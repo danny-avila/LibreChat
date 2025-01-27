@@ -162,6 +162,12 @@
  */
 
 /**
+ * @exports GenAIUsageMetadata
+ * @typedef {import('@google/generative-ai').UsageMetadata} GenAIUsageMetadata
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantStreamEvent
  * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
  * @memberof typedefs

@@ -1,4 +1,5 @@
 const { google } = require('googleapis');
+const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
@@ -10,11 +11,13 @@ const {
   endpointSettings,
   EModelEndpoint,
   VisionModes,
+  ErrorTypes,
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const Tokenizer = require('~/server/services/Tokenizer');
+const { spendTokens } = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -58,6 +61,15 @@ class GoogleClient extends BaseClient {
     this.reverseProxyUrl = options.reverseProxyUrl;
 
     this.authHeader = options.authHeader;
+
+    /** @type {UsageMetadata | undefined} */
+    this.usage;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'input_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'output_tokens';
 
     if (options.skipSetOptions) {
       return;
@@ -170,6 +182,11 @@ class GoogleClient extends BaseClient {
       this.completionsUrl = this.constructUrl();
     }
 
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
+    this.options.promptPrefix = promptPrefix;
     this.initializeClient();
     return this;
   }
@@ -322,19 +339,56 @@ class GoogleClient extends BaseClient {
    * @param {TMessage[]} [messages=[]]
    * @param {string} [parentMessageId]
    */
-  async buildMessages(messages = [], parentMessageId) {
+  async buildMessages(_messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
       throw new Error(
         '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
       );
     }
 
+    if (this.options.promptPrefix) {
+      const instructionsTokenCount = this.getTokenCount(this.options.promptPrefix);
+
+      this.maxContextTokens = this.maxContextTokens - instructionsTokenCount;
+      if (this.maxContextTokens < 0) {
+        const info = `${instructionsTokenCount} / ${this.maxContextTokens}`;
+        const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+        logger.warn(`Instructions token count exceeds max context (${info}).`);
+        throw new Error(errorMessage);
+      }
+    }
+
+    for (let i = 0; i < _messages.length; i++) {
+      const message = _messages[i];
+      if (!message.tokenCount) {
+        _messages[i].tokenCount = this.getTokenCountForMessage({
+          role: message.isCreatedByUser ? 'user' : 'assistant',
+          content: message.content ?? message.text,
+        });
+      }
+    }
+
+    const {
+      payload: messages,
+      tokenCountMap,
+      promptTokens,
+    } = await this.handleContextStrategy({
+      orderedMessages: _messages,
+      formattedMessages: _messages,
+    });
+
     if (!this.project_id && !EXCLUDED_GENAI_MODELS.test(this.modelOptions.model)) {
-      return await this.buildGenerativeMessages(messages);
+      const result = await this.buildGenerativeMessages(messages);
+      result.tokenCountMap = tokenCountMap;
+      result.promptTokens = promptTokens;
+      return result;
     }
 
     if (this.options.attachments && this.isGenerativeModel) {
-      return this.buildVisionMessages(messages, parentMessageId);
+      const result = this.buildVisionMessages(messages, parentMessageId);
+      result.tokenCountMap = tokenCountMap;
+      result.promptTokens = promptTokens;
+      return result;
     }
 
     if (this.isTextModel) {
@@ -352,17 +406,12 @@ class GoogleClient extends BaseClient {
       ],
     };
 
-    let promptPrefix = (this.options.promptPrefix ?? '').trim();
-    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
-      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
-    }
-
-    if (promptPrefix) {
-      payload.instances[0].context = promptPrefix;
+    if (this.options.promptPrefix) {
+      payload.instances[0].context = this.options.promptPrefix;
     }
 
     logger.debug('[GoogleClient] buildMessages', payload);
-    return { prompt: payload };
+    return { prompt: payload, tokenCountMap, promptTokens };
   }
 
   async buildMessagesPrompt(messages, parentMessageId) {
@@ -405,9 +454,6 @@ class GoogleClient extends BaseClient {
     }
 
     let promptPrefix = (this.options.promptPrefix ?? '').trim();
-    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
-      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
-    }
 
     if (identityPrefix) {
       promptPrefix = `${identityPrefix}${promptPrefix}`;
@@ -586,11 +632,7 @@ class GoogleClient extends BaseClient {
         generationConfig: googleGenConfigSchema.parse(this.modelOptions),
       };
 
-      let promptPrefix = (this.options.promptPrefix ?? '').trim();
-      if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
-        promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
-      }
-
+      const promptPrefix = (this.options.promptPrefix ?? '').trim();
       if (promptPrefix.length) {
         requestOptions.systemInstruction = {
           parts: [
@@ -602,8 +644,13 @@ class GoogleClient extends BaseClient {
       }
 
       const delay = modelName.includes('flash') ? 8 : 15;
+      /** @type {GenAIUsageMetadata} */
+      let usageMetadata;
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
+        usageMetadata = !usageMetadata
+          ? chunk?.usageMetadata
+          : Object.assign(usageMetadata, chunk?.usageMetadata);
         const chunkText = chunk.text();
         await this.generateTextStream(chunkText, onProgress, {
           delay,
@@ -611,11 +658,21 @@ class GoogleClient extends BaseClient {
         reply += chunkText;
         await sleep(streamRate);
       }
+
+      if (usageMetadata) {
+        this.usage = {
+          input_tokens: usageMetadata.promptTokenCount,
+          output_tokens: usageMetadata.candidatesTokenCount,
+        };
+      }
       return reply;
     }
 
+    /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
+    let usageMetadata;
     const stream = await this.client.stream(messages, {
       signal: abortController.signal,
+      streamUsage: true,
       safetySettings,
     });
 
@@ -631,6 +688,9 @@ class GoogleClient extends BaseClient {
     }
 
     for await (const chunk of stream) {
+      usageMetadata = !usageMetadata
+        ? chunk?.usage_metadata
+        : concat(usageMetadata, chunk?.usage_metadata);
       const chunkText = chunk?.content ?? chunk;
       await this.generateTextStream(chunkText, onProgress, {
         delay,
@@ -638,7 +698,68 @@ class GoogleClient extends BaseClient {
       reply += chunkText;
     }
 
+    if (usageMetadata) {
+      this.usage = usageMetadata;
+    }
     return reply;
+  }
+
+  /**
+   * Get stream usage as returned by this client's API response.
+   * @returns {UsageMetadata} The stream usage object.
+   */
+  getStreamUsage() {
+    return this.usage;
+  }
+
+  /**
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
+   * Edge case: If the calculation results in a negative value, it returns the original estimate.
+   * If revisiting a conversation with a chat history entirely composed of token estimates,
+   * the cumulative token count going forward should become more accurate as the conversation progresses.
+   * @param {Object} params - The parameters for the calculation.
+   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
+   * @param {string} params.currentMessageId - The ID of the current message to calculate.
+   * @param {UsageMetadata} params.usage - The usage object returned by the API.
+   * @returns {number} The correct token count for the current user message.
+   */
+  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
+    const originalEstimate = tokenCountMap[currentMessageId] || 0;
+
+    if (!usage || typeof usage.input_tokens !== 'number') {
+      return originalEstimate;
+    }
+
+    tokenCountMap[currentMessageId] = 0;
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
+      const numCount = Number(count);
+      return sum + (isNaN(numCount) ? 0 : numCount);
+    }, 0);
+    const totalInputTokens = usage.input_tokens ?? 0;
+    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
+    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
+  }
+
+  /**
+   * @param {object} params
+   * @param {number} params.promptTokens
+   * @param {number} params.completionTokens
+   * @param {UsageMetadata} [params.usage]
+   * @param {string} [params.model]
+   * @param {string} [params.context='message']
+   * @returns {Promise<void>}
+   */
+  async recordTokenUsage({ promptTokens, completionTokens, model, context = 'message' }) {
+    await spendTokens(
+      {
+        context,
+        user: this.user,
+        conversationId: this.conversationId,
+        model: model ?? this.modelOptions.model,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+      },
+      { promptTokens, completionTokens },
+    );
   }
 
   /**
@@ -726,6 +847,7 @@ class GoogleClient extends BaseClient {
       endpointType: null,
       artifacts: this.options.artifacts,
       promptPrefix: this.options.promptPrefix,
+      maxContextTokens: this.options.maxContextTokens,
       modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
