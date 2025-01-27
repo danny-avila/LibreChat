@@ -1,63 +1,118 @@
-// ~/strategies/passkeyStrategy.js
-const { Strategy: WebAuthnStrategy } = require('passport-fido2-webauthn');
-const { logger } = require('~/config');
-const { Strategy: DiscordStrategy } = require('passport-discord');
+const {
+  Strategy: WebAuthnStrategy,
+  SessionChallengeStore,
+} = require('passport-fido2-webauthn');
+const { User } = require('~/models'); // Adjust path to your User model
 
-// In-memory user store for demo purposes.
-// In production, use your DB to fetch and save user passkeys.
-const users = {};
+// Required for storing WebAuthn challenges in the session
+const store = new SessionChallengeStore();
 
 /**
- * Callback for verifying passkey credentials once passport-fido2-webauthn
- * has done the cryptographic verification.
- *
- * @param {object} publicKeyCredential The credential from the client
- * @param {function} done The Passport callback
+ * VERIFY CALLBACK
+ * --------------
+ * Triggered when a user attempts to log in with an existing passkey:
+ *   1) Find the user by credentialId
+ *   2) Make sure the user and passkey exist
+ *   3) Return the publicKey for final verification
  */
-async function passkeyLogin(publicKeyCredential, done) {
+async function verify(credentialId, userHandle, done) {
   try {
-    // The userId is typically embedded in the credential when registering.
-    // This can be done in the "options.user.id" you provide on registration.
-    const userId = publicKeyCredential.user?.id;
+    // 1) Look up user who has this passkey
+    const user = await User.findOne({
+      'passkeys.credentialID': Buffer.from(credentialId),
+    });
 
-    if (!userId) {
-      logger.warn('[Passkeys] Missing userId in credential');
-      return done(null, false);
+    if (!user) {
+      return done(null, false, { message: 'Invalid key: User not found.' });
     }
 
-    // If this user doesn't exist yet, create them in memory.
-    // Alternatively, fetch from DB, etc.
-    if (!users[userId]) {
-      users[userId] = {
-        id: userId,
-        displayName: `User-${userId}`,
-        // You might store passkey data here if you want, e.g.:
-        passkeys: [publicKeyCredential.authenticator],
-      };
+    // 2) Extract the specific passkey sub-document
+    const passkey = user.passkeys.find((pk) =>
+      pk.credentialID.equals(Buffer.from(credentialId)),
+    );
+    if (!passkey) {
+      return done(null, false, { message: 'Invalid key: Passkey record not found.' });
     }
 
-    // Example: update or store the user's passkeys in the DB if needed.
-    // For demo, we skip it.
+    // OPTIONAL: If you store a user handle in your DB, you can compare it here.
+    // For example, if your DB has user.passkeyHandle (a 16-byte buffer):
+    //
+    // const dbHandle = user.passkeyHandle; // or however you store it
+    // if (userHandle && !Buffer.from(userHandle).equals(dbHandle)) {
+    //   return done(null, false, { message: 'Invalid key: handle mismatch.' });
+    // }
 
-    const user = users[userId];
-    logger.info('[Passkeys] Successful passkey verification for user:', user);
-
-    // `done(null, user)` means success; pass the user object to the next step
-    return done(null, user);
-  } catch (error) {
-    logger.error('[Passkeys] Verification error:', error);
-    return done(error);
+    // Everything checks out
+    // Return the user doc + passkey's public key
+    return done(null, user, passkey.credentialPublicKey);
+  } catch (err) {
+    return done(err);
   }
 }
 
-// Export a function that returns a configured instance of the WebAuthnStrategy.
-module.exports = () =>
-  new WebAuthnStrategy(
-    {
-      rpName: process.env.PASSKEY_RP_NAME || 'MyApp Passkey Demo',
-      // rpID should match your domain (e.g. "example.com"). For local dev, 'localhost' typically works:
-      rpID: process.env.PASSKEY_RP_ID || 'localhost',
-      // You can provide additional options, such as a challengeStore, if you want to manage your own challenge lookups.
-    },
-    passkeyLogin,
-  );
+/**
+ * REGISTER CALLBACK
+ * -----------------
+ * Triggered when a new passkey is being created:
+ *   1) Possibly create a new user or find existing
+ *   2) Add passkey info to user's passkeys array
+ *   3) Return user doc for finalizing registration
+ *
+ * The `webauthnUser` object is from your challenge route:
+ *   { id, name, displayName }
+ */
+async function register(webauthnUser, credentialId, publicKey, done) {
+  try {
+    // Convert base64url handle if needed
+    const userHandleBuf = Buffer.from(webauthnUser.id, 'base64url');
+
+    // 1) Look up user by some unique field (e.g. `username` or `email`)
+    let user = await User.findOne({ username: webauthnUser.name });
+
+    // 2) If user doesn't exist, create them
+    if (!user) {
+      user = new User({
+        username: webauthnUser.name,
+        name: webauthnUser.displayName || webauthnUser.name,
+        email: `${webauthnUser.name}@example.com`, // or your real email creation logic
+        emailVerified: false,
+        provider: 'passkey',
+        // passkeyHandle: userHandleBuf, // If you want to store the userHandle specifically
+      });
+    }
+
+    // 3) Avoid duplicates: Check if passkey credentialId is already in passkeys
+    const alreadyExists = user.passkeys.some((pk) =>
+      pk.credentialID.equals(Buffer.from(credentialId)),
+    );
+    if (alreadyExists) {
+      // E.g., user re-registering same device
+      return done(null, user, { message: 'Passkey credential already exists for this user.' });
+    }
+
+    // 4) Push new passkey
+    user.passkeys.push({
+      credentialID: Buffer.from(credentialId),
+      credentialPublicKey: Buffer.from(publicKey),
+      counter: 0,
+      transports: [],
+    });
+
+    // 5) Save user to DB
+    await user.save();
+
+    // Return final user doc
+    return done(null, user);
+  } catch (err) {
+    return done(err);
+  }
+}
+
+// Create the WebAuthn strategy instance
+const passkeyStrategy = new WebAuthnStrategy(
+  { store },
+  verify,
+  register,
+);
+
+module.exports = passkeyStrategy;

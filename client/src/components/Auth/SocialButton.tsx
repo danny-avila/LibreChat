@@ -1,5 +1,6 @@
 import React from 'react';
 
+// 1) Define the props interface, making onClick optional
 interface SocialButtonProps {
     id: string;
     enabled: boolean;
@@ -10,6 +11,7 @@ interface SocialButtonProps {
     onClick?: () => void;
 }
 
+// 2) Use the interface in your component definition
 const SocialButton: React.FC<SocialButtonProps> = ({
   id,
   enabled,
@@ -17,38 +19,44 @@ const SocialButton: React.FC<SocialButtonProps> = ({
   oauthPath,
   Icon,
   label,
-  onClick,
+  onClick, // optional
 }) => {
   if (!enabled) {return null;}
 
-  // If an onClick is provided, render a button; otherwise, render an anchor link
-  if (onClick) {
+  // If onClick is provided, render a button
+  if (typeof onClick === 'function') {
     return (
       <div className="mt-2 flex gap-x-2">
         <button
-          type="button"
           aria-label={label}
-          className="flex w-full items-center space-x-3 rounded-2xl border border-border-light bg-surface-primary px-5 py-3 text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
+          className="flex w-full items-center space-x-3 rounded-2xl
+                     border border-border-light bg-surface-primary px-5 py-3
+                     text-text-primary transition-colors duration-200
+                     hover:bg-surface-tertiary"
           onClick={onClick}
           data-testid={id}
+          type="button"
         >
-          <Icon />
+          {Icon && <Icon />}
           <p>{label}</p>
         </button>
       </div>
     );
   }
 
-  // Fallback: normal social login link
+  // Otherwise, render a standard anchor for OAuth
   return (
     <div className="mt-2 flex gap-x-2">
       <a
         aria-label={label}
-        className="flex w-full items-center space-x-3 rounded-2xl border border-border-light bg-surface-primary px-5 py-3 text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
+        className="flex w-full items-center space-x-3 rounded-2xl
+                   border border-border-light bg-surface-primary px-5 py-3
+                   text-text-primary transition-colors duration-200
+                   hover:bg-surface-tertiary"
         href={`${serverDomain}/oauth/${oauthPath}`}
         data-testid={id}
       >
-        <Icon />
+        {Icon && <Icon />}
         <p>{label}</p>
       </a>
     </div>

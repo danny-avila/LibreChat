@@ -9,7 +9,7 @@ const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
-const { jwtLogin, passportLogin, passkeyStrategy } = require('~/strategies');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
@@ -21,6 +21,7 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const models = require('~/models');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -77,17 +78,29 @@ const startServer = async () => {
     passport.use(ldapLogin);
   }
 
-  // IMPORTANT: Register the passkey (webauthn) strategy
-  passport.use(passkeyStrategy());
-
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);
   }
 
+  // 3) Define how to store and retrieve user data
+  passport.serializeUser((user, done) => {
+    done(null, user._id); // Or another unique field
+  });
+
+  passport.deserializeUser(async (id, done) => {
+    try {
+      // Make sure you have a User model or service you can query
+      const user = await models.User.findById(id).lean();
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
+  });
+
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
-  app.use('/api/passkeys', routes.passkeys);
+  app.use('/api/auth/passkey', routes.passkeyAuthRoutes);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);

@@ -57,6 +57,10 @@ function AuthLayout({
     return null;
   };
 
+  // Decide if the user is on login or register
+  const isRegister = pathname.includes('register');
+  const mode = isRegister ? 'register' : 'login';
+
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
@@ -86,7 +90,7 @@ function AuthLayout({
           )}
           {children}
           {(pathname.includes('login') || pathname.includes('register')) && (
-            <SocialLoginRender startupConfig={startupConfig} />
+            <SocialLoginRender startupConfig={startupConfig} mode={mode} />
           )}
         </div>
       </div>

@@ -7,6 +7,14 @@ const { SystemRoles } = require('librechat-data-provider');
  */
 
 /**
+ * @typedef {Object} Passkey
+ * @property {Buffer} credentialID - Unique ID for the credential (ArrayBuffer -> Buffer)
+ * @property {Buffer} credentialPublicKey - The public key (ArrayBuffer -> Buffer)
+ * @property {number} [counter] - The signature counter to protect against replay attacks
+ * @property {string[]} [transports] - The transport methods (e.g., "usb", "nfc", "ble", "internal")
+ */
+
+/**
  * @typedef {Object} MongoUser
  * @property {ObjectId} [_id] - MongoDB Document ID
  * @property {string} [name] - The user's name
@@ -26,6 +34,7 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {string} [appleId] - Optional Apple ID for the user
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
+ * @property {Array.<Passkey>} [passkeys] - Array of passkey credentials for @simplewebauthn
  * @property {Date} [expiresAt] - Optional expiration date of the file
  * @property {Date} [createdAt] - Date when the user was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the user was last updated (added by timestamps)
@@ -39,8 +48,28 @@ const Session = mongoose.Schema({
   },
 });
 
-/** @type {MongooseSchema<MongoUser>} */
-const userSchema = mongoose.Schema(
+/** @type {MongooseSchema<Passkey>} */
+const PasskeySchema = mongoose.Schema({
+  credentialID: {
+    type: Buffer,
+    required: true,
+  },
+  credentialPublicKey: {
+    type: Buffer,
+    required: true,
+  },
+  counter: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
+  transports: {
+    type: [String],
+    default: [],
+  },
+});
+
+const userSchema =  mongoose.Schema(
   {
     name: {
       type: String,
@@ -71,7 +100,6 @@ const userSchema = mongoose.Schema(
     },
     avatar: {
       type: String,
-      required: false,
     },
     provider: {
       type: String,
@@ -123,6 +151,12 @@ const userSchema = mongoose.Schema(
     },
     refreshToken: {
       type: [Session],
+      default: [],
+    },
+    // Array of passkeys for WebAuthn
+    passkeys: {
+      type: [PasskeySchema],
+      default: [],
     },
     expiresAt: {
       type: Date,
@@ -133,7 +167,6 @@ const userSchema = mongoose.Schema(
       default: false,
     },
   },
-
   { timestamps: true },
 );
 
