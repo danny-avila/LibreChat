@@ -1,8 +1,6 @@
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
-const { GoogleVertexAI } = require('@langchain/google-vertexai');
-const { ChatGoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
@@ -50,9 +48,10 @@ class GoogleClient extends BaseClient {
     const serviceKey = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
     this.serviceKey =
       serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : serviceKey ?? {};
+    /** @type {string | null | undefined} */
+    this.project_id = this.serviceKey.project_id;
     this.client_email = this.serviceKey.client_email;
     this.private_key = this.serviceKey.private_key;
-    this.project_id = this.serviceKey.project_id;
     this.access_token = null;
 
     this.apiKey = creds[AuthKeys.GOOGLE_API_KEY];
@@ -566,13 +565,7 @@ class GoogleClient extends BaseClient {
       }
     }
 
-    if (this.project_id && this.isTextModel) {
-      logger.debug('Creating Google VertexAI client');
-      return new GoogleVertexAI(clientOptions);
-    } else if (this.project_id && this.isChatModel) {
-      logger.debug('Creating Chat Google VertexAI client');
-      return new ChatGoogleVertexAI(clientOptions);
-    } else if (this.project_id) {
+    if (this.project_id != null) {
       logger.debug('Creating VertexAI client');
       return new ChatVertexAI(clientOptions);
     } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
@@ -602,6 +595,7 @@ class GoogleClient extends BaseClient {
     }
 
     this.client = this.createLLM(clientOptions);
+    return this.client;
   }
 
   async getCompletion(_payload, options = {}) {
@@ -848,12 +842,32 @@ class GoogleClient extends BaseClient {
     return 'cl100k_base';
   }
 
+  async getVertexTokenCount(text) {
+    /** @type {ChatVertexAI} */
+    const client = this.client ?? this.initializeClient();
+    const connection = client.connection;
+    const gAuthClient = connection.client;
+    const tokenEndpoint = `https://${connection._endpoint}/${connection.apiVersion}/projects/${this.project_id}/locations/${connection._location}/publishers/google/models/${connection.model}/:countTokens`;
+    const result = await gAuthClient.request({
+      url: tokenEndpoint,
+      method: 'POST',
+      data: {
+        contents: [{ role: 'user', parts: [{ text }] }],
+      },
+    });
+    console.dir(result, { depth: null });
+    return result;
+  }
+
   /**
    * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
    * @param {string} text - The text to get the token count for.
-   * @returns {number} The token count of the given text.
+   * @returns {Promise<number>} The token count of the given text.
    */
-  getTokenCount(text) {
+  async getTokenCount(text) {
+    if (this.client instanceof ChatVertexAI) {
+      return await this.getVertexTokenCount(text);
+    }
     const encoding = this.getEncoding();
     return Tokenizer.getTokenCount(text, encoding);
   }
