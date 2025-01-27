@@ -13,7 +13,6 @@ const {
 const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
 const { createContextHandlers } = require('./prompts');
 const { createCoherePayload } = require('./llm');
-const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -186,10 +185,6 @@ class ChatGPTClient extends BaseClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      dispatcher: new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
-      }),
     };
 
     if (this.isVisionModel) {
@@ -273,10 +268,6 @@ class ChatGPTClient extends BaseClient {
     if (this.useOpenRouter) {
       opts.headers['HTTP-Referer'] = 'https://librechat.ai';
       opts.headers['X-Title'] = 'LibreChat';
-    }
-
-    if (this.options.proxy) {
-      opts.dispatcher = new ProxyAgent(this.options.proxy);
     }
 
     /* hacky fixes for Mistral AI API:

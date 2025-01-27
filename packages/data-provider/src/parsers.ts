@@ -272,7 +272,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   if (endpoint === EModelEndpoint.google) {
     if (modelLabel) {
       return modelLabel;
-    } else if (model && model.includes('gemini')) {
+    } else if (model && (model.includes('gemini') || model.includes('learnlm'))) {
       return 'Gemini';
     } else if (model && model.includes('code')) {
       return 'Codey';
