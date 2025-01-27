@@ -385,10 +385,6 @@ class GoogleClient extends BaseClient {
       return result;
     }
 
-    if (this.isTextModel) {
-      return this.buildMessagesPrompt(messages, parentMessageId);
-    }
-
     let payload = {
       instances: [
         {
