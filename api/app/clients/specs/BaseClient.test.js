@@ -674,4 +674,98 @@ describe('BaseClient', () => {
       expect(calls[1][0].isCreatedByUser).toBe(false); // Second call should be for response message
     });
   });
+
+  // Add these tests within the BaseClient describe block
+
+  describe('getMessagesWithinTokenLimit with instructions', () => {
+    test('should always include instructions when present', async () => {
+      TestClient.maxContextTokens = 50;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      expect(result.context[0]).toBe(instructions);
+      expect(result.remainingContextTokens).toBe(2);
+    });
+
+    test('should handle case when messages exceed limit but instructions must be preserved', async () => {
+      TestClient.maxContextTokens = 30;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      // Should only include instructions and the last message that fits
+      expect(result.context).toHaveLength(1);
+      expect(result.context[0].content).toBe(instructions.content);
+      expect(result.messagesToRefine).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(7); // 30 - 20 - 3 (assistant label)
+    });
+
+    test('should work correctly without instructions', async () => {
+      TestClient.maxContextTokens = 50;
+      const messages = [
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+      });
+
+      expect(result.context).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(22); // 50 - 10 - 15 - 3(assistant label)
+      expect(result.messagesToRefine).toHaveLength(0);
+    });
+
+    test('should handle case when only instructions fit within limit', async () => {
+      TestClient.maxContextTokens = 25;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      expect(result.context).toHaveLength(1);
+      expect(result.context[0]).toBe(instructions);
+      expect(result.messagesToRefine).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(2); // 25 - 20 - 3(assistant label)
+    });
+  });
 });
