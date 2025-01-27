@@ -191,6 +191,9 @@ export default function useTextarea({
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
       const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
 
+      // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
+      const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
+
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();
       }
@@ -204,7 +207,7 @@ export default function useTextarea({
         !enterToSend &&
         !isCtrlEnter &&
         textAreaRef.current &&
-        !isComposing.current
+        !isComposingInput
       ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
@@ -212,7 +215,7 @@ export default function useTextarea({
         return;
       }
 
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposing.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposingInput) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
         if (globalAudio) {
           console.log('Unmuting global audio');
