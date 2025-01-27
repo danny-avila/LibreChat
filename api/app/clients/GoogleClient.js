@@ -118,10 +118,6 @@ class GoogleClient extends BaseClient {
       this.options = options;
     }
 
-    this.options.examples = (this.options.examples ?? [])
-      .filter((ex) => ex)
-      .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
-
     this.modelOptions = this.options.modelOptions || {};
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
@@ -365,12 +361,7 @@ class GoogleClient extends BaseClient {
       payload.instances[0].context = promptPrefix;
     }
 
-    if (this.options.examples.length > 0) {
-      payload.instances[0].examples = this.options.examples;
-    }
-
     logger.debug('[GoogleClient] buildMessages', payload);
-
     return { prompt: payload };
   }
 
@@ -574,9 +565,9 @@ class GoogleClient extends BaseClient {
     const { instances } = _payload;
     const safetySettings = this.getSafetySettings();
     const { onProgress, abortController } = options;
+    const { messages: _messages, context } = instances?.[0] ?? {};
     const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
-    const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
 
     let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
@@ -657,7 +648,7 @@ class GoogleClient extends BaseClient {
     const { abortController } = options;
     const { instances } = _payload;
     const safetySettings = this.getSafetySettings();
-    const { messages: _messages, examples: _examples } = instances?.[0] ?? {};
+    const { messages: _messages } = instances?.[0] ?? {};
 
     let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
