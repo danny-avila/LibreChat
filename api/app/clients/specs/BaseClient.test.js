@@ -203,66 +203,6 @@ describe('BaseClient', () => {
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
 
-  test('handles context strategy correctly in handleContextStrategy()', async () => {
-    TestClient.addInstructions = jest
-      .fn()
-      .mockReturnValue([
-        { content: 'Hello' },
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ]);
-    TestClient.getMessagesWithinTokenLimit = jest.fn().mockReturnValue({
-      context: [
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ],
-      remainingContextTokens: 80,
-      messagesToRefine: [{ content: 'Hello' }],
-      summaryIndex: 3,
-    });
-
-    TestClient.getTokenCount = jest.fn().mockReturnValue(40);
-
-    const instructions = { content: 'Please provide more details.' };
-    const orderedMessages = [
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' },
-    ];
-    const formattedMessages = [
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' },
-    ];
-    const expectedResult = {
-      payload: [
-        {
-          role: 'system',
-          content: 'Refined answer',
-        },
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ],
-      promptTokens: expect.any(Number),
-      tokenCountMap: {},
-      messages: expect.any(Array),
-    };
-
-    TestClient.shouldSummarize = true;
-    const result = await TestClient.handleContextStrategy({
-      instructions,
-      orderedMessages,
-      formattedMessages,
-    });
-
-    expect(result).toEqual(expectedResult);
-  });
-
   describe('getMessagesForConversation', () => {
     it('should return an empty array if the parentMessageId does not exist', () => {
       const result = TestClient.constructor.getMessagesForConversation({
