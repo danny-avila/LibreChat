@@ -28,7 +28,24 @@ type TCodeProps = {
   children: React.ReactNode;
 };
 
-export const code: FC<TCodeProps> = memo(({ className, children }) => {
+export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
+  const match = /language-(\w+)/.exec(className ?? '');
+  const lang = match && match[1];
+
+  if (lang === 'math') {
+    return children;
+  } else if (typeof children === 'string' && children.split('\n').length === 1) {
+    return (
+      <code onDoubleClick={handleDoubleClick} className={className}>
+        {children}
+      </code>
+    );
+  } else {
+    return <CodeBlock lang={lang ?? 'text'} codeChildren={children} allowExecution={false} />;
+  }
+});
+
+export const code: React.ElementType = memo(({ className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
   const isMath = lang === 'math';
@@ -55,7 +72,7 @@ type TAnchorProps = {
   children: React.ReactNode;
 };
 
-export const a: FC<TAnchorProps> = memo(({ href, children }) => {
+export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
   const user = useRecoilValue(store.user);
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -129,7 +146,7 @@ type TParagraphProps = {
   children: React.ReactNode;
 };
 
-export const p: FC<TParagraphProps> = memo(({ children }) => {
+export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
@@ -178,6 +195,16 @@ const Markdown: FC<TContentProps> = memo(({ content = '', showCursor, isLatestMe
     ],
     [],
   );
+
+  if (isInitializing) {
+    return (
+      <div className="absolute">
+        <p className="relative">
+          <span className={isLatestMessage ? 'result-thinking' : ''} />
+        </p>
+      </div>
+    );
+  }
 
   return (
     <ArtifactProvider>

@@ -42,7 +42,7 @@ const ThinkingButton = memo(
   ),
 );
 
-const Thinking: FC<{ children: React.ReactNode }> = memo(({ children }) => {
+const Thinking: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
   const [showThinking] = useRecoilState<boolean>(store.showThinking);
   const [isExpanded, setIsExpanded] = useState(showThinking);
