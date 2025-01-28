@@ -120,6 +120,11 @@ const userSchema =  mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    openidId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     ldapId: {
       type: String,
       unique: true,
