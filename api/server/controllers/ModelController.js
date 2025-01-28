@@ -21,6 +21,25 @@ const getModelsConfig = async (req) => {
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {
+  const { BedrockAgentClient, ListAgentsCommand } = await import('@aws-sdk/client-bedrock-agent');
+
+  const client = new BedrockAgentClient({
+    region: process.env.AWS_REGION ?? 'eu-central-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
+    },
+  });
+
+  // console.log(req);
+
+  const command = new ListAgentsCommand({});
+  const response = await client.send(command);
+  const agNames = [];
+  response.agentSummaries?.forEach((a) => {
+    agNames.push(a.description ?? a.agentName);
+  });
+
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
   if (cachedModelsConfig) {
@@ -32,7 +51,8 @@ async function loadModels(req) {
   const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
 
   await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
-  return modelConfig;
+  return { bedrock: agNames };
+  // return modelConfig;
 }
 
 async function modelController(req, res) {
