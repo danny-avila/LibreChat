@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef, FC } from 'react';
+import React, { memo, useMemo, useRef, useEffect } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
@@ -51,8 +51,12 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
   const isMath = lang === 'math';
   const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
 
-  const { getNextIndex } = useCodeBlockContext();
+  const { getNextIndex, resetCounter } = useCodeBlockContext();
   const blockIndex = useRef(getNextIndex(isMath || isSingleLine)).current;
+
+  useEffect(() => {
+    resetCounter();
+  }, [children, resetCounter]);
 
   if (isMath) {
     return <>{children}</>;
@@ -158,7 +162,7 @@ type TContentProps = {
   isLatestMessage: boolean;
 };
 
-const Markdown: FC<TContentProps> = memo(({ content = '', showCursor, isLatestMessage }) => {
+const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
