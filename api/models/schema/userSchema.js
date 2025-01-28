@@ -68,6 +68,7 @@ const PasskeySchema = mongoose.Schema({
   },
 });
 
+/** @type {MongooseSchema<MongoUser>} */
 const userSchema =  mongoose.Schema(
   {
     name: {
