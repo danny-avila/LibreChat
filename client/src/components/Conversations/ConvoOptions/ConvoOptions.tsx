@@ -1,8 +1,9 @@
-import { useState, useId } from 'react';
+import { useState, useId, useRef, memo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent } from 'react';
+import type * as t from '~/common';
 import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
 import { useDuplicateConversationMutation } from '~/data-provider';
@@ -11,7 +12,7 @@ import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
-export default function ConvoOptions({
+function ConvoOptions({
   conversationId,
   title,
   retainView,
@@ -34,18 +35,18 @@ export default function ConvoOptions({
   const archiveHandler = useArchiveHandler(conversationId, true, retainView);
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
+  const shareButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
-      if (data != null) {
-        navigateToConvo(data.conversation);
-        showToast({
-          message: localize('com_ui_duplication_success'),
-          status: 'success',
-        });
-      }
+      navigateToConvo(data.conversation);
+      showToast({
+        message: localize('com_ui_duplication_success'),
+        status: 'success',
+      });
     },
     onMutate: () => {
       showToast({
@@ -62,12 +63,10 @@ export default function ConvoOptions({
   });
 
   const shareHandler = () => {
-    setIsPopoverActive(false);
     setShowShareDialog(true);
   };
 
   const deleteHandler = () => {
-    setIsPopoverActive(false);
     setShowDeleteDialog(true);
   };
 
@@ -78,12 +77,16 @@ export default function ConvoOptions({
     });
   };
 
-  const dropdownItems = [
+  const dropdownItems: t.MenuItemProps[] = [
     {
       label: localize('com_ui_share'),
       onClick: shareHandler,
       icon: <Share2 className="icon-sm mr-2 text-text-primary" />,
       show: startupConfig && startupConfig.sharedLinksEnabled,
+      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+      hideOnClick: false,
+      ref: shareButtonRef,
+      render: (props) => <button {...props} />,
     },
     {
       label: localize('com_ui_rename'),
@@ -104,6 +107,9 @@ export default function ConvoOptions({
       label: localize('com_ui_delete'),
       onClick: deleteHandler,
       icon: <Trash className="icon-sm mr-2 text-text-primary" />,
+      hideOnClick: false,
+      ref: deleteButtonRef,
+      render: (props) => <button {...props} />,
     },
   ];
 
@@ -133,10 +139,10 @@ export default function ConvoOptions({
       />
       {showShareDialog && (
         <ShareButton
-          title={title ?? ''}
           conversationId={conversationId ?? ''}
-          showShareDialog={showShareDialog}
-          setShowShareDialog={setShowShareDialog}
+          open={showShareDialog}
+          onOpenChange={setShowShareDialog}
+          triggerRef={shareButtonRef}
         />
       )}
       {showDeleteDialog && (
@@ -146,8 +152,11 @@ export default function ConvoOptions({
           conversationId={conversationId ?? ''}
           showDeleteDialog={showDeleteDialog}
           setShowDeleteDialog={setShowDeleteDialog}
+          triggerRef={deleteButtonRef}
         />
       )}
     </>
   );
 }
+
+export default memo(ConvoOptions);

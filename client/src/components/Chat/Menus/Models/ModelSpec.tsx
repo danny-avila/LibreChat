@@ -33,10 +33,10 @@ const MenuItem: FC<MenuItemProps> = ({
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { getExpiry } = useUserKey(endpoint ?? '');
   const localize = useLocalize();
-  const expiryTime = getExpiry();
+  const expiryTime = getExpiry() ?? '';
 
   const clickHandler = () => {
-    if (expiryTime == null) {
+    if (expiryTime) {
       setDialogOpen(true);
     }
     if (onClick) {
@@ -83,10 +83,12 @@ const MenuItem: FC<MenuItemProps> = ({
             {userProvidesKey ? (
               <div className="text-token-text-primary" key={`set-key-${endpoint}`}>
                 <button
+                  tabIndex={0}
+                  aria-label={`${localize('com_endpoint_config_key')} for ${title}`}
                   className={cn(
-                    'invisible flex gap-x-1 group-hover:visible',
+                    'invisible flex gap-x-1 group-focus-within:visible group-hover:visible',
                     selected ? 'visible' : '',
-                    expiryTime != null
+                    expiryTime
                       ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-900'
                       : '',
                   )}
@@ -95,16 +97,23 @@ const MenuItem: FC<MenuItemProps> = ({
                     e.stopPropagation();
                     setDialogOpen(true);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDialogOpen(true);
+                    }
+                  }}
                 >
                   <div
                     className={cn(
-                      'invisible group-hover:visible',
-                      expiryTime != null ? 'text-xs' : '',
+                      'invisible group-focus-within:visible group-hover:visible',
+                      expiryTime ? 'text-xs' : '',
                     )}
                   >
                     {localize('com_endpoint_config_key')}
                   </div>
-                  <Settings className={cn(expiryTime != null ? 'icon-sm' : 'icon-md stroke-1')} />
+                  <Settings className={cn(expiryTime ? 'icon-sm' : 'icon-md stroke-1')} />
                 </button>
               </div>
             ) : null}

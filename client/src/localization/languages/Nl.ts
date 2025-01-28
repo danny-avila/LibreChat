@@ -55,7 +55,6 @@ export default {
   com_ui_chats: 'chats',
   com_ui_share: 'Delen',
   com_ui_copy_link: 'Link kopiëren',
-  com_ui_update_link: 'Link bijwerken',
   com_ui_create_link: 'Link aanmaken',
   com_ui_share_link_to_chat: 'Deel link naar chat',
   com_ui_share_error: 'Er is een fout opgetreden bij het delen van de chatlink',

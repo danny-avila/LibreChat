@@ -212,6 +212,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
                       return (
                         <TableCell
+                          style={{
+                            width: '150px',
+                            maxWidth: '150px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
                           data-skip-refocus="true"
                           key={cell.id}
                           role={isFilenameCell ? 'button' : undefined}

@@ -183,7 +183,7 @@ export const parseConvo = ({
   possibleValues,
 }: {
   endpoint: EModelEndpoint;
-  endpointType?: EModelEndpoint;
+  endpointType?: EModelEndpoint | null;
   conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
@@ -272,7 +272,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   if (endpoint === EModelEndpoint.google) {
     if (modelLabel) {
       return modelLabel;
-    } else if (model && model.includes('gemini')) {
+    } else if (model && (model.includes('gemini') || model.includes('learnlm'))) {
       return 'Gemini';
     } else if (model && model.includes('code')) {
       return 'Codey';
@@ -338,7 +338,7 @@ export const parseCompactConvo = ({
   possibleValues,
 }: {
   endpoint?: EModelEndpoint;
-  endpointType?: EModelEndpoint;
+  endpointType?: EModelEndpoint | null;
   conversation: Partial<s.TConversation | s.TPreset>;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
@@ -348,7 +348,7 @@ export const parseCompactConvo = ({
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
 
-  let schema = compactEndpointSchemas[endpoint];
+  let schema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
@@ -356,7 +356,11 @@ export const parseCompactConvo = ({
     schema = compactEndpointSchemas[endpointType];
   }
 
-  const convo = schema.parse(conversation) as s.TConversation;
+  if (!schema) {
+    throw new Error(`Unknown endpointType: ${endpointType}`);
+  }
+
+  const convo = schema.parse(conversation) as s.TConversation | null;
   // const { models, secondaryModels } = possibleValues ?? {};
   const { models } = possibleValues ?? {};
 

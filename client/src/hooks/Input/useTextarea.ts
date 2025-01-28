@@ -4,7 +4,13 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
-import { forceResize, insertTextAtCursor, getEntityName, getEntity } from '~/utils';
+import {
+  forceResize,
+  insertTextAtCursor,
+  getEntityName,
+  getEntity,
+  checkIfScrollable,
+} from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -20,10 +26,12 @@ type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
+  setIsScrollable,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
+  setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
 }) {
   const localize = useLocalize();
@@ -128,7 +136,10 @@ export default function useTextarea({
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'AI'}`;
+      return `${localize(
+        'com_endpoint_message_new',
+        sender ? sender : localize('com_endpoint_ai'),
+      )}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -167,6 +178,10 @@ export default function useTextarea({
 
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
+      if (textAreaRef.current && checkIfScrollable(textAreaRef.current)) {
+        const scrollable = checkIfScrollable(textAreaRef.current);
+        scrollable && setIsScrollable(scrollable);
+      }
       if (e.key === 'Enter' && isSubmitting) {
         return;
       }
@@ -175,6 +190,9 @@ export default function useTextarea({
 
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
       const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+
+      // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
+      const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();
@@ -189,7 +207,7 @@ export default function useTextarea({
         !enterToSend &&
         !isCtrlEnter &&
         textAreaRef.current &&
-        !isComposing.current
+        !isComposingInput
       ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
@@ -197,7 +215,7 @@ export default function useTextarea({
         return;
       }
 
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposing.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposingInput) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
         if (globalAudio) {
           console.log('Unmuting global audio');
@@ -206,7 +224,15 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, checkHealth, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+    [
+      isSubmitting,
+      checkHealth,
+      filesLoading,
+      enterToSend,
+      setIsScrollable,
+      textAreaRef,
+      submitButtonRef,
+    ],
   );
 
   const handleCompositionStart = () => {

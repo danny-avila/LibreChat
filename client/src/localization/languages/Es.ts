@@ -142,7 +142,6 @@ export default {
   com_ui_create: 'Crear',
   com_ui_share: 'Compartir',
   com_ui_copy_link: 'Copiar enlace',
-  com_ui_update_link: 'Actualizar enlace',
   com_ui_create_link: 'Crear enlace',
   com_ui_share_link_to_chat: 'Compartir enlace en el chat',
   com_ui_share_error: 'Hubo un error al compartir el enlace del chat',
@@ -1195,4 +1194,13 @@ export default {
   com_endpoint_agent_placeholder: 'Por favor seleccione un Agente',
   com_nav_welcome_agent: 'Seleccione un agente',
   com_ui_delete_shared_link: '¿Eliminar enlace compartido?',
+  com_ui_bookmarks_add: 'Agregar Marcadores',
+  com_ui_page: 'Página',
+  com_ui_bookmarks_edit: 'Editar Marcador',
+  com_nav_maximize_chat_space: 'Maximizar espacio del chat',
+  com_endpoint_ai: 'IA',
+  com_ui_collapse_chat: 'Contraer Chat',
+  com_endpoint_message_new: 'Mensaje {0}',
+  com_ui_speech_while_submitting:
+    'No se puede enviar un mensaje de voz mientras se está generando una respuesta',
 };

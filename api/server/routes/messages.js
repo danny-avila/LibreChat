@@ -1,12 +1,82 @@
 const express = require('express');
 const { ContentTypes } = require('librechat-data-provider');
-const { saveConvo, saveMessage, getMessages, updateMessage, deleteMessages } = require('~/models');
+const {
+  saveConvo,
+  saveMessage,
+  getMessage,
+  getMessages,
+  updateMessage,
+  deleteMessages,
+} = require('~/models');
+const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { countTokens } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+router.post('/artifact/:messageId', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { index, original, updated } = req.body;
+
+    if (typeof index !== 'number' || index < 0 || !original || !updated) {
+      return res.status(400).json({ error: 'Invalid request parameters' });
+    }
+
+    const message = await getMessage({ user: req.user.id, messageId });
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const artifacts = findAllArtifacts(message);
+    if (index >= artifacts.length) {
+      return res.status(400).json({ error: 'Artifact index out of bounds' });
+    }
+
+    const targetArtifact = artifacts[index];
+    let updatedText = null;
+
+    if (targetArtifact.source === 'content') {
+      const part = message.content[targetArtifact.partIndex];
+      updatedText = replaceArtifactContent(part.text, targetArtifact, original, updated);
+      if (updatedText) {
+        part.text = updatedText;
+      }
+    } else {
+      updatedText = replaceArtifactContent(message.text, targetArtifact, original, updated);
+      if (updatedText) {
+        message.text = updatedText;
+      }
+    }
+
+    if (!updatedText) {
+      return res.status(400).json({ error: 'Original content not found in target artifact' });
+    }
+
+    const savedMessage = await saveMessage(
+      req,
+      {
+        messageId,
+        conversationId: message.conversationId,
+        text: message.text,
+        content: message.content,
+        user: req.user.id,
+      },
+      { context: 'POST /api/messages/artifact/:messageId' },
+    );
+
+    res.status(200).json({
+      conversationId: savedMessage.conversationId,
+      content: savedMessage.content,
+      text: savedMessage.text,
+    });
+  } catch (error) {
+    logger.error('Error editing artifact:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
 router.get('/:conversationId', validateMessageReq, async (req, res) => {

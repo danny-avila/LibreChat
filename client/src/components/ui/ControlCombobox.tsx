@@ -1,5 +1,6 @@
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
+import { AutoSizer, List } from 'react-virtualized';
 import { startTransition, useMemo, useState, useEffect, useRef, memo } from 'react';
 import { cn } from '~/utils';
 import type { OptionWithIcon } from '~/common';
@@ -16,6 +17,8 @@ interface ControlComboboxProps {
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
 }
+
+const ROW_HEIGHT = 36;
 
 function ControlCombobox({
   selectedValue,
@@ -44,6 +47,39 @@ function ControlCombobox({
       setButtonWidth(buttonRef.current.offsetWidth);
     }
   }, [isCollapsed]);
+
+  const rowRenderer = ({
+    index,
+    key,
+    style,
+  }: {
+    index: number;
+    key: string;
+    style: React.CSSProperties;
+  }) => {
+    const item = matches[index];
+    return (
+      <Ariakit.SelectItem
+        key={key}
+        value={`${item.value ?? ''}`}
+        aria-label={`${item.label ?? item.value ?? ''}`}
+        className={cn(
+          'flex cursor-pointer items-center px-3 text-sm',
+          'text-text-primary hover:bg-surface-tertiary',
+          'data-[active-item]:bg-surface-tertiary',
+        )}
+        render={<Ariakit.ComboboxItem />}
+        style={style}
+      >
+        {item.icon != null && (
+          <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            {item.icon}
+          </div>
+        )}
+        <span className="flex-grow truncate text-left">{item.label}</span>
+      </Ariakit.SelectItem>
+    );
+  };
 
   return (
     <div className="flex w-full items-center justify-center px-1">
@@ -93,28 +129,20 @@ function ControlCombobox({
                 />
               </div>
             </div>
-            <Ariakit.ComboboxList className="max-h-[50vh] overflow-auto">
-              {matches.map((item) => (
-                <Ariakit.SelectItem
-                  key={item.value}
-                  value={`${item.value ?? ''}`}
-                  aria-label={`${item.label ?? item.value ?? ''}`}
-                  className={cn(
-                    'flex cursor-pointer items-center px-3 py-2 text-sm',
-                    'text-text-primary hover:bg-surface-tertiary',
-                    'data-[active-item]:bg-surface-tertiary',
-                  )}
-                  render={<Ariakit.ComboboxItem />}
-                >
-                  {item.icon != null && (
-                    <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                      {item.icon}
-                    </div>
-                  )}
-                  <span className="flex-grow truncate text-left">{item.label}</span>
-                </Ariakit.SelectItem>
-              ))}
-            </Ariakit.ComboboxList>
+            <div className="max-h-[50vh]">
+              <AutoSizer disableHeight>
+                {({ width }) => (
+                  <List
+                    width={width}
+                    height={Math.min(matches.length * ROW_HEIGHT, 300)}
+                    rowCount={matches.length}
+                    rowHeight={ROW_HEIGHT}
+                    rowRenderer={rowRenderer}
+                    overscanRowCount={5}
+                  />
+                )}
+              </AutoSizer>
+            </div>
           </Ariakit.SelectPopover>
         </Ariakit.SelectProvider>
       </Ariakit.ComboboxProvider>

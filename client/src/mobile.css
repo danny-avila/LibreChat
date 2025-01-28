@@ -338,3 +338,27 @@
 .shake {
   animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
 }
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"] {
+  scrollbar-gutter: stable !important;
+  background-color: rgba(21, 21, 21, 0.5) !important;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar {
+  width: 12px !important;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar-thumb {
+  background-color: rgba(56, 56, 56) !important;
+  border-radius: 6px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar-track {
+  background-color: transparent !important;
+}
+
+.cm-content:focus {
+  outline: none !important;
+}

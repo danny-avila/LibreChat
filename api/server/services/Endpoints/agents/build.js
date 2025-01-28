@@ -3,9 +3,10 @@ const { logger } = require('~/config');
 
 const buildOptions = (req, endpoint, parsedBody) => {
   const {
+    spec,
+    iconURL,
     agent_id,
     instructions,
-    spec,
     maxContextTokens,
     resendFiles = true,
     ...model_parameters
@@ -20,6 +21,7 @@ const buildOptions = (req, endpoint, parsedBody) => {
 
   const endpointOption = {
     spec,
+    iconURL,
     endpoint,
     agent_id,
     resendFiles,

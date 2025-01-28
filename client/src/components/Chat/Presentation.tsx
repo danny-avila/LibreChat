@@ -8,6 +8,7 @@ import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanel } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
+import { EditorProvider } from '~/Providers';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -94,11 +95,13 @@ export default function Presentation({
             artifactsVisible === true &&
             codeArtifacts === true &&
             Object.keys(artifacts ?? {}).length > 0 ? (
-                <Artifacts />
+                <EditorProvider>
+                  <Artifacts />
+                </EditorProvider>
               ) : null
           }
         >
-          <main className="flex h-full flex-col" role="main">
+          <main className="flex h-full flex-col overflow-y-auto" role="main">
             {children}
           </main>
         </SidePanel>

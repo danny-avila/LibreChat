@@ -13,7 +13,6 @@ const {
   validateVisionModel,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   extractBaseURL,
   constructAzureURL,
@@ -29,6 +28,7 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
@@ -39,11 +39,6 @@ const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
-
-// Cache to store Tiktoken instances
-const tokenizersCache = {};
-// Counter for keeping track of the number of tokenizer calls
-let tokenizerCallsCount = 0;
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -307,75 +302,8 @@ class OpenAIClient extends BaseClient {
     }
   }
 
-  // Selects an appropriate tokenizer based on the current configuration of the client instance.
-  // It takes into account factors such as whether it's a chat completion, an unofficial chat GPT model, etc.
-  selectTokenizer() {
-    let tokenizer;
-    this.encoding = 'text-davinci-003';
-    if (this.isChatCompletion) {
-      this.encoding = this.modelOptions.model.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
-      tokenizer = this.constructor.getTokenizer(this.encoding);
-    } else if (this.isUnofficialChatGptModel) {
-      const extendSpecialTokens = {
-        '<|im_start|>': 100264,
-        '<|im_end|>': 100265,
-      };
-      tokenizer = this.constructor.getTokenizer(this.encoding, true, extendSpecialTokens);
-    } else {
-      try {
-        const { model } = this.modelOptions;
-        this.encoding = model.includes('instruct') ? 'text-davinci-003' : model;
-        tokenizer = this.constructor.getTokenizer(this.encoding, true);
-      } catch {
-        tokenizer = this.constructor.getTokenizer('text-davinci-003', true);
-      }
-    }
-
-    return tokenizer;
-  }
-
-  // Retrieves a tokenizer either from the cache or creates a new one if one doesn't exist in the cache.
-  // If a tokenizer is being created, it's also added to the cache.
-  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
-    let tokenizer;
-    if (tokenizersCache[encoding]) {
-      tokenizer = tokenizersCache[encoding];
-    } else {
-      if (isModelName) {
-        tokenizer = encodingForModel(encoding, extendSpecialTokens);
-      } else {
-        tokenizer = getEncoding(encoding, extendSpecialTokens);
-      }
-      tokenizersCache[encoding] = tokenizer;
-    }
-    return tokenizer;
-  }
-
-  // Frees all encoders in the cache and resets the count.
-  static freeAndResetAllEncoders() {
-    try {
-      Object.keys(tokenizersCache).forEach((key) => {
-        if (tokenizersCache[key]) {
-          tokenizersCache[key].free();
-          delete tokenizersCache[key];
-        }
-      });
-      // Reset count
-      tokenizerCallsCount = 1;
-    } catch (error) {
-      logger.error('[OpenAIClient] Free and reset encoders error', error);
-    }
-  }
-
-  // Checks if the cache of tokenizers has reached a certain size. If it has, it frees and resets all tokenizers.
-  resetTokenizersIfNecessary() {
-    if (tokenizerCallsCount >= 25) {
-      if (this.options.debug) {
-        logger.debug('[OpenAIClient] freeAndResetAllEncoders: reached 25 encodings, resetting...');
-      }
-      this.constructor.freeAndResetAllEncoders();
-    }
-    tokenizerCallsCount++;
+  getEncoding() {
+    return this.model?.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
   }
 
   /**
@@ -384,15 +312,8 @@ class OpenAIClient extends BaseClient {
    * @returns {number} The token count of the given text.
    */
   getTokenCount(text) {
-    this.resetTokenizersIfNecessary();
-    try {
-      const tokenizer = this.selectTokenizer();
-      return tokenizer.encode(text, 'all').length;
-    } catch (error) {
-      this.constructor.freeAndResetAllEncoders();
-      const tokenizer = this.selectTokenizer();
-      return tokenizer.encode(text, 'all').length;
-    }
+    const encoding = this.getEncoding();
+    return Tokenizer.getTokenCount(text, encoding);
   }
 
   /**
@@ -693,8 +614,6 @@ class OpenAIClient extends BaseClient {
     model = 'gpt-4o-mini',
     modelName,
     temperature = 0.2,
-    presence_penalty = 0,
-    frequency_penalty = 0,
     max_tokens,
     streaming,
     context,
@@ -705,8 +624,6 @@ class OpenAIClient extends BaseClient {
     const modelOptions = {
       modelName: modelName ?? model,
       temperature,
-      presence_penalty,
-      frequency_penalty,
       user: this.user,
     };
 
@@ -877,7 +794,11 @@ ${convo}
         }
 
         title = (
-          await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion })
+          await this.sendPayload(instructionsPayload, {
+            modelOptions,
+            useChatCompletion,
+            context: 'title',
+          })
         ).replaceAll('"', '');
 
         const completionTokens = this.getTokenCount(title);
@@ -1010,7 +931,10 @@ ${convo}
     );
 
     if (excessTokenCount > maxContextTokens) {
-      ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
+      ({ context } = await this.getMessagesWithinTokenLimit({
+        messages: context,
+        maxContextTokens,
+      }));
     }
 
     if (context.length === 0) {
@@ -1144,6 +1068,7 @@ ${convo}
     let error = null;
     const errorCallback = (err) => (error = err);
     const intermediateReply = [];
+    const reasoningTokens = [];
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -1335,6 +1260,12 @@ ${convo}
         delete modelOptions.stop;
       }
 
+      let reasoningKey = 'reasoning_content';
+      if (this.useOpenRouter) {
+        modelOptions.include_reasoning = true;
+        reasoningKey = 'reasoning';
+      }
+
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
@@ -1371,8 +1302,29 @@ ${convo}
             }
           });
 
+        let reasoningCompleted = false;
         for await (const chunk of stream) {
-          const token = chunk.choices[0]?.delta?.content || '';
+          if (chunk?.choices?.[0]?.delta?.[reasoningKey]) {
+            if (reasoningTokens.length === 0) {
+              const thinkingDirective = '<think>\n';
+              intermediateReply.push(thinkingDirective);
+              reasoningTokens.push(thinkingDirective);
+              onProgress(thinkingDirective);
+            }
+            const reasoning_content = chunk?.choices?.[0]?.delta?.[reasoningKey] || '';
+            intermediateReply.push(reasoning_content);
+            reasoningTokens.push(reasoning_content);
+            onProgress(reasoning_content);
+          }
+
+          const token = chunk?.choices?.[0]?.delta?.content || '';
+          if (!reasoningCompleted && reasoningTokens.length > 0 && token) {
+            reasoningCompleted = true;
+            const separatorTokens = '\n</think>\n';
+            reasoningTokens.push(separatorTokens);
+            onProgress(separatorTokens);
+          }
+
           intermediateReply.push(token);
           onProgress(token);
           if (abortController.signal.aborted) {
@@ -1437,6 +1389,10 @@ ${convo}
           { intermediateReply: reply },
         );
         return reply;
+      }
+
+      if (reasoningTokens.length > 0 && this.options.context !== 'title') {
+        return reasoningTokens.join('') + message.content;
       }
 
       return message.content;

@@ -401,7 +401,6 @@ export default {
   com_ui_copied: 'Copié !',
   com_ui_copy_code: 'Copier le code',
   com_ui_copy_link: 'Copier le lien',
-  com_ui_update_link: 'Mettre à jour le lien',
   com_ui_create_link: 'Créer un lien',
   com_nav_source_chat: 'Afficher la conversation source',
   com_ui_date_today: 'Aujourd\'hui',
@@ -957,4 +956,13 @@ export default {
   com_endpoint_agent_placeholder: 'Veuillez sélectionner un Agent',
   com_nav_welcome_agent: 'Veuillez sélectionner un agent',
   com_ui_delete_shared_link: 'Supprimer le lien partagé ?',
+  com_ui_bookmarks_add: 'Ajouter des signets',
+  com_ui_bookmarks_edit: 'Modifier le signet',
+  com_endpoint_ai: 'IA',
+  com_nav_maximize_chat_space: 'Maximiser l\'espace de discussion',
+  com_ui_page: 'Page',
+  com_ui_collapse_chat: 'Réduire la discussion',
+  com_ui_speech_while_submitting:
+    'Impossible de soumettre un message vocal pendant la génération d\'une réponse',
+  com_endpoint_message_new: 'Message {0}',
 };
