@@ -28,3 +28,27 @@ variable "account_ids" {
   default     = []
 
 }
+
+variable "github_repositories" {
+  description = "The list of GitHub repositories"
+  type        = list(string)
+  default     = []
+}
+
+variable "max_session_duration" {
+  description = "The maximum session duration"
+  type        = number
+  default     = 3600
+}
+
+variable "tags" {
+  description = "The tags for the IAM role"
+  type        = map(string)
+  default     = {}
+}
+
+variable "match_field" {
+  description = "The match field"
+  type        = string
+  default     = "sub"
+}

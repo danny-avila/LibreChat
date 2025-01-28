@@ -18,6 +18,9 @@ organizations = [
 ]
 
 
+github_repositories = ["repo:aproorg/*"]
+
+
 # TODO: We need to add a github role here for our pipelines.
 principals_push_access_all = []
 region                     = "eu-west-1"
