@@ -615,8 +615,6 @@ describe('BaseClient', () => {
     });
   });
 
-  // Add these tests within the BaseClient describe block
-
   describe('getMessagesWithinTokenLimit with instructions', () => {
     test('should always include instructions when present', async () => {
       TestClient.maxContextTokens = 50;
@@ -667,7 +665,7 @@ describe('BaseClient', () => {
       expect(result.remainingContextTokens).toBe(7); // 30 - 20 - 3 (assistant label)
     });
 
-    test('should work correctly without instructions', async () => {
+    test('should work correctly without instructions (1/2)', async () => {
       TestClient.maxContextTokens = 50;
       const messages = [
         { role: 'user', content: 'Hello', tokenCount: 10 },
@@ -681,6 +679,22 @@ describe('BaseClient', () => {
       expect(result.context).toHaveLength(2);
       expect(result.remainingContextTokens).toBe(22); // 50 - 10 - 15 - 3(assistant label)
       expect(result.messagesToRefine).toHaveLength(0);
+    });
+
+    test('should work correctly without instructions (2/2)', async () => {
+      TestClient.maxContextTokens = 30;
+      const messages = [
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 20 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+      });
+
+      expect(result.context).toHaveLength(1);
+      expect(result.remainingContextTokens).toBe(7);
+      expect(result.messagesToRefine).toHaveLength(1);
     });
 
     test('should handle case when only instructions fit within limit', async () => {
