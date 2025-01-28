@@ -479,7 +479,6 @@ export type TStartupConfig = {
   githubLoginEnabled: boolean;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
-  appleLoginEnabled: boolean;
   passkeyLoginEnabled: boolean
   openidLabel: string;
   openidImageUrl: string;

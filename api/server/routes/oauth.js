@@ -144,24 +144,4 @@ router.get(
   oauthHandler,
 );
 
-/**
- * Apple Routes
- */
-router.get(
-  '/apple',
-  passport.authenticate('apple', {
-    session: false,
-  }),
-);
-
-router.post(
-  '/apple/callback',
-  passport.authenticate('apple', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
-  oauthHandler,
-);
-
 module.exports = router;

@@ -1,7 +1,7 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const socialLogin = require('./socialLogin');
 
-const getProfileDetails = ({ profile }) => ({
+const getProfileDetails = (profile) => ({
   email: profile.emails[0].value,
   id: profile.id,
   avatarUrl: profile.photos[0].value,

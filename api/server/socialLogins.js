@@ -9,7 +9,6 @@ const {
   githubLogin,
   discordLogin,
   facebookLogin,
-  appleLogin,
   passkeyStrategy,
 } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
@@ -32,9 +31,6 @@ const configureSocialLogins = (app) => {
   }
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());
-  }
-  if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
-    passport.use(appleLogin());
   }
   if (isEnabled(process.env.PASSKEY_ENABLED)) {
     // Use the passkey (FIDO2 WebAuthn) strategy

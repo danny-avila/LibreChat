@@ -31,7 +31,6 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {string} [ldapId] - Optional LDAP ID for the user
  * @property {string} [githubId] - Optional GitHub ID for the user
  * @property {string} [discordId] - Optional Discord ID for the user
- * @property {string} [appleId] - Optional Apple ID for the user
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
  * @property {Array.<Passkey>} [passkeys] - Array of passkey credentials for @simplewebauthn
@@ -100,6 +99,7 @@ const userSchema =  mongoose.Schema(
     },
     avatar: {
       type: String,
+      required: false,
     },
     provider: {
       type: String,
@@ -116,11 +116,6 @@ const userSchema =  mongoose.Schema(
       sparse: true,
     },
     facebookId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    openidId: {
       type: String,
       unique: true,
       sparse: true,
@@ -151,9 +146,7 @@ const userSchema =  mongoose.Schema(
     },
     refreshToken: {
       type: [Session],
-      default: [],
     },
-    // Array of passkeys for WebAuthn
     passkeys: {
       type: [PasskeySchema],
       default: [],

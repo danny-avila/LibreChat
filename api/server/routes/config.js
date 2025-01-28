@@ -47,11 +47,6 @@ router.get('/', async function (req, res) {
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
       passkeyLoginEnabled : !!process.env.PASSKEY_ENABLED,
-      appleLoginEnabled:
-          !!process.env.APPLE_CLIENT_ID &&
-          !!process.env.APPLE_TEAM_ID &&
-          !!process.env.APPLE_KEY_ID &&
-          !!process.env.APPLE_PRIVATE_KEY_PATH,
       openidLoginEnabled:
         !!process.env.OPENID_CLIENT_ID &&
         !!process.env.OPENID_CLIENT_SECRET &&
