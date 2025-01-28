@@ -13,7 +13,15 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        include:
+          - target: api-build
+            file: Dockerfile.multi
+            image_name: api
+          - target: node
+            file: Dockerfile
+            image_name: frontend
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -31,14 +39,14 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and push Docker image
-        id: build-image
-        run: |
-          IMAGE_TAG=latest
-          API_REPOSITORY_URI=533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/api
-          FRONTEND_REPOSITORY_URI=533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/frontend
-
-          docker buildx build --platform linux/amd64,linux/arm64 -t $API_REPOSITORY_URI:$IMAGE_TAG .
-          docker buildx build --platform linux/amd64,linux/arm64 -t $FRONTEND_REPOSITORY_URI:$IMAGE_TAG .
-          docker push $API_REPOSITORY_URI:$IMAGE_TAG
-          docker push $FRONTEND_REPOSITORY_URI:$IMAGE_TAG
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: true
+          tags: |
+            533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:${{ github.sha }}
+            533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:latest
+          platforms: linux/amd64,linux/arm64
+          target: ${{ matrix.target }}
