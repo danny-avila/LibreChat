@@ -1,7 +1,10 @@
 name: Build and Push Docker Image to ECR
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/application-terraform
 
 jobs:
   build:
