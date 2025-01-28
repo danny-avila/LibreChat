@@ -35,13 +35,14 @@ const genericVerificationMessage = 'Please check your email to verify your email
 /**
  * Logout user
  *
- * @param {String} userId
- * @param {*} refreshToken
+ * @param {ServerRequest} req
+ * @param {string} refreshToken
  * @returns
  */
-const logoutUser = async (userId, refreshToken) => {
+const logoutUser = async (req, refreshToken) => {
   try {
-    const session = await findSession({ userId: userId, refreshToken: refreshToken });
+    const userId = req.user._id;
+    const session = await findSession({ userId: userId, refreshToken });
 
     if (session) {
       try {
@@ -50,6 +51,12 @@ const logoutUser = async (userId, refreshToken) => {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
       }
+    }
+
+    try {
+      req.session.destroy();
+    } catch (destroyErr) {
+      logger.error('[logoutUser] Failed to destroy session.', destroyErr);
     }
 
     return { status: 200, message: 'Logout successful' };
