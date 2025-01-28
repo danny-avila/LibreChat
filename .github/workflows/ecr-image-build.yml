@@ -39,6 +39,10 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
