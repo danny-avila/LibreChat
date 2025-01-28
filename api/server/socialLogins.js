@@ -9,7 +9,6 @@ const {
   githubLogin,
   discordLogin,
   facebookLogin,
-  passkeyStrategy,
 } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -32,50 +31,33 @@ const configureSocialLogins = (app) => {
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());
   }
-  if (isEnabled(process.env.PASSKEY_ENABLED)) {
-    // Use the passkey (FIDO2 WebAuthn) strategy
-    passport.use('webauthn', passkeyStrategy);
-  }
-
-  // ---- 2) Determine if we need session middleware ----
-  const usingOpenId =
-      process.env.OPENID_CLIENT_ID &&
+  if (
+    process.env.OPENID_CLIENT_ID &&
       process.env.OPENID_CLIENT_SECRET &&
       process.env.OPENID_ISSUER &&
       process.env.OPENID_SCOPE &&
-      process.env.OPENID_SESSION_SECRET;
-
-  const usingPasskey = isEnabled(process.env.PASSKEY_ENABLED);
-
-  // If either OpenID or Passkey is in use, we need a session:
-  if (usingOpenId || usingPasskey) {
+      process.env.OPENID_SESSION_SECRET
+  ) {
     const sessionOptions = {
-      secret: process.env.SESSION_SECRET || process.env.OPENID_SESSION_SECRET || 'someFallbackSecret',
+      secret: process.env.OPENID_SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
     };
-
     if (isEnabled(process.env.USE_REDIS)) {
       const client = new Redis(process.env.REDIS_URI);
       client
         .on('error', (err) => logger.error('ioredis error:', err))
         .on('ready', () => logger.info('ioredis successfully initialized.'))
         .on('reconnecting', () => logger.info('ioredis reconnecting...'));
-
       sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
     } else {
       sessionOptions.store = new MemoryStore({
         checkPeriod: 86400000, // prune expired entries every 24h
       });
     }
-
     app.use(session(sessionOptions));
     app.use(passport.session());
-
-    // If using OpenID, set it up
-    if (usingOpenId) {
-      setupOpenId();
-    }
+    setupOpenId();
   }
 };
 

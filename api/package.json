@@ -113,6 +113,7 @@
     "jest": "^29.7.0",
     "mongodb-memory-server": "^10.0.0",
     "nodemon": "^3.0.1",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.3",
+    "@types/passport-fido2-webauthn": "^0.1.3"
   }
 }

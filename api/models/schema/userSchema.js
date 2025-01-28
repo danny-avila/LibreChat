@@ -33,7 +33,8 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {string} [discordId] - Optional Discord ID for the user
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
- * @property {Array.<Passkey>} [passkeys] - Array of passkey credentials for @simplewebauthn
+ * @property {Array.<Passkey>} [passkeys] - Array of passkey credentials for passport-fido2-webauthn
+ * @property {Buffer} [webauthnUserHandle] - Unique user handle for WebAuthn
  * @property {Date} [expiresAt] - Optional expiration date of the file
  * @property {Date} [createdAt] - Date when the user was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the user was last updated (added by timestamps)
@@ -48,28 +49,31 @@ const Session = mongoose.Schema({
 });
 
 /** @type {MongooseSchema<Passkey>} */
-const PasskeySchema = mongoose.Schema({
-  credentialID: {
-    type: Buffer,
-    required: true,
+const PasskeySchema = mongoose.Schema(
+  {
+    credentialID: {
+      type: Buffer,
+      required: true,
+    },
+    credentialPublicKey: {
+      type: Buffer,
+      required: true,
+    },
+    counter: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    transports: {
+      type: [String],
+      default: [],
+    },
   },
-  credentialPublicKey: {
-    type: Buffer,
-    required: true,
-  },
-  counter: {
-    type: Number,
-    required: true,
-    default: 0,
-  },
-  transports: {
-    type: [String],
-    default: [],
-  },
-});
+  { _id: false },
+);
 
 /** @type {MongooseSchema<MongoUser>} */
-const userSchema =  mongoose.Schema(
+const userSchema = mongoose.Schema(
   {
     name: {
       type: String,
@@ -151,6 +155,11 @@ const userSchema =  mongoose.Schema(
     passkeys: {
       type: [PasskeySchema],
       default: [],
+    },
+    webauthnUserHandle: {
+      type: Buffer,
+      unique: true,
+      sparse: true,
     },
     expiresAt: {
       type: Date,

@@ -3,7 +3,7 @@ const googleLogin = require('./googleStrategy');
 const githubLogin = require('./githubStrategy');
 const discordLogin = require('./discordStrategy');
 const facebookLogin = require('./facebookStrategy');
-const passkeyStrategy = require('./passkeyStrategy');
+const webauthnStrategy = require('./webauthnStrategy');
 const setupOpenId = require('./openidStrategy');
 const jwtLogin = require('./jwtStrategy');
 const ldapLogin = require('./ldapStrategy');
@@ -17,5 +17,5 @@ module.exports = {
   facebookLogin,
   setupOpenId,
   ldapLogin,
-  passkeyStrategy,
+  webauthnStrategy,
 };
