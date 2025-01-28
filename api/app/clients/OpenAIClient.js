@@ -931,7 +931,10 @@ ${convo}
     );
 
     if (excessTokenCount > maxContextTokens) {
-      ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
+      ({ context } = await this.getMessagesWithinTokenLimit({
+        messages: context,
+        maxContextTokens,
+      }));
     }
 
     if (context.length === 0) {
