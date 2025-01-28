@@ -10,8 +10,8 @@ import {
 import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
-import { useGetUserQuery, useRefreshTokenMutation } from 'librechat-data-provider/react-query';
-import type { TLoginResponse, TLoginUser } from 'librechat-data-provider';
+import { useGetStartupConfig, useGetUserQuery, useRefreshTokenMutation } from 'librechat-data-provider/react-query';
+import type { TLoginResponse, TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import { useLoginUserMutation, useLogoutUserMutation, useGetRole } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
@@ -27,6 +27,7 @@ const AuthContextProvider = ({
   children: ReactNode;
 }) => {
   const [user, setUser] = useRecoilState(store.user);
+  const [defaultLoginAttempted, setDefaultLoginAttempted] = useState<boolean>(false);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -36,7 +37,8 @@ const AuthContextProvider = ({
   const { data: adminRole = null } = useGetRole(SystemRoles.ADMIN, {
     enabled: !!(isAuthenticated && user?.role === SystemRoles.ADMIN),
   });
-
+  const { data: startupConfig = null } = useGetStartupConfig();
+  
   const navigate = useNavigate();
 
   const setUserContext = useCallback(
@@ -124,6 +126,16 @@ const AuthContextProvider = ({
       },
     });
   }, []);
+
+  useEffect(() => {
+    if (startupConfig?.defaultLogin && !user && !defaultLoginAttempted) {
+      login({
+        email: startupConfig.defaultLogin.username,
+        password: startupConfig.defaultLogin?.password,
+      });
+      setDefaultLoginAttempted(true);
+    }
+  }, [startupConfig]);
 
   useEffect(() => {
     if (userQuery.data) {

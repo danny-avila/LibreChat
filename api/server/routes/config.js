@@ -41,6 +41,10 @@ router.get('/', async function (req, res) {
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
       socialLogins: req.app.locals.socialLogins ?? defaultSocialLogins,
+      defaultLogin: (process.env.DEFAULT_LOGIN_USER && process.env.DEFAULT_LOGIN_PASSWORD) ? {
+        username: process.env.DEFAULT_LOGIN_USER,
+        password: process.env.DEFAULT_LOGIN_PASSWORD,
+      } : undefined,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
