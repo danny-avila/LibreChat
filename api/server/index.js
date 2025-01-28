@@ -1,9 +1,11 @@
 require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+// const Redis = require('ioredis');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const session = require('express-session');
 const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
@@ -21,6 +23,8 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const { User } = require('~/models');
+// const MongoStore = require('connect-mongo');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -54,7 +58,14 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
   app.set('trust proxy', 1); /* trust first proxy */
-  app.use(cors());
+
+  app.use(
+    cors({
+      origin: process.env.DOMAIN_CLIENT, // e.g., 'https://your-client-domain.com'
+      methods: ['GET', 'POST'],
+      credentials: true, // Allow cookies to be sent
+    }),
+  );
   app.use(cookieParser());
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
@@ -67,8 +78,56 @@ const startServer = async () => {
     );
   }
 
-  /* OAUTH */
-  app.use(passport.initialize());
+  /* Session Management */
+  if (
+    (process.env.OPENID_CLIENT_ID &&
+          process.env.OPENID_CLIENT_SECRET &&
+          process.env.OPENID_ISSUER &&
+          process.env.OPENID_SCOPE &&
+          process.env.OPENID_SESSION_SECRET) || process.env.PASSKEY_ENABLED
+  ) {
+    app.use(
+      session({
+        secret: 'your_secret_key', // Replace with a strong secret key
+        resave: false,
+        saveUninitialized: true,
+        cookie: { secure: false }, // Use `true` in production with HTTPS
+      }),
+    );
+
+    // const sessionOptions = {
+    //   secret: process.env.OPENID_SESSION_SECRET || 'your-very-secure-secret',
+    //   resave: false,
+    //   saveUninitialized: false,
+    //   store: MongoStore.create({
+    //     mongoUrl: process.env.MONGO_URI, // MongoDB connection string
+    //   }),
+    //   cookie: {
+    //     secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    //     httpOnly: true,
+    //     sameSite: 'lax', // Adjust based on your needs
+    //   },
+    // };
+
+    // if (isEnabled(process.env.USE_REDIS)) {
+    //   const client = new Redis(process.env.REDIS_URI);
+    //   client
+    //     .on('error', (err) => logger.error('ioredis error:', err))
+    //     .on('ready', () => logger.info('ioredis successfully initialized.'))
+    //     .on('reconnecting', () => logger.info('ioredis reconnecting...'));
+    //   sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+    // } else {
+    //   sessionOptions.store = new MemoryStore({
+    //     checkPeriod: 86400000, // prune expired entries every 24h
+    //   });
+    // }
+
+    app.use(passport.initialize());
+    app.use(passport.session());
+  } else {
+    app.use(passport.initialize());
+  }
+
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
@@ -78,11 +137,26 @@ const startServer = async () => {
   }
   /* Passkey (WebAuthn) Strategy */
   if (process.env.PASSKEY_ENABLED) {
-    passport.use('webauthn', webauthnStrategy);
+
+    // Passport Serialization
+    passport.serializeUser(function(user, done) {
+      done(null, user.id);
+    });
+
+    passport.deserializeUser(async function(id, done) {
+      try {
+        const user = await User.findById(id).exec();
+        done(null, user);
+      } catch (err) {
+        done(err);
+      }
+    });
+
+    passport.use(webauthnStrategy);
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    configureSocialLogins(app);
+    configureSocialLogins();
   }
 
   app.use('/oauth', routes.oauth);
@@ -131,7 +205,7 @@ const startServer = async () => {
   });
 
   app.listen(port, host, () => {
-    if (host == '0.0.0.0') {
+    if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
       );

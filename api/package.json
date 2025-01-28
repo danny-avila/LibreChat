@@ -107,7 +107,8 @@
     "winston-daily-rotate-file": "^4.7.1",
     "zod": "^3.22.4",
     "base64url": "^3.0.1",
-    "uuid": "^11.0.5"
+    "uuid": "^11.0.5",
+    "connect-mongo": "^5.1.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

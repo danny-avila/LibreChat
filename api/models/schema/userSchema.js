@@ -1,17 +1,10 @@
 const mongoose = require('mongoose');
+const Passkey = require('./Passkey');
 const { SystemRoles } = require('librechat-data-provider');
 
 /**
  * @typedef {Object} MongoSession
  * @property {string} [refreshToken] - The refresh token
- */
-
-/**
- * @typedef {Object} Passkey
- * @property {Buffer} credentialID - Unique ID for the credential (ArrayBuffer -> Buffer)
- * @property {Buffer} credentialPublicKey - The public key (ArrayBuffer -> Buffer)
- * @property {number} [counter] - The signature counter to protect against replay attacks
- * @property {string[]} [transports] - The transport methods (e.g., "usb", "nfc", "ble", "internal")
  */
 
 /**
@@ -33,8 +26,7 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {string} [discordId] - Optional Discord ID for the user
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
- * @property {Array.<Passkey>} [passkeys] - Array of passkey credentials for passport-fido2-webauthn
- * @property {Buffer} [webauthnUserHandle] - Unique user handle for WebAuthn
+ * @property {string} [webauthnUserHandle] - Unique user handle for WebAuthn (Base64URL encoded)
  * @property {Date} [expiresAt] - Optional expiration date of the file
  * @property {Date} [createdAt] - Date when the user was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the user was last updated (added by timestamps)
@@ -47,30 +39,6 @@ const Session = mongoose.Schema({
     default: '',
   },
 });
-
-/** @type {MongooseSchema<Passkey>} */
-const PasskeySchema = mongoose.Schema(
-  {
-    credentialID: {
-      type: Buffer,
-      required: true,
-    },
-    credentialPublicKey: {
-      type: Buffer,
-      required: true,
-    },
-    counter: {
-      type: Number,
-      required: true,
-      default: 0,
-    },
-    transports: {
-      type: [String],
-      default: [],
-    },
-  },
-  { _id: false },
-);
 
 /** @type {MongooseSchema<MongoUser>} */
 const userSchema = mongoose.Schema(
@@ -152,14 +120,15 @@ const userSchema = mongoose.Schema(
     refreshToken: {
       type: [Session],
     },
-    passkeys: {
-      type: [PasskeySchema],
-      default: [],
-    },
     webauthnUserHandle: {
-      type: Buffer,
+      type: String, // Base64URL encoded string
       unique: true,
       sparse: true,
+      index: true,
+    },
+    passkeys: {
+      type: [Passkey],
+      default: [],
     },
     expiresAt: {
       type: Date,

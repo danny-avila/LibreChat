@@ -1,8 +1,16 @@
-import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon, PasskeyIcon } from '~/components';
+import {
+  GoogleIcon,
+  FacebookIcon,
+  OpenIDIcon,
+  GithubIcon,
+  DiscordIcon,
+  PasskeyIcon,
+} from '~/components';
 import { useLocalize } from '~/hooks';
 import SocialButton from './SocialButton';
 import { TStartupConfig } from 'librechat-data-provider';
-import { useState } from 'react';
+import { encode, decode } from '~/utils/encoding';
+import React, { useState } from 'react';
 
 interface Props {
   startupConfig: TStartupConfig | null | undefined;
@@ -11,220 +19,185 @@ interface Props {
 
 function SocialLoginRender({ startupConfig, mode }: Props) {
   const localize = useLocalize();
-  const [email, setEmail] = useState(''); // **New State for Email**
+  const [email, setEmail] = useState(''); // **State for Email**
+  const [loading, setLoading] = useState(false); // **State for Loading**
 
   if (!startupConfig) {
     return null;
   }
 
-  /* ---------------------------------------
-   * Helper: Create and Submit a Hidden Form
-   *---------------------------------------*/
-  function submitCredential(endpoint: string, credentialData: any) {
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = endpoint;
+  async function handleFetch(url, options) {
+    const response = await fetch(url, options);
 
-    // Function to add hidden input fields to the form
-    function addHiddenInput(name: string, value: string | null) {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value || '';
-      form.appendChild(input);
-    }
+    // Dynamically check the Content-Type header to decide how to parse the response
+    const contentType = response.headers.get('Content-Type') || '';
 
-    // Flatten the credentialData object
-    function flatten(obj: any, prefix = ''): { name: string; value: string }[] {
-      const items: { name: string; value: string }[] = [];
-      for (const key in obj) {
-        if (obj.hasOwnProperty(key)) {
-          const propName = prefix ? `${prefix}[${key}]` : key;
-          if (typeof obj[key] === 'object' && obj[key] !== null) {
-            items.push(...flatten(obj[key], propName));
-          } else {
-            items.push({ name: propName, value: obj[key] });
-          }
-        }
+    if (!response.ok) {
+      // Parse error message based on Content-Type
+      if (contentType.includes('application/json')) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'An error occurred.');
+      } else {
+        const errorText = await response.text();
+        throw new Error(errorText || 'An error occurred.');
       }
-      return items;
     }
 
-    const flatData = flatten(credentialData);
-    flatData.forEach(({ name, value }) => addHiddenInput(name, value));
-
-    document.body.appendChild(form);
-    form.submit();
+    // Handle valid responses
+    if (contentType.includes('application/json')) {
+      return await response.json();
+    }
+    return await response.text(); // Fallback for non-JSON responses
   }
 
   /* ---------------------------------------
-   * PASSKEY LOGIN FLOW (Manual Challenge)
-   * ---------------------------------------
-   * 1) POST /login/public-key/challenge
-   * 2) navigator.credentials.get()
-   * 3) Submit a form to /login/public-key
-   */
+   * PASSKEY LOGIN FLOW
+   * --------------------------------------- */
   async function handlePasskeyLogin() {
+    setLoading(true);
     try {
-      // Step A: Request challenge from server
-      const challengeRes = await fetch('/api/auth/passkey/login/public-key/challenge', {
+      // Step 1: Request challenge from server
+      const data = await handleFetch('/api/auth/passkey/login/public-key/challenge', {
         method: 'POST',
-        credentials: 'include', // if your server uses cookies
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
       });
-      if (!challengeRes.ok) {
-        throw new Error('Failed to retrieve login challenge.');
-      }
-      const data = await challengeRes.json();
-      // data: { challenge: 'base64urlString' }
-      const challengeBuffer = base64urlToArrayBuffer(data.challenge);
 
-      // Step B: Request credential from authenticator
+      const challengeBuffer = decode(data.challenge);
+
+      // Step 2: Request assertion from authenticator
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge: challengeBuffer,
-          timeout: 60000, // 60 seconds timeout
-          userVerification: 'preferred', // or 'required'
-          // Optional extensions
-          // extensions: { ... }
+          allowCredentials: [], // Optionally specify allowed credentials
+          timeout: 60000, // Timeout in milliseconds
+          userVerification: 'preferred',
         },
       });
+
       if (!assertion) {
         throw new Error('No credential returned from WebAuthn API.');
       }
 
-      // Prepare credential data for submission
+      // Step 3: Prepare credential data for submission
       const credentialData = {
         id: assertion.id,
         type: assertion.type,
-        rawId: arrayBufferToBase64url(assertion.rawId),
+        rawId: encode(assertion.rawId),
         response: {
-          clientDataJSON: arrayBufferToBase64url(assertion.response.clientDataJSON),
-          authenticatorData: arrayBufferToBase64url(assertion.response.authenticatorData),
-          signature: arrayBufferToBase64url(assertion.response.signature),
-          userHandle: assertion.response.userHandle
-            ? arrayBufferToBase64url(assertion.response.userHandle)
-            : null,
+          clientDataJSON: encode(assertion.response.clientDataJSON),
+          authenticatorData: encode(assertion.response.authenticatorData),
+          signature: encode(assertion.response.signature),
+          userHandle: assertion.response.userHandle ? encode(assertion.response.userHandle) : null,
         },
       };
 
-      // Step C: Submit credential via AJAX
-      const submitRes = await fetch('/api/auth/passkey/login/public-key', {
+      // Step 4: Submit credential to the server
+      const submitRes = await handleFetch('/api/auth/passkey/login/public-key', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify(credentialData),
       });
 
+      // Handle redirection
       if (submitRes.redirected) {
         window.location.href = submitRes.url;
-      } else if (!submitRes.ok) {
-        const errorData = await submitRes.json();
-        throw new Error(errorData.message || 'Passkey login failed.');
       } else {
-        // Handle successful login if no redirect
-        window.location.href = domains.client;
+        // Handle successful login without redirection
+        window.location.href = startupConfig?.serverDomain;
       }
     } catch (err) {
       console.error('Passkey login error:', err);
       alert(err?.message || 'Passkey login error');
+    } finally {
+      setLoading(false);
     }
   }
 
   /* ---------------------------------------
-   * PASSKEY SIGNUP FLOW (Manual Challenge)
-   * ---------------------------------------
-   * 1) POST /signup/public-key/challenge
-   * 2) navigator.credentials.create()
-   * 3) Submit a form to /signup/public-key
-   */
+   * PASSKEY SIGNUP FLOW
+   * --------------------------------------- */
   async function handlePasskeyRegister() {
+    setLoading(true);
+
     try {
       if (!email) {
         throw new Error('Email is required for signup.');
       }
 
-      // Step A: Request challenge from server with email
-      const challengeRes = await fetch('/api/auth/passkey/signup/public-key/challenge', {
+      // Step 1: Request challenge from server
+      const json = await handleFetch('/api/auth/passkey/signup/public-key/challenge', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify({ email }),
       });
-      if (!challengeRes.ok) {
-        const errorData = await challengeRes.json();
-        throw new Error(errorData.message || 'Failed to retrieve signup challenge.');
-      }
-      const data = await challengeRes.json();
-      // data: { user: {...}, challenge: '...' }
 
-      // Convert challenge and user.id from base64url to ArrayBuffer
-      const challengeBuffer = base64urlToArrayBuffer(data.challenge);
-      const userIdBuffer = base64urlToArrayBuffer(data.user.id);
-
-      // Log received data for debugging
-      console.log('Received signup data:', data);
-
-      // Step B: Create credential
+      // Step 2: Create credential
       const credential = await navigator.credentials.create({
         publicKey: {
-          challenge: challengeBuffer,
-          timeout: 60000, // 60 seconds timeout
           rp: {
-            name: 'LibreChat', // or your app name
-            id: window.location.hostname, // Relying Party ID
+            name: 'LibreChat', // Replace with your app name
+            id: startupConfig?.serverDomain,
           },
           user: {
-            id: userIdBuffer,
-            name: data.user.email, // Use Email as Username
-            displayName: data.user.email, // Use Email as Display Name
+            id: decode(json.user.id),
+            name: json.user.name,
+            displayName: json.user.displayName,
           },
+          challenge: decode(json.challenge),
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -7 }, // ES256
+            { type: 'public-key', alg: -257 }, // RS256
+          ],
           authenticatorSelection: {
             userVerification: 'preferred',
           },
-          attestation: 'none', // or 'direct'/'indirect' based on your needs
-          pubKeyCredParams: [{ type: 'public-key', alg: -7 }], // ES256
+          attestation: 'none',
         },
       });
+
       if (!credential) {
         throw new Error('No credential returned from WebAuthn API.');
       }
 
-      // Prepare credential data for submission
+      // Step 3: Prepare credential data for submission
       const credentialData = {
+        response: {
+          clientDataJSON: encode(credential.response.clientDataJSON),
+          attestationObject: encode(credential.response.attestationObject),
+        },
         id: credential.id,
         type: credential.type,
-        rawId: arrayBufferToBase64url(credential.rawId),
-        response: {
-          clientDataJSON: arrayBufferToBase64url(credential.response.clientDataJSON),
-          attestationObject: arrayBufferToBase64url(
-            credential.response.attestationObject,
-          ),
-        },
       };
 
-      // Step C: Submit credential via AJAX
-      const submitRes = await fetch('/api/auth/passkey/signup/public-key', {
+      // Step 4: Submit credential to the server
+      const result = await handleFetch('/api/auth/passkey/signup/public-key', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify(credentialData),
       });
 
-      if (submitRes.redirected) {
-        window.location.href = submitRes.url;
-      } else if (!submitRes.ok) {
-        const errorData = await submitRes.json();
-        throw new Error(errorData.message || 'Passkey registration failed.');
-      } else {
-        // Handle successful registration if no redirect
-        window.location.href = domains.client;
-      }
+      // Redirect user on success
+      window.location.href = result.location;
     } catch (err) {
       console.error('Passkey register error:', err);
-      alert(err?.message || 'Passkey register error');
+      alert(err?.message || 'Passkey registration error');
+    } finally {
+      setLoading(false);
     }
   }
-
   // Choose which flow
   function handlePasskey() {
     if (mode === 'register') {
@@ -237,82 +210,92 @@ function SocialLoginRender({ startupConfig, mode }: Props) {
   /* --------------------------------------
    * Create Social Buttons
    * --------------------------------------*/
-  const providerComponents = {
-    discord: startupConfig.discordLoginEnabled && (
-      <SocialButton
-        key="discord"
-        enabled={startupConfig.discordLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="discord"
-        Icon={DiscordIcon}
-        label={localize('com_auth_discord_login')}
-        id="discord"
-      />
-    ),
-    facebook: startupConfig.facebookLoginEnabled && (
-      <SocialButton
-        key="facebook"
-        enabled={startupConfig.facebookLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="facebook"
-        Icon={FacebookIcon}
-        label={localize('com_auth_facebook_login')}
-        id="facebook"
-      />
-    ),
-    github: startupConfig.githubLoginEnabled && (
-      <SocialButton
-        key="github"
-        enabled={startupConfig.githubLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="github"
-        Icon={GithubIcon}
-        label={localize('com_auth_github_login')}
-        id="github"
-      />
-    ),
-    google: startupConfig.googleLoginEnabled && (
-      <SocialButton
-        key="google"
-        enabled={startupConfig.googleLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="google"
-        Icon={GoogleIcon}
-        label={localize('com_auth_google_login')}
-        id="google"
-      />
-    ),
-    passkeys: startupConfig.passkeyLoginEnabled && (
-      <SocialButton
-        key="passkeys"
-        id="passkeys"
-        enabled={startupConfig.passkeyLoginEnabled}
-        onClick={handlePasskey}
-        Icon={PasskeyIcon}
-        label={
-          mode === 'register'
-            ? localize('com_auth_passkey_signup') || 'Sign up with Passkey'
-            : localize('com_auth_passkey_login') || 'Sign in with Passkey'
-        }
-      />
-    ),
-    openid: startupConfig.openidLoginEnabled && (
-      <SocialButton
-        key="openid"
-        enabled={startupConfig.openidLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="openid"
-        Icon={() =>
-          startupConfig.openidImageUrl ? (
-            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
-          ) : (
-            <OpenIDIcon />
-          )
-        }
-        label={startupConfig.openidLabel}
-        id="openid"
-      />
-    ),
+  const providerComponents: Record<string, JSX.Element | null> = {
+    discord:
+        startupConfig.discordLoginEnabled ? (
+          <SocialButton
+            key="discord"
+            enabled={startupConfig.discordLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="discord"
+            Icon={DiscordIcon}
+            label={localize('com_auth_discord_login')}
+            id="discord"
+          />
+        ) : null,
+    facebook:
+        startupConfig.facebookLoginEnabled ? (
+          <SocialButton
+            key="facebook"
+            enabled={startupConfig.facebookLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="facebook"
+            Icon={FacebookIcon}
+            label={localize('com_auth_facebook_login')}
+            id="facebook"
+          />
+        ) : null,
+    github:
+        startupConfig.githubLoginEnabled ? (
+          <SocialButton
+            key="github"
+            enabled={startupConfig.githubLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="github"
+            Icon={GithubIcon}
+            label={localize('com_auth_github_login')}
+            id="github"
+          />
+        ) : null,
+    google:
+        startupConfig.googleLoginEnabled ? (
+          <SocialButton
+            key="google"
+            enabled={startupConfig.googleLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="google"
+            Icon={GoogleIcon}
+            label={localize('com_auth_google_login')}
+            id="google"
+          />
+        ) : null,
+    passkeys:
+        startupConfig.passkeyLoginEnabled ? (
+          <SocialButton
+            key="passkeys"
+            id="passkeys"
+            enabled={startupConfig.passkeyLoginEnabled}
+            onClick={handlePasskey}
+            Icon={PasskeyIcon}
+            label={
+              mode === 'register'
+                ? localize('com_auth_passkey_signup') || 'Sign up with Passkey'
+                : localize('com_auth_passkey_login') || 'Sign in with Passkey'
+            }
+          />
+        ) : null,
+    openid:
+        startupConfig.openidLoginEnabled ? (
+          <SocialButton
+            key="openid"
+            enabled={startupConfig.openidLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="openid"
+            Icon={() =>
+              startupConfig.openidImageUrl ? (
+                <img
+                  src={startupConfig.openidImageUrl}
+                  alt="OpenID Logo"
+                  className="h-5 w-5"
+                />
+              ) : (
+                <OpenIDIcon />
+              )
+            }
+            label={startupConfig.openidLabel}
+            id="openid"
+          />
+        ) : null,
   };
 
   return (
@@ -328,7 +311,7 @@ function SocialLoginRender({ startupConfig, mode }: Props) {
             <div className="mt-8" />
           </>
         )}
-        <div className="mt-2">
+        <div className="mt-2 flex flex-col space-y-2">
           {startupConfig.socialLogins?.map((provider) => providerComponents[provider] || null)}
         </div>
 
@@ -338,13 +321,13 @@ function SocialLoginRender({ startupConfig, mode }: Props) {
         {mode === 'register' && (
           <div className="mt-4">
             <h2 className="text-lg font-semibold">{localize('com_auth_signup')}</h2>
-            <form onSubmit={(e) => { e.preventDefault(); handlePasskeyRegister(); }}> {/* Trigger handlePasskeyRegister on submit */}
+            <form onSubmit={handlePasskeyRegister}>
               <div className="mt-2">
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                   {localize('com_auth_email') || 'Email'}
                 </label>
                 <input
-                  type="email" // Ensures proper email validation
+                  type="email"
                   id="email"
                   name="email"
                   value={email}
@@ -353,47 +336,12 @@ function SocialLoginRender({ startupConfig, mode }: Props) {
                   required
                 />
               </div>
-              <button
-                type="submit" // Use submit type to trigger form submission
-                className="mt-4 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                {localize('com_auth_passkey_signup_button') || 'Sign Up with Passkey'}
-              </button>
             </form>
           </div>
         )}
-
       </>
     )
   );
 }
 
 export default SocialLoginRender;
-
-/* ---------------------------------------
- * Utility: base64url <-> ArrayBuffer
- *---------------------------------------*/
-function base64urlToArrayBuffer(base64urlString: string): ArrayBuffer {
-  const base64 = base64urlString.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = base64.length % 4;
-  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
-  const str = window.atob(padded);
-  const len = str.length;
-  const buffer = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    buffer[i] = str.charCodeAt(i);
-  }
-  return buffer.buffer;
-}
-
-function arrayBufferToBase64url(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  let base64 = window.btoa(binary);
-  // Convert to URL-safe
-  base64 = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  return base64;
-}

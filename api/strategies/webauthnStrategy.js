@@ -1,179 +1,139 @@
-const { Strategy: WebAuthnStrategy } = require('passport-fido2-webauthn');
-const { sessionChallengeStore } = require('~/cache');
-const { createUser } = require('~/models/userMethods');
+const { Strategy: WebAuthnStrategy, SessionChallengeStore } = require('passport-fido2-webauthn');
+const { v4: uuidv4 } = require('uuid');
+const { base64urlToBuffer, bufferToBase64url } = require('~/utils/encoding');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const crypto = require('crypto');
 
-/* Helper Functions */
-function base64urlToBase64(base64urlString) {
-  return base64urlString
-    .replace(/-/g, '+')
-    .replace(/_/g, '/')
-    .padEnd(base64urlString.length + (4 - (base64urlString.length % 4)) % 4, '=');
-}
+const sessionChallengeStore = new SessionChallengeStore();
 
-function base64ToBuffer(base64String) {
-  return Buffer.from(base64String, 'base64');
-}
+const webauthnOptions = {
+  origin: process.env.DOMAIN_CLIENT, // Update to your app's domain
+  store: sessionChallengeStore,
+  relyingParty: 'LibreChat', // Name of your app (relying party)
+};
 
-/** VERIFY (Login) */
-async function verify(id, userHandle, cb) {
-  logger.debug('Verify function called', { id, userHandle });
+const webauthnStrategy = new WebAuthnStrategy(
+  webauthnOptions,
+  // Verify callback for login
+  async (id, userHandle, done, req) => {
+    try {
+      // Extract and verify the origin
+      const clientOrigin = JSON.parse(
+        Buffer.from(req.body.response.clientDataJSON, 'base64').toString('utf8'),
+      ).origin;
 
-  try {
-    // Decode credentialId and userHandle
-    const base64CredentialId = base64urlToBase64(id);
-    const decodedCredentialId = base64ToBuffer(base64CredentialId);
-    const decodedUserHandle = userHandle ? base64ToBuffer(base64urlToBase64(userHandle)) : null;
-
-    logger.debug('Decoded credentialId and userHandle', {
-      decodedCredentialId: decodedCredentialId.toString('hex'),
-      decodedUserHandle: decodedUserHandle ? decodedUserHandle.toString('hex') : null,
-    });
-
-    // Build query based on userHandle
-    const query = decodedUserHandle
-      ? {
-        webauthnUserHandle: decodedUserHandle,
-        'passkeys.credentialID': decodedCredentialId,
+      if (clientOrigin !== webauthnOptions.origin) {
+        logger.warn('Origin mismatch:', { expected: webauthnOptions.origin, received: clientOrigin });
+        return done(null, false, { message: 'Origin mismatch.' });
       }
-      : { 'passkeys.credentialID': decodedCredentialId };
 
-    // Find user using the User model directly (non-lean)
-    const user = await User.findOne(query).exec();
+      const credentialIdBuffer = base64urlToBuffer(id);
+      logger.info('Received credential ID:', id);
 
-    if (!user) {
-      logger.warn('Verification failed: User not found', { id, userHandle });
-      return cb(null, false, { message: 'Invalid key: User not found.' });
-    }
-
-    // Find corresponding passkey
-    const passkey = user.passkeys.find(pk =>
-      pk.credentialID.equals(decodedCredentialId),
-    );
-
-    if (!passkey) {
-      logger.warn('Verification failed: Passkey record not found', { id, userId: user._id });
-      return cb(null, false, { message: 'Invalid key: Passkey record not found.' });
-    }
-
-    logger.info('Credentials verified successfully', { userId: user._id, id });
-
-    // Prepare options for assertion verification
-    const options = {
-      publicKey: passkey.credentialPublicKey,
-      counter: passkey.counter,
-    };
-
-    return cb(null, user, options);
-  } catch (err) {
-    logger.error('Error during credential verification', { error: err, id, userHandle });
-    return cb(err);
-  }
-}
-
-/** REGISTER (Signup) */
-async function register(webauthnUser, id, publicKey, cb) {
-  logger.debug('Register function called', { webauthnUser, id, publicKey });
-
-  try {
-    const { username, displayName, email } = webauthnUser;
-
-    if (!email) {
-      logger.warn('Registration failed: Email is required', { webauthnUser });
-      return cb(null, false, { message: 'Email is required for registration.' });
-    }
-
-    // Attempt to find the user using the User model directly (non-lean)
-    let user = await User.findOne({ email: email.toLowerCase() }).exec();
-
-    if (user) {
-      logger.info('User already exists, adding new passkey', { userId: user._id });
-    } else {
-      // Create a new user
-      const newUserId = await createUser({
-        username: username ? username.toLowerCase() : email.split('@')[0].toLowerCase(),
-        name: displayName || username || email.split('@')[0],
-        email: email.toLowerCase(),
-        provider: 'passkey',
-        emailVerified: false,
-      }, true, false);
-
-      logger.debug('New user ID returned from createUser', { newUserId });
-
-      // Retrieve the newly created user as a Mongoose document
-      user = await User.findById(newUserId).exec();
-
+      const user = await User.findOne({ 'passkeys.credentialID': credentialIdBuffer }).exec();
       if (!user) {
-        logger.error('Failed to retrieve newly created user document', { newUserId });
-        return cb(null, false, { message: 'User creation failed.' });
+        logger.warn('No user found for given credential ID:', id);
+        return done(null, false, { message: 'Invalid credentials.' });
       }
 
-      logger.info('New user created via passkey registration', { userId: user._id });
+      if (user.webauthnUserHandle !== userHandle) {
+        logger.warn('User handle mismatch:', {
+          expected: user.webauthnUserHandle,
+          received: userHandle,
+        });
+        return done(null, false, { message: 'Invalid credentials.' });
+      }
+
+      const passkey = user.passkeys.find((pk) => pk.credentialID.equals(credentialIdBuffer));
+      if (!passkey) {
+        logger.warn('Passkey not found for user:', {
+          credentialID: id,
+          userId: user._id,
+        });
+        return done(null, false, { message: 'Passkey not found.' });
+      }
+
+      // Successful authentication
+      done(null, user, { publicKey: passkey.credentialPublicKey, counter: passkey.counter });
+    } catch (err) {
+      logger.error('Error in WebAuthn login verification:', { error: err.message });
+      done(err);
     }
+  },
+  // Verify callback for registration
+  async (webauthnUser, id, publicKey, done, req) => {
+    try {
+      const clientOrigin = JSON.parse(
+        Buffer.from(req.body.response.clientDataJSON, 'base64').toString('utf8'),
+      ).origin;
 
-    // Decode credentialId and publicKey
-    const base64CredentialId = base64urlToBase64(id);
-    const decodedCredentialId = base64ToBuffer(base64CredentialId);
+      console.log('Client origin:', clientOrigin);
 
-    const base64PublicKey = base64urlToBase64(publicKey);
-    const decodedPublicKey = base64ToBuffer(base64PublicKey);
+      if (clientOrigin !== webauthnOptions.origin) {
+        logger.warn('Origin mismatch:', { expected: webauthnOptions.origin, received: clientOrigin });
+        return done(null, false, { message: 'Origin mismatch.' });
+      }
 
-    logger.debug('Decoded credentialID and publicKey', {
-      decodedCredentialId: decodedCredentialId.toString('hex'),
-      decodedPublicKey: decodedPublicKey.toString('hex'),
-    });
+      const { email, displayName } = webauthnUser;
+      const credentialIdBuffer = base64urlToBuffer(id);
+      const publicKeyBuffer = base64urlToBuffer(publicKey);
 
-    // Check for duplicate passkey
-    const existingPasskey = user.passkeys.find(pk =>
-      pk.credentialID.equals(decodedCredentialId),
-    );
+      let user = await User.findOne({ email: email.toLowerCase() }).exec();
+      if (!user) {
+        const userHandle = bufferToBase64url(Buffer.from(uuidv4().replace(/-/g, ''), 'hex'));
+        user = new User({
+          name: email.split('@')[0],
+          email: email.toLowerCase(),
+          username: email.split('@')[0],
+          webauthnUserHandle: userHandle,
+          passkeys: [],
+        });
+        await user.save();
+      }
 
-    if (existingPasskey) {
-      logger.warn('Passkey credential already exists for user', { userId: user._id, id });
-      return cb(null, false, { message: 'Passkey credential already exists.' });
+      if (user.passkeys.some((pk) => pk.credentialID.equals(credentialIdBuffer))) {
+        logger.warn('Duplicate passkey detected during registration:', { credentialID: id });
+        return done(null, false, { message: 'Passkey already exists.' });
+      }
+
+      user.passkeys.push({
+        credentialID: credentialIdBuffer,
+        credentialPublicKey: publicKeyBuffer,
+        counter: 0,
+      });
+      await user.save();
+
+      done(null, user);
+    } catch (err) {
+      logger.error('Error during WebAuthn registration:', { error: err.message });
+      done(err);
     }
+  },
+);
 
-    // Create new passkey object
-    const newPasskey = {
-      credentialID: decodedCredentialId,
-      credentialPublicKey: decodedPublicKey,
-      counter: 0,
-      transports: [], // Populate if necessary
-    };
+// sessionChallengeStore.challenge = (req, user, cb) => {
+//   const challenge = crypto.randomBytes(32);
+//   req.session.challenge = challenge.toString('base64url'); // Save as Base64 URL string
+//   logger.info('Challenge set:', { challenge: req.session.challenge });
+//   cb(null, challenge);
+// };
+//
+// sessionChallengeStore.verify = (req, challenge, cb) => {
+//   const storedChallenge = req.session.challenge;
+//
+//   console.log('Stored challenge:', storedChallenge);
+//   console.log('Received challenge:', challenge.toString('base64url'));
+//
+//   // Ensure stored challenge matches the received challenge
+//   if (!storedChallenge || storedChallenge !== challenge.toString('base64url')) {
+//     logger.warn('Challenge verification failed.');
+//     return cb(new Error('Challenge verification failed.'));
+//   }
+//
+//   // Clear the challenge after successful verification
+//   delete req.session.challenge;
+//   cb(null);
+// };
 
-    // Add the new passkey to the user's passkeys array
-    user.passkeys.push(newPasskey);
-    logger.debug('Added new passkey to user', { userId: user._id, newPasskey });
-
-    // Decode userHandle and store it if not already set
-    if (!user.webauthnUserHandle && webauthnUser.id) {
-      const userHandleBuffer = base64ToBuffer(base64urlToBase64(webauthnUser.id));
-      logger.debug('Decoded userHandle', { userHandleBuffer: userHandleBuffer.toString('hex') });
-      user.webauthnUserHandle = userHandleBuffer;
-    }
-
-    // Save the user with the new passkey
-    await user.save();
-    logger.info('New passkey registered and associated with user', { userId: user._id, id });
-
-    // Prepare options for assertion verification
-    const options = {
-      publicKey: newPasskey.credentialPublicKey,
-      counter: newPasskey.counter,
-    };
-
-    return cb(null, user, options);
-  } catch (err) {
-    logger.error('Error during passkey registration', { error: err, webauthnUser, id });
-    return cb(err);
-  }
-}
-
-// Initialize the WebAuthnStrategy with SessionChallengeStore
-const strategy = new WebAuthnStrategy({ store: sessionChallengeStore }, verify, register);
-
-// Log strategy initialization
-logger.info('WebAuthnStrategy initialized with SessionChallengeStore');
-
-module.exports = strategy;
+module.exports = { webauthnStrategy, sessionChallengeStore };
