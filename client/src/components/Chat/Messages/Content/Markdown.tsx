@@ -28,23 +28,6 @@ type TCodeProps = {
   children: React.ReactNode;
 };
 
-export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
-  const match = /language-(\w+)/.exec(className ?? '');
-  const lang = match && match[1];
-
-  if (lang === 'math') {
-    return children;
-  } else if (typeof children === 'string' && children.split('\n').length === 1) {
-    return (
-      <code onDoubleClick={handleDoubleClick} className={className}>
-        {children}
-      </code>
-    );
-  } else {
-    return <CodeBlock lang={lang ?? 'text'} codeChildren={children} allowExecution={false} />;
-  }
-});
-
 export const code: React.ElementType = memo(({ className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
@@ -68,6 +51,23 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
     );
   } else {
     return <CodeBlock lang={lang ?? 'text'} codeChildren={children} blockIndex={blockIndex} />;
+  }
+});
+
+export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
+  const match = /language-(\w+)/.exec(className ?? '');
+  const lang = match && match[1];
+
+  if (lang === 'math') {
+    return children;
+  } else if (typeof children === 'string' && children.split('\n').length === 1) {
+    return (
+      <code onDoubleClick={handleDoubleClick} className={className}>
+        {children}
+      </code>
+    );
+  } else {
+    return <CodeBlock lang={lang ?? 'text'} codeChildren={children} allowExecution={false} />;
   }
 });
 
@@ -217,13 +217,17 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
           remarkPlugins={remarkPlugins}
           /* @ts-ignore */
           rehypePlugins={rehypePlugins}
-          components={{
-            code,
-            a,
-            p,
-            artifact: Artifact,
-            thinking: Thinking,
-          }}
+          components={
+            {
+              code,
+              a,
+              p,
+              artifact: Artifact,
+              thinking: Thinking,
+            } as {
+              [nodeType: string]: React.ElementType;
+            }
+          }
         >
           {isLatestMessage && (showCursor ?? false) ? currentContent + cursor : currentContent}
         </ReactMarkdown>
