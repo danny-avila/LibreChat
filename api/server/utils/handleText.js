@@ -18,7 +18,12 @@ const citationRegex = /\[\^\d+?\^]/g;
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
 const base = { message: true, initial: true };
-const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
+const createOnProgress = (
+  { generation = '', onProgress: _onProgress } = {
+    generation: '',
+    onProgress: null,
+  },
+) => {
   let i = 0;
   let tokens = addSpaceIfNeeded(generation);
 
