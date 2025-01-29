@@ -320,11 +320,28 @@ const ttsLocalaiSchema = z.object({
   backend: z.string(),
 });
 
+const ttsDeepgramSchema = z
+  .object({
+    url: z.string().optional(),
+    apiKey: z.string().optional(),
+    voices: z.array(z.string()),
+    model: z.string(),
+    language: z.string().optional(),
+    media_settings: z
+      .object({
+        bit_rate: z.number().optional(),
+        sample_rate: z.number().optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
+  deepgram: ttsDeepgramSchema.optional(),
 });
 
 const sttOpenaiSchema = z.object({
@@ -340,9 +357,50 @@ const sttAzureOpenAISchema = z.object({
   apiVersion: z.string(),
 });
 
+const sttDeepgramSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string().optional(),
+  model: z
+    .object({
+      model: z.string().optional(),
+      language: z.string().optional(),
+      detect_language: z.boolean().optional(),
+      version: z.string().optional(),
+    })
+    .optional(),
+  formatting: z
+    .object({
+      smart_format: z.boolean().optional(),
+      diarize: z.boolean().optional(),
+      filler_words: z.boolean().optional(),
+      numerals: z.boolean().optional(),
+      punctuate: z.boolean().optional(),
+      paragraphs: z.boolean().optional(),
+      profanity_filter: z.boolean().optional(),
+      redact: z.boolean().optional(),
+      utterances: z.boolean().optional(),
+      utt_split: z.number().optional(),
+    })
+    .optional(),
+  custom_vocabulary: z
+    .object({
+      replace: z.array(z.string()).optional(),
+      keywords: z.array(z.string()).optional(),
+    })
+    .optional(),
+  intelligence: z
+    .object({
+      sentiment: z.boolean().optional(),
+      intents: z.boolean().optional(),
+      topics: z.boolean().optional(),
+    })
+    .optional(),
+});
+
 const sttSchema = z.object({
   openai: sttOpenaiSchema.optional(),
   azureOpenAI: sttAzureOpenAISchema.optional(),
+  deepgram: sttDeepgramSchema.optional(),
 });
 
 const speechTab = z
@@ -1105,6 +1163,10 @@ export enum STTProviders {
    * Provider for Microsoft Azure STT
    */
   AZURE_OPENAI = 'azureOpenAI',
+  /**
+   * Provider for Deepgram STT
+   */
+  DEEPGRAM = 'deepgram',
 }
 
 export enum TTSProviders {
@@ -1124,6 +1186,10 @@ export enum TTSProviders {
    * Provider for LocalAI TTS
    */
   LOCALAI = 'localai',
+  /**
+   * Provider for Deepgram TTS
+   */
+  DEEPGRAM = 'deepgram',
 }
 
 /** Enum for app-wide constants */
