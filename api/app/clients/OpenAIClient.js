@@ -1075,12 +1075,23 @@ ${convo}
 
     const reasoningTokens =
       this.streamHandler.reasoningTokens.length > 0
-        ? `<think>
-    ${this.streamHandler.reasoningTokens.join('')}
-    </think>\n`
+        ? `:::thinking\n${this.streamHandler.reasoningTokens.join('')}\n:::\n`
         : '';
 
     return `${reasoningTokens}${this.streamHandler.tokens.join('')}`;
+  }
+
+  getMessageMapMethod() {
+    /**
+     * @param {TMessage} msg
+     */
+    return (msg) => {
+      if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
+        msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
+      }
+
+      return msg;
+    };
   }
 
   async chatCompletion({ payload, onProgress, abortController = null }) {
@@ -1408,6 +1419,12 @@ ${convo}
         !message.content.startsWith('<think>')
       ) {
         return this.getStreamText();
+      } else if (
+        this.streamHandler.reasoningTokens.length > 0 &&
+        this.options.context !== 'title' &&
+        message.content.startsWith('<think>')
+      ) {
+        return message.content.replace('<think>', ':::thinking').replace('</think>', ':::');
       }
 
       return message.content;
