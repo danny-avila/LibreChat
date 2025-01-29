@@ -1,8 +1,6 @@
-const throttle = require('lodash/throttle');
-const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
+const { getResponseSender, Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { getLogStores } = require('~/cache');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
@@ -57,31 +55,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: throttle(
-        ({ text: partialText }) => {
-          /*
-              const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
-          messageCache.set(responseMessageId, {
-            messageId: responseMessageId,
-            sender,
-            conversationId,
-            parentMessageId: overrideParentMessageId ?? userMessageId,
-            text: partialText,
-            model: client.modelOptions.model,
-            unfinished,
-            error: false,
-            user,
-          }, Time.FIVE_MINUTES);
-          */
-
-          messageCache.set(responseMessageId, partialText, Time.FIVE_MINUTES);
-        },
-        3000,
-        { trailing: false },
-      ),
-    });
+    const { onProgress: progressCallback, getPartialText } = createOnProgress();
 
     getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
 
