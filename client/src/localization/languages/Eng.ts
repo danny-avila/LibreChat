@@ -410,6 +410,7 @@ export default {
   com_ui_more_info: 'More info',
   com_ui_preview: 'Preview',
   com_ui_thoughts: 'Thoughts',
+  com_ui_thinking: 'Thinking...',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
   com_ui_locked: 'Locked',
