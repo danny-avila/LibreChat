@@ -7,10 +7,10 @@ import {
 } from 'librechat-data-provider';
 import { memo } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
-import { ThinkingContent } from '~/components/Artifacts/Thinking';
 import { ErrorMessage } from './MessageContent';
 import ExecuteCode from './Parts/ExecuteCode';
 import RetrievalCall from './RetrievalCall';
+import Reasoning from './Parts/Reasoning';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import ToolCall from './ToolCall';
@@ -52,7 +52,7 @@ const Part = memo(({ part, isSubmitting, attachments, showCursor, isCreatedByUse
     if (typeof reasoning !== 'string') {
       return null;
     }
-    return <ThinkingContent>{reasoning}</ThinkingContent>;
+    return <Reasoning reasoning={reasoning} />;
   } else if (part.type === ContentTypes.TOOL_CALL) {
     const toolCall = part[ContentTypes.TOOL_CALL];
 
