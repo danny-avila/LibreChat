@@ -53,7 +53,7 @@ export default function StreamAudio({ index = 0 }) {
     const shouldFetch = !!(
       token != null &&
       automaticPlayback &&
-      isSubmitting &&
+      !isSubmitting &&
       latestMessage &&
       !latestMessage.isCreatedByUser &&
       latestText &&
@@ -118,14 +118,14 @@ export default function StreamAudio({ index = 0 }) {
         }
 
         let done = false;
-        const chunks: Uint8Array[] = [];
+        const chunks: ArrayBuffer[] = [];
 
         while (!done) {
           const readPromise = reader.read();
           const { value, done: readerDone } = (await Promise.race([
             readPromise,
             timeoutPromise(maxPromiseTime, promiseTimeoutMessage),
-          ])) as ReadableStreamReadResult<Uint8Array>;
+          ])) as ReadableStreamReadResult<ArrayBuffer>;
 
           if (cacheTTS && value) {
             chunks.push(value);
@@ -195,8 +195,8 @@ export default function StreamAudio({ index = 0 }) {
 
   useEffect(() => {
     if (
-      playbackRate &&
-      globalAudioURL &&
+      playbackRate != null &&
+      globalAudioURL != null &&
       playbackRate > 0 &&
       audioRef.current &&
       audioRef.current.playbackRate !== playbackRate
@@ -213,6 +213,7 @@ export default function StreamAudio({ index = 0 }) {
 
   logger.log('StreamAudio.tsx - globalAudioURL:', globalAudioURL);
   return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio
       ref={audioRef}
       controls
@@ -226,7 +227,6 @@ export default function StreamAudio({ index = 0 }) {
       }}
       src={globalAudioURL ?? undefined}
       id={globalAudioId}
-      muted
       autoPlay
     />
   );

@@ -88,14 +88,14 @@ function createChunkProcessor(user, messageId) {
         messageId,
         {
           text: message.text,
-          complete: notFoundCount === 0,
+          complete: true,
         },
         Time.FIVE_MINUTES,
       );
     }
 
     const text = typeof message === 'string' ? message : message.text;
-    const complete = typeof message === 'string' ? false : message.complete;
+    const complete = typeof message === 'string' ? false : message.complete ?? true;
 
     if (text === processedText) {
       noChangeCount++;
