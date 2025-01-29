@@ -260,7 +260,6 @@ console.log(greeting);`;
       codeExample,
       'updated content',
     );
-    console.log(result);
     expect(result).toMatch(/id="2".*updated content/s);
     expect(result).toMatch(new RegExp(`${ARTIFACT_START}.*updated content.*${ARTIFACT_END}`, 's'));
   });
