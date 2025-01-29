@@ -1,6 +1,7 @@
 const { CacheKeys } = require('librechat-data-provider');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
+const { BedrockAgentClient, ListAgentsCommand } = require('@aws-sdk/client-bedrock-agent');
 
 /**
  * @param {ServerRequest} req
@@ -21,8 +22,6 @@ const getModelsConfig = async (req) => {
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {
-  const { BedrockAgentClient, ListAgentsCommand } = await import('@aws-sdk/client-bedrock-agent');
-
   const client = new BedrockAgentClient({
     region: process.env.AWS_REGION ?? 'eu-central-1',
     credentials: {
