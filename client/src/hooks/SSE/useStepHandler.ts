@@ -234,6 +234,28 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
+      } else if (event === 'on_reasoning_delta') {
+        const reasoningDelta = data as Agents.ReasoningDeltaEvent;
+        const runStep = stepMap.current.get(reasoningDelta.id);
+        const responseMessageId = runStep?.runId ?? '';
+
+        if (!runStep || !responseMessageId) {
+          console.warn('No run step or runId found for reasoning delta event');
+          return;
+        }
+
+        const response = messageMap.current.get(responseMessageId);
+        if (response && reasoningDelta.delta.content != null) {
+          const contentPart = Array.isArray(reasoningDelta.delta.content)
+            ? reasoningDelta.delta.content[0]
+            : reasoningDelta.delta.content;
+
+          const updatedResponse = updateContent(response, runStep.index, contentPart);
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
       } else if (event === 'on_run_step_delta') {
         const runStepDelta = data as Agents.RunStepDeltaEvent;
         const runStep = stepMap.current.get(runStepDelta.id);

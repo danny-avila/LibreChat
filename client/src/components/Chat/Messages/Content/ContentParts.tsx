@@ -44,6 +44,8 @@ const ContentParts = memo(
       () => mapAttachments(attachments ?? messageAttachmentsMap[messageId] ?? []),
       [attachments, messageAttachmentsMap, messageId],
     );
+
+    console.log('content', content);
     if (!content) {
       return null;
     }

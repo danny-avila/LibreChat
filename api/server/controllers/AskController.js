@@ -83,7 +83,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       ),
     });
 
-    getText = getPartialText;
+    getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
 
     const getAbortData = () => ({
       sender,
@@ -91,7 +91,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
-      text: getPartialText(),
+      text: getText(),
       userMessage,
       promptTokens,
     });

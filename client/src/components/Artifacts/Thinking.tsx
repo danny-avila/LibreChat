@@ -17,7 +17,7 @@ const CONTENT_STYLES = {
   text: 'whitespace-pre-wrap leading-[26px]',
 } as const;
 
-const ThinkingContent: FC<{ children: React.ReactNode }> = memo(({ children }) => (
+export const ThinkingContent: FC<{ children: React.ReactNode }> = memo(({ children }) => (
   <div className={CONTENT_STYLES.wrapper}>
     <div className={CONTENT_STYLES.border} />
     <p className={CONTENT_STYLES.text}>{children}</p>

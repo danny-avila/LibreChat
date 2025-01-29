@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
 const {
   Constants,
   ImageDetail,
@@ -28,6 +29,7 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { sendEvent } = require('~/server/controllers/agents/callbacks.js');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { isEnabled, sleep } = require('~/server/utils');
@@ -65,6 +67,8 @@ class OpenAIClient extends BaseClient {
     this.usage;
     /** @type {boolean|undefined} */
     this.isO1Model;
+    /** @type {SplitStreamHandler | undefined} */
+    this.streamHandler;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -1064,11 +1068,25 @@ ${convo}
     });
   }
 
+  getStreamText() {
+    if (!this.streamHandler) {
+      return '';
+    }
+
+    const reasoningTokens =
+      this.streamHandler.reasoningTokens.length > 0
+        ? `<think>
+    ${this.streamHandler.reasoningTokens.join('')}
+    </think>\n`
+        : '';
+
+    return `${reasoningTokens}${this.streamHandler.tokens.join('')}`;
+  }
+
   async chatCompletion({ payload, onProgress, abortController = null }) {
     let error = null;
+    let intermediateReply = [];
     const errorCallback = (err) => (error = err);
-    const intermediateReply = [];
-    const reasoningTokens = [];
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -1266,6 +1284,19 @@ ${convo}
         reasoningKey = 'reasoning';
       }
 
+      this.streamHandler = new SplitStreamHandler({
+        reasoningKey,
+        accumulate: true,
+        runId: this.responseMessageId,
+        handlers: {
+          [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
+          [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
+          [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
+        },
+      });
+
+      intermediateReply = this.streamHandler.tokens;
+
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
@@ -1292,41 +1323,21 @@ ${convo}
             }
 
             if (typeof finalMessage.content !== 'string' || finalMessage.content.trim() === '') {
-              finalChatCompletion.choices[0].message.content = intermediateReply.join('');
+              finalChatCompletion.choices[0].message.content = this.streamHandler.tokens.join('');
             }
           })
           .on('finalMessage', (message) => {
             if (message?.role !== 'assistant') {
-              stream.messages.push({ role: 'assistant', content: intermediateReply.join('') });
+              stream.messages.push({
+                role: 'assistant',
+                content: this.streamHandler.tokens.join(''),
+              });
               UnexpectedRoleError = true;
             }
           });
 
-        let reasoningCompleted = false;
         for await (const chunk of stream) {
-          if (chunk?.choices?.[0]?.delta?.[reasoningKey]) {
-            if (reasoningTokens.length === 0) {
-              const thinkingDirective = '<think>\n';
-              intermediateReply.push(thinkingDirective);
-              reasoningTokens.push(thinkingDirective);
-              onProgress(thinkingDirective);
-            }
-            const reasoning_content = chunk?.choices?.[0]?.delta?.[reasoningKey] || '';
-            intermediateReply.push(reasoning_content);
-            reasoningTokens.push(reasoning_content);
-            onProgress(reasoning_content);
-          }
-
-          const token = chunk?.choices?.[0]?.delta?.content || '';
-          if (!reasoningCompleted && reasoningTokens.length > 0 && token) {
-            reasoningCompleted = true;
-            const separatorTokens = '\n</think>\n';
-            reasoningTokens.push(separatorTokens);
-            onProgress(separatorTokens);
-          }
-
-          intermediateReply.push(token);
-          onProgress(token);
+          this.streamHandler.handle(chunk);
           if (abortController.signal.aborted) {
             stream.controller.abort();
             break;
@@ -1369,7 +1380,7 @@ ${convo}
 
       if (!Array.isArray(choices) || choices.length === 0) {
         logger.warn('[OpenAIClient] Chat completion response has no choices');
-        return intermediateReply.join('');
+        return this.streamHandler.tokens.join('');
       }
 
       const { message, finish_reason } = choices[0] ?? {};
@@ -1379,11 +1390,11 @@ ${convo}
 
       if (!message) {
         logger.warn('[OpenAIClient] Message is undefined in chatCompletion response');
-        return intermediateReply.join('');
+        return this.streamHandler.tokens.join('');
       }
 
       if (typeof message.content !== 'string' || message.content.trim() === '') {
-        const reply = intermediateReply.join('');
+        const reply = this.streamHandler.tokens.join('');
         logger.debug(
           '[OpenAIClient] chatCompletion: using intermediateReply due to empty message.content',
           { intermediateReply: reply },
@@ -1391,8 +1402,12 @@ ${convo}
         return reply;
       }
 
-      if (reasoningTokens.length > 0 && this.options.context !== 'title') {
-        return reasoningTokens.join('') + message.content;
+      if (
+        this.streamHandler.reasoningTokens.length > 0 &&
+        this.options.context !== 'title' &&
+        !message.content.startsWith('<think>')
+      ) {
+        return this.getStreamText();
       }
 
       return message.content;

@@ -170,8 +170,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     if (isInitializing) {
       return '';
     }
-    const processed = content.replace('<think>', ':::thinking').replace('</think>', ':::');
-    return LaTeXParsing ? preprocessLaTeX(processed) : processed;
+    return LaTeXParsing ? preprocessLaTeX(content) : content;
   }, [content, LaTeXParsing, isInitializing]);
 
   const rehypePlugins = useMemo(
