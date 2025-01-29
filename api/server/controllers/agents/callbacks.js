@@ -10,7 +10,7 @@ const {
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 const { loadAuthValues } = require('~/app/clients/tools/util');
-const { logger } = require('~/config');
+const { logger, sendEvent } = require('~/config');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */
 /** @typedef {import('@librechat/agents').EventHandler} EventHandler */
@@ -20,20 +20,6 @@ const { logger } = require('~/config');
 /** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
 /** @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator */
 /** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
-
-/**
- * Sends message data in Server Sent Events format.
- * @param {ServerResponse} res - The server response.
- * @param {{ data: string | Record<string, unknown>, event?: string }} event - The message event.
- * @param {string} event.event - The type of event.
- * @param {string} event.data - The message to be sent.
- */
-const sendEvent = (res, event) => {
-  if (typeof event.data === 'string' && event.data.length === 0) {
-    return;
-  }
-  res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
-};
 
 class ModelEndHandler {
   /**
@@ -322,7 +308,6 @@ function createToolEndCallback({ req, res, artifactPromises }) {
 }
 
 module.exports = {
-  sendEvent,
   getDefaultHandlers,
   createToolEndCallback,
 };

@@ -29,18 +29,17 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { sendEvent } = require('~/server/controllers/agents/callbacks.js');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
+const { logger, sendEvent } = require('~/config');
 const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
-const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
