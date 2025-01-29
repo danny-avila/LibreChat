@@ -1,5 +1,5 @@
 import { useState, useMemo, memo, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { Atom, ChevronDown } from 'lucide-react';
 import type { MouseEvent, FC } from 'react';
 import { useLocalize } from '~/hooks';
@@ -14,17 +14,21 @@ const CONTENT_STYLES = {
   wrapper: 'relative pl-3 text-text-secondary',
   border:
     'absolute left-0 h-[calc(100%-10px)] border-l-2 border-border-medium dark:border-border-heavy',
+  partBorder:
+    'absolute left-0 h-[calc(100%)] border-l-2 border-border-medium dark:border-border-heavy',
   text: 'whitespace-pre-wrap leading-[26px]',
 } as const;
 
-export const ThinkingContent: FC<{ children: React.ReactNode }> = memo(({ children }) => (
-  <div className={CONTENT_STYLES.wrapper}>
-    <div className={CONTENT_STYLES.border} />
-    <p className={CONTENT_STYLES.text}>{children}</p>
-  </div>
-));
+export const ThinkingContent: FC<{ children: React.ReactNode; isPart?: boolean }> = memo(
+  ({ isPart, children }) => (
+    <div className={CONTENT_STYLES.wrapper}>
+      <div className={isPart === true ? CONTENT_STYLES.partBorder : CONTENT_STYLES.border} />
+      <p className={CONTENT_STYLES.text}>{children}</p>
+    </div>
+  ),
+);
 
-const ThinkingButton = memo(
+export const ThinkingButton = memo(
   ({
     isExpanded,
     onClick,
@@ -44,7 +48,7 @@ const ThinkingButton = memo(
 
 const Thinking: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
-  const [showThinking] = useRecoilState<boolean>(store.showThinking);
+  const showThinking = useRecoilValue<boolean>(store.showThinking);
   const [isExpanded, setIsExpanded] = useState(showThinking);
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
@@ -54,7 +58,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
   const label = useMemo(() => localize('com_ui_thoughts'), [localize]);
 
-  if (!children) {
+  if (children == null) {
     return null;
   }
 
