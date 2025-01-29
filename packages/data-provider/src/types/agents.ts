@@ -8,6 +8,11 @@ export namespace Agents {
 
   export type ImageDetail = 'auto' | 'low' | 'high';
 
+  export type ReasoningContentText = {
+    type: ContentTypes.THINK;
+    think: string;
+  };
+
   export type MessageContentText = {
     type: ContentTypes.TEXT;
     text: string;

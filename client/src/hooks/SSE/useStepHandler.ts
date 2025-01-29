@@ -33,8 +33,11 @@ type TStepEvent = {
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
+type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
+
 type AllContentTypes =
   | ContentTypes.TEXT
+  | ContentTypes.THINK
   | ContentTypes.TOOL_CALL
   | ContentTypes.IMAGE_FILE
   | ContentTypes.IMAGE_URL
@@ -84,6 +87,18 @@ export default function useStepHandler({
       if (contentPart.tool_call_ids != null) {
         update.tool_call_ids = contentPart.tool_call_ids;
       }
+      updatedContent[index] = update;
+    } else if (
+      contentType.startsWith(ContentTypes.THINK) &&
+      ContentTypes.THINK in contentPart &&
+      typeof contentPart.think === 'string'
+    ) {
+      const currentContent = updatedContent[index] as ReasoningDeltaUpdate;
+      const update: ReasoningDeltaUpdate = {
+        type: ContentTypes.THINK,
+        think: (currentContent.think || '') + contentPart.think,
+      };
+
       updatedContent[index] = update;
     } else if (contentType === ContentTypes.IMAGE_URL && 'image_url' in contentPart) {
       const currentContent = updatedContent[index] as {
