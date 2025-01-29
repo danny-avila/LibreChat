@@ -62,10 +62,6 @@ export function Artifact({
     const content = extractContent(props.children);
     logger.log('artifacts', 'updateArtifact: content.length', content.length);
 
-    if (!content || content.trim() === '') {
-      return;
-    }
-
     const title = props.title ?? 'Untitled Artifact';
     const type = props.type ?? 'unknown';
     const identifier = props.identifier ?? 'no-identifier';
