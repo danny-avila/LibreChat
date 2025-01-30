@@ -90,8 +90,9 @@ export default function useTextarea({
       setShowBingToneSetting(false);
     }
 
+    // Disabled to improve app experience in PWA mode on iOS
     if (convoId !== Constants.SEARCH) {
-      textAreaRef.current?.focus();
+      //textAreaRef.current?.focus();
     }
     // setShowBingToneSetting is a recoil setter, so it doesn't need to be in the dependency array
     // eslint-disable-next-line react-hooks/exhaustive-deps
