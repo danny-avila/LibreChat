@@ -71,6 +71,7 @@ const useNewConvo = (index = 0) => {
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
         keepAddedConvos?: boolean,
+        disableFocus?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -166,6 +167,9 @@ const useNewConvo = (index = 0) => {
         }
 
         clearTimeout(timeoutIdRef.current);
+        if (disableFocus === true) {
+          return;
+        }
         timeoutIdRef.current = setTimeout(() => {
           const textarea = document.getElementById(mainTextareaId);
           if (textarea) {
@@ -181,6 +185,7 @@ const useNewConvo = (index = 0) => {
       template: _template = {},
       preset: _preset,
       modelsData,
+      disableFocus,
       buildDefault = true,
       keepLatestMessage = false,
       keepAddedConvos = false,
@@ -189,6 +194,7 @@ const useNewConvo = (index = 0) => {
       preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      disableFocus?: boolean;
       keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
     } = {}) {
@@ -259,6 +265,7 @@ const useNewConvo = (index = 0) => {
         buildDefault,
         keepLatestMessage,
         keepAddedConvos,
+        disableFocus,
       );
     },
     [
