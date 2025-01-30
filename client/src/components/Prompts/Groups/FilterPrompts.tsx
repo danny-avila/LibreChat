@@ -1,17 +1,17 @@
 import { ListFilter, User, Share2, Dot } from 'lucide-react';
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { SystemCategories } from 'librechat-data-provider';
 import type { OptionWithIcon } from '~/common';
 import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
 import {
-  Input,
   Button,
   DropdownMenu,
   DropdownMenuItem,
   DropdownMenuGroup,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  AnimatedSearchInput,
   DropdownMenuSeparator,
 } from '~/components/ui';
 import { cn } from '~/utils';
@@ -114,6 +114,7 @@ export default function FilterPrompts({
   const [displayName, setDisplayName] = useState('');
   const setCategory = useSetRecoilState(store.promptsCategory);
   const [selectedIcon, setSelectedIcon] = useState(<ListFilter className="icon-sm" />);
+  const [isSearching, setIsSearching] = useState(false);
 
   const onSelect = useCallback(
     (category: string, icon?: React.ReactNode | null) => {
@@ -129,8 +130,16 @@ export default function FilterPrompts({
     [setCategory],
   );
 
+  useEffect(() => {
+    setIsSearching(true);
+    const timeout = setTimeout(() => {
+      setIsSearching(false);
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [displayName]);
+
   return (
-    <div className={cn('flex gap-2 text-text-primary', className)}>
+    <div className={cn('flex w-full gap-2 text-text-primary', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -145,14 +154,14 @@ export default function FilterPrompts({
         </DropdownMenuTrigger>
         <FilterMenu onSelect={onSelect} />
       </DropdownMenu>
-      <Input
-        placeholder={localize('com_ui_filter_prompts_name')}
+      <AnimatedSearchInput
         value={displayName}
         onChange={(e) => {
           setDisplayName(e.target.value);
           setName(e.target.value);
         }}
-        className="w-full border-border-light placeholder:text-text-secondary"
+        isSearching={isSearching}
+        placeholder={localize('com_ui_filter_prompts_name')}
       />
     </div>
   );
