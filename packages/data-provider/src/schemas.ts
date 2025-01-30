@@ -24,8 +24,6 @@ export enum EModelEndpoint {
   custom = 'custom',
   bedrock = 'bedrock',
   /** @deprecated */
-  bingAI = 'bingAI',
-  /** @deprecated */
   chatGPTBrowser = 'chatGPTBrowser',
   /** @deprecated */
   gptPlugins = 'gptPlugins',
@@ -815,41 +813,6 @@ export const googleGenConfigSchema = z
   })
   .strip()
   .optional();
-
-export const bingAISchema = tConversationSchema
-  .pick({
-    jailbreak: true,
-    systemMessage: true,
-    context: true,
-    toneStyle: true,
-    jailbreakConversationId: true,
-    conversationSignature: true,
-    clientId: true,
-    invocationId: true,
-  })
-  .transform((obj) => ({
-    ...obj,
-    model: '',
-    jailbreak: obj.jailbreak ?? false,
-    systemMessage: obj.systemMessage ?? null,
-    context: obj.context ?? null,
-    toneStyle: obj.toneStyle ?? 'creative',
-    jailbreakConversationId: obj.jailbreakConversationId ?? null,
-    conversationSignature: obj.conversationSignature ?? null,
-    clientId: obj.clientId ?? null,
-    invocationId: obj.invocationId ?? 1,
-  }))
-  .catch(() => ({
-    model: '',
-    jailbreak: false,
-    systemMessage: null,
-    context: null,
-    toneStyle: 'creative',
-    jailbreakConversationId: null,
-    conversationSignature: null,
-    clientId: null,
-    invocationId: 1,
-  }));
 
 export const chatGPTBrowserSchema = tConversationSchema
   .pick({

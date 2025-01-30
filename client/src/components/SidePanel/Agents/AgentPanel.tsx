@@ -61,8 +61,7 @@ export default function AgentPanel({
             !isAssistantsEndpoint(key) &&
             key !== EModelEndpoint.agents &&
             key !== EModelEndpoint.chatGPTBrowser &&
-            key !== EModelEndpoint.gptPlugins &&
-            key !== EModelEndpoint.bingAI,
+            key !== EModelEndpoint.gptPlugins,
         )
         .map((provider) => createProviderOption(provider)),
     [endpointsConfig],

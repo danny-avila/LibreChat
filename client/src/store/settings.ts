@@ -14,7 +14,6 @@ const staticAtoms = {
     key: 'currentSettingsView',
     default: SettingsViews.default,
   }),
-  showBingToneSetting: atom<boolean>({ key: 'showBingToneSetting', default: false }),
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
 
