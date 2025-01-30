@@ -1364,6 +1364,14 @@ ${convo}
         }
 
         for await (const chunk of stream) {
+          // Add finish_reason: null if missing in any choice
+          if (chunk.choices) {
+            chunk.choices.forEach(choice => {
+              if (!('finish_reason' in choice)) {
+                choice.finish_reason = null;
+              }
+            });
+          }
           this.streamHandler.handle(chunk);
           if (abortController.signal.aborted) {
             stream.controller.abort();
