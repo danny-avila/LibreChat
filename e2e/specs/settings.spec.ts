@@ -12,14 +12,6 @@ test.describe('Settings suite', () => {
           endpoint: 'openAI',
           createdAt: '',
           updatedAt: '',
-          jailbreak: false,
-          context: null,
-          systemMessage: null,
-          toneStyle: 'creative',
-          jailbreakConversationId: null,
-          conversationSignature: null,
-          clientId: null,
-          invocationId: 1,
         }),
       ),
     );
@@ -65,10 +57,6 @@ test.describe('Settings suite', () => {
 
     // Check if the settings persisted
     const localStorage = await page.evaluate(() => window.localStorage);
-    const lastBingSettings = JSON.parse(localStorage.lastBingSettings);
-    const { jailbreak, toneStyle } = lastBingSettings;
-    expect(jailbreak).toBeTruthy();
-    expect(toneStyle).toEqual('balanced');
     const button = page.getByRole('button', { name: 'Mode: Sydney' });
     expect(button.count()).toBeTruthy();
   });

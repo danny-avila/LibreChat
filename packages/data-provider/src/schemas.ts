@@ -590,25 +590,6 @@ export const tConversationSchema = z.object({
   greeting: z.string().optional(),
   spec: z.string().nullable().optional(),
   iconURL: z.string().nullable().optional(),
-  /*
-  Deprecated fields
-  */
-  /** @deprecated */
-  suggestions: z.array(z.string()).optional(),
-  /** @deprecated */
-  systemMessage: z.string().nullable().optional(),
-  /** @deprecated */
-  jailbreak: z.boolean().optional(),
-  /** @deprecated */
-  jailbreakConversationId: z.string().nullable().optional(),
-  /** @deprecated */
-  conversationSignature: z.string().nullable().optional(),
-  /** @deprecated */
-  clientId: z.string().nullable().optional(),
-  /** @deprecated */
-  invocationId: z.number().nullable().optional(),
-  /** @deprecated */
-  toneStyle: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
