@@ -33,7 +33,6 @@ const configureSocialLogins = (app) => {
   }
   if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
     passport.use(appleLogin());
-
   }
   if (
     process.env.OPENID_CLIENT_ID &&
