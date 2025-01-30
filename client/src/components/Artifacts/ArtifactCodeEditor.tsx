@@ -43,7 +43,6 @@ const CodeEditor = ({
     },
     onError: () => {
       setIsMutating(false);
-      setCurrentCode(artifact.content);
     },
   });
 

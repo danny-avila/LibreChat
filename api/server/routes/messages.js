@@ -21,7 +21,7 @@ router.post('/artifact/:messageId', async (req, res) => {
     const { messageId } = req.params;
     const { index, original, updated } = req.body;
 
-    if (typeof index !== 'number' || index < 0 || !original || !updated) {
+    if (typeof index !== 'number' || index < 0 || original == null || updated == null) {
       return res.status(400).json({ error: 'Invalid request parameters' });
     }
 

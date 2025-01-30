@@ -410,6 +410,7 @@ export default {
   com_ui_more_info: 'More info',
   com_ui_preview: 'Preview',
   com_ui_thoughts: 'Thoughts',
+  com_ui_thinking: 'Thinking...',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
   com_ui_locked: 'Locked',
@@ -843,10 +844,13 @@ export default {
   com_nav_enable_cache_tts: 'Enable cache TTS',
   com_nav_voice_select: 'Voice',
   com_nav_enable_cloud_browser_voice: 'Use cloud-based voices',
+  com_nav_show_thinking: 'Open Thinking Dropdowns by Default',
   com_nav_info_enter_to_send:
     'When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you\'ll need to press `CTRL + ENTER` / `⌘ + ENTER` to send your message.',
   com_nav_info_save_draft:
     'When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.',
+  com_nav_info_show_thinking:
+    'When enabled, the chat will display the thinking dropdowns open by default, allowing you to view the AI\'s reasoning in real-time. When disabled, the thinking dropdowns will remain closed by default for a cleaner and more streamlined interface',
   com_nav_info_fork_change_default:
     '`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.',
   com_nav_info_fork_split_target_setting:
