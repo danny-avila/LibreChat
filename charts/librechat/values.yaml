@@ -108,5 +108,5 @@ config:
     DEBUG_PLUGINS: "true"
     DOMAIN_CLIENT: ""
     DOMAIN_SERVER: ""
-    ENDPOINTS: "openAI,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic"
+    ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
     SEARCH: false 

@@ -24,8 +24,6 @@ export enum EModelEndpoint {
   custom = 'custom',
   bedrock = 'bedrock',
   /** @deprecated */
-  bingAI = 'bingAI',
-  /** @deprecated */
   chatGPTBrowser = 'chatGPTBrowser',
   /** @deprecated */
   gptPlugins = 'gptPlugins',
@@ -592,25 +590,6 @@ export const tConversationSchema = z.object({
   greeting: z.string().optional(),
   spec: z.string().nullable().optional(),
   iconURL: z.string().nullable().optional(),
-  /*
-  Deprecated fields
-  */
-  /** @deprecated */
-  suggestions: z.array(z.string()).optional(),
-  /** @deprecated */
-  systemMessage: z.string().nullable().optional(),
-  /** @deprecated */
-  jailbreak: z.boolean().optional(),
-  /** @deprecated */
-  jailbreakConversationId: z.string().nullable().optional(),
-  /** @deprecated */
-  conversationSignature: z.string().nullable().optional(),
-  /** @deprecated */
-  clientId: z.string().nullable().optional(),
-  /** @deprecated */
-  invocationId: z.number().nullable().optional(),
-  /** @deprecated */
-  toneStyle: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -815,41 +794,6 @@ export const googleGenConfigSchema = z
   })
   .strip()
   .optional();
-
-export const bingAISchema = tConversationSchema
-  .pick({
-    jailbreak: true,
-    systemMessage: true,
-    context: true,
-    toneStyle: true,
-    jailbreakConversationId: true,
-    conversationSignature: true,
-    clientId: true,
-    invocationId: true,
-  })
-  .transform((obj) => ({
-    ...obj,
-    model: '',
-    jailbreak: obj.jailbreak ?? false,
-    systemMessage: obj.systemMessage ?? null,
-    context: obj.context ?? null,
-    toneStyle: obj.toneStyle ?? 'creative',
-    jailbreakConversationId: obj.jailbreakConversationId ?? null,
-    conversationSignature: obj.conversationSignature ?? null,
-    clientId: obj.clientId ?? null,
-    invocationId: obj.invocationId ?? 1,
-  }))
-  .catch(() => ({
-    model: '',
-    jailbreak: false,
-    systemMessage: null,
-    context: null,
-    toneStyle: 'creative',
-    jailbreakConversationId: null,
-    conversationSignature: null,
-    clientId: null,
-    invocationId: 1,
-  }));
 
 export const chatGPTBrowserSchema = tConversationSchema
   .pick({

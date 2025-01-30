@@ -53,7 +53,6 @@ export default function useGenerationsByLatest({
       EModelEndpoint.bedrock,
       EModelEndpoint.chatGPTBrowser,
       EModelEndpoint.google,
-      EModelEndpoint.bingAI,
       EModelEndpoint.gptPlugins,
       EModelEndpoint.anthropic,
     ].find((e) => e === endpoint),
