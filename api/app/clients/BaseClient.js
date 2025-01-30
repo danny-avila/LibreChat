@@ -51,6 +51,12 @@ class BaseClient {
     this.outputTokensKey = 'completion_tokens';
     /** @type {Set<string>} */
     this.savedMessageIds = new Set();
+    /**
+     * Flag to determine if the client re-submitted the latest assistant message.
+     * @type {boolean | undefined} */
+    this.continued;
+    /** @type {TMessage[]} */
+    this.currentMessages = [];
   }
 
   setOptions() {
@@ -586,6 +592,7 @@ class BaseClient {
       } else {
         latestMessage.text = generation;
       }
+      this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
     }

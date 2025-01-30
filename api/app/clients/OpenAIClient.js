@@ -29,9 +29,9 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { addSpaceIfNeeded, isEnabled, sleep } = require('~/server/utils');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
-const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
 const { logger, sendEvent } = require('~/config');
@@ -1345,6 +1345,21 @@ ${convo}
               UnexpectedRoleError = true;
             }
           });
+
+        if (this.continued === true) {
+          const latestText = addSpaceIfNeeded(
+            this.currentMessages[this.currentMessages.length - 1]?.text ?? '',
+          );
+          this.streamHandler.handle({
+            choices: [
+              {
+                delta: {
+                  content: latestText,
+                },
+              },
+            ],
+          });
+        }
 
         for await (const chunk of stream) {
           this.streamHandler.handle(chunk);
