@@ -110,6 +110,12 @@ export enum ImageDetail {
   high = 'high',
 }
 
+export enum ReasoningEffort {
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -123,6 +129,7 @@ export const imageDetailValue = {
 };
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
+export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -564,6 +571,8 @@ export const tConversationSchema = z.object({
   file_ids: z.array(z.string()).optional(),
   /* vision */
   imageDetail: eImageDetailSchema.optional(),
+  /* OpenAI: o1 only */
+  reasoning_effort: eReasoningEffortSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -1055,6 +1064,7 @@ export const openAISchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
     max_tokens: true,
+    reasoning_effort: true,
   })
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
   .catch(() => ({}));
