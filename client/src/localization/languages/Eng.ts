@@ -578,6 +578,7 @@ export default {
   com_endpoint_top_k: 'Top K',
   com_endpoint_max_output_tokens: 'Max Output Tokens',
   com_endpoint_stop: 'Stop Sequences',
+  com_endpoint_reasoning_effort: 'Reasoning Effort',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
   com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
 
@@ -596,6 +597,8 @@ export default {
     'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
   com_endpoint_openai_resend_files:
     'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+  com_endpoint_openai_reasoning_effort:
+    'o1 models only: constrains effort on reasoning for reasoning models. Reducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response.',
   com_endpoint_openai_detail:
     'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
   com_endpoint_openai_stop: 'Up to 4 sequences where the API will stop generating further tokens.',

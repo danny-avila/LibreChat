@@ -6,8 +6,8 @@ import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { useMessageContext, useArtifactContext } from '~/Providers';
 import { artifactsState } from '~/store/artifacts';
+import { logger, extractContent } from '~/utils';
 import ArtifactButton from './ArtifactButton';
-import { logger } from '~/utils';
 
 export const artifactPlugin: Pluggable = () => {
   return (tree) => {
@@ -20,21 +20,6 @@ export const artifactPlugin: Pluggable = () => {
       return node;
     });
   };
-};
-
-const extractContent = (
-  children: React.ReactNode | { props: { children: React.ReactNode } } | string,
-): string => {
-  if (typeof children === 'string') {
-    return children;
-  }
-  if (React.isValidElement(children)) {
-    return extractContent((children.props as { children?: React.ReactNode }).children);
-  }
-  if (Array.isArray(children)) {
-    return children.map(extractContent).join('');
-  }
-  return '';
 };
 
 export function Artifact({

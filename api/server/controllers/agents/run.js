@@ -41,6 +41,11 @@ async function createRun({
     agent.model_parameters,
   );
 
+  if (/o1(?!-(?:mini|preview)).*$/.test(llmConfig.model)) {
+    llmConfig.streaming = false;
+    llmConfig.disableStreaming = true;
+  }
+
   /** @type {StandardGraphConfig} */
   const graphConfig = {
     signal,

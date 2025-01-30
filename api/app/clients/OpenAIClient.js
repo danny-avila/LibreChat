@@ -1286,6 +1286,8 @@ ${convo}
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
+      } else if (!this.isO1Model && modelOptions.reasoning_effort != null) {
+        delete modelOptions.reasoning_effort;
       }
 
       let reasoningKey = 'reasoning_content';
