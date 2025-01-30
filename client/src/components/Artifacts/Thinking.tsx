@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Atom, ChevronDown } from 'lucide-react';
 import type { MouseEvent, FC } from 'react';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const BUTTON_STYLES = {
@@ -63,19 +64,21 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="mb-3">
-      <ThinkingButton isExpanded={isExpanded} onClick={handleClick} label={label} />
+    <>
+      <div className="mb-5">
+        <ThinkingButton isExpanded={isExpanded} onClick={handleClick} label={label} />
+      </div>
       <div
-        className="grid transition-all duration-300 ease-out"
+        className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-8')}
         style={{
           gridTemplateRows: isExpanded ? '1fr' : '0fr',
         }}
       >
         <div className="overflow-hidden">
-          <ThinkingContent>{children}</ThinkingContent>
+          <ThinkingContent isPart={true}>{children}</ThinkingContent>
         </div>
       </div>
-    </div>
+    </>
   );
 });
 
