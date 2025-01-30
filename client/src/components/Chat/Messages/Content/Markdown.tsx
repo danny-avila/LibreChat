@@ -23,7 +23,7 @@ import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
 type TCodeProps = {
-  inline: boolean;
+  inline?: boolean;
   className?: string;
   children: React.ReactNode;
 };
@@ -42,7 +42,7 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
   }, [children, resetCounter]);
 
   if (isMath) {
-    return children;
+    return <>{children}</>;
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -71,79 +71,86 @@ export const codeNoExecution: React.ElementType = memo(({ className, children }:
   }
 });
 
-export const a: React.ElementType = memo(
-  ({ href, children }: { href: string; children: React.ReactNode }) => {
-    const user = useRecoilValue(store.user);
-    const { showToast } = useToastContext();
-    const localize = useLocalize();
+type TAnchorProps = {
+  href: string;
+  children: React.ReactNode;
+};
 
-    const {
-      file_id = '',
-      filename = '',
-      filepath,
-    } = useMemo(() => {
-      const pattern = new RegExp(`(?:files|outputs)/${user?.id}/([^\\s]+)`);
-      const match = href.match(pattern);
-      if (match && match[0]) {
-        const path = match[0];
-        const parts = path.split('/');
-        const name = parts.pop();
-        const file_id = parts.pop();
-        return { file_id, filename: name, filepath: path };
-      }
-      return { file_id: '', filename: '', filepath: '' };
-    }, [user?.id, href]);
+export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
+  const user = useRecoilValue(store.user);
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
 
-    const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
-    const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_new' };
-
-    if (!file_id || !filename) {
-      return (
-        <a href={href} {...props}>
-          {children}
-        </a>
-      );
+  const {
+    file_id = '',
+    filename = '',
+    filepath,
+  } = useMemo(() => {
+    const pattern = new RegExp(`(?:files|outputs)/${user?.id}/([^\\s]+)`);
+    const match = href.match(pattern);
+    if (match && match[0]) {
+      const path = match[0];
+      const parts = path.split('/');
+      const name = parts.pop();
+      const file_id = parts.pop();
+      return { file_id, filename: name, filepath: path };
     }
+    return { file_id: '', filename: '', filepath: '' };
+  }, [user?.id, href]);
 
-    const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement>) => {
-      event.preventDefault();
-      try {
-        const stream = await downloadFile();
-        if (stream.data == null || stream.data === '') {
-          console.error('Error downloading file: No data found');
-          showToast({
-            status: 'error',
-            message: localize('com_ui_download_error'),
-          });
-          return;
-        }
-        const link = document.createElement('a');
-        link.href = stream.data;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(stream.data);
-      } catch (error) {
-        console.error('Error downloading file:', error);
-      }
-    };
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
+  const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_new' };
 
-    props.onClick = handleDownload;
-    props.target = '_blank';
-
+  if (!file_id || !filename) {
     return (
-      <a
-        href={filepath.startsWith('files/') ? `/api/${filepath}` : `/api/files/${filepath}`}
-        {...props}
-      >
+      <a href={href} {...props}>
         {children}
       </a>
     );
-  },
-);
+  }
 
-export const p: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
+  const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    try {
+      const stream = await downloadFile();
+      if (stream.data == null || stream.data === '') {
+        console.error('Error downloading file: No data found');
+        showToast({
+          status: 'error',
+          message: localize('com_ui_download_error'),
+        });
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = stream.data;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(stream.data);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+    }
+  };
+
+  props.onClick = handleDownload;
+  props.target = '_blank';
+
+  return (
+    <a
+      href={filepath.startsWith('files/') ? `/api/${filepath}` : `/api/files/${filepath}`}
+      {...props}
+    >
+      {children}
+    </a>
+  );
+});
+
+type TParagraphProps = {
+  children: React.ReactNode;
+};
+
+export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
@@ -157,27 +164,40 @@ type TContentProps = {
 
 const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
-
   const isInitializing = content === '';
 
-  let currentContent = content;
-  if (!isInitializing) {
-    currentContent = currentContent.replace('<think>', ':::thinking') || '';
-    currentContent = currentContent.replace('</think>', ':::') || '';
-    currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
-  }
+  const currentContent = useMemo(() => {
+    if (isInitializing) {
+      return '';
+    }
+    return LaTeXParsing ? preprocessLaTeX(content) : content;
+  }, [content, LaTeXParsing, isInitializing]);
 
-  const rehypePlugins = [
-    [rehypeKatex, { output: 'mathml' }],
-    [
-      rehypeHighlight,
-      {
-        detect: true,
-        ignoreMissing: true,
-        subset: langSubset,
-      },
+  const rehypePlugins = useMemo(
+    () => [
+      [rehypeKatex, { output: 'mathml' }],
+      [
+        rehypeHighlight,
+        {
+          detect: true,
+          ignoreMissing: true,
+          subset: langSubset,
+        },
+      ],
     ],
-  ];
+    [],
+  );
+
+  const remarkPlugins: Pluggable[] = useMemo(
+    () => [
+      supersub,
+      remarkGfm,
+      remarkDirective,
+      artifactPlugin,
+      [remarkMath, { singleDollarTextMath: true }],
+    ],
+    [],
+  );
 
   if (isInitializing) {
     return (
@@ -189,14 +209,6 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     );
   }
 
-  const remarkPlugins: Pluggable[] = [
-    supersub,
-    remarkGfm,
-    remarkDirective,
-    artifactPlugin,
-    [remarkMath, { singleDollarTextMath: true }],
-  ];
-
   return (
     <ArtifactProvider>
       <CodeBlockProvider>
@@ -205,7 +217,6 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
           remarkPlugins={remarkPlugins}
           /* @ts-ignore */
           rehypePlugins={rehypePlugins}
-          // linkTarget="_new"
           components={
             {
               code,
@@ -218,7 +229,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
             }
           }
         >
-          {isLatestMessage && showCursor === true ? currentContent + cursor : currentContent}
+          {isLatestMessage && (showCursor ?? false) ? currentContent + cursor : currentContent}
         </ReactMarkdown>
       </CodeBlockProvider>
     </ArtifactProvider>
