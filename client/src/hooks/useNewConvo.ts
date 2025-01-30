@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Constants,
   FileSources,
+  EModelEndpoint,
   isParamEndpoint,
   LocalStorageKeys,
   isAssistantsEndpoint,
@@ -87,10 +88,14 @@ const useNewConvo = (index = 0) => {
             : preset;
 
         if (buildDefaultConversation) {
-          const defaultEndpoint = getDefaultEndpoint({
+          let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
+
+          if (!defaultEndpoint) {
+            defaultEndpoint = Object.keys(endpointsConfig ?? {})[0] as EModelEndpoint;
+          }
 
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
           if (!conversation.endpointType && endpointType) {
