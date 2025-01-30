@@ -13,6 +13,14 @@ const { Providers } = require('@librechat/agents');
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
 
+/** Helper function to escape special characters in regex
+ * @param {string} string - The string to escape.
+ * @returns {string} The escaped string.
+ */
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
 const base = { message: true, initial: true };
@@ -251,6 +259,7 @@ module.exports = {
   isEnabled,
   handleText,
   formatSteps,
+  escapeRegExp,
   formatAction,
   isUserProvided,
   generateConfig,
