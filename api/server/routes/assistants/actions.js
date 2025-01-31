@@ -63,7 +63,7 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(404).json({ message: 'Assistant not found' });
     }
 
-    const { actions: _actions = [] } = assistant_data ?? {};
+    const { actions: _actions = [], user: assistant_user } = assistant_data ?? {};
     const actions = [];
     for (const action of _actions) {
       const [_action_domain, current_action_id] = action.split(actionDelimiter);
@@ -99,16 +99,26 @@ router.post('/:assistant_id', async (req, res) => {
 
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
+
+    // Only update user field for new assistant documents
+    const assistantUpdateData = { actions };
+    if (!assistant_data) {
+      assistantUpdateData.user = req.user.id;
+    }
     promises.push(
       updateAssistantDoc(
         { assistant_id },
-        {
-          actions,
-          user: req.user.id,
-        },
-      ),
+         assistantUpdateData,
+      )
     );
-    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
+
+    // Only update user field for new actions
+    const actionUpdateData = { metadata, assistant_id };
+    if (!actions_result || !actions_result.length) {
+      // For new actions, use the assistant owner's user ID
+      actionUpdateData.user = assistant_user || req.user.id;
+    }
+    promises.push(updateAction({ action_id }, actionUpdateData));
 
     /** @type {[AssistantDocument, Action]} */
     let [assistantDocument, updatedAction] = await Promise.all(promises);
@@ -180,13 +190,15 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
     await openai.beta.assistants.update(assistant_id, { tools: updatedTools });
 
     const promises = [];
+    // Only update user field if assistant document doesn't exist
+    const assistantUpdateData = { actions };
+    if (!assistant_data) {
+      assistantUpdateData.user = req.user.id;
+    }
     promises.push(
       updateAssistantDoc(
-        { assistant_id },
-        {
-          actions: updatedActions,
-          user: req.user.id,
-        },
+      { assistant_id },
+      assistantUpdateData,
       ),
     );
     promises.push(deleteAction({ action_id }));
