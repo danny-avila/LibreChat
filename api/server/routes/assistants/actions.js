@@ -105,12 +105,7 @@ router.post('/:assistant_id', async (req, res) => {
     if (!assistant_data) {
       assistantUpdateData.user = req.user.id;
     }
-    promises.push(
-      updateAssistantDoc(
-        { assistant_id },
-         assistantUpdateData,
-      )
-    );
+    promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
 
     // Only update user field for new actions
     const actionUpdateData = { metadata, assistant_id };
@@ -191,16 +186,11 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
 
     const promises = [];
     // Only update user field if assistant document doesn't exist
-    const assistantUpdateData = { actions };
+    const assistantUpdateData = { actions: updatedActions };
     if (!assistant_data) {
       assistantUpdateData.user = req.user.id;
     }
-    promises.push(
-      updateAssistantDoc(
-      { assistant_id },
-      assistantUpdateData,
-      ),
-    );
+    promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
     promises.push(deleteAction({ action_id }));
 
     await Promise.all(promises);
