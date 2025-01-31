@@ -882,6 +882,7 @@ export default {
   com_nav_command_settings: 'Command Settings',
   com_nav_command_settings_description: 'Customize which commands are available in the chat',
   com_nav_no_search_results: 'No search results found',
+  com_nav_scroll_button: 'Scroll to the end button',
   com_nav_setting_general: 'General',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',
