@@ -115,6 +115,8 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     titleMessageRole: endpointConfig.titleMessageRole,
     streamRate: endpointConfig.streamRate,
     endpointTokenConfig,
+    timeout: endpointConfig.timeout,
+    maxRetries: endpointConfig.maxRetries,
   };
 
   /** @type {undefined | TBaseEndpoint} */

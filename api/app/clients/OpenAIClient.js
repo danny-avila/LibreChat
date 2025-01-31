@@ -1214,6 +1214,8 @@ ${convo}
       const openai = new OpenAI({
         fetch: this.fetch,
         apiKey: this.apiKey,
+        timeout: this.options.timeout ?? 10 * 60 * 1000, // 10 minutes default timeout
+        maxRetries: this.options.maxRetries ?? 2, // Default to 2 retries
         ...opts,
       });
 
