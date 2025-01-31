@@ -2,6 +2,7 @@ const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
 const { updateAssistantDoc } = require('~/models/Assistant');
+const { manifestToolMap } = require('~/app/clients/tools');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
@@ -32,9 +33,21 @@ const createAssistant = async (req, res) => {
           return tool;
         }
 
-        return req.app.locals.availableTools[tool];
+        const loadedTools = req.app.locals.availableTools;
+        const toolDef = loadedTools[tool];
+        if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
+          return (
+            Object.entries(loadedTools)
+              .filter(([key]) => key.startsWith(`${tool}_`))
+              // eslint-disable-next-line no-unused-vars
+              .map(([_, val]) => val)
+          );
+        }
+
+        return toolDef;
       })
-      .filter((tool) => tool);
+      .filter((tool) => tool)
+      .flat();
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -112,9 +125,30 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 
   let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {
-    let actualTool = typeof tool === 'string' ? req.app.locals.availableTools[tool] : tool;
+    const loadedTools = req.app.locals.availableTools;
+    let actualTool = typeof tool === 'string' ? loadedTools[tool] : tool;
 
-    if (!actualTool) {
+    if (!actualTool && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
+      actualTool = Object.entries(loadedTools)
+        .filter(([key]) => key.startsWith(`${tool}_`))
+        // eslint-disable-next-line no-unused-vars
+        .map(([_, val]) => val);
+    } else if (!actualTool) {
+      continue;
+    }
+
+    if (Array.isArray(actualTool)) {
+      for (const subTool of actualTool) {
+        if (!subTool.function) {
+          tools.push(subTool);
+          continue;
+        }
+
+        const updatedTool = await validateAndUpdateTool({ req, tool: subTool, assistant_id });
+        if (updatedTool) {
+          tools.push(updatedTool);
+        }
+      }
       continue;
     }
 

@@ -6,6 +6,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
+const { manifestToolMap } = require('~/app/clients/tools');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -35,9 +36,21 @@ const createAssistant = async (req, res) => {
           return tool;
         }
 
-        return req.app.locals.availableTools[tool];
+        const loadedTools = req.app.locals.availableTools;
+        const toolDef = loadedTools[tool];
+        if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
+          return (
+            Object.entries(loadedTools)
+              .filter(([key]) => key.startsWith(`${tool}_`))
+              // eslint-disable-next-line no-unused-vars
+              .map(([_, val]) => val)
+          );
+        }
+
+        return toolDef;
       })
-      .filter((tool) => tool);
+      .filter((tool) => tool)
+      .flat();
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -128,9 +141,21 @@ const patchAssistant = async (req, res) => {
           return tool;
         }
 
-        return req.app.locals.availableTools[tool];
+        const loadedTools = req.app.locals.availableTools;
+        const toolDef = loadedTools[tool];
+        if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
+          return (
+            Object.entries(loadedTools)
+              .filter(([key]) => key.startsWith(`${tool}_`))
+              // eslint-disable-next-line no-unused-vars
+              .map(([_, val]) => val)
+          );
+        }
+
+        return toolDef;
       })
-      .filter((tool) => tool);
+      .filter((tool) => tool)
+      .flat();
 
     if (openai.locals?.azureOptions && updateData.model) {
       updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
