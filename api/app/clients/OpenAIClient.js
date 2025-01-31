@@ -65,7 +65,7 @@ class OpenAIClient extends BaseClient {
     /** @type {OpenAIUsageMetadata | undefined} */
     this.usage;
     /** @type {boolean|undefined} */
-    this.isO1Model;
+    this.isOmni;
     /** @type {SplitStreamHandler | undefined} */
     this.streamHandler;
   }
@@ -105,8 +105,8 @@ class OpenAIClient extends BaseClient {
       this.checkVisionRequest(this.options.attachments);
     }
 
-    const o1Pattern = /\bo1\b/i;
-    this.isO1Model = o1Pattern.test(this.modelOptions.model);
+    const omniPattern = /\b(o1|o3)\b/i;
+    this.isOmni = omniPattern.test(this.modelOptions.model);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
@@ -146,7 +146,7 @@ class OpenAIClient extends BaseClient {
     const { model } = this.modelOptions;
 
     this.isChatCompletion =
-      o1Pattern.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
+      omniPattern.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
@@ -475,7 +475,7 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    if (promptPrefix && this.isO1Model !== true) {
+    if (promptPrefix && this.isOmni !== true) {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
@@ -503,7 +503,7 @@ class OpenAIClient extends BaseClient {
     };
 
     /** EXPERIMENTAL */
-    if (promptPrefix && this.isO1Model === true) {
+    if (promptPrefix && this.isOmni === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
         payload[
@@ -1200,7 +1200,7 @@ ${convo}
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }
 
-      if (this.isO1Model === true && modelOptions.max_tokens != null) {
+      if (this.isOmni === true && modelOptions.max_tokens != null) {
         modelOptions.max_completion_tokens = modelOptions.max_tokens;
         delete modelOptions.max_tokens;
       }
@@ -1280,13 +1280,13 @@ ${convo}
       let streamResolve;
 
       if (
-        this.isO1Model === true &&
+        this.isOmni === true &&
         (this.azure || /o1(?!-(?:mini|preview)).*$/.test(modelOptions.model)) &&
         modelOptions.stream
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
-      } else if (!this.isO1Model && modelOptions.reasoning_effort != null) {
+      } else if (!this.isOmni && modelOptions.reasoning_effort != null) {
         delete modelOptions.reasoning_effort;
       }
 
@@ -1366,7 +1366,7 @@ ${convo}
         for await (const chunk of stream) {
           // Add finish_reason: null if missing in any choice
           if (chunk.choices) {
-            chunk.choices.forEach(choice => {
+            chunk.choices.forEach((choice) => {
               if (!('finish_reason' in choice)) {
                 choice.finish_reason = null;
               }
