@@ -2,10 +2,6 @@ const { logger } = require('~/config');
 // const { Categories } = require('./schema/categories');
 const options = [
   {
-    label: '',
-    value: '',
-  },
-  {
     label: 'idea',
     value: 'idea',
   },
