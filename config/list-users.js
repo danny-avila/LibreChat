@@ -1,6 +1,5 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 const User = require('../api/models/User');
 
@@ -8,10 +7,10 @@ const listUsers = async () => {
   try {
     await connect();
     const users = await User.find({}, 'email provider avatar username name createdAt');
-    
+
     console.log('\nUser List:');
     console.log('----------------------------------------');
-    users.forEach(user => {
+    users.forEach((user) => {
       console.log(`Email: ${user.email}`);
       console.log(`Username: ${user.username || 'N/A'}`);
       console.log(`Name: ${user.name || 'N/A'}`);
@@ -19,7 +18,7 @@ const listUsers = async () => {
       console.log(`Created: ${user.createdAt}`);
       console.log('----------------------------------------');
     });
-    
+
     console.log(`\nTotal Users: ${users.length}`);
     process.exit(0);
   } catch (err) {
