@@ -8,6 +8,7 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const { PROVIDER_MAPPERS } = require('./customOpenIdDataRetrieval.js')
 
 let crypto;
 try {
@@ -106,29 +107,13 @@ function convertToUsername(input, defaultValue = '') {
 }
 
 async function mapCustomOpenIdData(accessToken, customOpenIdFields) {
-  const customData = {};
-  const fieldsQueryURL = `https://graph.microsoft.com/v1.0/me?$select=${customOpenIdFields.join(',')}`;
 
-  const response = await fetch(fieldsQueryURL, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    }
-  });
-
-
-  if (response.ok) {
-    const customOpenIdFieldsResult = await response.json();
-
-    // Extract relevant fields from the response
-    customOpenIdFields.forEach(field => {
-      if (customOpenIdFieldsResult[field]) {
-        customData[field] = customOpenIdFieldsResult[field];
-      }
-    });
+  const mapper = PROVIDER_MAPPERS[process.env.OPENID_CUSTOM_DATA_PROVIDER]
+  if (!mapper) {
+    throw new Error(`No mapper found for provider: ${provider}`);
   }
-  logger.debug('[openidStrategy] map custom openId data', { fieldsQueryURL, customData });
+
+  customData = await mapper(accessToken, customOpenIdFields);
   return customData;
 }
 
@@ -271,9 +256,16 @@ async function setupOpenId() {
 
           const customOpenIdFields = process.env.OPENID_CUSTOM_DATA ? process.env.OPENID_CUSTOM_DATA.split(" ") : [];
           if (customOpenIdFields.length > 0) {
-            user.customOpenIdData = new Map(Object.entries(await mapCustomOpenIdData(tokenset.access_token, customOpenIdFields)));
+            try {
+              user.customOpenIdData = new Map(Object.entries(await mapCustomOpenIdData(tokenset.access_token, customOpenIdFields)));
+              logger.info(`[openidStrategy] customOpenIdData retrieved : ${JSON.stringify(Object.fromEntries(user.customOpenIdData))}`);
+            }
+            catch (e) {
+              logger.error(`[openidStrategy] load custom OPENID data failed with error :${e.message}`)
+              user.customOpenIdData = { error: true, message: e.message }
+            }
           }
-          
+
           user = await updateUser(user._id, user);
 
           logger.info(
