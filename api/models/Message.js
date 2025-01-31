@@ -77,7 +77,7 @@ async function saveMessage(req, params, metadata) {
  * @returns {Promise<Object>} The result of the bulk write operation.
  * @throws {Error} If there is an error in saving messages in bulk.
  */
-async function bulkSaveMessages(messages, overrideTimestamp=false) {
+async function bulkSaveMessages(messages, overrideTimestamp = false) {
   try {
     const bulkOps = messages.map((message) => ({
       updateOne: {
@@ -170,6 +170,7 @@ async function updateMessageText(req, { messageId, text }) {
  * @param {Object} message - The message object containing update data.
  * @param {string} message.messageId - The unique identifier for the message.
  * @param {string} [message.text] - The new text content of the message.
+ * @param {isEdited} [message.isEdited] - Whether or not this message was edited
  * @param {Object[]} [message.files] - The files associated with the message.
  * @param {boolean} [message.isCreatedByUser] - Indicates if the message was created by the user.
  * @param {string} [message.sender] - The identifier of the sender.
@@ -182,7 +183,6 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
-    update.isEdited = true;
     const updatedMessage = await Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
@@ -203,7 +203,6 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
-      isEdited: true,
     };
   } catch (err) {
     logger.error('Error updating message:', err);
