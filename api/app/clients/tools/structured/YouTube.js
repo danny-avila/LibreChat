@@ -26,19 +26,19 @@ class YouTubeTool extends Tool {
 
 // 2. GET VIDEO INFO:
 //    - Action: get_video_info
-//    - Required: videoUrl (full YouTube URL or video ID)
+//    - Required: url (full YouTube URL or video ID)
 //    - Example command: get info for video "https://youtube.com/watch?v=123"
 
 // 3. GET COMMENTS:
 //    - Action: get_comments
-//    - Required: videoUrl (full YouTube URL or video ID)
+//    - Required: url (full YouTube URL or video ID)
 //    - Optional: maxResults (between 1-50, default: 10)
 //    - Usecases: analyzing user feedback, identifying common issues, or understanding viewer sentiment
 //    - Example command: get 10 comments from video "https://youtube.com/watch?v=123"
 
 // 4. GET TRANSCRIPT:
 //    - Action: get_video_transcript
-//    - Required: videoUrl (full YouTube URL or video ID)
+//    - Required: url (full YouTube URL or video ID)
 //    - Optional: Usecases: in-depth analysis, summarization, or translation of a video
 //    - Example command: get transcript for video "https://youtube.com/watch?v=123"
 
@@ -58,7 +58,7 @@ class YouTubeTool extends Tool {
         .string()
         .optional()
         .describe('Required for search_videos: The search term to find videos.'),
-      videoUrl: z
+      url: z
         .string()
         .optional()
         .describe(
@@ -75,6 +75,7 @@ class YouTubeTool extends Tool {
         ),
     });
 
+    /** @type {import('@googleapis/youtube').youtube_v3.Youtube} */
     this.youtubeClient = youtube({
       version: 'v3',
       auth: this.apiKey,
@@ -97,11 +98,11 @@ class YouTubeTool extends Tool {
         case 'search_videos':
           return JSON.stringify(await this.searchVideos(data.query, data.maxResults));
         case 'get_video_info':
-          return JSON.stringify(await this.getVideoInfo(data.videoUrl));
+          return JSON.stringify(await this.getVideoInfo(data.url));
         case 'get_comments':
-          return JSON.stringify(await this.getComments(data.videoUrl, data.maxResults));
+          return JSON.stringify(await this.getComments(data.url, data.maxResults));
         case 'get_video_transcript':
-          return JSON.stringify(await this.getVideoTranscript(data.videoUrl));
+          return JSON.stringify(await this.getVideoTranscript(data.url));
         default:
           throw new Error(`Unknown action: ${data.action}`);
       }
@@ -126,8 +127,8 @@ class YouTubeTool extends Tool {
     }));
   }
 
-  async getVideoInfo(videoUrl) {
-    const videoId = this.extractVideoId(videoUrl);
+  async getVideoInfo(url) {
+    const videoId = this.extractVideoId(url);
     const response = await this.youtubeClient.videos.list({
       part: 'snippet,statistics',
       id: videoId,
@@ -143,8 +144,8 @@ class YouTubeTool extends Tool {
     };
   }
 
-  async getComments(videoUrl, maxResults = 10) {
-    const videoId = this.extractVideoId(videoUrl);
+  async getComments(url, maxResults = 10) {
+    const videoId = this.extractVideoId(url);
     const response = await this.youtubeClient.commentThreads.list({
       part: 'snippet',
       videoId: videoId,
@@ -158,8 +159,8 @@ class YouTubeTool extends Tool {
     }));
   }
 
-  async getVideoTranscript(videoUrl) {
-    const videoId = this.extractVideoId(videoUrl);
+  async getVideoTranscript(url) {
+    const videoId = this.extractVideoId(url);
     try {
       // Try to fetch English transcript (most common language)
       try {
