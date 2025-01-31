@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { tool: toolFn, Tool } = require('@langchain/core/tools');
+const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const {
   Tools,
@@ -19,6 +19,7 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
+const { createYouTubeTool } = require('~/app/clients/tools');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
@@ -97,7 +98,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   }
 
   /** Basic Tools; schema: { input: string } */
-  const basicToolInstances = [new Calculator()];
+  const basicToolInstances = [new Calculator(), createYouTubeTool({ override: true })];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
     tools.push(formattedTool);
@@ -437,6 +438,11 @@ async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
     }
 
     if (tool.mcp === true) {
+      agentTools.push(tool);
+      continue;
+    }
+
+    if (tool instanceof DynamicStructuredTool) {
       agentTools.push(tool);
       continue;
     }

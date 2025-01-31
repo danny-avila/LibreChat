@@ -9,13 +9,13 @@ const {
   GoogleSearchAPI,
   // Structured Tools
   DALLE3,
+  OpenWeather,
   StructuredSD,
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
+  createYouTubeTool,
   TavilySearchResults,
-  YouTubeTool,
-  OpenWeather,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -147,6 +147,13 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
   };
 };
 
+/** @type {Record<string, string[] | undefined>} */
+const toolAuthFields = {};
+
+availableTools.forEach((tool) => {
+  toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
+});
+
 /**
  *
  * @param {object} object
@@ -175,26 +182,31 @@ const loadTools = async ({
   const toolConstructors = {
     calculator: Calculator,
     google: GoogleSearchAPI,
+    open_weather: OpenWeather,
     wolfram: StructuredWolfram,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
-    youtube: YouTubeTool,
-    open_weather: OpenWeather,
   };
 
   const customConstructors = {
     serpapi: async () => {
-      let apiKey = process.env.SERPAPI_API_KEY;
+      let envVar = toolAuthFields['serpapi'][0] ?? '';
+      let apiKey = process.env[envVar];
       if (!apiKey) {
-        apiKey = await getUserPluginAuthValue(user, 'SERPAPI_API_KEY');
+        apiKey = await getUserPluginAuthValue(user, envVar);
       }
       return new SerpAPI(apiKey, {
         location: 'Austin,Texas,United States',
         hl: 'en',
         gl: 'us',
       });
+    },
+    youtube: async () => {
+      const authFields = toolAuthFields['youtube'];
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      return createYouTubeTool(authValues);
     },
   };
 
@@ -218,18 +230,7 @@ const loadTools = async ({
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
-    youtube: { YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY },
   };
-
-  const toolAuthFields = {};
-
-  availableTools.forEach((tool) => {
-    if (customConstructors[tool.pluginKey]) {
-      return;
-    }
-
-    toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
-  });
 
   const toolContextMap = {};
   const remainingTools = [];
