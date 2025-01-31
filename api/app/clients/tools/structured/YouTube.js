@@ -40,14 +40,15 @@ Rules:
  * @param {import('youtube-transcript').TranscriptResponse[]} transcriptResponse
  */
 function parseTranscript(transcriptResponse) {
-  if (!Array.isArray(transcriptResponse.transcript)) {
+  if (!Array.isArray(transcriptResponse)) {
     return '';
   }
 
-  return transcriptResponse.transcript
+  return transcriptResponse
     .map((entry) => entry.text.trim())
     .filter((text) => text)
-    .join(' ');
+    .join(' ')
+    .replaceAll('&amp;#39;', '\'');
 }
 
 function createYouTubeTool(fields = {}) {
