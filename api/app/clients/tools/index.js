@@ -8,6 +8,7 @@ const StructuredSD = require('./structured/StableDiffusion');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const TavilySearchResults = require('./structured/TavilySearchResults');
+const YouTubeTool = require('./structured/YouTube');
 const OpenWeather = require('./structured/OpenWeather');
 
 module.exports = {
@@ -20,5 +21,6 @@ module.exports = {
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
+  YouTubeTool,
   OpenWeather,
 };

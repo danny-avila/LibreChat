@@ -14,6 +14,7 @@ const {
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
+  YouTubeTool,
   OpenWeather,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -179,6 +180,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    youtube: YouTubeTool,
     open_weather: OpenWeather,
   };
 
@@ -216,6 +218,7 @@ const loadTools = async ({
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
+    youtube: { YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY },
   };
 
   const toolAuthFields = {};
