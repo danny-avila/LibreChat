@@ -36,6 +36,20 @@ Rules:
 - MaxResults must be 1-50
 - Focused, single-operation requests only`;
 
+/**
+ * @param {import('youtube-transcript').TranscriptResponse[]} transcriptResponse
+ */
+function parseTranscript(transcriptResponse) {
+  if (!Array.isArray(transcriptResponse.transcript)) {
+    return '';
+  }
+
+  return transcriptResponse.transcript
+    .map((entry) => entry.text.trim())
+    .filter((text) => text)
+    .join(' ');
+}
+
 function createYouTubeTool(fields = {}) {
   const envVar = 'YOUTUBE_API_KEY';
   const override = fields.override ?? false;
@@ -68,11 +82,12 @@ function createYouTubeTool(fields = {}) {
       type: 'video',
       maxResults: maxResults || 5,
     });
-    return response.data.items.map((item) => ({
+    const result = response.data.items.map((item) => ({
       title: item.snippet.title,
       description: item.snippet.description,
       url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
     }));
+    return JSON.stringify(result, null, 2);
   }
 
   async function getVideoInfo(url) {
@@ -91,13 +106,14 @@ function createYouTubeTool(fields = {}) {
     }
     const video = response.data.items[0];
 
-    return {
+    const result = {
       title: video.snippet.title,
       description: video.snippet.description,
       views: video.statistics.viewCount,
       likes: video.statistics.likeCount,
       comments: video.statistics.commentCount,
     };
+    return JSON.stringify(result, null, 2);
   }
 
   async function getComments(url, maxResults = 10) {
@@ -112,13 +128,18 @@ function createYouTubeTool(fields = {}) {
       maxResults: maxResults || 10,
     });
 
-    return response.data.items.map((item) => ({
+    const result = response.data.items.map((item) => ({
       author: item.snippet.topLevelComment.snippet.authorDisplayName,
       text: item.snippet.topLevelComment.snippet.textDisplay,
       likes: item.snippet.topLevelComment.snippet.likeCount,
     }));
+    return JSON.stringify(result, null, 2);
   }
 
+  /**
+   * @param {string} url - YouTube URL or video ID
+   * @returns {Promise<string>}
+   */
   async function getVideoTranscript(url) {
     const videoId = extractVideoId(url);
     if (!videoId) {
@@ -128,20 +149,20 @@ function createYouTubeTool(fields = {}) {
     try {
       try {
         const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
-        return { language: 'English', transcript };
+        return parseTranscript(transcript);
       } catch (e) {
         logger.error(e);
       }
 
       try {
         const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'de' });
-        return { language: 'German', transcript };
+        return parseTranscript(transcript);
       } catch (e) {
         logger.error(e);
       }
 
       const transcript = await YoutubeTranscript.fetchTranscript(videoId);
-      return { language: 'Unknown', transcript };
+      return parseTranscript(transcript);
     } catch (error) {
       throw new Error(`Failed to fetch transcript: ${error.message}`);
     }
@@ -184,8 +205,7 @@ function createYouTubeTool(fields = {}) {
         throw new Error(`Unknown action: ${input.action}`);
       }
 
-      const result = await handler(input);
-      return JSON.stringify(result);
+      return await handler(input);
     },
     {
       name: 'youtube',
