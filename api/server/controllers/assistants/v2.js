@@ -33,11 +33,11 @@ const createAssistant = async (req, res) => {
           return tool;
         }
 
-        const loadedTools = req.app.locals.availableTools;
-        const toolDef = loadedTools[tool];
+        const toolDefinitions = req.app.locals.availableTools;
+        const toolDef = toolDefinitions[tool];
         if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
           return (
-            Object.entries(loadedTools)
+            Object.entries(toolDefinitions)
               .filter(([key]) => key.startsWith(`${tool}_`))
               // eslint-disable-next-line no-unused-vars
               .map(([_, val]) => val)
@@ -125,11 +125,11 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 
   let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {
-    const loadedTools = req.app.locals.availableTools;
-    let actualTool = typeof tool === 'string' ? loadedTools[tool] : tool;
+    const toolDefinitions = req.app.locals.availableTools;
+    let actualTool = typeof tool === 'string' ? toolDefinitions[tool] : tool;
 
     if (!actualTool && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
-      actualTool = Object.entries(loadedTools)
+      actualTool = Object.entries(toolDefinitions)
         .filter(([key]) => key.startsWith(`${tool}_`))
         // eslint-disable-next-line no-unused-vars
         .map(([_, val]) => val);

@@ -36,11 +36,11 @@ const createAssistant = async (req, res) => {
           return tool;
         }
 
-        const loadedTools = req.app.locals.availableTools;
-        const toolDef = loadedTools[tool];
+        const toolDefinitions = req.app.locals.availableTools;
+        const toolDef = toolDefinitions[tool];
         if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
           return (
-            Object.entries(loadedTools)
+            Object.entries(toolDefinitions)
               .filter(([key]) => key.startsWith(`${tool}_`))
               // eslint-disable-next-line no-unused-vars
               .map(([_, val]) => val)
@@ -141,11 +141,11 @@ const patchAssistant = async (req, res) => {
           return tool;
         }
 
-        const loadedTools = req.app.locals.availableTools;
-        const toolDef = loadedTools[tool];
+        const toolDefinitions = req.app.locals.availableTools;
+        const toolDef = toolDefinitions[tool];
         if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
           return (
-            Object.entries(loadedTools)
+            Object.entries(toolDefinitions)
               .filter(([key]) => key.startsWith(`${tool}_`))
               // eslint-disable-next-line no-unused-vars
               .map(([_, val]) => val)
