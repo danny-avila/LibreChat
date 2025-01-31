@@ -240,6 +240,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return modelLabel;
     } else if (model && /\bo1\b/i.test(model)) {
       return 'o1';
+    } else if (model && /\bo3\b/i.test(model)) {
+      return 'o3';
     } else if (model && model.includes('gpt-3')) {
       return 'GPT-3.5';
     } else if (model && model.includes('gpt-4o')) {
