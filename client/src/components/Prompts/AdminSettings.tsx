@@ -140,9 +140,9 @@ const AdminSettings = () => {
     <OGDialog>
       <OGDialogTrigger asChild>
         <Button
-          size={'sm'}
-          variant={'outline'}
-          className="h-10 w-fit gap-1 border transition-all dark:bg-transparent"
+          size='sm'
+          variant='outline'
+          className="h-10 w-fit gap-1 border transition-all dark:bg-transparent dark:hover:bg-surface-tertiary"
         >
           <ShieldEllipsis className="cursor-pointer" />
           <span className="hidden sm:flex">{localize('com_ui_admin')}</span>

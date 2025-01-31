@@ -4,9 +4,9 @@ import {
   Constants,
   QueryKeys,
   ContentTypes,
+  EModelEndpoint,
   parseCompactConvo,
   isAssistantsEndpoint,
-  EModelEndpoint,
 } from 'librechat-data-provider';
 import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
@@ -29,6 +29,15 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
   logger.dir(request);
   logger.log('=====================================');
+};
+
+const usesContentStream = (endpoint: EModelEndpoint | undefined, endpointType?: string) => {
+  if (endpointType === EModelEndpoint.custom) {
+    return true;
+  }
+  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
+    return true;
+  }
 };
 
 export default function useChatFunctions({
@@ -219,7 +228,8 @@ export default function useChatFunctions({
       unfinished: false,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
-      iconURL: convo.iconURL,
+      iconURL: convo?.iconURL,
+      model: convo?.model,
       error: false,
     };
 
@@ -246,6 +256,17 @@ export default function useChatFunctions({
         },
       ];
       setShowStopButton(true);
+    } else if (usesContentStream(endpoint, endpointType)) {
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+      setShowStopButton(true);
     } else {
       setShowStopButton(true);
     }
@@ -254,6 +275,7 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,

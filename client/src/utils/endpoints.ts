@@ -7,7 +7,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import type { LocalizeFunction } from '~/common';
+import type { LocalizeFunction, IconsRecord } from '~/common';
 
 export const getEntityName = ({
   name = '',
@@ -204,9 +204,9 @@ export function getIconEndpoint({
   iconURL,
   endpoint,
 }: {
-  endpointsConfig: t.TEndpointsConfig | undefined;
-  iconURL: string | undefined;
-  endpoint: string | null | undefined;
+  endpointsConfig?: t.TEndpointsConfig;
+  iconURL?: string | null;
+  endpoint?: string | null;
 }) {
   return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
 }
@@ -219,10 +219,10 @@ export function getIconKey({
   endpointIconURL: iconURL,
 }: {
   endpoint?: string | null;
-  endpointsConfig?: t.TEndpointsConfig | undefined;
+  endpointsConfig?: t.TEndpointsConfig;
   endpointType?: string | null;
   endpointIconURL?: string;
-}) {
+}): keyof IconsRecord {
   const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type') ?? '';
   const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL') ?? '';
   if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {

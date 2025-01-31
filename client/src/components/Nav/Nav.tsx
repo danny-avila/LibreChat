@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useParams } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
@@ -8,10 +7,8 @@ import {
   useHasAccess,
   useMediaQuery,
   useAuthContext,
-  useConversation,
   useLocalStorage,
   useNavScrolling,
-  useConversations,
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
@@ -33,7 +30,6 @@ const Nav = ({
   setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
   const localize = useLocalize();
-  const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
 
   const [navWidth, setNavWidth] = useState('260px');
@@ -67,11 +63,9 @@ const Nav = ({
     }
   }, [isSmallScreen]);
 
-  const { newConversation } = useConversation();
   const [showLoading, setShowLoading] = useState(false);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
 
-  const { refreshConversations } = useConversations();
   const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
   const [tags, setTags] = useState<string[]>([]);
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
@@ -103,14 +97,6 @@ const Nav = ({
       [],
     [data, searchQuery, searchQueryRes?.data],
   );
-
-  const clearSearch = () => {
-    setPageNumber(1);
-    refreshConversations();
-    if (conversationId == 'search') {
-      newConversation();
-    }
-  };
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => {
@@ -174,7 +160,10 @@ const Nav = ({
                       subHeaders={
                         <>
                           {isSearchEnabled === true && (
-                            <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
+                            <SearchBar
+                              setPageNumber={setPageNumber}
+                              isSmallScreen={isSmallScreen}
+                            />
                           )}
                           {hasAccessToBookmarks === true && (
                             <>

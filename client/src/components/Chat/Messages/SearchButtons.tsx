@@ -8,33 +8,34 @@ export default function SearchButtons({ message }: { message: TMessage }) {
   const localize = useLocalize();
   const { searchQueryRes } = useSearchContext();
   const { navigateWithLastTools } = useNavigateToConvo();
+  const conversationId = message.conversationId ?? '';
 
-  if (!message.conversationId) {
+  if (!conversationId) {
     return null;
   }
 
-  const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
+  const clickHandler = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
-    const conversation = getConversationById(searchQueryRes?.data, message.conversationId);
+    const conversation = getConversationById(searchQueryRes?.data, conversationId);
     if (!conversation) {
       return;
     }
 
     document.title = message.title ?? '';
-    navigateWithLastTools(conversation);
+    navigateWithLastTools(conversation, true, true);
   };
 
   return (
-    <div className="visible mt-0 flex items-center justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      <a
-        className="ml-0 flex cursor-pointer items-center gap-1.5 rounded-md p-1 text-xs hover:text-gray-900 hover:underline dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
+    <div className="visible mt-0 flex items-center justify-center gap-1 self-end text-text-secondary lg:justify-start">
+      <button
+        className="ml-0 flex cursor-pointer items-center gap-1.5 rounded-md p-1 text-xs hover:text-text-primary hover:underline"
         onClick={clickHandler}
         title={localize('com_ui_go_to_conversation')}
       >
         <Link className="icon-sm" />
         {message.title}
-      </a>
+      </button>
     </div>
   );
 }

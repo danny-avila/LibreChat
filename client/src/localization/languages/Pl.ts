@@ -32,7 +32,6 @@ export default {
     'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
   com_ui_share: 'Udostępnij',
   com_ui_copy_link: 'Skopiuj link',
-  com_ui_update_link: 'Zaktualizuj link',
   com_ui_create_link: 'Utwórz link',
   com_ui_share_link_to_chat: 'Udostępnij link w czacie',
   com_ui_share_error: 'Wystąpił błąd podczas udostępniania linku do czatu',

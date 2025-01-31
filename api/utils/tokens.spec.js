@@ -385,8 +385,15 @@ describe('Meta Models Tests', () => {
     });
 
     test('should match Deepseek model variations', () => {
-      expect(getModelMaxTokens('deepseek-chat')).toBe(127500);
-      expect(getModelMaxTokens('deepseek-coder')).toBe(127500);
+      expect(getModelMaxTokens('deepseek-chat')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+      );
+      expect(getModelMaxTokens('deepseek-coder')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+      );
+      expect(getModelMaxTokens('deepseek-reasoner')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek-reasoner'],
+      );
     });
   });
 

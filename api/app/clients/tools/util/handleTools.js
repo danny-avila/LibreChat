@@ -15,6 +15,7 @@ const {
   StructuredWolfram,
   TavilySearchResults,
   YouTubeTool,
+  OpenWeather,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -180,6 +181,7 @@ const loadTools = async ({
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
     youtube: YouTubeTool,
+    open_weather: OpenWeather,
   };
 
   const customConstructors = {

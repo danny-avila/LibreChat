@@ -291,7 +291,6 @@ export default {
   com_ui_share_var: '{0} を共有',
   com_ui_enter_var: '{0} を入力',
   com_ui_copy_link: 'リンクをコピー',
-  com_ui_update_link: 'リンクを更新する',
   com_ui_create_link: 'リンクを作成する',
   com_ui_share_to_all_users: '全ユーザーと共有',
   com_ui_my_prompts: 'マイ プロンプト',
@@ -909,7 +908,8 @@ export default {
   com_ui_page: 'ページ',
   com_ui_bookmarks_edit: 'ブックマークを編集',
   com_endpoint_ai: 'AI',
-  com_endpoint_message_new: 'メッセージ {0} または「@」を入力してAIを切り替え',
   com_nav_maximize_chat_space: 'チャット画面を最大化',
   com_ui_collapse_chat: 'チャットを折りたたむ',
+  com_endpoint_message_new: 'メッセージ {0}',
+  com_ui_speech_while_submitting: '応答の生成中は音声を送信できません',
 };

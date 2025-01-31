@@ -1,17 +1,6 @@
 import type { TPreset, TPlugin } from 'librechat-data-provider';
 import { EModelEndpoint } from 'librechat-data-provider';
 
-export const getPresetIcon = (preset: TPreset, Icon) => {
-  return Icon({
-    size: 20,
-    endpoint: preset?.endpoint,
-    model: preset?.model,
-    error: false,
-    className: 'icon-md',
-    isCreatedByUser: false,
-  });
-};
-
 type TEndpoints = Array<string | EModelEndpoint>;
 
 export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
@@ -23,11 +12,9 @@ export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
     promptPrefix,
     chatGptLabel,
     modelLabel,
-    jailbreak,
-    toneStyle,
   } = preset;
+  const modelInfo = model ?? '';
   let title = '';
-  let modelInfo = model || '';
   let label = '';
 
   const usesChatGPTLabel: TEndpoints = [
@@ -37,24 +24,27 @@ export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
   ];
   const usesModelLabel: TEndpoints = [EModelEndpoint.google, EModelEndpoint.anthropic];
 
-  if (endpoint && usesChatGPTLabel.includes(endpoint)) {
-    label = chatGptLabel || '';
-  } else if (endpoint && usesModelLabel.includes(endpoint)) {
-    label = modelLabel || '';
-  } else if (endpoint === EModelEndpoint.bingAI) {
-    modelInfo = jailbreak ? 'Sydney' : modelInfo;
-    label = toneStyle ? `: ${toneStyle}` : '';
+  if (endpoint != null && endpoint && usesChatGPTLabel.includes(endpoint)) {
+    label = chatGptLabel ?? '';
+  } else if (endpoint != null && endpoint && usesModelLabel.includes(endpoint)) {
+    label = modelLabel ?? '';
   }
-
-  if (label && presetTitle && label.toLowerCase().includes(presetTitle.toLowerCase())) {
+  if (
+    label &&
+    presetTitle != null &&
+    presetTitle &&
+    label.toLowerCase().includes(presetTitle.toLowerCase())
+  ) {
     title = label + ': ';
     label = '';
-  } else if (presetTitle && presetTitle.trim() !== 'New Chat') {
+  } else if (presetTitle != null && presetTitle && presetTitle.trim() !== 'New Chat') {
     title = presetTitle + ': ';
   }
 
-  if (mention) {
-    return `${modelInfo}${label ? ` | ${label}` : ''}${promptPrefix ? ` | ${promptPrefix}` : ''}${
+  if (mention === true) {
+    return `${modelInfo}${label ? ` | ${label}` : ''}${
+      promptPrefix != null && promptPrefix ? ` | ${promptPrefix}` : ''
+    }${
       tools
         ? ` | ${tools
           .map((tool: TPlugin | string) => {
@@ -74,7 +64,7 @@ export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
 /** Remove unavailable tools from the preset */
 export const removeUnavailableTools = (
   preset: TPreset,
-  availableTools: Record<string, TPlugin>,
+  availableTools: Record<string, TPlugin | undefined>,
 ) => {
   const newPreset = { ...preset };
 

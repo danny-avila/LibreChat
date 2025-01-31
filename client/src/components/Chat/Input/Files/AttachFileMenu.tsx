@@ -11,15 +11,15 @@ import { cn } from '~/utils';
 interface AttachFileProps {
   isRTL: boolean;
   disabled?: boolean | null;
-  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  setToolResource?: React.Dispatch<React.SetStateAction<string | undefined>>;
+  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>, toolResource?: string) => void;
 }
 
-const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: AttachFileProps) => {
+const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const capabilities = useMemo(
@@ -42,7 +42,7 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
       {
         label: localize('com_ui_upload_image_input'),
         onClick: () => {
-          setToolResource?.(undefined);
+          setToolResource(undefined);
           handleUploadClick(true);
         },
         icon: <ImageUpIcon className="icon-md" />,
@@ -53,7 +53,7 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
       items.push({
         label: localize('com_ui_upload_file_search'),
         onClick: () => {
-          setToolResource?.(EToolResources.file_search);
+          setToolResource(EToolResources.file_search);
           handleUploadClick();
         },
         icon: <FileSearch className="icon-md" />,
@@ -64,7 +64,7 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
       items.push({
         label: localize('com_ui_upload_code_files'),
         onClick: () => {
-          setToolResource?.(EToolResources.execute_code);
+          setToolResource(EToolResources.execute_code);
           handleUploadClick();
         },
         icon: <TerminalSquareIcon className="icon-md" />,
@@ -98,7 +98,12 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
   );
 
   return (
-    <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
+    <FileUpload
+      ref={inputRef}
+      handleFileChange={(e) => {
+        handleFileChange(e, toolResource);
+      }}
+    >
       <div className="relative select-none">
         <DropdownPopup
           menuId="attach-file-menu"

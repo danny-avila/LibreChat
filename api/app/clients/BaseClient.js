@@ -4,16 +4,15 @@ const {
   supportsBalanceCheck,
   isAgentsEndpoint,
   isParamEndpoint,
+  EModelEndpoint,
   ErrorTypes,
   Constants,
-  CacheKeys,
-  Time,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
+const { truncateToolCallOutputs } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
-const { getLogStores } = require('~/cache');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -52,6 +51,12 @@ class BaseClient {
     this.outputTokensKey = 'completion_tokens';
     /** @type {Set<string>} */
     this.savedMessageIds = new Set();
+    /**
+     * Flag to determine if the client re-submitted the latest assistant message.
+     * @type {boolean | undefined} */
+    this.continued;
+    /** @type {TMessage[]} */
+    this.currentMessages = [];
   }
 
   setOptions() {
@@ -95,7 +100,7 @@ class BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse(responseMessage) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', responseMessage);
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', responseMessage);
   }
 
   /**
@@ -106,7 +111,7 @@ class BaseClient {
    * @returns {Promise<void>}
    */
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       promptTokens,
       completionTokens,
     });
@@ -262,17 +267,24 @@ class BaseClient {
   /**
    * Adds instructions to the messages array. If the instructions object is empty or undefined,
    * the original messages array is returned. Otherwise, the instructions are added to the messages
-   * array, preserving the last message at the end.
+   * array either at the beginning (default) or preserving the last message at the end.
    *
    * @param {Array} messages - An array of messages.
    * @param {Object} instructions - An object containing instructions to be added to the messages.
+   * @param {boolean} [beforeLast=false] - If true, adds instructions before the last message; if false, adds at the beginning.
    * @returns {Array} An array containing messages and instructions, or the original messages if instructions are empty.
    */
-  addInstructions(messages, instructions) {
-    const payload = [];
+  addInstructions(messages, instructions, beforeLast = false) {
     if (!instructions || Object.keys(instructions).length === 0) {
       return messages;
     }
+
+    if (!beforeLast) {
+      return [instructions, ...messages];
+    }
+
+    // Legacy behavior: add instructions before the last message
+    const payload = [];
     if (messages.length > 1) {
       payload.push(...messages.slice(0, -1));
     }
@@ -287,6 +299,9 @@ class BaseClient {
   }
 
   async handleTokenCountMap(tokenCountMap) {
+    if (this.clientName === EModelEndpoint.agents) {
+      return;
+    }
     if (this.currentMessages.length === 0) {
       return;
     }
@@ -335,25 +350,38 @@ class BaseClient {
    * If the token limit would be exceeded by adding a message, that message is not added to the context and remains in the original array.
    * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the context array at the end to maintain the original order of the messages.
    *
-   * @param {Array} _messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
-   * @param {number} [maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
-   * @returns {Object} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
+   * @param {Object} params
+   * @param {TMessage[]} params.messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @param {number} [params.maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
+   * @param {{ role: 'system', content: text, tokenCount: number }} [params.instructions] - Instructions already added to the context at index 0.
+   * @returns {Promise<{
+   *  context: TMessage[],
+   *  remainingContextTokens: number,
+   *  messagesToRefine: TMessage[],
+   *  summaryIndex: number,
+   * }>} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
    *    `summaryIndex` is the index of the first message in the `messagesToRefine` array.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
-  async getMessagesWithinTokenLimit(_messages, maxContextTokens) {
+  async getMessagesWithinTokenLimit({ messages: _messages, maxContextTokens, instructions }) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
-    let currentTokenCount = 3;
     let summaryIndex = -1;
-    let remainingContextTokens = maxContextTokens ?? this.maxContextTokens;
+    let currentTokenCount = 3;
+    const instructionsTokenCount = instructions?.tokenCount ?? 0;
+    let remainingContextTokens =
+      (maxContextTokens ?? this.maxContextTokens) - instructionsTokenCount;
     const messages = [..._messages];
 
     const context = [];
+
     if (currentTokenCount < remainingContextTokens) {
       while (messages.length > 0 && currentTokenCount < remainingContextTokens) {
+        if (messages.length === 1 && instructions) {
+          break;
+        }
         const poppedMessage = messages.pop();
         const { tokenCount } = poppedMessage;
 
@@ -365,6 +393,11 @@ class BaseClient {
           break;
         }
       }
+    }
+
+    if (instructions) {
+      context.push(_messages[0]);
+      messages.shift();
     }
 
     const prunedMemory = messages;
@@ -391,12 +424,38 @@ class BaseClient {
     if (instructions) {
       ({ tokenCount, ..._instructions } = instructions);
     }
+
     _instructions && logger.debug('[BaseClient] instructions tokenCount: ' + tokenCount);
-    let payload = this.addInstructions(formattedMessages, _instructions);
+    if (tokenCount && tokenCount > this.maxContextTokens) {
+      const info = `${tokenCount} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(`Instructions token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
+    }
+
+    if (this.clientName === EModelEndpoint.agents) {
+      const { dbMessages, editedIndices } = truncateToolCallOutputs(
+        orderedMessages,
+        this.maxContextTokens,
+        this.getTokenCountForMessage.bind(this),
+      );
+
+      if (editedIndices.length > 0) {
+        logger.debug('[BaseClient] Truncated tool call outputs:', editedIndices);
+        for (const index of editedIndices) {
+          formattedMessages[index].content = dbMessages[index].content;
+        }
+        orderedMessages = dbMessages;
+      }
+    }
+
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
 
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
-      await this.getMessagesWithinTokenLimit(orderedWithInstructions);
+      await this.getMessagesWithinTokenLimit({
+        messages: orderedWithInstructions,
+        instructions,
+      });
 
     logger.debug('[BaseClient] Context Count (1/2)', {
       remainingContextTokens,
@@ -408,7 +467,9 @@ class BaseClient {
     let { shouldSummarize } = this;
 
     // Calculate the difference in length to determine how many messages were discarded if any
-    const { length } = payload;
+    let payload;
+    let { length } = formattedMessages;
+    length += instructions != null ? 1 : 0;
     const diff = length - context.length;
     const firstMessage = orderedWithInstructions[0];
     const usePrevSummary =
@@ -418,17 +479,30 @@ class BaseClient {
       this.previous_summary.messageId === firstMessage.messageId;
 
     if (diff > 0) {
-      payload = payload.slice(diff);
+      payload = formattedMessages.slice(diff);
       logger.debug(
         `[BaseClient] Difference between original payload (${length}) and context (${context.length}): ${diff}`,
       );
     }
+
+    payload = this.addInstructions(payload ?? formattedMessages, _instructions);
 
     const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
     if (payload.length === 0 && !shouldSummarize && latestMessage) {
       const info = `${latestMessage.tokenCount} / ${this.maxContextTokens}`;
       const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
       logger.warn(`Prompt token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
+    } else if (
+      _instructions &&
+      payload.length === 1 &&
+      payload[0].content === _instructions.content
+    ) {
+      const info = `${tokenCount + 3} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(
+        `Including instructions, the prompt token count exceeds remaining max token count (${info}).`,
+      );
       throw new Error(errorMessage);
     }
 
@@ -518,6 +592,7 @@ class BaseClient {
       } else {
         latestMessage.text = generation;
       }
+      this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
     }
@@ -625,7 +700,7 @@ class BaseClient {
         await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-        completionTokens = this.getTokenCount(completion);
+        completionTokens = responseMessage.tokenCount;
       }
 
       await this.recordTokenUsage({ promptTokens, completionTokens, usage });
@@ -649,17 +724,6 @@ class BaseClient {
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     this.savedMessageIds.add(responseMessage.messageId);
-    if (responseMessage.text) {
-      const messageCache = getLogStores(CacheKeys.MESSAGES);
-      messageCache.set(
-        responseMessageId,
-        {
-          text: responseMessage.text,
-          complete: true,
-        },
-        Time.FIVE_MINUTES,
-      );
-    }
     delete responseMessage.tokenCount;
     return responseMessage;
   }

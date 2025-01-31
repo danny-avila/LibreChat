@@ -293,7 +293,6 @@ export default {
   com_ui_share_var: 'Compartilhar {0}',
   com_ui_enter_var: 'Inserir {0}',
   com_ui_copy_link: 'Copiar link',
-  com_ui_update_link: 'Atualizar link',
   com_ui_create_link: 'Criar link',
   com_ui_share_to_all_users: 'Compartilhar com todos os usuários',
   com_ui_my_prompts: 'Meus Prompts',

@@ -6,7 +6,7 @@ import {
   OGDialogHeader,
   OGDialogContent,
   OGDialogDescription,
-} from './';
+} from './OriginalDialog';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 
