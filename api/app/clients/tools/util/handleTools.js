@@ -5,6 +5,7 @@ const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
+  manifestToolMap,
   // Basic Tools
   GoogleSearchAPI,
   // Structured Tools
@@ -147,12 +148,13 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
   };
 };
 
-/** @type {Record<string, string[] | undefined>} */
-const toolAuthFields = {};
-
-availableTools.forEach((tool) => {
-  toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
-});
+/**
+ * @param {string} toolKey
+ * @returns {Array<string>}
+ */
+const getAuthFields = (toolKey) => {
+  return manifestToolMap[toolKey]?.authConfig.map((auth) => auth.authField) ?? [];
+};
 
 /**
  *
@@ -192,7 +194,8 @@ const loadTools = async ({
 
   const customConstructors = {
     serpapi: async () => {
-      let envVar = toolAuthFields['serpapi'][0] ?? '';
+      const authFields = getAuthFields('serpapi');
+      let envVar = authFields[0] ?? '';
       let apiKey = process.env[envVar];
       if (!apiKey) {
         apiKey = await getUserPluginAuthValue(user, envVar);
@@ -204,7 +207,7 @@ const loadTools = async ({
       });
     },
     youtube: async () => {
-      const authFields = toolAuthFields['youtube'];
+      const authFields = getAuthFields('youtube');
       const authValues = await loadAuthValues({ userId: user, authFields });
       return createYouTubeTools(authValues);
     },
@@ -286,7 +289,7 @@ const loadTools = async ({
       const options = toolOptions[tool] || {};
       const toolInstance = loadToolWithAuth(
         user,
-        toolAuthFields[tool],
+        getAuthFields(tool),
         toolConstructors[tool],
         options,
       );

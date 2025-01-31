@@ -11,8 +11,16 @@ const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 
+/** @type {Record<string, TPlugin | undefined>} */
+const manifestToolMap = {};
+
+availableTools.forEach((tool) => {
+  manifestToolMap[tool.pluginKey] = tool;
+});
+
 module.exports = {
   availableTools,
+  manifestToolMap,
   // Structured Tools
   DALLE3,
   OpenWeather,
