@@ -18,8 +18,8 @@ const {
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { getEndpointsConfig } = require('~/server/services/Config');
+const { createYouTubeTools } = require('~/app/clients/tools');
 const { recordUsage } = require('~/server/services/Threads');
-const { createYouTubeTool } = require('~/app/clients/tools');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
@@ -98,7 +98,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   }
 
   /** Basic Tools; schema: { input: string } */
-  const basicToolInstances = [new Calculator(), createYouTubeTool({ override: true })];
+  const basicToolInstances = [new Calculator(), ...createYouTubeTools({ override: true })];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
     tools.push(formattedTool);

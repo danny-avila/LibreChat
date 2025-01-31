@@ -14,7 +14,7 @@ const {
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
-  createYouTubeTool,
+  createYouTubeTools,
   TavilySearchResults,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -206,7 +206,7 @@ const loadTools = async ({
     youtube: async () => {
       const authFields = toolAuthFields['youtube'];
       const authValues = await loadAuthValues({ userId: user, authFields });
-      return createYouTubeTool(authValues);
+      return createYouTubeTools(authValues);
     },
   };
 

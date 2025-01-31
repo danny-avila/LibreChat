@@ -126,8 +126,12 @@ const getAvailableTools = async (req, res) => {
       }
     });
 
+    const availableTools = req.app.locals.availableTools;
     const tools = authenticatedPlugins.filter(
-      (plugin) => req.app.locals.availableTools[plugin.pluginKey] !== undefined,
+      (plugin) =>
+        availableTools[plugin.pluginKey] !== undefined ||
+        (plugin.toolkit === true &&
+          Object.keys(availableTools).some((key) => key.startsWith(`${plugin.pluginKey}_`))),
     );
 
     await cache.set(CacheKeys.TOOLS, tools);

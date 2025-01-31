@@ -33,6 +33,7 @@
   {
     "name": "YouTube",
     "pluginKey": "youtube",
+    "toolkit": true,
     "description": "Get YouTube video information, retrieve comments, analyze transcripts and search for videos.",
     "icon": "https://www.youtube.com/s/desktop/7449ebf7/img/favicon_144x144.png",
     "authConfig": [
