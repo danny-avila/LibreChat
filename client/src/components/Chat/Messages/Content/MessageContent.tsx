@@ -1,9 +1,9 @@
-import { Fragment, Suspense, useMemo } from 'react';
+import { memo, Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessage, TResPlugin } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
-import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
+import Thinking from '~/components/Artifacts/Thinking';
 import { DelayedRender } from '~/components/ui';
 import { useChatContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -56,6 +56,8 @@ export const ErrorMessage = ({
   return (
     <Container message={message}>
       <div
+        role="alert"
+        aria-live="assertive"
         className={cn(
           'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
           className,
@@ -115,7 +117,6 @@ export const UnfinishedMessage = ({ message }: { message: TMessage }) => (
   />
 );
 
-// Content Component
 const MessageContent = ({
   text,
   edit,
@@ -125,72 +126,49 @@ const MessageContent = ({
   isLast,
   ...props
 }: TMessageContentProps) => {
+  const { message } = props;
+  const { messageId } = message;
+
+  const { thinkingContent, regularContent } = useMemo(() => {
+    const thinkingMatch = text.match(/:::thinking([\s\S]*?):::/);
+    return {
+      thinkingContent: thinkingMatch ? thinkingMatch[1].trim() : '',
+      regularContent: thinkingMatch ? text.replace(/:::thinking[\s\S]*?:::/, '').trim() : text,
+    };
+  }, [text]);
+
+  const showRegularCursor = useMemo(() => isLast && isSubmitting, [isLast, isSubmitting]);
+
+  const unfinishedMessage = useMemo(
+    () =>
+      !isSubmitting && unfinished ? (
+        <Suspense>
+          <DelayedRender delay={250}>
+            <UnfinishedMessage message={message} />
+          </DelayedRender>
+        </Suspense>
+      ) : null,
+    [isSubmitting, unfinished, message],
+  );
+
   if (error) {
     return <ErrorMessage message={props.message} text={text} />;
   } else if (edit) {
     return <EditMessage text={text} isSubmitting={isSubmitting} {...props} />;
-  } else {
-    const marker = ':::plugin:::\n';
-    const splitText = text.split(marker);
-    const { message } = props;
-    const { plugins, messageId } = message;
-    const displayedIndices = new Set<number>();
-    // Function to get the next non-empty text index
-    const getNextNonEmptyTextIndex = (currentIndex: number) => {
-      for (let i = currentIndex + 1; i < splitText.length; i++) {
-        // Allow the last index to be last in case it has text
-        // this may need to change if I add back streaming
-        if (i === splitText.length - 1) {
-          return currentIndex;
-        }
-
-        if (splitText[i].trim() !== '' && !displayedIndices.has(i)) {
-          return i;
-        }
-      }
-      return currentIndex; // If no non-empty text is found, return the current index
-    };
-
-    return splitText.map((text, idx) => {
-      let currentText = text.trim();
-      let plugin: TResPlugin | null = null;
-
-      if (plugins) {
-        plugin = plugins[idx];
-      }
-
-      // If the current text is empty, get the next non-empty text index
-      const displayTextIndex = currentText === '' ? getNextNonEmptyTextIndex(idx) : idx;
-      currentText = splitText[displayTextIndex];
-      const isLastIndex = displayTextIndex === splitText.length - 1;
-      const isEmpty = currentText.trim() === '';
-      const showText =
-        (currentText && !isEmpty && !displayedIndices.has(displayTextIndex)) ||
-        (isEmpty && isLastIndex);
-      displayedIndices.add(displayTextIndex);
-
-      return (
-        <Fragment key={idx}>
-          {plugin && <Plugin key={`plugin-${messageId}-${idx}`} plugin={plugin} />}
-          {showText ? (
-            <DisplayMessage
-              key={`display-${messageId}-${idx}`}
-              showCursor={isLastIndex && isLast && isSubmitting}
-              text={currentText}
-              {...props}
-            />
-          ) : null}
-          {!isSubmitting && unfinished && (
-            <Suspense>
-              <DelayedRender delay={250}>
-                <UnfinishedMessage message={message} key={`unfinished-${messageId}-${idx}`} />
-              </DelayedRender>
-            </Suspense>
-          )}
-        </Fragment>
-      );
-    });
   }
+
+  return (
+    <>
+      {thinkingContent && <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>}
+      <DisplayMessage
+        key={`display-${messageId}`}
+        showCursor={showRegularCursor}
+        text={regularContent}
+        {...props}
+      />
+      {unfinishedMessage}
+    </>
+  );
 };
 
-export default MessageContent;
+export default memo(MessageContent);

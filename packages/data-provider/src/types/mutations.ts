@@ -1,6 +1,7 @@
 import * as types from '../types';
 import * as r from '../roles';
 import {
+  Tools,
   Assistant,
   AssistantCreateParams,
   AssistantUpdateParams,
@@ -23,6 +24,12 @@ export type MutationOptions<
   onSuccess?: (data: Response, variables: Request, context?: Context) => void;
   onMutate?: (variables: Request) => Snapshot | Promise<Snapshot>;
   onError?: (error: Error, variables: Request, context?: Context, snapshot?: Snapshot) => void;
+  onSettled?: (
+    data: Response | undefined,
+    error: Error | null,
+    variables: Request,
+    context?: Context,
+  ) => void;
 };
 
 export type TGenTitleRequest = {
@@ -125,6 +132,15 @@ export type UpdateAgentVariables = {
 
 export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
 
+export type DuplicateAgentBody = {
+  agent_id: string;
+};
+
+export type DuplicateAgentMutationOptions = MutationOptions<
+  { agent: Agent; actions: Action[] },
+  Pick<DuplicateAgentBody, 'agent_id'>
+>;
+
 export type DeleteAgentBody = {
   agent_id: string;
 };
@@ -149,6 +165,11 @@ export type DeleteConversationOptions = MutationOptions<
   types.TDeleteConversationRequest
 >;
 
+export type DuplicateConvoOptions = MutationOptions<
+  types.TDuplicateConvoResponse,
+  types.TDuplicateConvoRequest
+>;
+
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
 
 export type CreateSharedLinkOptions = MutationOptions<
@@ -171,7 +192,12 @@ export type ArchiveConvoOptions = MutationOptions<
   types.TArchiveConversationRequest
 >;
 
-export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
+export type DeleteSharedLinkContext = { previousQueries?: Map<string, TDeleteSharedLinkResponse> };
+export type DeleteSharedLinkOptions = MutationOptions<
+  TDeleteSharedLinkResponse,
+  { shareId: string },
+  DeleteSharedLinkContext
+>;
 
 export type TUpdatePromptContext =
   | {
@@ -222,18 +248,29 @@ export type RegistrationOptions = MutationOptions<
   types.TError
 >;
 
-export type UpdatePromptPermVars = {
+export type UpdatePermVars<T> = {
   roleName: string;
-  updates: Partial<r.TPromptPermissions>;
+  updates: Partial<T>;
 };
 
-export type UpdatePromptPermResponse = r.TRole;
+export type UpdatePromptPermVars = UpdatePermVars<r.TPromptPermissions>;
+
+export type UpdateAgentPermVars = UpdatePermVars<r.TAgentPermissions>;
+
+export type UpdatePermResponse = r.TRole;
 
 export type UpdatePromptPermOptions = MutationOptions<
-  UpdatePromptPermResponse,
+  UpdatePermResponse,
   UpdatePromptPermVars,
   unknown,
-  types.TError
+  types.TError | null | undefined
+>;
+
+export type UpdateAgentPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateAgentPermVars,
+  unknown,
+  types.TError | null | undefined
 >;
 
 export type UpdateConversationTagOptions = MutationOptions<
@@ -251,3 +288,46 @@ export type AcceptTermsMutationOptions = MutationOptions<
 
 /* Tools */
 export type UpdatePluginAuthOptions = MutationOptions<types.TUser, types.TUpdateUserPlugins>;
+
+export type ToolParamsMap = {
+  [Tools.execute_code]: {
+    lang: string;
+    code: string;
+  };
+};
+
+export type ToolId = keyof ToolParamsMap;
+
+export type ToolParams<T extends ToolId> = ToolParamsMap[T] & {
+  messageId: string;
+  partIndex?: number;
+  blockIndex?: number;
+  conversationId: string;
+};
+export type ToolCallResponse = { result: unknown; attachments?: types.TAttachment[] };
+export type ToolCallMutationOptions<T extends ToolId> = MutationOptions<
+  ToolCallResponse,
+  ToolParams<T>
+>;
+
+export type TDeleteSharedLinkResponse = {
+  success: boolean;
+  shareId: string;
+  message: string;
+};
+
+export type TEditArtifactRequest = {
+  index: number;
+  messageId: string;
+  original: string;
+  updated: string;
+};
+
+export type TEditArtifactResponse = Pick<types.TMessage, 'content' | 'text' | 'conversationId'>;
+
+export type EditArtifactOptions = MutationOptions<
+  TEditArtifactResponse,
+  TEditArtifactRequest,
+  unknown,
+  Error
+>;

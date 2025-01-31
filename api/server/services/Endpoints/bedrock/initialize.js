@@ -5,7 +5,6 @@ const {
   getResponseSender,
 } = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
-// const { loadAgentTools } = require('~/server/services/ToolService');
 const getOptions = require('~/server/services/Endpoints/bedrock/options');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
@@ -19,8 +18,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const collectedUsage = [];
   const { contentParts, aggregateContent } = createContentAggregator();
   const eventHandlers = getDefaultHandlers({ res, aggregateContent, collectedUsage });
-
-  // const tools = [createTavilySearchTool()];
 
   /** @type {Agent} */
   const agent = {
@@ -36,8 +33,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent.instructions = `${agent.instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
   }
 
-  let modelOptions = { model: agent.model };
-
   // TODO: pass-in override settings that are specific to current run
   const options = await getOptions({
     req,
@@ -45,28 +40,35 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     endpointOption,
   });
 
-  modelOptions = Object.assign(modelOptions, options.llmConfig);
-  const maxContextTokens =
-    agent.max_context_tokens ??
-    getModelMaxTokens(modelOptions.model, providerEndpointMap[agent.provider]);
+  agent.model_parameters = Object.assign(agent.model_parameters, options.llmConfig);
+  if (options.configOptions) {
+    agent.model_parameters.configuration = options.configOptions;
+  }
 
-  const sender = getResponseSender({
-    ...endpointOption,
-    model: endpointOption.model_parameters.model,
-  });
+  const sender =
+    agent.name ??
+    getResponseSender({
+      ...endpointOption,
+      model: endpointOption.model_parameters.model,
+    });
 
   const client = new AgentClient({
     req,
     agent,
     sender,
     // tools,
-    modelOptions,
     contentParts,
     eventHandlers,
     collectedUsage,
-    maxContextTokens,
+    spec: endpointOption.spec,
+    iconURL: endpointOption.iconURL,
     endpoint: EModelEndpoint.bedrock,
-    configOptions: options.configOptions,
+    resendFiles: endpointOption.resendFiles,
+    maxContextTokens:
+      endpointOption.maxContextTokens ??
+      agent.max_context_tokens ??
+      getModelMaxTokens(agent.model_parameters.model, providerEndpointMap[agent.provider]) ??
+      4000,
     attachments: endpointOption.attachments,
   });
   return { client };

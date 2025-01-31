@@ -10,8 +10,8 @@ const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/User
 const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
+const { isUserProvided, sleep } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
 
 const { PROXY } = process.env;
@@ -123,7 +123,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     customOptions.streamRate = allConfig.streamRate;
   }
 
-  const clientOptions = {
+  let clientOptions = {
     reverseProxyUrl: baseURL ?? null,
     proxy: PROXY ?? null,
     req,
@@ -135,13 +135,24 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   if (optionsOnly) {
     const modelOptions = endpointOption.model_parameters;
     if (endpoint !== Providers.OLLAMA) {
-      const requestOptions = Object.assign(
+      clientOptions = Object.assign(
         {
           modelOptions,
         },
         clientOptions,
       );
-      return getLLMConfig(apiKey, requestOptions);
+      const options = getLLMConfig(apiKey, clientOptions);
+      if (!customOptions.streamRate) {
+        return options;
+      }
+      options.llmConfig.callbacks = [
+        {
+          handleLLMNewToken: async () => {
+            await sleep(customOptions.streamRate);
+          },
+        },
+      ];
+      return options;
     }
 
     if (clientOptions.reverseProxyUrl) {

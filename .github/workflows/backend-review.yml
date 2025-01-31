@@ -33,8 +33,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Data Provider
+      - name: Install Data Provider Package
         run: npm run build:data-provider
+
+      - name: Install MCP Package
+        run: npm run build:mcp
       
       - name: Create empty auth.json file
         run: |

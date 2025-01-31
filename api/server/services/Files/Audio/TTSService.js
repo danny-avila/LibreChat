@@ -143,9 +143,9 @@ class TTSService {
    */
   azureOpenAIProvider(ttsSchema, input, voice) {
     const url = `${genAzureEndpoint({
-      azureOpenAIApiInstanceName: ttsSchema?.instanceName,
-      azureOpenAIApiDeploymentName: ttsSchema?.deploymentName,
-    })}/audio/speech?api-version=${ttsSchema?.apiVersion}`;
+      azureOpenAIApiInstanceName: extractEnvVariable(ttsSchema?.instanceName),
+      azureOpenAIApiDeploymentName: extractEnvVariable(ttsSchema?.deploymentName),
+    })}/audio/speech?api-version=${extractEnvVariable(ttsSchema?.apiVersion)}`;
 
     if (
       ttsSchema?.voices &&
@@ -157,7 +157,7 @@ class TTSService {
     }
 
     const data = {
-      model: ttsSchema?.model,
+      model: extractEnvVariable(ttsSchema?.model),
       input,
       voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
     };
@@ -364,7 +364,7 @@ class TTSService {
       shouldContinue = false;
     });
 
-    const processChunks = createChunkProcessor(req.body.messageId);
+    const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
 
     try {
       while (shouldContinue) {

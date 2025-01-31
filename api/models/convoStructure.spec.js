@@ -220,4 +220,94 @@ describe('Conversation Structure Tests', () => {
     }
     expect(currentNode.children.length).toBe(0); // Last message should have no children
   });
+
+  test('Random order dates between parent and children messages', async () => {
+    const userId = 'testUser';
+    const conversationId = 'testConversation';
+
+    // Create messages with deliberately out-of-order timestamps but sequential creation
+    const messages = [
+      {
+        messageId: 'parent',
+        parentMessageId: null,
+        text: 'Parent Message',
+        createdAt: new Date('2023-01-01T00:00:00Z'), // Make parent earliest
+      },
+      {
+        messageId: 'child1',
+        parentMessageId: 'parent',
+        text: 'Child Message 1',
+        createdAt: new Date('2023-01-01T00:01:00Z'),
+      },
+      {
+        messageId: 'child2',
+        parentMessageId: 'parent',
+        text: 'Child Message 2',
+        createdAt: new Date('2023-01-01T00:02:00Z'),
+      },
+      {
+        messageId: 'grandchild1',
+        parentMessageId: 'child1',
+        text: 'Grandchild Message 1',
+        createdAt: new Date('2023-01-01T00:03:00Z'),
+      },
+    ];
+
+    // Add common properties to all messages
+    messages.forEach((msg) => {
+      msg.conversationId = conversationId;
+      msg.user = userId;
+      msg.isCreatedByUser = false;
+      msg.error = false;
+      msg.unfinished = false;
+    });
+
+    // Save messages with overrideTimestamp set to true
+    await bulkSaveMessages(messages, true);
+
+    // Retrieve messages
+    const retrievedMessages = await getMessages({ conversationId, user: userId });
+
+    // Debug log to see what's being returned
+    console.log(
+      'Retrieved Messages:',
+      retrievedMessages.map((msg) => ({
+        messageId: msg.messageId,
+        parentMessageId: msg.parentMessageId,
+        createdAt: msg.createdAt,
+      })),
+    );
+
+    // Build tree
+    const tree = buildTree({ messages: retrievedMessages });
+
+    // Debug log to see the tree structure
+    console.log(
+      'Tree structure:',
+      tree.map((root) => ({
+        messageId: root.messageId,
+        children: root.children.map((child) => ({
+          messageId: child.messageId,
+          children: child.children.map((grandchild) => ({
+            messageId: grandchild.messageId,
+          })),
+        })),
+      })),
+    );
+
+    // Verify the structure before making assertions
+    expect(retrievedMessages.length).toBe(4); // Should have all 4 messages
+
+    // Check if messages are properly linked
+    const parentMsg = retrievedMessages.find((msg) => msg.messageId === 'parent');
+    expect(parentMsg.parentMessageId).toBeNull(); // Parent should have null parentMessageId
+
+    const childMsg1 = retrievedMessages.find((msg) => msg.messageId === 'child1');
+    expect(childMsg1.parentMessageId).toBe('parent');
+
+    // Then check tree structure
+    expect(tree.length).toBe(1); // Should have only one root message
+    expect(tree[0].messageId).toBe('parent');
+    expect(tree[0].children.length).toBe(2); // Should have two children
+  });
 });

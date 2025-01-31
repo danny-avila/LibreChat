@@ -1,35 +1,20 @@
-import React from 'react';
+import { RefObject } from 'react';
 import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
-import type {
-  TRole,
-  TUser,
-  Agent,
-  Action,
-  TPreset,
-  TPlugin,
-  TMessage,
-  Assistant,
-  TResPlugin,
-  TLoginUser,
-  AuthTypeEnum,
-  TModelsConfig,
-  TConversation,
-  TStartupConfig,
-  EModelEndpoint,
-  TEndpointsConfig,
-  ActionMetadata,
-  AssistantDocument,
-  AssistantsEndpoint,
-  TMessageContentParts,
-  AuthorizationTypeEnum,
-  TSetOption as SetOption,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
+
+export type CodeBarProps = {
+  lang: string;
+  error?: boolean;
+  plugin?: boolean;
+  blockIndex?: number;
+  allowExecution?: boolean;
+  codeRef: RefObject<HTMLElement>;
+};
 
 export enum PromptsEditorMode {
   SIMPLE = 'simple',
@@ -65,21 +50,21 @@ export type AudioChunk = {
 export type AssistantListItem = {
   id: string;
   name: string;
-  metadata: Assistant['metadata'];
+  metadata: t.Assistant['metadata'];
   model: string;
 };
 
 export type AgentListItem = {
   id: string;
   name: string;
-  avatar: Agent['avatar'];
+  avatar: t.Agent['avatar'];
 };
 
-export type TPluginMap = Record<string, TPlugin>;
+export type TPluginMap = Record<string, t.TPlugin>;
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
-export type LastSelectedModels = Record<EModelEndpoint, string>;
+export type LastSelectedModels = Record<t.EModelEndpoint, string>;
 
 export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
 
@@ -106,7 +91,14 @@ export type IconMapProps = {
   size?: number;
 };
 
-export type AgentIconMapProps = IconMapProps & { agentName: string };
+export type IconComponent = React.ComponentType<IconMapProps>;
+export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
+export type IconComponentTypes = IconComponent | AgentIconComponent;
+export type IconsRecord = {
+  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
+};
+
+export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
   title: string;
@@ -145,11 +137,11 @@ export type FileSetter =
 
 export type ActionAuthForm = {
   /* General */
-  type: AuthTypeEnum;
+  type: t.AuthTypeEnum;
   saved_auth_fields: boolean;
   /* API key */
   api_key: string; // not nested
-  authorization_type: AuthorizationTypeEnum;
+  authorization_type: t.AuthorizationTypeEnum;
   custom_auth_header: string;
   /* OAuth */
   oauth_client_id: string; // not nested
@@ -157,23 +149,23 @@ export type ActionAuthForm = {
   authorization_url: string;
   client_url: string;
   scope: string;
-  token_exchange_method: TokenExchangeMethodEnum;
+  token_exchange_method: t.TokenExchangeMethodEnum;
 };
 
-export type ActionWithNullableMetadata = Omit<Action, 'metadata'> & {
-  metadata: ActionMetadata | null;
+export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
+  metadata: t.ActionMetadata | null;
 };
 
 export type AssistantPanelProps = {
   index?: number;
   action?: ActionWithNullableMetadata;
-  actions?: Action[];
+  actions?: t.Action[];
   assistant_id?: string;
   activePanel?: string;
-  endpoint: AssistantsEndpoint;
+  endpoint: t.AssistantsEndpoint;
   version: number | string;
-  documentsMap: Map<string, AssistantDocument> | null;
-  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
+  documentsMap: Map<string, t.AssistantDocument> | null;
+  setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
@@ -182,24 +174,25 @@ export type AgentPanelProps = {
   index?: number;
   agent_id?: string;
   activePanel?: string;
-  action?: Action;
-  actions?: Action[];
+  action?: t.Action;
+  actions?: t.Action[];
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
-  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
-  endpointsConfig?: TEndpointsConfig;
+  setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
+  endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  agentsConfig?: t.TAgentsEndpoint | null;
 };
 
 export type AgentModelPanelProps = {
-  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
-  providers: Option[];
-  models: Record<string, string[]>;
   agent_id?: string;
+  providers: Option[];
+  models: Record<string, string[] | undefined>;
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
 
-export type TSetOption = SetOption;
+export type TSetOption = t.TSetOption;
 
 export type TSetExample = (
   i: number,
@@ -234,7 +227,7 @@ export type TShowToast = {
 };
 
 export type TBaseSettingsProps = {
-  conversation: TConversation | TPreset | null;
+  conversation: t.TConversation | t.TPreset | null;
   className?: string;
   isPreset?: boolean;
   readonly?: boolean;
@@ -255,7 +248,7 @@ export type TModelSelectProps = TSettingsProps & TModels;
 export type TEditPresetProps = {
   open: boolean;
   onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
-  preset: TPreset;
+  preset: t.TPreset;
   title?: string;
 };
 
@@ -266,18 +259,18 @@ export type TSetOptionsPayload = {
   addExample: () => void;
   removeExample: () => void;
   setAgentOption: TSetOption;
-  // getConversation: () => TConversation | TPreset | null;
+  // getConversation: () => t.TConversation | t.TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string, remove?: boolean) => void;
   setOptions?: TSetOptions;
 };
 
 export type TPresetItemProps = {
-  preset: TPreset;
-  value: TPreset;
-  onSelect: (preset: TPreset) => void;
-  onChangePreset: (preset: TPreset) => void;
-  onDeletePreset: (preset: TPreset) => void;
+  preset: t.TPreset;
+  value: t.TPreset;
+  onSelect: (preset: t.TPreset) => void;
+  onChangePreset: (preset: t.TPreset) => void;
+  onDeletePreset: (preset: t.TPreset) => void;
 };
 
 export type TOnClick = (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -293,6 +286,7 @@ export type TAskProps = {
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  clientTimestamp?: string;
 };
 
 export type TOptions = {
@@ -302,16 +296,16 @@ export type TOptions = {
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
-  overrideMessages?: TMessage[];
+  overrideMessages?: t.TMessage[];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
 
 export type TMessageProps = {
-  conversation?: TConversation | null;
+  conversation?: t.TConversation | null;
   messageId?: string | null;
-  message?: TMessage;
-  messagesTree?: TMessage[];
+  message?: t.TMessage;
+  messagesTree?: t.TMessage[];
   currentEditId: string | number | null;
   isSearchView?: boolean;
   siblingIdx?: number;
@@ -319,6 +313,12 @@ export type TMessageProps = {
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
+
+export type TMessageIcon = { endpoint?: string | null; isCreatedByUser?: boolean } & Pick<
+  t.TConversation,
+  'modelLabel'
+> &
+  Pick<t.TMessage, 'model' | 'iconURL'>;
 
 export type TInitialProps = {
   text: string;
@@ -330,7 +330,7 @@ export type TInitialProps = {
 };
 export type TAdditionalProps = {
   ask: TAskFunction;
-  message: TMessage;
+  message: t.TMessage;
   isCreatedByUser: boolean;
   siblingIdx: number;
   enterEdit: (cancel: boolean) => void;
@@ -354,7 +354,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: EModelEndpoint | string;
+  endpoint: t.EModelEndpoint | string;
 };
 
 export type TDangerButtonProps = {
@@ -389,18 +389,18 @@ export type TResError = {
 };
 
 export type TAuthContext = {
-  user: TUser | undefined;
+  user: t.TUser | undefined;
   token: string | undefined;
   isAuthenticated: boolean;
   error: string | undefined;
-  login: (data: TLoginUser) => void;
+  login: (data: t.TLoginUser) => void;
   logout: () => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
-  roles?: Record<string, TRole | null | undefined>;
+  roles?: Record<string, t.TRole | null | undefined>;
 };
 
 export type TUserContext = {
-  user?: TUser | undefined;
+  user?: t.TUser | undefined;
   token: string | undefined;
   isAuthenticated: boolean;
   redirect?: string;
@@ -411,16 +411,16 @@ export type TAuthConfig = {
   test?: boolean;
 };
 
-export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
-  Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
+export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
+  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
     iconURL?: string;
     message?: boolean;
     className?: string;
     iconClassName?: string;
-    endpoint?: EModelEndpoint | string | null;
-    endpointType?: EModelEndpoint | null;
+    endpoint?: t.EModelEndpoint | string | null;
+    endpointType?: t.EModelEndpoint | null;
     assistantName?: string;
     agentName?: string;
     error?: boolean;
@@ -440,7 +440,7 @@ export type VoiceOption = {
 
 export type TMessageAudio = {
   messageId?: string;
-  content?: TMessageContentParts[] | string;
+  content?: t.TMessageContentParts[] | string;
   className?: string;
   isLast: boolean;
   index: number;
@@ -477,17 +477,18 @@ export interface ExtendedFile {
   source?: FileSources;
   attached?: boolean;
   embedded?: boolean;
+  tool_resource?: string;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
 
 export interface SwitcherProps {
-  endpoint?: EModelEndpoint | null;
+  endpoint?: t.EModelEndpoint | null;
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
 export type TLoginLayoutContext = {
-  startupConfig: TStartupConfig | null;
+  startupConfig: t.TStartupConfig | null;
   startupConfigError: unknown;
   isFetching: boolean;
   error: string | null;
@@ -497,34 +498,34 @@ export type TLoginLayoutContext = {
 };
 
 export type NewConversationParams = {
-  template?: Partial<TConversation>;
-  preset?: Partial<TPreset>;
-  modelsData?: TModelsConfig;
+  template?: Partial<t.TConversation>;
+  preset?: Partial<t.TPreset>;
+  modelsData?: t.TModelsConfig;
   buildDefault?: boolean;
   keepLatestMessage?: boolean;
   keepAddedConvos?: boolean;
 };
 
-export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
+export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;
 
 export type TBaseResData = {
-  plugin?: TResPlugin;
+  plugin?: t.TResPlugin;
   final?: boolean;
   initial?: boolean;
-  previousMessages?: TMessage[];
-  conversation: TConversation;
+  previousMessages?: t.TMessage[];
+  conversation: t.TConversation;
   conversationId?: string;
-  runMessages?: TMessage[];
+  runMessages?: t.TMessage[];
 };
 
 export type TResData = TBaseResData & {
-  requestMessage: TMessage;
-  responseMessage: TMessage;
+  requestMessage: t.TMessage;
+  responseMessage: t.TMessage;
 };
 
 export type TFinalResData = TBaseResData & {
-  requestMessage?: TMessage;
-  responseMessage?: TMessage;
+  requestMessage?: t.TMessage;
+  responseMessage?: t.TMessage;
 };
 
 export type TVectorStore = {

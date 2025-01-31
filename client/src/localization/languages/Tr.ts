@@ -30,6 +30,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Bilgi olarak dosya yüklemeden önce, Asistan oluşturulmalı ve Kod Yorumlayıcı veya Geri Getirme etkinleştirilip kaydedilmelidir.',
   com_assistants_image_vision: 'Görüntü Vizyonu',
+  com_assistants_append_date: 'Şu anki tarih ve saati ekleyin',
+  com_assistants_append_date_tooltip:
+    'Etkinleştirildiğinde, şu anki müşteri tarihi ve saati, Asistanın sistem talimatlarına eklenir.',
   com_assistants_code_interpreter: 'Kod Yorumlayıcı',
   com_assistants_code_interpreter_files:
     'Aşağıdaki dosyalar yalnızca Kod Yorumlayıcı için kullanılabilir:',
@@ -218,7 +221,6 @@ export default {
   com_ui_create: 'Oluştur',
   com_ui_share: 'Paylaş',
   com_ui_copy_link: 'Bağlantıyı kopyala',
-  com_ui_update_link: 'Bağlantıyı güncelle',
   com_ui_create_link: 'Bağlantı oluştur',
   com_ui_share_link_to_chat: 'Sohbete bağlantı paylaş',
   com_ui_share_error: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
@@ -450,7 +452,7 @@ export default {
   com_endpoint_preset_default_item: 'Varsayılan:',
   com_endpoint_preset_default_none: 'Aktif varsayılan hazır ayar yok.',
   com_endpoint_preset_title: 'Hazır Ayar',
-  com_endpoint_preset_saved: 'Kaydedildi!',
+  com_ui_saved: 'Kaydedildi!',
   com_endpoint_preset_default: 'şu anda varsayılan hazır ayar.',
   com_endpoint_preset: 'hazır ayar',
   com_endpoint_presets: 'hazır ayarlar',

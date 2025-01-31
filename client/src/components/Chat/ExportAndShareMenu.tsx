@@ -1,11 +1,12 @@
-import { useState, useId } from 'react';
+import { useState, useId, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { Upload, Share2 } from 'lucide-react';
+import type * as t from '~/common';
+import ExportModal from '~/components/Nav/ExportConversation/ExportModal';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
+import { DropdownPopup, TooltipAnchor } from '~/components/ui';
 import { useMediaQuery, useLocalize } from '~/hooks';
-import { DropdownPopup } from '~/components/ui';
-import { ExportModal } from '../Nav';
 import store from '~/store';
 
 export default function ExportAndShareMenu({
@@ -19,6 +20,8 @@ export default function ExportAndShareMenu({
   const [showShareDialog, setShowShareDialog] = useState(false);
 
   const menuId = useId();
+  const shareButtonRef = useRef<HTMLButtonElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const conversation = useRecoilValue(store.conversationByIndex(0));
 
@@ -32,31 +35,33 @@ export default function ExportAndShareMenu({
     return null;
   }
 
-  const onOpenChange = (value: boolean) => {
-    setShowExports(value);
-  };
-
   const shareHandler = () => {
-    setIsPopoverActive(false);
     setShowShareDialog(true);
   };
 
   const exportHandler = () => {
-    setIsPopoverActive(false);
     setShowExports(true);
   };
 
-  const dropdownItems = [
+  const dropdownItems: t.MenuItemProps[] = [
     {
       label: localize('com_endpoint_export'),
       onClick: exportHandler,
-      icon: <Upload className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Upload className="icon-md mr-2 text-text-secondary" />,
+      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+      hideOnClick: false,
+      ref: exportButtonRef,
+      render: (props) => <button {...props} />,
     },
     {
       label: localize('com_ui_share'),
       onClick: shareHandler,
-      icon: <Share2 className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
       show: isSharedButtonEnabled,
+      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+      hideOnClick: false,
+      ref: shareButtonRef,
+      render: (props) => <button {...props} />,
     },
   ];
 
@@ -64,36 +69,44 @@ export default function ExportAndShareMenu({
     <>
       <DropdownPopup
         menuId={menuId}
+        focusLoop={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
-          <Ariakit.MenuButton
-            id="export-menu-button"
-            aria-label="Export options"
-            className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
-          >
-            <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
-          </Ariakit.MenuButton>
+          <TooltipAnchor
+            description={localize('com_endpoint_export_share')}
+            render={
+              <Ariakit.MenuButton
+                id="export-menu-button"
+                aria-label="Export options"
+                className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+              >
+                <Upload
+                  className="icon-md text-text-secondary"
+                  aria-hidden="true"
+                  focusable="false"
+                />
+              </Ariakit.MenuButton>
+            }
+          />
         }
         items={dropdownItems}
         className={isSmallScreen ? '' : 'absolute right-0 top-0 mt-2'}
       />
-      {showShareDialog && conversation.conversationId != null && (
-        <ShareButton
-          conversationId={conversation.conversationId}
-          title={conversation.title ?? ''}
-          showShareDialog={showShareDialog}
-          setShowShareDialog={setShowShareDialog}
-        />
-      )}
-      {showExports && (
-        <ExportModal
-          open={showExports}
-          onOpenChange={onOpenChange}
-          conversation={conversation}
-          aria-label="Export conversation modal"
-        />
-      )}
+      <ExportModal
+        open={showExports}
+        onOpenChange={setShowExports}
+        conversation={conversation}
+        triggerRef={exportButtonRef}
+        aria-label={localize('com_ui_export_convo_modal')}
+      />
+      <ShareButton
+        triggerRef={shareButtonRef}
+        conversationId={conversation.conversationId ?? ''}
+        title={conversation.title ?? ''}
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+      />
     </>
   );
 }

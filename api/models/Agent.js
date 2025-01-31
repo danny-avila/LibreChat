@@ -20,7 +20,7 @@ const Agent = mongoose.model('agent', agentSchema);
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  return await Agent.create(agentData);
+  return (await Agent.create(agentData)).toObject();
 };
 
 /**
@@ -82,7 +82,7 @@ const loadAgent = async ({ req, agent_id }) => {
  */
 const updateAgent = async (searchParameter, updateData) => {
   const options = { new: true, upsert: false };
-  return await Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
+  return Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
 };
 
 /**
@@ -96,59 +96,75 @@ const updateAgent = async (searchParameter, updateData) => {
  */
 const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
-  const agent = await getAgent(searchParameter);
 
-  if (!agent) {
+  // build the update to push or create the file ids set
+  const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
+  const updateData = { $addToSet: { [fileIdsPath]: file_id } };
+
+  // return the updated agent or throw if no agent matches
+  const updatedAgent = await updateAgent(searchParameter, updateData);
+  if (updatedAgent) {
+    return updatedAgent;
+  } else {
     throw new Error('Agent not found for adding resource file');
   }
-
-  const tool_resources = agent.tool_resources || {};
-
-  if (!tool_resources[tool_resource]) {
-    tool_resources[tool_resource] = { file_ids: [] };
-  }
-
-  if (!tool_resources[tool_resource].file_ids.includes(file_id)) {
-    tool_resources[tool_resource].file_ids.push(file_id);
-  }
-
-  const updateData = { tool_resources };
-
-  return await updateAgent(searchParameter, updateData);
 };
 
 /**
- * Removes a resource file id from an agent.
+ * Removes multiple resource files from an agent in a single update.
  * @param {object} params
- * @param {ServerRequest} params.req
  * @param {string} params.agent_id
- * @param {string} params.tool_resource
- * @param {string} params.file_id
+ * @param {Array<{tool_resource: string, file_id: string}>} params.files
  * @returns {Promise<Agent>} The updated agent.
  */
-const removeAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+const removeAgentResourceFiles = async ({ agent_id, files }) => {
   const searchParameter = { id: agent_id };
-  const agent = await getAgent(searchParameter);
 
-  if (!agent) {
-    throw new Error('Agent not found for removing resource file');
-  }
-
-  const tool_resources = agent.tool_resources || {};
-
-  if (tool_resources[tool_resource] && tool_resources[tool_resource].file_ids) {
-    tool_resources[tool_resource].file_ids = tool_resources[tool_resource].file_ids.filter(
-      (id) => id !== file_id,
-    );
-
-    if (tool_resources[tool_resource].file_ids.length === 0) {
-      delete tool_resources[tool_resource];
+  // associate each tool resource with the respective file ids array
+  const filesByResource = files.reduce((acc, { tool_resource, file_id }) => {
+    if (!acc[tool_resource]) {
+      acc[tool_resource] = [];
     }
+    acc[tool_resource].push(file_id);
+    return acc;
+  }, {});
+
+  // build the update aggregation pipeline wich removes file ids from tool resources array
+  // and eventually deletes empty tool resources
+  const updateData = [];
+  Object.entries(filesByResource).forEach(([resource, fileIds]) => {
+    const toolResourcePath = `tool_resources.${resource}`;
+    const fileIdsPath = `${toolResourcePath}.file_ids`;
+
+    // file ids removal stage
+    updateData.push({
+      $set: {
+        [fileIdsPath]: {
+          $filter: {
+            input: `$${fileIdsPath}`,
+            cond: { $not: [{ $in: ['$$this', fileIds] }] },
+          },
+        },
+      },
+    });
+
+    // empty tool resource deletion stage
+    updateData.push({
+      $set: {
+        [toolResourcePath]: {
+          $cond: [{ $eq: [`$${fileIdsPath}`, []] }, '$$REMOVE', `$${toolResourcePath}`],
+        },
+      },
+    });
+  });
+
+  // return the updated agent or throw if no agent matches
+  const updatedAgent = await updateAgent(searchParameter, updateData);
+  if (updatedAgent) {
+    return updatedAgent;
+  } else {
+    throw new Error('Agent not found for removing resource files');
   }
-
-  const updateData = { tool_resources };
-
-  return await updateAgent(searchParameter, updateData);
 };
 
 /**
@@ -193,6 +209,7 @@ const getListAgents = async (searchParameter) => {
       avatar: 1,
       author: 1,
       projectIds: 1,
+      description: 1,
       isCollaborative: 1,
     }).lean()
   ).map((agent) => {
@@ -281,5 +298,5 @@ module.exports = {
   getListAgents,
   updateAgentProjects,
   addAgentResourceFile,
-  removeAgentResourceFile,
+  removeAgentResourceFiles,
 };

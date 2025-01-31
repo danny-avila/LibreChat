@@ -1,7 +1,8 @@
 export const ErrorMessage = ({ children }: { children: React.ReactNode }) => (
   <div
-    className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
     role="alert"
+    aria-live="assertive"
+    className="relative mt-6 rounded-lg border border-red-500/20 bg-red-50/50 px-6 py-4 text-red-700 shadow-sm transition-all dark:bg-red-950/30 dark:text-red-100"
   >
     {children}
   </div>

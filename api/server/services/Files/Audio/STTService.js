@@ -121,9 +121,9 @@ class STTService {
    */
   azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
     const url = `${genAzureEndpoint({
-      azureOpenAIApiInstanceName: sttSchema?.instanceName,
-      azureOpenAIApiDeploymentName: sttSchema?.deploymentName,
-    })}/audio/transcriptions?api-version=${sttSchema?.apiVersion}`;
+      azureOpenAIApiInstanceName: extractEnvVariable(sttSchema?.instanceName),
+      azureOpenAIApiDeploymentName: extractEnvVariable(sttSchema?.deploymentName),
+    })}/audio/transcriptions?api-version=${extractEnvVariable(sttSchema?.apiVersion)}`;
 
     const apiKey = sttSchema.apiKey ? extractEnvVariable(sttSchema.apiKey) : '';
 

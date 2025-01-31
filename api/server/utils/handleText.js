@@ -10,15 +10,26 @@ const {
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
 const { Providers } = require('@librechat/agents');
-const { getCitations, citeText } = require('./citations');
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
-const citationRegex = /\[\^\d+?\^]/g;
+
+/** Helper function to escape special characters in regex
+ * @param {string} string - The string to escape.
+ * @returns {string} The escaped string.
+ */
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
 const base = { message: true, initial: true };
-const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
+const createOnProgress = (
+  { generation = '', onProgress: _onProgress } = {
+    generation: '',
+    onProgress: null,
+  },
+) => {
   let i = 0;
   let tokens = addSpaceIfNeeded(generation);
 
@@ -59,18 +70,9 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   return { onProgress, getPartialText, sendIntermediateMessage };
 };
 
-const handleText = async (response, bing = false) => {
+const handleText = async (response) => {
   let { text } = response;
   response.text = text;
-
-  if (bing) {
-    const links = getCitations(response);
-    if (response.text.match(citationRegex)?.length > 0) {
-      text = citeText(response);
-    }
-    text += links?.length > 0 ? `\n- ${links}` : '';
-  }
-
   return text;
 };
 
@@ -196,14 +198,11 @@ function generateConfig(key, baseURL, endpoint) {
 
   if (agents) {
     config.capabilities = [
+      AgentCapabilities.execute_code,
       AgentCapabilities.file_search,
       AgentCapabilities.actions,
       AgentCapabilities.tools,
     ];
-
-    if (key === 'EXPERIMENTAL_RUN_CODE') {
-      config.capabilities.push(AgentCapabilities.execute_code);
-    }
   }
 
   if (assistants && endpoint === EModelEndpoint.azureAssistants) {
@@ -260,6 +259,7 @@ module.exports = {
   isEnabled,
   handleText,
   formatSteps,
+  escapeRegExp,
   formatAction,
   isUserProvided,
   generateConfig,

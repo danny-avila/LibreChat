@@ -22,12 +22,9 @@ import type {
   AssistantListParams,
   AssistantListResponse,
   AssistantDocument,
-  Agent,
-  AgentListParams,
-  AgentListResponse,
   TEndpointsConfig,
   TCheckUserKeyResponse,
-  SharedLinkListParams,
+  SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
 import { findPageForConversation } from '~/utils';
@@ -142,31 +139,29 @@ export const useConversationsInfiniteQuery = (
   );
 };
 
-export const useSharedLinksInfiniteQuery = (
-  params?: SharedLinkListParams,
+export const useSharedLinksQuery = (
+  params: SharedLinksListParams,
   config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
 ) => {
-  return useInfiniteQuery<SharedLinksResponse, unknown>(
-    [QueryKeys.sharedLinks],
-    ({ pageParam = '' }) =>
+  const { pageSize, isPublic, search, sortBy, sortDirection } = params;
+
+  return useInfiniteQuery<SharedLinksResponse>({
+    queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
+    queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
-        ...params,
-        pageNumber: pageParam?.toString(),
-        isPublic: params?.isPublic || true,
+        cursor: pageParam?.toString(),
+        pageSize,
+        isPublic,
+        search,
+        sortBy,
+        sortDirection,
       }),
-    {
-      getNextPageParam: (lastPage) => {
-        const currentPageNumber = Number(lastPage.pageNumber);
-        const totalPages = Number(lastPage.pages); // Convert totalPages to a number
-        // If the current page number is less than total pages, return the next page number
-        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
-      },
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes
+    ...config,
+  });
 };
 
 export const useConversationTagsQuery = (
@@ -366,78 +361,6 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
       refetchOnMount: false,
       ...config,
       enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
-};
-
-/**
- * AGENTS
- */
-
-/**
- * Hook for getting all available tools for A
- */
-export const useAvailableAgentToolsQuery = (): QueryObserverResult<TPlugin[]> => {
-  const queryClient = useQueryClient();
-  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-
-  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
-  return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableAgentTools(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    enabled,
-  });
-};
-
-/**
- * Hook for listing all Agents, with optional parameters provided for pagination and sorting
- */
-export const useListAgentsQuery = <TData = AgentListResponse>(
-  params: AgentListParams = defaultOrderQuery,
-  config?: UseQueryOptions<AgentListResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
-  const queryClient = useQueryClient();
-  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-
-  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
-  return useQuery<AgentListResponse, unknown, TData>(
-    [QueryKeys.agents, params],
-    () => dataService.listAgents(params),
-    {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
-};
-
-/**
- * Hook for retrieving details about a single agent
- */
-export const useGetAgentByIdQuery = (
-  agent_id: string,
-  config?: UseQueryOptions<Agent>,
-): QueryObserverResult<Agent> => {
-  return useQuery<Agent>(
-    [QueryKeys.agent, agent_id],
-    () =>
-      dataService.getAgentById({
-        agent_id,
-      }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
     },
   );
 };

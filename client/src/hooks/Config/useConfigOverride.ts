@@ -8,7 +8,7 @@ import store from '~/store';
 
 type TempOverrideType = Record<string, unknown> & {
   endpointsConfig: TEndpointsConfig;
-  modelsConfig: TModelsConfig;
+  modelsConfig?: TModelsConfig;
   combinedOptions: unknown[];
   combined: boolean;
 };
@@ -38,7 +38,7 @@ export default function useConfigOverride() {
   );
 
   useEffect(() => {
-    if (overrideQuery.data) {
+    if (overrideQuery.data != null) {
       handleOverride(overrideQuery.data);
     }
   }, [overrideQuery.data, handleOverride]);

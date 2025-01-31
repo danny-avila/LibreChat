@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
 
@@ -40,23 +41,34 @@ export type ConversationUpdater = (
 export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
   messages: s.TMessage[];
 };
-export type SharedLinkListParams = Omit<ConversationListParams, 'isArchived' | 'conversationId'> & {
-  isPublic?: boolean;
+
+export interface SharedLinksListParams {
+  pageSize: number;
+  isPublic: boolean;
+  sortBy: 'title' | 'createdAt';
+  sortDirection: 'asc' | 'desc';
+  search?: string;
+  cursor?: string;
+}
+
+export type SharedLinkItem = {
+  shareId: string;
+  title: string;
+  isPublic: boolean;
+  createdAt: Date;
+  conversationId: string;
 };
 
-export type SharedLinksResponse = Omit<ConversationListResponse, 'conversations' | 'messages'> & {
-  sharedLinks: s.TSharedLink[];
-};
+export interface SharedLinksResponse {
+  links: SharedLinkItem[];
+  nextCursor: string | null;
+  hasNextPage: boolean;
+}
 
-// Type for the response from the conversation list API
-export type SharedLinkListResponse = {
-  sharedLinks: s.TSharedLink[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-};
-
-export type SharedLinkListData = InfiniteData<SharedLinkListResponse>;
+export interface SharedLinkQueryData {
+  pages: SharedLinksResponse[];
+  pageParams: (string | null)[];
+}
 
 export type AllPromptGroupsFilterRequest = {
   category: string;
@@ -75,3 +87,6 @@ export type ConversationTagsResponse = s.TConversationTag[];
 
 export type VerifyToolAuthParams = { toolId: string };
 export type VerifyToolAuthResponse = { authenticated: boolean; message?: string | s.AuthType };
+
+export type GetToolCallParams = { conversationId: string };
+export type ToolCallResults = a.ToolCallResult[];

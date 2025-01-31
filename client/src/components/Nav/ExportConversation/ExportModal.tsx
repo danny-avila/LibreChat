@@ -9,10 +9,14 @@ export default function ExportModal({
   open,
   onOpenChange,
   conversation,
+  triggerRef,
+  children,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
   conversation: TConversation | null;
+  onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
+  children?: React.ReactNode;
 }) {
   const localize = useLocalize();
 
@@ -30,6 +34,12 @@ export default function ExportModal({
     { value: 'json', label: 'json (.json)' },
     { value: 'csv', label: 'csv (.csv)' },
   ];
+
+  useEffect(() => {
+    if (!open && triggerRef && triggerRef.current) {
+      triggerRef.current.focus();
+    }
+  }, [open, triggerRef]);
 
   useEffect(() => {
     setFileName(filenamify(String(conversation?.title ?? 'file')));
@@ -61,7 +71,8 @@ export default function ExportModal({
   });
 
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
+      {children}
       <OGDialogTemplate
         title={localize('com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"

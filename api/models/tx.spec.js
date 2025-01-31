@@ -4,6 +4,7 @@ const {
   tokenValues,
   getValueKey,
   getMultiplier,
+  cacheTokenValues,
   getCacheMultiplier,
 } = require('./tx');
 
@@ -211,6 +212,7 @@ describe('getMultiplier', () => {
 
 describe('AWS Bedrock Model Tests', () => {
   const awsModels = [
+    'anthropic.claude-3-5-haiku-20241022-v1:0',
     'anthropic.claude-3-haiku-20240307-v1:0',
     'anthropic.claude-3-sonnet-20240229-v1:0',
     'anthropic.claude-3-opus-20240229-v1:0',
@@ -237,6 +239,9 @@ describe('AWS Bedrock Model Tests', () => {
     'ai21.j2-ultra-v1',
     'amazon.titan-text-lite-v1',
     'amazon.titan-text-express-v1',
+    'amazon.nova-micro-v1:0',
+    'amazon.nova-lite-v1:0',
+    'amazon.nova-pro-v1:0',
   ];
 
   it('should return the correct prompt multipliers for all models', () => {
@@ -258,14 +263,57 @@ describe('AWS Bedrock Model Tests', () => {
   });
 });
 
+describe('Deepseek Model Tests', () => {
+  const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'];
+
+  it('should return the correct prompt multipliers for all models', () => {
+    const results = deepseekModels.map((model) => {
+      const valueKey = getValueKey(model);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct completion multipliers for all models', () => {
+    const results = deepseekModels.map((model) => {
+      const valueKey = getValueKey(model);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
+      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct prompt multipliers for reasoning model', () => {
+    const model = 'deepseek-reasoner';
+    const valueKey = getValueKey(model);
+    expect(valueKey).toBe(model);
+    const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+    const result = tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    expect(result).toBe(true);
+  });
+});
+
 describe('getCacheMultiplier', () => {
   it('should return the correct cache multiplier for a given valueKey and cacheType', () => {
-    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(3.75);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'read' })).toBe(0.3);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'write' })).toBe(1.25);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'read' })).toBe(0.1);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'write' })).toBe(0.3);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'read' })).toBe(0.03);
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-5-sonnet'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-5-sonnet'].read,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-5-haiku'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-5-haiku'].read,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-haiku'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-haiku'].read,
+    );
   });
 
   it('should return null if cacheType is provided but not found in cacheTokenValues', () => {

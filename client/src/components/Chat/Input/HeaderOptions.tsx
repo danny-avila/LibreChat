@@ -2,7 +2,8 @@ import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetUpdateSchema, EModelEndpoint, isParamEndpoint } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { tConvoUpdateSchema, EModelEndpoint, isParamEndpoint } from 'librechat-data-provider';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { PluginStoreDialog, TooltipAnchor } from '~/components';
@@ -11,6 +12,7 @@ import { useSetIndexOptions, useLocalize } from '~/hooks';
 import OptionsPopover from './OptionsPopover';
 import PopoverButtons from './PopoverButtons';
 import { useChatContext } from '~/Providers';
+import { getEndpointField } from '~/utils';
 import store from '~/store';
 
 export default function HeaderOptions({
@@ -18,32 +20,22 @@ export default function HeaderOptions({
 }: {
   interfaceConfig?: Partial<TInterfaceConfig>;
 }) {
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
   );
   const localize = useLocalize();
 
-  const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
-    useChatContext();
+  const { showPopover, conversation, setShowPopover } = useChatContext();
   const { setOption } = useSetIndexOptions();
-
-  const { endpoint, endpointType, conversationId, jailbreak = false } = conversation ?? {};
-
-  const altConditions: { [key: string]: boolean } = {
-    bingAI: !!(latestMessage && jailbreak && endpoint === 'bingAI'),
-  };
-
-  const altSettings: { [key: string]: () => void } = {
-    bingAI: () => setShowBingToneSetting((prev) => !prev),
-  };
+  const { endpoint, conversationId } = conversation ?? {};
 
   const noSettings = useMemo<{ [key: string]: boolean }>(
     () => ({
       [EModelEndpoint.chatGPTBrowser]: true,
-      [EModelEndpoint.bingAI]: jailbreak ? false : conversationId !== 'new',
     }),
-    [jailbreak, conversationId],
+    [conversationId],
   );
 
   useEffect(() => {
@@ -61,11 +53,11 @@ export default function HeaderOptions({
     return null;
   }
 
-  const triggerAdvancedMode = altConditions[endpoint]
-    ? altSettings[endpoint]
-    : () => setShowPopover((prev) => !prev);
+  const triggerAdvancedMode = () => setShowPopover((prev) => !prev);
 
+  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const paramEndpoint = isParamEndpoint(endpoint, endpointType);
+
   return (
     <Root
       open={showPopover}
@@ -123,7 +115,7 @@ export default function HeaderOptions({
                 open={saveAsDialogShow}
                 onOpenChange={setSaveAsDialogShow}
                 preset={
-                  tPresetUpdateSchema.parse({
+                  tConvoUpdateSchema.parse({
                     ...conversation,
                   }) as TPreset
                 }

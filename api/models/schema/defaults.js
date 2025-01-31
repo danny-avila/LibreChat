@@ -1,5 +1,5 @@
 const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, bingAI, anthropic, chatGPTBrowser]
+  // endpoint: [azureOpenAI, openAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
@@ -61,19 +61,6 @@ const conversationPreset = {
     type: Number,
     required: false,
   },
-  // for bingai only
-  jailbreak: {
-    type: Boolean,
-  },
-  context: {
-    type: String,
-  },
-  systemMessage: {
-    type: String,
-  },
-  toneStyle: {
-    type: String,
-  },
   file_ids: { type: [{ type: String }], default: undefined },
   // deprecated
   resendImages: {
@@ -91,6 +78,10 @@ const conversationPreset = {
     type: Boolean,
   },
   imageDetail: {
+    type: String,
+  },
+  /* agents */
+  agent_id: {
     type: String,
   },
   /* assistants */

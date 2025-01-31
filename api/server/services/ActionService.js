@@ -7,9 +7,11 @@ const {
   actionDomainSeparator,
 } = require('librechat-data-provider');
 const { tool } = require('@langchain/core/tools');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
+const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
@@ -122,6 +124,10 @@ async function loadActionSets(searchParams) {
  */
 async function createActionTool({ action, requestBuilder, zodSchema, name, description }) {
   action.metadata = await decryptMetadata(action.metadata);
+  const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+  if (!isDomainAllowed) {
+    return null;
+  }
   /** @type {(toolInput: Object | string) => Promise<unknown>} */
   const _call = async (toolInput) => {
     try {
@@ -141,15 +147,8 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
       }
       return res.data;
     } catch (error) {
-      logger.error(`API call to ${action.metadata.domain} failed`, error);
-      if (error.response) {
-        const { status, data } = error.response;
-        return `API call to ${
-          action.metadata.domain
-        } failed with status ${status}: ${JSON.stringify(data)}`;
-      }
-
-      return `API call to ${action.metadata.domain} failed.`;
+      const logMessage = `API call to ${action.metadata.domain} failed`;
+      logAxiosError({ message: logMessage, error });
     }
   };
 

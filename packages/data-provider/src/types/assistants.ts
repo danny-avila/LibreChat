@@ -100,6 +100,7 @@ export type AssistantCreateParams = {
   tools?: Array<FunctionTool | string>;
   endpoint: AssistantsEndpoint;
   version: number | string;
+  append_current_datetime?: boolean;
 };
 
 export type AssistantUpdateParams = {
@@ -113,6 +114,7 @@ export type AssistantUpdateParams = {
   tools?: Array<FunctionTool | string>;
   tool_resources?: ToolResources;
   endpoint: AssistantsEndpoint;
+  append_current_datetime?: boolean;
 };
 
 export type AssistantListParams = {
@@ -147,6 +149,7 @@ export type File = {
 export type AgentParameterValue = number | null;
 
 export type AgentModelParameters = {
+  model?: string;
   temperature: AgentParameterValue;
   max_context_tokens: AgentParameterValue;
   max_output_tokens: AgentParameterValue;
@@ -165,6 +168,10 @@ export interface ExecuteCodeResource {
    * There can be a maximum of 20 files associated with the tool.
    */
   file_ids?: Array<string>;
+  /**
+   * A list of files already fetched.
+   */
+  files?: Array<TFile>;
 }
 
 export interface AgentFileSearchResource {
@@ -178,6 +185,10 @@ export interface AgentFileSearchResource {
    * To be used before vector stores are implemented.
    */
   file_ids?: Array<string>;
+  /**
+   * A list of files already fetched.
+   */
+  files?: Array<TFile>;
 }
 
 export type Agent = {
@@ -201,6 +212,9 @@ export type Agent = {
   conversation_starters?: string[];
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
+  agent_ids?: string[];
+  end_after_tools?: boolean;
+  hide_sequential_outputs?: boolean;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -215,7 +229,7 @@ export type AgentCreateParams = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
-};
+} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs'>;
 
 export type AgentUpdateParams = {
   name?: string | null;
@@ -231,7 +245,7 @@ export type AgentUpdateParams = {
   projectIds?: string[];
   removeProjectIds?: string[];
   isCollaborative?: boolean;
-};
+} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs'>;
 
 export type AgentListParams = {
   limit?: number;
@@ -418,6 +432,7 @@ export type ContentPart = (
 
 export type TMessageContentParts =
   | { type: ContentTypes.ERROR; text: Text & PartMetadata }
+  | { type: ContentTypes.THINK; think: string | (Text & PartMetadata) }
   | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
   | {
       type: ContentTypes.TOOL_CALL;
@@ -516,6 +531,7 @@ export type AssistantDocument = {
   actions?: string[];
   createdAt?: Date;
   updatedAt?: Date;
+  append_current_datetime?: boolean;
 };
 
 /* Agent types */

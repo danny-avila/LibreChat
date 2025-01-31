@@ -8,7 +8,6 @@ const {
   AZURE_API_KEY: azureOpenAIApiKey,
   ANTHROPIC_API_KEY: anthropicApiKey,
   CHATGPT_TOKEN: chatGPTToken,
-  BINGAI_TOKEN: bingToken,
   PLUGINS_USE_AZURE,
   GOOGLE_KEY: googleKey,
   OPENAI_REVERSE_PROXY,
@@ -30,7 +29,6 @@ module.exports = {
     useAzurePlugins,
     userProvidedOpenAI,
     googleKey,
-    [EModelEndpoint.bingAI]: generateConfig(bingToken),
     [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
     [EModelEndpoint.chatGPTBrowser]: generateConfig(chatGPTToken),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
@@ -49,10 +47,6 @@ module.exports = {
       process.env.BEDROCK_AWS_SECRET_ACCESS_KEY ?? process.env.BEDROCK_AWS_DEFAULT_REGION,
     ),
     /* key will be part of separate config */
-    [EModelEndpoint.agents]: generateConfig(
-      process.env.EXPERIMENTAL_AGENTS,
-      undefined,
-      EModelEndpoint.agents,
-    ),
+    [EModelEndpoint.agents]: generateConfig('true', undefined, EModelEndpoint.agents),
   },
 };

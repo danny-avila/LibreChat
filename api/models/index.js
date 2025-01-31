@@ -18,6 +18,7 @@ const {
   updateFileUsage,
 } = require('./File');
 const {
+  getMessage,
   getMessages,
   saveMessage,
   recordMessage,
@@ -25,10 +26,18 @@ const {
   deleteMessagesSince,
   deleteMessages,
 } = require('./Message');
+const {
+  createSession,
+  findSession,
+  updateExpiration,
+  deleteSession,
+  deleteAllUserSessions,
+  generateRefreshToken,
+  countActiveSessions,
+} = require('./Session');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 const { createToken, findToken, updateToken, deleteTokens } = require('./Token');
-const Session = require('./Session');
 const Balance = require('./Balance');
 const User = require('./User');
 const Key = require('./Key');
@@ -51,6 +60,7 @@ module.exports = {
   getFiles,
   updateFileUsage,
 
+  getMessage,
   getMessages,
   saveMessage,
   recordMessage,
@@ -73,8 +83,15 @@ module.exports = {
   updateToken,
   deleteTokens,
 
+  createSession,
+  findSession,
+  updateExpiration,
+  deleteSession,
+  deleteAllUserSessions,
+  generateRefreshToken,
+  countActiveSessions,
+
   User,
   Key,
-  Session,
   Balance,
 };

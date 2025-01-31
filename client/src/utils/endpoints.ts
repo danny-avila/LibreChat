@@ -7,19 +7,21 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import type { LocalizeFunction } from '~/common';
+import type { LocalizeFunction, IconsRecord } from '~/common';
 
-export const getAssistantName = ({
+export const getEntityName = ({
   name = '',
   localize,
+  isAgent,
 }: {
   name?: string;
+  isAgent?: boolean;
   localize: LocalizeFunction;
 }) => {
   if (name && name.length > 0) {
     return name;
   } else {
-    return localize('com_ui_assistant');
+    return isAgent === true ? localize('com_ui_agent') : localize('com_ui_assistant');
   }
 };
 
@@ -96,14 +98,18 @@ export function updateLastSelectedModel({
     return;
   }
   /* Note: an empty string value is possible */
-  const lastConversationSetup = JSON.parse((localStorage.getItem(firstLocalConvoKey) ?? '{}') || '{}');
+  const lastConversationSetup = JSON.parse(
+    (localStorage.getItem(firstLocalConvoKey) ?? '{}') || '{}',
+  );
 
   if (lastConversationSetup.endpoint === endpoint) {
     lastConversationSetup.model = model;
     localStorage.setItem(firstLocalConvoKey, JSON.stringify(lastConversationSetup));
   }
 
-  const lastSelectedModels = JSON.parse((localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}') || '{}');
+  const lastSelectedModels = JSON.parse(
+    (localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}') || '{}',
+  );
   lastSelectedModels[endpoint] = model;
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastSelectedModels));
 }
@@ -198,9 +204,9 @@ export function getIconEndpoint({
   iconURL,
   endpoint,
 }: {
-  endpointsConfig: t.TEndpointsConfig | undefined;
-  iconURL: string | undefined;
-  endpoint: string | null | undefined;
+  endpointsConfig?: t.TEndpointsConfig;
+  iconURL?: string | null;
+  endpoint?: string | null;
 }) {
   return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
 }
@@ -213,10 +219,10 @@ export function getIconKey({
   endpointIconURL: iconURL,
 }: {
   endpoint?: string | null;
-  endpointsConfig?: t.TEndpointsConfig | undefined;
+  endpointsConfig?: t.TEndpointsConfig;
   endpointType?: string | null;
   endpointIconURL?: string;
-}) {
+}): keyof IconsRecord {
   const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type') ?? '';
   const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL') ?? '';
   if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {

@@ -11,6 +11,9 @@ export default {
     'אם אתה מעלה קבצים תחת ידע, שיחות עם ה-סייען שלך עשויות לכלול תוכן מהקובץ.',
   com_assistants_knowledge_disabled:
     'יש ליצור סייען, ויש להפעיל ולשמור את מתורגמן קוד או אחזור לפני העלאת קבצים כ-ידע.',
+  com_assistants_append_date: 'הוסף תאריך ושעה נוכחיים',
+  com_assistants_append_date_tooltip:
+    'כשמופעל, תאריך ושעה נוכחיים של הלקוח יוספים להוראות מערכת הסייען.',
   com_assistants_code_interpreter: 'מתורגמן קוד',
   com_assistants_code_interpreter_files: 'הקבצים הבאים זמינים רק עבור מתורגמן קוד:',
   com_assistants_retrieval: 'אחזור',
@@ -93,7 +96,6 @@ export default {
   com_ui_create: 'צור',
   com_ui_share: 'שתף',
   com_ui_copy_link: 'העתק קישור',
-  com_ui_update_link: 'עדכן קישור',
   com_ui_create_link: 'צור קישור',
   com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
   com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
@@ -283,7 +285,7 @@ export default {
   com_endpoint_preset_default_item: 'ברירת מחדל:',
   com_endpoint_preset_default_none: 'אין ברירת מחדל פעילה.',
   com_endpoint_preset_title: 'הגדרה מראש',
-  com_endpoint_preset_saved: 'שמור!',
+  com_ui_saved: 'שמור!',
   com_endpoint_preset_default: 'הוא כעת ברירת המחדל המוגדרת מראש.',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',

@@ -2,7 +2,7 @@ const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
 const openAIModels = {
-  o1: 127500, // -500 from max
+  o1: 195000, // -5000 from max
   'o1-mini': 127500, // -500 from max
   'o1-preview': 127500, // -500 from max
   'gpt-4': 8187, // -5 from max
@@ -50,7 +50,9 @@ const googleModels = {
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288, // -4096 from max
   'gemini-exp': 8000,
-  'gemini-1.5': 1048576, // -8192 from max
+  'gemini-2.0-flash-thinking-exp': 30720, // -2048 from max
+  'gemini-2.0': 1048576,
+  'gemini-1.5': 1048576,
   'text-bison-32k': 32758, // -10 from max
   'chat-bison-32k': 32758, // -10 from max
   'code-bison-32k': 32758, // -10 from max
@@ -80,20 +82,63 @@ const anthropicModels = {
 };
 
 const deepseekModels = {
-  deepseek: 127500,
+  'deepseek-reasoner': 63000, // -1000 from max (API)
+  deepseek: 63000, // -1000 from max (API)
 };
 
 const metaModels = {
+  // Basic patterns
   llama3: 8000,
   llama2: 4000,
+  'llama-3': 8000,
+  'llama-2': 4000,
+
+  // llama3.x pattern
   'llama3.1': 127500,
+  'llama3.2': 127500,
+  'llama3.3': 127500,
+
+  // llama3-x pattern
   'llama3-1': 127500,
+  'llama3-2': 127500,
+  'llama3-3': 127500,
+
+  // llama-3.x pattern
+  'llama-3.1': 127500,
+  'llama-3.2': 127500,
+  'llama-3.3': 127500,
+
+  // llama3.x:Nb pattern
   'llama3.1:405b': 127500,
   'llama3.1:70b': 127500,
   'llama3.1:8b': 127500,
+  'llama3.2:1b': 127500,
+  'llama3.2:3b': 127500,
+  'llama3.2:11b': 127500,
+  'llama3.2:90b': 127500,
+  'llama3.3:70b': 127500,
+
+  // llama3-x-Nb pattern
   'llama3-1-405b': 127500,
   'llama3-1-70b': 127500,
   'llama3-1-8b': 127500,
+  'llama3-2-1b': 127500,
+  'llama3-2-3b': 127500,
+  'llama3-2-11b': 127500,
+  'llama3-2-90b': 127500,
+  'llama3-3-70b': 127500,
+
+  // llama-3.x-Nb pattern
+  'llama-3.1-405b': 127500,
+  'llama-3.1-70b': 127500,
+  'llama-3.1-8b': 127500,
+  'llama-3.2-1b': 127500,
+  'llama-3.2-3b': 127500,
+  'llama-3.2-11b': 127500,
+  'llama-3.2-90b': 127500,
+  'llama-3.3-70b': 127500,
+
+  // Original llama2/3 patterns
   'llama3-70b': 8000,
   'llama3-8b': 8000,
   'llama2-70b': 4000,
@@ -117,6 +162,10 @@ const amazonModels = {
   'amazon.titan-text-lite-v1': 4000,
   'amazon.titan-text-express-v1': 8000,
   'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+  // https://aws.amazon.com/ai/generative-ai/nova/
+  'amazon.nova-micro-v1:0': 127000, // -1000 from max,
+  'amazon.nova-lite-v1:0': 295000, // -5000 from max,
+  'amazon.nova-pro-v1:0': 295000, // -5000 from max,
 };
 
 const bedrockModels = {

@@ -7,6 +7,7 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   description: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
   className?: string;
+  focusable?: boolean;
   role?: string;
 }
 

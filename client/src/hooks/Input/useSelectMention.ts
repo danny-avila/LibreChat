@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
   TPreset,
   TModelSpec,
@@ -64,7 +64,11 @@ export default function useSelectMention({
         preset.endpointType = newEndpointType;
       }
 
-      if (isAssistantsEndpoint(newEndpoint) && preset.assistant_id != null && !(preset.model ?? '')) {
+      if (
+        isAssistantsEndpoint(newEndpoint) &&
+        preset.assistant_id != null &&
+        !(preset.model ?? '')
+      ) {
         preset.model = assistantMap?.[newEndpoint]?.[preset.assistant_id]?.model;
       }
 
@@ -94,11 +98,19 @@ export default function useSelectMention({
         keepAddedConvos: isModular,
       });
     },
-    [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig, assistantMap],
+    [
+      conversation,
+      getDefaultConversation,
+      modularChat,
+      newConversation,
+      endpointsConfig,
+      assistantMap,
+    ],
   );
 
   type Kwargs = {
     model?: string;
+    agent_id?: string;
     assistant_id?: string;
   };
 
@@ -131,6 +143,10 @@ export default function useSelectMention({
       const assistant_id = kwargs.assistant_id ?? '';
       if (assistant_id) {
         template.assistant_id = assistant_id;
+      }
+      const agent_id = kwargs.agent_id ?? '';
+      if (agent_id) {
+        template.agent_id = agent_id;
       }
 
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
@@ -227,6 +243,10 @@ export default function useSelectMention({
         onSelectEndpoint(option.type, {
           assistant_id: key,
           model: assistantMap?.[option.type]?.[key]?.model ?? '',
+        });
+      } else if (isAgentsEndpoint(option.type)) {
+        onSelectEndpoint(option.type, {
+          agent_id: key,
         });
       }
     },

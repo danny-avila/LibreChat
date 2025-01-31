@@ -26,26 +26,16 @@ const convoSchema = mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
     },
     ...conversationPreset,
-    // for bingAI only
-    bingConversationId: {
+    agent_id: {
       type: String,
-    },
-    jailbreakConversationId: {
-      type: String,
-    },
-    conversationSignature: {
-      type: String,
-    },
-    clientId: {
-      type: String,
-    },
-    invocationId: {
-      type: Number,
     },
     tags: {
       type: [String],
       default: [],
       meiliIndex: true,
+    },
+    files: {
+      type: [String],
     },
   },
   { timestamps: true },
