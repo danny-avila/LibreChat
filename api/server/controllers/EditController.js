@@ -1,8 +1,6 @@
-const throttle = require('lodash/throttle');
-const { getResponseSender, CacheKeys, Time } = require('librechat-data-provider');
+const { getResponseSender } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { getLogStores } = require('~/cache');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
@@ -53,61 +51,43 @@ const EditController = async (req, res, next, initializeClient) => {
     }
   };
 
-  const messageCache = getLogStores(CacheKeys.MESSAGES);
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
-    onProgress: throttle(
-      ({ text: partialText }) => {
-        /*
-          const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
-        {
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId ?? userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished,
-          isEdited: true,
-          error: false,
-          user,
-        } */
-        messageCache.set(responseMessageId, partialText, Time.FIVE_MINUTES);
-      },
-      3000,
-      { trailing: false },
-    ),
   });
 
-  const getAbortData = () => ({
-    conversationId,
-    userMessagePromise,
-    messageId: responseMessageId,
-    sender,
-    parentMessageId: overrideParentMessageId ?? userMessageId,
-    text: getPartialText(),
-    userMessage,
-    promptTokens,
-  });
-
-  const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
-
-  res.on('close', () => {
-    logger.debug('[EditController] Request closed');
-    if (!abortController) {
-      return;
-    } else if (abortController.signal.aborted) {
-      return;
-    } else if (abortController.requestCompleted) {
-      return;
-    }
-
-    abortController.abort();
-    logger.debug('[EditController] Request aborted on close');
-  });
+  let getText;
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
+
+    getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
+
+    const getAbortData = () => ({
+      conversationId,
+      userMessagePromise,
+      messageId: responseMessageId,
+      sender,
+      parentMessageId: overrideParentMessageId ?? userMessageId,
+      text: getText(),
+      userMessage,
+      promptTokens,
+    });
+
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
+
+    res.on('close', () => {
+      logger.debug('[EditController] Request closed');
+      if (!abortController) {
+        return;
+      } else if (abortController.signal.aborted) {
+        return;
+      } else if (abortController.requestCompleted) {
+        return;
+      }
+
+      abortController.abort();
+      logger.debug('[EditController] Request aborted on close');
+    });
 
     let response = await client.sendMessage(text, {
       user,
@@ -153,7 +133,7 @@ const EditController = async (req, res, next, initializeClient) => {
       );
     }
   } catch (error) {
-    const partialText = getPartialText();
+    const partialText = getText();
     handleAbortError(res, req, error, {
       partialText,
       conversationId,

@@ -63,7 +63,6 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     button,
     iconURL = '',
     endpoint,
-    jailbreak,
     size = 30,
     model = '',
     assistantName,
@@ -162,23 +161,6 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       icon: <BedrockIcon className="icon-xl text-white" />,
       bg: '#268672',
       name: alternateName[EModelEndpoint.bedrock],
-    },
-    [EModelEndpoint.bingAI]: {
-      icon:
-        jailbreak === true ? (
-          <img src="/assets/bingai-jb.png" alt="Bing Icon" />
-        ) : (
-          <img src="/assets/bingai.png" alt="Sydney Icon" />
-        ),
-      name: jailbreak === true ? 'Sydney' : 'BingAI',
-    },
-    [EModelEndpoint.chatGPTBrowser]: {
-      icon: <GPTIcon size={size * 0.5555555555555556} />,
-      bg:
-        typeof model === 'string' && model.toLowerCase().includes('gpt-4')
-          ? '#AB68FF'
-          : `rgba(0, 163, 255, ${button === true ? 0.75 : 1})`,
-      name: 'ChatGPT',
     },
     [EModelEndpoint.custom]: {
       icon: <CustomMinimalIcon size={size * 0.7} />,

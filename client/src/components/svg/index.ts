@@ -34,7 +34,6 @@ export { default as MinimalPlugin } from './MinimalPlugin';
 export { default as AzureMinimalIcon } from './AzureMinimalIcon';
 export { default as OpenAIMinimalIcon } from './OpenAIMinimalIcon';
 export { default as ChatGPTMinimalIcon } from './ChatGPTMinimalIcon';
-export { default as BingAIMinimalIcon } from './BingAIMinimalIcon';
 export { default as PaLMinimalIcon } from './PaLMinimalIcon';
 export { default as PaLMIcon } from './PaLMIcon';
 export { default as CodeyIcon } from './CodeyIcon';

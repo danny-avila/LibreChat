@@ -1,5 +1,4 @@
 const OpenAIClient = require('./OpenAIClient');
-const { CacheKeys, Time } = require('librechat-data-provider');
 const { CallbackManager } = require('@langchain/core/callbacks/manager');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
@@ -11,7 +10,6 @@ const checkBalance = require('~/models/checkBalance');
 const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
-const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 class PluginsClient extends OpenAIClient {
@@ -256,17 +254,6 @@ class PluginsClient extends OpenAIClient {
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    if (responseMessage.text) {
-      const messageCache = getLogStores(CacheKeys.MESSAGES);
-      messageCache.set(
-        responseMessage.messageId,
-        {
-          text: responseMessage.text,
-          complete: true,
-        },
-        Time.FIVE_MINUTES,
-      );
-    }
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
   }

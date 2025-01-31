@@ -58,10 +58,10 @@ interface:
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
   endpointsMenu: true
-  modelSelect: false
+  modelSelect: true
   parameters: true
   sidePanel: true
-  presets: false
+  presets: true
   prompts: true
   bookmarks: true
   multiConvo: true
