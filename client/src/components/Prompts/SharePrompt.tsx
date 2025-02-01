@@ -62,8 +62,15 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
       return;
     }
 
-    const payload = {} as TUpdatePromptGroupPayload;
+    if (data[Permissions.SHARED_GLOBAL] && groupIsGlobal) {
+      showToast({
+        message: localize('com_ui_prompt_already_shared_to_all'),
+        status: 'info',
+      });
+      return;
+    }
 
+    const payload = {} as TUpdatePromptGroupPayload;
     if (data[Permissions.SHARED_GLOBAL]) {
       payload.projectIds = [startupConfig.instanceProjectId];
     } else {
@@ -88,56 +95,17 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
           <Share2Icon className="size-5 cursor-pointer text-white" />
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-11/12 max-w-[600px]">
+      <OGDialogContent className="w-11/12 max-w-lg">
         <OGDialogTitle className="truncate pr-2" title={group.name}>
           {localize('com_ui_share_var', `"${group.name}"`)}
         </OGDialogTitle>
         <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
           <div className="mb-4 flex items-center justify-between gap-2 py-4">
-            <div className="flex items-center">
-              <button
-                type="button"
-                className="mr-2 cursor-pointer"
-                onClick={() =>
-                  setValue(Permissions.SHARED_GLOBAL, !getValues(Permissions.SHARED_GLOBAL), {
-                    shouldDirty: true,
-                  })
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setValue(Permissions.SHARED_GLOBAL, !getValues(Permissions.SHARED_GLOBAL), {
-                      shouldDirty: true,
-                    });
-                  }
-                }}
-                aria-checked={getValues(Permissions.SHARED_GLOBAL)}
-                role="checkbox"
-              >
-                {localize('com_ui_share_to_all_users')}
-              </button>
-              <label htmlFor={Permissions.SHARED_GLOBAL} className="select-none">
-                {groupIsGlobal && (
-                  <span className="ml-2 text-xs">{localize('com_ui_prompt_shared_to_all')}</span>
-                )}
-              </label>
-            </div>
+            <div className="flex items-center">{localize('com_ui_share_to_all_users')}</div>
             <Controller
               name={Permissions.SHARED_GLOBAL}
               control={control}
               disabled={isFetching || updateGroup.isLoading || !instanceProjectId}
-              rules={{
-                validate: (value) => {
-                  const isValid = !(value && groupIsGlobal);
-                  if (!isValid) {
-                    showToast({
-                      message: localize('com_ui_prompt_already_shared_to_all'),
-                      status: 'warning',
-                    });
-                  }
-                  return isValid;
-                },
-              }}
               render={({ field }) => (
                 <Switch
                   {...field}
