@@ -1,11 +1,13 @@
+import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 
 const WelcomeUser: React.FC = () => {
   const location = useLocation();
   const { state } = location;
 
-  const addBalanceHandler = () => {
-    console.log('add balance');
+  const addBalanceHandler = async () => {
+    const response = await axios.post('http://localhost:3090/api/balance' , 20000);
+    console.log('add balance' ,response);
   };
 
   return (
