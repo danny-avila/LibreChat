@@ -184,11 +184,6 @@ const showAgentSettingsFamily = atomFamily({
   default: false,
 });
 
-const showBingToneSettingFamily = atomFamily({
-  key: 'showBingToneSettingByIndex',
-  default: false,
-});
-
 const showPopoverFamily = atomFamily({
   key: 'showPopoverByIndex',
   default: false,
@@ -385,7 +380,6 @@ export default {
   isSubmittingFamily,
   optionSettingsFamily,
   showAgentSettingsFamily,
-  showBingToneSettingFamily,
   showPopoverFamily,
   latestMessageFamily,
   messagesSiblingIdxFamily,

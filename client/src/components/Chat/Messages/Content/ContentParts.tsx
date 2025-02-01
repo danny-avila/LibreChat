@@ -1,8 +1,10 @@
-import { memo, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { memo, useMemo, useState } from 'react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
+import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import EditTextPart from './Parts/EditTextPart';
+import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
@@ -39,11 +41,20 @@ const ContentParts = memo(
     siblingIdx,
     setSiblingIdx,
   }: ContentPartsProps) => {
+    const localize = useLocalize();
+    const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
+    const [isExpanded, setIsExpanded] = useState(showThinking);
     const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
     const attachmentMap = useMemo(
       () => mapAttachments(attachments ?? messageAttachmentsMap[messageId] ?? []),
       [attachments, messageAttachmentsMap, messageId],
     );
+
+    const hasReasoningParts = useMemo(
+      () => content?.some((part) => part?.type === ContentTypes.THINK && part.think) ?? false,
+      [content],
+    );
+
     if (!content) {
       return null;
     }
@@ -74,6 +85,21 @@ const ContentParts = memo(
 
     return (
       <>
+        {hasReasoningParts && (
+          <div className="mb-5">
+            <ThinkingButton
+              isExpanded={isExpanded}
+              onClick={() =>
+                setIsExpanded((prev) => {
+                  const val = !prev;
+                  setShowThinking(val);
+                  return val;
+                })
+              }
+              label={isSubmitting ? localize('com_ui_thinking') : localize('com_ui_thoughts')}
+            />
+          </div>
+        )}
         {content
           .filter((part) => part)
           .map((part, idx) => {
@@ -88,6 +114,8 @@ const ContentParts = memo(
                   messageId,
                   conversationId,
                   partIndex: idx,
+                  isExpanded,
+                  nextType: content[idx + 1]?.type,
                 }}
               >
                 <Part

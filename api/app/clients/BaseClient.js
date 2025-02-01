@@ -7,15 +7,12 @@ const {
   EModelEndpoint,
   ErrorTypes,
   Constants,
-  CacheKeys,
-  Time,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const { truncateToolCallOutputs } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
-const { getLogStores } = require('~/cache');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -54,6 +51,12 @@ class BaseClient {
     this.outputTokensKey = 'completion_tokens';
     /** @type {Set<string>} */
     this.savedMessageIds = new Set();
+    /**
+     * Flag to determine if the client re-submitted the latest assistant message.
+     * @type {boolean | undefined} */
+    this.continued;
+    /** @type {TMessage[]} */
+    this.currentMessages = [];
   }
 
   setOptions() {
@@ -589,6 +592,7 @@ class BaseClient {
       } else {
         latestMessage.text = generation;
       }
+      this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
     }
@@ -720,17 +724,6 @@ class BaseClient {
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     this.savedMessageIds.add(responseMessage.messageId);
-    if (responseMessage.text) {
-      const messageCache = getLogStores(CacheKeys.MESSAGES);
-      messageCache.set(
-        responseMessageId,
-        {
-          text: responseMessage.text,
-          complete: true,
-        },
-        Time.FIVE_MINUTES,
-      );
-    }
     delete responseMessage.tokenCount;
     return responseMessage;
   }

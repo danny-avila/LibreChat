@@ -23,7 +23,6 @@ const idSchema = z.string().uuid();
  * @param {string} [params.error] - Any error associated with the message.
  * @param {boolean} [params.unfinished] - Indicates if the message is unfinished.
  * @param {Object[]} [params.files] - An array of files associated with the message.
- * @param {boolean} [params.isEdited] - Indicates if the message was edited.
  * @param {string} [params.finish_reason] - Reason for finishing the message.
  * @param {number} [params.tokenCount] - The number of tokens in the message.
  * @param {string} [params.plugin] - Plugin associated with the message.
@@ -191,7 +190,6 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
-    update.isEdited = true;
     const updatedMessage = await Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
@@ -212,7 +210,6 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
-      isEdited: true,
     };
   } catch (err) {
     logger.error('Error updating message:', err);

@@ -605,91 +605,97 @@ class GoogleClient extends BaseClient {
 
     let reply = '';
 
-    if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
-      /** @type {GenAI} */
-      const client = this.client;
-      /** @type {GenerateContentRequest} */
-      const requestOptions = {
-        safetySettings,
-        contents: _payload,
-        generationConfig: googleGenConfigSchema.parse(this.modelOptions),
-      };
-
-      const promptPrefix = (this.options.promptPrefix ?? '').trim();
-      if (promptPrefix.length) {
-        requestOptions.systemInstruction = {
-          parts: [
-            {
-              text: promptPrefix,
-            },
-          ],
+    try {
+      if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
+        /** @type {GenAI} */
+        const client = this.client;
+        /** @type {GenerateContentRequest} */
+        const requestOptions = {
+          safetySettings,
+          contents: _payload,
+          generationConfig: googleGenConfigSchema.parse(this.modelOptions),
         };
+
+        const promptPrefix = (this.options.promptPrefix ?? '').trim();
+        if (promptPrefix.length) {
+          requestOptions.systemInstruction = {
+            parts: [
+              {
+                text: promptPrefix,
+              },
+            ],
+          };
+        }
+
+        const delay = modelName.includes('flash') ? 8 : 15;
+        /** @type {GenAIUsageMetadata} */
+        let usageMetadata;
+
+        const result = await client.generateContentStream(requestOptions);
+        for await (const chunk of result.stream) {
+          usageMetadata = !usageMetadata
+            ? chunk?.usageMetadata
+            : Object.assign(usageMetadata, chunk?.usageMetadata);
+          const chunkText = chunk.text();
+          await this.generateTextStream(chunkText, onProgress, {
+            delay,
+          });
+          reply += chunkText;
+          await sleep(streamRate);
+        }
+
+        if (usageMetadata) {
+          this.usage = {
+            input_tokens: usageMetadata.promptTokenCount,
+            output_tokens: usageMetadata.candidatesTokenCount,
+          };
+        }
+
+        return reply;
       }
 
-      const delay = modelName.includes('flash') ? 8 : 15;
-      /** @type {GenAIUsageMetadata} */
+      const { instances } = _payload;
+      const { messages: messages, context } = instances?.[0] ?? {};
+
+      if (!this.isVisionModel && context && messages?.length > 0) {
+        messages.unshift(new SystemMessage(context));
+      }
+
+      /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
       let usageMetadata;
-      const result = await client.generateContentStream(requestOptions);
-      for await (const chunk of result.stream) {
+      const stream = await this.client.stream(messages, {
+        signal: abortController.signal,
+        streamUsage: true,
+        safetySettings,
+      });
+
+      let delay = this.options.streamRate || 8;
+
+      if (!this.options.streamRate) {
+        if (this.isGenerativeModel) {
+          delay = 15;
+        }
+        if (modelName.includes('flash')) {
+          delay = 5;
+        }
+      }
+
+      for await (const chunk of stream) {
         usageMetadata = !usageMetadata
-          ? chunk?.usageMetadata
-          : Object.assign(usageMetadata, chunk?.usageMetadata);
-        const chunkText = chunk.text();
+          ? chunk?.usage_metadata
+          : concat(usageMetadata, chunk?.usage_metadata);
+        const chunkText = chunk?.content ?? chunk;
         await this.generateTextStream(chunkText, onProgress, {
           delay,
         });
         reply += chunkText;
-        await sleep(streamRate);
       }
 
       if (usageMetadata) {
-        this.usage = {
-          input_tokens: usageMetadata.promptTokenCount,
-          output_tokens: usageMetadata.candidatesTokenCount,
-        };
+        this.usage = usageMetadata;
       }
-      return reply;
-    }
-
-    const { instances } = _payload;
-    const { messages: messages, context } = instances?.[0] ?? {};
-
-    if (!this.isVisionModel && context && messages?.length > 0) {
-      messages.unshift(new SystemMessage(context));
-    }
-
-    /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
-    let usageMetadata;
-    const stream = await this.client.stream(messages, {
-      signal: abortController.signal,
-      streamUsage: true,
-      safetySettings,
-    });
-
-    let delay = this.options.streamRate || 8;
-
-    if (!this.options.streamRate) {
-      if (this.isGenerativeModel) {
-        delay = 15;
-      }
-      if (modelName.includes('flash')) {
-        delay = 5;
-      }
-    }
-
-    for await (const chunk of stream) {
-      usageMetadata = !usageMetadata
-        ? chunk?.usage_metadata
-        : concat(usageMetadata, chunk?.usage_metadata);
-      const chunkText = chunk?.content ?? chunk;
-      await this.generateTextStream(chunkText, onProgress, {
-        delay,
-      });
-      reply += chunkText;
-    }
-
-    if (usageMetadata) {
-      this.usage = usageMetadata;
+    } catch (e) {
+      logger.error('[GoogleClient] There was an issue generating the completion', e);
     }
     return reply;
   }

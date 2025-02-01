@@ -29,22 +29,6 @@ const convoSchema = mongoose.Schema(
     agent_id: {
       type: String,
     },
-    // for bingAI only
-    bingConversationId: {
-      type: String,
-    },
-    jailbreakConversationId: {
-      type: String,
-    },
-    conversationSignature: {
-      type: String,
-    },
-    clientId: {
-      type: String,
-    },
-    invocationId: {
-      type: Number,
-    },
     tags: {
       type: [String],
       default: [],

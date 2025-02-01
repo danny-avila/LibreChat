@@ -1,7 +1,7 @@
 const { Strategy: DiscordStrategy } = require('passport-discord');
 const socialLogin = require('./socialLogin');
 
-const getProfileDetails = (profile) => {
+const getProfileDetails = ({ profile }) => {
   let avatarUrl;
   if (profile.avatar) {
     const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';

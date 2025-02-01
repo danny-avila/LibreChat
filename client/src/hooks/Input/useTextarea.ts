@@ -1,7 +1,6 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { Constants } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
@@ -43,18 +42,11 @@ export default function useTextarea({
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
-  const {
-    index,
-    conversation,
-    isSubmitting,
-    filesLoading,
-    latestMessage,
-    setFilesLoading,
-    setShowBingToneSetting,
-  } = useChatContext();
+  const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
+    useChatContext();
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
-  const { conversationId, jailbreak = false, endpoint = '' } = conversation || {};
+  const { endpoint = '' } = conversation || {};
   const { entity, isAgent, isAssistant } = getEntity({
     endpoint,
     agentsMap,
@@ -77,33 +69,6 @@ export default function useTextarea({
       setActivePrompt(undefined);
     }
   }, [activePrompt, setActivePrompt, textAreaRef]);
-
-  // auto focus to input, when enter a conversation.
-  useEffect(() => {
-    const convoId = conversationId ?? '';
-    if (!convoId) {
-      return;
-    }
-
-    // Prevents Settings from not showing on new conversation, also prevents showing toneStyle change without jailbreak
-    if (convoId === Constants.NEW_CONVO || !jailbreak) {
-      setShowBingToneSetting(false);
-    }
-
-    if (convoId !== Constants.SEARCH) {
-      textAreaRef.current?.focus();
-    }
-    // setShowBingToneSetting is a recoil setter, so it doesn't need to be in the dependency array
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, jailbreak]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      textAreaRef.current?.focus();
-    }, 100);
-
-    return () => clearTimeout(timeoutId);
-  }, [isSubmitting, textAreaRef]);
 
   useEffect(() => {
     const currentValue = textAreaRef.current?.value ?? '';

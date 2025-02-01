@@ -1,5 +1,6 @@
 import { useRouteError } from 'react-router-dom';
 import { Button } from '~/components/ui';
+import logger from '~/utils/logger';
 
 interface UserAgentData {
   getHighEntropyValues(hints: string[]): Promise<{ platform: string; platformVersion: string }>;
@@ -31,7 +32,8 @@ const getPlatformInfo = async (): Promise<PlatformInfo> => {
         version: highEntropyValues.platformVersion,
       };
     } catch (e) {
-      console.warn('Failed to get high entropy values:', e);
+      logger.warn('Failed to get high entropy values');
+      logger.error(e);
     }
   }
 
@@ -85,28 +87,33 @@ export default function RouteErrorBoundary() {
   };
 
   const handleDownloadLogs = async () => {
-    const browser = await getBrowserInfo();
-    const errorLog = {
-      timestamp: new Date().toISOString(),
-      browser,
-      error: {
-        ...errorDetails,
-        stack:
-          errorDetails.stack != null && errorDetails.stack.trim() !== ''
-            ? formatStackTrace(errorDetails.stack)
-            : undefined,
-      },
-    };
+    try {
+      const browser = await getBrowserInfo();
+      const errorLog = {
+        timestamp: new Date().toISOString(),
+        browser,
+        error: {
+          ...errorDetails,
+          stack:
+            errorDetails.stack != null && errorDetails.stack.trim() !== ''
+              ? formatStackTrace(errorDetails.stack)
+              : undefined,
+        },
+      };
 
-    const blob = new Blob([JSON.stringify(errorLog, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `error-log-${new Date().toISOString()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const blob = new Blob([JSON.stringify(errorLog, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `error-log-${new Date().toISOString()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      logger.warn('Failed to download error logs:');
+      logger.error(e);
+    }
   };
 
   const handleCopyStack = async () => {
