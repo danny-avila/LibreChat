@@ -386,6 +386,7 @@ export const tPluginSchema = z.object({
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
   isButton: z.boolean().optional(),
+  toolkit: z.boolean().optional(),
 });
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
@@ -462,7 +463,6 @@ export const tMessageSchema = z.object({
   sender: z.string().optional(),
   text: z.string(),
   generation: z.string().nullable().optional(),
-  isEdited: z.boolean().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),
   clientTimestamp: z.string().optional(),
