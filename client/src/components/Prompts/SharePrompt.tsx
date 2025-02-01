@@ -9,6 +9,8 @@ import type {
   TUpdatePromptGroupPayload,
 } from 'librechat-data-provider';
 import {
+  Button,
+  Switch,
   OGDialog,
   OGDialogTitle,
   OGDialogContent,
@@ -16,7 +18,6 @@ import {
   OGDialogClose,
 } from '~/components/ui';
 import { useUpdatePromptGroup } from '~/data-provider';
-import { Button, Switch } from '~/components/ui';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
@@ -31,14 +32,13 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
   const { data: startupConfig = {} as TStartupConfig, isFetching } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
   const groupIsGlobal = useMemo(
-    () => !!(group?.projectIds ?? []).includes(instanceProjectId),
+    () => ((group?.projectIds ?? []) as string[]).includes(instanceProjectId as string),
     [group, instanceProjectId],
   );
 
   const {
     control,
     setValue,
-    getValues,
     handleSubmit,
     formState: { isSubmitting },
   } = useForm<FormValues>({
@@ -52,17 +52,17 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
     setValue(Permissions.SHARED_GLOBAL, groupIsGlobal);
   }, [groupIsGlobal, setValue]);
 
-  if (!group || !instanceProjectId) {
+  if (group == null || instanceProjectId == null) {
     return null;
   }
 
   const onSubmit = (data: FormValues) => {
     const groupId = group._id ?? '';
-    if (!groupId || !instanceProjectId) {
+    if (groupId === '' || instanceProjectId == null) {
       return;
     }
 
-    if (data[Permissions.SHARED_GLOBAL] && groupIsGlobal) {
+    if (data[Permissions.SHARED_GLOBAL] === true && groupIsGlobal) {
       showToast({
         message: localize('com_ui_prompt_already_shared_to_all'),
         status: 'info',
@@ -71,7 +71,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
     }
 
     const payload = {} as TUpdatePromptGroupPayload;
-    if (data[Permissions.SHARED_GLOBAL]) {
+    if (data[Permissions.SHARED_GLOBAL] === true) {
       payload.projectIds = [startupConfig.instanceProjectId];
     } else {
       payload.removeProjectIds = [startupConfig.instanceProjectId];
@@ -105,7 +105,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
             <Controller
               name={Permissions.SHARED_GLOBAL}
               control={control}
-              disabled={isFetching || updateGroup.isLoading || !instanceProjectId}
+              disabled={isFetching === true || updateGroup.isLoading || instanceProjectId == null}
               render={({ field }) => (
                 <Switch
                   {...field}
@@ -118,13 +118,9 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
           </div>
           <div className="flex justify-end">
             <OGDialogClose asChild>
-              <button
-                type="submit"
-                disabled={isSubmitting || isFetching}
-                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
-              >
+              <Button type="submit" disabled={isSubmitting || isFetching} variant="submit">
                 {localize('com_ui_save')}
-              </button>
+              </Button>
             </OGDialogClose>
           </div>
         </form>
