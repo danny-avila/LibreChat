@@ -8,28 +8,18 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
   return (
     <div className="relative w-full">
       <div className="relative rounded-lg transition-all duration-500 ease-in-out">
-        {/* Background gradient effect */}
-        <div
-          className={`
-            absolute inset-0 rounded-lg
-            bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20
-            transition-all duration-500 ease-in-out
-            ${isSearching ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'}
-          `}
-        />
-
         <div className="relative">
-          <div className="absolute left-3 top-1/2 z-10 -translate-y-1/2">
+          {/* Icon on the left */}
+          <div className="absolute left-3 top-1/2 z-50 -translate-y-1/2">
             <Search
               className={`
                 h-4 w-4 transition-all duration-500 ease-in-out
-                ${isFocused ? 'text-blue-500' : 'text-gray-400'}
-                ${isSearching ? 'text-blue-400' : ''}
+                ${isSearching ? 'text-blue-400' : 'text-gray-400'}
               `}
             />
           </div>
 
-          {/* Input field with background transitions */}
+          {/* Input field */}
           <input
             type="text"
             value={value}
@@ -38,21 +28,28 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
             onBlur={() => setIsFocused(false)}
             placeholder={placeholder}
             className={`
-              w-full rounded-lg px-10 py-2
-              outline-none ring-0 transition-all
-              duration-500
-              ease-in-out [-webkit-tap-highlight-color:transparent] placeholder:text-gray-400 focus:outline-none
+              relative z-20 w-full rounded-lg bg-surface-secondary px-10
+              py-2 outline-none ring-0 backdrop-blur-sm transition-all
+              duration-500 ease-in-out placeholder:text-gray-400
+              focus:outline-none
               focus:ring-0
-              ${isFocused ? 'bg-white/10' : 'bg-white/5'}
-              ${isSearching ? 'bg-white/15' : ''}
-              backdrop-blur-sm
+            `}
+          />
+
+          {/* Gradient overlay over the input background (but behind text) */}
+          <div
+            className={`
+              pointer-events-none absolute inset-0 z-20 rounded-lg
+              bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20
+              transition-all duration-500 ease-in-out
+              ${isSearching ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'}
             `}
           />
 
           {/* Animated loading indicator */}
           <div
             className={`
-              absolute right-3 top-1/2 -translate-y-1/2
+              absolute right-3 top-1/2 z-20 -translate-y-1/2
               transition-all duration-500 ease-in-out
               ${isSearching ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}
             `}

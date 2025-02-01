@@ -38,7 +38,7 @@ export default function FilterPrompts({
         label: localize('com_ui_shared_prompts'),
         icon: <Share2 className="h-4 w-4 text-text-primary" />,
       },
-      { divider: true },
+      { divider: true, value: null },
     ];
 
     const categoryOptions = categories

@@ -214,6 +214,7 @@ export default {
   com_ui_prompt: 'Prompt',
   com_ui_prompts: 'Prompts',
   com_ui_prompt_name: 'Prompt Name',
+  com_ui_rename_prompt: 'Rename Prompt',
   com_ui_delete_prompt: 'Delete Prompt?',
   com_ui_admin: 'Admin',
   com_ui_simple: 'Simple',
