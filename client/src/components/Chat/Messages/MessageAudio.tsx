@@ -1,4 +1,3 @@
-// client/src/components/Chat/Messages/MessageAudio.tsx
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';

@@ -12,11 +12,9 @@ export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
     promptPrefix,
     chatGptLabel,
     modelLabel,
-    jailbreak,
-    toneStyle,
   } = preset;
+  const modelInfo = model ?? '';
   let title = '';
-  let modelInfo = model ?? '';
   let label = '';
 
   const usesChatGPTLabel: TEndpoints = [
@@ -30,11 +28,7 @@ export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
     label = chatGptLabel ?? '';
   } else if (endpoint != null && endpoint && usesModelLabel.includes(endpoint)) {
     label = modelLabel ?? '';
-  } else if (endpoint === EModelEndpoint.bingAI) {
-    modelInfo = jailbreak === true ? 'Sydney' : modelInfo;
-    label = toneStyle != null && toneStyle ? `: ${toneStyle}` : '';
   }
-
   if (
     label &&
     presetTitle != null &&

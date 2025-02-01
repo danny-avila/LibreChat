@@ -3,6 +3,7 @@ import {
   EModelEndpoint,
   openAISettings,
   googleSettings,
+  ReasoningEffort,
   BedrockProviders,
   anthropicSettings,
 } from 'librechat-data-provider';
@@ -202,6 +203,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
+  },
+  reasoning_effort: {
+    key: 'reasoning_effort',
+    label: 'com_endpoint_reasoning_effort',
+    labelCode: true,
+    description: 'com_endpoint_openai_reasoning_effort',
+    descriptionCode: true,
+    type: 'enum',
+    default: ReasoningEffort.medium,
+    component: 'slider',
+    options: [ReasoningEffort.low, ReasoningEffort.medium, ReasoningEffort.high],
+    optionType: 'model',
+    columnSpan: 4,
   },
 };
 
@@ -446,6 +460,7 @@ const openAI: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.reasoning_effort,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -453,6 +468,7 @@ const openAICol1: SettingsConfiguration = [
   openAIParams.chatGptLabel,
   librechat.promptPrefix,
   librechat.maxContextTokens,
+  openAIParams.reasoning_effort,
 ];
 
 const openAICol2: SettingsConfiguration = [

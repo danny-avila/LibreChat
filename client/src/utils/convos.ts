@@ -256,15 +256,9 @@ export function storeEndpointSettings(conversation: TConversation | null) {
   if (!conversation) {
     return;
   }
-  const { endpoint, model, agentOptions, jailbreak, toneStyle } = conversation;
+  const { endpoint, model, agentOptions } = conversation;
 
   if (!endpoint) {
-    return;
-  }
-
-  if (endpoint === EModelEndpoint.bingAI) {
-    const settings = { jailbreak, toneStyle };
-    localStorage.setItem(LocalStorageKeys.LAST_BING, JSON.stringify(settings));
     return;
   }
 

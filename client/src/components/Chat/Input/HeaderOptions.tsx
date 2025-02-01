@@ -27,25 +27,15 @@ export default function HeaderOptions({
   );
   const localize = useLocalize();
 
-  const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
-    useChatContext();
+  const { showPopover, conversation, setShowPopover } = useChatContext();
   const { setOption } = useSetIndexOptions();
-  const { endpoint, conversationId, jailbreak = false } = conversation ?? {};
-
-  const altConditions: { [key: string]: boolean } = {
-    bingAI: !!(latestMessage && jailbreak && endpoint === 'bingAI'),
-  };
-
-  const altSettings: { [key: string]: () => void } = {
-    bingAI: () => setShowBingToneSetting((prev) => !prev),
-  };
+  const { endpoint, conversationId } = conversation ?? {};
 
   const noSettings = useMemo<{ [key: string]: boolean }>(
     () => ({
       [EModelEndpoint.chatGPTBrowser]: true,
-      [EModelEndpoint.bingAI]: jailbreak ? false : conversationId !== 'new',
     }),
-    [jailbreak, conversationId],
+    [conversationId],
   );
 
   useEffect(() => {
@@ -63,9 +53,7 @@ export default function HeaderOptions({
     return null;
   }
 
-  const triggerAdvancedMode = altConditions[endpoint]
-    ? altSettings[endpoint]
-    : () => setShowPopover((prev) => !prev);
+  const triggerAdvancedMode = () => setShowPopover((prev) => !prev);
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const paramEndpoint = isParamEndpoint(endpoint, endpointType);

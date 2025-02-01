@@ -87,7 +87,7 @@ function useTextToSpeechExternal({
     setDownloadFile(false);
   };
 
-  const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
+  const { mutate: processAudio } = useTextToSpeechMutation({
     onMutate: (variables) => {
       const inputText = (variables.get('input') ?? '') as string;
       if (inputText.length >= 4096) {
@@ -178,13 +178,14 @@ function useTextToSpeechExternal({
       promiseAudioRef.current = null;
       setIsSpeaking(false);
     }
-  }, []);
+  }, [setIsSpeaking]);
 
   useEffect(() => cancelPromiseSpeech, [cancelPromiseSpeech]);
 
-  const isLoading = useMemo(() => {
-    return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
-  }, [isProcessing, globalIsFetching, globalIsPlaying, isLast]);
+  const isLoading = useMemo(
+    () => isLast && globalIsFetching && !globalIsPlaying,
+    [globalIsFetching, globalIsPlaying, isLast],
+  );
 
   const { data: voicesData = [] } = useVoicesQuery();
 
