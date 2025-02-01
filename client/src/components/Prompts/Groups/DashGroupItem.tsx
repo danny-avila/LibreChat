@@ -75,7 +75,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
     <div
       className={cn(
         'mx-2 my-2 flex cursor-pointer rounded-lg bg-surface-secondary p-3 transition-all duration-300 ease-in-out hover:bg-surface-hover',
-        params.promptId === group._id && 'ring-2 ring-primary',
+        params.promptId === group._id && 'bg-surface-hover',
       )}
       onClick={handleContainerClick}
       onKeyDown={handleKeyDown}
@@ -107,7 +107,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
                     variant="ghost"
                     onClick={(e) => e.stopPropagation()}
                     className="h-8 w-8 p-0"
-                    aria-label={localize('com_ui_more_options')}
+                    aria-label={localize('com_ui_rename_prompt')}
                   >
                     <Pen className="icon-sm text-text-primary" aria-hidden="true" />
                   </Button>
