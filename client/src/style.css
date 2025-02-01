@@ -29,6 +29,17 @@
   --green-800: #065f46;
   --green-900: #064e3b;
   --green-950: #022c22;
+  --red-50: #fef2f2;
+  --red-100: #fee2e2;
+  --red-200: #fecaca;
+  --red-300: #fca5a5;
+  --red-400: #f87171;
+  --red-500: #ef4444;
+  --red-600: #dc2626;
+  --red-700: #b91c1c;
+  --red-800: #991b1b;
+  --red-900: #7f1d1d;
+  --red-950: #450a0a;
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
@@ -62,6 +73,8 @@ html {
   --surface-dialog: var(--white);
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
+  --surface-destructive: var(--red-500);
+  --surface-destructive-hover: var(--red-600);
   --border-light: var(--gray-200);
   --border-medium-alt: var(--gray-300);
   --border-medium: var(--gray-300);
@@ -117,6 +130,8 @@ html {
   --surface-dialog: var(--gray-850);
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
+  --surface-destructive: var(--red-700);
+  --surface-destructive-hover: var(--red-800);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
   --border-medium: var(--gray-600);

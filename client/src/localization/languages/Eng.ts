@@ -377,6 +377,9 @@ export default {
   com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used.',
   com_ui_command_usage_placeholder: 'Select a Prompt by command or name',
   com_ui_no_prompt_description: 'No description found.',
+  com_ui_confirm_change: 'Confirm Change',
+  com_ui_confirm_admin_use_change:
+    'Changing this setting will block access for admins, including yourself. Are you sure you want to proceed?',
   com_ui_share_link_to_chat: 'Share link to chat',
   com_ui_share_error: 'There was an error sharing the chat link',
   com_ui_share_retrieve_error: 'There was an error retrieving the shared links',
