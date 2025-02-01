@@ -16,6 +16,8 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import Datall from './Layouts/Datall';
+import WelcomeUser from '~/components/Datall/WelcomeUser';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -46,6 +48,14 @@ export const router = createBrowserRouter([
       {
         path: 'reset-password',
         element: <ResetPassword />,
+      },
+      {
+        path: 'datall',
+        element: <Datall />,
+        children: [{
+          path: 'welcome',
+          element: <WelcomeUser />,
+        },]
       },
     ],
   },
