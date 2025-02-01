@@ -43,16 +43,18 @@ export default function List({
           {isLoading && isChatRoute && (
             <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
           )}
-          {isLoading && !isChatRoute && (
-            <Skeleton className="w-100 mx-2 my-3 flex h-[72px] rounded-md border-0 p-4" />
-          )}
+          {isLoading &&
+            !isChatRoute &&
+            Array.from({ length: 10 }).map((_, index: number) => (
+              <Skeleton key={index} className="w-100 mx-2 my-2 flex h-14 rounded-lg border-0 p-4" />
+            ))}
           {!isLoading && groups.length === 0 && isChatRoute && (
             <div className="my-2 flex h-[84px] w-full items-center justify-center rounded-2xl border border-border-light bg-transparent px-3 pb-4 pt-3 text-text-primary">
               {localize('com_ui_nothing_found')}
             </div>
           )}
           {!isLoading && groups.length === 0 && !isChatRoute && (
-            <div className="w-100 mx-2 my-3 flex h-[72px] items-center justify-center rounded-md border border-border-light bg-transparent p-4 text-text-primary">
+            <div className="my-12 flex w-full items-center justify-center text-lg font-semibold text-text-primary">
               {localize('com_ui_nothing_found')}
             </div>
           )}
