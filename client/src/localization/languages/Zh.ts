@@ -904,4 +904,5 @@ export default {
   com_ui_collapse_chat: '收起聊天',
   com_endpoint_message_new: '消息 {0}',
   com_ui_speech_while_submitting: '正在生成回复时无法提交语音',
+  com_nav_balance: '平衡:',
 };

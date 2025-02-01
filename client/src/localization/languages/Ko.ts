@@ -1150,4 +1150,5 @@ export default {
   com_ui_collapse_chat: '채팅 접기',
   com_endpoint_message_new: '메시지 {0}',
   com_ui_speech_while_submitting: '응답 생성 중에는 음성을 전송할 수 없습니다',
+  com_nav_balance: '균형:',
 };

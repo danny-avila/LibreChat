@@ -959,4 +959,5 @@ export default {
   com_endpoint_message_new: 'Messaggio {0}',
   com_ui_speech_while_submitting:
     'Impossibile inviare il messaggio mentre è in corso la generazione di una risposta',
+  com_nav_balance: 'Bilancia:',
 };

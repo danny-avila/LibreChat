@@ -1203,4 +1203,5 @@ export default {
   com_endpoint_message_new: 'Mensaje {0}',
   com_ui_speech_while_submitting:
     'No se puede enviar un mensaje de voz mientras se está generando una respuesta',
+  com_nav_balance: 'Balance:',
 };

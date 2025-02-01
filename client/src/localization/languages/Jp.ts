@@ -912,4 +912,5 @@ export default {
   com_ui_collapse_chat: 'チャットを折りたたむ',
   com_endpoint_message_new: 'メッセージ {0}',
   com_ui_speech_while_submitting: '応答の生成中は音声を送信できません',
+  com_nav_balance: 'バランス:',
 };
