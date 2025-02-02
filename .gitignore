@@ -106,3 +106,5 @@ uploads/
 
 # owner
 release/
+
+*.p8
