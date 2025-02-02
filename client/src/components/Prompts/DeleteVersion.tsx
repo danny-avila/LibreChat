@@ -20,7 +20,7 @@ const DeleteVersion = ({
         <Button
           variant="destructive"
           size="sm"
-          className="h-10 w-16 p-0.5"
+          className="h-10 w-10 p-0.5"
           disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();

@@ -230,6 +230,8 @@ export default {
   com_ui_prompt_name_required: 'Prompt Name is required',
   com_ui_prompt_text_required: 'Text is required',
   com_ui_prompt_text: 'Text',
+  com_ui_currently_production: 'Currently in production',
+  com_ui_latest_version: 'Latest version',
   com_ui_back_to_chat: 'Back to Chat',
   com_ui_back_to_prompts: 'Back to Prompts',
   com_ui_categories: 'Categories',

@@ -52,7 +52,7 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
   }, [name]);
 
   return (
-    <div className=" flex items-center">
+    <div className="flex items-center">
       <div
         style={{
           display: 'grid',

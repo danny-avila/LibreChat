@@ -12,7 +12,7 @@ const AdvancedSwitch = () => {
 
   return (
     <div className="relative flex h-10 items-center justify-center rounded-xl border border-border-light bg-surface-primary transition-all duration-300">
-      <div className="relative flex w-64 items-stretch">
+      <div className="relative flex w-48 items-stretch md:w-64">
         <div
           className="absolute rounded-lg bg-surface-hover shadow-lg transition-all duration-300 ease-in-out"
           style={{
@@ -30,7 +30,7 @@ const AdvancedSwitch = () => {
             setAlwaysMakeProd(true);
             setMode(PromptsEditorMode.SIMPLE);
           }}
-          className={`relative z-10 flex-1 rounded-xl px-6 py-2 text-sm font-medium transition-all duration-300 ${
+          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300 md:px-6 ${
             mode === PromptsEditorMode.SIMPLE
               ? 'text-text-primary'
               : 'text-text-secondary hover:text-text-primary'
@@ -43,7 +43,7 @@ const AdvancedSwitch = () => {
         <button
           type="button"
           onClick={() => setMode(PromptsEditorMode.ADVANCED)}
-          className={`relative z-10 flex-1 rounded-xl px-6 py-2 text-sm font-medium transition-all duration-300 ${
+          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300 md:px-6 ${
             mode === PromptsEditorMode.ADVANCED
               ? 'text-text-primary'
               : 'text-text-secondary hover:text-text-primary'
