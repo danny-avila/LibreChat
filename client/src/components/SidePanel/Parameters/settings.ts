@@ -468,7 +468,6 @@ const openAICol1: SettingsConfiguration = [
   openAIParams.chatGptLabel,
   librechat.promptPrefix,
   librechat.maxContextTokens,
-  openAIParams.reasoning_effort,
 ];
 
 const openAICol2: SettingsConfiguration = [
@@ -478,6 +477,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
+  openAIParams.reasoning_effort,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
 ];
