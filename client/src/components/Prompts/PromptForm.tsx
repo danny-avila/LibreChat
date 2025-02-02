@@ -1,6 +1,6 @@
+import { Menu } from 'lucide-react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
-import { Rocket, Menu } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
@@ -15,20 +15,17 @@ import {
   useMakePromptProduction,
 } from '~/data-provider';
 import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
-import CategorySelector from './Groups/CategorySelector';
 import NoPromptGroup from './Groups/NoPromptGroup';
 import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
 import { useToastContext } from '~/Providers';
-import PromptVersions from './PromptVersions';
 import { PromptsEditorMode } from '~/common';
-import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
+import { RightPanel } from './RightPanel';
 import { findPromptGroup } from '~/utils';
 import PromptEditor from './PromptEditor';
 import SkeletonForm from './SkeletonForm';
 import Description from './Description';
-import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
 import Command from './Command';
 import { cn } from '~/utils';
@@ -237,82 +234,6 @@ const PromptForm = () => {
     return null;
   }
 
-  const renderRightPanel = () => (
-    <div className="w-full overflow-y-auto px-4" style={{ maxHeight: 'calc(100vh - 150px)' }}>
-      <div className="mb-2 flex flex-row items-center justify-center gap-x-2 lg:flex-col lg:space-y-2 xl:flex-row xl:space-y-0">
-        <CategorySelector
-          currentCategory={group.category}
-          onValueChange={(value) =>
-            updateGroupMutation.mutate({
-              id: group._id || '',
-              payload: { name: group.name || '', category: value },
-            })
-          }
-        />
-        <div className="flex flex-row items-center justify-center gap-x-2">
-          {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
-          {editorMode === PromptsEditorMode.ADVANCED && (
-            <Button
-              variant="submit"
-              size="sm"
-              className="h-10 w-10 border border-transparent p-0.5 transition-all"
-              onClick={() => {
-                const { _id: promptVersionId = '', prompt } = selectedPrompt ?? ({} as TPrompt);
-                makeProductionMutation.mutate(
-                  {
-                    id: promptVersionId || '',
-                    groupId: group._id || '',
-                    productionPrompt: { prompt },
-                  },
-                  {
-                    onSuccess: (_data, variables) => {
-                      const productionIndex = prompts.findIndex(
-                        (prompt) => variables.id === prompt._id,
-                      );
-                      setSelectionIndex(productionIndex);
-                    },
-                  },
-                );
-              }}
-              disabled={
-                isLoadingGroup ||
-                selectedPrompt?._id === group.productionId ||
-                makeProductionMutation.isLoading
-              }
-            >
-              <Rocket className="size-5 cursor-pointer text-white" />
-            </Button>
-          )}
-          <DeleteConfirm
-            name={group.name}
-            disabled={isLoadingGroup}
-            selectHandler={() => {
-              deletePromptMutation.mutate({
-                _id: selectedPrompt?._id || '',
-                groupId: group._id || '',
-              });
-            }}
-          />
-        </div>
-      </div>
-      {editorMode === PromptsEditorMode.ADVANCED &&
-        (isLoadingPrompts
-          ? Array.from({ length: 6 }).map((_: unknown, index: number) => (
-            <div key={index} className="my-2">
-              <Skeleton className="h-[72px] w-full" />
-            </div>
-          ))
-          : !!prompts.length && (
-            <PromptVersions
-              group={group}
-              prompts={prompts}
-              selectionIndex={selectionIndex}
-              setSelectionIndex={setSelectionIndex}
-            />
-          ))}
-    </div>
-  );
-
   return (
     <FormProvider {...methods}>
       <form className="mt-4 h-full w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
@@ -329,7 +250,7 @@ const PromptForm = () => {
             <div className="flex h-full flex-row">
               {/* Left Panel */}
               <div className="flex-1 px-4">
-                <div className="mb-4 flex items-center gap-2 text-text-primary">
+                <div className="my-4 flex items-center gap-2 text-text-primary">
                   {isLoadingGroup ? (
                     <Skeleton className="mb-1 flex h-10 w-32 font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
                   ) : (
@@ -354,6 +275,10 @@ const PromptForm = () => {
                       >
                         <Menu className="size-5" />
                       </Button>
+                      <div className="flex-1" />
+                      <div className="hidden lg:block">
+                        {editorMode === PromptsEditorMode.SIMPLE && <RightPanel />}
+                      </div>
                     </>
                   )}
                 </div>
@@ -379,10 +304,12 @@ const PromptForm = () => {
               <div className="hidden border-l border-border-light lg:block" />
 
               {/* Desktop Right Panel */}
-              <div className="hidden w-1/4 lg:block">
-                <div className="border-l border-border-light" />
-                {renderRightPanel()}
-              </div>
+              {editorMode === PromptsEditorMode.ADVANCED && (
+                <div className="hidden w-1/4 lg:block">
+                  <div className="border-l border-border-light" />
+                  <RightPanel />
+                </div>
+              )}
             </div>
           </div>
 
@@ -404,6 +331,7 @@ const PromptForm = () => {
           />
 
           {/* Mobile Right Side Panel (pushes the main content left) */}
+
           <div
             className="absolute inset-y-0 right-0 z-50 flex shadow-lg will-change-transform lg:hidden"
             style={{
@@ -414,7 +342,9 @@ const PromptForm = () => {
             }}
           >
             <div className="flex h-full w-full flex-col">
-              <div className="mt-4 flex-1 overflow-auto">{renderRightPanel()}</div>
+              <div className="mt-4 flex-1 overflow-auto">
+                <RightPanel />
+              </div>
             </div>
           </div>
         </div>

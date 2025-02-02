@@ -95,6 +95,7 @@ const VersionCard = ({
 
   return (
     <button
+      type="button"
       className={cn(
         'group relative w-full rounded-lg border border-border-light p-4 transition-all duration-300',
         isSelected
