@@ -176,7 +176,7 @@ async function setupOpenId() {
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
-    const adminRole = process.env.OPENID_ADMIN_ROLE; // NEW: Admin role from environment
+    const adminRole = process.env.OPENID_ADMIN_ROLE;
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -235,13 +235,10 @@ async function setupOpenId() {
             }
           }
 
-          // NEW FEATURE: Initialize and populate custom OpenID data if OPENID_CUSTOM_DATA is set.
           let customOpenIdData = new Map();
           if (process.env.OPENID_CUSTOM_DATA) {
             const dataMapper = OpenIdDataMapper.getMapper(process.env.OPENID_PROVIDER.toLowerCase());
             customOpenIdData = await dataMapper.mapCustomData(tokenset.access_token, process.env.OPENID_CUSTOM_DATA);
-
-            // Integrate raw token-based roles directly into customOpenIdData.
             const tokenBasedRoles =
                   requiredRole &&
                   extractRolesFromToken(
@@ -255,7 +252,6 @@ async function setupOpenId() {
             }
           }
 
-          // NEW FEATURE: Determine system role based on token roles.
           const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
           const decodedToken = safeDecode(token);
           const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
