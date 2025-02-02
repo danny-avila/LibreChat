@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
-import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
-import { useGetAssistantDocsQuery } from '~/data-provider';
+import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { getIconEndpoint, getEntity, cn } from '~/utils';
 import { useLocalize, useSubmitMessage } from '~/hooks';

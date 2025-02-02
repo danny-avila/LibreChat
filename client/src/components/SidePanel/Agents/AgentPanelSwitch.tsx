@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { ActionsEndpoint } from '~/common';
 import type { Action, TConfig, TEndpointsConfig } from 'librechat-data-provider';
-import { useGetActionsQuery } from '~/data-provider';
+import { useGetActionsQuery, useGetEndpointsQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 import ActionsPanel from './ActionsPanel';
 import AgentPanel from './AgentPanel';

@@ -1,9 +1,5 @@
 import { useCallback, useRef } from 'react';
-import {
-  useGetModelsQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-} from 'librechat-data-provider/react-query';
+import { useGetModelsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Constants,
@@ -30,8 +26,8 @@ import {
   getModelSpecIconURL,
   updateLastSelectedModel,
 } from '~/utils';
+import { useDeleteFilesMutation, useGetEndpointsQuery } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
-import { useDeleteFilesMutation } from '~/data-provider';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
