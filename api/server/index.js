@@ -1,7 +1,6 @@
 require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
-// const Redis = require('ioredis');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
@@ -23,8 +22,7 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const { WebAuthnStrategy } = require('passport-simple-webauthn2');
-const MongoChallengeStore = require('~/cache/mongoChallengeStore');
-const MongoUserStore = require('~/cache/passkeyStore');
+const { mongoChallengeStore, mongoUserStore } = require('~/cache');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -84,15 +82,15 @@ const startServer = async () => {
   /* Passkey (WebAuthn) Strategy */
   if (process.env.PASSKEY_ENABLED) {
 
-    const userStore = new MongoUserStore();
-    const challengeStore = new MongoChallengeStore();
+    const userStore = new mongoUserStore();
+    const challengeStore = new mongoChallengeStore();
 
     passport.use(
       new WebAuthnStrategy({
         rpID: process.env.RP_ID || 'localhost',
         rpName: process.env.APP_TITLE || 'LibreChat',
-        userStore: userStore,
-        challengeStore: challengeStore,
+        userStore,
+        challengeStore,
         debug: true,
       }),
     );
