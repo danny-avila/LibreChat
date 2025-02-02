@@ -236,10 +236,8 @@ const PromptForm = () => {
 
   return (
     <FormProvider {...methods}>
-      <form className="mt-4 h-full w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
-        {/* Container that shifts left when side panel is open */}
-        <div className="relative h-full w-full overflow-hidden will-change-transform">
-          {/* Main content transforms left */}
+      <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+        <div className="relative w-full">
           <div
             className="h-full w-full"
             style={{
@@ -247,10 +245,10 @@ const PromptForm = () => {
               transition: 'transform 0.3s ease-in-out',
             }}
           >
-            <div className="flex h-full flex-row">
+            <div className="flex h-full">
               {/* Left Panel */}
-              <div className="flex-1 px-4">
-                <div className="my-4 flex items-center gap-2 text-text-primary">
+              <div className="flex-1 overflow-hidden px-4">
+                <div className="mb-4 flex items-center gap-2 text-text-primary">
                   {isLoadingGroup ? (
                     <Skeleton className="mb-1 flex h-10 w-32 font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
                   ) : (
@@ -285,7 +283,7 @@ const PromptForm = () => {
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" />
                 ) : (
-                  <div className="flex flex-col gap-4">
+                  <div className="flex h-full flex-col gap-4">
                     <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                     <PromptVariables promptText={promptText} />
                     <Description
@@ -300,49 +298,43 @@ const PromptForm = () => {
                 )}
               </div>
 
-              {/* Vertical Divider for desktop */}
-              <div className="hidden border-l border-border-light lg:block" />
-
               {/* Desktop Right Panel */}
               {editorMode === PromptsEditorMode.ADVANCED && (
-                <div className="hidden w-1/4 lg:block">
-                  <div className="border-l border-border-light" />
+                <div className="hidden w-1/4 border-l border-border-light lg:block">
                   <RightPanel />
                 </div>
               )}
             </div>
           </div>
 
-          {/* Background button to close side panel */}
+          {/* Background Overlay */}
           <div
             role="button"
             tabIndex={0}
+            className={cn(
+              'absolute inset-0 z-40 bg-black/40',
+              showSidePanel ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+            style={{ transition: 'opacity 0.3s ease-in-out' }}
+            onClick={() => setShowSidePanel(false)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 setShowSidePanel(false);
               }
             }}
-            className={cn(
-              'absolute inset-0 z-40 ',
-              showSidePanel ? 'pointer-events-auto' : 'pointer-events-none',
-            )}
-            style={{ transition: 'opacity 0.3s ease-in-out' }}
-            onClick={() => setShowSidePanel(false)}
           />
 
-          {/* Mobile Right Side Panel (pushes the main content left) */}
-
+          {/* Mobile Side Panel */}
           <div
-            className="absolute inset-y-0 right-0 z-50 flex shadow-lg will-change-transform lg:hidden"
+            className="absolute inset-y-0 right-0 z-50 shadow-lg lg:hidden"
             style={{
               width: sidePanelWidth,
               transform: `translateX(${showSidePanel ? '0' : '100%'})`,
               transition: 'transform 0.3s ease-in-out',
-              maxHeight: '100vh',
             }}
           >
-            <div className="flex h-full w-full flex-col">
-              <div className="mt-4 flex-1 overflow-auto">
+            <div className="h-full bg-background">
+              <div className="h-full overflow-auto">
                 <RightPanel />
               </div>
             </div>

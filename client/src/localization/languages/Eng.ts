@@ -376,7 +376,7 @@ export default {
   com_ui_agent_duplicate_error: 'There was an error duplicating the agent',
   com_ui_prompt_already_shared_to_all: 'This prompt is already shared to all users',
   com_ui_description_placeholder: 'Optional: Enter a description to display for the prompt',
-  com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used.',
+  com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used',
   com_ui_command_usage_placeholder: 'Select a Prompt by command or name',
   com_ui_no_prompt_description: 'No description found.',
   com_ui_confirm_change: 'Confirm Change',
