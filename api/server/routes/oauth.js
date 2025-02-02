@@ -144,4 +144,37 @@ router.get(
   oauthHandler,
 );
 
+/**
+ * Apple Routes
+ */
+// Apply body-parser only to Apple routes
+router.get(
+  '/apple',
+  passport.authenticate('apple', {
+    session: false,
+  }),
+);
+
+// Apply body-parser middleware only to POST callback route
+router.post(
+  '/apple/callback',
+  passport.authenticate('apple', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
+  }),
+  oauthHandler,
+);
+
+// Optionally, handle GET requests for Apple callback without body-parser
+router.get(
+  '/apple/callback',
+  passport.authenticate('apple', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
+  }),
+  oauthHandler,
+);
+
 module.exports = router;
