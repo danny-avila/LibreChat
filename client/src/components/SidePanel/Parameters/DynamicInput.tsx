@@ -48,12 +48,15 @@ function DynamicInput({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    if (type === 'number') {
-      if (!isNaN(Number(value))) {
-        setInputValue(e, true);
-      }
-    } else {
+    if (type !== 'number') {
       setInputValue(e);
+      return;
+    }
+
+    if (value === '') {
+      setInputValue(e);
+    } else if (!isNaN(Number(value))) {
+      setInputValue(e, true);
     }
   };
 

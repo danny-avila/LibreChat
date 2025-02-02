@@ -24,8 +24,6 @@ export enum EModelEndpoint {
   custom = 'custom',
   bedrock = 'bedrock',
   /** @deprecated */
-  bingAI = 'bingAI',
-  /** @deprecated */
   chatGPTBrowser = 'chatGPTBrowser',
   /** @deprecated */
   gptPlugins = 'gptPlugins',
@@ -110,6 +108,12 @@ export enum ImageDetail {
   high = 'high',
 }
 
+export enum ReasoningEffort {
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -123,6 +127,7 @@ export const imageDetailValue = {
 };
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
+export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -381,6 +386,7 @@ export const tPluginSchema = z.object({
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
   isButton: z.boolean().optional(),
+  toolkit: z.boolean().optional(),
 });
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
@@ -457,7 +463,6 @@ export const tMessageSchema = z.object({
   sender: z.string().optional(),
   text: z.string(),
   generation: z.string().nullable().optional(),
-  isEdited: z.boolean().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),
   clientTimestamp: z.string().optional(),
@@ -564,6 +569,8 @@ export const tConversationSchema = z.object({
   file_ids: z.array(z.string()).optional(),
   /* vision */
   imageDetail: eImageDetailSchema.optional(),
+  /* OpenAI: o1 only */
+  reasoning_effort: eReasoningEffortSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -583,25 +590,6 @@ export const tConversationSchema = z.object({
   greeting: z.string().optional(),
   spec: z.string().nullable().optional(),
   iconURL: z.string().nullable().optional(),
-  /*
-  Deprecated fields
-  */
-  /** @deprecated */
-  suggestions: z.array(z.string()).optional(),
-  /** @deprecated */
-  systemMessage: z.string().nullable().optional(),
-  /** @deprecated */
-  jailbreak: z.boolean().optional(),
-  /** @deprecated */
-  jailbreakConversationId: z.string().nullable().optional(),
-  /** @deprecated */
-  conversationSignature: z.string().nullable().optional(),
-  /** @deprecated */
-  clientId: z.string().nullable().optional(),
-  /** @deprecated */
-  invocationId: z.number().nullable().optional(),
-  /** @deprecated */
-  toneStyle: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -788,40 +776,24 @@ export const googleSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export const bingAISchema = tConversationSchema
-  .pick({
-    jailbreak: true,
-    systemMessage: true,
-    context: true,
-    toneStyle: true,
-    jailbreakConversationId: true,
-    conversationSignature: true,
-    clientId: true,
-    invocationId: true,
+/**
+   * TODO: Map the following fields:
+  - presence_penalty -> presencePenalty
+  - frequency_penalty -> frequencyPenalty
+  - stop -> stopSequences
+   */
+export const googleGenConfigSchema = z
+  .object({
+    maxOutputTokens: coerceNumber.optional(),
+    temperature: coerceNumber.optional(),
+    topP: coerceNumber.optional(),
+    topK: coerceNumber.optional(),
+    presencePenalty: coerceNumber.optional(),
+    frequencyPenalty: coerceNumber.optional(),
+    stopSequences: z.array(z.string()).optional(),
   })
-  .transform((obj) => ({
-    ...obj,
-    model: '',
-    jailbreak: obj.jailbreak ?? false,
-    systemMessage: obj.systemMessage ?? null,
-    context: obj.context ?? null,
-    toneStyle: obj.toneStyle ?? 'creative',
-    jailbreakConversationId: obj.jailbreakConversationId ?? null,
-    conversationSignature: obj.conversationSignature ?? null,
-    clientId: obj.clientId ?? null,
-    invocationId: obj.invocationId ?? 1,
-  }))
-  .catch(() => ({
-    model: '',
-    jailbreak: false,
-    systemMessage: null,
-    context: null,
-    toneStyle: 'creative',
-    jailbreakConversationId: null,
-    conversationSignature: null,
-    clientId: null,
-    invocationId: 1,
-  }));
+  .strip()
+  .optional();
 
 export const chatGPTBrowserSchema = tConversationSchema
   .pick({
@@ -1036,6 +1008,7 @@ export const openAISchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
     max_tokens: true,
+    reasoning_effort: true,
   })
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
   .catch(() => ({}));

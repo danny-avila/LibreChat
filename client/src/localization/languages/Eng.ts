@@ -410,6 +410,7 @@ export default {
   com_ui_more_info: 'More info',
   com_ui_preview: 'Preview',
   com_ui_thoughts: 'Thoughts',
+  com_ui_thinking: 'Thinking...',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
   com_ui_locked: 'Locked',
@@ -471,6 +472,7 @@ export default {
   com_auth_facebook_login: 'Continue with Facebook',
   com_auth_github_login: 'Continue with Github',
   com_auth_discord_login: 'Continue with Discord',
+  com_auth_apple_login: 'Sign in with Apple',
   com_auth_email: 'Email',
   com_auth_email_required: 'Email is required',
   com_auth_email_min_length: 'Email must be at least 6 characters',
@@ -577,6 +579,7 @@ export default {
   com_endpoint_top_k: 'Top K',
   com_endpoint_max_output_tokens: 'Max Output Tokens',
   com_endpoint_stop: 'Stop Sequences',
+  com_endpoint_reasoning_effort: 'Reasoning Effort',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
   com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
 
@@ -595,6 +598,8 @@ export default {
     'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
   com_endpoint_openai_resend_files:
     'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+  com_endpoint_openai_reasoning_effort:
+    'o1 models only: constrains effort on reasoning for reasoning models. Reducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response.',
   com_endpoint_openai_detail:
     'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
   com_endpoint_openai_stop: 'Up to 4 sequences where the API will stop generating further tokens.',
@@ -843,10 +848,13 @@ export default {
   com_nav_enable_cache_tts: 'Enable cache TTS',
   com_nav_voice_select: 'Voice',
   com_nav_enable_cloud_browser_voice: 'Use cloud-based voices',
+  com_nav_show_thinking: 'Open Thinking Dropdowns by Default',
   com_nav_info_enter_to_send:
     'When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you\'ll need to press `CTRL + ENTER` / `⌘ + ENTER` to send your message.',
   com_nav_info_save_draft:
     'When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.',
+  com_nav_info_show_thinking:
+    'When enabled, the chat will display the thinking dropdowns open by default, allowing you to view the AI\'s reasoning in real-time. When disabled, the thinking dropdowns will remain closed by default for a cleaner and more streamlined interface',
   com_nav_info_fork_change_default:
     '`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.',
   com_nav_info_fork_split_target_setting:
@@ -875,6 +883,7 @@ export default {
   com_nav_command_settings: 'Command Settings',
   com_nav_command_settings_description: 'Customize which commands are available in the chat',
   com_nav_no_search_results: 'No search results found',
+  com_nav_scroll_button: 'Scroll to the end button',
   com_nav_setting_general: 'General',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',

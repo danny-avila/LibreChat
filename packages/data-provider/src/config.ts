@@ -479,6 +479,7 @@ export type TStartupConfig = {
   githubLoginEnabled: boolean;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
+  appleLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
   /** LDAP Auth Configuration */
@@ -596,7 +597,6 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.azureAssistants,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.agents,
-  EModelEndpoint.bingAI,
   EModelEndpoint.chatGPTBrowser,
   EModelEndpoint.gptPlugins,
   EModelEndpoint.google,
@@ -611,7 +611,6 @@ export const alternateName = {
   [EModelEndpoint.agents]: 'Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.bingAI]: 'Bing',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
   [EModelEndpoint.gptPlugins]: 'Plugins',
   [EModelEndpoint.google]: 'Google',
@@ -735,7 +734,6 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
   [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
@@ -744,7 +742,6 @@ export const initialModelsConfig: TModelsConfig = {
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
-  [EModelEndpoint.bingAI]: `/api/ask/${EModelEndpoint.bingAI}`,
   [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
   [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
   [EModelEndpoint.anthropic]: `/api/ask/${EModelEndpoint.anthropic}`,
@@ -781,9 +778,9 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
-  'o1',
   'gpt-4o',
   'gpt-4o-mini',
+  'o1',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
@@ -1163,8 +1160,6 @@ export enum LocalStorageKeys {
   APP_TITLE = 'appTitle',
   /** Key for the last conversation setup. */
   LAST_CONVO_SETUP = 'lastConversationSetup',
-  /** Key for the last BingAI Settings */
-  LAST_BING = 'lastBingSettings',
   /** Key for the last selected model. */
   LAST_MODEL = 'lastSelectedModel',
   /** Key for the last selected tools. */
@@ -1240,6 +1235,6 @@ export enum SystemCategories {
 export const providerEndpointMap = {
   [EModelEndpoint.openAI]: EModelEndpoint.openAI,
   [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
-  [EModelEndpoint.azureOpenAI]: EModelEndpoint.openAI,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
+  [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
 };

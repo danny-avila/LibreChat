@@ -8,6 +8,11 @@ export namespace Agents {
 
   export type ImageDetail = 'auto' | 'low' | 'high';
 
+  export type ReasoningContentText = {
+    type: ContentTypes.THINK;
+    think: string;
+  };
+
   export type MessageContentText = {
     type: ContentTypes.TEXT;
     text: string;
@@ -20,6 +25,7 @@ export namespace Agents {
   };
 
   export type MessageContentComplex =
+    | ReasoningContentText
     | MessageContentText
     | MessageContentImageUrl
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,9 +221,41 @@ export namespace Agents {
     /**
      * The content of the message in array of text and/or images.
      */
+    content?: Agents.MessageContentComplex[];
+  }
+
+  /**
+   * Represents a reasoning delta i.e. any changed fields on a message during
+   * streaming.
+   */
+  export interface ReasoningDeltaEvent {
+    /**
+     * The identifier of the message, which can be referenced in API endpoints.
+     */
+    id: string;
+
+    /**
+     * The delta containing the fields that have changed.
+     */
+    delta: ReasoningDelta;
+  }
+
+  /**
+   * The reasoning delta containing the fields that have changed on the Message.
+   */
+  export interface ReasoningDelta {
+    /**
+     * The content of the message in array of text and/or images.
+     */
     content?: MessageContentComplex[];
   }
-  export type ContentType = ContentTypes.TEXT | ContentTypes.IMAGE_URL | string;
+
+  export type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
+  export type ContentType =
+    | ContentTypes.THINK
+    | ContentTypes.TEXT
+    | ContentTypes.IMAGE_URL
+    | string;
 }
 
 export type ToolCallResult = {
