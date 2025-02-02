@@ -1,4 +1,4 @@
-const ChallengeStore = require('~/models/challengeStore');
+const ChallengeStore = require('~/models/ChallengeStore');
 
 class MongoChallengeStore {
   async get(userId) {
