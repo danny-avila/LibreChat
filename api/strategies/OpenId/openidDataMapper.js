@@ -1,19 +1,10 @@
 const fetch = require('node-fetch');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logger } = require('~/config');
+const { URL } = require('url');
 
 // Microsoft SDK
 const { Client: MicrosoftGraphClient } = require('@microsoft/microsoft-graph-client');
-
-// Google SDK
-const { google } = require('googleapis');
-const { OAuth2 } = require('google-auth-library');
-
-// GitHub SDK
-const { Octokit } = require('@octokit/rest');
-
-// Okta SDK
-const { OktaAuth } = require('@okta/okta-auth-js');
 
 /**
  * Base class for provider-specific data mappers.
@@ -32,7 +23,7 @@ class BaseDataMapper {
   }
 
   /**
-   * Optionally handle proxy settings for SDK clients.
+   * Optionally handle proxy settings for HTTP requests.
    * @returns {Object} Configuration object with proxy settings if PROXY is set.
    */
   getProxyOptions() {
@@ -49,6 +40,45 @@ class BaseDataMapper {
  */
 class MicrosoftDataMapper extends BaseDataMapper {
   /**
+   * Initializes the MicrosoftGraphClient once for reuse.
+   */
+  constructor() {
+    super();
+    this.accessToken = null;
+
+    this.client = MicrosoftGraphClient.init({
+      defaultVersion: 'beta',
+      authProvider: (done) => {
+        // The authProvider will be called for each request to get the token
+        if (this.accessToken) {
+          done(null, this.accessToken);
+        } else {
+          done(new Error('Access token is not set.'), null);
+        }
+      },
+      fetch: fetch,
+      ...this.getProxyOptions(),
+    });
+
+    // Bind methods to maintain context
+    this.mapCustomData = this.mapCustomData.bind(this);
+    this.cleanData = this.cleanData.bind(this);
+  }
+
+  /**
+   * Set the access token for the client.
+   * This method should be called before making any requests.
+   *
+   * @param {string} accessToken - The access token.
+   */
+  setAccessToken(accessToken) {
+    if (!accessToken || typeof accessToken !== 'string') {
+      throw new Error('[MicrosoftDataMapper] Invalid access token provided.');
+    }
+    this.accessToken = accessToken;
+  }
+
+  /**
    * Map custom OpenID data using the Microsoft Graph SDK.
    *
    * @param {string} accessToken - The access token to authenticate the request.
@@ -57,256 +87,53 @@ class MicrosoftDataMapper extends BaseDataMapper {
    */
   async mapCustomData(accessToken, customQuery) {
     try {
-      const fields = Array.isArray(customQuery) ? customQuery.join(',') : customQuery;
-      const client = MicrosoftGraphClient.init({
-        authProvider: (done) => {
-          done(null, accessToken);
-        },
-        fetch: fetch,
-        ...this.getProxyOptions(),
-      });
+      this.setAccessToken(accessToken);
 
-      const result = await client.api('/me').select(fields).get();
-      return this.cleanOdataKeys(result);
+      if (!customQuery) {
+        logger.warn('[MicrosoftDataMapper] No customQuery provided.');
+        return new Map();
+      }
+
+      // Convert customQuery to a comma-separated string if it's an array
+      const fields = Array.isArray(customQuery) ? customQuery.join(',') : customQuery;
+
+      if (!fields) {
+        logger.warn('[MicrosoftDataMapper] No fields specified in customQuery.');
+        return new Map();
+      }
+
+      const result = await this.client
+        .api('/me')
+        .select(fields)
+        .get();
+
+      const cleanedData = this.cleanData(result);
+      return new Map(Object.entries(cleanedData));
     } catch (error) {
-      logger.error(`[MicrosoftDataMapper] Error: ${error.message}`);
+      // Handle specific Microsoft Graph errors if needed
+      logger.error(`[MicrosoftDataMapper] Error fetching user data: ${error.message}`, { stack: error.stack });
       return new Map();
     }
   }
 
   /**
-   * Recursively remove all keys starting with @odata. from an object and convert objects to Maps.
+   * Recursively remove all keys starting with @odata. from an object and convert Maps.
    *
-   * @param {object} obj - The object to clean and convert.
-   * @returns {Map<string, any>| Array<any> | any} - The cleaned and converted object.
+   * @param {object|Array} obj - The object or array to clean.
+   * @returns {object|Array} - The cleaned object or array.
    */
-  cleanOdataKeys(obj) {
+  cleanData(obj) {
     if (Array.isArray(obj)) {
-      return obj.map(item => this.cleanOdataKeys(item));
+      return obj.map(this.cleanData);
     } else if (obj && typeof obj === 'object') {
-      const cleanedEntries = Object.entries(obj)
-        .filter(([key]) => !key.startsWith('@odata.'))
-        .map(([key, value]) => [key, this.cleanOdataKeys(value)]);
-      return new Map(cleanedEntries);
+      return Object.entries(obj).reduce((acc, [key, value]) => {
+        if (!key.startsWith('@odata.')) {
+          acc[key] = this.cleanData(value);
+        }
+        return acc;
+      }, {});
     }
     return obj;
-  }
-}
-
-/**
- * Google-specific data mapper using the Google People API.
- */
-class GoogleDataMapper extends BaseDataMapper {
-  /**
-   * Map custom OpenID data using the Google People API.
-   *
-   * @param {string} accessToken - The access token to authenticate the request.
-   * @param {string|Array<string>} customQuery - Fields to select from the Google People API.
-   * @returns {Promise<Map<string, any>>} A promise that resolves to a map of custom fields.
-   */
-  async mapCustomData(accessToken, customQuery) {
-    try {
-      const oauth2Client = new OAuth2();
-      const fields = Array.isArray(customQuery) ? customQuery.join(',') : customQuery;
-
-      oauth2Client.setCredentials({ access_token: accessToken });
-
-      const people = google.people({
-        version: 'v1',
-        auth: oauth2Client,
-        ...this.getProxyOptions(),
-      });
-
-      const res = await people.people.get({
-        resourceName: 'people/me',
-        personFields: fields,
-      });
-
-      return new Map(Object.entries(res.data));
-    } catch (error) {
-      logger.error(`[GoogleDataMapper] Error: ${error.message}`);
-      return new Map();
-    }
-  }
-}
-
-/**
- * GitHub-specific data mapper using the GitHub SDK.
- */
-class GitHubDataMapper extends BaseDataMapper {
-  /**
-   * Map custom OpenID data using the GitHub SDK.
-   *
-   * @param {string} accessToken - The access token to authenticate the request.
-   * @param {string|Array<string>} customQuery - Comma-separated string or array of fields to select (e.g., 'login,email,plan').
-   * @returns {Promise<Map<string, any>>} A promise that resolves to a map of custom fields.
-   */
-  async mapCustomData(accessToken, customQuery) {
-    try {
-      const octokit = new Octokit({
-        auth: accessToken,
-        request: {
-          agent: this.getProxyOptions().agent,
-        },
-      });
-
-      const { data } = await octokit.rest.users.getAuthenticated();
-
-      let fields = [];
-      if (typeof customQuery === 'string' && customQuery.trim() !== '') {
-        fields = customQuery.split(',').map(field => field.trim());
-      } else if (Array.isArray(customQuery)) {
-        fields = customQuery;
-      }
-
-      // If no specific fields are requested, return all fields
-      if (fields.length === 0) {
-        return new Map(Object.entries(data));
-      }
-
-      // Filter the result to include only specified fields
-      return this.filterFields(data, fields);
-    } catch (error) {
-      logger.error(`[GitHubDataMapper] Error: ${error.message}`);
-      return new Map();
-    }
-  }
-
-  /**
-   * Filter the fields of an object based on the provided list.
-   *
-   * @param {object} obj - The object to filter.
-   * @param {Array<string>} fields - The list of fields to retain.
-   * @returns {Map<string, any>} - A Map containing only the specified fields.
-   */
-  filterFields(obj, fields) {
-    const filtered = new Map();
-
-    fields.forEach(field => {
-      if (Object.prototype.hasOwnProperty.call(obj, field)) {
-        filtered.set(field, obj[field]);
-      }
-    });
-
-    return filtered;
-  }
-}
-
-/**
- * Okta-specific data mapper using the OktaAuth from @okta/okta-auth-js.
- */
-class OktaDataMapper extends BaseDataMapper {
-  /**
-   * Map custom OpenID data using the OktaAuth from @okta/okta-auth-js.
-   *
-   * @param {string} accessToken - The access token to authenticate the request.
-   * @param {string|Array<string>} customQuery - Comma-separated string or array of fields to select.
-   * @returns {Promise<Map<string, any>>} A promise that resolves to a map of custom fields.
-   */
-  async mapCustomData(accessToken, customQuery) {
-    try {
-      const issuer = process.env.OPENID_ISSUER;
-      if (!issuer) {
-        throw new Error('OPENID_ISSUER environment variable is not set.');
-      }
-
-      // Initialize OktaAuth
-      const oktaAuth = new OktaAuth({
-        issuer: issuer,
-        // Additional configuration if needed
-        ...this.getProxyOptions(),
-      });
-
-      // Set the access token manually
-      oktaAuth.tokenManager.add('accessToken', {
-        accessToken: accessToken,
-        tokenType: 'Bearer',
-        expiresAt: Math.floor(Date.now() / 1000) + 3600, // Assuming token expires in 1 hour
-      });
-
-      // Retrieve user info using the access token
-      const userInfo = await oktaAuth.token.getUserInfo();
-
-      let fields = [];
-      if (typeof customQuery === 'string' && customQuery.trim() !== '') {
-        fields = customQuery.split(',').map(field => field.trim());
-      } else if (Array.isArray(customQuery)) {
-        fields = customQuery;
-      }
-
-      // If no specific fields are requested, return all fields
-      if (fields.length === 0) {
-        return new Map(Object.entries(userInfo));
-      }
-
-      // Filter the result to include only specified fields
-      return this.filterFields(userInfo, fields);
-    } catch (error) {
-      logger.error(`[OktaDataMapper] Error: ${error.message}`);
-      return new Map();
-    }
-  }
-
-  /**
-   * Filter the fields of an object based on the provided list.
-   *
-   * @param {object} obj - The object to filter.
-   * @param {Array<string>} fields - The list of fields to retain.
-   * @returns {Map<string, any>} - A Map containing only the specified fields.
-   */
-  filterFields(obj, fields) {
-    const filtered = new Map();
-
-    fields.forEach(field => {
-      if (Object.prototype.hasOwnProperty.call(obj, field)) {
-        filtered.set(field, obj[field]);
-      }
-    });
-
-    return filtered;
-  }
-}
-
-/**
- * Keycloak-specific data mapper using HTTP requests as there's no official SDK.
- */
-class KeycloakDataMapper extends BaseDataMapper {
-  /**
-   * Map custom OpenID data using Keycloak's user info endpoint.
-   *
-   * @param {string} accessToken - The access token to authenticate the request.
-   * @param {string|Array<string>} customQuery - Not used in this implementation but kept for consistency.
-   * @returns {Promise<Map<string, any>>} A promise that resolves to a map of custom fields.
-   */
-  async mapCustomData(accessToken, customQuery) {
-    try {
-      const issuer = process.env.OPENID_ISSUER;
-      if (!issuer) {
-        throw new Error('OPENID_ISSUER environment variable is not set.');
-      }
-
-      const url = `${issuer}/protocol/openid-connect/userinfo`;
-      const options = {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        ...this.getProxyOptions(),
-      };
-
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        const errorDetails = await response.text();
-        throw new Error(`Request failed with status ${response.status}: ${response.statusText} - ${errorDetails}`);
-      }
-
-      const result = await response.json();
-      return new Map(Object.entries(result));
-    } catch (error) {
-      logger.error(`[KeycloakDataMapper] Error: ${error.message}`);
-      return new Map();
-    }
   }
 }
 
@@ -316,17 +143,6 @@ class KeycloakDataMapper extends BaseDataMapper {
 const PROVIDER_MAPPERS = {
   // Fully Working
   microsoft: MicrosoftDataMapper,
-  // Maybe need some work.
-  google: GoogleDataMapper,
-  // Maybe need some work.
-  keycloak: KeycloakDataMapper,
-  // Maybe need some work.
-  github: GitHubDataMapper,
-  // Maybe need some work. (Assuming Auth0 uses Okta SDK)
-  auth0: OktaDataMapper,
-  // Maybe need some work. (Assuming Auth0 uses Okta SDK)
-  okta: OktaDataMapper,
-  // Additional providers can be added here.
 };
 
 /**
@@ -336,7 +152,7 @@ class OpenIdDataMapper {
   /**
    * Retrieve an instance of the mapper for the specified provider.
    *
-   * @param {string} provider - The name of the provider (e.g. 'microsoft', 'google', 'keycloak', 'github', 'auth0', 'okta').
+   * @param {string} provider - The name of the provider (e.g., 'microsoft').
    * @returns {BaseDataMapper} An instance of the specific data mapper for the provider.
    * @throws {Error} Throws an error if no mapper is found for the specified provider.
    */
