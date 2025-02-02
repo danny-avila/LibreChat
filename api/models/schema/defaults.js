@@ -166,10 +166,8 @@ const agentOptions = {
     type: Number,
     required: false,
   },
-  context: {
-    type: String,
-  },
-  systemMessage: {
+  /** omni models only */
+  reasoning_effort: {
     type: String,
   },
 };
