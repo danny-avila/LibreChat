@@ -2,19 +2,17 @@ import React, { useMemo } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useLocalize, useCategories } from '~/hooks';
-import { cn, createDropdownSetter } from '~/utils';
-import { SelectDropDown } from '~/components/ui';
+import { cn } from '~/utils';
+import { Dropdown } from '~/components/ui';
 
 const CategorySelector = ({
   currentCategory,
   onValueChange,
   className = '',
-  tabIndex,
 }: {
   currentCategory?: string;
   onValueChange?: (value: string) => void;
   className?: string;
-  tabIndex?: number;
 }) => {
   const localize = useLocalize();
   const { control, watch, setValue } = useFormContext();
@@ -33,24 +31,16 @@ const CategorySelector = ({
       name="category"
       control={control}
       render={() => (
-        <SelectDropDown
-          title="Category"
-          tabIndex={tabIndex}
-          value={categoryOption || ''}
-          setValue={createDropdownSetter((value: string) => {
+        <Dropdown
+          label="Category"
+          value={categoryOption.value ?? ''}
+          onChange={(value: string) => {
             setValue('category', value, { shouldDirty: false });
             localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
             onValueChange?.(value);
-          })}
-          availableValues={categories}
-          showAbove={false}
-          showLabel={false}
-          emptyTitle={true}
-          showOptionIcon={true}
-          searchPlaceholder={localize('com_ui_search_categories')}
-          className={cn('h-10 w-56 cursor-pointer', className)}
-          currentValueClass="text-md gap-2"
-          optionsListClass="text-sm max-h-72"
+          }}
+          options={categories || []}
+          className={cn('', className)}
         />
       )}
     />

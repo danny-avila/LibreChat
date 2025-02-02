@@ -240,11 +240,7 @@ const AdminSettings = () => {
           showCloseButton={true}
           title={localize('com_ui_confirm_change')}
           className="w-11/12 max-w-lg"
-          main={
-            <div className="p-4">
-              <p className="mb-4">{localize('com_ui_confirm_admin_use_change')}</p>
-            </div>
-          }
+          main={<p className="mb-4">{localize('com_ui_confirm_admin_use_change')}</p>}
           selection={{
             selectHandler: () => {
               if (confirmAdminUseChange) {
