@@ -21,6 +21,8 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const { WebAuthnStrategy } = require('passport-simple-webauthn2');
+const { mongoUserStore, mongoChallengeStore } = require('~/cache');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -77,11 +79,29 @@ const startServer = async () => {
     passport.use(ldapLogin);
   }
 
+  /* Passkey (WebAuthn) Strategy */
+  if (process.env.PASSKEY_ENABLED) {
+
+    const userStore = new mongoUserStore();
+    const challengeStore = new mongoChallengeStore();
+
+    passport.use(
+      new WebAuthnStrategy({
+        rpID: process.env.RP_ID || 'localhost',
+        rpName: process.env.APP_TITLE || 'LibreChat',
+        userStore,
+        challengeStore,
+        debug: true,
+      }),
+    );
+  }
+
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);
   }
 
   app.use('/oauth', routes.oauth);
+  app.use('/webauthn', routes.authWebAuthn);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
