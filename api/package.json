@@ -107,13 +107,11 @@
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
     "youtube-transcript": "^1.2.1",
-    "zod": "^3.22.4",
-    "@microsoft/microsoft-graph-client": "^3.0.7"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "mongodb-memory-server": "^10.0.0",
-    "@microsoft/microsoft-graph-types-beta": "^0.43.0-preview",
     "nodemon": "^3.0.1",
     "supertest": "^6.3.3"
   }
