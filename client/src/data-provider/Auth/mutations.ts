@@ -9,7 +9,7 @@ import store from '~/store';
 /* login/logout */
 export const useLogoutUserMutation = (
   options?: t.LogoutOptions,
-): UseMutationResult<unknown, unknown, undefined, unknown> => {
+): UseMutationResult<t.TLogoutResponse, unknown, undefined, unknown> => {
   const queryClient = useQueryClient();
   const clearStates = useClearStates();
   const resetDefaultPreset = useResetRecoilState(store.defaultPreset);

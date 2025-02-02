@@ -137,7 +137,7 @@ export const login = (payload: t.TLoginUser) => {
   return request.post(endpoints.login(), payload);
 };
 
-export const logout = () => {
+export const logout = (): Promise<m.TLogoutResponse> => {
   return request.post(endpoints.logout());
 };
 

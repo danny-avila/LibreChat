@@ -42,14 +42,20 @@ const AuthContextProvider = ({
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
-      if (user) {
-        setUser(user);
-      }
+      setUser(user);
       setToken(token);
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
-      if (redirect != null && redirect) {
+      if (redirect == null) {
+        return;
+      }
+      if (redirect.startsWith('http://') || redirect.startsWith('https://')) {
+        // For external links, use window.location
+        window.location.href = redirect;
+        // Or if you want to open in a new tab:
+        // window.open(redirect, '_blank');
+      } else {
         navigate(redirect, { replace: true });
       }
     },
@@ -59,12 +65,12 @@ const AuthContextProvider = ({
 
   const loginUser = useLoginUserMutation();
   const logoutUser = useLogoutUserMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       setUserContext({
         token: undefined,
         isAuthenticated: false,
         user: undefined,
-        redirect: '/login',
+        redirect: data.redirect ?? '/login',
       });
     },
     onError: (error) => {

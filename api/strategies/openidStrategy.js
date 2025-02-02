@@ -129,7 +129,8 @@ async function setupOpenId() {
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     };
     if (isEnabled(process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM)) {
-      clientMetadata.id_token_signed_response_alg = issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
+      clientMetadata.id_token_signed_response_alg =
+        issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
     }
     const client = new issuer.Client(clientMetadata);
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
@@ -240,6 +241,9 @@ async function setupOpenId() {
               });
               user.avatar = imagePath ?? '';
             }
+          }
+          if (issuer.end_session_endpoint) {
+            user.endSessionEndpoint = issuer.end_session_endpoint;
           }
 
           user = await updateUser(user._id, user);

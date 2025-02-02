@@ -124,6 +124,9 @@ const userSchema = mongoose.Schema(
     refreshToken: {
       type: [Session],
     },
+    endSessionEndpoint: {
+      type: String,
+    },
     expiresAt: {
       type: Date,
       expires: 604800, // 7 days in seconds
