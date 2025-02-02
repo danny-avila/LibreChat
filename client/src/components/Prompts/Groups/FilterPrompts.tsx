@@ -2,9 +2,9 @@ import { ListFilter, User, Share2 } from 'lucide-react';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { SystemCategories } from 'librechat-data-provider';
-import type { Option, OptionWithIcon } from '~/common';
 import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
-import { Button, Dropdown, AnimatedSearchInput } from '~/components/ui';
+import { Dropdown, AnimatedSearchInput } from '~/components/ui';
+import type { Option } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -78,7 +78,7 @@ export default function FilterPrompts({
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className=""
+        className="bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         iconOnly

@@ -74,7 +74,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   return (
     <div
       className={cn(
-        'mx-2 my-2 flex cursor-pointer rounded-lg bg-surface-secondary p-3 transition-all duration-300 ease-in-out hover:bg-surface-hover',
+        'mx-2 my-2 flex cursor-pointer rounded-lg border border-border-light bg-surface-secondary p-3 shadow-md transition-all duration-300 ease-in-out hover:bg-surface-hover',
         params.promptId === group._id && 'bg-surface-hover',
       )}
       onClick={handleContainerClick}
@@ -84,12 +84,10 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
       aria-label={`${group.name} prompt group`}
     >
       <div className="flex w-full items-center justify-between">
-        <div className="flex items-center gap-2 truncate">
+        <div className="flex items-center gap-2 truncate pr-2">
           <CategoryIcon category={group.category ?? ''} className="icon-md" aria-hidden="true" />
 
-          <h3 className="truncate text-sm font-semibold text-gray-800 dark:text-gray-200">
-            {group.name}
-          </h3>
+          <h3 className="truncate text-sm font-semibold text-text-primary">{group.name}</h3>
         </div>
 
         <div className="flex h-full items-center gap-2">
@@ -115,7 +113,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
                 <OGDialogTemplate
                   showCloseButton={false}
                   title={localize('com_ui_rename_prompt')}
-                  className="max-w-[450px]"
+                  className="w-11/12 max-w-lg"
                   main={
                     <div className="flex w-full flex-col items-center gap-2">
                       <div className="grid w-full items-center gap-2">
@@ -152,7 +150,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
                 <OGDialogTemplate
                   showCloseButton={false}
                   title={localize('com_ui_delete_prompt')}
-                  className="max-w-[450px]"
+                  className="w-11/12 max-w-lg"
                   main={
                     <div className="flex w-full flex-col items-center gap-2">
                       <div className="grid w-full items-center gap-2">
