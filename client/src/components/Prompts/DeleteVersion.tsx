@@ -18,15 +18,15 @@ const DeleteVersion = ({
     <OGDialog>
       <OGDialogTrigger asChild>
         <Button
-          variant="default"
+          variant="destructive"
           size="sm"
-          className="h-10 w-10 border border-transparent bg-red-600 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800 p-0.5"
+          className="h-10 w-16 p-0.5"
           disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();
           }}
         >
-          <Trash2 className="cursor-pointer text-white size-5" />
+          <Trash2 className="size-5 cursor-pointer text-white" />
         </Button>
       </OGDialogTrigger>
       <OGDialogTemplate
@@ -50,7 +50,7 @@ const DeleteVersion = ({
         selection={{
           selectHandler,
           selectClasses:
-            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+            'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-white',
           selectText: localize('com_ui_delete'),
         }}
       />

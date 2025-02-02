@@ -89,7 +89,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
         <Button
           variant="default"
           size="sm"
-          className="h-10 w-10 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
+          className="h-10 w-16 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
           disabled={disabled}
         >
           <Share2Icon className="size-5 cursor-pointer text-white" />

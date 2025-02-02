@@ -85,15 +85,15 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
     >
       <div className="flex w-full items-center justify-between">
         <div className="flex items-center gap-2 truncate pr-2">
-          <CategoryIcon category={group.category ?? ''} className="icon-md" aria-hidden="true" />
+          <CategoryIcon category={group.category ?? ''} className="icon-lg" aria-hidden="true" />
 
-          <h3 className="truncate text-sm font-semibold text-text-primary">{group.name}</h3>
+          <Label className="text-md truncate font-semibold text-text-primary">{group.name}</Label>
         </div>
 
         <div className="flex h-full items-center gap-2">
           {isGlobalGroup && (
             <EarthIcon
-              className="icon-md text-green-400"
+              className="icon-md text-green-500"
               aria-label={localize('com_ui_global_group')}
             />
           )}

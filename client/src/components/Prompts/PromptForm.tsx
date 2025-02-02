@@ -226,23 +226,49 @@ const PromptForm = () => {
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit((data) => onSave(data.prompt))}>
-        <div>
-          <div className="mt-4 flex flex-col items-center justify-between px-4 dark:text-gray-200 sm:flex-row">
-            {isLoadingGroup ? (
-              <Skeleton className="mb-1 flex h-10 w-32 flex-row items-center font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
+      <form className="mt-4 flex h-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+        <div className="flex h-full w-full flex-row">
+          {/* Left Panel */}
+          <div className="flex-1 px-4">
+            <div className="mb-4 px-4 text-text-primary">
+              {isLoadingGroup ? (
+                <Skeleton className="mb-1 flex h-10 w-32 font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
+              ) : (
+                <PromptName
+                  name={group.name}
+                  onSave={(value) => {
+                    if (!group) {
+                      return console.warn('Group not found');
+                    }
+                    updateGroupMutation.mutate({ id: group._id || '', payload: { name: value } });
+                  }}
+                />
+              )}
+            </div>
+            {isLoadingPrompts ? (
+              <Skeleton className="h-96" />
             ) : (
-              <PromptName
-                name={group.name}
-                onSave={(value) => {
-                  if (!group) {
-                    return console.warn('Group not found');
-                  }
-                  updateGroupMutation.mutate({ id: group._id || '', payload: { name: value } });
-                }}
-              />
+              <div className="flex flex-col gap-4">
+                <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
+                <PromptVariables promptText={promptText} />
+                <Description
+                  initialValue={group.oneliner ?? ''}
+                  onValueChange={debouncedUpdateOneliner}
+                />
+                <Command
+                  initialValue={group.command ?? ''}
+                  onValueChange={debouncedUpdateCommand}
+                />
+              </div>
             )}
-            <div className="flex h-10 flex-row gap-x-2">
+          </div>
+
+          {/* Vertical Divider */}
+          <div className="border-l border-border-light" />
+
+          {/* Right Panel */}
+          <div className="w-1/4 overflow-y-auto px-4" style={{ maxHeight: 'calc(100vh - 150px)' }}>
+            <div className="mb-2 flex flex-row items-center justify-center gap-x-2">
               <CategorySelector
                 currentCategory={group.category}
                 onValueChange={(value) =>
@@ -255,9 +281,9 @@ const PromptForm = () => {
               {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <Button
-                  variant="default"
+                  variant="submit"
                   size="sm"
-                  className="h-10 w-10 border border-transparent bg-green-500 p-0.5 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
+                  className="h-10 w-16 border border-transparent p-0.5 transition-all"
                   onClick={() => {
                     const { _id: promptVersionId = '', prompt } = selectedPrompt ?? ({} as TPrompt);
                     makeProductionMutation.mutate(
@@ -296,49 +322,21 @@ const PromptForm = () => {
                 }}
               />
             </div>
-          </div>
-          {editorMode === PromptsEditorMode.ADVANCED && (
-            <div className="mt-4 flex items-center justify-center text-text-primary sm:hidden">
-              <AlwaysMakeProd />
-            </div>
-          )}
-          <div className="flex h-full w-full flex-col md:flex-row">
-            {/* Left Section */}
-            <div className="flex-1 overflow-y-auto border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)] md:border-r">
-              {isLoadingPrompts ? (
-                <Skeleton className="h-96" />
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
-                  <PromptVariables promptText={promptText} />
-                  <Description
-                    initialValue={group.oneliner ?? ''}
-                    onValueChange={debouncedUpdateOneliner}
+            {editorMode === PromptsEditorMode.ADVANCED &&
+              (isLoadingPrompts
+                ? Array.from({ length: 6 }).map((_: unknown, index: number) => (
+                  <div key={index} className="my-2">
+                    <Skeleton className="h-[72px] w-full" />
+                  </div>
+                ))
+                : !!prompts.length && (
+                  <PromptVersions
+                    group={group}
+                    prompts={prompts}
+                    selectionIndex={selectionIndex}
+                    setSelectionIndex={setSelectionIndex}
                   />
-                  <Command
-                    initialValue={group.command ?? ''}
-                    onValueChange={debouncedUpdateCommand}
-                  />
-                </div>
-              )}
-            </div>
-            {/* Right Section */}
-            {editorMode === PromptsEditorMode.ADVANCED && (
-              <div className="flex-1 overflow-y-auto p-4 md:max-h-[calc(100vh-150px)] md:w-1/4 md:max-w-[35%] lg:max-w-[30%] xl:max-w-[25%]">
-                {isLoadingPrompts ? (
-                  <Skeleton className="h-96 w-full" />
-                ) : (
-                  !!prompts.length && (
-                    <PromptVersions
-                      group={group}
-                      prompts={prompts}
-                      selectionIndex={selectionIndex}
-                      setSelectionIndex={setSelectionIndex}
-                    />
-                  )
-                )}
-              </div>
-            )}
+                ))}
           </div>
         </div>
       </form>

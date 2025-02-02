@@ -13,6 +13,7 @@ interface DropdownProps {
   testId?: string;
   icon?: React.ReactNode;
   iconOnly?: boolean;
+  renderValue?: (option: Option) => React.ReactNode;
 }
 
 const isDivider = (item: string | Option | { divider: true }): item is { divider: true } =>
@@ -31,6 +32,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   testId = 'dropdown-menu',
   icon,
   iconOnly = false,
+  renderValue,
 }) => {
   const handleChange = (value: string) => {
     onChange(value);
@@ -41,14 +43,21 @@ const Dropdown: React.FC<DropdownProps> = ({
     setValue: handleChange,
   });
 
-  const getOptionLabel = (currentValue: string | undefined) => {
-    if (!currentValue) {
-      return '';
+  const getOptionObject = (val: string | undefined): Option | undefined => {
+    if (val == null || val === '') {
+      return undefined;
     }
-    const option = options
+    return options
       .filter((o) => !isDivider(o))
       .map((o) => (typeof o === 'string' ? { value: o, label: o } : o))
-      .find((o) => isOption(o) && o.value === currentValue);
+      .find((o) => isOption(o) && o.value === val) as Option | undefined;
+  };
+
+  const getOptionLabel = (currentValue: string | undefined) => {
+    if (currentValue == null || currentValue === '') {
+      return '';
+    }
+    const option = getOptionObject(currentValue);
     return option ? option.label : currentValue;
   };
 
@@ -58,7 +67,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         store={selectProps}
         className={cn(
           'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
-          iconOnly ? 'h-full w-10' : 'w-fit gap-2',
+          iconOnly ? 'h-full w-10' : 'h-10 w-fit gap-2',
           className,
         )}
         data-testid={testId}
@@ -68,7 +77,13 @@ const Dropdown: React.FC<DropdownProps> = ({
           {!iconOnly && (
             <span className="block truncate">
               {label}
-              {getOptionLabel(selectedValue)}
+              {(() => {
+                const matchedOption = getOptionObject(selectedValue);
+                if (matchedOption && renderValue) {
+                  return renderValue(matchedOption);
+                }
+                return getOptionLabel(selectedValue);
+              })()}
             </span>
           )}
         </div>
@@ -91,12 +106,12 @@ const Dropdown: React.FC<DropdownProps> = ({
           return (
             <Select.SelectItem
               key={`option-${index}`}
-              value={option.value}
+              value={String(option.value)}
               className="select-item"
               data-theme={option.value}
             >
               <div className="flex w-full items-center gap-2">
-                {option.icon && <span>{option.icon}</span>}
+                {option.icon != null && <span>{option.icon as React.ReactNode}</span>}
                 <span className="block truncate">{option.label}</span>
                 {selectedValue === option.value && (
                   <span className="ml-auto pl-2">
