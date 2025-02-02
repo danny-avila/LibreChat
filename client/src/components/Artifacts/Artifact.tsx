@@ -12,6 +12,9 @@ import ArtifactButton from './ArtifactButton';
 export const artifactPlugin: Pluggable = () => {
   return (tree) => {
     visit(tree, ['textDirective', 'leafDirective', 'containerDirective'], (node) => {
+      if (node.name !== 'artifact') {
+        return;
+      }
       node.data = {
         hName: node.name,
         hProperties: node.attributes,
