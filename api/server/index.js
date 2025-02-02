@@ -5,13 +5,12 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
-const session = require('express-session');
 const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
-const { jwtLogin, passportLogin, webauthnStrategy } = require('~/strategies');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
@@ -23,8 +22,9 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-const { User } = require('~/models');
-// const MongoStore = require('connect-mongo');
+const { WebAuthnStrategy } = require('passport-simple-webauthn2');
+const MongoChallengeStore = require('~/cache/mongoChallengeStore');
+const MongoUserStore = require('~/cache/passkeyStore');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -58,14 +58,7 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
   app.set('trust proxy', 1); /* trust first proxy */
-
-  app.use(
-    cors({
-      origin: process.env.DOMAIN_CLIENT, // e.g., 'https://your-client-domain.com'
-      methods: ['GET', 'POST'],
-      credentials: true, // Allow cookies to be sent
-    }),
-  );
+  app.use(cors());
   app.use(cookieParser());
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
@@ -78,56 +71,8 @@ const startServer = async () => {
     );
   }
 
-  /* Session Management */
-  if (
-    (process.env.OPENID_CLIENT_ID &&
-          process.env.OPENID_CLIENT_SECRET &&
-          process.env.OPENID_ISSUER &&
-          process.env.OPENID_SCOPE &&
-          process.env.OPENID_SESSION_SECRET) || process.env.PASSKEY_ENABLED
-  ) {
-    app.use(
-      session({
-        secret: 'your_secret_key', // Replace with a strong secret key
-        resave: false,
-        saveUninitialized: true,
-        cookie: { secure: false }, // Use `true` in production with HTTPS
-      }),
-    );
-
-    // const sessionOptions = {
-    //   secret: process.env.OPENID_SESSION_SECRET || 'your-very-secure-secret',
-    //   resave: false,
-    //   saveUninitialized: false,
-    //   store: MongoStore.create({
-    //     mongoUrl: process.env.MONGO_URI, // MongoDB connection string
-    //   }),
-    //   cookie: {
-    //     secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    //     httpOnly: true,
-    //     sameSite: 'lax', // Adjust based on your needs
-    //   },
-    // };
-
-    // if (isEnabled(process.env.USE_REDIS)) {
-    //   const client = new Redis(process.env.REDIS_URI);
-    //   client
-    //     .on('error', (err) => logger.error('ioredis error:', err))
-    //     .on('ready', () => logger.info('ioredis successfully initialized.'))
-    //     .on('reconnecting', () => logger.info('ioredis reconnecting...'));
-    //   sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
-    // } else {
-    //   sessionOptions.store = new MemoryStore({
-    //     checkPeriod: 86400000, // prune expired entries every 24h
-    //   });
-    // }
-
-    app.use(passport.initialize());
-    app.use(passport.session());
-  } else {
-    app.use(passport.initialize());
-  }
-
+  /* OAUTH */
+  app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
@@ -135,34 +80,32 @@ const startServer = async () => {
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
+
   /* Passkey (WebAuthn) Strategy */
   if (process.env.PASSKEY_ENABLED) {
 
-    // Passport Serialization
-    passport.serializeUser(function(user, done) {
-      done(null, user.id);
-    });
+    const userStore = new MongoUserStore();
+    const challengeStore = new MongoChallengeStore();
 
-    passport.deserializeUser(async function(id, done) {
-      try {
-        const user = await User.findById(id).exec();
-        done(null, user);
-      } catch (err) {
-        done(err);
-      }
-    });
-
-    passport.use(webauthnStrategy);
+    passport.use(
+      new WebAuthnStrategy({
+        rpID: process.env.RP_ID || 'localhost',
+        rpName: process.env.APP_TITLE || 'LibreChat',
+        userStore: userStore,
+        challengeStore: challengeStore,
+        debug: true,
+      }),
+    );
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    configureSocialLogins();
+    configureSocialLogins(app);
   }
 
   app.use('/oauth', routes.oauth);
+  app.use('/webauthn', routes.authWebAuthn);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
-  app.use('/api/auth/passkey', routes.passkeyAuthRoutes);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);

@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const Passkey = require('./Passkey');
 const { SystemRoles } = require('librechat-data-provider');
 
 /**
@@ -38,6 +37,13 @@ const Session = mongoose.Schema({
     type: String,
     default: '',
   },
+});
+
+const passkeySchema = mongoose.Schema({
+  id: { type: String, required: true },
+  publicKey: { type: Buffer, required: true },
+  counter: { type: Number, default: 0 },
+  transports: { type: [String], default: [] },
 });
 
 /** @type {MongooseSchema<MongoUser>} */
@@ -127,7 +133,7 @@ const userSchema = mongoose.Schema(
       index: true,
     },
     passkeys: {
-      type: [Passkey],
+      type: [passkeySchema],
       default: [],
     },
     expiresAt: {

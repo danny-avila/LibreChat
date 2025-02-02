@@ -5,7 +5,6 @@ const azureUtils = require('./azureUtils');
 const deriveBaseURL = require('./deriveBaseURL');
 const extractBaseURL = require('./extractBaseURL');
 const findMessageContent = require('./findMessageContent');
-const encoding = require('./encoding');
 
 module.exports = {
   loadYaml,
@@ -15,5 +14,4 @@ module.exports = {
   ...axiosHelpers,
   ...tokenHelpers,
   findMessageContent,
-  encoding,
 };

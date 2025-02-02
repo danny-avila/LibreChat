@@ -88,7 +88,7 @@
     "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
     "openid-client": "^5.4.2",
-    "passport": "^0.6.0",
+    "passport": "^0.7.0",
     "passport-custom": "^1.1.1",
     "passport-discord": "^0.1.4",
     "passport-facebook": "^3.0.0",
@@ -97,7 +97,7 @@
     "passport-jwt": "^4.0.1",
     "passport-ldapauth": "^3.0.1",
     "passport-local": "^1.0.0",
-    "passport-fido2-webauthn": "^0.1.0",
+    "passport-simple-webauthn2": "^3.0.4",
     "pino": "^8.12.1",
     "sharp": "^0.32.6",
     "tiktoken": "^1.0.15",
@@ -105,16 +105,12 @@
     "ua-parser-js": "^1.0.36",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "zod": "^3.22.4",
-    "base64url": "^3.0.1",
-    "uuid": "^11.0.5",
-    "connect-mongo": "^5.1.0"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "mongodb-memory-server": "^10.0.0",
     "nodemon": "^3.0.1",
-    "supertest": "^6.3.3",
-    "@types/passport-fido2-webauthn": "^0.1.3"
+    "supertest": "^6.3.3"
   }
 }

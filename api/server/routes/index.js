@@ -25,7 +25,7 @@ const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
 const banner = require('./banner');
-const passkeyAuthRoutes = require('./authPasskey');
+const authWebAuthn = require('./authWebAuthn');
 
 module.exports = {
   ask,
@@ -55,5 +55,5 @@ module.exports = {
   categories,
   staticRoute,
   banner,
-  passkeyAuthRoutes,
+  authWebAuthn,
 };

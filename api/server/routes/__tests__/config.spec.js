@@ -24,6 +24,7 @@ afterEach(() => {
   delete process.env.DISCORD_CLIENT_ID;
   delete process.env.DISCORD_CLIENT_SECRET;
   delete process.env.DOMAIN_SERVER;
+  delete process.env.RP_ID;
   delete process.env.ALLOW_REGISTRATION;
   delete process.env.ALLOW_SOCIAL_LOGIN;
   delete process.env.ALLOW_PASSWORD_RESET;
@@ -55,6 +56,7 @@ describe.skip('GET /', () => {
     process.env.DISCORD_CLIENT_ID = 'Test Discord client Id';
     process.env.DISCORD_CLIENT_SECRET = 'Test Discord client Secret';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
+    process.env.RP_ID = 'localhost';
     process.env.ALLOW_REGISTRATION = 'true';
     process.env.ALLOW_SOCIAL_LOGIN = 'true';
     process.env.ALLOW_PASSWORD_RESET = 'true';
