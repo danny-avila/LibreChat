@@ -228,7 +228,7 @@ const PromptForm = () => {
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit((data) => onSave(data.prompt))}>
         <div>
-          <div className="flex flex-col items-center justify-between px-4 dark:text-gray-200 sm:flex-row">
+          <div className="mt-4 flex flex-col items-center justify-between px-4 dark:text-gray-200 sm:flex-row">
             {isLoadingGroup ? (
               <Skeleton className="mb-1 flex h-10 w-32 flex-row items-center font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
             ) : (
@@ -244,7 +244,7 @@ const PromptForm = () => {
             )}
             <div className="flex h-10 flex-row gap-x-2">
               <CategorySelector
-                className="w-48 md:w-56"
+                className="w-40"
                 currentCategory={group.category}
                 onValueChange={(value) =>
                   updateGroupMutation.mutate({
@@ -258,7 +258,7 @@ const PromptForm = () => {
                 <Button
                   variant="default"
                   size="sm"
-                  className="h-10 w-10 border border-transparent bg-green-500 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600 p-0.5"
+                  className="h-10 w-10 border border-transparent bg-green-500 p-0.5 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
                   onClick={() => {
                     const { _id: promptVersionId = '', prompt } = selectedPrompt ?? ({} as TPrompt);
                     makeProductionMutation.mutate(
@@ -283,7 +283,7 @@ const PromptForm = () => {
                     makeProductionMutation.isLoading
                   }
                 >
-                  <Rocket className="cursor-pointer text-white size-5" />
+                  <Rocket className="size-5 cursor-pointer text-white" />
                 </Button>
               )}
               <DeleteConfirm

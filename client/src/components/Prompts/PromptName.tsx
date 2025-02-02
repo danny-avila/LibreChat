@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { EditIcon, SaveIcon } from '~/components/svg';
+import { Button, Label, Input, EditIcon, SaveIcon } from '~/components';
 
 type Props = {
   name?: string;
@@ -31,21 +31,12 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
     clearTimeout(blurTimeoutRef.current);
   };
 
-  const handleBlur = () => {
-    blurTimeoutRef.current = setTimeout(() => {
-      if (document.activeElement !== inputRef.current) {
-        setIsEditing(false);
-        setNewName(name);
-      }
-    }, 200);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsEditing(false);
       setNewName(name);
     }
-    if (e.key === 'Enter' || e.key === 'Tab') {
+    if (e.key === 'Enter') {
       saveName();
     }
   };
@@ -61,39 +52,62 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
   }, [name]);
 
   return (
-    <div className="mb-1 flex flex-row items-center font-bold sm:text-xl md:mb-0 md:text-2xl">
-      {isEditing ? (
-        <div className="mb-1 flex items-center md:mb-0">
-          <input
-            type="text"
-            value={newName ?? ''}
-            onChange={handleInputChange}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            ref={inputRef}
-            className="mr-2 w-56 rounded-md border bg-transparent p-2 focus:outline-none dark:border-gray-600 md:w-auto"
-            autoFocus={true}
-          />
-          <button
-            type="button"
-            onClick={handleSaveClick}
-            className="rounded p-2 hover:bg-gray-300/50 dark:hover:bg-gray-700"
-          >
-            <SaveIcon className="icon-md" size="1.2em" />
-          </button>
-        </div>
-      ) : (
-        <div className="mb-1 flex items-center md:mb-0">
-          <span className="border border-transparent p-2">{newName}</span>
-          <button
-            type="button"
-            onClick={handleEditClick}
-            className="rounded p-2 hover:bg-gray-300/50 dark:hover:bg-gray-700"
-          >
-            <EditIcon className="icon-md" />
-          </button>
-        </div>
-      )}
+    <div className="mr-4 flex items-center">
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr auto',
+          alignItems: 'center',
+        }}
+        className="gap-2"
+      >
+        {isEditing ? (
+          <>
+            <Input
+              type="text"
+              value={newName ?? ''}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              ref={inputRef}
+              className="flex w-full max-w-none rounded-lg text-2xl font-bold transition duration-200"
+              style={{
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+              }}
+            />
+
+            <Button
+              onClick={handleSaveClick}
+              variant="ghost"
+              size="sm"
+              className="h-10 flex-shrink-0"
+            >
+              <SaveIcon className="icon-md" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Label
+              className="text-2xl font-bold"
+              style={{
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {newName}
+            </Label>
+            <Button
+              onClick={handleEditClick}
+              variant="ghost"
+              size="sm"
+              className="h-10 flex-shrink-0"
+            >
+              <EditIcon className="icon-md" />
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 };
