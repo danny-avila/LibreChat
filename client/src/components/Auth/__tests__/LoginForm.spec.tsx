@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
 import * as authDataProvider from '~/data-provider/Auth/mutations';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
 import Login from '../LoginForm';
 
 jest.mock('librechat-data-provider/react-query');
@@ -83,7 +84,7 @@ const setup = ({
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
   const mockUseGetBannerQuery = jest
-    .spyOn(mockDataProvider, 'useGetBannerQuery')
+    .spyOn(miscDataProvider, 'useGetBannerQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetBannerQueryReturnValue);
   return {

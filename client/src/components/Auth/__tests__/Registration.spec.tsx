@@ -2,6 +2,7 @@ import reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { render, waitFor, screen } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
 import type { TStartupConfig } from 'librechat-data-provider';
 import Registration from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
@@ -77,7 +78,7 @@ const setup = ({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
   const mockUseGetBannerQuery = jest
-    .spyOn(mockDataProvider, 'useGetBannerQuery')
+    .spyOn(miscDataProvider, 'useGetBannerQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetBannerQueryReturnValue);
   const renderResult = render(
