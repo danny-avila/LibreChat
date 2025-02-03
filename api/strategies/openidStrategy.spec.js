@@ -245,15 +245,18 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    await validate(tokenset, userinfo);
 
     // Assert – updateUser should be called and the user object updated
-    expect(updateUser).toHaveBeenCalledWith(existingUser._id, expect.objectContaining({
-      provider: 'openid',
-      openidId: baseUserinfo.sub,
-      username: baseUserinfo.username,
-      name: `${baseUserinfo.given_name} ${baseUserinfo.family_name}`,
-    }));
+    expect(updateUser).toHaveBeenCalledWith(
+      existingUser._id,
+      expect.objectContaining({
+        provider: 'openid',
+        openidId: baseUserinfo.sub,
+        username: baseUserinfo.username,
+        name: `${baseUserinfo.given_name} ${baseUserinfo.family_name}`,
+      }),
+    );
   });
 
   it('should enforce the required role and reject login if missing', async () => {
@@ -268,9 +271,7 @@ describe('setupOpenId', () => {
 
     // Assert – verify that the strategy rejects login
     expect(user).toBe(false);
-    expect(details.message).toBe(
-      'You must have the "requiredRole" role to log in.',
-    );
+    expect(details.message).toBe('You must have the "requiredRole" role to log in.');
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
@@ -292,7 +293,7 @@ describe('setupOpenId', () => {
     delete userinfo.picture;
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    await validate(tokenset, userinfo);
 
     // Assert – fetch should not be called and avatar should remain undefined or empty
     expect(fetch).not.toHaveBeenCalled();
