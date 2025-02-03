@@ -1,0 +1,169 @@
+openapi: 3.0.3
+info:
+  title: GitHub OAuth Demo
+  version: 1.0.0
+  description: |
+    Demonstrates the Authorization Code flow for GitHub OAuth 2.0 in an OpenAPI file.
+    Note that GitHub's real endpoints for user data are on `api.github.com`, while
+    the OAuth endpoints are on `github.com/login/oauth/...`.
+
+servers:
+  # This base URL covers the OAuth endpoints (authorize, access_token)
+  - url: https://github.com
+
+paths:
+  /login/oauth/authorize:
+    get:
+      summary: Redirect to GitHub's OAuth2 Authorization
+      description: |
+        This is the GitHub endpoint where you redirect the user to start the authorization code flow.
+        They sign into GitHub and grant your app permission. GitHub sends them back to your `redirect_uri`
+        with a temporary `code`.
+      parameters:
+        - in: query
+          name: client_id
+          required: true
+          schema:
+            type: string
+          description: Your GitHub OAuth app's client ID.
+        - in: query
+          name: redirect_uri
+          required: false
+          schema:
+            type: string
+          description: Must match the URL set in your GitHub OAuth app settings.
+        - in: query
+          name: scope
+          required: false
+          schema:
+            type: string
+          description: Space-delimited list of scopes (e.g., "read:user repo").
+        - in: query
+          name: state
+          required: false
+          schema:
+            type: string
+          description: A random string for CSRF protection.
+      responses:
+        '302':
+          description: Redirects user to sign in with GitHub.
+        '400':
+          description: Missing or invalid client_id.
+
+  /login/oauth/access_token:
+    post:
+      summary: Exchange OAuth Code for Access Token
+      description: |
+        Exchanges the code from the previous step for an OAuth2 access token. You must post
+        `client_id`, `client_secret`, and `code`, plus an optional `redirect_uri` and `state`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                  description: Your GitHub OAuth app's client ID.
+                client_secret:
+                  type: string
+                  description: Your GitHub OAuth app's client secret.
+                code:
+                  type: string
+                  description: The code provided in the redirect.
+                redirect_uri:
+                  type: string
+                  description: Must match the redirect URI from the previous step.
+                state:
+                  type: string
+                  description: Must match the state if used in the previous step for CSRF protection.
+      responses:
+        '200':
+          description: A successful token response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Missing or invalid parameters.
+        '401':
+          description: Invalid client credentials or code.
+
+  # The user profile is on a different host: https://api.github.com
+  /user:
+    get:
+      summary: Retrieve Authenticated GitHub User
+      description: |
+        Once you have the `access_token`, call this endpoint (using `Authorization: Bearer YOUR_TOKEN`)
+        to get user profile data such as login name, id, and avatar_url.
+      operationId: getUser
+      servers:
+        - url: https://api.github.com
+      security:
+        - GitHubOAuth: [read:user]
+      responses:
+        '200':
+          description: User profile data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubUser'
+        '401':
+          description: Unauthorized or invalid token
+
+components:
+  securitySchemes:
+    GitHubOAuth:
+      type: oauth2
+      description: |
+        Standard OAuth2 Authorization Code flow for GitHub. 
+        Requires a valid access token in the 'Authorization' header.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://github.com/login/oauth/authorize
+          tokenUrl: https://github.com/login/oauth/access_token
+          scopes:
+            read:user: Grants read access to a user's profile data
+
+  schemas:
+    TokenResponse:
+      type: object
+      description: GitHub's token exchange response
+      properties:
+        access_token:
+          type: string
+          description: The OAuth access token
+        token_type:
+          type: string
+          example: bearer
+        scope:
+          type: string
+          description: Space-separated list of granted scopes
+      required:
+        - access_token
+        - token_type
+
+    GitHubUser:
+      type: object
+      description: A GitHub user profile
+      properties:
+        login:
+          type: string
+          description: GitHub username
+        id:
+          type: integer
+          description: GitHub user ID
+        avatar_url:
+          type: string
+          format: uri
+          description: URL to the user's avatar image
+        name:
+          type: string
+          description: The user's display name
+        email:
+          type: string
+          description: The user's public email if visible
+      required:
+        - login
+        - id

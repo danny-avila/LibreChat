@@ -15,6 +15,10 @@ function addLinePrefix(text, prefix = '// ') {
     .join('\n');
 }
 
+/**
+ * Creates a meta-prompt explaining the available functions and how the LLM
+ * should respond with the correct JSON.
+ */
 function createPrompt(name, functions) {
   const prefix = `// The ${name} tool has the following functions. Determine the desired or most optimal function for the user's query:`;
   const functionDescriptions = functions
@@ -25,6 +29,7 @@ function createPrompt(name, functions) {
 // Always format as such: {{"func": "function_name", "intent": "intent and expected result"}}`;
 }
 
+// Old approach for "service_http" type w/ "bearer" tokens
 const AuthBearer = z
   .object({
     type: z.string().includes('service_http'),
@@ -35,6 +40,9 @@ const AuthBearer = z
   })
   .catch(() => false);
 
+/**
+ * Older style "AuthDefinition" that checks for "verification_tokens" object
+ */
 const AuthDefinition = z
   .object({
     type: z.string(),
@@ -45,6 +53,21 @@ const AuthDefinition = z
   })
   .catch(() => false);
 
+/**
+ * New approach for "oauth2" usage — expects an access_token (optional).
+ * The handshake/redirect should happen elsewhere (you handle code->token).
+ * Once you have a token, pass { type: 'oauth2', access_token: '...' } here.
+ */
+const AuthOAuth2 = z
+  .object({
+    type: z.string().includes('oauth2'),
+    access_token: z.string().optional(),
+  })
+  .catch(() => false);
+
+/**
+ * Reads a local file (JSON or YAML) and returns its content parsed.
+ */
 async function readSpecFile(filePath) {
   try {
     const fileContents = await fs.promises.readFile(filePath, 'utf8');
@@ -58,6 +81,11 @@ async function readSpecFile(filePath) {
   }
 }
 
+/**
+ * Attempts to load an OpenAPI spec from:
+ *  1. A remote JSON file if URL is valid and ends with .json
+ *  2. Otherwise, attempts a local path in .well-known/openapi/<url>
+ */
 async function getSpec(url) {
   const RegularUrl = z
     .string()
@@ -84,6 +112,13 @@ async function getSpec(url) {
   return ValidSpecPath.parse(url);
 }
 
+/**
+ * Creates a "tool" that can be used by an LLM to call the specified OpenAPI spec.
+ * It handles:
+ *  - optional memory (chat history)
+ *  - optional service_http/bearer or OAuth2 auth
+ *  - building the correct chain/prompt
+ */
 async function createOpenAPIPlugin({ data, llm, user, message, memory, signal }) {
   let spec;
   try {
@@ -98,17 +133,29 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, signal })
     return null;
   }
 
+  // Prepare headers for the requests
   const headers = {};
   const { auth, name_for_model, description_for_model, description_for_human } = data;
+
+  // -- Check if we have the older "service_http + bearer" style
   if (auth && AuthDefinition.parse(auth)) {
-    logger.debug('[createOpenAPIPlugin] auth detected', auth);
-    const { openai } = auth.verification_tokens;
+    logger.debug('[createOpenAPIPlugin] auth (service_http) detected', auth);
+    const { openai } = auth.verification_tokens || {};
     if (AuthBearer.parse(auth)) {
       headers.authorization = `Bearer ${openai}`;
       logger.debug('[createOpenAPIPlugin] added auth bearer', headers);
     }
   }
 
+  // -- Check if we have an OAuth2 token
+  const maybeOAuth2 = AuthOAuth2.parse(auth);
+  if (maybeOAuth2) {
+    logger.debug('[createOpenAPIPlugin] OAuth2 auth detected', auth);
+    if (maybeOAuth2.access_token) {
+      headers.authorization = `Bearer ${maybeOAuth2.access_token}`;
+      logger.debug('[createOpenAPIPlugin] Using OAuth2 bearer token', headers);
+    }
+  }
   const chainOptions = { llm };
 
   if (data.headers && data.headers['librechat_user_id']) {
@@ -117,7 +164,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, signal })
   }
 
   if (Object.keys(headers).length > 0) {
-    logger.debug('[createOpenAPIPlugin] headers detected', headers);
+    logger.debug('[createOpenAPIPlugin] final headers:', headers);
     chainOptions.headers = headers;
   }
 
@@ -165,8 +212,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, signal })
         .describe('Describe your intent with the function and your expected result'),
     }),
     func: async ({ func = '', intent = '' }) => {
-      const filteredFunctions = functions.filter((f) => f.name === func);
-      chain.chains[0].lc_kwargs.llmKwargs.functions = filteredFunctions;
+      chain.chains[0].lc_kwargs.llmKwargs.functions = functions.filter((f) => f.name === func);
       const query = `${message}${func?.length > 0 ? `\n// Intent: ${intent}` : ''}`;
       const result = await chain.call({
         query,
