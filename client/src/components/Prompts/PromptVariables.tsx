@@ -28,8 +28,8 @@ const PromptVariables = ({
   }, [promptText]);
 
   return (
-    <div className="rounded-xl border border-border-light bg-surface-primary p-4 shadow-md ">
-      <h3 className="flex items-center gap-2 py-2 text-lg font-semibold text-gray-800 dark:text-gray-200">
+    <div className="rounded-xl border border-border-light bg-transparent p-4 shadow-md ">
+      <h3 className="flex items-center gap-2 py-2 text-lg font-semibold text-text-primary">
         <Variable className="icon-sm" />
         {localize('com_ui_variables')}
       </h3>
@@ -39,7 +39,7 @@ const PromptVariables = ({
             {variables.map((variable, index) => (
               <span
                 className={cn(
-                  'rounded-full border border-gray-300 px-3 py-1 text-gray-800 dark:border-gray-700 dark:text-gray-200',
+                  'rounded-full border border-border-light px-3 py-1 text-text-primary',
                   specialVariables[variable.toLowerCase()] != null ? specialVariableClasses : '',
                 )}
                 key={index}
@@ -51,30 +51,30 @@ const PromptVariables = ({
             ))}
           </div>
         ) : (
-          <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="text-sm text-text-secondary">
             <ReactMarkdown components={{ code: CodeVariableGfm }}>
               {localize('com_ui_variables_info')}
             </ReactMarkdown>
           </div>
         )}
-        <Separator className="my-3 bg-gray-300 dark:bg-gray-700" />
+        <Separator className="my-3 text-text-primary" />
         {showInfo && (
           <div className="space-y-4">
             <div>
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+              <span className="text-sm font-medium text-text-primary">
                 {localize('com_ui_special_variables')}
               </span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">
+              <span className="text-sm text-text-secondary">
                 <ReactMarkdown components={{ code: CodeVariableGfm }}>
                   {localize('com_ui_special_variables_info')}
                 </ReactMarkdown>
               </span>
             </div>
             <div>
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+              <span className="text-text-text-primary text-sm font-medium">
                 {localize('com_ui_dropdown_variables')}
               </span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">
+              <span className="text-sm text-text-secondary">
                 <ReactMarkdown components={{ code: CodeVariableGfm }}>
                   {localize('com_ui_dropdown_variables_info')}
                 </ReactMarkdown>
