@@ -1,11 +1,12 @@
-import { useGetEndpointsQuery, useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type {
-  TConversation,
-  TPreset,
   TEndpointsConfig,
   TModelsConfig,
+  TConversation,
+  TPreset,
 } from 'librechat-data-provider';
 import { getDefaultEndpoint, buildDefaultConvo } from '~/utils';
+import { useGetEndpointsQuery } from '~/data-provider';
 
 type TDefaultConvo = { conversation: Partial<TConversation>; preset?: Partial<TPreset> | null };
 
