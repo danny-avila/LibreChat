@@ -37,7 +37,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
-            {{ if .Values.config.envSecrets.secretRef }}
+            {{- if .Values.config.envSecrets.secretRef }}
             - secretRef:
                 name: {{ .Values.config.envSecrets.secretRef }}
             {{- end }}
@@ -53,7 +53,7 @@ spec:
             {{- end }}
           ports:
             - name: http
-              containerPort: 3080
+              containerPort: {{ .Values.containerPort }}
               protocol: TCP
           livenessProbe:
             initialDelaySeconds: 5

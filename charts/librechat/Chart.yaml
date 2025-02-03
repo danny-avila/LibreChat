@@ -2,3 +2,5 @@ apiVersion: v2
 name: librechat
 type: application
 version: 1.0.0
+appVersion: "latest"
+icon: "https://www.librechat.ai/librechat.svg"

@@ -1,6 +1,6 @@
 name: Build Helm Charts on Tag
 
-# The workflow is triggered when a tag is pushed
+# Trigger the workflow when a tag is pushed.
 on:
   push:
     tags:
@@ -12,7 +12,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -27,7 +27,20 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.6.0
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Lint Helm Chart
+        run: helm lint charts/librechat
+
+      - name: Package Helm Chart
+        run: helm package charts/librechat --destination ./packages
+
+      - name: Update Helm Repository Index
+        run: |
+          # Copy artifacthub-repo.yml to the packages folder so it’s served with the index.
+          cp artifacthub-repo.yml ./packages/
+          helm repo index ./packages --url https://danny-avila.github.io/LibreChat
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./packages

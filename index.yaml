@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  librechat:
+  - apiVersion: v2
+    appVersion: latest
+    created: "2025-02-03T20:50:00.533105+01:00"
+    digest: 6e0264c8be2aed5653f7ddfc1b8b63362b86450e3ac2e7e5b66003fec826203f
+    icon: https://www.librechat.ai/librechat.svg
+    name: librechat
+    type: application
+    urls:
+    - https://danny-avila.github.io/LibreChat/librechat-1.0.0.tgz
+    version: 1.0.0
+generated: "2025-02-03T20:50:00.531905+01:00"

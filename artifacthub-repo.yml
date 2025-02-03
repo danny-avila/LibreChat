@@ -1,0 +1,21 @@
+# Artifact Hub repository metadata file
+#
+# This file is used by Artifact Hub to:
+# - Verify the publisher (Verified publisher flag) when the repositoryID is set.
+# - Claim repository ownership via the owners field.
+# - Exclude specific packages via the ignore field.
+#
+# For Helm chart repositories, this file must be served at the same level as the index.yaml.
+
+repositoryID: your-artifact-hub-repository-id  # Replace with the ID provided in Artifact Hub once available
+
+owners:
+  - name: danny-avila
+    email: danny@librechat.ai   # Replace with your actual email (the one you use for Artifact Hub)
+#  - name: another-owner       # You can add additional owners if needed.
+#    email: owner2@example.com
+
+#ignore:
+#  - name: package1            # Packages to ignore (if any)
+#  - name: package2
+#    version: beta             # Only ignore beta versions of package2

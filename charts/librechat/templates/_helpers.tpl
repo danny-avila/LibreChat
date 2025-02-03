@@ -51,7 +51,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
+Create the name of the service account to use.
 */}}
 {{- define "librechat.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
@@ -60,15 +60,3 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
-
-{{/*
-Print string from list split by ,
-*/}}
-{{- define "model.list" -}}
-{{- range $idx, $val := $.Values.configEndpoint.models -}}
-{{- if $idx }}
-{{- print ", "  -}} 
-{{- end -}}
-{{- $val -}}
-{{- end -}}
-{{- end -}}
