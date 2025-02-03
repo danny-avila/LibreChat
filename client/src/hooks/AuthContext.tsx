@@ -7,16 +7,16 @@ import {
   useCallback,
   createContext,
 } from 'react';
-import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
-import { useRefreshTokenMutation } from 'librechat-data-provider/react-query';
-import type { TLoginResponse, TLoginUser } from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import {
-  useLoginUserMutation,
-  useLogoutUserMutation,
   useGetRole,
   useGetUserQuery,
+  useLoginUserMutation,
+  useLogoutUserMutation,
+  useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
@@ -32,6 +32,7 @@ const AuthContextProvider = ({
   children: ReactNode;
 }) => {
   const [user, setUser] = useRecoilState(store.user);
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -69,7 +70,7 @@ const AuthContextProvider = ({
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
   const loginUser = useLoginUserMutation({
-    onSuccess: (data: TLoginResponse) => {
+    onSuccess: (data: t.TLoginResponse) => {
       const { user, token } = data;
       setError(undefined);
       setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
@@ -99,12 +100,12 @@ const AuthContextProvider = ({
       });
     },
   });
+  const refreshToken = useRefreshTokenMutation();
 
   const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
-  const refreshToken = useRefreshTokenMutation();
 
-  const login = (data: TLoginUser) => {
+  const login = (data: t.TLoginUser) => {
     loginUser.mutate(data);
   };
 
@@ -113,8 +114,12 @@ const AuthContextProvider = ({
       console.log('Test mode. Skipping silent refresh.');
       return;
     }
+    if (!queriesEnabled) {
+      console.log('Skipping refresh due to logout');
+      return;
+    }
     refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse | undefined) => {
+      onSuccess: (data: t.TRefreshTokenResponse | undefined) => {
         const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });

@@ -9,7 +9,6 @@ import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
 import { QueryKeys } from '../keys';
-import request from '../request';
 import * as s from '../schemas';
 import * as t from '../types';
 
@@ -290,20 +289,6 @@ export const useRegisterUserMutation = (
       },
     },
   );
-};
-
-export const useRefreshTokenMutation = (): UseMutationResult<
-  t.TRefreshTokenResponse | undefined,
-  unknown,
-  unknown,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation(() => request.refreshToken(), {
-    onMutate: () => {
-      queryClient.removeQueries();
-    },
-  });
 };
 
 export const useUserKeyQuery = (
