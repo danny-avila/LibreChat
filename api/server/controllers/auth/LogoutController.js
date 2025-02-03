@@ -17,7 +17,7 @@ const logoutController = async (req, res) => {
       process.env.OPENID_ISSUER
     ) {
       const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
-      const redirect = issuer.end_session_endpoint;
+      const redirect = issuer.metadata.end_session_endpoint;
       if (!redirect) {
         logger.warn(
           '[logoutController] end_session_endpoint not found in OpenID issuer metadata. Please verify that the issuer is correct.',
