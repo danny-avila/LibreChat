@@ -32,7 +32,6 @@ const AuthContextProvider = ({
   children: ReactNode;
 }) => {
   const [user, setUser] = useRecoilState(store.user);
-  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -112,10 +111,6 @@ const AuthContextProvider = ({
   const silentRefresh = useCallback(() => {
     if (authConfig?.test === true) {
       console.log('Test mode. Skipping silent refresh.');
-      return;
-    }
-    if (!queriesEnabled) {
-      console.log('Skipping refresh due to logout');
       return;
     }
     refreshToken.mutate(undefined, {
