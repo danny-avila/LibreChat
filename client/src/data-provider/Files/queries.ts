@@ -15,7 +15,7 @@ export const useGetFiles = <TData = t.TFile[] | boolean>(
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
-    enabled: config?.enabled === true && queriesEnabled,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
 };
 

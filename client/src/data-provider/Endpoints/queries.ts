@@ -8,6 +8,7 @@ import store from '~/store';
 export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
   config?: UseQueryOptions<t.TEndpointsConfig, unknown, TData>,
 ): QueryObserverResult<TData> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.TEndpointsConfig, unknown, TData>(
     [QueryKeys.endpoints],
     () => dataService.getAIEndpoints(),
@@ -17,6 +18,7 @@ export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };
@@ -24,6 +26,7 @@ export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
 export const useGetStartupConfig = (
   config?: UseQueryOptions<t.TStartupConfig>,
 ): QueryObserverResult<t.TStartupConfig> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.TStartupConfig>(
     [QueryKeys.startupConfig],
     () => dataService.getStartupConfig(),
@@ -32,6 +35,7 @@ export const useGetStartupConfig = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };

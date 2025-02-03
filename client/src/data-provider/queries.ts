@@ -138,7 +138,7 @@ export const useConversationsInfiniteQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
-      enabled: config?.enabled === true && queriesEnabled,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };
