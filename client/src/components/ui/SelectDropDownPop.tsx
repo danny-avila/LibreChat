@@ -5,6 +5,7 @@ import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import { useMultiSearch } from './MultiSearch';
+import axios from 'axios';
 
 type SelectDropDownProps = {
   id?: string;
@@ -34,6 +35,14 @@ function SelectDropDownPop({
   if (showAbove) {
     transitionProps.className = 'bottom-full mb-3';
   }
+
+  const handleSetValue = async (option: string | Option) => {
+    if (typeof option === 'string') {
+      setValue(option);
+      await axios.put(`/api/models/${option}`, {}, { responseType: 'json' });
+      const res = await axios.get('/api/models/current', { responseType: 'json' });
+    }
+  };
 
   let title = _title;
 
@@ -120,7 +129,7 @@ function SelectDropDownPop({
                     title={option}
                     value={option}
                     selected={!!(value && value === option)}
-                    onClick={() => setValue(option)}
+                    onClick={() => handleSetValue(option)}
                   />
                 );
               })}

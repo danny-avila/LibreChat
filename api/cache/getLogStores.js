@@ -53,7 +53,12 @@ const abortKeys = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: Time.TEN_MINUTES });
 
+const currentAgentId = isRedisEnabled
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.CURRENT_AGENT_ID });
+
 const namespaces = {
+  [CacheKeys.CURRENT_AGENT_ID]: currentAgentId,
   [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,

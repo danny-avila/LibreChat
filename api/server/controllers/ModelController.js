@@ -1,7 +1,11 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
+const { loadDefaultModels } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
-const { BedrockAgentClient, ListAgentsCommand } = require('@aws-sdk/client-bedrock-agent');
+const {
+  BedrockAgentClient,
+  ListAgentsCommand,
+  ListAgentAliasesCommand,
+} = require('@aws-sdk/client-bedrock-agent');
 
 /**
  * @param {ServerRequest} req
@@ -18,10 +22,43 @@ const getModelsConfig = async (req) => {
 
 /**
  * Loads the models from the config.
+ * @param {string} key - The key of the model to set as current.
+ * @returns {Promise<boolean>} Whether the model was set.
+ */
+async function setCurrentModel(label) {
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
+  const agentName = cachedModelsConfig?.find((a) => a.agentName === label)?.agentName;
+
+  await cache.set(CacheKeys.CURRENT_AGENT_ID, agentName);
+  return true;
+}
+
+async function getCurrentModel() {
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const availableAgents = await cache.get(CacheKeys.MODELS_CONFIG);
+  console.log('availableAgents:', availableAgents); // eslint-disable-line no-console
+  const currentAgentName = await cache.get(CacheKeys.CURRENT_AGENT_ID);
+  console.log('currentAgentName:', currentAgentName); // eslint-disable-line no-console
+  let agentId = '';
+  let latestAliasId = '';
+  availableAgents.forEach((agent) => {
+    if (agent.agentName === currentAgentName) {
+      latestAliasId = agent.latestAliasId;
+      agentId = agent.agentId;
+      return;
+    }
+  });
+  return { agentId, latestAliasId };
+}
+
+/**
+ * Loads the models from the config.
  * @param {ServerRequest} req - The Express request object.
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const client = new BedrockAgentClient({
     region: process.env.AWS_REGION ?? 'eu-central-1',
     credentials: {
@@ -30,28 +67,32 @@ async function loadModels(req) {
     },
   });
 
-  // console.log(req);
-
+  // First request to get agent summaries
   const command = new ListAgentsCommand({});
   const response = await client.send(command);
-  const agNames = [];
-  response.agentSummaries?.forEach((a) => {
-    agNames.push(a.description ?? a.agentName);
+  const agentSummaries = response.agentSummaries;
+
+  // Second request to get aliases for each agent
+  const aliasRequests = agentSummaries.map(async (agent) => {
+    const aliasCommand = new ListAgentAliasesCommand({ agentId: agent.agentId });
+    const aliasResponse = await client.send(aliasCommand);
+    const latestAgent = aliasResponse.agentAliasSummaries.reduce((latest, current) =>
+      new Date(current.updatedAt) > new Date(latest.updatedAt) ? current : latest,
+    );
+    return {
+      ...agent,
+      latestAliasId: latestAgent.agentAliasId,
+    };
   });
 
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (cachedModelsConfig) {
-    return cachedModelsConfig;
-  }
+  // Wait for all alias requests to complete
+  const agentsWithAliases = await Promise.all(aliasRequests);
+  const agNames = agentsWithAliases.map((a) => a.agentName);
   const defaultModelsConfig = await loadDefaultModels(req);
-  const customModelsConfig = await loadConfigModels(req);
 
-  const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
-
-  await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
-  return { bedrock: agNames };
-  // return modelConfig;
+  const modelConfig = { ...defaultModelsConfig, ...{ bedrock: agNames } };
+  await cache.set(CacheKeys.MODELS_CONFIG, agentsWithAliases);
+  return modelConfig;
 }
 
 async function modelController(req, res) {
@@ -59,4 +100,4 @@ async function modelController(req, res) {
   res.send(modelConfig);
 }
 
-module.exports = { modelController, loadModels, getModelsConfig };
+module.exports = { modelController, loadModels, getModelsConfig, setCurrentModel, getCurrentModel };
