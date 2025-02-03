@@ -9,4 +9,9 @@ const messageAttachmentsMap = atom<Record<string, TAttachment[] | undefined>>({
   default: {},
 });
 
-export default { hideBannerHint, messageAttachmentsMap };
+const queriesEnabled = atom<boolean>({
+  key: 'queriesEnabled',
+  default: true,
+});
+
+export default { hideBannerHint, messageAttachmentsMap, queriesEnabled };
