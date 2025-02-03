@@ -127,6 +127,9 @@ async function setupOpenId() {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
+      ...(!issuer.metadata.end_session_endpoint && process.env.OPENID_END_SESSION_ENDPOINT && {
+        post_logout_redirect_uri: process.env.DOMAIN_SERVER,
+      }),
     };
     if (isEnabled(process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM)) {
       clientMetadata.id_token_signed_response_alg = issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
