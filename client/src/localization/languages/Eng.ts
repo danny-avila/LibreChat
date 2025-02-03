@@ -235,6 +235,7 @@ export default {
   com_ui_back_to_chat: 'Back to Chat',
   com_ui_back_to_prompts: 'Back to Prompts',
   com_ui_categories: 'Categories',
+  com_ui_filter_prompts: 'Filter Prompts',
   com_ui_filter_prompts_name: 'Filter prompts by name',
   com_ui_search_categories: 'Search Categories',
   com_ui_manage: 'Manage',

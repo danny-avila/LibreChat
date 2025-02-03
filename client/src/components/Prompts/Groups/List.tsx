@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
@@ -34,7 +35,8 @@ export default function List({
             className="mx-2 w-full bg-transparent px-3"
             onClick={() => navigate('/d/prompts/new')}
           >
-            + {localize('com_ui_create_prompt')}
+            <Plus className="size-4" aria-hidden />
+            {localize('com_ui_create_prompt')}
           </Button>
         </div>
       )}

@@ -313,7 +313,6 @@ const PromptForm = () => {
             }}
           >
             <div className="flex h-full">
-              {/* Left Panel */}
               <div className="flex-1 overflow-hidden px-4">
                 <div className="mb-4 flex items-center gap-2 text-text-primary">
                   {isLoadingGroup ? (
@@ -323,13 +322,10 @@ const PromptForm = () => {
                       <PromptName
                         name={groupName}
                         onSave={(value) => {
-                          if (!group || !group._id) {
-                            return console.warn('Group not found');
+                          if (!group._id) {
+                            return;
                           }
-                          updateGroupMutation.mutate({
-                            id: group._id,
-                            payload: { name: value },
-                          });
+                          updateGroupMutation.mutate({ id: group._id, payload: { name: value } });
                         }}
                       />
                       <div className="flex-1" />
@@ -338,6 +334,7 @@ const PromptForm = () => {
                         variant="ghost"
                         className="h-10 w-14 border border-border-light lg:hidden"
                         onClick={() => setShowSidePanel(true)}
+                        aria-label={localize('com_ui_open_menu')}
                       >
                         <Menu className="size-5" />
                       </Button>
@@ -348,7 +345,7 @@ const PromptForm = () => {
                   )}
                 </div>
                 {isLoadingPrompts ? (
-                  <Skeleton className="h-96" />
+                  <Skeleton className="h-96" aria-live="polite" />
                 ) : (
                   <div className="flex h-full flex-col gap-4">
                     <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
@@ -365,7 +362,6 @@ const PromptForm = () => {
                 )}
               </div>
 
-              {/* Desktop Right Panel */}
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <div className="hidden w-1/4 border-l border-border-light lg:block">
                   <RightPanel />
@@ -374,33 +370,30 @@ const PromptForm = () => {
             </div>
           </div>
 
-          {/* Background Overlay */}
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             className={cn(
-              'absolute inset-0 z-40',
+              'absolute inset-0 z-40 cursor-default',
               showSidePanel ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
             style={{ transition: 'opacity 0.3s ease-in-out' }}
             onClick={() => setShowSidePanel(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                setShowSidePanel(false);
-              }
-            }}
+            aria-hidden={!showSidePanel}
+            tabIndex={showSidePanel ? 0 : -1}
           />
 
-          {/* Mobile Side Panel */}
           <div
-            className="absolute inset-y-0 right-0 z-50 shadow-lg lg:hidden"
+            className="absolute inset-y-0 right-0 z-50 lg:hidden"
             style={{
               width: sidePanelWidth,
               transform: `translateX(${showSidePanel ? '0' : '100%'})`,
               transition: 'transform 0.3s ease-in-out',
             }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mobile navigation panel"
           >
-            <div className="h-full bg-background">
+            <div className="h-full">
               <div className="h-full overflow-auto">
                 <RightPanel />
               </div>

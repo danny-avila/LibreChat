@@ -81,6 +81,7 @@ export default function FilterPrompts({
         className="bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
+        ariaLabel={localize('com_ui_filter_prompts')}
         iconOnly
       />
       <AnimatedSearchInput
