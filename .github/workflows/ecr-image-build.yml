@@ -42,9 +42,7 @@ jobs:
       - name: Prepare environment
         run: |
           cp .env.example .env
-          set -a
-          source .env
-          set +a
+          cat .env
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:

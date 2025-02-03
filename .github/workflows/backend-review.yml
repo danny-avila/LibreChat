@@ -57,9 +57,7 @@ jobs:
       - name: Prepare .env.test file
         run: | 
           cp api/test/.env.test.example api/test/.env.test
-          set -a
-          source api/test/.env.test
-          set +a
+          cat api/test/.env.test
 
       - name: Run unit tests
         run: cd api && npm run test:ci
