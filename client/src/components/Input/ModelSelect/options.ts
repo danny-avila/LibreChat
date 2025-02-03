@@ -2,6 +2,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import type { FC } from 'react';
 
+import NurieAI from './NurieAI';
 import OpenAI from './OpenAI';
 import Google from './Google';
 import ChatGPT from './ChatGPT';
@@ -9,6 +10,7 @@ import Anthropic from './Anthropic';
 import PluginsByIndex from './PluginsByIndex';
 
 export const options: { [key: string]: FC<TModelSelectProps> } = {
+  [EModelEndpoint.nurieAI]: NurieAI,
   [EModelEndpoint.openAI]: OpenAI,
   [EModelEndpoint.custom]: OpenAI,
   [EModelEndpoint.bedrock]: OpenAI,

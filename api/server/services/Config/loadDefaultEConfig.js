@@ -15,6 +15,7 @@ async function loadDefaultEndpointsConfig(req) {
 
   const endpointConfig = {
     [EModelEndpoint.openAI]: config[EModelEndpoint.openAI],
+    [EModelEndpoint.nurieAI]: config[EModelEndpoint.nurieAI],
     [EModelEndpoint.agents]: config[EModelEndpoint.agents],
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,

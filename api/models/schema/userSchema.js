@@ -50,6 +50,10 @@ const userSchema = mongoose.Schema(
       lowercase: true,
       default: '',
     },
+    orgination: {
+      type: String,
+      required: false,
+    },
     email: {
       type: String,
       required: [true, 'can\'t be blank'],

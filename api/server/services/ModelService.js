@@ -4,6 +4,7 @@ const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-pro
 const { inputSchema, logAxiosError, extractBaseURL, processModelData } = require('~/utils');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
 const getLogStores = require('~/cache/getLogStores');
+const { logger } = require('~/config');
 
 /**
  * Splits a string by commas and trims each resulting value.
@@ -250,6 +251,50 @@ const getGoogleModels = () => {
   return models;
 };
 
+/**
+ * Loads the default models for the specific user orgination.
+ * @async
+ * @function
+ * @param {string} orgination - The user orgination name for fetching the model from NurieAI
+ */
+const getNurieAIModels = async (orgination) => {
+  const cache = getLogStores(CacheKeys.NURIEAI_MODEL_MAPPING);
+  const models = await cache.get(orgination);
+  if (models) {
+    return Object.keys(models);
+  }
+
+  const baseURL = process.env.NURIEAI_HOST;
+  if (!orgination || !baseURL) {return [];}
+
+  const url = new URL(`${baseURL}/api/v1/chatflows?categories=company_code:${orgination}`);
+  const options = {
+    headers: {
+      'x-request-from': 'internal',
+    },
+    timeout: 5000,
+  };
+  // error handling, or not server will crash
+  try {
+    const res = await axios.get(url.toString(), options);
+    const map = {};
+    const result = res.data.map((item) => {
+      map[item.name] = item;
+      return item.name;
+    });
+
+    try {
+      await cache.set(orgination, map);
+    } catch (e) {
+      logger.error('[getNurieAIModels] set cache failed', e);
+    }
+    return result;
+  } catch (e) {
+    logger.error('[getNurieAIModels]', e);
+    return [];
+  }
+};
+
 const getBedrockModels = () => {
   let models = defaultModels[EModelEndpoint.bedrock];
   if (process.env.BEDROCK_AWS_MODELS) {
@@ -264,6 +309,7 @@ module.exports = {
   splitAndTrim,
   getOpenAIModels,
   getBedrockModels,
+  getNurieAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,

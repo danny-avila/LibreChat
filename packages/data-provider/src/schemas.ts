@@ -27,11 +27,13 @@ export enum EModelEndpoint {
   chatGPTBrowser = 'chatGPTBrowser',
   /** @deprecated */
   gptPlugins = 'gptPlugins',
+  nurieAI = 'nurieAI',
 }
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
+  EModelEndpoint.nurieAI,
   EModelEndpoint.bedrock,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
@@ -988,6 +990,29 @@ export const agentsSchema = tConversationSchema
     greeting: undefined,
     maxContextTokens: undefined,
   }));
+
+export const nurieAISchema = tConversationSchema
+  .pick({
+    model: true,
+    modelLabel: true,
+    chatGptLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    top_p: true,
+    presence_penalty: true,
+    frequency_penalty: true,
+    resendFiles: true,
+    artifacts: true,
+    imageDetail: true,
+    stop: true,
+    iconURL: true,
+    greeting: true,
+    spec: true,
+    maxContextTokens: true,
+    max_tokens: true,
+  })
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .catch(() => ({}));
 
 export const openAISchema = tConversationSchema
   .pick({

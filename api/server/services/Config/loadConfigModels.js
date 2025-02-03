@@ -81,6 +81,7 @@ async function loadConfigModels(req) {
           apiKey: API_KEY,
           name,
           userIdQuery: models.userIdQuery,
+          orgination: req.user.orgination,
         });
       uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
       uniqueKeyToEndpointsMap[uniqueKey].push(name);
