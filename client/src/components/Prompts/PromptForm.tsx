@@ -237,6 +237,7 @@ const PromptForm = () => {
               payload: { name: groupName, category: value },
             })
           }
+          className="w-full"
         />
         <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
           {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}

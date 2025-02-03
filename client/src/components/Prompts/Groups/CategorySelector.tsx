@@ -7,9 +7,14 @@ import { useCategories } from '~/hooks';
 interface CategorySelectorProps {
   currentCategory?: string;
   onValueChange?: (value: string) => void;
+  className?: string;
 }
 
-const CategorySelector: React.FC<CategorySelectorProps> = ({ currentCategory, onValueChange }) => {
+const CategorySelector: React.FC<CategorySelectorProps> = ({
+  currentCategory,
+  onValueChange,
+  className = '',
+}) => {
   const formContext = useFormContext();
   const { categories, emptyCategory } = useCategories();
 
@@ -39,7 +44,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({ currentCategory, on
             localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
             onValueChange?.(value);
           }}
-          className="w-full"
+          aria-labelledby="category-selector-label"
+          ariaLabel="Prompt's category selector"
+          className={className}
           options={categories || []}
           renderValue={(option) => (
             <div className="flex items-center space-x-2">
@@ -57,6 +64,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({ currentCategory, on
         localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
         onValueChange?.(value);
       }}
+      aria-labelledby="category-selector-label"
+      ariaLabel="Prompt's category selector"
+      className={className}
       options={categories || []}
       renderValue={(option) => (
         <div className="flex items-center space-x-2">

@@ -81,6 +81,7 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
               variant="ghost"
               size="sm"
               className="h-10 flex-shrink-0"
+              aria-label="Save prompt name"
             >
               <SaveIcon className="icon-md" />
             </Button>
@@ -101,6 +102,7 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
               onClick={handleEditClick}
               variant="ghost"
               size="sm"
+              aria-label="Edit prompt name"
               className="h-10 flex-shrink-0"
             >
               <EditIcon className="icon-md" />
