@@ -14,7 +14,7 @@ export const useGetBannerQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
-    enabled: queriesEnabled,
+    enabled: config?.enabled === true && queriesEnabled,
   });
 };
 
@@ -27,6 +27,6 @@ export const useGetUserBalance = (
     refetchOnReconnect: true,
     refetchOnMount: true,
     ...config,
-    enabled: queriesEnabled,
+    enabled: config?.enabled === true && queriesEnabled,
   });
 };
