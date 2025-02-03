@@ -42,7 +42,9 @@ jobs:
       - name: Prepare environment
         run: |
           cp .env.example .env
-          cat .env >> $GITHUB_ENV
+          set -a
+          source .env
+          set +a
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:

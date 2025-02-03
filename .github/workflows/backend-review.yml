@@ -57,7 +57,9 @@ jobs:
       - name: Prepare .env.test file
         run: | 
           cp api/test/.env.test.example api/test/.env.test
-          cat .env >> $GITHUB_ENV
+          set -a
+          source api/test/.env.test
+          set +a
 
       - name: Run unit tests
         run: cd api && npm run test:ci
