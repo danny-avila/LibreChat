@@ -67,7 +67,11 @@
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
     "b:list-balances": "bun config/list-balances.js",
-    "reset-terms": "node config/reset-terms.js"
+    "reset-terms": "node config/reset-terms.js",
+    "deploy:secrets:aws": "node deploy-secrets.js --provider aws",
+    "deploy:secrets:azure:keyvault": "node deploy-secrets.js --provider azure --target keyvault",
+    "deploy:secrets:azure:webapp": "node deploy-secrets.js --provider azure --target webapp",
+    "deploy:secrets:gcp": "node deploy-secrets.js --provider gcp"
   },
   "repository": {
     "type": "git",
@@ -101,7 +105,13 @@
     "prettier": "^2.8.8",
     "prettier-eslint": "^15.0.1",
     "prettier-eslint-cli": "^7.1.0",
-    "prettier-plugin-tailwindcss": "^0.2.2"
+    "prettier-plugin-tailwindcss": "^0.2.2",
+    "@aws-sdk/client-secrets-manager": "^3.738.0",
+    "@azure/keyvault-secrets": "^4.9.0",
+    "@azure/identity": "^4.6.0",
+    "@azure/arm-appservice": "^15.0.0",
+    "@google-cloud/secret-manager": "^5.6.0",
+    "minimist": "^1.2.8"
   },
   "overrides": {
     "mdast-util-gfm-autolink-literal": "2.0.0",
