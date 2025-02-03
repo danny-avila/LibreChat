@@ -245,6 +245,7 @@ const PromptForm = () => {
             <Button
               variant="submit"
               size="sm"
+              aria-label="Make prompt production"
               className="h-10 w-10 border border-transparent p-0.5 transition-all"
               onClick={() => {
                 if (!selectedPrompt) {
@@ -333,7 +334,7 @@ const PromptForm = () => {
                       <Button
                         type="button"
                         variant="ghost"
-                        className="h-10 w-14 border border-border-light lg:hidden"
+                        className="h-10 w-10 border border-border-light p-0 lg:hidden"
                         onClick={() => setShowSidePanel(true)}
                         aria-label={localize('com_ui_open_menu')}
                       >

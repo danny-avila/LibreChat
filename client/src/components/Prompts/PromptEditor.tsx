@@ -66,7 +66,8 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
           <button
             type="button"
             onClick={() => setIsEditing((prev) => !prev)}
-            className="mr-1 p-1.5 sm:mr-2 sm:p-1"
+            aria-label={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
+            className="mr-1 rounded-lg p-1.5 sm:mr-2 sm:p-1"
           >
             <EditorIcon
               className={cn(

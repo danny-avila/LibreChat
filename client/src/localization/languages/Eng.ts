@@ -380,6 +380,7 @@ export default {
   com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used',
   com_ui_command_usage_placeholder: 'Select a Prompt by command or name',
   com_ui_no_prompt_description: 'No description found.',
+  com_ui_latest_production_version: 'Latest production version',
   com_ui_confirm_change: 'Confirm Change',
   com_ui_confirm_admin_use_change:
     'Changing this setting will block access for admins, including yourself. Are you sure you want to proceed?',

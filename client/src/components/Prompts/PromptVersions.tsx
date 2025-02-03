@@ -6,9 +6,10 @@ import { Tag, TooltipAnchor, Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const CombinedStatusIcon = () => (
+const CombinedStatusIcon = ({ description }: { description: string }) => (
   <TooltipAnchor
-    description="Latest Production Version"
+    description={description}
+    aria-label={description}
     render={
       <div className="flex items-center justify-center">
         <Crown className="h-4 w-4 text-amber-500" />
@@ -24,7 +25,7 @@ const VersionTags = ({ tags }: { tags: string[] }) => {
   if (isLatestAndProduction) {
     return (
       <span className="absolute bottom-3 right-3">
-        <CombinedStatusIcon />
+        <CombinedStatusIcon description={localize('com_ui_latest_production_version')} />
       </span>
     );
   }
@@ -39,6 +40,11 @@ const VersionTags = ({ tags }: { tags: string[] }) => {
               : localize('com_ui_latest_version')
           }
           key={`${tag}-${i}`}
+          aria-label={
+            tag === 'production'
+              ? localize('com_ui_currently_production')
+              : localize('com_ui_latest_version')
+          }
           render={
             <Tag
               label={tag}
@@ -105,13 +111,14 @@ const VersionCard = ({
       onClick={onClick}
       aria-selected={isSelected}
       role="tab"
+      aria-label={localize('com_ui_version_var', `${totalVersions - index}`)}
     >
       <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between lg:flex-col xl:flex-row">
           <h3 className="font-bold text-text-primary">
             {localize('com_ui_version_var', `${totalVersions - index}`)}
           </h3>
-          <time className="text-xs text-text-secondary">
+          <time className="text-xs text-text-secondary" dateTime={prompt.createdAt}>
             {format(new Date(prompt.createdAt), 'yyyy-MM-dd HH:mm')}
           </time>
         </div>

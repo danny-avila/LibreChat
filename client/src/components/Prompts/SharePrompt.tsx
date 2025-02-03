@@ -89,19 +89,25 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
         <Button
           variant="default"
           size="sm"
+          aria-label="Share prompt"
           className="h-10 w-10 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
           disabled={disabled}
         >
           <Share2Icon className="size-5 cursor-pointer text-white" />
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-11/12 max-w-lg">
-        <OGDialogTitle className="truncate pr-2" title={group.name}>
+      <OGDialogContent className="w-11/12 max-w-lg" role="dialog" aria-labelledby="dialog-title">
+        <OGDialogTitle id="dialog-title" className="truncate pr-2" title={group.name}>
           {localize('com_ui_share_var', `"${group.name}"`)}
         </OGDialogTitle>
-        <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
+        <form className="p-2" onSubmit={handleSubmit(onSubmit)} aria-describedby="form-description">
+          <div id="form-description" className="sr-only">
+            {localize('com_ui_share_form_description')}
+          </div>
           <div className="mb-4 flex items-center justify-between gap-2 py-4">
-            <div className="flex items-center">{localize('com_ui_share_to_all_users')}</div>
+            <div className="flex items-center" id="share-to-all-users">
+              {localize('com_ui_share_to_all_users')}
+            </div>
             <Controller
               name={Permissions.SHARED_GLOBAL}
               control={control}
@@ -112,13 +118,19 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
                   checked={field.value}
                   onCheckedChange={field.onChange}
                   value={field.value.toString()}
+                  aria-labelledby="share-to-all-users"
                 />
               )}
             />
           </div>
           <div className="flex justify-end">
             <OGDialogClose asChild>
-              <Button type="submit" disabled={isSubmitting || isFetching} variant="submit">
+              <Button
+                type="submit"
+                disabled={isSubmitting || isFetching}
+                variant="submit"
+                aria-label={localize('com_ui_save')}
+              >
                 {localize('com_ui_save')}
               </Button>
             </OGDialogClose>

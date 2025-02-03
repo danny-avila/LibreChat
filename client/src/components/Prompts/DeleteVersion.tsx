@@ -20,6 +20,7 @@ const DeleteVersion = ({
         <Button
           variant="destructive"
           size="sm"
+          aria-label="Delete version"
           className="h-10 w-10 p-0.5"
           disabled={disabled}
           onClick={(e) => {
