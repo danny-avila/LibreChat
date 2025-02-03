@@ -153,9 +153,11 @@ const PromptVersions = ({
       <div className="flex flex-col gap-3" role="tablist" aria-label="Version history">
         {prompts.map((prompt: TPrompt, index: number) => {
           const tags: string[] = [];
+
           if (index === 0) {
             tags.push('latest');
           }
+
           if (prompt._id === group?.productionId) {
             tags.push('production');
           }
