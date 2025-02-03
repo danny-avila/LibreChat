@@ -13,7 +13,6 @@ COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/mcp/package*.json ./packages/mcp/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
-COPY .env.example ./.env
 
 # Install all dependencies for every build
 FROM base-min AS base
@@ -46,6 +45,7 @@ FROM base-min AS api-build
 WORKDIR /app
 # Install only production deps
 RUN npm ci --omit=dev
+COPY ./env ./
 COPY api ./api
 COPY config ./config
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist

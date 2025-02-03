@@ -11,7 +11,6 @@ WORKDIR /app
 USER node
 
 COPY --chown=node:node . .
-COPY .env.example ./.env
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
@@ -26,6 +25,7 @@ RUN \
     npm prune --production; \
     npm cache clean --force
 
+COPY .env ./
 RUN mkdir -p /app/client/public/images /app/api/logs
 
 # Node API setup
