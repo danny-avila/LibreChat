@@ -68,7 +68,18 @@ const AuthContextProvider = ({
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
-  const loginUser = useLoginUserMutation();
+  const loginUser = useLoginUserMutation({
+    onSuccess: (data: TLoginResponse) => {
+      const { user, token } = data;
+      setError(undefined);
+      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+    },
+    onError: (error: TResError | unknown) => {
+      const resError = error as TResError;
+      doSetError(resError.message);
+      navigate('/login', { replace: true });
+    },
+  });
   const logoutUser = useLogoutUserMutation({
     onSuccess: (data) => {
       setUserContext({
@@ -94,18 +105,7 @@ const AuthContextProvider = ({
   const refreshToken = useRefreshTokenMutation();
 
   const login = (data: TLoginUser) => {
-    loginUser.mutate(data, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setError(undefined);
-        setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
-      },
-      onError: (error: TResError | unknown) => {
-        const resError = error as TResError;
-        doSetError(resError.message);
-        navigate('/login', { replace: true });
-      },
-    });
+    loginUser.mutate(data);
   };
 
   const silentRefresh = useCallback(() => {
