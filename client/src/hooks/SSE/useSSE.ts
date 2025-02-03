@@ -3,18 +3,17 @@ import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
 import {
+  request,
   /* @ts-ignore */
   createPayload,
   isAgentsEndpoint,
-  isAssistantsEndpoint,
   removeNullishValues,
-  request,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useGetUserBalance } from 'librechat-data-provider/react-query';
 import type { EventSubmission, TMessage, TPayload, TSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
-import { useGenTitleMutation, useGetStartupConfig } from '~/data-provider';
+import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';

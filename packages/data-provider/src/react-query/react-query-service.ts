@@ -97,17 +97,6 @@ export const useGetSharedLinkQuery = (
   );
 };
 
-export const useGetUserBalance = (
-  config?: UseQueryOptions<string>,
-): QueryObserverResult<string> => {
-  return useQuery<string>([QueryKeys.balance], () => dataService.getUserBalance(), {
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    refetchOnMount: true,
-    ...config,
-  });
-};
-
 export const useGetConversationByIdQuery = (
   id: string,
   config?: UseQueryOptions<s.TConversation>,

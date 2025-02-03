@@ -17,3 +17,16 @@ export const useGetBannerQuery = (
     enabled: queriesEnabled,
   });
 };
+
+export const useGetUserBalance = (
+  config?: UseQueryOptions<string>,
+): QueryObserverResult<string> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<string>([QueryKeys.balance], () => dataService.getUserBalance(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
+    ...config,
+    enabled: queriesEnabled,
+  });
+};
