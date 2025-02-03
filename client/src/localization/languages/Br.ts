@@ -816,4 +816,5 @@ export default {
   com_ui_decline: 'Eu não aceito',
   com_ui_terms_and_conditions: 'Termos e Condições',
   com_ui_no_terms_content: 'Nenhum conteúdo de termos e condições para exibir',
+  com_nav_balance: 'Equilíbrio',
 };

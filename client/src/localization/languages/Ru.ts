@@ -1176,4 +1176,5 @@ export default {
   com_ui_collapse_chat: 'Свернуть чат',
   com_endpoint_message_new: 'Сообщение {0}',
   com_ui_speech_while_submitting: 'Невозможно отправить голосовой ввод во время генерации ответа',
+  com_nav_balance: 'Баланс',
 };
