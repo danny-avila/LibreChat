@@ -471,6 +471,7 @@ export default {
   com_auth_google_login: 'Continue with Google',
   com_auth_facebook_login: 'Continue with Facebook',
   com_auth_github_login: 'Continue with Github',
+  com_auth_github_enterprise_login: 'Continue with Github Enterprise',
   com_auth_discord_login: 'Continue with Discord',
   com_auth_apple_login: 'Sign in with Apple',
   com_auth_email: 'Email',

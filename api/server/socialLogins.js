@@ -7,6 +7,7 @@ const {
   setupOpenId,
   googleLogin,
   githubLogin,
+  githubEnterpriseLogin,
   discordLogin,
   facebookLogin,
   appleLogin,
@@ -27,6 +28,9 @@ const configureSocialLogins = (app) => {
   }
   if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
     passport.use(githubLogin());
+  }
+  if (process.env.GHE_CLIENT_ID && process.env.GHE_CLIENT_SECRET) {
+    passport.use( githubEnterpriseLogin());
   }
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());

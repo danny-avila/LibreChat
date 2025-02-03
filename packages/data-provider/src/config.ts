@@ -477,6 +477,7 @@ export type TStartupConfig = {
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
+  githubEnterpriseLoginEnabled: boolean;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   appleLoginEnabled: boolean;
