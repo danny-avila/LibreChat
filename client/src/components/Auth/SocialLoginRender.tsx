@@ -51,17 +51,6 @@ function SocialLoginRender({
         id="github"
       />
     ),
-    githubEnterprise: startupConfig.githubEnterpriseLoginEnabled && (
-      <SocialButton
-        key="github-enterprise"
-        enabled={startupConfig.githubEnterpriseLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="github-enterprise"
-        Icon={GithubIcon}
-        label={localize('com_auth_github_enterprise_login')}
-        id="github-enterprise"
-      />
-    ),
     google: startupConfig.googleLoginEnabled && (
       <SocialButton
         key="google"

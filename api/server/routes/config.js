@@ -45,11 +45,6 @@ router.get('/', async function (req, res) {
       facebookLoginEnabled:
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
-      githubEnterpriseLoginEnabled:
-          !!process.env.GITHUB_ENTERPRISE_BASE_URL &&
-          !!process.env.GITHUB_ENTERPRISE_CLIENT_ID &&
-          !!process.env.GITHUB_ENTERPRISE_CLIENT_SECRET &&
-          !!process.env.GITHUB_ENTERPRISE_CALLBACK_URL,
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
       appleLoginEnabled:
           !!process.env.APPLE_CLIENT_ID &&

@@ -20,6 +20,15 @@ module.exports = () =>
       callbackURL: `${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`,
       proxy: false,
       scope: ['user:email'],
+      ...(process.env.GITHUB_ENTERPRISE_BASE_URL && {
+        authorizationURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/authorize`,
+        tokenURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/access_token`,
+        userProfileURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user`,
+        userEmailURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user/emails`,
+        ...(process.env.GITHUB_ENTERPRISE_USER_AGENT && {
+          userAgent: process.env.GITHUB_ENTERPRISE_USER_AGENT,
+        }),
+      }),
     },
     githubLogin,
   );

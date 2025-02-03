@@ -1,4 +1,4 @@
-// routes/oauth.js
+// file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
 const { loginLimiter, checkBan, checkDomainAllowed } = require('~/server/middleware');
@@ -114,28 +114,6 @@ router.get(
 router.get(
   '/github/callback',
   passport.authenticate('github', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-    scope: ['user:email', 'read:user'],
-  }),
-  oauthHandler,
-);
-
-/**
- * GitHub Enterprise Routes
- */
-router.get(
-  '/github-enterprise',
-  passport.authenticate('githubEnterprise', {
-    scope: ['user:email', 'read:user'],
-    session: false,
-  }),
-);
-
-router.get(
-  '/github-enterprise/callback',
-  passport.authenticate('githubEnterprise', {
     failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
