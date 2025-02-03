@@ -30,18 +30,6 @@ export const useAbortRequestWithMessage = (): UseMutationResult<
   );
 };
 
-export const useGetUserQuery = (
-  config?: UseQueryOptions<t.TUser>,
-): QueryObserverResult<t.TUser> => {
-  return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    retry: false,
-    ...config,
-  });
-};
-
 export const useGetMessagesByConvoId = <TData = s.TMessage[]>(
   id: string,
   config?: UseQueryOptions<s.TMessage[], unknown, TData>,
