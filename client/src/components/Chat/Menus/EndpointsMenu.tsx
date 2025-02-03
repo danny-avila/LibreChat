@@ -1,9 +1,9 @@
 import { useCallback, useRef } from 'react';
 import { alternateName } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC, KeyboardEvent } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getEntity } from '~/utils';
 import EndpointItems from './Endpoints/MenuItems';
 import useLocalize from '~/hooks/useLocalize';

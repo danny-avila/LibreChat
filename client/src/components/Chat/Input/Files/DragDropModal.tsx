@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon } from 'lucide-react';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useGetEndpointsQuery } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import { OGDialog } from '~/components/ui';
 
