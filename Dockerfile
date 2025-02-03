@@ -11,7 +11,7 @@ WORKDIR /app
 USER node
 
 COPY --chown=node:node . .
-COPY .env ./
+COPY .env.example ./.env
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
