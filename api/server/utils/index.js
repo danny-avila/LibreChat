@@ -1,4 +1,4 @@
-console.log({ "Starting utils"})
+console.log("Starting utils")
 const streamResponse = require('./streamResponse');
 const removePorts = require('./removePorts');
 const countTokens = require('./countTokens');
