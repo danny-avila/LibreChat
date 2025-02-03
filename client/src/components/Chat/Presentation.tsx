@@ -1,10 +1,9 @@
 import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { FileSources, LocalStorageKeys, getConfigDefaults } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { useDeleteFilesMutation, useGetStartupConfig } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
-import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanel } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';

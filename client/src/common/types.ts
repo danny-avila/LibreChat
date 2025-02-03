@@ -412,7 +412,7 @@ export type TAuthConfig = {
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
-  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
+  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel'> & {
     size?: number;
     button?: boolean;
     iconURL?: string;
