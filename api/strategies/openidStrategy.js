@@ -242,12 +242,6 @@ async function setupOpenId() {
               user.avatar = imagePath ?? '';
             }
           }
-          if (
-            isEnabled(process.env.OPENID_USE_END_SESSION_ENDPOINT) &&
-            issuer.end_session_endpoint
-          ) {
-            user.endSessionEndpoint = issuer.end_session_endpoint;
-          }
 
           user = await updateUser(user._id, user);
 
