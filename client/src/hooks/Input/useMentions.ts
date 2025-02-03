@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useGetModelsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   alternateName,
   EModelEndpoint,
@@ -9,7 +9,12 @@ import {
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
-import { useGetPresetsQuery, useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
+import {
+  useGetPresetsQuery,
+  useGetEndpointsQuery,
+  useListAgentsQuery,
+  useGetStartupConfig,
+} from '~/data-provider';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';

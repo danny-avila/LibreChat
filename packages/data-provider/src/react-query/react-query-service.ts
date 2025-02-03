@@ -5,7 +5,6 @@ import type {
   QueryObserverResult,
 } from '@tanstack/react-query';
 import { initialModelsConfig } from '../config';
-import type { TStartupConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
@@ -409,17 +408,6 @@ export const useUpdateUserPluginsMutation = (
       queryClient.invalidateQueries([QueryKeys.user]);
       onSuccess?.(...args);
     },
-  });
-};
-
-export const useGetStartupConfig = (
-  config?: UseQueryOptions<TStartupConfig>,
-): QueryObserverResult<TStartupConfig> => {
-  return useQuery<TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
   });
 };
 

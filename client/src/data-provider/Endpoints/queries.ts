@@ -20,3 +20,18 @@ export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
     },
   );
 };
+
+export const useGetStartupConfig = (
+  config?: UseQueryOptions<t.TStartupConfig>,
+): QueryObserverResult<t.TStartupConfig> => {
+  return useQuery<t.TStartupConfig>(
+    [QueryKeys.startupConfig],
+    () => dataService.getStartupConfig(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
