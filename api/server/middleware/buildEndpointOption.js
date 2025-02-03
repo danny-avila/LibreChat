@@ -10,6 +10,7 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const nurieAI = require('~/server/services/Endpoints/nurieAI');
 const { getConvoFiles } = require('~/models/Conversation');
 const { handleError } = require('~/server/utils');
 
@@ -23,6 +24,7 @@ const buildFunction = {
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
   [EModelEndpoint.assistants]: assistants.buildOptions,
+  [EModelEndpoint.nurieAI]: nurieAI.buildOptions,
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
 

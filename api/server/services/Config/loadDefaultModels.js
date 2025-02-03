@@ -3,6 +3,7 @@ const { useAzurePlugins } = require('~/server/services/Config/EndpointService').
 const {
   getOpenAIModels,
   getGoogleModels,
+  getNurieAIModels,
   getBedrockModels,
   getAnthropicModels,
   getChatGPTBrowserModels,
@@ -15,6 +16,7 @@ const {
  * @param {Express.Request} req - The Express request object.
  */
 async function loadDefaultModels(req) {
+  const nurieAI = await getNurieAIModels(req.user.orgination);
   const google = getGoogleModels();
   const openAI = await getOpenAIModels({ user: req.user.id });
   const anthropic = getAnthropicModels();
@@ -38,6 +40,7 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,
+    [EModelEndpoint.nurieAI]: nurieAI,
     [EModelEndpoint.bedrock]: getBedrockModels(),
   };
 }

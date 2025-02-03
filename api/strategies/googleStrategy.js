@@ -8,6 +8,7 @@ const getProfileDetails = ({ profile }) => ({
   username: profile.name.givenName,
   name: `${profile.name.givenName} ${profile.name.familyName}`,
   emailVerified: profile.emails[0].verified,
+  orgination: profile.orgination,
 });
 
 const googleLogin = socialLogin('google', getProfileDetails);

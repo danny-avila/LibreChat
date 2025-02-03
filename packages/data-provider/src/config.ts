@@ -606,6 +606,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
 ];
 
 export const alternateName = {
+  [EModelEndpoint.nurieAI]: 'NurieAI',
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistants]: 'Assistants',
   [EModelEndpoint.agents]: 'Agents',
@@ -693,6 +694,7 @@ export const bedrockModels = [
 ];
 
 export const defaultModels = {
+  [EModelEndpoint.nurieAI]: [],
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
@@ -737,10 +739,12 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
+  [EModelEndpoint.nurieAI]: defaultModels[EModelEndpoint.nurieAI],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
+  [EModelEndpoint.nurieAI]: `/api/ask/${EModelEndpoint.nurieAI}`,
   [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
   [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
   [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
@@ -929,6 +933,10 @@ export enum CacheKeys {
    * Key for in-progress messages.
    */
   MESSAGES = 'messages',
+  /**
+   * Key for nurieAI model mapping.
+   */
+  NURIEAI_MODEL_MAPPING = 'nurieai_model_mapping',
 }
 
 /**

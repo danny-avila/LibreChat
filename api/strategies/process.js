@@ -66,6 +66,7 @@ const createSocialUser = async ({
   providerId,
   username,
   name,
+  orgination,
   emailVerified,
 }) => {
   const update = {
@@ -75,6 +76,7 @@ const createSocialUser = async ({
     [providerKey]: providerId,
     username,
     name,
+    orgination,
     emailVerified,
   };
 

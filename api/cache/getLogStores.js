@@ -29,6 +29,10 @@ const roles = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ROLES });
 
+const nurieModelMapping = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.NURIEAI_MODEL_MAPPING, ttl: Time.TEN_MINUTES });
+
 const audioRuns = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
   : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: Time.TEN_MINUTES });
@@ -81,6 +85,7 @@ const namespaces = {
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(
     ViolationTypes.ILLEGAL_MODEL_REQUEST,
   ),
+  [CacheKeys.NURIEAI_MODEL_MAPPING]: nurieModelMapping,
   logins: createViolationInstance('logins'),
   [CacheKeys.ABORT_KEYS]: abortKeys,
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,

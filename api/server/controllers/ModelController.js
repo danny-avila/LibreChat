@@ -1,19 +1,12 @@
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const { getNurieAIModels } = require('~/server/services/ModelService');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 /**
  * @param {ServerRequest} req
  */
-const getModelsConfig = async (req) => {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (!modelsConfig) {
-    modelsConfig = await loadModels(req);
-  }
-
-  return modelsConfig;
-};
+const getModelsConfig = (req) => loadModels(req);
 
 /**
  * Loads the models from the config.
@@ -24,7 +17,11 @@ async function loadModels(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
   if (cachedModelsConfig) {
-    return cachedModelsConfig;
+    const nurieAI = await getNurieAIModels(req.user.orgination);
+    return {
+      ...cachedModelsConfig,
+      [EModelEndpoint.nurieAI]: nurieAI,
+    };
   }
   const defaultModelsConfig = await loadDefaultModels(req);
   const customModelsConfig = await loadConfigModels(req);

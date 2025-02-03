@@ -4,6 +4,7 @@ import type * as s from './schemas';
 import type * as t from './types';
 import { ContentTypes } from './types/runs';
 import {
+  nurieAISchema,
   openAISchema,
   googleSchema,
   EModelEndpoint,
@@ -29,9 +30,11 @@ type EndpointSchema =
   | typeof gptPluginsSchema
   | typeof assistantSchema
   | typeof compactAgentsSchema
-  | typeof bedrockInputSchema;
+  | typeof bedrockInputSchema
+  | typeof nurieAISchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
+  [EModelEndpoint.nurieAI]: nurieAISchema,
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
@@ -52,6 +55,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
 /** Get the enabled endpoints from the `ENDPOINTS` environment variable */
 export function getEnabledEndpoints() {
   const defaultEndpoints: string[] = [
+    EModelEndpoint.nurieAI,
     EModelEndpoint.openAI,
     EModelEndpoint.agents,
     EModelEndpoint.assistants,
@@ -258,6 +262,10 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
     return modelLabel || 'Claude';
   }
 
+  if (endpoint === EModelEndpoint.nurieAI) {
+    return modelLabel || 'NurieAI';
+  }
+
   if (endpoint === EModelEndpoint.bedrock) {
     return modelLabel || alternateName[endpoint];
   }
@@ -308,6 +316,7 @@ type CompactEndpointSchema =
   | typeof compactPluginsSchema;
 
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
+  [EModelEndpoint.nurieAI]: nurieAISchema,
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,

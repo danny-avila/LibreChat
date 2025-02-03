@@ -24,6 +24,7 @@ const userProvidedOpenAI = useAzurePlugins
 
 module.exports = {
   config: {
+    [EModelEndpoint.nurieAI]: {},
     openAIApiKey,
     azureOpenAIApiKey,
     useAzurePlugins,
