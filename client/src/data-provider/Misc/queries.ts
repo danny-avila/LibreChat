@@ -30,3 +30,16 @@ export const useGetUserBalance = (
     enabled: config?.enabled === true && queriesEnabled,
   });
 };
+
+export const useGetSearchEnabledQuery = (
+  config?: UseQueryOptions<boolean>,
+): QueryObserverResult<boolean> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<boolean>([QueryKeys.searchEnabled], () => dataService.getSearchEnabled(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: config?.enabled === true && queriesEnabled,
+  });
+};

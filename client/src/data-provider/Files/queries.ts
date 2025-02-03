@@ -1,17 +1,21 @@
+import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { addFileToCache } from '~/utils';
+import store from '~/store';
 
 export const useGetFiles = <TData = t.TFile[] | boolean>(
   config?: UseQueryOptions<t.TFile[], unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.TFile[], unknown, TData>([QueryKeys.files], () => dataService.getFiles(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
+    enabled: config?.enabled === true && queriesEnabled,
   });
 };
 

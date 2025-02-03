@@ -214,17 +214,6 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetSearchEnabledQuery = (
-  config?: UseQueryOptions<boolean>,
-): QueryObserverResult<boolean> => {
-  return useQuery<boolean>([QueryKeys.searchEnabled], () => dataService.getSearchEnabled(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
 export const useGetModelsQuery = (
   config?: UseQueryOptions<t.TModelsConfig>,
 ): QueryObserverResult<t.TModelsConfig> => {
