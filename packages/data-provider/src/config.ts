@@ -479,6 +479,7 @@ export type TStartupConfig = {
   githubLoginEnabled: boolean;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
+  appleLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
   /** LDAP Auth Configuration */
@@ -777,9 +778,9 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
-  'o1',
   'gpt-4o',
   'gpt-4o-mini',
+  'o1',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
@@ -1234,6 +1235,6 @@ export enum SystemCategories {
 export const providerEndpointMap = {
   [EModelEndpoint.openAI]: EModelEndpoint.openAI,
   [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
-  [EModelEndpoint.azureOpenAI]: EModelEndpoint.openAI,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
+  [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
 };
