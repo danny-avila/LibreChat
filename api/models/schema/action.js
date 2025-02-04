@@ -51,8 +51,19 @@ const actionSchema = new Schema({
     // json_schema: Schema.Types.Mixed,
     privacy_policy_url: String,
     raw_spec: String,
-    oauth_client_id: String, // private, encrypted
-    oauth_client_secret: String, // private, encrypted
+    oauth_client_id: String,      // private, encrypted
+    oauth_client_secret: String,  // private, encrypted
+
+    // New fields for storing OAuth tokens after user authentication:
+    oauth_access_token: {
+      type: String,
+      select: false, // Do not return by default in queries
+    },
+    oauth_refresh_token: {
+      type: String,
+      select: false,
+    },
+    oauth_token_expires_at: Date,
   },
 });
 // }, { minimize: false }); // Prevent removal of empty objects

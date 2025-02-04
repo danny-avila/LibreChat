@@ -5,7 +5,9 @@ const { encryptMetadata, domainParser } = require('~/server/services/ActionServi
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getAgent, updateAgent } = require('~/models/Agent');
+const fetch = require('node-fetch');
 const { logger } = require('~/config');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const router = express.Router();
 
@@ -29,6 +31,128 @@ router.get('/', async (req, res) => {
     res.json(await getActions(searchParams));
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Route to initiate OAuth login.
+ * GET /actions/:action_id/oauth/login
+ *
+ * Retrieves the action, generates a random state (stored in session), constructs
+ * the OAuth provider authorization URL using the action's OAuth configuration,
+ * and redirects the user to that URL.
+ */
+router.get('/:action_id/oauth/login', async (req, res) => {
+  const { action_id } = req.params;
+
+  try {
+    // Retrieve the action from the database
+    const actions = await getActions({ action_id });
+    if (!actions || actions.length === 0) {
+      return res.status(404).send('Action not found');
+    }
+    const action = actions[0];
+
+    // Generate a random state and store it in session for later verification
+    const state = nanoid();
+    req.session.oauthState = state; // Assumes express-session is set up
+
+    // Build the redirect URI (should match your registered callback)
+    const redirectUri = `${process.env.DOMAIN_CLIENT}/actions/${action_id}/oauth/callback`;
+
+    // Build the OAuth authorization URL.
+    const params = new URLSearchParams({
+      client_id: action.metadata.oauth_client_id,
+      redirect_uri: redirectUri,
+      scope: action.metadata.auth.scope,
+      state,
+    });
+    const authUrl = `${action.metadata.auth.authorization_url}?${params.toString()}`;
+
+    // Redirect the user to the OAuth provider.
+    res.redirect(authUrl);
+  } catch (error) {
+    logger.error('OAuth login error:', error);
+    res.status(500).send('OAuth login failed');
+  }
+});
+
+/**
+ * OAuth Callback
+ * GET /actions/:action_id/oauth/callback
+ *
+ * This route is used as the OAuth callback. It receives the authorization code
+ * and state from the OAuth provider, validates the state, exchanges the code for an access token,
+ * and updates the corresponding action document.
+ */
+router.get('/:action_id/oauth/callback', async (req, res) => {
+  const { action_id } = req.params;
+  const { code, state } = req.query;
+
+  try {
+    // Validate the state parameter using the value stored in session.
+    if (!req.session.oauthState || req.session.oauthState !== state) {
+      return res.status(400).send('Invalid state parameter');
+    }
+    // Clear the stored state from session.
+    delete req.session.oauthState;
+
+    // Retrieve the action from the database
+    const actions = await getActions({ action_id });
+    if (!actions || actions.length === 0) {
+      return res.status(404).send('Action not found');
+    }
+    const action = actions[0];
+
+    // Build URL-encoded parameters for token exchange.
+    const params = new URLSearchParams({
+      client_id: action.metadata.oauth_client_id,
+      client_secret: action.metadata.oauth_client_secret,
+      code: code,
+      redirect_uri: `http://localhost:3080/actions/${action_id}/oauth/callback`,
+      grant_type: 'authorization_code',
+    });
+
+    // Build the options for fetch.
+    const options = {
+      method: 'POST',
+      body: params.toString(),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+    };
+
+    if (process.env.PROXY) {
+      options.agent = new HttpsProxyAgent(process.env.PROXY);
+    }
+
+    // Exchange the authorization code for an access token.
+    const tokenResponse = await fetch(action.metadata.auth.client_url, options);
+    if (!tokenResponse.ok) {
+      throw new Error(`${tokenResponse.statusText} (HTTP ${tokenResponse.status})`);
+    }
+    const tokenData = await tokenResponse.json();
+
+    // Build a nested update object using proper names.
+    const updateData = {
+      metadata: {
+        oauth_access_token: tokenData.access_token,
+        oauth_refresh_token: tokenData.refresh_token,
+        ...(tokenData.expires_in && {
+          oauth_token_expires_at: new Date(Date.now() + tokenData.expires_in * 1000),
+        }),
+      },
+    };
+
+    // Update the action document with the new token data.
+    await updateAction({ action_id }, updateData);
+
+    // Optionally, redirect the user back to your chat UI or close the popup.
+    res.send('Authentication successful. You can close this window.');
+  } catch (error) {
+    console.error('OAuth callback error:', error.message);
+    res.status(500).send('Token exchange failed');
   }
 });
 
