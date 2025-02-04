@@ -14,7 +14,6 @@ const staticAtoms = {
     key: 'currentSettingsView',
     default: SettingsViews.default,
   }),
-  showBingToneSetting: atom<boolean>({ key: 'showBingToneSetting', default: false }),
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
 
@@ -34,6 +33,7 @@ const localStorageAtoms = {
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   showCode: atomWithLocalStorage(LocalStorageKeys.SHOW_ANALYSIS_CODE, true),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
+  showScrollButton: atomWithLocalStorage('showScrollButton', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
   rememberDefaultFork: atomWithLocalStorage(LocalStorageKeys.REMEMBER_FORK_OPTION, false),

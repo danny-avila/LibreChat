@@ -280,7 +280,6 @@ class PluginsClient extends OpenAIClient {
     logger.debug('[PluginsClient] sendMessage', { userMessageText: message, opts });
     const {
       user,
-      isEdited,
       conversationId,
       responseMessageId,
       saveOptions,
@@ -359,7 +358,6 @@ class PluginsClient extends OpenAIClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
       promptTokens,

@@ -1,10 +1,10 @@
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
 import DashGroupItem from '~/components/Prompts/Groups/DashGroupItem';
 import ChatGroupItem from '~/components/Prompts/Groups/ChatGroupItem';
+import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { Button, Skeleton } from '~/components/ui';
 

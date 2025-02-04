@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { render, waitFor, screen } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
+import * as endpointQueries from '~/data-provider/Endpoints/queries';
+import * as authMutations from '~/data-provider/Auth/mutations';
+import * as authQueries from '~/data-provider/Auth/queries';
 import Registration from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
 
@@ -62,22 +66,22 @@ const setup = ({
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRegisterUserMutationReturnValue);
   const mockUseGetUserQuery = jest
-    .spyOn(mockDataProvider, 'useGetUserQuery')
+    .spyOn(authQueries, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
   const mockUseGetStartupConfig = jest
-    .spyOn(mockDataProvider, 'useGetStartupConfig')
+    .spyOn(endpointQueries, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupConfigReturnValue);
   const mockUseRefreshTokenMutation = jest
-    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    .spyOn(authMutations, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
   const mockUseGetBannerQuery = jest
-    .spyOn(mockDataProvider, 'useGetBannerQuery')
+    .spyOn(miscDataProvider, 'useGetBannerQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetBannerQueryReturnValue);
   const renderResult = render(

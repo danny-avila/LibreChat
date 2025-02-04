@@ -480,6 +480,7 @@ export default {
   com_auth_facebook_login: 'Continue with Facebook',
   com_auth_github_login: 'Continue with Github',
   com_auth_discord_login: 'Continue with Discord',
+  com_auth_apple_login: 'Sign in with Apple',
   com_auth_email: 'Email',
   com_auth_email_required: 'Email is required',
   com_auth_email_min_length: 'Email must be at least 6 characters',
@@ -890,6 +891,7 @@ export default {
   com_nav_command_settings: 'Command Settings',
   com_nav_command_settings_description: 'Customize which commands are available in the chat',
   com_nav_no_search_results: 'No search results found',
+  com_nav_scroll_button: 'Scroll to the end button',
   com_nav_setting_general: 'General',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',
@@ -923,4 +925,5 @@ export default {
   com_ui_terms_and_conditions: 'Terms and Conditions',
   com_ui_no_terms_content: 'No terms and conditions content to display',
   com_ui_speech_while_submitting: 'Can\'t submit speech while a response is being generated',
+  com_nav_balance: 'Balance',
 };

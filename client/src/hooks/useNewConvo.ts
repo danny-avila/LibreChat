@@ -1,13 +1,10 @@
 import { useCallback, useRef } from 'react';
-import {
-  useGetModelsQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-} from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Constants,
   FileSources,
+  EModelEndpoint,
   isParamEndpoint,
   LocalStorageKeys,
   isAssistantsEndpoint,
@@ -29,8 +26,8 @@ import {
   getModelSpecIconURL,
   updateLastSelectedModel,
 } from '~/utils';
+import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
-import { useDeleteFilesMutation } from '~/data-provider';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
@@ -70,6 +67,7 @@ const useNewConvo = (index = 0) => {
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
         keepAddedConvos?: boolean,
+        disableFocus?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -87,10 +85,14 @@ const useNewConvo = (index = 0) => {
             : preset;
 
         if (buildDefaultConversation) {
-          const defaultEndpoint = getDefaultEndpoint({
+          let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
+
+          if (!defaultEndpoint) {
+            defaultEndpoint = Object.keys(endpointsConfig ?? {})[0] as EModelEndpoint;
+          }
 
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
           if (!conversation.endpointType && endpointType) {
@@ -161,6 +163,9 @@ const useNewConvo = (index = 0) => {
         }
 
         clearTimeout(timeoutIdRef.current);
+        if (disableFocus === true) {
+          return;
+        }
         timeoutIdRef.current = setTimeout(() => {
           const textarea = document.getElementById(mainTextareaId);
           if (textarea) {
@@ -176,6 +181,7 @@ const useNewConvo = (index = 0) => {
       template: _template = {},
       preset: _preset,
       modelsData,
+      disableFocus,
       buildDefault = true,
       keepLatestMessage = false,
       keepAddedConvos = false,
@@ -184,6 +190,7 @@ const useNewConvo = (index = 0) => {
       preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      disableFocus?: boolean;
       keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
     } = {}) {
@@ -254,6 +261,7 @@ const useNewConvo = (index = 0) => {
         buildDefault,
         keepLatestMessage,
         keepAddedConvos,
+        disableFocus,
       );
     },
     [

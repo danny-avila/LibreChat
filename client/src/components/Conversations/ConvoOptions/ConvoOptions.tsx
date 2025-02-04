@@ -1,12 +1,11 @@
 import { useState, useId, useRef, memo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent } from 'react';
 import type * as t from '~/common';
+import { useDuplicateConversationMutation, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
-import { useDuplicateConversationMutation } from '~/data-provider';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';

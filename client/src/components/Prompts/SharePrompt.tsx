@@ -2,7 +2,6 @@ import React, { useEffect, useMemo } from 'react';
 import { Share2Icon } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type {
   TPromptGroup,
   TStartupConfig,
@@ -17,7 +16,8 @@ import {
   OGDialogTrigger,
   OGDialogClose,
 } from '~/components/ui';
-import { useUpdatePromptGroup } from '~/data-provider';
+import { useUpdatePromptGroup, useGetStartupConfig } from '~/data-provider';
+import { Button, Switch } from '~/components/ui';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
