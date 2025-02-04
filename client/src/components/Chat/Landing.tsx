@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type * as t from 'librechat-data-provider';
@@ -11,6 +11,7 @@ import { useLocalize, useSubmitMessage } from '~/hooks';
 import { TooltipAnchor } from '~/components/ui';
 import { BirthdayIcon } from '~/components/svg';
 import ConvoStarter from './ConvoStarter';
+import axios from 'axios';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
@@ -18,6 +19,16 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const [welcomeMessage, setWelcomeMessage] = useState<string>('');
+
+  useEffect(() => {
+    const fetchWelcomeMessage = async () => {
+      const message = await getWelcomeMessage();
+      setWelcomeMessage(message);
+    };
+
+    fetchWelcomeMessage();
+  }, []);
 
   const localize = useLocalize();
 
@@ -70,7 +81,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = (text: string) => submitMessage({ text });
 
-  const getWelcomeMessage = () => {
+  const getWelcomeMessage = async () => {
     const greeting = conversation?.greeting ?? '';
     if (greeting) {
       return greeting;
@@ -84,7 +95,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
       return localize('com_nav_welcome_agent');
     }
 
-    return localize('com_nav_welcome_message');
+    const currentAgent = await axios.get('/api/models/current');
+    return currentAgent.data.description;
+    // return localize('com_nav_welcome_message');
   };
 
   return (
@@ -123,7 +136,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
           </div>
         ) : (
           <h2 className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-            {getWelcomeMessage()}
+            {welcomeMessage}
           </h2>
         )}
         <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">

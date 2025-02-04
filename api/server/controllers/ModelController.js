@@ -42,14 +42,16 @@ async function getCurrentModel() {
   console.log('currentAgentName:', currentAgentName); // eslint-disable-line no-console
   let agentId = '';
   let latestAliasId = '';
+  let description = '';
   availableAgents.forEach((agent) => {
     if (agent.agentName === currentAgentName) {
       latestAliasId = agent.latestAliasId;
       agentId = agent.agentId;
+      description = agent.description;
       return;
     }
   });
-  return { agentId, latestAliasId };
+  return { agentId, latestAliasId, description };
 }
 
 /**
