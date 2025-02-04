@@ -917,6 +917,7 @@ export default {
   com_ui_terms_and_conditions: 'Terms and Conditions',
   com_ui_no_terms_content: 'No terms and conditions content to display',
   com_ui_speech_while_submitting: 'Can\'t submit speech while a response is being generated',
+  com_nav_balance: 'Balance',
   com_auth_passkey_login: 'Login with Passkey',
   com_auth_passkey_register: 'Register with Passkey',
   com_auth_loading: 'Loading...',
