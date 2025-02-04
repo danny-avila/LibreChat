@@ -1,11 +1,13 @@
 import { Search } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TConversation } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, Constants } from 'librechat-data-provider';
+import type { TConversation, TMessage } from 'librechat-data-provider';
 import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { NewChatIcon } from '~/components/svg';
 import { cn } from '~/utils';
@@ -35,7 +37,12 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
   return (
     <div className="h-7 w-7 flex-shrink-0">
       {iconURL && iconURL.includes('http') ? (
-        <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
+        <ConvoIconURL
+          iconURL={iconURL}
+          modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
+          endpointIconURL={iconURL}
+          context="nav"
+        />
       ) : (
         <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
           {endpoint && Icon != null && (
@@ -65,6 +72,7 @@ export default function NewChat({
   subHeaders?: React.ReactNode;
   isSmallScreen: boolean;
 }) {
+  const queryClient = useQueryClient();
   /** Note: this component needs an explicit index passed if using more than one */
   const { newConversation: newConvo } = useNewConvo(index);
   const navigate = useNavigate();
@@ -75,6 +83,10 @@ export default function NewChat({
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && !(event.ctrlKey || event.metaKey)) {
       event.preventDefault();
+      queryClient.setQueryData<TMessage[]>(
+        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+        [],
+      );
       newConvo();
       navigate('/c/new');
       toggleNav();
@@ -87,7 +99,7 @@ export default function NewChat({
         <a
           href="/"
           tabIndex={0}
-          data-testid="nav-new-chat"
+          data-testid="nav-new-chat-button"
           onClick={clickHandler}
           className={cn(
             'group flex h-10 items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover',

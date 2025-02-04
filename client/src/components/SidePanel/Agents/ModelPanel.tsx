@@ -1,13 +1,13 @@
 import React, { useMemo, useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { getSettingsKeys } from 'librechat-data-provider';
-import { useFormContext, Controller } from 'react-hook-form';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { agentSettings } from '~/components/SidePanel/Parameters/settings';
 import { getEndpointField, cn, cardStyle } from '~/utils';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { SelectDropDown } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
@@ -19,10 +19,11 @@ export default function Parameters({
 }: AgentModelPanelProps) {
   const localize = useLocalize();
 
-  const { control, setValue, watch } = useFormContext<AgentForm>();
-  const modelParameters = watch('model_parameters');
-  const providerOption = watch('provider');
-  const model = watch('model');
+  const { control, setValue } = useFormContext<AgentForm>();
+
+  const model = useWatch({ control, name: 'model' });
+  const providerOption = useWatch({ control, name: 'provider' });
+  const modelParameters = useWatch({ control, name: 'model_parameters' });
 
   const provider = useMemo(() => {
     const value =
@@ -69,6 +70,10 @@ export default function Parameters({
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);
+  };
+
+  const handleResetParameters = () => {
+    setValue('model_parameters', {} as t.AgentModelParameters);
   };
 
   return (
@@ -208,6 +213,17 @@ export default function Parameters({
                 />
               );
             })}
+          </div>
+          {/* Reset Parameters Button */}
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={handleResetParameters}
+              className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+            >
+              <RotateCcw className="h-4 w-4" />
+              {localize('com_ui_reset_var', localize('com_ui_model_parameters'))}
+            </button>
           </div>
         </div>
       )}

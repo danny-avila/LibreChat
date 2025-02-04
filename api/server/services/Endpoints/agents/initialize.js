@@ -12,6 +12,7 @@ const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize'
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const initCustom = require('~/server/services/Endpoints/custom/initialize');
+const initGoogle = require('~/server/services/Endpoints/google/initialize');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -24,6 +25,7 @@ const providerConfigMap = {
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
+  [EModelEndpoint.google]: initGoogle,
   [Providers.OLLAMA]: initCustom,
 };
 
@@ -80,8 +82,7 @@ const initializeAgentOptions = async ({
 }) => {
   const { tools, toolContextMap } = await loadAgentTools({
     req,
-    tools: agent.tools,
-    agent_id: agent.id,
+    agent,
     tool_resources,
   });
 
@@ -98,12 +99,15 @@ const initializeAgentOptions = async ({
     agent.endpoint = provider.toLowerCase();
   }
 
-  const model_parameters = agent.model_parameters ?? { model: agent.model };
-  const _endpointOption = isInitialAgent
-    ? endpointOption
-    : {
-      model_parameters,
-    };
+  const model_parameters = Object.assign(
+    {},
+    agent.model_parameters ?? { model: agent.model },
+    isInitialAgent === true ? endpointOption?.model_parameters : {},
+  );
+  const _endpointOption =
+    isInitialAgent === true
+      ? Object.assign({}, endpointOption, { model_parameters })
+      : { model_parameters };
 
   const options = await getOptions({
     req,
@@ -114,6 +118,10 @@ const initializeAgentOptions = async ({
     endpointOption: _endpointOption,
   });
 
+  if (options.provider != null) {
+    agent.provider = options.provider;
+  }
+
   agent.model_parameters = Object.assign(model_parameters, options.llmConfig);
   if (options.configOptions) {
     agent.model_parameters.configuration = options.configOptions;
@@ -123,13 +131,16 @@ const initializeAgentOptions = async ({
     agent.model_parameters.model = agent.model;
   }
 
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
+
   return {
     ...agent,
     tools,
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(agent.model_parameters.model, providerEndpointMap[provider]) ??
+      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
       4000,
   };
 };
@@ -214,6 +225,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     collectedUsage,
     artifactPromises,
     spec: endpointOption.spec,
+    iconURL: endpointOption.iconURL,
     agentConfigs,
     endpoint: EModelEndpoint.agents,
     maxContextTokens: primaryConfig.maxContextTokens,

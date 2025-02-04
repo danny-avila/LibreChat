@@ -35,7 +35,7 @@ function ResetPassword() {
     return (
       <>
         <div
-          className="relative mb-8 mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-center text-green-700 dark:bg-gray-900 dark:text-white"
+          className="relative mb-8 mt-4 rounded-2xl border border-green-400 bg-green-100 px-4 py-3 text-center text-green-700 dark:bg-gray-900 dark:text-white"
           role="alert"
         >
           {localize('com_auth_login_with_new_password')}
@@ -43,7 +43,7 @@ function ResetPassword() {
         <button
           onClick={() => navigate('/login')}
           aria-label={localize('com_auth_sign_in')}
-          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+          className="w-full transform rounded-2xl bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
         >
           {localize('com_auth_continue')}
         </button>
@@ -163,7 +163,12 @@ function ResetPassword() {
           disabled={!!errors.password || !!errors.confirm_password}
           type="submit"
           aria-label={localize('com_auth_submit_registration')}
-          className="btn-primary w-full transform rounded-2xl px-4 py-3 tracking-wide transition-colors duration-200"
+          className="
+            w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
+            transition-colors hover:bg-green-700 focus:outline-none focus:ring-2
+            focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50
+            disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700
+          "
         >
           {localize('com_auth_continue')}
         </button>

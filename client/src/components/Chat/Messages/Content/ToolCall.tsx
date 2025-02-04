@@ -35,8 +35,30 @@ export default function ToolCall({
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - progress * circumference;
 
-  const [function_name, _domain] = name.split(actionDelimiter) as [string, string | undefined];
-  const domain = _domain?.replaceAll(actionDomainSeparator, '.') ?? null;
+  const { function_name, domain, isMCPToolCall } = useMemo(() => {
+    if (typeof name !== 'string') {
+      return { function_name: '', domain: null, isMCPToolCall: false };
+    }
+
+    if (name.includes(Constants.mcp_delimiter)) {
+      const [func, server] = name.split(Constants.mcp_delimiter);
+      return {
+        function_name: func || '',
+        domain: server && (server.replaceAll(actionDomainSeparator, '.') || null),
+        isMCPToolCall: true,
+      };
+    }
+
+    const [func, _domain] = name.includes(actionDelimiter)
+      ? name.split(actionDelimiter)
+      : [name, ''];
+    return {
+      function_name: func || '',
+      domain: _domain && (_domain.replaceAll(actionDomainSeparator, '.') || null),
+      isMCPToolCall: false,
+    };
+  }, [name]);
+
   const error =
     typeof output === 'string' && output.toLowerCase().includes('error processing tool');
 
@@ -83,6 +105,9 @@ export default function ToolCall({
   };
 
   const getFinishedText = () => {
+    if (isMCPToolCall === true) {
+      return localize('com_assistants_completed_function', function_name);
+    }
     if (domain != null && domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH) {
       return localize('com_assistants_completed_action', domain);
     }

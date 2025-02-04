@@ -91,7 +91,14 @@ export type IconMapProps = {
   size?: number;
 };
 
-export type AgentIconMapProps = IconMapProps & { agentName: string };
+export type IconComponent = React.ComponentType<IconMapProps>;
+export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
+export type IconComponentTypes = IconComponent | AgentIconComponent;
+export type IconsRecord = {
+  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
+};
+
+export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
   title: string;
@@ -173,13 +180,14 @@ export type AgentPanelProps = {
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  agentsConfig?: t.TAgentsEndpoint | null;
 };
 
 export type AgentModelPanelProps = {
-  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
-  providers: Option[];
-  models: Record<string, string[]>;
   agent_id?: string;
+  providers: Option[];
+  models: Record<string, string[] | undefined>;
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
@@ -278,6 +286,7 @@ export type TAskProps = {
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  clientTimestamp?: string;
 };
 
 export type TOptions = {
@@ -304,6 +313,12 @@ export type TMessageProps = {
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
+
+export type TMessageIcon = { endpoint?: string | null; isCreatedByUser?: boolean } & Pick<
+  t.TConversation,
+  'modelLabel'
+> &
+  Pick<t.TMessage, 'model' | 'iconURL'>;
 
 export type TInitialProps = {
   text: string;
@@ -397,7 +412,7 @@ export type TAuthConfig = {
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
-  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
+  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel'> & {
     size?: number;
     button?: boolean;
     iconURL?: string;
@@ -462,6 +477,7 @@ export interface ExtendedFile {
   source?: FileSources;
   attached?: boolean;
   embedded?: boolean;
+  tool_resource?: string;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

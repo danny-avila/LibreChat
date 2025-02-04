@@ -1,10 +1,15 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { Constants } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
-import { forceResize, insertTextAtCursor, getEntityName, getEntity } from '~/utils';
+import {
+  forceResize,
+  insertTextAtCursor,
+  getEntityName,
+  getEntity,
+  checkIfScrollable,
+} from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -20,10 +25,12 @@ type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
+  setIsScrollable,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
+  setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
 }) {
   const localize = useLocalize();
@@ -35,18 +42,11 @@ export default function useTextarea({
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
-  const {
-    index,
-    conversation,
-    isSubmitting,
-    filesLoading,
-    latestMessage,
-    setFilesLoading,
-    setShowBingToneSetting,
-  } = useChatContext();
+  const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
+    useChatContext();
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
-  const { conversationId, jailbreak = false, endpoint = '' } = conversation || {};
+  const { endpoint = '' } = conversation || {};
   const { entity, isAgent, isAssistant } = getEntity({
     endpoint,
     agentsMap,
@@ -69,33 +69,6 @@ export default function useTextarea({
       setActivePrompt(undefined);
     }
   }, [activePrompt, setActivePrompt, textAreaRef]);
-
-  // auto focus to input, when enter a conversation.
-  useEffect(() => {
-    const convoId = conversationId ?? '';
-    if (!convoId) {
-      return;
-    }
-
-    // Prevents Settings from not showing on new conversation, also prevents showing toneStyle change without jailbreak
-    if (convoId === Constants.NEW_CONVO || !jailbreak) {
-      setShowBingToneSetting(false);
-    }
-
-    if (convoId !== Constants.SEARCH) {
-      textAreaRef.current?.focus();
-    }
-    // setShowBingToneSetting is a recoil setter, so it doesn't need to be in the dependency array
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, jailbreak]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      textAreaRef.current?.focus();
-    }, 100);
-
-    return () => clearTimeout(timeoutId);
-  }, [isSubmitting, textAreaRef]);
 
   useEffect(() => {
     const currentValue = textAreaRef.current?.value ?? '';
@@ -128,7 +101,10 @@ export default function useTextarea({
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'AI'}`;
+      return `${localize(
+        'com_endpoint_message_new',
+        sender ? sender : localize('com_endpoint_ai'),
+      )}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -167,6 +143,10 @@ export default function useTextarea({
 
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
+      if (textAreaRef.current && checkIfScrollable(textAreaRef.current)) {
+        const scrollable = checkIfScrollable(textAreaRef.current);
+        scrollable && setIsScrollable(scrollable);
+      }
       if (e.key === 'Enter' && isSubmitting) {
         return;
       }
@@ -175,6 +155,9 @@ export default function useTextarea({
 
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
       const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+
+      // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
+      const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();
@@ -189,7 +172,7 @@ export default function useTextarea({
         !enterToSend &&
         !isCtrlEnter &&
         textAreaRef.current &&
-        !isComposing.current
+        !isComposingInput
       ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
@@ -197,7 +180,7 @@ export default function useTextarea({
         return;
       }
 
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposing.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposingInput) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
         if (globalAudio) {
           console.log('Unmuting global audio');
@@ -206,7 +189,15 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, checkHealth, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+    [
+      isSubmitting,
+      checkHealth,
+      filesLoading,
+      enterToSend,
+      setIsScrollable,
+      textAreaRef,
+      submitButtonRef,
+    ],
   );
 
   const handleCompositionStart = () => {

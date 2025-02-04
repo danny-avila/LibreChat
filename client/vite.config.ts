@@ -59,9 +59,11 @@ export default defineConfig({
       devOptions: {
         enabled: false, // enable/disable registering SW in development mode
       },
+      useCredentials: true,
       workbox: {
         globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        navigateFallbackDenylist: [/^\/oauth/],
       },
       manifest: {
         name: 'LibreChat',

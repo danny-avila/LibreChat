@@ -52,7 +52,6 @@ export default {
   com_ui_chats: 'chattar',
   com_ui_share: 'Dela',
   com_ui_copy_link: 'Kopiera länk',
-  com_ui_update_link: 'Uppdatera länk',
   com_ui_create_link: 'Skapa länk',
   com_ui_share_link_to_chat: 'Dela länk till chatt',
   com_ui_share_error: 'Ett fel uppstod vid delning av chattlänken',
@@ -338,4 +337,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'Balans',
 };

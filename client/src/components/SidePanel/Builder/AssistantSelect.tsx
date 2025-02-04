@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useMemo } from 'react';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Tools,
   FileSources,
@@ -12,6 +12,7 @@ import {
 import type { UseFormReset } from 'react-hook-form';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
+  TPlugin,
   Assistant,
   AssistantDocument,
   AssistantsEndpoint,
@@ -37,6 +38,7 @@ const keys = new Set([
   'instructions',
   'conversation_starters',
   'model',
+  'append_current_datetime',
 ]);
 
 export default function AssistantSelect({
@@ -47,6 +49,7 @@ export default function AssistantSelect({
   selectedAssistant,
   setCurrentAssistantId,
   createMutation,
+  allTools,
 }: {
   reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
@@ -55,6 +58,7 @@ export default function AssistantSelect({
   documentsMap: Map<string, AssistantDocument> | null;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
+  allTools?: TPlugin[];
 }) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
@@ -64,12 +68,17 @@ export default function AssistantSelect({
     {} as LastSelectedModels,
   );
 
+  const toolkits = useMemo(
+    () => new Set(allTools?.filter((tool) => tool.toolkit === true).map((tool) => tool.pluginKey)),
+    [allTools],
+  );
+
   const query = useListAssistantsQuery(endpoint, undefined, {
     select: (res) =>
       res.data.map((_assistant) => {
         const source =
           endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
-        const assistant = {
+        const assistant: TAssistantOption = {
           ..._assistant,
           label: _assistant.name ?? '',
           value: _assistant.id,
@@ -125,8 +134,11 @@ export default function AssistantSelect({
 
         const assistantDoc = documentsMap?.get(_assistant.id);
         /* If no user updates, use the latest assistant docs */
-        if (assistantDoc && !assistant.conversation_starters) {
-          assistant.conversation_starters = assistantDoc.conversation_starters;
+        if (assistantDoc) {
+          if (!assistant.conversation_starters) {
+            assistant.conversation_starters = assistantDoc.conversation_starters;
+          }
+          assistant.append_current_datetime = assistantDoc.append_current_datetime ?? false;
         }
 
         return assistant;
@@ -149,7 +161,7 @@ export default function AssistantSelect({
       const update = {
         ...assistant,
         label: assistant.name ?? '',
-        value: assistant.id ?? '',
+        value: assistant.id || '',
       };
 
       const actions: Actions = {
@@ -160,7 +172,7 @@ export default function AssistantSelect({
 
       (assistant.tools ?? [])
         .filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
-        .map((tool) => tool.function?.name || tool.type)
+        .map((tool) => (tool.function?.name ?? '') || tool.type)
         .forEach((tool) => {
           if (tool === Tools.file_search) {
             actions[Capabilities.retrieval] = true;
@@ -168,9 +180,22 @@ export default function AssistantSelect({
           actions[tool] = true;
         });
 
+      const seenToolkits = new Set<string>();
       const functions = (assistant.tools ?? [])
         .filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
-        .map((tool) => tool.function?.name ?? '');
+        .map((tool) => tool.function?.name ?? '')
+        .filter((fnName) => {
+          const fnPrefix = fnName.split('_')[0];
+          const seenToolkit = toolkits.has(fnPrefix);
+          if (seenToolkit) {
+            seenToolkits.add(fnPrefix);
+          }
+          return !seenToolkit;
+        });
+
+      if (seenToolkits.size > 0) {
+        functions.push(...Array.from(seenToolkits));
+      }
 
       const formValues: Partial<AssistantForm & Actions> = {
         functions,
@@ -181,6 +206,11 @@ export default function AssistantSelect({
 
       Object.entries(assistant).forEach(([name, value]) => {
         if (!keys.has(name)) {
+          return;
+        }
+
+        if (name === 'append_current_datetime') {
+          formValues[name] = !!value;
           return;
         }
 
@@ -201,7 +231,15 @@ export default function AssistantSelect({
       reset(formValues);
       setCurrentAssistantId(assistant.id);
     },
-    [query.data, reset, setCurrentAssistantId, createMutation, endpoint, lastSelectedModels],
+    [
+      query.data,
+      reset,
+      setCurrentAssistantId,
+      createMutation,
+      endpoint,
+      lastSelectedModels,
+      toolkits,
+    ],
   );
 
   useEffect(() => {

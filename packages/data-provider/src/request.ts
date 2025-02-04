@@ -2,6 +2,7 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import * as endpoints from './api-endpoints';
 import { setTokenHeader } from './headers-helpers';
+import type * as t from './types';
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   const response = await axios.get(url, { ...options });
@@ -63,7 +64,8 @@ async function _patch(url: string, data?: any) {
 let isRefreshing = false;
 let failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
 
-const refreshToken = (retry?: boolean) => _post(endpoints.refreshToken(retry));
+const refreshToken = (retry?: boolean): Promise<t.TRefreshTokenResponse | undefined> =>
+  _post(endpoints.refreshToken(retry));
 
 const dispatchTokenUpdatedEvent = (token: string) => {
   setTokenHeader(token);
@@ -89,7 +91,12 @@ axios.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    if (originalRequest.url?.includes('/api/auth/logout') === true) {
+      return Promise.reject(error);
+    }
+
     if (error.response.status === 401 && !originalRequest._retry) {
+      console.warn('401 error, refreshing token');
       originalRequest._retry = true;
 
       if (isRefreshing) {
@@ -107,16 +114,22 @@ axios.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { token } = await refreshToken(
+        const response = await refreshToken(
           // Handle edge case where we get a blank screen if the initial 401 error is from a refresh token request
-          originalRequest.url?.includes('api/auth/refresh') ? true : false,
+          originalRequest.url?.includes('api/auth/refresh') === true ? true : false,
         );
+
+        const token = response?.token ?? '';
 
         if (token) {
           originalRequest.headers['Authorization'] = 'Bearer ' + token;
           dispatchTokenUpdatedEvent(token);
           processQueue(null, token);
           return await axios(originalRequest);
+        } else if (window.location.href.includes('share/')) {
+          console.log(
+            `Refresh token failed from shared link, attempting request to ${originalRequest.url}`,
+          );
         } else {
           window.location.href = '/login';
         }

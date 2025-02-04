@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.7.5",
+  "version": "v0.7.6",
   "description": "",
   "workspaces": [
     "api",
@@ -28,6 +28,8 @@
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "invite-user": "node config/invite-user.js",
+    "list-users": "node config/list-users.js",
+    "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
     "update-banner": "node config/update-banner.js",
@@ -36,7 +38,8 @@
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
-    "frontend": "npm run build:data-provider && cd client && npm run build",
+    "build:mcp": "cd packages/mcp && npm run build",
+    "frontend": "npm run build:data-provider && npm run build:mcp && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
@@ -101,10 +104,22 @@
     "prettier-plugin-tailwindcss": "^0.2.2"
   },
   "overrides": {
-    "vite-plugin-pwa": {
-      "rollup": "^4.22.4"
+    "mdast-util-gfm-autolink-literal": "2.0.0",
+    "remark-gfm": {
+      "mdast-util-gfm-autolink-literal": "2.0.0"
     },
-    "mdast-util-gfm-autolink-literal": "2.0.0"
+    "mdast-util-gfm": {
+      "mdast-util-gfm-autolink-literal": "2.0.0"
+    },
+    "katex": "^0.16.21",
+    "rehype-katex": {
+      "katex": "^0.16.21"
+    },
+    "remark-math": {
+      "micromark-extension-math": {
+        "katex": "^0.16.21"
+      }
+    }
   },
   "nodemonConfig": {
     "ignore": [

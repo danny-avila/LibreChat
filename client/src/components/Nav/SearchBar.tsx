@@ -1,27 +1,39 @@
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 type SearchBarProps = {
-  clearSearch: () => void;
   isSmallScreen?: boolean;
+  setPageNumber: React.Dispatch<React.SetStateAction<number>>;
 };
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
-  const { clearSearch, isSmallScreen } = props;
+  const localize = useLocalize();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const { setPageNumber, isSmallScreen } = props;
+
+  const [text, setText] = useState('');
+  const [showClearIcon, setShowClearIcon] = useState(false);
+
+  const { newConversation } = useNewConvo();
   const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
-  const [showClearIcon, setShowClearIcon] = useState(false);
-  const [text, setText] = useState('');
   const setIsSearching = useSetRecoilState(store.isSearching);
-  const localize = useLocalize();
+
+  const clearSearch = useCallback(() => {
+    setPageNumber(1);
+    if (location.pathname.includes('/search')) {
+      newConversation({ disableFocus: true });
+    }
+  }, [newConversation, setPageNumber, location.pathname]);
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
@@ -73,7 +85,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       }
       <input
         type="text"
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
         value={text}
         onChange={onChange}
         onKeyDown={(e) => {

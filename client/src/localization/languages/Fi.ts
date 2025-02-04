@@ -29,6 +29,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Avustaja täytyy ensin luoda, ja Kooditulkki tai Tiedonhaku täytyy olla päällä ja asetukset tallennettuna, ennen kuin tiedostoja voidaan ladata Tietoihin.',
   com_assistants_image_vision: 'Kuvanäkö',
+  com_assistants_append_date: 'Lisää nykyinen päivämäärä ja aika',
+  com_assistants_append_date_tooltip:
+    'Kun käytössä, nykyinen asiakkaan päivämäärä ja aika lisätään avustajan järjestelmäohjeisiin.',
   com_assistants_code_interpreter: 'Kooditulkki',
   com_assistants_code_interpreter_files: 'Seuraavat tiedostot ovat vain Kooditulkin käytettävissä:',
   com_assistants_retrieval: 'Tiedonhaku',
@@ -240,7 +243,6 @@ export default {
   com_ui_share: 'Jaa',
   com_ui_share_var: 'Jaa {0}',
   com_ui_copy_link: 'Kopioi linkki',
-  com_ui_update_link: 'Päivitä linkki',
   com_ui_create_link: 'Luo linkki',
   com_ui_share_to_all_users: 'Jaa kaikille käyttäjille',
   com_ui_my_prompts: 'Omat syötteet',
@@ -709,4 +711,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'Saldo',
 };

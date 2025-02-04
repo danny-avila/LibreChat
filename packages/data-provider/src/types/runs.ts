@@ -1,5 +1,6 @@
 export enum ContentTypes {
   TEXT = 'text',
+  THINK = 'think',
   TEXT_DELTA = 'text_delta',
   TOOL_CALL = 'tool_call',
   IMAGE_FILE = 'image_file',

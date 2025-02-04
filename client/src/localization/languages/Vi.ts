@@ -54,7 +54,6 @@ export default {
   com_ui_chats: 'cuộc trò chuyện',
   com_ui_share: 'Chia sẻ',
   com_ui_copy_link: 'Sao chép liên kết',
-  com_ui_update_link: 'Cập nhật liên kết',
   com_ui_create_link: 'Tạo liên kết',
   com_ui_share_link_to_chat: 'Chia sẻ liên kết đến cuộc trò chuyện',
   com_ui_share_error: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
@@ -336,4 +335,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'Sự cân bằng',
 };

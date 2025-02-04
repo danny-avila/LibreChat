@@ -414,7 +414,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     // Default columnSpan
     if (!setting.columnSpan) {
-      setting.columnSpan = Math.floor(columns / 2);
+      setting.columnSpan = Math.floor((columns ?? 0) / 2);
     }
 
     // Default label to key

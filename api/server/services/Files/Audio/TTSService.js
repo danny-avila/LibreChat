@@ -364,7 +364,7 @@ class TTSService {
       shouldContinue = false;
     });
 
-    const processChunks = createChunkProcessor(req.body.messageId);
+    const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
 
     try {
       while (shouldContinue) {

@@ -1,7 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { BookmarkPlusIcon } from 'lucide-react';
 import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
-import { Table, TableHeader, TableBody, TableRow, TableCell, Input, Button } from '~/components/ui';
+import {
+  Table,
+  Input,
+  Button,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+  TableHeader,
+  OGDialogTrigger,
+} from '~/components/ui';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
+import { BookmarkEditDialog } from '~/components/Bookmarks';
 import BookmarkTableRow from './BookmarkTableRow';
 import { useLocalize } from '~/hooks';
 
@@ -19,9 +31,11 @@ const BookmarkTable = () => {
   const [rows, setRows] = useState<ConversationTagsResponse>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [open, setOpen] = useState(false);
   const pageSize = 10;
 
   const { bookmarks = [] } = useBookmarkContext();
+
   useEffect(() => {
     const _bookmarks = removeDuplicates(bookmarks).sort((a, b) => a.position - b.position);
     setRows(_bookmarks);
@@ -37,9 +51,9 @@ const BookmarkTable = () => {
   }, []);
 
   const renderRow = useCallback(
-    (row: TConversationTag) => {
-      return <BookmarkTableRow key={row._id} moveRow={moveRow} row={row} position={row.position} />;
-    },
+    (row: TConversationTag) => (
+      <BookmarkTableRow key={row._id} moveRow={moveRow} row={row} position={row.position} />
+    ),
     [moveRow],
   );
 
@@ -48,58 +62,91 @@ const BookmarkTable = () => {
   );
 
   const currentRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+
   return (
     <BookmarkContext.Provider value={{ bookmarks }}>
-      <div className="flex items-center gap-4 py-4">
-        <Input
-          placeholder={localize('com_ui_bookmarks_filter')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full border-border-light placeholder:text-text-secondary"
-        />
-      </div>
-      <div className="overflow-y-auto rounded-md border border-border-light">
-        <Table className="table-fixed border-separate border-spacing-0">
-          <TableHeader>
-            <TableRow>
-              <TableCell className="w-full bg-header-primary px-3 py-3.5 pl-6">
-                <div>{localize('com_ui_bookmarks_title')}</div>
-              </TableCell>
-              <TableCell className="w-full bg-header-primary px-3 py-3.5 sm:pl-6">
-                <div>{localize('com_ui_bookmarks_count')}</div>
-              </TableCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>{currentRows.map((row) => renderRow(row))}</TableBody>
-        </Table>
-      </div>
-      <div className="flex items-center justify-between py-4">
-        <div className="pl-1 text-text-secondary">
-          {localize('com_ui_showing')} {pageIndex * pageSize + 1} -{' '}
-          {Math.min((pageIndex + 1) * pageSize, filteredRows.length)} {localize('com_ui_of')}{' '}
-          {filteredRows.length}
+      <div role="region" aria-label={localize('com_ui_bookmarks')} className="mt-2 space-y-2">
+        <div className="flex items-center gap-4">
+          <Input
+            placeholder={localize('com_ui_bookmarks_filter')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={localize('com_ui_bookmarks_filter')}
+          />
         </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPageIndex((prev) => Math.max(prev - 1, 0))}
-            disabled={pageIndex === 0}
-          >
-            {localize('com_ui_prev')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setPageIndex((prev) =>
-                (prev + 1) * pageSize < filteredRows.length ? prev + 1 : prev,
-              )
-            }
-            disabled={(pageIndex + 1) * pageSize >= filteredRows.length}
-          >
-            {localize('com_ui_next')}
-          </Button>
+
+        <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
+          <Table className="w-full table-fixed">
+            <TableHeader>
+              <TableRow className="border-b border-border-light">
+                <TableHead className="w-[70%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <div className="px-4">{localize('com_ui_bookmarks_title')}</div>
+                </TableHead>
+                <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <div className="px-4">{localize('com_ui_bookmarks_count')}</div>
+                </TableHead>
+                <TableHead className="w-[40%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <div className="px-4">{localize('com_assistants_actions')}</div>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {currentRows.length ? (
+                currentRows.map(renderRow)
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-24 text-center text-sm text-text-secondary">
+                    {localize('com_ui_no_bookmarks')}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex justify-between gap-2">
+            <BookmarkEditDialog context="BookmarkPanel" open={open} setOpen={setOpen}>
+              <OGDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 text-sm"
+                  onClick={() => setOpen(!open)}
+                >
+                  <BookmarkPlusIcon className="size-4" />
+                  <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
+                </Button>
+              </OGDialogTrigger>
+            </BookmarkEditDialog>
+          </div>
+          <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPageIndex((prev) => Math.max(prev - 1, 0))}
+              disabled={pageIndex === 0}
+              aria-label={localize('com_ui_prev')}
+            >
+              {localize('com_ui_prev')}
+            </Button>
+            <div aria-live="polite" className="text-sm">
+              {`${pageIndex + 1} / ${Math.ceil(filteredRows.length / pageSize)}`}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setPageIndex((prev) =>
+                  (prev + 1) * pageSize < filteredRows.length ? prev + 1 : prev,
+                )
+              }
+              disabled={(pageIndex + 1) * pageSize >= filteredRows.length}
+              aria-label={localize('com_ui_next')}
+            >
+              {localize('com_ui_next')}
+            </Button>
+          </div>
         </div>
       </div>
     </BookmarkContext.Provider>

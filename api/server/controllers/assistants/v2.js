@@ -2,6 +2,7 @@ const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
 const { updateAssistantDoc } = require('~/models/Assistant');
+const { manifestToolMap } = require('~/app/clients/tools');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
@@ -16,8 +17,15 @@ const createAssistant = async (req, res) => {
     /** @type {{ openai: OpenAIClient }} */
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint, conversation_starters, ...assistantData } = req.body;
+    const {
+      tools = [],
+      endpoint,
+      conversation_starters,
+      append_current_datetime,
+      ...assistantData
+    } = req.body;
     delete assistantData.conversation_starters;
+    delete assistantData.append_current_datetime;
 
     assistantData.tools = tools
       .map((tool) => {
@@ -25,9 +33,21 @@ const createAssistant = async (req, res) => {
           return tool;
         }
 
-        return req.app.locals.availableTools[tool];
+        const toolDefinitions = req.app.locals.availableTools;
+        const toolDef = toolDefinitions[tool];
+        if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
+          return (
+            Object.entries(toolDefinitions)
+              .filter(([key]) => key.startsWith(`${tool}_`))
+              // eslint-disable-next-line no-unused-vars
+              .map(([_, val]) => val)
+          );
+        }
+
+        return toolDef;
       })
-      .filter((tool) => tool);
+      .filter((tool) => tool)
+      .flat();
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -46,6 +66,9 @@ const createAssistant = async (req, res) => {
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
+    if (append_current_datetime !== undefined) {
+      createData.append_current_datetime = append_current_datetime;
+    }
 
     const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
 
@@ -55,6 +78,9 @@ const createAssistant = async (req, res) => {
 
     if (document.conversation_starters) {
       assistant.conversation_starters = document.conversation_starters;
+    }
+    if (append_current_datetime !== undefined) {
+      assistant.append_current_datetime = append_current_datetime;
     }
 
     logger.debug('/assistants/', assistant);
@@ -89,11 +115,40 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     delete updateData.conversation_starters;
   }
 
+  if (updateData?.append_current_datetime !== undefined) {
+    await updateAssistantDoc(
+      { assistant_id: assistant_id },
+      { append_current_datetime: updateData.append_current_datetime },
+    );
+    delete updateData.append_current_datetime;
+  }
+
   let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {
-    let actualTool = typeof tool === 'string' ? req.app.locals.availableTools[tool] : tool;
+    const toolDefinitions = req.app.locals.availableTools;
+    let actualTool = typeof tool === 'string' ? toolDefinitions[tool] : tool;
 
-    if (!actualTool) {
+    if (!actualTool && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
+      actualTool = Object.entries(toolDefinitions)
+        .filter(([key]) => key.startsWith(`${tool}_`))
+        // eslint-disable-next-line no-unused-vars
+        .map(([_, val]) => val);
+    } else if (!actualTool) {
+      continue;
+    }
+
+    if (Array.isArray(actualTool)) {
+      for (const subTool of actualTool) {
+        if (!subTool.function) {
+          tools.push(subTool);
+          continue;
+        }
+
+        const updatedTool = await validateAndUpdateTool({ req, tool: subTool, assistant_id });
+        if (updatedTool) {
+          tools.push(updatedTool);
+        }
+      }
       continue;
     }
 

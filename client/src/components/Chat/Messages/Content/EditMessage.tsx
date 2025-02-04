@@ -1,11 +1,10 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { useRef, useEffect, useCallback } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useChatContext, useAddedChatContext } from '~/Providers';
-import { TextareaAutosize } from '~/components/ui';
+import { TextareaAutosize, TooltipAnchor } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
@@ -21,6 +20,8 @@ const EditMessage = ({
   setSiblingIdx,
 }: TEditProps) => {
   const { addedIndex } = useAddedChatContext();
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const { getMessages, setMessages, conversation } = useChatContext();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
@@ -29,8 +30,6 @@ const EditMessage = ({
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { conversationId, parentMessageId, messageId } = message;
-  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
-  const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -115,7 +114,6 @@ const EditMessage = ({
             ? {
               ...msg,
               text: data.text,
-              isEdited: true,
             }
             : msg,
         ),
@@ -127,6 +125,14 @@ const EditMessage = ({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        submitButtonRef.current?.click();
+      }
+      if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        saveButtonRef.current?.click();
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         enterEdit(true);
@@ -165,25 +171,40 @@ const EditMessage = ({
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
-        <button
-          className="btn btn-primary relative mr-2"
-          disabled={
-            isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
+        <TooltipAnchor
+          description="Ctrl + Enter / ⌘ + Enter"
+          render={
+            <button
+              ref={submitButtonRef}
+              className="btn btn-primary relative mr-2"
+              disabled={isSubmitting}
+              onClick={handleSubmit(resubmitMessage)}
+            >
+              {localize('com_ui_save_submit')}
+            </button>
           }
-          onClick={handleSubmit(resubmitMessage)}
-        >
-          {localize('com_ui_save_submit')}
-        </button>
-        <button
-          className="btn btn-secondary relative mr-2"
-          disabled={isSubmitting}
-          onClick={handleSubmit(updateMessage)}
-        >
-          {localize('com_ui_save')}
-        </button>
-        <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
-          {localize('com_ui_cancel')}
-        </button>
+        />
+        <TooltipAnchor
+          description="Shift + Enter"
+          render={
+            <button
+              ref={saveButtonRef}
+              className="btn btn-secondary relative mr-2"
+              disabled={isSubmitting}
+              onClick={handleSubmit(updateMessage)}
+            >
+              {localize('com_ui_save')}
+            </button>
+          }
+        />
+        <TooltipAnchor
+          description="Esc"
+          render={
+            <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
+              {localize('com_ui_cancel')}
+            </button>
+          }
+        />
       </div>
     </Container>
   );

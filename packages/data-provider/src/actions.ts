@@ -201,15 +201,21 @@ class RequestExecutor {
       oauth_client_secret,
     } = metadata;
 
-    const isApiKey = api_key && type === AuthTypeEnum.ServiceHttp;
-    const isOAuth =
+    const isApiKey = api_key != null && api_key.length > 0 && type === AuthTypeEnum.ServiceHttp;
+    const isOAuth = !!(
+      oauth_client_id != null &&
       oauth_client_id &&
+      oauth_client_secret != null &&
       oauth_client_secret &&
       type === AuthTypeEnum.OAuth &&
+      authorization_url != null &&
       authorization_url &&
+      client_url != null &&
       client_url &&
+      scope != null &&
       scope &&
-      token_exchange_method;
+      token_exchange_method
+    );
 
     if (isApiKey && authorization_type === AuthorizationTypeEnum.Basic) {
       const basicToken = Buffer.from(api_key).toString('base64');
@@ -219,11 +225,13 @@ class RequestExecutor {
     } else if (
       isApiKey &&
       authorization_type === AuthorizationTypeEnum.Custom &&
+      custom_auth_header != null &&
       custom_auth_header
     ) {
       this.authHeaders[custom_auth_header] = api_key;
     } else if (isOAuth) {
-      if (!this.authToken) {
+      const authToken = this.authToken ?? '';
+      if (!authToken) {
         const tokenResponse = await axios.post(
           client_url,
           {
@@ -419,8 +427,8 @@ export function openapiToFunction(
         path,
         method,
         operationId,
-        !!(operationObj['x-openai-isConsequential'] ?? false), // Custom extension for consequential actions
-        operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
+        !!(operationObj['x-openai-isConsequential'] ?? false),
+        operationObj.requestBody ? 'application/json' : '',
       );
 
       requestBuilders[operationId] = actionRequest;

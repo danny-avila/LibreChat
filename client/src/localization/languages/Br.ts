@@ -51,6 +51,9 @@ export default {
   com_assistants_knowledge_disabled:
     'O assistente deve ser criado, e o Interpretador de Código ou Recuperação deve ser habilitado e salvo antes de carregar arquivos como Conhecimento.',
   com_assistants_image_vision: 'Visão de Imagem',
+  com_assistants_append_date: 'Anexar Data e Hora Atual',
+  com_assistants_append_date_tooltip:
+    'Quando ativado, a data e hora atual do cliente serão anexadas às instruções do sistema do assistente.',
   com_assistants_code_interpreter: 'Interpretador de Código',
   com_assistants_code_interpreter_files:
     'Os arquivos abaixo são apenas para o Interpretador de Código:',
@@ -290,7 +293,6 @@ export default {
   com_ui_share_var: 'Compartilhar {0}',
   com_ui_enter_var: 'Inserir {0}',
   com_ui_copy_link: 'Copiar link',
-  com_ui_update_link: 'Atualizar link',
   com_ui_create_link: 'Criar link',
   com_ui_share_to_all_users: 'Compartilhar com todos os usuários',
   com_ui_my_prompts: 'Meus Prompts',
@@ -814,4 +816,5 @@ export default {
   com_ui_decline: 'Eu não aceito',
   com_ui_terms_and_conditions: 'Termos e Condições',
   com_ui_no_terms_content: 'Nenhum conteúdo de termos e condições para exibir',
+  com_nav_balance: 'Equilíbrio',
 };

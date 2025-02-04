@@ -1,6 +1,8 @@
-const { promises: fs } = require('fs');
 const { CacheKeys, AuthType } = require('librechat-data-provider');
 const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
+const { getCustomConfig } = require('~/server/services/Config');
+const { availableTools } = require('~/app/clients/tools');
+const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -57,10 +59,9 @@ const getAvailablePluginsController = async (req, res) => {
 
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = req.app.locals;
-    const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
-    const jsonData = JSON.parse(pluginManifest);
+    const pluginManifest = availableTools;
 
-    const uniquePlugins = filterUniquePlugins(jsonData);
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
     let authenticatedPlugins = [];
     for (const plugin of uniquePlugins) {
       authenticatedPlugins.push(
@@ -104,11 +105,15 @@ const getAvailableTools = async (req, res) => {
       return;
     }
 
-    const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
+    const pluginManifest = availableTools;
+    const customConfig = await getCustomConfig();
+    if (customConfig?.mcpServers != null) {
+      const mcpManager = await getMCPManager();
+      await mcpManager.loadManifestTools(pluginManifest);
+    }
 
-    const jsonData = JSON.parse(pluginManifest);
     /** @type {TPlugin[]} */
-    const uniquePlugins = filterUniquePlugins(jsonData);
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
 
     const authenticatedPlugins = uniquePlugins.map((plugin) => {
       if (checkPluginAuth(plugin)) {
@@ -118,8 +123,12 @@ const getAvailableTools = async (req, res) => {
       }
     });
 
+    const toolDefinitions = req.app.locals.availableTools;
     const tools = authenticatedPlugins.filter(
-      (plugin) => req.app.locals.availableTools[plugin.pluginKey] !== undefined,
+      (plugin) =>
+        toolDefinitions[plugin.pluginKey] !== undefined ||
+        (plugin.toolkit === true &&
+          Object.keys(toolDefinitions).some((key) => key.startsWith(`${plugin.pluginKey}_`))),
     );
 
     await cache.set(CacheKeys.TOOLS, tools);

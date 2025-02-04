@@ -1,14 +1,13 @@
 import { Plus, EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
+import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
-import { useListAgentsQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
@@ -185,8 +184,8 @@ export default function AgentSelect({
         hasAgentValue ? 'text-gray-500' : '',
       )}
       className={cn(
-        'mt-1 rounded-md dark:border-gray-700 dark:bg-gray-850',
-        'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
+        'rounded-md dark:border-gray-700 dark:bg-gray-850',
+        'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
       )}
       renderOption={() => (
         <span className="flex items-center gap-1.5 truncate">

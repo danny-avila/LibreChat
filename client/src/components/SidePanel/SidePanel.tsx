@@ -1,14 +1,11 @@
 import throttle from 'lodash/throttle';
 import { getConfigDefaults } from 'librechat-data-provider';
+import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
-import {
-  useGetEndpointsQuery,
-  useGetStartupConfig,
-  useUserKeyQuery,
-} from 'librechat-data-provider/react-query';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import NavToggle from '~/components/Nav/NavToggle';
@@ -183,7 +180,7 @@ const SidePanel = ({
       <ResizablePanelGroup
         direction="horizontal"
         onLayout={(sizes) => throttledSaveLayout(sizes)}
-        className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
+        className="transition-width relative h-full w-full flex-1 overflow-auto bg-presentation"
       >
         <ResizablePanel
           defaultSize={currentLayout[0]}
@@ -195,7 +192,7 @@ const SidePanel = ({
         </ResizablePanel>
         {artifacts != null && (
           <>
-            <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
+            <ResizableHandleAlt withHandle className="ml-3 bg-border-medium text-text-primary" />
             <ResizablePanel
               defaultSize={currentLayout[1]}
               minSize={minSizeMain}
@@ -227,7 +224,7 @@ const SidePanel = ({
           />
         </div>
         {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
-          <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
+          <ResizableHandleAlt withHandle className="bg-transparent text-text-primary" />
         )}
         <ResizablePanel
           tagName="nav"

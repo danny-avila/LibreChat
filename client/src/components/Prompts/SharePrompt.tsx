@@ -2,7 +2,6 @@ import React, { useEffect, useMemo } from 'react';
 import { Share2Icon } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type {
   TPromptGroup,
   TStartupConfig,
@@ -15,7 +14,7 @@ import {
   OGDialogTrigger,
   OGDialogClose,
 } from '~/components/ui';
-import { useUpdatePromptGroup } from '~/data-provider';
+import { useUpdatePromptGroup, useGetStartupConfig } from '~/data-provider';
 import { Button, Switch } from '~/components/ui';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -80,16 +79,18 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
     <OGDialog>
       <OGDialogTrigger asChild>
         <Button
-          variant={'default'}
-          size={'sm'}
-          className="h-10 w-10 border border-transparent bg-blue-500/90 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
+          variant="default"
+          size="sm"
+          className="h-10 w-10 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
           disabled={disabled}
         >
-          <Share2Icon className="cursor-pointer text-white " />
+          <Share2Icon className="size-5 cursor-pointer text-white" />
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="border-border-light bg-surface-primary-alt text-text-secondary">
-        <OGDialogTitle>{localize('com_ui_share_var', `"${group.name}"`)}</OGDialogTitle>
+      <OGDialogContent className="w-11/12 max-w-[600px]">
+        <OGDialogTitle className="truncate pr-2" title={group.name}>
+          {localize('com_ui_share_var', `"${group.name}"`)}
+        </OGDialogTitle>
         <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
           <div className="mb-4 flex items-center justify-between gap-2 py-4">
             <div className="flex items-center">

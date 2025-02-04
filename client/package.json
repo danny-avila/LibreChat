@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.7.5",
+  "version": "v0.7.6",
   "description": "",
   "type": "module",
   "scripts": {
@@ -29,7 +29,7 @@
   "homepage": "https://librechat.ai",
   "dependencies": {
     "@ariakit/react": "^0.4.11",
-    "@codesandbox/sandpack-react": "^2.18.2",
+    "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^2.1.2",
@@ -72,12 +72,14 @@
     "lucide-react": "^0.394.0",
     "match-sorter": "^6.3.4",
     "msedge-tts": "^1.3.4",
+    "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
     "react-avatar-editor": "^13.0.2",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
+    "react-error-boundary": "^5.0.0",
     "react-flip-toolkit": "^7.1.0",
     "react-gtm-module": "^2.0.11",
     "react-hook-form": "^7.43.9",
@@ -88,10 +90,11 @@
     "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",
+    "react-virtualized": "^9.22.6",
     "recoil": "^0.7.7",
     "regenerator-runtime": "^0.14.1",
     "rehype-highlight": "^6.0.0",
-    "rehype-katex": "^6.0.2",
+    "rehype-katex": "^6.0.3",
     "remark-directive": "^3.0.0",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
@@ -137,8 +140,8 @@
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
-    "vite": "^5.1.1",
+    "vite": "^5.4.14",
     "vite-plugin-node-polyfills": "^0.17.0",
-    "vite-plugin-pwa": "^0.20.5"
+    "vite-plugin-pwa": "^0.21.1"
   }
 }

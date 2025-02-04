@@ -39,8 +39,32 @@
  */
 
 /**
+ * @exports OpenAIClientOptions
+ * @typedef {import('@librechat/agents').OpenAIClientOptions} OpenAIClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AnthropicClientOptions
+ * @typedef {import('@librechat/agents').AnthropicClientOptions} AnthropicClientOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports BedrockClientOptions
  * @typedef {import('@librechat/agents').BedrockConverseClientOptions} BedrockClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports VertexAIClientOptions
+ * @typedef {import('@librechat/agents').VertexAIClientOptions} VertexAIClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GoogleClientOptions
+ * @typedef {import('@librechat/agents').GoogleClientOptions} GoogleClientOptions
  * @memberof typedefs
  */
 
@@ -59,6 +83,12 @@
 /**
  * @exports BaseMessage
  * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ConversationSummaryBufferMemory
+ * @typedef {import('langchain/memory').ConversationSummaryBufferMemory} ConversationSummaryBufferMemory
  * @memberof typedefs
  */
 
@@ -122,6 +152,18 @@
 /**
  * @exports GenerativeModel
  * @typedef {import('@google/generative-ai').GenerativeModel} GenerativeModel
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GenerateContentRequest
+ * @typedef {import('@google/generative-ai').GenerateContentRequest} GenerateContentRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GenAIUsageMetadata
+ * @typedef {import('@google/generative-ai').UsageMetadata} GenAIUsageMetadata
  * @memberof typedefs
  */
 
@@ -747,6 +789,33 @@
  */
 
 /**
+ *
+ * @typedef {Object} ImageGenOptions
+ * @property {ServerRequest} req - The request object.
+ * @property {boolean} isAgent - Whether the request is from an agent.
+ * @property {FileSources} fileStrategy - The file strategy to use.
+ * @property {processFileURL} processFileURL - The function to process a file URL.
+ * @property {boolean} returnMetadata - Whether to return metadata.
+ * @property {uploadImageBuffer} uploadImageBuffer - The function to upload an image buffer.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Partial<ImageGenOptions> & {
+ *   message?: string,
+ *   signal?: AbortSignal
+ *   memory?: ConversationSummaryBufferMemory
+ * }} LoadToolOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports EModelEndpoint
+ * @typedef {import('librechat-data-provider').EModelEndpoint} EModelEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAttachment
  * @typedef {import('librechat-data-provider').TAttachment} TAttachment
  * @memberof typedefs
@@ -825,6 +894,12 @@
  */
 
 /**
+ * @exports TAgentsEndpoint
+ * @typedef {import('librechat-data-provider').TAgentsEndpoint} TAgentsEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
  * @memberof typedefs
@@ -857,6 +932,42 @@
 /**
  * @exports AgentListResponse
  * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports JsonSchemaType
+ * @typedef {import('librechat-data-provider').JsonSchemaType} JsonSchemaType
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPServers
+ * @typedef {import('librechat-mcp').MCPServers} MCPServers
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPManager
+ * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCAvailableTools
+ * @typedef {import('librechat-mcp').LCAvailableTools} LCAvailableTools
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCTool
+ * @typedef {import('librechat-mcp').LCTool} LCTool
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FormattedContent
+ * @typedef {import('librechat-mcp').FormattedContent} FormattedContent
  * @memberof typedefs
  */
 
@@ -1210,8 +1321,7 @@
  * @property {boolean|{userProvide: boolean}} [azureOpenAI] - Flag to indicate if Azure OpenAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [chatGPTBrowser] - Flag to indicate if ChatGPT Browser endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
  * @memberof typedefs
  */
@@ -1242,7 +1352,6 @@
  * @property {boolean|{userProvide: boolean}} [azureOpenAI] - Flag to indicate if Azure OpenAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [chatGPTBrowser] - Flag to indicate if ChatGPT Browser endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
  * @property {boolean|GptPlugins} [gptPlugins] - Configuration for GPT plugins.
