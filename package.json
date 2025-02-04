@@ -129,5 +129,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "msedge-tts": "^2.0.0"
   }
 }
