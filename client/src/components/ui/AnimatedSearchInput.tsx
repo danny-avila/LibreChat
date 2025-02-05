@@ -1,9 +1,20 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Search } from 'lucide-react';
+import { cn } from '~/utils';
 
-const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placeholder }) => {
-  const [isFocused, setIsFocused] = useState(false);
+const AnimatedSearchInput = ({
+  value,
+  onChange,
+  isSearching: searching,
+  placeholder,
+}: {
+  value?: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  isSearching?: boolean;
+  placeholder: string;
+}) => {
   const isSearching = searching === true;
+  const hasValue = value != null && value.length > 0;
 
   return (
     <div className="relative w-full">
@@ -12,10 +23,11 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
           {/* Icon on the left */}
           <div className="absolute left-3 top-1/2 z-50 -translate-y-1/2">
             <Search
-              className={`
-                h-4 w-4 transition-all duration-500 ease-in-out
-                ${isSearching ? 'text-blue-400' : 'text-gray-400'}
-              `}
+              className={cn(
+                `
+                h-4 w-4 transition-all duration-500 ease-in-out`,
+                isSearching && hasValue ? 'text-blue-400' : 'text-gray-400',
+              )}
             />
           </div>
 
@@ -24,25 +36,22 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
             type="text"
             value={value}
             onChange={onChange}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
             placeholder={placeholder}
             className={`
-              relative z-20 w-full rounded-lg bg-surface-secondary px-10
+              peer relative z-20 w-full rounded-lg bg-surface-secondary px-10
               py-2 outline-none ring-0 backdrop-blur-sm transition-all
               duration-500 ease-in-out placeholder:text-gray-400
-              focus:outline-none
-              focus:ring-0
+              focus:outline-none focus:ring-0
             `}
           />
 
-          {/* Gradient overlay over the input background (but behind text) */}
+          {/* Gradient overlay */}
           <div
             className={`
               pointer-events-none absolute inset-0 z-20 rounded-lg
               bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20
               transition-all duration-500 ease-in-out
-              ${isSearching ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'}
+              ${isSearching && hasValue ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'}
             `}
           />
 
@@ -51,7 +60,7 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
             className={`
               absolute right-3 top-1/2 z-20 -translate-y-1/2
               transition-all duration-500 ease-in-out
-              ${isSearching ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}
+              ${isSearching && hasValue ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}
             `}
           >
             <div className="relative h-2 w-2">
@@ -67,7 +76,7 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
         className={`
           absolute -inset-8 -z-10
           transition-all duration-700 ease-in-out
-          ${isSearching ? 'scale-105 opacity-100' : 'scale-100 opacity-0'}
+          ${isSearching && hasValue ? 'scale-105 opacity-100' : 'scale-100 opacity-0'}
         `}
       >
         <div className="absolute inset-0">
@@ -75,26 +84,24 @@ const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placehol
             className={`
               bg-gradient-radial absolute inset-0 from-blue-500/10 to-transparent
               transition-opacity duration-700 ease-in-out
-              ${isSearching ? 'animate-pulse-slow opacity-100' : 'opacity-0'}
+              ${isSearching && hasValue ? 'animate-pulse-slow opacity-100' : 'opacity-0'}
             `}
           />
           <div
             className={`
               absolute inset-0 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-purple-500/5
               blur-xl transition-all duration-700 ease-in-out
-              ${isSearching ? 'animate-gradient-x opacity-100' : 'opacity-0'}
+              ${isSearching && hasValue ? 'animate-gradient-x opacity-100' : 'opacity-0'}
             `}
           />
         </div>
       </div>
-
-      {/* Focus state background glow */}
       <div
         className={`
-          absolute inset-0 -z-20 bg-gradient-to-r from-blue-500/10
-          via-purple-500/10 to-blue-500/10 blur-xl
+          absolute inset-0 -z-20 scale-100 bg-gradient-to-r from-blue-500/10 
+          via-purple-500/10 to-blue-500/10 opacity-0 blur-xl
           transition-all duration-500 ease-in-out
-          ${isFocused ? 'scale-105 opacity-100' : 'scale-100 opacity-0'}
+          peer-focus:scale-105 peer-focus:opacity-100
         `}
       />
     </div>
