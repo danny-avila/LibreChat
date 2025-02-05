@@ -29,7 +29,9 @@ async function setCurrentModel(label) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
   const agentName = cachedModelsConfig?.find((a) => a.agentName === label)?.agentName;
-
+  if (!agentName) {
+    return false;
+  }
   await cache.set(CacheKeys.CURRENT_AGENT_ID, agentName);
   return true;
 }
@@ -78,7 +80,7 @@ async function loadModels(req) {
   const aliasRequests = agentSummaries.map(async (agent) => {
     const aliasCommand = new ListAgentAliasesCommand({ agentId: agent.agentId });
     const aliasResponse = await client.send(aliasCommand);
-    const latestAgent = aliasResponse.agentAliasSummaries.reduce((latest, current) =>
+    const latestAgent = aliasResponse?.agentAliasSummaries?.reduce((latest, current) =>
       new Date(current.updatedAt) > new Date(latest.updatedAt) ? current : latest,
     );
     return {

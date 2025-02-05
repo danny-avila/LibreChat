@@ -34,6 +34,7 @@ import { useDeleteFilesMutation } from '~/data-provider';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
+import axios from 'axios';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -117,7 +118,11 @@ const useNewConvo = (index = 0) => {
               ) ?? assistants[0]?.id;
           }
 
-          if (currentAssistantId && isAssistantEndpoint && conversation.conversationId === Constants.NEW_CONVO) {
+          if (
+            currentAssistantId &&
+            isAssistantEndpoint &&
+            conversation.conversationId === Constants.NEW_CONVO
+          ) {
             const assistant = assistants.find((asst) => asst.id === currentAssistantId);
             conversation.model = assistant?.model;
             updateLastSelectedModel({
@@ -142,7 +147,8 @@ const useNewConvo = (index = 0) => {
         if (!(keepAddedConvos ?? false)) {
           clearAllConversations(true);
         }
-        setConversation(conversation);
+        handleSetConversation(conversation);
+        // setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!(keepLatestMessage ?? false)) {
           clearAllLatestMessages();
@@ -166,6 +172,11 @@ const useNewConvo = (index = 0) => {
       },
     [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
   );
+
+  const handleSetConversation = async (conversation: TConversation) => {
+    setConversation(conversation);
+    await axios.put(`/api/models/${conversation.model}`, {}, { responseType: 'json' });
+  };
 
   const newConversation = useCallback(
     ({
