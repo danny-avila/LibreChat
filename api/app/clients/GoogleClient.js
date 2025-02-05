@@ -566,7 +566,16 @@ class GoogleClient extends BaseClient {
 
     if (this.project_id != null) {
       logger.debug('Creating VertexAI client');
-      return new ChatVertexAI(clientOptions);
+      clientOptions.streaming = true;
+      const client = new ChatVertexAI(clientOptions);
+      client.temperature = clientOptions.temperature;
+      client.topP = clientOptions.topP;
+      client.topK = clientOptions.topK;
+      client.topLogprobs = clientOptions.topLogprobs;
+      client.frequencyPenalty = clientOptions.frequencyPenalty;
+      client.presencePenalty = clientOptions.presencePenalty;
+      client.maxOutputTokens = clientOptions.maxOutputTokens;
+      return client;
     } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
       return new GenAI(this.apiKey).getGenerativeModel({ model }, requestOptions);
@@ -577,7 +586,7 @@ class GoogleClient extends BaseClient {
   }
 
   initializeClient() {
-    let clientOptions = { ...this.modelOptions, maxRetries: 2 };
+    let clientOptions = { ...this.modelOptions };
 
     if (this.project_id) {
       clientOptions['authOptions'] = {
@@ -663,7 +672,9 @@ class GoogleClient extends BaseClient {
 
       /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
       let usageMetadata;
-      const stream = await this.client.stream(messages, {
+      /** @type {ChatVertexAI} */
+      const client = this.client;
+      const stream = await client.stream(messages, {
         signal: abortController.signal,
         streamUsage: true,
         safetySettings,
@@ -681,10 +692,18 @@ class GoogleClient extends BaseClient {
       }
 
       for await (const chunk of stream) {
-        usageMetadata = !usageMetadata
-          ? chunk?.usage_metadata
-          : concat(usageMetadata, chunk?.usage_metadata);
-        const chunkText = chunk?.content ?? chunk;
+        if (chunk?.usage_metadata) {
+          const metadata = chunk.usage_metadata;
+          for (const key in metadata) {
+            if (Number.isNaN(metadata[key])) {
+              delete metadata[key];
+            }
+          }
+
+          usageMetadata = !usageMetadata ? metadata : concat(usageMetadata, metadata);
+        }
+
+        const chunkText = chunk?.content ?? '';
         await this.generateTextStream(chunkText, onProgress, {
           delay,
         });
