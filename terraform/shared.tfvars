@@ -6,6 +6,8 @@ principals_readonly_access_all = [
   # sandbox-snorri-hjorvar
   "arn:aws:iam::746669190533:root",
   "arn:aws:iam::515966504419:root",
+  "arn:aws:iam::515966504419:role/aprochat-api-20250128152124893800000009",
+  "arn:aws:iam::515966504419:role/aprochat-web-2025012815212489380000000a"
 ]
 
 account_ids = [
