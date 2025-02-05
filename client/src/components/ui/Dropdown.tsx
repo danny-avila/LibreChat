@@ -15,6 +15,7 @@ interface DropdownProps {
   iconOnly?: boolean;
   renderValue?: (option: Option) => React.ReactNode;
   ariaLabel?: string;
+  portal?: boolean;
 }
 
 const isDivider = (item: string | Option | { divider: true }): item is { divider: true } =>
@@ -35,6 +36,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   iconOnly = false,
   renderValue,
   ariaLabel,
+  portal = true,
 }) => {
   const handleChange = (value: string) => {
     onChange(value);
@@ -93,7 +95,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         {!iconOnly && <Select.SelectArrow />}
       </Select.Select>
       <Select.SelectPopover
-        portal
+        portal={portal}
         store={selectProps}
         className={cn('popover-ui', sizeClasses, className, 'max-h-[80vh] overflow-y-auto')}
       >
