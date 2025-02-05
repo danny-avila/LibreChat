@@ -17,6 +17,7 @@ export default function MessagesView({
   Header?: ReactNode;
 }) {
   const localize = useLocalize();
+  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const fontSize = useRecoilValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
@@ -83,7 +84,10 @@ export default function MessagesView({
           unmountOnExit={false}
           // appear
         >
-          {() => showScrollButton && <ScrollToBottom scrollHandler={handleSmoothToRef} />}
+          {() =>
+            showScrollButton &&
+            scrollButtonPreference && <ScrollToBottom scrollHandler={handleSmoothToRef} />
+          }
         </CSSTransition>
       </div>
     </div>

@@ -15,8 +15,8 @@ import {
   extractVariableInfo,
 } from '~/utils';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
+import { TextareaAutosize, InputCombobox, Button } from '~/components/ui';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { TextareaAutosize, InputCombobox } from '~/components/ui';
 
 type FieldType = 'text' | 'select';
 
@@ -202,12 +202,9 @@ export default function VariableForm({
           ))}
         </div>
         <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn rounded bg-brand-blue-500 px-4 py-2 font-bold text-white transition-all hover:bg-brand-blue-600"
-          >
+          <Button type="submit" variant="submit">
             {localize('com_ui_submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

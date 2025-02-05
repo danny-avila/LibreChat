@@ -263,6 +263,37 @@ describe('AWS Bedrock Model Tests', () => {
   });
 });
 
+describe('Deepseek Model Tests', () => {
+  const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'];
+
+  it('should return the correct prompt multipliers for all models', () => {
+    const results = deepseekModels.map((model) => {
+      const valueKey = getValueKey(model);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct completion multipliers for all models', () => {
+    const results = deepseekModels.map((model) => {
+      const valueKey = getValueKey(model);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
+      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct prompt multipliers for reasoning model', () => {
+    const model = 'deepseek-reasoner';
+    const valueKey = getValueKey(model);
+    expect(valueKey).toBe(model);
+    const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+    const result = tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    expect(result).toBe(true);
+  });
+});
+
 describe('getCacheMultiplier', () => {
   it('should return the correct cache multiplier for a given valueKey and cacheType', () => {
     expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(

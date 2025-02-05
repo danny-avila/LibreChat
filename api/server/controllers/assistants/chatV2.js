@@ -397,18 +397,6 @@ const chatV2 = async (req, res) => {
 
       response = streamRunManager;
       response.text = streamRunManager.intermediateText;
-
-      if (response.text) {
-        const messageCache = getLogStores(CacheKeys.MESSAGES);
-        messageCache.set(
-          responseMessageId,
-          {
-            complete: true,
-            text: response.text,
-          },
-          Time.FIVE_MINUTES,
-        );
-      }
     };
 
     await processRun();
