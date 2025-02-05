@@ -12,12 +12,11 @@ import {
   Switch,
   OGDialog,
   OGDialogTitle,
+  OGDialogClose,
   OGDialogContent,
   OGDialogTrigger,
-  OGDialogClose,
 } from '~/components/ui';
 import { useUpdatePromptGroup, useGetStartupConfig } from '~/data-provider';
-import { Button, Switch } from '~/components/ui';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
@@ -52,13 +51,13 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
     setValue(Permissions.SHARED_GLOBAL, groupIsGlobal);
   }, [groupIsGlobal, setValue]);
 
-  if (group == null || instanceProjectId == null) {
+  if (group == null || !instanceProjectId) {
     return null;
   }
 
   const onSubmit = (data: FormValues) => {
     const groupId = group._id ?? '';
-    if (groupId === '' || instanceProjectId == null) {
+    if (groupId === '' || !instanceProjectId) {
       return;
     }
 
@@ -111,7 +110,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
             <Controller
               name={Permissions.SHARED_GLOBAL}
               control={control}
-              disabled={isFetching === true || updateGroup.isLoading || instanceProjectId == null}
+              disabled={isFetching === true || updateGroup.isLoading || !instanceProjectId}
               render={({ field }) => (
                 <Switch
                   {...field}
