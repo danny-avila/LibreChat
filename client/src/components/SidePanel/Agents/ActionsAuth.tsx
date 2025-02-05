@@ -84,16 +84,15 @@ export default function ActionsAuth({
                 API Key
               </label>
             </div>
-            <div className="flex items-center gap-2 text-gray-500">
-              <label htmlFor=":rfc:" className="flex cursor-not-allowed items-center gap-1">
+            <div className="flex items-center gap-2">
+              <label htmlFor=":rfc:" className="flex cursor-pointer items-center gap-1">
                 <RadioGroup.Item
                   type="button"
                   role="radio"
-                  disabled={true}
                   value={AuthTypeEnum.OAuth}
                   id=":rfc:"
-                  className="mr-1 flex h-5 w-5 cursor-not-allowed items-center justify-center rounded-full border border-gray-500 bg-gray-300 dark:border-gray-600 dark:bg-gray-700"
-                  tabIndex={-1}
+                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-500 dark:bg-gray-500"
+                  tabIndex={0}
                 >
                   <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
                 </RadioGroup.Item>

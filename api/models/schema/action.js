@@ -57,11 +57,9 @@ const actionSchema = new Schema({
     // New fields for storing OAuth tokens after user authentication:
     oauth_access_token: {
       type: String,
-      select: false, // Do not return by default in queries
     },
     oauth_refresh_token: {
       type: String,
-      select: false,
     },
     oauth_token_expires_at: Date,
   },
