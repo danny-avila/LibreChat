@@ -25,7 +25,7 @@ module "label" {
 
 locals {
   principals_readonly_access_all = var.principals_readonly_access_all
-  principals                     = var.account_ids
+  principals                     = var.principals_readonly_access_all
 }
 
 ## TODO: Allow Organization Access: https://aws.amazon.com/blogs/containers/sharing-amazon-ecr-repositories-with-multiple-accounts-using-aws-organizations/

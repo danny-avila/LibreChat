@@ -10,11 +10,6 @@ principals_readonly_access_all = [
   "arn:aws:iam::515966504419:role/aprochat-web-2025012815212489380000000a"
 ]
 
-account_ids = [
-  "746669190533",
-  "515966504419",
-]
-
 organizations = [
   "arn:aws:organizations::464622532012:organization/o-0b1b4b4b4b4b4b4b4",
 ]
