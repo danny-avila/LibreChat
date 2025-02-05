@@ -575,6 +575,7 @@ class GoogleClient extends BaseClient {
       client.frequencyPenalty = clientOptions.frequencyPenalty;
       client.presencePenalty = clientOptions.presencePenalty;
       client.maxOutputTokens = clientOptions.maxOutputTokens;
+      return client;
     } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
       return new GenAI(this.apiKey).getGenerativeModel({ model }, requestOptions);
