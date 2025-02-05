@@ -14,7 +14,6 @@ let keyvRedis;
 if (REDIS_URI && isEnabled(USE_REDIS)) {
   let redisOptions = null;
   let keyvOpts = { useRedisSets: false };
-  let keyvRedis;
   if (REDIS_CA) {
     const ca = fs.readFileSync(REDIS_CA);
     redisOptions = { tls: { ca } };
