@@ -20,13 +20,11 @@ const InputWithLabel: FC<InputWithLabelProps> = forwardRef((props, ref) => {
   const localize = useLocalize();
   return (
     <>
-      <div className={cn('flex flex-row', labelClassName)}>
+      <div className={cn('mt-4 flex flex-row', labelClassName)}>
         <Label htmlFor={id} className="text-left text-sm font-medium">
           {label}
         </Label>
-        {subLabel && (
-          <div className="mx-1 text-left text-sm text-gray-700 dark:text-gray-400">{subLabel}</div>
-        )}
+        {Label && <Label className="mx-1 text-right text-sm text-text-secondary">{subLabel}</Label>}
         <br />
       </div>
       <div className="h-1" />
