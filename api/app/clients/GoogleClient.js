@@ -671,7 +671,9 @@ class GoogleClient extends BaseClient {
 
       /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
       let usageMetadata;
-      const stream = await this.client.stream(messages, {
+      /** @type {ChatVertexAI} */
+      const client = this.client;
+      const stream = await client.stream(messages, {
         signal: abortController.signal,
         streamUsage: true,
         safetySettings,
@@ -700,7 +702,7 @@ class GoogleClient extends BaseClient {
           usageMetadata = !usageMetadata ? metadata : concat(usageMetadata, metadata);
         }
 
-        const chunkText = chunk?.content ?? chunk;
+        const chunkText = chunk?.content ?? '';
         await this.generateTextStream(chunkText, onProgress, {
           delay,
         });
