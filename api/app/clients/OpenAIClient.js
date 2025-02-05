@@ -1282,6 +1282,7 @@ ${convo}
       if (
         this.isOmni === true &&
         (this.azure || /o1(?!-(?:mini|preview)).*$/.test(modelOptions.model)) &&
+        !/o3-.*$/.test(this.modelOptions.model) &&
         modelOptions.stream
       ) {
         delete modelOptions.stream;

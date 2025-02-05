@@ -85,6 +85,8 @@ module.exports = {
         'surface-dialog': 'var(--surface-dialog)',
         'surface-submit': 'var(--surface-submit)',
         'surface-submit-hover': 'var(--surface-submit-hover)',
+        'surface-destructive': 'var(--surface-destructive)',
+        'surface-destructive-hover': 'var(--surface-destructive-hover)',
         'border-light': 'var(--border-light)',
         'border-medium': 'var(--border-medium)',
         'border-medium-alt': 'var(--border-medium-alt)',
