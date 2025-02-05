@@ -1,6 +1,7 @@
 import { SquareSlash } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useState, useEffect } from 'react';
+import { Input } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 const Command = ({
@@ -43,20 +44,20 @@ const Command = ({
   }
 
   return (
-    <div className="rounded-lg border border-border-medium">
-      <h3 className="flex h-10 items-center gap-2 pl-4 text-sm text-text-secondary">
+    <div className="rounded-xl border border-border-light">
+      <h3 className="flex h-10 items-center gap-1 pl-4 text-sm text-text-secondary">
         <SquareSlash className="icon-sm" />
-        <input
+        <Input
           type="text"
           tabIndex={tabIndex}
           disabled={disabled}
           placeholder={localize('com_ui_command_placeholder')}
           value={command}
           onChange={handleInputChange}
-          className="w-full rounded-lg border-none bg-surface-tertiary p-1 text-text-primary placeholder:text-text-secondary focus:bg-surface-tertiary focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring-primary md:w-96"
+          className="border-none"
         />
         {disabled !== true && (
-          <span className="mr-1 w-10 text-xs text-text-secondary md:text-sm">{`${charCount}/${Constants.COMMANDS_MAX_LENGTH}`}</span>
+          <span className="mr-4 w-10 text-xs text-text-secondary md:text-sm">{`${charCount}/${Constants.COMMANDS_MAX_LENGTH}`}</span>
         )}
       </h3>
     </div>

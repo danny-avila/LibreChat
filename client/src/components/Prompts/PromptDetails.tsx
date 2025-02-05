@@ -12,6 +12,7 @@ import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
 import { PromptVariableGfm } from './Markdown';
 import { replaceSpecialVars } from '~/utils';
+import { Label } from '~/components/ui';
 import Description from './Description';
 import Command from './Command';
 
@@ -30,25 +31,25 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
 
   return (
     <div>
-      <div className="flex flex-col items-center justify-between px-4 dark:text-gray-200 sm:flex-row">
+      <div className="flex flex-col items-center justify-between p-4 text-text-primary sm:flex-row">
         <div className="mb-1 flex flex-row items-center font-bold sm:text-xl md:mb-0 md:text-2xl">
           <div className="mb-1 flex items-center md:mb-0">
-            <div className="rounded p-2">
+            <div className="rounded pr-2">
               {(group.category?.length ?? 0) > 0 ? (
                 <CategoryIcon category={group.category ?? ''} />
               ) : null}
             </div>
-            <span className="mr-2 border border-transparent p-2">{group.name}</span>
+            <Label className="text-2xl font-bold">{group.name}</Label>
           </div>
         </div>
       </div>
-      <div className="flex h-full max-h-screen w-full max-w-[90vw]  flex-col overflow-y-auto md:flex-row">
-        <div className="flex flex-1 flex-col gap-4 border-gray-300 p-0 dark:border-gray-600 md:max-h-[calc(100vh-150px)] md:p-2">
+      <div className="flex h-full max-h-screen flex-col overflow-y-auto md:flex-row">
+        <div className="flex flex-1 flex-col gap-4 p-0 md:max-h-[calc(100vh-150px)] md:p-2">
           <div>
-            <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
+            <h2 className="flex items-center justify-between rounded-t-lg border border-border-light py-2 pl-4 text-base font-semibold text-text-primary ">
               {localize('com_ui_prompt_text')}
             </h2>
-            <div className="group relative min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600 sm:max-w-full">
+            <div className="group relative min-h-32 rounded-b-lg border border-border-light p-4 transition-all duration-150">
               <ReactMarkdown
                 remarkPlugins={[
                   /** @ts-ignore */
