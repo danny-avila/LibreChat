@@ -159,8 +159,6 @@ const SetKeyDialog = ({
   const expiryTime = getExpiry();
   const config = endpointsConfig?.[endpoint];
 
-  console.log(expiryTime);
-
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogTemplate
