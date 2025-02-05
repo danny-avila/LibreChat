@@ -35,6 +35,7 @@
   "homepage": "https://librechat.ai",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@aws-sdk/client-bedrock-agent": "^3.741.0",
     "@azure/search-documents": "^12.0.0",
     "@google/generative-ai": "^0.21.0",
     "@keyv/mongo": "^2.1.8",
