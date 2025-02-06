@@ -803,12 +803,11 @@ class GoogleClient extends BaseClient {
    * Stripped-down logic for generating a title. This uses the non-streaming APIs, since the user does not see titles streaming
    */
   async titleChatCompletion(_payload, options = {}) {
-    const { abortController } = options;
-    const safetySettings = this.getSafetySettings();
-
     let reply = '';
+    const { abortController } = options;
 
     const model = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    const safetySettings = getSafetySettings(model);
     if (!EXCLUDED_GENAI_MODELS.test(model) && !this.project_id) {
       logger.debug('Identified titling model as GenAI version');
       /** @type {GenerativeModel} */
