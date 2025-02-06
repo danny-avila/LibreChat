@@ -9,7 +9,19 @@ export type JsonSchemaType = {
   description?: string;
 };
 
-export function convertJsonSchemaToZod(schema: JsonSchemaType): z.ZodType {
+export function convertJsonSchemaToZod(
+  schema: JsonSchemaType,
+  options: { allowEmptyObject?: boolean } = {},
+): z.ZodType | undefined {
+  const { allowEmptyObject = true } = options;
+  if (
+    !allowEmptyObject &&
+    schema.type === 'object' &&
+    (!schema.properties || Object.keys(schema.properties).length === 0)
+  ) {
+    return undefined;
+  }
+
   let zodSchema: z.ZodType;
 
   // Handle primitive types
@@ -26,13 +38,16 @@ export function convertJsonSchemaToZod(schema: JsonSchemaType): z.ZodType {
     zodSchema = z.boolean();
   } else if (schema.type === 'array' && schema.items !== undefined) {
     const itemSchema = convertJsonSchemaToZod(schema.items);
-    zodSchema = z.array(itemSchema);
+    zodSchema = z.array(itemSchema as z.ZodType);
   } else if (schema.type === 'object') {
     const shape: Record<string, z.ZodType> = {};
     const properties = schema.properties ?? {};
 
     for (const [key, value] of Object.entries(properties)) {
       let fieldSchema = convertJsonSchemaToZod(value);
+      if (!fieldSchema) {
+        continue;
+      }
       if (value.description != null && value.description !== '') {
         fieldSchema = fieldSchema.describe(value.description);
       }
