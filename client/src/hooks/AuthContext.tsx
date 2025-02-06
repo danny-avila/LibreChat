@@ -104,8 +104,35 @@ const AuthContextProvider = ({
   const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
-  const login = (data: t.TLoginUser) => {
-    loginUser.mutate(data);
+
+  /**
+   * Updated login function:
+   * - Uses async mutation (mutateAsync) so that it can await and return the backend response.
+   * - If the response indicates that 2FA is pending (twoFAPending === true),
+   *   it returns the result (which includes a tempToken) without calling setUserContext.
+   * - Otherwise, it proceeds with normal login.
+   */
+  const login = async (data: TLoginUser) => {
+    try {
+      const result: TLoginResponse = await loginUser.mutateAsync(data);
+      // If 2FA is required, navigate to the 2FA route with the temp token as a query parameter.
+      if (result.twoFAPending) {
+        // Redirect to the two-factor authentication route.
+        navigate(`/login/2fa?tempToken=${result.tempToken}`, { replace: true });
+        return result;
+      }
+      // Otherwise, complete normal login.
+      const { user, token } = result;
+      setError(undefined);
+      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+      return result;
+    } catch (error) {
+      const resError = error as TResError;
+      doSetError(resError.message);
+      navigate('/login', { replace: true });
+      throw error;
+    }
+
   };
 
   const silentRefresh = useCallback(() => {

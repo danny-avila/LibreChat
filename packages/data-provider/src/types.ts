@@ -106,6 +106,7 @@ export type TUser = {
   role: string;
   provider: string;
   plugins?: string[];
+  totpEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -287,6 +288,50 @@ export type TLoginUser = {
 export type TLoginResponse = {
   token: string;
   user: TUser;
+};
+
+export type TEnable2FAResponse = {
+  otpauthUrl: string;
+  backupCodes: string[];
+  message?: string;
+};
+
+export type TVerify2FARequest = {
+  token: string;
+};
+
+export type TVerify2FAResponse = {
+  message: string;
+};
+
+/**
+ * For verifying 2FA during login with a temporary token.
+ */
+export type TVerify2FATempRequest = {
+  tempToken: string;
+  token?: string;
+  backupCode?: string;
+};
+
+export type TVerify2FATempResponse = {
+  token?: string;
+  user?: TUser;
+  message?: string;
+};
+
+/**
+ * Response from disabling 2FA.
+ */
+export type TDisable2FAResponse = {
+  message: string;
+};
+
+/**
+ * Response from regenerating backup codes.
+ */
+export type TRegenerateBackupCodesResponse = {
+  message: string;
+  backupCodes: string[];
 };
 
 export type TRequestPasswordReset = {
