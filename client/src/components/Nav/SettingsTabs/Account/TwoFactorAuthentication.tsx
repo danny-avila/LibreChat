@@ -45,15 +45,25 @@ const TwoFactorAuthentication: React.FC = () => {
   const { mutate: confirm2FAMutate } = useConfirmTwoFactorMutation();
   const { mutate: disable2FAMutate, isLoading: isDisabling } = useDisableTwoFactorMutation();
 
-  // Reset state when closing the dialog
+  // Reset state when closing the dialog and cleanup if unfinished
   const resetState = useCallback(() => {
+    if (!user?.totpEnabled && otpauthUrl) {
+      // Cleanup unfinished setup when the dialog is closed before verification
+      disable2FAMutate(undefined, {
+        onSuccess: () => {
+          showToast({ message: localize('com_ui_2fa_canceled') });
+        },
+        onError: () => showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
+      });
+    }
+
     setOtpauthUrl('');
     setBackupCodes([]);
     setVerificationToken('');
     setDisableToken('');
     setPhase(user?.totpEnabled ? 'disable' : 'verify');
     setDownloaded(false);
-  }, [user]);
+  }, [user, otpauthUrl, disable2FAMutate, localize, showToast]);
 
   useEffect(() => {
     if (
