@@ -965,4 +965,5 @@ export default {
   com_ui_speech_while_submitting:
     'Impossible de soumettre un message vocal pendant la génération d\'une réponse',
   com_endpoint_message_new: 'Message {0}',
+  com_nav_balance: 'Équilibre',
 };
