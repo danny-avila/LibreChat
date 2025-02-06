@@ -57,14 +57,11 @@ router.post(
 );
 router.post('/resetPassword', checkBan, validatePasswordReset, resetPasswordController);
 
-// All endpoints below require authentication.
 router.get('/2fa/enable', requireJwtAuth, enable2FAController);
 router.post('/2fa/verify', requireJwtAuth, verify2FAController);
+router.post('/2fa/verify-temp', checkBan, verify2FA);
 router.post('/2fa/confirm', requireJwtAuth, confirm2FAController);
 router.post('/2fa/disable', requireJwtAuth, disable2FAController);
 router.post('/2fa/backup/regenerate', requireJwtAuth, regenerateBackupCodesController);
-
-// New endpoint for verifying 2FA after initial login.
-router.post('/2fa/verify-temp', verify2FA);
 
 module.exports = router;
