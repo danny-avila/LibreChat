@@ -9,16 +9,21 @@ export type JsonSchemaType = {
   description?: string;
 };
 
+function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
+  return (
+    jsonSchema != null &&
+    typeof jsonSchema === 'object' &&
+    jsonSchema.type === 'object' &&
+    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0)
+  );
+}
+
 export function convertJsonSchemaToZod(
   schema: JsonSchemaType,
   options: { allowEmptyObject?: boolean } = {},
 ): z.ZodType | undefined {
   const { allowEmptyObject = true } = options;
-  if (
-    !allowEmptyObject &&
-    schema.type === 'object' &&
-    (!schema.properties || Object.keys(schema.properties).length === 0)
-  ) {
+  if (!allowEmptyObject && isEmptyObjectSchema(schema)) {
     return undefined;
   }
 
