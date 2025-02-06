@@ -29,7 +29,7 @@ import {
   useDisableTwoFactorMutation,
 } from 'librechat-data-provider/react-query';
 import type { TUser } from 'librechat-data-provider';
-import { Copy, Check, Shield, QrCode, Download, Key } from 'lucide-react';
+import { Copy, Check, Shield, QrCode, Download } from 'lucide-react';
 import { cn } from '~/utils';
 
 type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
@@ -41,7 +41,7 @@ const TwoFactorAuthentication: React.FC = () => {
   const { showToast } = useToastContext();
 
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
-  const [phase, setPhase] = useState<Phase>(user?.totpEnabled ? 'disable' : 'setup');
+  const [phase, setPhase] = useState<Phase>(user?.totpEnabled ?? false ? 'disable' : 'setup');
   const [otpauthUrl, setOtpauthUrl] = useState<string>('');
   const [secret, setSecret] = useState<string>('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
@@ -57,21 +57,22 @@ const TwoFactorAuthentication: React.FC = () => {
   const { mutate: disable2FAMutate, isLoading: isDisabling } = useDisableTwoFactorMutation();
 
   const steps = ['Setup', 'Scan QR', 'Verify', 'Backup'];
-  const currentStep = steps.indexOf(
-    {
-      setup: 'Setup',
-      qr: 'Scan QR',
-      verify: 'Verify',
-      backup: 'Backup',
-    }[phase] || '',
-  );
+  const phases: Record<Phase, string> = {
+    setup: 'Setup',
+    qr: 'Scan QR',
+    verify: 'Verify',
+    backup: 'Backup',
+    disable: '',
+  };
+
+  const currentStep = steps.indexOf(phases[phase]);
 
   useEffect(() => {
     setProgress((currentStep / (steps.length - 1)) * 100);
   }, [currentStep]);
 
   const resetState = useCallback(() => {
-    if (!user?.totpEnabled && otpauthUrl) {
+    if (user?.totpEnabled !== true && otpauthUrl) {
       disable2FAMutate(undefined, {
         onSuccess: () => showToast({ message: localize('com_ui_2fa_canceled') }),
         onError: () =>
@@ -84,7 +85,7 @@ const TwoFactorAuthentication: React.FC = () => {
     setBackupCodes([]);
     setVerificationToken('');
     setDisableToken('');
-    setPhase(user?.totpEnabled ? 'disable' : 'setup');
+    setPhase(user?.totpEnabled ?? false ? 'disable' : 'setup');
     setDownloaded(false);
     setCopied(false);
     setProgress(0);
@@ -204,12 +205,14 @@ const TwoFactorAuthentication: React.FC = () => {
         </div>
         <OGDialogTrigger asChild>
           <Button
-            variant={user?.totpEnabled ? 'destructive' : 'outline'}
+            variant={user?.totpEnabled ?? false ? 'destructive' : 'outline'}
             className="flex items-center gap-2"
             disabled={isVerifying || isDisabling}
           >
             <Shield className="h-4 w-4" />
-            {user?.totpEnabled ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_enable')}
+            {user?.totpEnabled ?? false
+              ? localize('com_ui_2fa_disable')
+              : localize('com_ui_2fa_enable')}
           </Button>
         </OGDialogTrigger>
       </div>
@@ -217,9 +220,9 @@ const TwoFactorAuthentication: React.FC = () => {
       <OGDialogContent className="w-11/12 max-w-md">
         <OGDialogHeader>
           <OGDialogTitle className="mb-4 text-xl font-semibold">
-            {localize(user?.totpEnabled ? 'com_ui_2fa_disable_setup' : 'com_ui_2fa_setup')}
+            {localize(user?.totpEnabled ?? false ? 'com_ui_2fa_disable_setup' : 'com_ui_2fa_setup')}
           </OGDialogTitle>
-          {!user?.totpEnabled && phase !== 'disable' && (
+          {user?.totpEnabled !== true && phase !== 'disable' && (
             <div className="space-y-2">
               <Progress value={progress} className="h-2" />
               <div className="flex justify-between text-sm text-text-tertiary">
@@ -238,7 +241,7 @@ const TwoFactorAuthentication: React.FC = () => {
 
         <div className="mt-4">
           {/* Initial Setup */}
-          {!user?.totpEnabled && phase === 'setup' && (
+          {user?.totpEnabled !== true && phase === 'setup' && (
             <div className="space-y-4">
               <Button
                 onClick={handleGenerateQRCode}
@@ -251,7 +254,7 @@ const TwoFactorAuthentication: React.FC = () => {
           )}
 
           {/* QR Code Scan */}
-          {!user?.totpEnabled && phase === 'qr' && (
+          {user?.totpEnabled !== true && phase === 'qr' && (
             <div className="space-y-4">
               <div className="flex flex-col items-center space-y-4">
                 <QRCodeSVG
@@ -282,7 +285,7 @@ const TwoFactorAuthentication: React.FC = () => {
           )}
 
           {/* Verification */}
-          {!user?.totpEnabled && phase === 'verify' && (
+          {user?.totpEnabled !== true && phase === 'verify' && (
             <div className="space-y-8">
               <div className="flex justify-center">
                 <Label className="text-center font-normal">
@@ -321,7 +324,7 @@ const TwoFactorAuthentication: React.FC = () => {
           )}
 
           {/* Backup Codes */}
-          {!user?.totpEnabled && phase === 'backup' && (
+          {user?.totpEnabled !== true && phase === 'backup' && (
             <div className="space-y-8">
               <Label className="font-light">{localize('com_ui_save_backup_codes')}</Label>
               <div className="grid grid-cols-2 gap-4 rounded-xl bg-surface-secondary p-4 font-mono text-sm">
@@ -348,7 +351,7 @@ const TwoFactorAuthentication: React.FC = () => {
           )}
 
           {/* Disable 2FA */}
-          {user?.totpEnabled && phase === 'disable' && (
+          {user?.totpEnabled === true && phase === 'disable' && (
             <div className="space-y-10">
               <div className="flex justify-center">
                 <InputOTP
