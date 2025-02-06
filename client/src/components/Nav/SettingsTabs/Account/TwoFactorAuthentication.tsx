@@ -56,7 +56,12 @@ const TwoFactorAuthentication: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    if (isDialogOpen && !user?.totpEnabled && !otpauthUrl) {
+    if (
+      isDialogOpen &&
+        !user?.totpEnabled &&
+        !otpauthUrl &&
+        phase !== 'disable'
+    ) {
       enable2FAMutate(undefined, {
         onSuccess: ({ otpauthUrl, backupCodes }) => {
           setOtpauthUrl(otpauthUrl);
@@ -66,7 +71,7 @@ const TwoFactorAuthentication: React.FC = () => {
         onError: () => showToast({ message: localize('com_ui_2fa_generate_error'), status: 'error' }),
       });
     }
-  }, [isDialogOpen, user?.totpEnabled, otpauthUrl, enable2FAMutate, localize, showToast]);
+  }, [isDialogOpen, user?.totpEnabled, otpauthUrl, enable2FAMutate, localize, showToast, phase]);
 
   // Enable 2FA
   const handleVerify = useCallback(() => {
@@ -118,7 +123,9 @@ const TwoFactorAuthentication: React.FC = () => {
           onSuccess: () => {
             showToast({ message: localize('com_ui_2fa_disabled') });
             setDialogOpen(false);
-            setUser((prev) => ({ ...prev, totpEnabled: false , totpSecret: '', backupCodes: [] } as TUser));
+            setUser((prev) => ({ ...prev, totpEnabled: false, totpSecret: '', backupCodes: [] } as TUser));
+            setPhase('verify'); // Ensure it does not trigger re-enabling
+            setOtpauthUrl(''); // Clear state after disabling
           },
           onError: () => showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
         });
@@ -180,7 +187,7 @@ const TwoFactorAuthentication: React.FC = () => {
         {user?.totpEnabled && phase === 'disable' && (
           <div className="flex flex-col gap-4">
             <Input value={disableToken} onChange={(e) => setDisableToken(e.target.value)} placeholder={localize('com_ui_2fa_code_placeholder')} />
-            <Button variant='destructive' onClick={handleDisableVerify} disabled={!disableToken || isDisabling}>
+            <Button variant="destructive" onClick={handleDisableVerify} disabled={!disableToken || isDisabling}>
               {isDisabling && <Spinner className="mr-2" />}
               {localize('com_ui_2fa_disable')}
             </Button>
