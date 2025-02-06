@@ -34,6 +34,8 @@
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "invite-user": "node config/invite-user.js",
+    "list-users": "node config/list-users.js",
+    "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
     "update-banner": "node config/update-banner.js",
@@ -114,6 +116,15 @@
     },
     "mdast-util-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
+    },
+    "katex": "^0.16.21",
+    "rehype-katex": {
+      "katex": "^0.16.21"
+    },
+    "remark-math": {
+      "micromark-extension-math": {
+        "katex": "^0.16.21"
+      }
     }
   },
   "nodemonConfig": {

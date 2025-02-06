@@ -1,27 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useSpeechToTextMutation } from '~/data-provider';
+import useGetAudioSettings from './useGetAudioSettings';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
-import useGetAudioSettings from './useGetAudioSettings';
 
-const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
+const useSpeechToTextExternal = (
+  setText: (text: string) => void,
+  onTranscriptionComplete: (text: string) => void,
+) => {
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
   const isExternalSTTEnabled = speechToTextEndpoint === 'external';
-  const [speechToText] = useRecoilState<boolean>(store.speechToText);
-  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
-  const [autoSendText] = useRecoilState(store.autoSendText);
-  const [text, setText] = useState<string>('');
-  const [isListening, setIsListening] = useState(false);
+  const audioStream = useRef<MediaStream | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
   const [permission, setPermission] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
+
   const [minDecibels] = useRecoilState(store.decibelValue);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioStream = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animationFrameIdRef = useRef<number | null>(null);
+  const [autoSendText] = useRecoilState(store.autoSendText);
+  const [speechToText] = useRecoilState<boolean>(store.speechToText);
+  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
@@ -52,10 +56,6 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       mediaRecorderRef.current.removeEventListener('stop', handleStop);
       mediaRecorderRef.current = null;
     }
-  };
-
-  const clearText = () => {
-    setText('');
   };
 
   const getMicrophonePermission = async () => {
@@ -226,11 +226,9 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
 
   return {
     isListening,
-    isLoading: isProcessing,
-    text,
-    externalStartRecording,
     externalStopRecording,
-    clearText,
+    externalStartRecording,
+    isLoading: isProcessing,
   };
 };
 

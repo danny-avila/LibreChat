@@ -260,7 +260,6 @@ export default {
   com_ui_share: 'Teilen',
   com_ui_share_var: '{0} teilen',
   com_ui_copy_link: 'Link kopieren',
-  com_ui_update_link: 'Link aktualisieren',
   com_ui_create_link: 'Link erstellen',
   com_ui_share_to_all_users: 'Mit allen Benutzern teilen',
   com_ui_my_prompts: 'Meine Prompts',
@@ -943,7 +942,9 @@ export default {
   com_endpoint_ai: 'KI',
   com_ui_page: 'Seite',
   com_ui_bookmarks_add: 'Lesezeichen hinzufügen',
-  com_endpoint_message_new: 'Nachricht {0} oder "@" eingeben, um KI zu wechseln',
   com_nav_maximize_chat_space: 'Chat-Bereich maximieren',
   com_ui_collapse_chat: 'Chat einklappen',
+  com_ui_speech_while_submitting: 'Spracheingabe nicht möglich während eine Antwort generiert wird',
+  com_endpoint_message_new: 'Nachricht {0}',
+  com_nav_balance: 'Guthaben',
 };

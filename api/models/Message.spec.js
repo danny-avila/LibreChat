@@ -100,7 +100,6 @@ describe('Message Operations', () => {
         expect.objectContaining({
           messageId: 'msg123',
           text: 'Hello, world!',
-          isEdited: true,
         }),
       );
     });

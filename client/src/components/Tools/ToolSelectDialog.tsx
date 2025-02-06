@@ -178,10 +178,11 @@ function ToolSelectDialog({
                     setIsOpen(false);
                     setCurrentPage(1);
                   }}
-                  className="inline-block text-text-tertiary hover:text-text-secondary"
-                  tabIndex={0}
+                  className="inline-block rounded-full text-text-secondary transition-colors hover:text-text-primary"
+                  aria-label="Close dialog"
+                  type="button"
                 >
-                  <X />
+                  <X aria-hidden="true" />
                 </button>
               </div>
             </div>

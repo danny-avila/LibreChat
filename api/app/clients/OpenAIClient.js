@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
 const {
   Constants,
   ImageDetail,
@@ -28,17 +29,17 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { addSpaceIfNeeded, isEnabled, sleep } = require('~/server/utils');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
-const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
+const { logger, sendEvent } = require('~/config');
 const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
-const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -64,7 +65,9 @@ class OpenAIClient extends BaseClient {
     /** @type {OpenAIUsageMetadata | undefined} */
     this.usage;
     /** @type {boolean|undefined} */
-    this.isO1Model;
+    this.isOmni;
+    /** @type {SplitStreamHandler | undefined} */
+    this.streamHandler;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -102,8 +105,8 @@ class OpenAIClient extends BaseClient {
       this.checkVisionRequest(this.options.attachments);
     }
 
-    const o1Pattern = /\bo1\b/i;
-    this.isO1Model = o1Pattern.test(this.modelOptions.model);
+    const omniPattern = /\b(o1|o3)\b/i;
+    this.isOmni = omniPattern.test(this.modelOptions.model);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
@@ -143,7 +146,7 @@ class OpenAIClient extends BaseClient {
     const { model } = this.modelOptions;
 
     this.isChatCompletion =
-      o1Pattern.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
+      omniPattern.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
@@ -472,7 +475,7 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    if (promptPrefix && this.isO1Model !== true) {
+    if (promptPrefix && this.isOmni !== true) {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
@@ -500,7 +503,7 @@ class OpenAIClient extends BaseClient {
     };
 
     /** EXPERIMENTAL */
-    if (promptPrefix && this.isO1Model === true) {
+    if (promptPrefix && this.isOmni === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
         payload[
@@ -614,8 +617,6 @@ class OpenAIClient extends BaseClient {
     model = 'gpt-4o-mini',
     modelName,
     temperature = 0.2,
-    presence_penalty = 0,
-    frequency_penalty = 0,
     max_tokens,
     streaming,
     context,
@@ -626,8 +627,6 @@ class OpenAIClient extends BaseClient {
     const modelOptions = {
       modelName: modelName ?? model,
       temperature,
-      presence_penalty,
-      frequency_penalty,
       user: this.user,
     };
 
@@ -798,7 +797,11 @@ ${convo}
         }
 
         title = (
-          await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion })
+          await this.sendPayload(instructionsPayload, {
+            modelOptions,
+            useChatCompletion,
+            context: 'title',
+          })
         ).replaceAll('"', '');
 
         const completionTokens = this.getTokenCount(title);
@@ -931,7 +934,10 @@ ${convo}
     );
 
     if (excessTokenCount > maxContextTokens) {
-      ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
+      ({ context } = await this.getMessagesWithinTokenLimit({
+        messages: context,
+        maxContextTokens,
+      }));
     }
 
     if (context.length === 0) {
@@ -1061,10 +1067,36 @@ ${convo}
     });
   }
 
+  getStreamText() {
+    if (!this.streamHandler) {
+      return '';
+    }
+
+    const reasoningTokens =
+      this.streamHandler.reasoningTokens.length > 0
+        ? `:::thinking\n${this.streamHandler.reasoningTokens.join('')}\n:::\n`
+        : '';
+
+    return `${reasoningTokens}${this.streamHandler.tokens.join('')}`;
+  }
+
+  getMessageMapMethod() {
+    /**
+     * @param {TMessage} msg
+     */
+    return (msg) => {
+      if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
+        msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
+      }
+
+      return msg;
+    };
+  }
+
   async chatCompletion({ payload, onProgress, abortController = null }) {
     let error = null;
+    let intermediateReply = [];
     const errorCallback = (err) => (error = err);
-    const intermediateReply = [];
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -1168,7 +1200,7 @@ ${convo}
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }
 
-      if (this.isO1Model === true && modelOptions.max_tokens != null) {
+      if (this.isOmni === true && modelOptions.max_tokens != null) {
         modelOptions.max_completion_tokens = modelOptions.max_tokens;
         delete modelOptions.max_tokens;
       }
@@ -1248,13 +1280,35 @@ ${convo}
       let streamResolve;
 
       if (
-        this.isO1Model === true &&
+        this.isOmni === true &&
         (this.azure || /o1(?!-(?:mini|preview)).*$/.test(modelOptions.model)) &&
+        !/o3-.*$/.test(this.modelOptions.model) &&
         modelOptions.stream
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
+      } else if (!this.isOmni && modelOptions.reasoning_effort != null) {
+        delete modelOptions.reasoning_effort;
       }
+
+      let reasoningKey = 'reasoning_content';
+      if (this.useOpenRouter) {
+        modelOptions.include_reasoning = true;
+        reasoningKey = 'reasoning';
+      }
+
+      this.streamHandler = new SplitStreamHandler({
+        reasoningKey,
+        accumulate: true,
+        runId: this.responseMessageId,
+        handlers: {
+          [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
+          [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
+          [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
+        },
+      });
+
+      intermediateReply = this.streamHandler.tokens;
 
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
@@ -1282,20 +1336,44 @@ ${convo}
             }
 
             if (typeof finalMessage.content !== 'string' || finalMessage.content.trim() === '') {
-              finalChatCompletion.choices[0].message.content = intermediateReply.join('');
+              finalChatCompletion.choices[0].message.content = this.streamHandler.tokens.join('');
             }
           })
           .on('finalMessage', (message) => {
             if (message?.role !== 'assistant') {
-              stream.messages.push({ role: 'assistant', content: intermediateReply.join('') });
+              stream.messages.push({
+                role: 'assistant',
+                content: this.streamHandler.tokens.join(''),
+              });
               UnexpectedRoleError = true;
             }
           });
 
+        if (this.continued === true) {
+          const latestText = addSpaceIfNeeded(
+            this.currentMessages[this.currentMessages.length - 1]?.text ?? '',
+          );
+          this.streamHandler.handle({
+            choices: [
+              {
+                delta: {
+                  content: latestText,
+                },
+              },
+            ],
+          });
+        }
+
         for await (const chunk of stream) {
-          const token = chunk.choices[0]?.delta?.content || '';
-          intermediateReply.push(token);
-          onProgress(token);
+          // Add finish_reason: null if missing in any choice
+          if (chunk.choices) {
+            chunk.choices.forEach((choice) => {
+              if (!('finish_reason' in choice)) {
+                choice.finish_reason = null;
+              }
+            });
+          }
+          this.streamHandler.handle(chunk);
           if (abortController.signal.aborted) {
             stream.controller.abort();
             break;
@@ -1338,7 +1416,7 @@ ${convo}
 
       if (!Array.isArray(choices) || choices.length === 0) {
         logger.warn('[OpenAIClient] Chat completion response has no choices');
-        return intermediateReply.join('');
+        return this.streamHandler.tokens.join('');
       }
 
       const { message, finish_reason } = choices[0] ?? {};
@@ -1348,16 +1426,30 @@ ${convo}
 
       if (!message) {
         logger.warn('[OpenAIClient] Message is undefined in chatCompletion response');
-        return intermediateReply.join('');
+        return this.streamHandler.tokens.join('');
       }
 
       if (typeof message.content !== 'string' || message.content.trim() === '') {
-        const reply = intermediateReply.join('');
+        const reply = this.streamHandler.tokens.join('');
         logger.debug(
           '[OpenAIClient] chatCompletion: using intermediateReply due to empty message.content',
           { intermediateReply: reply },
         );
         return reply;
+      }
+
+      if (
+        this.streamHandler.reasoningTokens.length > 0 &&
+        this.options.context !== 'title' &&
+        !message.content.startsWith('<think>')
+      ) {
+        return this.getStreamText();
+      } else if (
+        this.streamHandler.reasoningTokens.length > 0 &&
+        this.options.context !== 'title' &&
+        message.content.startsWith('<think>')
+      ) {
+        return message.content.replace('<think>', ':::thinking').replace('</think>', ':::');
       }
 
       return message.content;
@@ -1381,7 +1473,11 @@ ${convo}
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
         logger.error('[OpenAIClient] Known OpenAI error:', err);
-        return intermediateReply.join('');
+        if (intermediateReply.length > 0) {
+          return intermediateReply.join('');
+        } else {
+          throw err;
+        }
       } else if (err instanceof OpenAI.APIError) {
         if (intermediateReply.length > 0) {
           return intermediateReply.join('');

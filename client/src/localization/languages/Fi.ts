@@ -243,7 +243,6 @@ export default {
   com_ui_share: 'Jaa',
   com_ui_share_var: 'Jaa {0}',
   com_ui_copy_link: 'Kopioi linkki',
-  com_ui_update_link: 'Päivitä linkki',
   com_ui_create_link: 'Luo linkki',
   com_ui_share_to_all_users: 'Jaa kaikille käyttäjille',
   com_ui_my_prompts: 'Omat syötteet',
@@ -712,4 +711,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'Saldo',
 };

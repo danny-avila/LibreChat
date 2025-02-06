@@ -192,7 +192,6 @@ export default {
   com_ui_create: 'Crea',
   com_ui_share: 'Condividi',
   com_ui_copy_link: 'Copia link',
-  com_ui_update_link: 'Aggiorna link',
   com_ui_create_link: 'Crea link',
   com_ui_share_link_to_chat: 'Condividi link a chat',
   com_ui_share_error: 'Si è verificato un errore durante la condivisione del link della chat',
@@ -953,9 +952,12 @@ export default {
   com_ui_delete_shared_link: 'Eliminare il link condiviso?',
   com_ui_bookmarks_add: 'Aggiungi Segnalibri',
   com_ui_bookmarks_edit: 'Modifica Segnalibro',
-  com_endpoint_message_new: 'Messaggio {0} oppure digita "@" per cambiare IA',
   com_endpoint_ai: 'IA',
   com_nav_maximize_chat_space: 'Massimizza spazio chat',
   com_ui_page: 'Pagina',
   com_ui_collapse_chat: 'Comprimi Chat',
+  com_endpoint_message_new: 'Messaggio {0}',
+  com_ui_speech_while_submitting:
+    'Impossibile inviare il messaggio mentre è in corso la generazione di una risposta',
+  com_nav_balance: 'Bilancia',
 };

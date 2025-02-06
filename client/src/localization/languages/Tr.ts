@@ -221,7 +221,6 @@ export default {
   com_ui_create: 'Oluştur',
   com_ui_share: 'Paylaş',
   com_ui_copy_link: 'Bağlantıyı kopyala',
-  com_ui_update_link: 'Bağlantıyı güncelle',
   com_ui_create_link: 'Bağlantı oluştur',
   com_ui_share_link_to_chat: 'Sohbete bağlantı paylaş',
   com_ui_share_error: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
@@ -645,4 +644,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'Denge',
 };

@@ -91,7 +91,14 @@ export type IconMapProps = {
   size?: number;
 };
 
-export type AgentIconMapProps = IconMapProps & { agentName: string };
+export type IconComponent = React.ComponentType<IconMapProps>;
+export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
+export type IconComponentTypes = IconComponent | AgentIconComponent;
+export type IconsRecord = {
+  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
+};
+
+export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
   title: string;
@@ -405,7 +412,7 @@ export type TAuthConfig = {
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
-  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
+  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel'> & {
     size?: number;
     button?: boolean;
     iconURL?: string;

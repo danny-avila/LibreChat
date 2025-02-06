@@ -29,7 +29,7 @@ export default function GroupSidePanel({
   return (
     <div
       className={cn(
-        'mr-2 flex w-full min-w-72 flex-col gap-2 overflow-y-auto md:w-full lg:w-1/4 xl:w-1/4',
+        'mr-2 flex h-auto w-auto min-w-72 flex-col gap-2 lg:w-1/4 xl:w-1/4',
         isDetailView && isSmallerScreen ? 'hidden' : '',
         className,
       )}
@@ -39,7 +39,7 @@ export default function GroupSidePanel({
         <List
           groups={promptGroups}
           isChatRoute={isChatRoute}
-          isLoading={!!groupsQuery?.isLoading}
+          isLoading={!!groupsQuery.isLoading}
         />
       </div>
       <PanelNavigation

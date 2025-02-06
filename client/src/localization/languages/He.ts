@@ -96,7 +96,6 @@ export default {
   com_ui_create: 'צור',
   com_ui_share: 'שתף',
   com_ui_copy_link: 'העתק קישור',
-  com_ui_update_link: 'עדכן קישור',
   com_ui_create_link: 'צור קישור',
   com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
   com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
@@ -441,4 +440,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'לְאַזֵן',
 };

@@ -214,10 +214,7 @@ const deletePromptController = async (req, res) => {
     const { promptId } = req.params;
     const { groupId } = req.query;
     const author = req.user.id;
-    const query = { promptId, groupId, author };
-    if (req.user.role === SystemRoles.ADMIN) {
-      delete query.author;
-    }
+    const query = { promptId, groupId, author, role: req.user.role };
     const result = await deletePrompt(query);
     res.status(200).send(result);
   } catch (error) {
