@@ -8,16 +8,6 @@ type ScreenshotContextType = {
 
 const ScreenshotContext = createContext<ScreenshotContextType>({});
 
-const preloadImage = (src: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve();
-    img.onerror = reject;
-    img.src = src;
-  });
-};
-
 export const useScreenshot = () => {
   const { ref } = useContext(ScreenshotContext);
   const { theme } = useContext(ThemeContext);
@@ -25,17 +15,6 @@ export const useScreenshot = () => {
   const takeScreenShot = async (node?: HTMLElement) => {
     if (!node) {
       throw new Error('You should provide correct html node.');
-    }
-
-    const images = node.getElementsByTagName('img');
-    try {
-      Array.from(images).forEach((img) => {
-        img.crossOrigin = 'anonymous';
-      });
-
-      await Promise.all(Array.from(images).map((img) => preloadImage(img.src)));
-    } catch (error) {
-      console.error('Error preloading images:', error);
     }
 
     let isDark = theme === 'dark';
