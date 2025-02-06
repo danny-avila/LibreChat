@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { useLocalize } from '~/hooks';
+// import { useLocalize } from '~/hooks';
 import { useVerifyTwoFactorTempMutation } from 'librechat-data-provider/react-query';
-import { useToastContext } from '~/Providers';
 
 type TwoFactorFormInputs = {
   token?: string;
@@ -18,11 +17,8 @@ const TwoFactorScreen: React.FC = () => {
 
   // Initialize form, localization, toast, and backup toggle state.
   const { register, handleSubmit, formState: { errors } } = useForm<TwoFactorFormInputs>();
-  const localize = useLocalize();
-  const { showToast } = useToastContext();
+  // const localize = useLocalize();
   const [useBackup, setUseBackup] = useState<boolean>(false);
-
-  // Setup the mutation for verifying 2FA.
   const { mutate: verifyTempMutate, isLoading } = useVerifyTwoFactorTempMutation();
 
   // Handle form submission.
@@ -41,7 +37,7 @@ const TwoFactorScreen: React.FC = () => {
         }
       },
       onError: (error: any) => {
-        const errorMsg = error.response?.data?.message || localize('Error verifying 2FA');
+        const errorMsg = error.response?.data?.message || 'Error verifying 2FA';
         alert(errorMsg);
       },
     });
@@ -94,7 +90,7 @@ const TwoFactorScreen: React.FC = () => {
               onClick={() => setUseBackup(true)}
               className="text-blue-600 hover:underline text-sm"
             >
-                  Use Backup Code Instead?
+              Use Backup Code Instead?
             </button>
           ) : (
             <button
@@ -102,7 +98,7 @@ const TwoFactorScreen: React.FC = () => {
               onClick={() => setUseBackup(false)}
               className="text-blue-600 hover:underline text-sm"
             >
-                  Use 2FA Code Instead?
+              Use 2FA Code Instead?
             </button>
           )}
         </div>
@@ -120,7 +116,7 @@ const TwoFactorScreen: React.FC = () => {
             onClick={handleCancel}
             className="rounded bg-gray-300 px-4 py-2 text-gray-800 hover:bg-gray-400"
           >
-              Cancel
+            Cancel
           </button>
         </div>
       </form>
