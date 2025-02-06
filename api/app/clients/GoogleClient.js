@@ -844,16 +844,8 @@ class GoogleClient extends BaseClient {
       },
     ]);
 
-    const model = process.env.GOOGLE_TITLE_MODEL ?? this.modelOptions.model;
-    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
-    this.isVisionModel = validateVisionModel({ model, availableModels });
-
-    if (this.isVisionModel) {
-      logger.warn(
-        `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
-      );
-      this.modelOptions.model = settings.model.default;
-    }
+    this.modelOptions.model =
+      process.env.GOOGLE_TITLE_MODEL ?? this.modelOptions.model ?? settings.model.default;
 
     try {
       this.initializeClient();
