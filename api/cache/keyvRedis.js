@@ -18,8 +18,12 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
     const ca = fs.readFileSync(REDIS_CA);
     redisOptions = { tls: { ca } };
   }
-  if (USE_REDIS_CLUSTER) {
-    const hosts = REDIS_URI.split(',').map((host) => {return { url: host }});
+  if (isEnabled(USE_REDIS_CLUSTER)) {
+    const hosts = REDIS_URI.split(',')
+      .map((host) => {
+        // TODO parse `host` input to handle connection strings
+        return { host: host };
+      });
     const cluster = new ioredis.Cluster(hosts, { redisOptions });
     keyvRedis = new KeyvRedis(cluster, keyvOpts);
   } else {
