@@ -1020,6 +1020,10 @@ export enum ErrorTypes {
    * Invalid request error, API rejected request
    */
   NO_SYSTEM_MESSAGES = 'no_system_messages',
+  /**
+   * Google provider returned an error
+   */
+  GOOGLE_ERROR = 'google_error',
 }
 
 /**

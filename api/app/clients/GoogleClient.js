@@ -635,7 +635,8 @@ class GoogleClient extends BaseClient {
     const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
 
     let reply = '';
-
+    /** @type {Error} */
+    let error;
     try {
       if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
         /** @type {GenAI} */
@@ -736,7 +737,15 @@ class GoogleClient extends BaseClient {
         this.usage = usageMetadata;
       }
     } catch (e) {
+      error = e;
       logger.error('[GoogleClient] There was an issue generating the completion', e);
+    }
+
+    if (error != null && reply === '') {
+      const errorMessage = `{ "type": "${ErrorTypes.GoogleError}", "info": "${
+        error.message ?? 'The Google provider failed to generate content, please contact the Admin.'
+      }" }`;
+      throw new Error(errorMessage);
     }
     return reply;
   }
