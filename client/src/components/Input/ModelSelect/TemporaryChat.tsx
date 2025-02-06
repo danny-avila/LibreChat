@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useGetStartupConfig } from '~/data-provider';
 import { Constants, getConfigDefaults } from 'librechat-data-provider';
 import temporaryStore from '~/store/temporary';
 import { Switch } from '~/components/ui';
