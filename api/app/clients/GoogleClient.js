@@ -10,6 +10,7 @@ const {
   getResponseSender,
   endpointSettings,
   EModelEndpoint,
+  ContentTypes,
   VisionModes,
   ErrorTypes,
   Constants,
@@ -216,10 +217,29 @@ class GoogleClient extends BaseClient {
   }
 
   formatMessages() {
-    return ((message) => ({
-      author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
-      content: message?.content ?? message.text,
-    })).bind(this);
+    return ((message) => {
+      const msg = {
+        author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
+        content: message?.content ?? message.text,
+      };
+
+      if (!message.image_urls?.length) {
+        return msg;
+      }
+
+      msg.content = (
+        !Array.isArray(msg.content)
+          ? [
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: msg.content,
+            },
+          ]
+          : msg.content
+      ).concat(message.image_urls);
+
+      return msg;
+    }).bind(this);
   }
 
   /**
@@ -567,6 +587,7 @@ class GoogleClient extends BaseClient {
 
     if (this.project_id != null) {
       logger.debug('Creating VertexAI client');
+      this.visionMode = undefined;
       clientOptions.streaming = true;
       const client = new ChatVertexAI(clientOptions);
       client.temperature = clientOptions.temperature;
