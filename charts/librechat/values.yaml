@@ -50,13 +50,21 @@ service:
 ingress:
   enabled: true
   className: "alb"
-  annotations: {}
-  # kubernetes.io/ingress.class: nginx
-  # kubernetes.io/tls-acme: "true"
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn:
+      arn:aws:acm:us-east-2:223287545160:certificate/165a4b36-fe02-4f36-bfc2-bd31064215da
+    alb.ingress.kubernetes.io/group.name: management-internal
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+    alb.ingress.kubernetes.io/subnets:
+      subnet-08a821bb9ab550178, subnet-0ad2292cddb2d301f,
+      subnet-083591421998a1e2f
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /
   hosts:
     - host: bai.getbalance.com
       paths:
-        - path: /
+        - path: /*
           pathType: ImplementationSpecific
   tls: []
   #  - secretName: chart-example-tls
@@ -90,15 +98,33 @@ config:
     # secretRef: librechat
 
     # Use this when using one k8s secret for each env secret
-    secretKeyRef: []
-    # - name: CREDS_IV
-    #   secretName: librechat
-    #   secretKey: CREDS_IV
+    secretKeyRef:
+      - name: mongodb-root-password
+        secretName: bai-mongodb
+        secretKey: mongodb-root-password
+      - name: CREDS_KEY
+        secretName: bai-creds
+        secretKey: CREDS_KEY
+      - name: CREDS_IV
+        secretName: bai-creds
+        secretKey: CREDS_IV
+      - name: JWT_SECRET
+        secretName: bai-creds
+        secretKey: JWT_SECRET
+      - name: JWT_REFRESH_SECRET
+        secretName: bai-creds
+        secretKey: JWT_REFRESH_SECRET
+      - name: MEILI_MASTER_KEY
+        secretName: bai-creds
+        secretKey: MEILI_MASTER_KEY
+
+  pod_env:
+    - name: MONGO_URI
+      value: "mongodb://root:$(mongodb-root-password)@bai-mongodb"
 
   env:
     # Full list of possible values
     # https://github.com/danny-avila/LibreChat/blob/main/.env.example
-    MONGO_URI: "bai-mongodb"
     ALLOW_EMAIL_LOGIN: "true"
     ALLOW_REGISTRATION: "true"
     ALLOW_SOCIAL_LOGIN: "false"

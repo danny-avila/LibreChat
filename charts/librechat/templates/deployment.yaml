@@ -51,6 +51,10 @@ spec:
                   name: {{ $secretKeyRef.secretName }}
                   key: {{ $secretKeyRef.secretKey }}
             {{- end }}
+            {{- range $pod_env := .Values.config.pod_env }}
+            - name: {{ $pod_env.name }}
+              value: {{ $pod_env.value }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 3080
