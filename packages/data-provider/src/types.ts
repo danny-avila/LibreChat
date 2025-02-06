@@ -99,6 +99,12 @@ export type TError = {
   };
 };
 
+export type TBackupCode = {
+  codeHash: string;
+  used: boolean;
+  usedAt: Date | null;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -109,6 +115,7 @@ export type TUser = {
   provider: string;
   plugins?: string[];
   totpEnabled: boolean;
+  backupCodes?: TBackupCode[];
   createdAt: string;
   updatedAt: string;
 };

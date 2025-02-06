@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { verifyTOTP } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById } = require('~/models');
+const { getUserById, updateUser } = require('~/models');
 const { logger } = require('~/config');
 
 const verify2FA = async (req, res) => {
@@ -27,12 +27,25 @@ const verify2FA = async (req, res) => {
     if (token && verifyTOTP(user.totpSecret, token)) {
       verified = true;
     } else if (backupCode) {
+      // Hash the provided backup code.
       const hashedInput = crypto.createHash('sha256').update(backupCode).digest('hex');
-      if (user.backupCodes && user.backupCodes.includes(hashedInput)) {
+
+      // Check if there is an unused backup code with the matching hash.
+      const matchingCode = user.backupCodes.find(codeObj =>
+        codeObj.codeHash === hashedInput && codeObj.used === false,
+      );
+
+      if (matchingCode) {
         verified = true;
-        // Remove the used backup code.
-        user.backupCodes = user.backupCodes.filter(code => code !== hashedInput);
-        await user.save();
+        // Update the backup codes array by marking the matching code as used.
+        const updatedBackupCodes = user.backupCodes.map(codeObj => {
+          if (codeObj.codeHash === hashedInput && codeObj.used === false) {
+            return { ...codeObj, used: true, usedAt: new Date() };
+          }
+          return codeObj;
+        });
+        // Use the updateUser helper to update the backupCodes field.
+        await updateUser(user._id, { backupCodes: updatedBackupCodes });
       }
     }
     if (!verified) {

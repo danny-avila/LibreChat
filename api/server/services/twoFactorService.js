@@ -107,21 +107,28 @@ function verifyTOTP(secret, token) {
 }
 
 /**
- * Generate backup codes.
- * Generates `count` plain backup codes and returns an object with both plain codes
- * (for one-time download) and their SHA-256 hashes (for secure storage).
+ * Generate backup codes as objects.
+ * Generates `count` backup code objects and returns an object with both plain codes
+ * (for one-time download) and their objects (for secure storage).
+ *
+ * @param {number} count - Number of backup codes to generate (default: 10).
+ * @returns {Object} - An object containing `plainCodes` (array of strings) and `codeObjects` (array of objects).
  */
 function generateBackupCodes(count = 10) {
   const plainCodes = [];
-  const hashedCodes = [];
+  const codeObjects = [];
   for (let i = 0; i < count; i++) {
     // Generate an 8-character hex string backup code.
     const code = crypto.randomBytes(4).toString('hex');
-    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
     plainCodes.push(code);
-    hashedCodes.push(hash);
+    codeObjects.push({
+      codeHash,
+      used: false,
+      usedAt: null,
+    });
   }
-  return { plainCodes, hashedCodes };
+  return { plainCodes, codeObjects };
 }
 
 module.exports = {
