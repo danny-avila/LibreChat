@@ -1,14 +1,13 @@
 import { Plus, EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
+import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
-import { useListAgentsQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));

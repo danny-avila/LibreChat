@@ -1,25 +1,27 @@
 import { useState, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
-  QueryKeys,
   Capabilities,
   actionDelimiter,
   ImageVisionTool,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
-import type { FunctionTool, TConfig, TPlugin } from 'librechat-data-provider';
+import type { FunctionTool, TConfig } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
-import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
+import {
+  useCreateAssistantMutation,
+  useUpdateAssistantMutation,
+  useAvailableAgentToolsQuery,
+} from '~/data-provider';
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
 import AssistantConversationStarters from './AssistantConversationStarters';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
-import CapabilitiesForm from './CapabilitiesForm';
 import AppendDateCheckbox from './AppendDateCheckbox';
+import CapabilitiesForm from './CapabilitiesForm';
 import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
@@ -49,11 +51,10 @@ export default function AssistantPanel({
   assistantsConfig,
   version,
 }: AssistantPanelProps & { assistantsConfig?: TConfig | null }) {
-  const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
   const assistantMap = useAssistantsMapContext();
 
-  const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
+  const { data: allTools = [] } = useAvailableAgentToolsQuery();
   const { onSelect: onSelectAssistant } = useSelectAssistant(endpoint);
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -223,6 +224,7 @@ export default function AssistantPanel({
                 value={field.value}
                 endpoint={endpoint}
                 documentsMap={documentsMap}
+                allTools={allTools}
                 setCurrentAssistantId={setCurrentAssistantId}
                 selectedAssistant={current_assistant_id ?? null}
                 createMutation={create}

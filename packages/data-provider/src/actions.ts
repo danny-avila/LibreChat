@@ -427,8 +427,8 @@ export function openapiToFunction(
         path,
         method,
         operationId,
-        !!(operationObj['x-openai-isConsequential'] ?? false), // Custom extension for consequential actions
-        operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
+        !!(operationObj['x-openai-isConsequential'] ?? false),
+        operationObj.requestBody ? 'application/json' : '',
       );
 
       requestBuilders[operationId] = actionRequest;

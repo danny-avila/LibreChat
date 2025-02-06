@@ -1,8 +1,8 @@
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/react';
 import { useCallback, memo, ReactNode } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
+import type { TResPlugin, TInput } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { useShareContext } from '~/Providers';
 import { cn, formatJSON } from '~/utils';
 import { Spinner } from '~/components';
@@ -47,7 +47,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
       if (pluginKey === 'n/a' || pluginKey === 'self reflection') {
         return pluginKey;
       }
-      return plugins?.[pluginKey] ?? 'self reflection';
+      return plugins[pluginKey] ?? 'self reflection';
     },
     [plugins],
   );
@@ -105,7 +105,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
 
               <DisclosurePanel className="mt-3 flex max-w-full flex-col gap-3">
                 <CodeBlock
-                  lang={latestPlugin ? `REQUEST TO ${latestPlugin?.toUpperCase()}` : 'REQUEST'}
+                  lang={latestPlugin ? `REQUEST TO ${latestPlugin.toUpperCase()}` : 'REQUEST'}
                   codeChildren={formatInputs(plugin.inputs ?? [])}
                   plugin={true}
                   classProp="max-h-[450px]"
@@ -113,7 +113,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
                 {plugin.outputs && plugin.outputs.length > 0 && (
                   <CodeBlock
                     lang={
-                      latestPlugin ? `RESPONSE FROM ${latestPlugin?.toUpperCase()}` : 'RESPONSE'
+                      latestPlugin ? `RESPONSE FROM ${latestPlugin.toUpperCase()}` : 'RESPONSE'
                     }
                     codeChildren={formatJSON(plugin.outputs ?? '')}
                     plugin={true}

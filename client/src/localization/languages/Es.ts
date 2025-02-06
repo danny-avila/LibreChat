@@ -142,7 +142,6 @@ export default {
   com_ui_create: 'Crear',
   com_ui_share: 'Compartir',
   com_ui_copy_link: 'Copiar enlace',
-  com_ui_update_link: 'Actualizar enlace',
   com_ui_create_link: 'Crear enlace',
   com_ui_share_link_to_chat: 'Compartir enlace en el chat',
   com_ui_share_error: 'Hubo un error al compartir el enlace del chat',
@@ -1204,4 +1203,5 @@ export default {
   com_endpoint_message_new: 'Mensaje {0}',
   com_ui_speech_while_submitting:
     'No se puede enviar un mensaje de voz mientras se está generando una respuesta',
+  com_nav_balance: 'Balance',
 };

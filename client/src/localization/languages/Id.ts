@@ -61,7 +61,6 @@ export default {
   com_ui_chats: 'chat',
   com_ui_share: 'Bagikan',
   com_ui_copy_link: 'Salin tautan',
-  com_ui_update_link: 'Perbarui tautan',
   com_ui_create_link: 'Buat tautan',
   com_ui_share_link_to_chat: 'Bagikan tautan ke chat',
   com_ui_share_error: 'Terjadi kesalahan saat membagikan tautan chat',
@@ -398,4 +397,5 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_nav_balance: 'Keseimbangan',
 };

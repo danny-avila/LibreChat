@@ -69,7 +69,7 @@ function AuthLayout({
       <div className="flex flex-grow items-center justify-center">
         <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
           <BlinkAnimation active={isFetching}>
-            <div className="mb-6 h-12 w-full bg-cover">
+            <div className="mb-6 h-20 w-full bg-cover">
               <img
                 src="/assets/agent-ai.png"
                 className="h-full w-full object-contain"

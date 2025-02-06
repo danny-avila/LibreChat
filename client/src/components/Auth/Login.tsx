@@ -13,8 +13,8 @@ function Login() {
 
   return (
     <>
-      {error && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
-      {startupConfig?.emailLoginEnabled && (
+      {error != null && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
+      {startupConfig?.emailLoginEnabled === true && (
         <LoginForm
           onSubmit={login}
           startupConfig={startupConfig}
@@ -22,7 +22,7 @@ function Login() {
           setError={setError}
         />
       )}
-      {startupConfig?.registrationEnabled && (
+      {startupConfig?.registrationEnabled === true && (
         <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
           {' '}
           {localize('com_auth_no_account')}{' '}

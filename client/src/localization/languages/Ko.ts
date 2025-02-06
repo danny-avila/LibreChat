@@ -51,7 +51,6 @@ export default {
   com_ui_chats: '채팅',
   com_ui_share: '공유하기',
   com_ui_copy_link: '링크 복사',
-  com_ui_update_link: '링크 업데이트',
   com_ui_create_link: '링크 만들기',
   com_ui_share_link_to_chat: '채팅으로 링크 공유하기',
   com_ui_share_error: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
@@ -1151,4 +1150,5 @@ export default {
   com_ui_collapse_chat: '채팅 접기',
   com_endpoint_message_new: '메시지 {0}',
   com_ui_speech_while_submitting: '응답 생성 중에는 음성을 전송할 수 없습니다',
+  com_nav_balance: '균형',
 };
