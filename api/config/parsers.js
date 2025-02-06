@@ -4,7 +4,7 @@ const traverse = require('traverse');
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
-const CONSOLE_JSON_LONG_STRING_LENGTH=parseInt(process.env.CONSOLE_JSON_LONG_STRING_LENGTH) || 255;
+const CONSOLE_JSON_STRING_LENGTH = parseInt(process.env.CONSOLE_JSON_STRING_LENGTH) || 255;
 
 const sensitiveKeys = [
   /^(sk-)[^\s]+/, // OpenAI API key pattern
@@ -206,13 +206,13 @@ const jsonTruncateFormat = winston.format((info) => {
     seen.add(obj);
 
     if (Array.isArray(obj)) {
-      return obj.map(item => truncateObject(item));
+      return obj.map((item) => truncateObject(item));
     }
 
     const newObj = {};
     Object.entries(obj).forEach(([key, value]) => {
       if (typeof value === 'string') {
-        newObj[key] = truncateLongStrings(value, CONSOLE_JSON_LONG_STRING_LENGTH);
+        newObj[key] = truncateLongStrings(value, CONSOLE_JSON_STRING_LENGTH);
       } else {
         newObj[key] = truncateObject(value);
       }

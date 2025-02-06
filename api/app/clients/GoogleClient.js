@@ -10,11 +10,13 @@ const {
   getResponseSender,
   endpointSettings,
   EModelEndpoint,
+  ContentTypes,
   VisionModes,
   ErrorTypes,
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
+const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
@@ -70,7 +72,7 @@ class GoogleClient extends BaseClient {
     /** The key for the usage object's output tokens
      * @type {string} */
     this.outputTokensKey = 'output_tokens';
-
+    this.visionMode = VisionModes.generative;
     if (options.skipSetOptions) {
       return;
     }
@@ -215,10 +217,29 @@ class GoogleClient extends BaseClient {
   }
 
   formatMessages() {
-    return ((message) => ({
-      author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
-      content: message?.content ?? message.text,
-    })).bind(this);
+    return ((message) => {
+      const msg = {
+        author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
+        content: message?.content ?? message.text,
+      };
+
+      if (!message.image_urls?.length) {
+        return msg;
+      }
+
+      msg.content = (
+        !Array.isArray(msg.content)
+          ? [
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: msg.content,
+            },
+          ]
+          : msg.content
+      ).concat(message.image_urls);
+
+      return msg;
+    }).bind(this);
   }
 
   /**
@@ -566,6 +587,7 @@ class GoogleClient extends BaseClient {
 
     if (this.project_id != null) {
       logger.debug('Creating VertexAI client');
+      this.visionMode = undefined;
       clientOptions.streaming = true;
       const client = new ChatVertexAI(clientOptions);
       client.temperature = clientOptions.temperature;
@@ -607,13 +629,14 @@ class GoogleClient extends BaseClient {
   }
 
   async getCompletion(_payload, options = {}) {
-    const safetySettings = this.getSafetySettings();
     const { onProgress, abortController } = options;
+    const safetySettings = getSafetySettings(this.modelOptions.model);
     const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
 
     let reply = '';
-
+    /** @type {Error} */
+    let error;
     try {
       if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
         /** @type {GenAI} */
@@ -714,7 +737,15 @@ class GoogleClient extends BaseClient {
         this.usage = usageMetadata;
       }
     } catch (e) {
+      error = e;
       logger.error('[GoogleClient] There was an issue generating the completion', e);
+    }
+
+    if (error != null && reply === '') {
+      const errorMessage = `{ "type": "${ErrorTypes.GoogleError}", "info": "${
+        error.message ?? 'The Google provider failed to generate content, please contact the Admin.'
+      }" }`;
+      throw new Error(errorMessage);
     }
     return reply;
   }
@@ -781,12 +812,11 @@ class GoogleClient extends BaseClient {
    * Stripped-down logic for generating a title. This uses the non-streaming APIs, since the user does not see titles streaming
    */
   async titleChatCompletion(_payload, options = {}) {
-    const { abortController } = options;
-    const safetySettings = this.getSafetySettings();
-
     let reply = '';
+    const { abortController } = options;
 
     const model = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    const safetySettings = getSafetySettings(model);
     if (!EXCLUDED_GENAI_MODELS.test(model) && !this.project_id) {
       logger.debug('Identified titling model as GenAI version');
       /** @type {GenerativeModel} */
@@ -844,17 +874,6 @@ class GoogleClient extends BaseClient {
       },
     ]);
 
-    const model = process.env.GOOGLE_TITLE_MODEL ?? this.modelOptions.model;
-    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
-    this.isVisionModel = validateVisionModel({ model, availableModels });
-
-    if (this.isVisionModel) {
-      logger.warn(
-        `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
-      );
-      this.modelOptions.model = settings.model.default;
-    }
-
     try {
       this.initializeClient();
       title = await this.titleChatCompletion(payload, {
@@ -890,48 +909,6 @@ class GoogleClient extends BaseClient {
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
-  }
-
-  getSafetySettings() {
-    const model = this.modelOptions.model;
-    const isGemini2 = model.includes('gemini-2.0') && !model.includes('thinking');
-    const mapThreshold = (value) => {
-      if (isGemini2 && value === 'BLOCK_NONE') {
-        return 'OFF';
-      }
-      return value;
-    };
-
-    return [
-      {
-        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_HATE_SPEECH',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_HARASSMENT',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-        threshold: mapThreshold(process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE'),
-      },
-    ];
   }
 
   getEncoding() {
