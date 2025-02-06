@@ -1,4 +1,9 @@
+---
 apiVersion: v2
 name: librechat
 type: application
 version: 1.0.0
+dependencies:
+  - name: mongodb
+    repository: https://charts.bitnami.com/bitnami
+    version: 16.4.3
