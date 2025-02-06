@@ -865,9 +865,6 @@ class GoogleClient extends BaseClient {
       },
     ]);
 
-    this.modelOptions.model =
-      process.env.GOOGLE_TITLE_MODEL ?? this.modelOptions.model ?? settings.model.default;
-
     try {
       this.initializeClient();
       title = await this.titleChatCompletion(payload, {
