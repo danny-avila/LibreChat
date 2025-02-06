@@ -13,7 +13,6 @@ export default function AudioRecorder({
   methods,
   textAreaRef,
   isSubmitting,
-  isTemporary = false,
 }: {
   isRTL: boolean;
   disabled: boolean;
@@ -21,7 +20,6 @@ export default function AudioRecorder({
   methods: ReturnType<typeof useChatFormContext>;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
-  isTemporary?: boolean;
 }) {
   const { setValue, reset } = methods;
   const localize = useLocalize();
@@ -78,11 +76,7 @@ export default function AudioRecorder({
     if (isLoading === true) {
       return <Spinner className="stroke-gray-700 dark:stroke-gray-300" />;
     }
-    return (
-      <ListeningIcon
-        className={cn(isTemporary ? 'stroke-white' : 'stroke-gray-700 dark:stroke-gray-300')}
-      />
-    );
+    return <ListeningIcon className="stroke-gray-700 dark:stroke-gray-300" />;
   };
 
   return (
@@ -92,7 +86,7 @@ export default function AudioRecorder({
       onClick={isListening === true ? handleStopRecording : handleStartRecording}
       disabled={disabled}
       className={cn(
-        'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
+        'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors',
         isRTL ? 'bottom-2 left-2' : 'bottom-2 right-2',
       )}
       description={localize('com_ui_use_micrphone')}

@@ -4,15 +4,16 @@ import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, getConfigDefaults } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
-import temporaryStore from '~/store/temporary';
 import { Switch } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 export const TemporaryChat = () => {
+  const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
   const defaultInterface = getConfigDefaults().interface;
-  const [isTemporary, setIsTemporary] = useRecoilState(temporaryStore.isTemporary);
+  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
   const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
   const interfaceConfig = useMemo(
@@ -20,7 +21,7 @@ export const TemporaryChat = () => {
     [startupConfig],
   );
 
-  if (!interfaceConfig.temporaryChat) {
+  if (interfaceConfig.temporaryChat === false) {
     return null;
   }
 
@@ -39,20 +40,21 @@ export const TemporaryChat = () => {
   };
 
   return (
-    <div className="sticky bottom-0 border-t border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-700">
+    <div className="sticky bottom-0 border-none bg-surface-tertiary px-6 py-4 ">
       <div className="flex items-center">
         <div className={cn('flex flex-1 items-center gap-2', isActiveConvo && 'opacity-40')}>
           <MessageCircleDashed className="icon-sm" />
-          <span className="text-sm text-gray-700 dark:text-gray-300">Temporary Chat</span>
+          <span className="text-sm text-text-primary">{localize('com_ui_temporary_chat')}</span>
         </div>
         <div className="ml-auto flex items-center">
           <Switch
-            id="enableUserMsgMarkdown"
+            id="temporary-chat-switch"
             checked={isTemporary}
             onCheckedChange={onClick}
             disabled={isActiveConvo}
             className="ml-4"
-            data-testid="enableUserMsgMarkdown"
+            aria-label="Toggle temporary chat"
+            data-testid="temporary-chat-switch"
           />
         </div>
       </div>
