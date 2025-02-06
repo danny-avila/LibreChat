@@ -11,7 +11,7 @@ const loginController = async (req, res) => {
     // If 2FA is enabled, do not complete login yet.
     if (req.user.totpEnabled) {
       const tempToken = generate2FATempToken(req.user._id);
-      return res.status(200).json({ twoFAPending: true, tempToken, message: '2FA required' });
+      return res.status(200).json({ twoFAPending: true, tempToken });
     }
 
     const { password: _, __v, ...user } = req.user;

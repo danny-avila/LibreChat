@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { verifyTOTP } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { User } = require('~/models');
+const { getUserById } = require('~/models');
 const { logger } = require('~/config');
 
 const verify2FA = async (req, res) => {
@@ -18,8 +18,8 @@ const verify2FA = async (req, res) => {
     } catch (err) {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
-    const userId = payload.userId;
-    const user = await User.findById(userId);
+
+    const user = await getUserById(payload.userId);
     if (!user || !user.totpEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }

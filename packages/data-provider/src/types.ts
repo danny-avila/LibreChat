@@ -294,7 +294,6 @@ export type TLoginResponse = {
   user?: TUser;
   twoFAPending?: boolean;
   tempToken?: string;
-  message?: string;
 };
 
 export type TEnable2FAResponse = {
