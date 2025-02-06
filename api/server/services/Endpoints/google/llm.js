@@ -1,5 +1,6 @@
 const { Providers } = require('@librechat/agents');
 const { AuthKeys } = require('librechat-data-provider');
+const { isEnabled } = require('~/server/utils');
 
 function getThresholdMapping(model) {
   const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
@@ -29,9 +30,12 @@ function getThresholdMapping(model) {
 /**
  *
  * @param {string} model
- * @returns {Array<{category: string, threshold: string}>}
+ * @returns {Array<{category: string, threshold: string}> | undefined}
  */
 function getSafetySettings(model) {
+  if (isEnabled(process.env.GOOGLE_EXCLUDE_SAFETY_SETTINGS)) {
+    return undefined;
+  }
   const mapThreshold = getThresholdMapping(model);
 
   return [
