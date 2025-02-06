@@ -1,127 +1,172 @@
-import React, { useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-// import { useLocalize } from '~/hooks';
+import React, { useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useForm, Controller } from 'react-hook-form';
+import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
 import { useVerifyTwoFactorTempMutation } from 'librechat-data-provider/react-query';
+import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot, Label } from '~/components';
+import { useLocalize } from '~/hooks';
+
+interface VerifyPayload {
+  tempToken: string;
+  token?: string;
+  backupCode?: string;
+}
 
 type TwoFactorFormInputs = {
   token?: string;
   backupCode?: string;
 };
 
-const TwoFactorScreen: React.FC = () => {
-  // Get the tempToken from query parameters.
+const TwoFactorScreen: React.FC = React.memo(() => {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const tempToken = searchParams.get('tempToken') || '';
+  const tempTokenRaw = searchParams.get('tempToken');
+  const tempToken = tempTokenRaw !== null && tempTokenRaw !== '' ? tempTokenRaw : '';
 
-  // Initialize form, localization, toast, and backup toggle state.
-  const { register, handleSubmit, formState: { errors } } = useForm<TwoFactorFormInputs>();
-  // const localize = useLocalize();
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<TwoFactorFormInputs>();
+  const localize = useLocalize();
   const [useBackup, setUseBackup] = useState<boolean>(false);
   const { mutate: verifyTempMutate, isLoading } = useVerifyTwoFactorTempMutation();
 
-  // Handle form submission.
-  const onSubmit = (data: TwoFactorFormInputs) => {
-    const payload: any = { tempToken };
-    if (useBackup && data.backupCode) {
-      payload.backupCode = data.backupCode;
-    } else if (data.token) {
-      payload.token = data.token;
-    }
-    verifyTempMutate(payload, {
-      onSuccess: (result) => {
-        if (result.token) {
-          // On successful verification, redirect to home.
-          window.location.href = '/';
-        }
-      },
-      onError: (error: any) => {
-        const errorMsg = error.response?.data?.message || 'Error verifying 2FA';
-        alert(errorMsg);
-      },
-    });
-  };
+  const onSubmit = useCallback(
+    (data: TwoFactorFormInputs) => {
+      const payload: VerifyPayload = { tempToken };
+      if (useBackup && data.backupCode != null && data.backupCode !== '') {
+        payload.backupCode = data.backupCode;
+      } else if (data.token != null && data.token !== '') {
+        payload.token = data.token;
+      }
+      verifyTempMutate(payload, {
+        onSuccess: (result) => {
+          if (result.token != null && result.token !== '') {
+            window.location.href = '/';
+          }
+        },
+        onError: (error: unknown) => {
+          const err = error as { response?: { data?: { message?: unknown } } };
+          const errorMsg =
+            typeof err.response?.data?.message === 'string'
+              ? err.response.data.message
+              : 'Error verifying 2FA';
+          alert(errorMsg);
+        },
+      });
+    },
+    [tempToken, useBackup, verifyTempMutate],
+  );
 
-  // Cancel handler navigates back to the login page.
-  const handleCancel = () => {
-    navigate('/login', { replace: true });
-  };
+  const toggleBackupOn = useCallback(() => {
+    setUseBackup(true);
+  }, []);
+
+  const toggleBackupOff = useCallback(() => {
+    setUseBackup(false);
+  }, []);
 
   return (
-    <div className="p-4">
-      <h2 className="mb-4 text-xl font-semibold">Enter 2FA Code</h2>
+    <div className="mt-4">
       <form onSubmit={handleSubmit(onSubmit)}>
-        {/* Input for the 2FA code if not using backup */}
+        <Label className="flex justify-center break-keep text-center text-sm text-text-primary">
+          {localize('com_auth_two_factor')}
+        </Label>
         {!useBackup && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium">2FA Code</label>
-            <input
-              type="text"
-              {...register('token')}
-              placeholder="Enter your 2FA code"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+          <div className="my-4 flex justify-center text-text-primary">
+            <Controller
+              name="token"
+              control={control}
+              render={({ field: { onChange, value } }) => (
+                <InputOTP
+                  maxLength={6}
+                  value={value != null ? value : ''}
+                  onChange={onChange}
+                  pattern={REGEXP_ONLY_DIGITS}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                  </InputOTPGroup>
+                  <InputOTPSeparator />
+                  <InputOTPGroup>
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+              )}
             />
-            {errors.token && (
-              <span className="text-red-500 text-sm">{errors.token.message}</span>
-            )}
+            {errors.token && <span className="text-sm text-red-500">{errors.token.message}</span>}
           </div>
         )}
-        {/* Input for the backup code if using backup */}
         {useBackup && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium">Backup Code</label>
-            <input
-              type="text"
-              {...register('backupCode')}
-              placeholder="Enter your backup code"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+          <div className="my-4 flex justify-center text-text-primary">
+            <Controller
+              name="backupCode"
+              control={control}
+              render={({ field: { onChange, value } }) => (
+                <InputOTP
+                  maxLength={8}
+                  value={value != null ? value : ''}
+                  onChange={onChange}
+                  pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                    <InputOTPSlot index={6} />
+                    <InputOTPSlot index={7} />
+                  </InputOTPGroup>
+                </InputOTP>
+              )}
             />
             {errors.backupCode && (
-              <span className="text-red-500 text-sm">{errors.backupCode.message}</span>
+              <span className="text-sm text-red-500">{errors.backupCode.message}</span>
             )}
           </div>
         )}
-        {/* Toggle button between 2FA and backup code */}
-        <div className="mb-4">
+        <div className="flex items-center justify-between">
+          <button
+            aria-label={localize('com_auth_continue')}
+            data-testid="login-button"
+            type="submit"
+            disabled={isLoading}
+            className="
+            w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
+            transition-colors hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700
+          "
+          >
+            {isLoading ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+        <div className="mt-4 flex justify-center">
           {!useBackup ? (
             <button
               type="button"
-              onClick={() => setUseBackup(true)}
-              className="text-blue-600 hover:underline text-sm"
+              onClick={toggleBackupOn}
+              className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
             >
-              Use Backup Code Instead?
+              {localize('com_ui_use_backup_code')}
             </button>
           ) : (
             <button
               type="button"
-              onClick={() => setUseBackup(false)}
-              className="text-blue-600 hover:underline text-sm"
+              onClick={toggleBackupOff}
+              className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
             >
-              Use 2FA Code Instead?
+              {localize('com_ui_use_2fa_code')}
             </button>
           )}
-        </div>
-        {/* Submit and Cancel buttons */}
-        <div className="flex items-center justify-between">
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700"
-          >
-            {isLoading ? 'Verifying...' : 'Verify'}
-          </button>
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="rounded bg-gray-300 px-4 py-2 text-gray-800 hover:bg-gray-400"
-          >
-            Cancel
-          </button>
         </div>
       </form>
     </div>
   );
-};
+});
 
 export default TwoFactorScreen;

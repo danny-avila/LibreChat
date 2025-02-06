@@ -13,7 +13,7 @@ const verify2FA = async (req, res) => {
     }
     let payload;
     try {
-      payload = jwt.verify(tempToken, process.env.JWT_2FA_SECRET);
+      payload = jwt.verify(tempToken, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
@@ -27,10 +27,7 @@ const verify2FA = async (req, res) => {
       verified = true;
     } else if (backupCode) {
       const backupCodeInput = backupCode.trim();
-      const hashedInput = crypto
-        .createHash('sha256')
-        .update(backupCodeInput)
-        .digest('hex');
+      const hashedInput = crypto.createHash('sha256').update(backupCodeInput).digest('hex');
       const matchingCode = user.backupCodes.find(
         (codeObj) => codeObj.codeHash === hashedInput && codeObj.used === false,
       );

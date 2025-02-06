@@ -57,6 +57,8 @@ function AuthLayout({
     return null;
   };
 
+  console.log(pathname.includes('2fa'));
+
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
@@ -85,7 +87,8 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          {(pathname.includes('login') || pathname.includes('register')) && (
+          {!pathname.includes('2fa') &&
+            (pathname.includes('login') || pathname.includes('register')) && (
             <SocialLoginRender startupConfig={startupConfig} />
           )}
         </div>

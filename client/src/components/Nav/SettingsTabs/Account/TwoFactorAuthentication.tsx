@@ -1,4 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
+import { useSetRecoilState } from 'recoil';
+import { REGEXP_ONLY_DIGITS } from 'input-otp';
+import { Copy, Check, Shield, QrCode, Download } from 'lucide-react';
+import {
+  useEnableTwoFactorMutation,
+  useVerifyTwoFactorMutation,
+  useConfirmTwoFactorMutation,
+  useDisableTwoFactorMutation,
+} from 'librechat-data-provider/react-query';
+import type { TUser } from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogContent,
@@ -15,22 +26,11 @@ import {
   InputOTPSlot,
   Progress,
 } from '~/components';
-import { QRCodeSVG } from 'qrcode.react';
-import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { useAuthContext, useLocalize } from '~/hooks';
-import { useToastContext } from '~/Providers';
-import { useSetRecoilState } from 'recoil';
-import store from '~/store';
 import HoverCardSettings from '../HoverCardSettings';
-import {
-  useEnableTwoFactorMutation,
-  useVerifyTwoFactorMutation,
-  useConfirmTwoFactorMutation,
-  useDisableTwoFactorMutation,
-} from 'librechat-data-provider/react-query';
-import type { TUser } from 'librechat-data-provider';
-import { Copy, Check, Shield, QrCode, Download } from 'lucide-react';
+import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
+import store from '~/store';
 
 type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
@@ -74,7 +74,6 @@ const TwoFactorAuthentication: React.FC = () => {
   const resetState = useCallback(() => {
     if (user?.totpEnabled !== true && otpauthUrl) {
       disable2FAMutate(undefined, {
-        onSuccess: () => showToast({ message: localize('com_ui_2fa_canceled') }),
         onError: () =>
           showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
       });
@@ -271,6 +270,7 @@ const TwoFactorAuthentication: React.FC = () => {
                       variant="outline"
                       size="icon"
                       onClick={handleCopySecret}
+                      aria-label="Copy Secret Key"
                       className={cn('shrink-0', copied ? 'cursor-default' : '')}
                     >
                       {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
