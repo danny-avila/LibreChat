@@ -8,13 +8,34 @@ type ScreenshotContextType = {
 
 const ScreenshotContext = createContext<ScreenshotContextType>({});
 
+const preloadImage = (src: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve();
+    img.onerror = reject;
+    img.src = src;
+  });
+};
+
 export const useScreenshot = () => {
   const { ref } = useContext(ScreenshotContext);
   const { theme } = useContext(ThemeContext);
 
-  const takeScreenShot = async (node: HTMLElement) => {
+  const takeScreenShot = async (node?: HTMLElement) => {
     if (!node) {
       throw new Error('You should provide correct html node.');
+    }
+
+    const images = node.getElementsByTagName('img');
+    try {
+      Array.from(images).forEach((img) => {
+        img.crossOrigin = 'anonymous';
+      });
+
+      await Promise.all(Array.from(images).map((img) => preloadImage(img.src)));
+    } catch (error) {
+      console.error('Error preloading images:', error);
     }
 
     let isDark = theme === 'dark';
@@ -22,7 +43,13 @@ export const useScreenshot = () => {
       isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
     const backgroundColor = isDark ? '#171717' : 'white';
-    const canvas = await toCanvas(node);
+
+    const canvas = await toCanvas(node, {
+      backgroundColor,
+      imagePlaceholder:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
+    });
+
     const croppedCanvas = document.createElement('canvas');
     const croppedCanvasContext = croppedCanvas.getContext('2d') as CanvasRenderingContext2D;
     // init data
@@ -35,9 +62,9 @@ export const useScreenshot = () => {
     croppedCanvas.height = cropHeight;
 
     croppedCanvasContext.fillStyle = backgroundColor;
-    croppedCanvasContext?.fillRect(0, 0, cropWidth, cropHeight);
+    croppedCanvasContext.fillRect(0, 0, cropWidth, cropHeight);
 
-    croppedCanvasContext?.drawImage(canvas, cropPositionLeft, cropPositionTop);
+    croppedCanvasContext.drawImage(canvas, cropPositionLeft, cropPositionTop);
 
     const base64Image = croppedCanvas.toDataURL('image/png', 1);
 
