@@ -310,7 +310,8 @@ export type TEnable2FAResponse = {
 };
 
 export type TVerify2FARequest = {
-  token: string;
+  token?: string;
+  backupCode?: string;
 };
 
 export type TVerify2FAResponse = {

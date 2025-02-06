@@ -1,6 +1,7 @@
 const { logger } = require('~/config');
 const { generateTOTPSecret, generateBackupCodes, verifyTOTP } = require('~/server/services/twoFactorService');
-const { User } = require('~/models');
+const { User, updateUser } = require('~/models');
+const crypto = require('crypto');
 
 const enable2FAController = async (req, res) => {
   const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
@@ -31,14 +32,34 @@ const enable2FAController = async (req, res) => {
 const verify2FAController = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { token } = req.body;
+    const { token, backupCode } = req.body;
     const user = await User.findById(userId);
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
-    if (verifyTOTP(user.totpSecret, token)) {
+    if (token && verifyTOTP(user.totpSecret, token)) {
       return res.status(200).json({ message: 'Token is valid.' });
+    } else if (backupCode) {
+      const backupCodeInput = backupCode.trim();
+      const hashedInput = crypto
+        .createHash('sha256')
+        .update(backupCodeInput)
+        .digest('hex');
+      const matchingCode = user.backupCodes.find(
+        (codeObj) => codeObj.codeHash === hashedInput && codeObj.used === false,
+      );
+      if (matchingCode) {
+        const updatedBackupCodes = user.backupCodes.map((codeObj) => {
+          if (codeObj.codeHash === hashedInput && codeObj.used === false) {
+            return { ...codeObj, used: true, usedAt: new Date() };
+          }
+          return codeObj;
+        });
+        await updateUser(user._id, { backupCodes: updatedBackupCodes });
+        return res.status(200).json({ message: 'Backup code is valid.' });
+      }
     }
+
     return res.status(400).json({ message: 'Invalid token.' });
   } catch (err) {
     logger.error('[verify2FAController]', err);
