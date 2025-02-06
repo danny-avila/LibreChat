@@ -30,10 +30,10 @@ function encodeBase32(buffer) {
 
 /**
  * Generate a temporary token for 2FA verification.
- * This token is signed with JWT_2FA_SECRET and expires in 5 minutes.
+ * This token is signed with JWT_SECRET and expires in 5 minutes.
  */
 function generate2FATempToken(userId) {
-  return sign({ userId, twoFAPending: true }, process.env.JWT_2FA_SECRET, { expiresIn: '5m' });
+  return sign({ userId, twoFAPending: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
 }
 
 /**
