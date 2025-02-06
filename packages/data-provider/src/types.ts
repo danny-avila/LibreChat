@@ -283,16 +283,11 @@ export type TRegisterUser = {
 export type TLoginUser = {
   email: string;
   password: string;
-  token?: string;
-  backupCode?: string;
 };
 
 export type TLoginResponse = {
-  token?: string;
-  user?: TUser;
-  twoFAPending?: boolean;
-  tempToken?: string;
-  message?: string;
+  token: string;
+  user: TUser;
 };
 
 export type TEnable2FAResponse = {
