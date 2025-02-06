@@ -121,6 +121,18 @@ const userSchema = mongoose.Schema(
       type: Array,
       default: [],
     },
+    totpEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    totpSecret: {
+      type: String,
+      default: '',
+    },
+    backupCodes: {
+      type: [String],
+      default: [],
+    },
     refreshToken: {
       type: [Session],
     },

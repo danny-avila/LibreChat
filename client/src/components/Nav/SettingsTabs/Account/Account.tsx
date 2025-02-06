@@ -2,6 +2,7 @@ import React from 'react';
 import DisplayUsernameMessages from './DisplayUsernameMessages';
 import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
+import EnableTwoFactorItem from './EnableTwoFactorItem';
 
 function Account() {
   return (
@@ -14,6 +15,9 @@ function Account() {
       </div>
       <div className="pb-3">
         <DisplayUsernameMessages />
+      </div>
+      <div className="pb-3">
+        <EnableTwoFactorItem />
       </div>
     </div>
   );
