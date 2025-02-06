@@ -76,7 +76,13 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
       </OGDialogHeader>
       <div className={cn('px-0 py-2', mainClassName)}>{main != null ? main : null}</div>
       <OGDialogFooter className={footerClassName}>
-        <div>{leftButtons != null ? <div className="mt-3 sm:mt-0">{leftButtons}</div> : null}</div>
+        <div>
+          {leftButtons != null ? (
+            <div className="mt-3 flex h-auto gap-3 max-sm:w-full max-sm:flex-col sm:mt-0 sm:flex-row">
+              {leftButtons}
+            </div>
+          ) : null}
+        </div>
         <div className="flex h-auto gap-3 max-sm:w-full max-sm:flex-col sm:flex-row">
           {buttons != null ? buttons : null}
           {showCancelButton && (
