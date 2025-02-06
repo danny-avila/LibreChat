@@ -927,11 +927,13 @@ export default {
   com_ui_no_terms_content: 'No terms and conditions content to display',
   com_ui_speech_while_submitting: 'Can\'t submit speech while a response is being generated',
   com_nav_balance: 'Balance',
-  com_nav_enable_2fa: 'Enable Two-Factor Authentication',
+  com_nav_2fa: 'Two-Factor Authentication (2FA)',
   com_nav_info_2fa: 'Click for more information about two-factor authentication.',
-  com_ui_2fa_generated: 'Two-factor authentication settings have been generated.',
+  com_ui_secret_key: 'Secret Key',
+  com_ui_2fa_generate: 'Generate 2FA',
   com_ui_2fa_generate_error: 'There was an error generating two-factor authentication settings.',
-  com_ui_generate_2fa: 'Generate 2FA Settings',
+  com_ui_save_backup_codes:
+    'Keep these backup codes safe. You can use them to regain access if you lose your authenticator device.',
   com_ui_scan_qr: 'Scan the QR code with your authenticator app.',
   com_ui_backup_codes: 'Backup Codes',
   com_ui_enter_2fa_code: 'Enter the 2FA code from your app',
@@ -948,4 +950,5 @@ export default {
   com_ui_2fa_disable_setup: 'Disable Two-Factor Authentication',
   com_ui_2fa_verification_error: 'Error verifying two-factor authentication.',
   com_ui_2fa_verified: 'Successfully verified Two-Factor Authentication',
+  com_ui_enter_verification_code: 'Enter the verification code from your authenticator app',
 };
