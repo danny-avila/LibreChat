@@ -71,7 +71,7 @@ class GoogleClient extends BaseClient {
     /** The key for the usage object's output tokens
      * @type {string} */
     this.outputTokensKey = 'output_tokens';
-
+    this.visionMode = VisionModes.generative;
     if (options.skipSetOptions) {
       return;
     }
