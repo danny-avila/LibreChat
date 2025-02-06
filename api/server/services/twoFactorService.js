@@ -111,7 +111,7 @@ function verifyTOTP(secret, token) {
  * Generates `count` plain backup codes and returns an object with both plain codes
  * (for one-time download) and their SHA-256 hashes (for secure storage).
  */
-function generateBackupCodes(count = 5) {
+function generateBackupCodes(count = 10) {
   const plainCodes = [];
   const hashedCodes = [];
   for (let i = 0; i < count; i++) {
