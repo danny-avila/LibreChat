@@ -6,7 +6,7 @@ import {
   ResetPassword,
   VerifyEmail,
   ApiErrorWatcher,
-  TwoFactorScreenWrapper,
+  TwoFactorScreen,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
@@ -69,7 +69,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'login/2fa',
-            element: <TwoFactorScreenWrapper />,
+            element: <TwoFactorScreen />,
           },
         ],
       },
