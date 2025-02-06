@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { RevokeKeysButton } from '~/components/Nav';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { OGDialog, Dropdown } from '~/components/ui';
+import { RevokeKeysButton } from '~/components/Nav';
 import { useUserKey, useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import CustomConfig from './CustomEndpoint';
@@ -118,7 +118,7 @@ const SetKeyDialog = ({
           if (isOpenAIBase && key === 'baseURL') {
             return false;
           }
-          if (key === 'baseURL' && !userProvideURL) {
+          if (key === 'baseURL' && !(userProvideURL ?? false)) {
             return false;
           }
           return data[key] === '';
@@ -163,7 +163,7 @@ const SetKeyDialog = ({
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogTemplate
         title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
-        className="w-11/12 max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        className="w-11/12 max-w-2xl"
         showCancelButton={false}
         main={
           <div className="grid w-full items-center gap-2">
@@ -180,6 +180,7 @@ const SetKeyDialog = ({
               onChange={handleExpirationChange}
               options={expirationOptions.map((option) => option.label)}
               sizeClasses="w-[185px]"
+              portal={false}
             />
             <div className="mt-2" />
             <FormProvider {...methods}>
@@ -205,7 +206,7 @@ const SetKeyDialog = ({
         leftButtons={
           <RevokeKeysButton
             endpoint={endpoint}
-            disabled={!expiryTime}
+            disabled={!(expiryTime ?? '')}
             setDialogOpen={onOpenChange}
           />
         }
