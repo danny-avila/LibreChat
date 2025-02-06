@@ -18,6 +18,7 @@ type SelectDropDownProps = {
   showLabel?: boolean;
   iconSide?: 'left' | 'right';
   renderOption?: () => React.ReactNode;
+  footer?: React.ReactNode;
 };
 
 function SelectDropDownPop({
@@ -28,6 +29,7 @@ function SelectDropDownPop({
   showAbove = false,
   showLabel = true,
   emptyTitle = false,
+  footer,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -78,9 +80,6 @@ function SelectDropDownPop({
                     'min-w-[75px] font-normal',
                   )}
                 >
-                  {/* {!showLabel && !emptyTitle && (
-                    <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
-                  )} */}
                   {typeof value !== 'string' && value ? value.label ?? '' : value ?? ''}
                 </span>
               </span>
@@ -124,6 +123,7 @@ function SelectDropDownPop({
                   />
                 );
               })}
+              {footer}
             </Content>
           </Portal>
         </div>
