@@ -45,8 +45,6 @@ jobs:
           # The following entry uses "javascript-typescript" to analyze both JavaScript and TypeScript.
           - language: javascript-typescript
             build-mode: none
-          - language: python
-            build-mode: none
           # CodeQL supports the following values for the 'language' key:
           #   'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift'
           # For compiled languages, you can adjust the 'build-mode' (for example, to "manual") if needed.
