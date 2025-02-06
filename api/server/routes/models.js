@@ -10,9 +10,9 @@ const { logger } = require('~/config');
 const router = express.Router();
 router.get('/', requireJwtAuth, modelController);
 
-router.get('/current', async (req, res) => {
+router.get('/current', requireJwtAuth, async (req, res) => {
   try {
-    const currentModel = await getCurrentModel();
+    const currentModel = await getCurrentModel(req);
     res.status(200).json(currentModel);
   } catch (error) {
     logger.error('Error getting current model:', error);
@@ -20,10 +20,10 @@ router.get('/current', async (req, res) => {
   }
 });
 
-router.put('/:key', async (req, res) => {
+router.put('/:key', requireJwtAuth, async (req, res) => {
   try {
     const key = req.params.key;
-    const success = await setCurrentModel(key);
+    const success = await setCurrentModel(req, key);
     if (!success) {
       return res.status(400).json({ error: 'Model key not set' });
     }

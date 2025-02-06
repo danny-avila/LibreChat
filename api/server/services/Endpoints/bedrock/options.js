@@ -13,7 +13,7 @@ const { CacheKeys } = require('librechat-data-provider');
 const getOptions = async ({ req, endpointOption }) => {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const availableAgents = await cache.get(CacheKeys.MODELS_CONFIG);
-  const currentAgentName = await cache.get(CacheKeys.CURRENT_AGENT_ID);
+  const currentAgentName = req?.user?.lastSelectedModel;
   const currentAgentId = availableAgents.find((a) => a.agentName === currentAgentName)?.agentId;
   const currentAliasId = availableAgents.find(
     (a) => a.agentName === currentAgentName,

@@ -6,6 +6,7 @@ const {
   ListAgentsCommand,
   ListAgentAliasesCommand,
 } = require('@aws-sdk/client-bedrock-agent');
+const User = require('~/models/User');
 
 /**
  * @param {ServerRequest} req
@@ -21,32 +22,35 @@ const getModelsConfig = async (req) => {
 };
 
 /**
- * Loads the models from the config.
+ * Sets the current model selected by the user.
  * @param {string} key - The key of the model to set as current.
  * @returns {Promise<boolean>} Whether the model was set.
  */
-async function setCurrentModel(label) {
+async function setCurrentModel(req, label) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
   const agentName = cachedModelsConfig?.find((a) => a.agentName === label)?.agentName;
   if (!agentName) {
     return false;
   }
-  await cache.set(CacheKeys.CURRENT_AGENT_ID, agentName);
+  console.log('agentName:', agentName); // eslint-disable-line no-console
+  await User.findByIdAndUpdate(req.user.id, { lastSelectedModel: agentName }, { new: true });
+
   return true;
 }
 
-async function getCurrentModel() {
+async function getCurrentModel(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const availableAgents = await cache.get(CacheKeys.MODELS_CONFIG);
   console.log('availableAgents:', availableAgents); // eslint-disable-line no-console
-  const currentAgentName = await cache.get(CacheKeys.CURRENT_AGENT_ID);
-  console.log('currentAgentName:', currentAgentName); // eslint-disable-line no-console
+  const response = await User.findById(req.user.id).select('lastSelectedModel');
+
+  console.log('currentAgentName:', response?.lastSelectedModel); // eslint-disable-line no-console
   let agentId = '';
   let latestAliasId = '';
   let description = '';
   availableAgents.forEach((agent) => {
-    if (agent.agentName === currentAgentName) {
+    if (agent.agentName === response?.lastSelectedModel) {
       latestAliasId = agent.latestAliasId;
       agentId = agent.agentId;
       description = agent.description;
