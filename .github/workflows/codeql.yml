@@ -66,6 +66,8 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          # Use our custom configuration file to exclude test files.
+          config-file: .codeql-config.yml
           # If you wish to specify custom queries, you can do so here or in a config file.
           # By default, queries listed here will override any specified in a config file.
           # To add queries to those specified in your config file, prefix the list here with "+"

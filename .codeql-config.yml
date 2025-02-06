@@ -1,0 +1,6 @@
+paths:
+  exclude:
+    - "**/test/**"
+    - "**/__tests__/**"
+    - "**/*.spec.*"
+    - "**/*.test.*"
