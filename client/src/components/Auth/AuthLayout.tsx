@@ -57,8 +57,6 @@ function AuthLayout({
     return null;
   };
 
-  console.log(pathname.includes('2fa'));
-
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
