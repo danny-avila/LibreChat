@@ -380,3 +380,81 @@ describe('getCacheMultiplier', () => {
     ).toBe(0.03);
   });
 });
+
+describe('Google Model Tests', () => {
+  const googleModels = [
+    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-pro-exp-02-05',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash-thinking',
+    'gemini-1.5-pro-latest',
+    'gemini-1.5-pro-preview-0409',
+    'gemini-pro-vision',
+    'gemini-1.0',
+    'gemini-pro',
+  ];
+
+  it('should return the correct prompt and completion rates for all models', () => {
+    const results = googleModels.map((model) => {
+      const valueKey = getValueKey(model, EModelEndpoint.google);
+      const promptRate = getMultiplier({
+        model,
+        tokenType: 'prompt',
+        endpoint: EModelEndpoint.google,
+      });
+      const completionRate = getMultiplier({
+        model,
+        tokenType: 'completion',
+        endpoint: EModelEndpoint.google,
+      });
+      return { model, valueKey, promptRate, completionRate };
+    });
+
+    results.forEach(({ valueKey, promptRate, completionRate }) => {
+      expect(promptRate).toBe(tokenValues[valueKey].prompt);
+      expect(completionRate).toBe(tokenValues[valueKey].completion);
+    });
+  });
+
+  it('should map to the correct model keys', () => {
+    const expected = {
+      'gemini-2.0-flash-lite-preview-02-05': 'gemini-2.0-flash-lite',
+      'gemini-2.0-flash-001': 'gemini-2.0-flash',
+      'gemini-2.0-flash-exp': 'gemini-2.0-flash',
+      'gemini-2.0-pro-exp-02-05': 'gemini-2.0',
+      'gemini-1.5-flash-8b': 'gemini-1.5-flash-8b',
+      'gemini-1.5-flash-thinking': 'gemini-1.5-flash',
+      'gemini-1.5-pro-latest': 'gemini-1.5',
+      'gemini-1.5-pro-preview-0409': 'gemini-1.5',
+      'gemini-pro-vision': 'gemini-pro-vision',
+      'gemini-1.0': 'gemini',
+      'gemini-pro': 'gemini',
+    };
+
+    Object.entries(expected).forEach(([model, expectedKey]) => {
+      const valueKey = getValueKey(model, EModelEndpoint.google);
+      expect(valueKey).toBe(expectedKey);
+    });
+  });
+
+  it('should handle model names with different formats', () => {
+    const testCases = [
+      { input: 'google/gemini-pro', expected: 'gemini' },
+      { input: 'gemini-pro/google', expected: 'gemini' },
+      { input: 'google/gemini-2.0-flash-lite', expected: 'gemini-2.0-flash-lite' },
+    ];
+
+    testCases.forEach(({ input, expected }) => {
+      const valueKey = getValueKey(input, EModelEndpoint.google);
+      expect(valueKey).toBe(expected);
+      expect(
+        getMultiplier({ model: input, tokenType: 'prompt', endpoint: EModelEndpoint.google }),
+      ).toBe(tokenValues[expected].prompt);
+      expect(
+        getMultiplier({ model: input, tokenType: 'completion', endpoint: EModelEndpoint.google }),
+      ).toBe(tokenValues[expected].completion);
+    });
+  });
+});
