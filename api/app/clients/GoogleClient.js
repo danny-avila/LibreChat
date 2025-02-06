@@ -15,6 +15,7 @@ const {
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
+const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
@@ -607,8 +608,8 @@ class GoogleClient extends BaseClient {
   }
 
   async getCompletion(_payload, options = {}) {
-    const safetySettings = this.getSafetySettings();
     const { onProgress, abortController } = options;
+    const safetySettings = getSafetySettings(this.modelOptions.model);
     const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
 
@@ -882,48 +883,6 @@ class GoogleClient extends BaseClient {
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
-  }
-
-  getSafetySettings() {
-    const model = this.modelOptions.model;
-    const isGemini2 = model.includes('gemini-2.0') && !model.includes('thinking');
-    const mapThreshold = (value) => {
-      if (isGemini2 && value === 'BLOCK_NONE') {
-        return 'OFF';
-      }
-      return value;
-    };
-
-    return [
-      {
-        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_HATE_SPEECH',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_HARASSMENT',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-        threshold: mapThreshold(
-          process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        ),
-      },
-      {
-        category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-        threshold: mapThreshold(process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE'),
-      },
-    ];
   }
 
   getEncoding() {

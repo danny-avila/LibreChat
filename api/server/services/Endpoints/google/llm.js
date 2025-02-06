@@ -1,18 +1,38 @@
 const { Providers } = require('@librechat/agents');
 const { AuthKeys } = require('librechat-data-provider');
 
+function getThresholdMapping(model) {
+  const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
+  const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
+
+  if (gemini1Pattern.test(model)) {
+    return (value) => {
+      if (value === 'OFF') {
+        return 'BLOCK_NONE';
+      }
+      return value;
+    };
+  }
+
+  if (restrictedPattern.test(model)) {
+    return (value) => {
+      if (value === 'OFF' || value === 'HARM_BLOCK_THRESHOLD_UNSPECIFIED') {
+        return 'BLOCK_NONE';
+      }
+      return value;
+    };
+  }
+
+  return (value) => value;
+}
+
 /**
  *
- * @param {boolean} isGemini2
+ * @param {string} model
  * @returns {Array<{category: string, threshold: string}>}
  */
-function getSafetySettings(isGemini2) {
-  const mapThreshold = (value) => {
-    if (isGemini2 && value === 'BLOCK_NONE') {
-      return 'OFF';
-    }
-    return value;
-  };
+function getSafetySettings(model) {
+  const mapThreshold = getThresholdMapping(model);
 
   return [
     {
@@ -85,8 +105,7 @@ function getLLMConfig(credentials, options = {}) {
   };
 
   /** Used only for Safety Settings */
-  const isGemini2 = llmConfig.model.includes('gemini-2.0') && !llmConfig.model.includes('thinking');
-  llmConfig.safetySettings = getSafetySettings(isGemini2);
+  llmConfig.safetySettings = getSafetySettings(llmConfig.model);
 
   let provider;
 
@@ -153,4 +172,5 @@ function getLLMConfig(credentials, options = {}) {
 
 module.exports = {
   getLLMConfig,
+  getSafetySettings,
 };
