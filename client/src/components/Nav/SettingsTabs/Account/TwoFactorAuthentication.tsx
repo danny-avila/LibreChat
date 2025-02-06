@@ -85,7 +85,7 @@ const TwoFactorAuthentication: React.FC = () => {
 
   // Enable 2FA
   const handleVerify = useCallback(() => {
-    if (!verificationToken) {return;}
+    if (!verificationToken) { return; }
 
     verify2FAMutate({ token: verificationToken }, {
       onSuccess: () => {
@@ -104,7 +104,7 @@ const TwoFactorAuthentication: React.FC = () => {
 
   // Download backup codes
   const handleDownload = useCallback(() => {
-    if (!backupCodes.length) {return;}
+    if (!backupCodes.length) { return; }
 
     const blob = new Blob([backupCodes.join('\n')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -116,7 +116,7 @@ const TwoFactorAuthentication: React.FC = () => {
     setDownloaded(true);
   }, [backupCodes]);
 
-  // Enable 2FA
+  // Enable 2FA complete confirmation
   const handleConfirm = useCallback(() => {
     setDialogOpen(false);
     showToast({ message: localize('com_ui_2fa_enabled') });
@@ -125,7 +125,7 @@ const TwoFactorAuthentication: React.FC = () => {
 
   // Disable 2FA
   const handleDisableVerify = useCallback(() => {
-    if (!disableToken) {return;}
+    if (!disableToken) { return; }
 
     verify2FAMutate({ token: disableToken }, {
       onSuccess: () => {
@@ -149,7 +149,7 @@ const TwoFactorAuthentication: React.FC = () => {
       open={isDialogOpen}
       onOpenChange={(open) => {
         setDialogOpen(open);
-        if (!open) {resetState();}
+        if (!open) { resetState(); }
       }}
     >
       <div className="flex items-center justify-between">
@@ -175,7 +175,16 @@ const TwoFactorAuthentication: React.FC = () => {
           <div className="flex flex-col gap-4">
             <p className="text-sm">{localize('com_ui_scan_qr')}</p>
             <QRCodeSVG value={otpauthUrl} size={200} className="self-center mt-2" />
-            <Input value={verificationToken} onChange={(e) => setVerificationToken(e.target.value)} placeholder={localize('com_ui_2fa_code_placeholder')} />
+            <Input
+              value={verificationToken}
+              onChange={(e) => setVerificationToken(e.target.value)}
+              placeholder={localize('com_ui_2fa_code_placeholder')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleVerify();
+                }
+              }}
+            />
             <Button onClick={handleVerify} disabled={isVerifying || !verificationToken}>
               {isVerifying && <Spinner className="mr-2" />}
               {localize('com_ui_verify')}
@@ -188,16 +197,33 @@ const TwoFactorAuthentication: React.FC = () => {
           <div className="flex flex-col gap-4">
             <p className="text-sm font-medium">{localize('com_ui_backup_codes')}</p>
             <pre className="mt-2 p-2 bg-gray-100 rounded text-sm font-mono">{backupCodes.join('\n')}</pre>
-            <Button variant="secondary" onClick={handleDownload}>{localize('com_ui_download_backup')}</Button>
-            <Button onClick={handleConfirm} disabled={!downloaded}>{localize('com_ui_done')}</Button>
+            <Button variant="secondary" onClick={handleDownload}>
+              {localize('com_ui_download_backup')}
+            </Button>
+            <Button onClick={handleConfirm} disabled={!downloaded}>
+              {localize('com_ui_done')}
+            </Button>
           </div>
         )}
 
         {/* Disable 2FA */}
         {user?.totpEnabled && phase === 'disable' && (
           <div className="flex flex-col gap-4">
-            <Input value={disableToken} onChange={(e) => setDisableToken(e.target.value)} placeholder={localize('com_ui_2fa_code_placeholder')} />
-            <Button variant="destructive" onClick={handleDisableVerify} disabled={!disableToken || isDisabling}>
+            <Input
+              value={disableToken}
+              onChange={(e) => setDisableToken(e.target.value)}
+              placeholder={localize('com_ui_2fa_code_placeholder')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleDisableVerify();
+                }
+              }}
+            />
+            <Button
+              variant="destructive"
+              onClick={handleDisableVerify}
+              disabled={!disableToken || isDisabling}
+            >
               {isDisabling && <Spinner className="mr-2" />}
               {localize('com_ui_2fa_disable')}
             </Button>
