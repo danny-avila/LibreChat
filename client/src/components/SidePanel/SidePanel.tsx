@@ -1,14 +1,11 @@
 import throttle from 'lodash/throttle';
 import { getConfigDefaults } from 'librechat-data-provider';
+import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
-import {
-  useGetEndpointsQuery,
-  useGetStartupConfig,
-  useUserKeyQuery,
-} from 'librechat-data-provider/react-query';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import NavToggle from '~/components/Nav/NavToggle';

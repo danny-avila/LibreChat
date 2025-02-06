@@ -65,7 +65,7 @@ const DeleteBookmarkButton: FC<{
         <OGDialogTemplate
           showCloseButton={false}
           title={localize('com_ui_bookmarks_delete')}
-          className="max-w-[450px]"
+          className="w-11/12 max-w-lg"
           main={
             <Label className="text-left text-sm font-medium">
               {localize('com_ui_bookmark_delete_confirm')} {bookmark}
