@@ -937,4 +937,5 @@ export default {
   com_ui_verify: 'Verify',
   com_ui_2fa_disable_setup: 'Disable Two-Factor Authentication',
   com_ui_2fa_verification_error: 'Error verifying two-factor authentication.',
+  com_ui_2fa_verified: 'Successfully verified Two-Factor Authentication',
 };

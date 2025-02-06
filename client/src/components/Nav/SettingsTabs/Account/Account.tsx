@@ -2,7 +2,7 @@ import React from 'react';
 import DisplayUsernameMessages from './DisplayUsernameMessages';
 import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
-import EnableTwoFactorItem from './EnableTwoFactorItem';
+import EnableTwoFactorItem from './TwoFactorAuthentication';
 
 function Account() {
   return (
