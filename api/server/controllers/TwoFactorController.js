@@ -7,11 +7,11 @@ const enable2FAController = async (req, res) => {
   try {
     const userId = req.user.id;
     const secret = generateTOTPSecret();
-    const { plainCodes, hashedCodes } = generateBackupCodes();
+    const { plainCodes, codeObjects } = generateBackupCodes();
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { totpSecret: secret, backupCodes: hashedCodes },
+      { totpSecret: secret, backupCodes: codeObjects },
       { new: true },
     );
 
@@ -84,10 +84,10 @@ const disable2FAController = async (req, res) => {
 const regenerateBackupCodesController = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { plainCodes, hashedCodes } = generateBackupCodes();
+    const { plainCodes, codeObjects } = generateBackupCodes();
     await User.findByIdAndUpdate(
       userId,
-      { backupCodes: hashedCodes },
+      { backupCodes: codeObjects },
       { new: true },
     );
     res.status(200).json({ message: 'Backup codes regenerated.', backupCodes: plainCodes });
