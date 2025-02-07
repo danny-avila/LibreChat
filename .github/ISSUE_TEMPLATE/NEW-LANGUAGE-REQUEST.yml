@@ -19,7 +19,7 @@ body:
     id: iso_code
     attributes:
       label: ISO 639-1 Code
-      description: Please provide the ISO 639-1 code for the language (e.g., es for Spanish).
+      description: Please provide the ISO 639-1 code for the language (e.g., es for Spanish). You can refer to [this list](https://www.w3schools.com/tags/ref_language_codes.asp) for valid codes.
       placeholder: e.g., es
     validations:
       required: true
