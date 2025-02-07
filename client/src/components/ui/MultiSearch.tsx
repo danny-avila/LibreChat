@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-// This is a generic that can be added to Menu and Select components
+/** This is a generic that can be added to Menu and Select components */
 export default function MultiSearch({
   value,
   onChange,
@@ -33,12 +33,12 @@ export default function MultiSearch({
   return (
     <div
       className={cn(
-        'group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20',
+        'group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-3 py-2 text-text-primary transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:focus:from-white/10 dark:focus:to-white/20',
         className,
       )}
     >
       <Search
-        className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300"
+        className="h-4 w-4 text-text-secondary-alt transition-colors duration-300"
         aria-hidden={'true'}
       />
       <input
@@ -52,7 +52,7 @@ export default function MultiSearch({
       />
       <button
         className={cn(
-          'relative flex h-5 w-5 items-center justify-end rounded-md text-gray-500',
+          'relative flex h-5 w-5 items-center justify-end rounded-md text-text-secondary-alt',
           value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'hidden',
         )}
         aria-label={'Clear search'}
@@ -62,7 +62,7 @@ export default function MultiSearch({
         <X
           aria-hidden={'true'}
           className={cn(
-            'text-gray-500 dark:text-gray-300',
+            'text-text-secondary-alt',
             value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'opacity-0',
           )}
         />
