@@ -1,5 +1,5 @@
-const tokenSchema = require('./schema/tokenSchema');
 const mongoose = require('mongoose');
+const tokenSchema = require('./schema/tokenSchema');
 const { logger } = require('~/config');
 
 /**

@@ -932,6 +932,10 @@ export enum CacheKeys {
    * Key for in-progress messages.
    */
   MESSAGES = 'messages',
+  /**
+   * Key for in-progress flow states.
+   */
+  FLOWS = 'flows',
 }
 
 /**

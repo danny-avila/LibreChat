@@ -948,8 +948,20 @@
  */
 
 /**
+ * @exports Keyv
+ * @typedef {import('keyv')} Keyv
+ * @memberof typedefs
+ */
+
+/**
  * @exports MCPManager
  * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FlowStateManager
+ * @typedef {import('librechat-mcp').FlowStateManager} FlowStateManager
  * @memberof typedefs
  */
 

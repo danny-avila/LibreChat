@@ -13,6 +13,10 @@ const tokenSchema = new Schema({
   identifier: {
     type: String,
   },
+  type: {
+    type: String,
+    enum: ['oauth', 'access', 'refresh'],
+  },
   token: {
     type: String,
     required: true,
@@ -25,6 +29,11 @@ const tokenSchema = new Schema({
   expiresAt: {
     type: Date,
     required: true,
+  },
+  metadata: {
+    type: Map,
+    of: Schema.Types.Mixed,
+    default: new Map(),
   },
 });
 

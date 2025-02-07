@@ -10,10 +10,11 @@ const { tool } = require('@langchain/core/tools');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
+const { logger, getFlowStateManager } = require('~/config');
 const { deleteAssistant } = require('~/models/Assistant');
+const { findToken } = require('~/models/Token');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
-const { logger } = require('~/config');
 
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
 const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
@@ -128,16 +129,57 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
   if (!isDomainAllowed) {
     return null;
   }
+
   /** @type {(toolInput: Object | string) => Promise<unknown>} */
   const _call = async (toolInput) => {
     try {
       const executor = requestBuilder.createExecutor();
-
-      // Chain the operations
       const preparedExecutor = executor.setParams(toolInput);
-      /** TODO: OAuth handling + token data must be passed at runtime */
+
       if (action.metadata.auth && action.metadata.auth.type !== AuthTypeEnum.None) {
-        await preparedExecutor.setAuth(action.metadata);
+        try {
+          // If OAuth, first check if we have a valid token
+          if (action.metadata.auth.type === AuthTypeEnum.OAuth) {
+            const token = await findToken({ identifier: action._id });
+            if (!token) {
+              // No token found, need to initiate OAuth flow
+              const flowManager = await getFlowStateManager(getLogStores);
+              // TODO: SEND LOGIN REQUEST TO CLIENT
+
+              const result = await flowManager.createFlow(action._id, 'oauth', {
+                userId: action.userId,
+                clientId: action.metadata.oauth_client_id,
+                clientSecret: action.metadata.oauth_client_secret,
+                tokenUrl: action.metadata.auth.client_url,
+              });
+
+              // The flow.createFlow will pause here until OAuth completes or times out
+              // When it resolves, result will contain the token data from the OAuth callback
+              action.metadata.oauth_access_token = result.access_token;
+            } else if (token.expiresAt && new Date() >= token.expiresAt) {
+              // Token exists but is expired
+              // Here you might want to handle refresh token logic
+              // For now, we'll trigger a new OAuth flow
+              // TODO: SEND LOGIN REQUEST TO CLIENT
+            } else {
+              // Valid token exists, add it to metadata for setAuth
+              action.metadata.oauth_access_token = token.token;
+              if (token.metadata) {
+                action.metadata.oauth_refresh_token = token.metadata.get('refreshToken');
+              }
+            }
+          }
+
+          await preparedExecutor.setAuth(action.metadata);
+        } catch (error) {
+          if (
+            error.message.includes('No access token found') ||
+            error.message.includes('Access token is expired')
+          ) {
+            throw error;
+          }
+          throw new Error(`Authentication failed: ${error.message}`);
+        }
       }
 
       const res = await preparedExecutor.execute();
@@ -149,6 +191,7 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
     } catch (error) {
       const logMessage = `API call to ${action.metadata.domain} failed`;
       logAxiosError({ message: logMessage, error });
+      throw error;
     }
   };
 
