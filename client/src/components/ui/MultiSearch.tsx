@@ -46,12 +46,12 @@ export default function MultiSearch({
         aria-hidden={'true'}
       />
       <input
-        ref={inputRef} // Attach the ref to the input element
+        ref={inputRef}
         type="text"
         value={value ?? ''}
         onChange={onChangeHandler}
         placeholder={placeholder ?? localize('com_ui_select_search_model')}
-        aria-label="Search Model" // Add aria-label to provide accessible name to the input
+        aria-label="Search Model"
         className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
       />
       <div
