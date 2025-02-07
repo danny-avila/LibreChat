@@ -1,5 +1,5 @@
 import { Search, X } from 'lucide-react';
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -17,10 +17,22 @@ export default function MultiSearch({
   className?: string;
 }) {
   const localize = useLocalize();
+  // Create a ref to reference the input element
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => onChange(e.target.value),
     [onChange],
   );
+
+  // Function to clear the search input and move focus back to it
+  const clearSearch = () => {
+    onChange('');
+    // Use setTimeout to ensure the input is cleared before moving focus
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
 
   return (
     <div
@@ -29,21 +41,40 @@ export default function MultiSearch({
         className,
       )}
     >
-      <Search className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
+      <Search
+        className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300"
+        aria-hidden={'true'}
+      />
       <input
+        ref={inputRef} // Attach the ref to the input element
         type="text"
         value={value ?? ''}
         onChange={onChangeHandler}
         placeholder={placeholder ?? localize('com_ui_select_search_model')}
-        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
+        aria-label="Search Model" // Add aria-label to provide accessible name to the input
+        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
       />
-      <div className="relative flex h-5 w-5 items-center justify-end text-gray-500">
+      <div
+        className={cn(
+          'relative flex h-5 w-5 items-center justify-end text-gray-500',
+          value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'hidden',
+        )}
+        aria-label={`Clear search`}
+        role="button"
+        tabIndex={0}
+        onClick={clearSearch} // Call clearSearch on click
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            clearSearch(); // Call clearSearch on Enter or Space key press
+          }
+        }}
+      >
         <X
+          aria-hidden={`true`}
           className={cn(
             'text-gray-500 dark:text-gray-300',
             value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'opacity-0',
           )}
-          onClick={() => onChange('')}
         />
       </div>
     </div>
