@@ -42,7 +42,8 @@ async function createToken(tokenData) {
  * @param {Object} query - The query to match against.
  * @param {mongoose.Types.ObjectId|String} query.userId - The ID of the user.
  * @param {String} query.token - The token value.
- * @param {String} query.email - The email of the user.
+ * @param {String} [query.email] - The email of the user.
+ * @param {String} [query.identifier] - Unique, alternative identifier for the token.
  * @returns {Promise<Object|null>} The matched Token document, or null if not found.
  * @throws Will throw an error if the find operation fails.
  */
@@ -58,6 +59,9 @@ async function findToken(query) {
     }
     if (query.email) {
       conditions.push({ email: query.email });
+    }
+    if (query.identifier) {
+      conditions.push({ identifier: query.identifier });
     }
 
     const token = await Token.findOne({
@@ -76,6 +80,8 @@ async function findToken(query) {
  * @param {Object} query - The query to match against.
  * @param {mongoose.Types.ObjectId|String} query.userId - The ID of the user.
  * @param {String} query.token - The token value.
+ * @param {String} [query.email] - The email of the user.
+ * @param {String} [query.identifier] - Unique, alternative identifier for the token.
  * @param {Object} updateData - The data to update the Token with.
  * @returns {Promise<mongoose.Document|null>} The updated Token document, or null if not found.
  * @throws Will throw an error if the update operation fails.
@@ -94,14 +100,20 @@ async function updateToken(query, updateData) {
  * @param {Object} query - The query to match against.
  * @param {mongoose.Types.ObjectId|String} query.userId - The ID of the user.
  * @param {String} query.token - The token value.
- * @param {String} query.email - The email of the user.
+ * @param {String} [query.email] - The email of the user.
+ * @param {String} [query.identifier] - Unique, alternative identifier for the token.
  * @returns {Promise<Object>} The result of the delete operation.
  * @throws Will throw an error if the delete operation fails.
  */
 async function deleteTokens(query) {
   try {
     return await Token.deleteMany({
-      $or: [{ userId: query.userId }, { token: query.token }, { email: query.email }],
+      $or: [
+        { userId: query.userId },
+        { token: query.token },
+        { email: query.email },
+        { identifier: query.identifier },
+      ],
     });
   } catch (error) {
     logger.debug('An error occurred while deleting tokens:', error);

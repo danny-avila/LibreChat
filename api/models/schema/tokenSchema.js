@@ -10,6 +10,9 @@ const tokenSchema = new Schema({
   email: {
     type: String,
   },
+  identifier: {
+    type: String,
+  },
   token: {
     type: String,
     required: true,

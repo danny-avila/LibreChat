@@ -504,9 +504,6 @@ export type ActionMetadata = {
   raw_spec?: string;
   oauth_client_id?: string;
   oauth_client_secret?: string;
-  oauth_access_token?: string;
-  oauth_refresh_token?: string;
-  oauth_token_expires_at?: Date;
 };
 
 /* Assistant types */
