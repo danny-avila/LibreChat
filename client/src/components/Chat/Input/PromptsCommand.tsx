@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
+import { AutoSizer, List } from 'react-virtualized';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
@@ -41,6 +42,8 @@ const PopoverContainer = memo(
     );
   },
 );
+
+const ROW_HEIGHT = 40;
 
 function PromptsCommand({
   index,
@@ -154,6 +157,37 @@ function PromptsCommand({
     return null;
   }
 
+  const rowRenderer = ({
+    index,
+    key,
+    style,
+  }: {
+    index: number;
+    key: string;
+    style: React.CSSProperties;
+  }) => {
+    const mention = matches[index] as PromptOption;
+    return (
+      <MentionItem
+        index={index}
+        type="prompt"
+        key={key}
+        style={style}
+        onClick={() => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          timeoutRef.current = null;
+          handleSelect(mention);
+        }}
+        name={mention.label ?? ''}
+        icon={mention.icon}
+        description={mention.description}
+        isActive={index === activeIndex}
+      />
+    );
+  };
+
   return (
     <PopoverContainer
       index={index}
@@ -213,24 +247,23 @@ function PromptsCommand({
               }
 
               if (!isLoading && open) {
-                return (matches as PromptOption[]).map((mention, index) => (
-                  <MentionItem
-                    index={index}
-                    type="prompt"
-                    key={`${mention.value}-${index}`}
-                    onClick={() => {
-                      if (timeoutRef.current) {
-                        clearTimeout(timeoutRef.current);
-                      }
-                      timeoutRef.current = null;
-                      handleSelect(mention);
-                    }}
-                    name={mention.label ?? ''}
-                    icon={mention.icon}
-                    description={mention.description}
-                    isActive={index === activeIndex}
-                  />
-                ));
+                return (
+                  <div className="max-h-40">
+                    <AutoSizer disableHeight>
+                      {({ width }) => (
+                        <List
+                          width={width}
+                          overscanRowCount={5}
+                          rowHeight={ROW_HEIGHT}
+                          rowCount={matches.length}
+                          rowRenderer={rowRenderer}
+                          scrollToIndex={activeIndex}
+                          height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                        />
+                      )}
+                    </AutoSizer>
+                  </div>
+                );
               }
               return null;
             })()}
