@@ -3,7 +3,13 @@ import axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
-import type { FunctionTool, Schema, Reference, ActionMetadata } from './types/assistants';
+import type {
+  FunctionTool,
+  Schema,
+  Reference,
+  ActionMetadata,
+  ActionMetadataRuntime,
+} from './types/assistants';
 import type { OpenAPIV3 } from 'openapi-types';
 import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
 
@@ -176,7 +182,7 @@ class RequestExecutor {
     return this;
   }
 
-  async setAuth(metadata: ActionMetadata) {
+  async setAuth(metadata: ActionMetadataRuntime) {
     if (!metadata.auth) {
       return this;
     }
@@ -199,8 +205,8 @@ class RequestExecutor {
       /* OAuth */
       oauth_client_id,
       oauth_client_secret,
-      oauth_access_token,
       oauth_token_expires_at,
+      oauth_access_token = '',
     } = metadata;
 
     const isApiKey = api_key != null && api_key.length > 0 && type === AuthTypeEnum.ServiceHttp;

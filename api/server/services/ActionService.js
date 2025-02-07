@@ -135,7 +135,7 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
 
       // Chain the operations
       const preparedExecutor = executor.setParams(toolInput);
-
+      /** TODO: OAuth handling + token data must be passed at runtime */
       if (action.metadata.auth && action.metadata.auth.type !== AuthTypeEnum.None) {
         await preparedExecutor.setAuth(action.metadata);
       }

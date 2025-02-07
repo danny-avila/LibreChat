@@ -506,6 +506,12 @@ export type ActionMetadata = {
   oauth_client_secret?: string;
 };
 
+export type ActionMetadataRuntime = ActionMetadata & {
+  oauth_access_token?: string;
+  oauth_refresh_token?: string;
+  oauth_token_expires_at?: Date;
+};
+
 /* Assistant types */
 
 export type Action = {
