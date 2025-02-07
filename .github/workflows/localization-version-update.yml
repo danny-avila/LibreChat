@@ -24,6 +24,8 @@ jobs:
         uses: locize/download@v1
         with:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
+          version: ${{ github.event.client_payload.payload.version }}
+          path: "client/src/locales"
 
       - name: Commit and Push Translations
         if: ${{ github.event.client_payload.payload.version == 'production' || github.event.client_payload.payload.version == 'prod' }}
