@@ -41,7 +41,7 @@ export const RevokeKeysButton = ({
 
   const dialogTitle = all
     ? localize('com_ui_revoke_keys')
-    : localize('com_ui_revoke_key_endpoint', endpoint);
+    : localize('com_ui_revoke_key_endpoint', { 0:endpoint });
 
   const dialogMessage = all
     ? localize('com_ui_revoke_keys_confirm')

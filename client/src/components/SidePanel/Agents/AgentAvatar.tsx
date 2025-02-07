@@ -171,7 +171,7 @@ function Avatar({
     } else {
       const megabytes = sizeLimit ? formatBytes(sizeLimit) : 2;
       showToast({
-        message: localize('com_ui_upload_invalid_var', megabytes + ''),
+        message: localize('com_ui_upload_invalid_var', { 0:megabytes + '' }),
         status: 'error',
       });
     }

@@ -111,12 +111,12 @@ const VersionCard = ({
       onClick={onClick}
       aria-selected={isSelected}
       role="tab"
-      aria-label={localize('com_ui_version_var', `${totalVersions - index}`)}
+      aria-label={localize('com_ui_version_var', { 0:`${totalVersions - index}` })}
     >
       <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between lg:flex-col xl:flex-row">
           <h3 className="font-bold text-text-primary">
-            {localize('com_ui_version_var', `${totalVersions - index}`)}
+            {localize('com_ui_version_var', { 0:`${totalVersions - index}` })}
           </h3>
           <time className="text-xs text-text-secondary" dateTime={prompt.createdAt}>
             {format(new Date(prompt.createdAt), 'yyyy-MM-dd HH:mm')}

@@ -6,6 +6,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
+import { TranslationKeys } from '~/hooks';
 
 export type CodeBarProps = {
   lang: string;
@@ -66,7 +67,10 @@ export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<t.EModelEndpoint, string>;
 
-export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
+export type LocalizeFunction = (
+    phraseKey: TranslationKeys,
+    options?: Record<string, string | number>
+) => string;
 
 export type ChatFormValues = { text: string };
 

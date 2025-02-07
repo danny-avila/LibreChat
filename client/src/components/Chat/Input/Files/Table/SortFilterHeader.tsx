@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/DropdownMenu';
 import { Button } from '~/components/ui/Button';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 
 interface SortFilterHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
@@ -77,27 +77,30 @@ export function SortFilterHeader<TData, TValue>({
           </DropdownMenuItem>
           <DropdownMenuSeparator className="dark:bg-gray-500" />
           {filters &&
-            Object.entries(filters).map(([key, values]) =>
-              values.map((value: string | number) => {
-                const localizedValue = localize(valueMap?.[value] ?? '');
-                const filterValue = localizedValue.length ? localizedValue : valueMap?.[value];
-                if (!filterValue) {
-                  return null;
-                }
-                return (
-                  <DropdownMenuItem
-                    className="cursor-pointer text-text-primary"
-                    key={`${key}-${value}`}
-                    onClick={() => {
-                      column.setFilterValue(value);
-                    }}
-                  >
-                    <ListFilter className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
-                    {filterValue}
-                  </DropdownMenuItem>
-                );
-              }),
-            )}
+                Object.entries(filters).map(([key, values]) =>
+                  values.map((value: string | number) => {
+                    const translationKey = valueMap?.[value];
+                    const filterValue =
+                          translationKey && translationKey.length
+                            ? localize(translationKey as TranslationKeys)
+                            : String(value);
+                    if (!filterValue) {
+                      return null;
+                    }
+                    return (
+                      <DropdownMenuItem
+                        className="cursor-pointer text-text-primary"
+                        key={`${key}-${value}`}
+                        onClick={() => {
+                          column.setFilterValue(value);
+                        }}
+                      >
+                        <ListFilter className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+                        {filterValue}
+                      </DropdownMenuItem>
+                    );
+                  }),
+                )}
           {filters && (
             <DropdownMenuItem
               className={

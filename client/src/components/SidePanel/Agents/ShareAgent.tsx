@@ -137,7 +137,7 @@ export default function ShareAgent({
           )}
           aria-label={localize(
             'com_ui_share_var',
-            agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+            { 0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
           )}
           type="button"
         >
@@ -150,7 +150,7 @@ export default function ShareAgent({
         <OGDialogTitle>
           {localize(
             'com_ui_share_var',
-            agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+            { 0:agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
           )}
         </OGDialogTitle>
         <form

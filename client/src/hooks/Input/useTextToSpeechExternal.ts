@@ -67,7 +67,7 @@ function useTextToSpeechExternal({
         return playPromise().catch(console.error);
       }
       console.error(error);
-      showToast({ message: localize('com_nav_audio_play_error', error.message), status: 'error' });
+      showToast({ message: localize('com_nav_audio_play_error', { 0:error.message }), status: 'error' });
     });
 
     newAudio.onended = () => {
@@ -123,7 +123,7 @@ function useTextToSpeechExternal({
     },
     onError: (error: unknown) => {
       showToast({
-        message: localize('com_nav_audio_process_error', (error as Error).message),
+        message: localize('com_nav_audio_process_error', { 0:(error as Error).message }),
         status: 'error',
       });
     },

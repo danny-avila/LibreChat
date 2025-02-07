@@ -38,6 +38,8 @@
 </a>
 </p>
 
+<img src="https://img.shields.io/badge/dynamic/json.svg?style=plastic&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated&link=https://www.locize.com" />
+
 # ✨ Features
 
 - 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features

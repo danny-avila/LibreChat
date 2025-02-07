@@ -97,7 +97,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
       </OGDialogTrigger>
       <OGDialogContent className="w-11/12 max-w-lg" role="dialog" aria-labelledby="dialog-title">
         <OGDialogTitle id="dialog-title" className="truncate pr-2" title={group.name}>
-          {localize('com_ui_share_var', `"${group.name}"`)}
+          {localize('com_ui_share_var', { 0:`"${group.name}"` })}
         </OGDialogTitle>
         <form className="p-2" onSubmit={handleSubmit(onSubmit)} aria-describedby="form-description">
           <div id="form-description" className="sr-only">
