@@ -44,6 +44,7 @@
     alt="Translation Progress">
 </p>
 
+
 # ✨ Features
 
 - 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features
@@ -172,6 +173,8 @@ Keep up with the latest updates by visiting the releases page and notes:
 Contributions, suggestions, bug reports and fixes are welcome!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR.
+
+If you'd like to help translate LibreChat into your language, we'd love your contribution! Improving our translations not only makes LibreChat more accessible to users around the world but also enhances the overall user experience. Please check out our [Translation Guide](.github/TRANSLATION.md).
 
 ---
 
