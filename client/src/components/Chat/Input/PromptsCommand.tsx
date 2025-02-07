@@ -63,8 +63,10 @@ function PromptsCommand({
       const mappedArray = data.map((group) => ({
         id: group._id,
         value: group.command ?? group.name,
-        label: `${group.command ? `/${group.command} - ` : ''}${group.name}: ${
-          group.oneliner?.length ? group.oneliner : group.productionPrompt?.prompt ?? ''
+        label: `${group.command != null && group.command ? `/${group.command} - ` : ''}${
+          group.name
+        }: ${
+          (group.oneliner?.length ?? 0) > 0 ? group.oneliner : group.productionPrompt?.prompt ?? ''
         }`,
         icon: <CategoryIcon category={group.category ?? ''} className="h-5 w-5" />,
       }));
@@ -85,12 +87,12 @@ function PromptsCommand({
   const [variableGroup, setVariableGroup] = useState<TPromptGroup | null>(null);
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
-  const prompts = useMemo(() => data?.promptGroups ?? [], [data]);
-  const promptsMap = useMemo(() => data?.promptsMap ?? {}, [data]);
+  const prompts = useMemo(() => data?.promptGroups, [data]);
+  const promptsMap = useMemo(() => data?.promptsMap, [data]);
 
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
-    options: prompts,
+    options: prompts ?? [],
   });
 
   const handleSelect = useCallback(
@@ -107,22 +109,20 @@ function PromptsCommand({
         removeCharIfLast(textAreaRef.current, commandChar);
       }
 
-      const isValidPrompt = mention && promptsMap && promptsMap[mention.id];
-
-      if (!isValidPrompt) {
+      const group = promptsMap?.[mention.id];
+      if (!group) {
         return;
       }
 
-      const group = promptsMap[mention.id];
       const hasVariables = detectVariables(group.productionPrompt?.prompt ?? '');
-      if (group && hasVariables) {
+      if (hasVariables) {
         if (e && e.key === 'Tab') {
           e.preventDefault();
         }
         setVariableGroup(group);
         setVariableDialogOpen(true);
         return;
-      } else if (group) {
+      } else {
         submitPrompt(group.productionPrompt?.prompt ?? '');
       }
     },
@@ -161,7 +161,7 @@ function PromptsCommand({
       variableGroup={variableGroup}
       setVariableDialogOpen={setVariableDialogOpen}
     >
-      <div className="absolute bottom-16 z-10 w-full space-y-2">
+      <div className="absolute bottom-14 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
             // The user expects focus to transition to the input field when the popover is opened
