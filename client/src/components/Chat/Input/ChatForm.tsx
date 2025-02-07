@@ -24,6 +24,7 @@ import { cn, removeFocusRings, checkIfScrollable } from '~/utils';
 import FileFormWrapper from './Files/FileFormWrapper';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
+import { TemporaryChat } from './TemporaryChat';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
@@ -47,7 +48,7 @@ const ChatForm = ({ index = 0 }) => {
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const isTemporary = useRecoilValue(store.isTemporary);
+  const [isTemporaryChat, setIsTemporaryChat] = useRecoilState<boolean>(store.isTemporary);
 
   const isSearching = useRecoilValue(store.isSearching);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -145,11 +146,8 @@ const ChatForm = ({ index = 0 }) => {
   const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
 
   const baseClasses = cn(
-    'md:py-3.5 m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+    'md:py-3.5 m-0 w-full resize-none py-[13px] bg-surface-tertiary placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
     isCollapsed ? 'max-h-[52px]' : 'max-h-[65vh] md:max-h-[75vh]',
-    isTemporary
-      ? 'bg-gray-600 text-white placeholder-white/20'
-      : 'bg-surface-tertiary placeholder-black/50 dark:placeholder-white/50',
   );
 
   const uploadActive = endpointSupportsFiles && !isUploadDisabled;
@@ -185,12 +183,11 @@ const ChatForm = ({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <div
-            className={cn(
-              'transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl text-text-primary ',
-              isTemporary ? 'text-white' : 'duration-200',
-            )}
-          >
+          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl bg-surface-tertiary text-text-primary duration-200">
+            <TemporaryChat
+              isTemporaryChat={isTemporaryChat}
+              setIsTemporaryChat={setIsTemporaryChat}
+            />
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileFormWrapper disableInputs={disableInputs}>
               {endpoint && (
@@ -243,7 +240,6 @@ const ChatForm = ({ index = 0 }) => {
                 textAreaRef={textAreaRef}
                 disabled={!!disableInputs}
                 isSubmitting={isSubmitting}
-                isTemporary={isTemporary}
               />
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}

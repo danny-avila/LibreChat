@@ -10,6 +10,7 @@ export interface MentionItemProps {
   icon?: React.ReactNode;
   isActive?: boolean;
   description?: string;
+  style?: React.CSSProperties;
 }
 
 export default function MentionItem({
@@ -19,21 +20,28 @@ export default function MentionItem({
   icon,
   isActive,
   description,
+  style,
   type = 'mention',
 }: MentionItemProps) {
   return (
-    <button tabIndex={index} onClick={onClick} id={`${type}-item-${index}`} className="w-full">
+    <button
+      tabIndex={index}
+      onClick={onClick}
+      id={`${type}-item-${index}`}
+      className="w-full"
+      style={style}
+    >
       <div
         className={cn(
           'text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary',
-          isActive ? 'bg-surface-active' : 'bg-transparent',
+          isActive === true ? 'bg-surface-active' : 'bg-transparent',
         )}
       >
         <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">{icon}</div>
         <div className="flex min-w-0 flex-grow items-center justify-between">
           <div className="truncate">
             <span className="font-medium">{name}</span>
-            {description ? (
+            {description != null && description ? (
               <span className="text-token-text-tertiary ml-2 text-sm font-light">
                 {description}
               </span>
