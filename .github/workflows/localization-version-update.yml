@@ -25,6 +25,7 @@ jobs:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           version: ${{ github.event.client_payload.payload.version }}
           path: "client/src/locales"
+          path-mask: "{{language}}/translation.json"
 
       - name: Commit & Push changes
         uses: actions-js/push@master
