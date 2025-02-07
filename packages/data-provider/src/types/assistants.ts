@@ -39,7 +39,7 @@ export type FunctionTool = {
     name: string;
     parameters: Record<string, unknown>;
     strict?: boolean;
-    additionnalProperties?: boolean; // must be false if strict is true https://platform.openai.com/docs/guides/structured-outputs/some-type-specific-keywords-are-not-yet-supported
+    additionalProperties?: boolean; // must be false if strict is true https://platform.openai.com/docs/guides/structured-outputs/some-type-specific-keywords-are-not-yet-supported
   };
 };
 

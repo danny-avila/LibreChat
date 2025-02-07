@@ -129,13 +129,13 @@ export class FunctionSignature {
     this.name = name;
     this.description = description;
     this.parameters = parameters;
-    this.strict = strict || false;
+    this.strict = strict ?? false;
   }
 
   toObjectTool(): FunctionTool {
-    const parameters = { 
+    const parameters = {
       ...this.parameters,
-      additionalProperties: this.strict ? false : undefined
+      additionalProperties: this.strict ? false : undefined,
     };
 
     return {
@@ -144,7 +144,7 @@ export class FunctionSignature {
         name: this.name,
         description: this.description,
         parameters,
-        strict: this.strict
+        strict: this.strict,
       },
     };
   }
@@ -384,8 +384,8 @@ export function openapiToFunction(
       const defaultOperationId = `${method}_${path}`;
       const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
-      const isStrict = operationObj['x-strict'] || false;
-      
+      const isStrict = operationObj['x-strict'] ?? false;
+
       const parametersSchema: OpenAPISchema = {
         type: 'object',
         properties: {},
