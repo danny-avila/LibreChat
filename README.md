@@ -39,9 +39,11 @@
 </p>
 
 <p align="center">
-  <img 
-    src="https://img.shields.io/badge/dynamic/json.svg?style=for-the-badge&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated" 
-    alt="Translation Progress">
+  <a href=https://github.com/danny-avila/LibreChat/blob/main/.github/TRANSLATION.md">
+    <img 
+      src="https://img.shields.io/badge/dynamic/json.svg?style=for-the-badge&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated" 
+      alt="Translation Progress">
+  </a>
 </p>
 
 
