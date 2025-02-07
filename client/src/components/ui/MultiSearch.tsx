@@ -59,7 +59,7 @@ export default function MultiSearch({
           'relative flex h-5 w-5 items-center justify-end text-gray-500',
           value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'hidden',
         )}
-        aria-label={`Clear search`}
+        aria-label={'Clear search'}
         role="button"
         tabIndex={0}
         onClick={clearSearch} // Call clearSearch on click
@@ -70,7 +70,7 @@ export default function MultiSearch({
         }}
       >
         <X
-          aria-hidden={`true`}
+          aria-hidden={'true'}
           className={cn(
             'text-gray-500 dark:text-gray-300',
             value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'opacity-0',
