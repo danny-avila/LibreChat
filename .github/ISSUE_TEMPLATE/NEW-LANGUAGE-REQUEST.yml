@@ -23,20 +23,6 @@ body:
       placeholder: e.g., es
     validations:
       required: true
-  - type: textarea
-    id: reason
-    attributes:
-      label: Why Should This Language Be Supported?
-      description: Please explain why supporting this language will benefit the LibreChat community.
-      placeholder: Provide as many details as possible.
-    validations:
-      required: true
-  - type: textarea
-    id: additional_details
-    attributes:
-      label: Additional Details
-      description: Provide any extra context or details that might help us integrate this language.
-      placeholder: Any additional information...
   - type: checkboxes
     id: terms
     attributes:

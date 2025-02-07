@@ -27,8 +27,6 @@ If you do not see your language listed in our current translation table, please 
 2. **Use the Template:** When creating your issue, please select the **New Language Request** template. This template will guide you through providing all the necessary details, including:
    - The full name of your language (e.g., Spanish, Mandarin).
    - The [ISO 639-1](https://www.w3schools.com/tags/ref_language_codes.asp) code for your language (e.g., es for Spanish).
-   - A brief explanation of why supporting this language will benefit the LibreChat community.
-   - Any additional context that might help the maintainers integrate your language into the project.
 3. **Collaborate with Maintainers:** Our maintainers will review your issue and work with you to integrate the new language. Once approved, your language will appear in the translation progress table, and you can start contributing translations.
 
 
