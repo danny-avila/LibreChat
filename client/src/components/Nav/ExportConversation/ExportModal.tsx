@@ -94,7 +94,7 @@ export default function ExportModal({
                 <Label htmlFor="type" className="text-left text-sm font-medium">
                   {localize('com_nav_export_type')}
                 </Label>
-                <Dropdown value={type} onChange={_setType} options={typeOptions} />
+                <Dropdown value={type} onChange={_setType} options={typeOptions} portal={false} />
               </div>
             </div>
             <div className="grid w-full gap-6 sm:grid-cols-2">

@@ -1,9 +1,6 @@
-import { atom } from 'recoil';
+import { atomWithLocalStorage } from '~/store/utils';
 
-const isTemporary = atom<boolean>({
-  key: 'isTemporary',
-  default: false,
-});
+const isTemporary = atomWithLocalStorage('isTemporary', false);
 
 export default {
   isTemporary,
