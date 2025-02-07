@@ -1,0 +1,35 @@
+name: Locize Version Published Workflow
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [locize/versionPublished]
+
+jobs:
+  locize_update:
+    name: Process Locize Version Published Event
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Display Dispatch Payload
+        run: |
+          echo "Received Version: ${{ github.event.client_payload.payload.version }}"
+          echo "Full Payload: ${{ toJson(github.event.client_payload) }}"
+
+      - name: Download Translations from locize
+        if: ${{ github.event.client_payload.payload.version == 'production' || github.event.client_payload.payload.version == 'prod' }}
+        uses: locize/download@v1
+        with:
+          project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
+
+      - name: Commit and Push Translations
+        if: ${{ github.event.client_payload.payload.version == 'production' || github.event.client_payload.payload.version == 'prod' }}
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: "chore: update translations from locize (production)"
+          add: "."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
