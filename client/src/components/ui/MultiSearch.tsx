@@ -4,7 +4,6 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 // This is a generic that can be added to Menu and Select components
-
 export default function MultiSearch({
   value,
   onChange,
@@ -17,7 +16,6 @@ export default function MultiSearch({
   className?: string;
 }) {
   const localize = useLocalize();
-  // Create a ref to reference the input element
   const inputRef = useRef<HTMLInputElement>(null);
 
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
@@ -25,10 +23,8 @@ export default function MultiSearch({
     [onChange],
   );
 
-  // Function to clear the search input and move focus back to it
   const clearSearch = () => {
     onChange('');
-    // Use setTimeout to ensure the input is cleared before moving focus
     setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
@@ -52,22 +48,16 @@ export default function MultiSearch({
         onChange={onChangeHandler}
         placeholder={placeholder ?? localize('com_ui_select_search_model')}
         aria-label="Search Model"
-        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
+        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
       />
-      <div
+      <button
         className={cn(
-          'relative flex h-5 w-5 items-center justify-end text-gray-500',
+          'relative flex h-5 w-5 items-center justify-end rounded-md text-gray-500',
           value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'hidden',
         )}
         aria-label={'Clear search'}
-        role="button"
+        onClick={clearSearch}
         tabIndex={0}
-        onClick={clearSearch} // Call clearSearch on click
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            clearSearch(); // Call clearSearch on Enter or Space key press
-          }
-        }}
       >
         <X
           aria-hidden={'true'}
@@ -76,7 +66,7 @@ export default function MultiSearch({
             value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'opacity-0',
           )}
         />
-      </div>
+      </button>
     </div>
   );
 }
