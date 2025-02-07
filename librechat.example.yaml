@@ -184,7 +184,7 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
-
+      
     # Portkey AI Example
     - name: "Portkey"
       apiKey: "dummy"  
