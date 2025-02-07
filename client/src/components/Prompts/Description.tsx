@@ -43,7 +43,7 @@ const Description = ({
   return (
     <div className="rounded-xl border border-border-light">
       <h3 className="flex h-10 items-center gap-1 pl-4 text-sm text-text-secondary">
-        <Info className="icon-sm" />
+        <Info className="icon-sm" aria-hidden="true" />
         <Input
           type="text"
           tabIndex={tabIndex}

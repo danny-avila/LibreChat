@@ -153,7 +153,7 @@ const AdminSettings = () => {
             variant="outline"
             className="mr-2 h-10 w-fit gap-1 border transition-all dark:bg-transparent dark:hover:bg-surface-tertiary sm:m-0"
           >
-            <ShieldEllipsis className="cursor-pointer" />
+            <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
             <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
           </Button>
         </OGDialogTrigger>
