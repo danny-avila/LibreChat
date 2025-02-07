@@ -1,7 +1,7 @@
 name: New Language Request
 description: Request to add a new language for LibreChat translations.
 title: "New Language Request: "
-labels: ["enhancement", "new language"]
+labels: ["enhancement", "i18n"]
 body:
   - type: markdown
     attributes:
