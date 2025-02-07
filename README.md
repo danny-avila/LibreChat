@@ -185,7 +185,7 @@ For new features, components, or extensions, please open an issue and discuss be
 
 ## 🎉 Special Thanks
 
-We would like to extend our gratitude to our translation partner [Locize](https://locize.com) for providing excellent translation management tools that help make LibreChat accessible in multiple languages.
+We thank [Locize](https://locize.com) for their translation management tools that support multiple languages in LibreChat.
 
 <p align="center">
   <a href="https://locize.com" target="_blank" rel="noopener noreferrer">
