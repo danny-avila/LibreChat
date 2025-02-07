@@ -17,6 +17,6 @@ export interface FlowState<T = unknown> {
 }
 
 export interface FlowManagerOptions {
-  ttl?: number;
+  ttl: number;
   logger?: Logger;
 }

@@ -2,7 +2,6 @@
 
 // flowStateManager.ts
 import Keyv from 'keyv';
-import { Time } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
@@ -20,8 +19,11 @@ export class FlowStateManager {
     } as Logger;
   }
 
-  constructor(store: Keyv, options: FlowManagerOptions = {}) {
-    const { ttl = Time.TWO_MINUTES, logger } = options;
+  constructor(store: Keyv, options?: FlowManagerOptions) {
+    if (!options) {
+      options = { ttl: 60000 };
+    }
+    const { ttl, logger } = options;
 
     if (!(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
