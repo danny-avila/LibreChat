@@ -23,12 +23,14 @@ This invitation will give you access to our translation project once you’ve cr
 
 If you do not see your language listed in our current translation table, please help us expand our language support by following these steps:
 
-1. **Fork the Repository:** Fork the LibreChat repository on GitHub.
-2. **Create a New Pull Request:** Open a new PR requesting the addition of your language. In your PR, please include:
-    - The [ISO 639-1](https://www.w3schools.com/tags/ref_language_codes.asp).
-    - A brief explanation of why you’d like to support this language.
-    - Any additional context that might help the maintainers integrate your language into the project.
-3. **Collaborate with Maintainers:** Our maintainers will review your PR and work with you to integrate the new language. Once approved, your language will appear in the translation progress table, and you can start contributing translations.
+1. **Create a New Issue:** Open a new issue in the GitHub repository.
+2. **Use the Template:** When creating your issue, please select the **New Language Request** template. This template will guide you through providing all the necessary details, including:
+   - The full name of your language (e.g., Spanish, Mandarin).
+   - The [ISO 639-1](https://www.w3schools.com/tags/ref_language_codes.asp) code for your language (e.g., es for Spanish).
+   - A brief explanation of why supporting this language will benefit the LibreChat community.
+   - Any additional context that might help the maintainers integrate your language into the project.
+3. **Collaborate with Maintainers:** Our maintainers will review your issue and work with you to integrate the new language. Once approved, your language will appear in the translation progress table, and you can start contributing translations.
+
 
 ## Translation Progress
 
