@@ -38,7 +38,11 @@
 </a>
 </p>
 
-<img src="https://img.shields.io/badge/dynamic/json.svg?style=plastic&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated&link=https://www.locize.com" />
+<p align="center">
+  <img 
+    src="https://img.shields.io/badge/dynamic/json.svg?style=for-the-badge&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated" 
+    alt="Translation Progress">
+</p>
 
 # ✨ Features
 
@@ -176,3 +180,15 @@ For new features, components, or extensions, please open an issue and discuss be
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>
+
+---
+
+## 🎉 Special Thanks
+
+We would like to extend our gratitude to our translation partner [Locize](https://locize.com) for providing excellent translation management tools that help make LibreChat accessible in multiple languages.
+
+<p align="center">
+  <a href="https://locize.com" target="_blank" rel="noopener noreferrer">
+    <img src="https://locize.com/img/locize_color.svg" alt="Locize Logo" height="50">
+  </a>
+</p>
