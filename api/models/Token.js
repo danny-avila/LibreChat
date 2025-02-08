@@ -13,24 +13,18 @@ const Token = mongoose.model('Token', tokenSchema);
 async function fixIndexes() {
   try {
     const indexes = await Token.collection.indexes();
-    logger.debug('Existing Token Indexes:', indexes);
+    logger.debug('Existing Token Indexes:', JSON.stringify(indexes, null, 2));
     const unwantedTTLIndexes = indexes.filter(
       (index) => index.key.createdAt === 1 && index.expireAfterSeconds !== undefined,
     );
+    if (unwantedTTLIndexes.length === 0) {
+      logger.debug('No unwanted Token indexes found.');
+      return;
+    }
     for (const index of unwantedTTLIndexes) {
       logger.debug(`Dropping unwanted Token index: ${index.name}`);
       await Token.collection.dropIndex(index.name);
       logger.debug(`Dropped Token index: ${index.name}`);
-    }
-    const hasExpiresAtIndex = indexes.some(
-      (index) => index.key.expiresAt === 1 && index.expireAfterSeconds === 0,
-    );
-    if (!hasExpiresAtIndex) {
-      logger.debug('Creating Token `expiresAt` TTL index.');
-      await Token.collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-      logger.debug('Token `expiresAt` TTL index created.');
-    } else {
-      logger.debug('Token `expiresAt` TTL index already exists.');
     }
     logger.debug('Token index cleanup completed successfully.');
   } catch (error) {
