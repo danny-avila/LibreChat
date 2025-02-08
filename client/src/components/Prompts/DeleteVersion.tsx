@@ -42,7 +42,7 @@ const DeleteVersion = ({
                   htmlFor="dialog-delete-confirm-prompt"
                   className="text-left text-sm font-medium"
                 >
-                  {localize('com_ui_delete_confirm_prompt_version_var', { 0:name })}
+                  {localize('com_ui_delete_confirm_prompt_version_var', { 0: name })}
                 </Label>
               </div>
             </div>

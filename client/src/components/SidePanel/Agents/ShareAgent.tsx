@@ -150,7 +150,7 @@ export default function ShareAgent({
         <OGDialogTitle>
           {localize(
             'com_ui_share_var',
-            { 0:agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
+            { 0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
           )}
         </OGDialogTitle>
         <form

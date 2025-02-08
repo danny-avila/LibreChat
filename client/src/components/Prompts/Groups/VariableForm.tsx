@@ -169,7 +169,7 @@ export default function VariableForm({
                     return (
                       <InputCombobox
                         options={field.config.options || []}
-                        placeholder={localize('com_ui_enter_var', { 0:field.config.variable })}
+                        placeholder={localize('com_ui_enter_var', { 0: field.config.variable })}
                         className={cn(
                           defaultTextProps,
                           'rounded px-3 py-2 focus:bg-surface-tertiary',
@@ -192,7 +192,7 @@ export default function VariableForm({
                         defaultTextProps,
                         'rounded px-3 py-2 focus:bg-surface-tertiary',
                       )}
-                      placeholder={localize('com_ui_enter_var', { 0:field.config.variable })}
+                      placeholder={localize('com_ui_enter_var', { 0: field.config.variable })}
                       maxRows={8}
                     />
                   );

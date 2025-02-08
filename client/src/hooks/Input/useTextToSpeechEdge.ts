@@ -67,7 +67,7 @@ function useTextToSpeechEdge({
         .catch((error) => {
           console.error('Error initializing TTS:', error);
           showToast({
-            message: localize('com_nav_tts_init_error', { 0:(error as Error).message }),
+            message: localize('com_nav_tts_init_error', { 0: (error as Error).message }),
             status: 'error',
           });
         });
@@ -77,7 +77,7 @@ function useTextToSpeechEdge({
         .catch((error) => {
           console.error('Error initializing TTS:', error);
           showToast({
-            message: localize('com_nav_tts_init_error', { 0:(error as Error).message }),
+            message: localize('com_nav_tts_init_error', { 0: (error as Error).message }),
             status: 'error',
           });
         });
@@ -168,7 +168,7 @@ function useTextToSpeechEdge({
         } catch (error) {
           console.error('Error generating speech:', error);
           showToast({
-            message: localize('com_nav_audio_play_error', { 0:(error as Error).message }),
+            message: localize('com_nav_audio_play_error', { 0: (error as Error).message }),
             status: 'error',
           });
           setIsSpeaking(false);

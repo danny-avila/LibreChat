@@ -94,7 +94,7 @@ function DynamicTags({
     let update = [...(currentTags ?? []), tagText];
     if (maxTags != null && update.length > maxTags) {
       showToast({
-        message: localize('com_ui_max_tags', { 0:maxTags + '' }),
+        message: localize('com_ui_max_tags', { 0: maxTags + '' }),
         status: 'warning',
       });
       update = update.slice(-maxTags);

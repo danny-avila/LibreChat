@@ -27,7 +27,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
             {tool.icon != null && tool.icon ? (
               <img
                 src={tool.icon}
-                alt={localize('com_ui_logo', { 0:tool.name })}
+                alt={localize('com_ui_logo', { 0: tool.name })}
                 className="h-full w-full rounded-[5px] bg-white"
               />
             ) : (

@@ -216,7 +216,7 @@ export default function Fork({
                       <span>{localize('com_ui_fork_info_1')}</span>
                       <span>{localize('com_ui_fork_info_2')}</span>
                       <span>
-                        {localize('com_ui_fork_info_3', { 0:localize('com_ui_fork_split_target') })}
+                        {localize('com_ui_fork_info_3', { 0: localize('com_ui_fork_split_target') })}
                       </span>
                     </div>
                   </HoverCardContent>
