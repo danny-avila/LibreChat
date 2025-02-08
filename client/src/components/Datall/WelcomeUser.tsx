@@ -6,7 +6,9 @@ const WelcomeUser: React.FC = () => {
   const { state } = location;
 
   const addBalanceHandler = async () => {
-    const response = await axios.post('http://localhost:3090/api/balance' , 20000);
+    // const response = await axios.post('http://localhost:3090/api/balance' , 20000);
+
+  const response = await axios.post('http://localhost:3080/api/addBalance/add_balance',{balance:30000})
     console.log('add balance' ,response);
   };
 
