@@ -1,21 +1,27 @@
 const {
+  Time,
   CacheKeys,
+  StepTypes,
   Constants,
   AuthTypeEnum,
   actionDelimiter,
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
+const jwt = require('jsonwebtoken');
+const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
+const { GraphEvents } = require('@librechat/agents');
 const { isActionDomainAllowed } = require('~/server/services/domains');
+const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
-const { logger, getFlowStateManager } = require('~/config');
 const { deleteAssistant } = require('~/models/Assistant');
 const { findToken } = require('~/models/Token');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 
+const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
 const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
@@ -116,6 +122,8 @@ async function loadActionSets(searchParams) {
  * Creates a general tool for an entire action set.
  *
  * @param {Object} params - The parameters for loading action sets.
+ * @param {ServerRequest} params.req
+ * @param {ServerResponse} params.res
  * @param {Action} params.action - The action set. Necessary for decrypting authentication values.
  * @param {ActionRequest} params.requestBuilder - The ActionRequest builder class to execute the API call.
  * @param {string | undefined} [params.name] - The name of the tool.
@@ -123,54 +131,104 @@ async function loadActionSets(searchParams) {
  * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createActionTool({ action, requestBuilder, zodSchema, name, description }) {
+async function createActionTool({
+  req,
+  res,
+  action,
+  requestBuilder,
+  zodSchema,
+  name,
+  description,
+}) {
   action.metadata = await decryptMetadata(action.metadata);
   const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
   if (!isDomainAllowed) {
     return null;
   }
 
-  /** @type {(toolInput: Object | string) => Promise<unknown>} */
-  const _call = async (toolInput) => {
+  /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
+  const _call = async (toolInput, config) => {
     try {
+      /** @type {import('librechat-data-provider').ActionMetadataRuntime} */
+      const metadata = action.metadata;
       const executor = requestBuilder.createExecutor();
       const preparedExecutor = executor.setParams(toolInput);
 
-      if (action.metadata.auth && action.metadata.auth.type !== AuthTypeEnum.None) {
+      if (metadata.auth && metadata.auth.type !== AuthTypeEnum.None) {
+        const toolCall = config.toolCall;
+        if (!toolCall.stepId) {
+          throw new Error('Tool call is missing stepId');
+        }
         try {
-          // If OAuth, first check if we have a valid token
-          if (action.metadata.auth.type === AuthTypeEnum.OAuth) {
-            const token = await findToken({ identifier: action._id });
-            if (!token) {
-              // No token found, need to initiate OAuth flow
-              const flowManager = await getFlowStateManager(getLogStores);
-              // TODO: SEND LOGIN REQUEST TO CLIENT
+          const action_id = action.action_id;
+          const requestLogin = async () => {
+            const statePayload = {
+              nonce: nanoid(),
+              action_id,
+              user: req.user.id,
+            };
 
-              const result = await flowManager.createFlow(action._id, 'oauth', {
-                userId: action.userId,
-                clientId: action.metadata.oauth_client_id,
-                clientSecret: action.metadata.oauth_client_secret,
-                tokenUrl: action.metadata.auth.client_url,
+            const stateToken = jwt.sign(statePayload, JWT_SECRET, { expiresIn: '10m' });
+            try {
+              const redirectUri = `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`;
+              const params = new URLSearchParams({
+                client_id: metadata.oauth_client_id,
+                redirect_uri: redirectUri,
+                scope: metadata.auth.scope,
+                state: stateToken,
               });
 
+              const authUrl = `${metadata.auth.authorization_url}?${params.toString()}`;
+              const id = toolCall.stepId;
+              delete toolCall.stepId;
+              const data = {
+                id,
+                delta: {
+                  type: StepTypes.TOOL_CALLS,
+                  tool_calls: [toolCall],
+                  auth: authUrl,
+                  expires_at: Date.now() + Time.TWO_MINUTES,
+                },
+              };
+              sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+              const flowManager = await getFlowStateManager(getLogStores);
+              const result = await flowManager.createFlow(action_id, 'oauth', {
+                state: stateToken,
+                userId: req.user.id,
+                clientId: metadata.oauth_client_id,
+                clientSecret: metadata.oauth_client_secret,
+                redirectUri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                tokenUrl: metadata.auth.client_url,
+              });
+              const expiresAt = new Date(Date.now() + result.expires_in * 1000);
+              metadata.oauth_access_token = result.access_token;
+              metadata.oauth_refresh_token = result.refresh_token;
+              metadata.oauth_token_expires_at = expiresAt.toISOString();
+            } catch (error) {
+              logger.error('Error initiating OAuth flow:', error);
+            }
+          };
+          // If OAuth, first check if we have a valid token
+          if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
+            const tokenData = await findToken({ identifier: action_id });
+            if (!tokenData) {
+              await requestLogin();
               // The flow.createFlow will pause here until OAuth completes or times out
               // When it resolves, result will contain the token data from the OAuth callback
-              action.metadata.oauth_access_token = result.access_token;
-            } else if (token.expiresAt && new Date() >= token.expiresAt) {
-              // Token exists but is expired
-              // Here you might want to handle refresh token logic
-              // For now, we'll trigger a new OAuth flow
-              // TODO: SEND LOGIN REQUEST TO CLIENT
+            } else if (tokenData.expiresAt && new Date() >= tokenData.expiresAt) {
+              // Token exists but is expired, trigger a new OAuth flow
+              await requestLogin();
             } else {
               // Valid token exists, add it to metadata for setAuth
-              action.metadata.oauth_access_token = token.token;
-              if (token.metadata) {
-                action.metadata.oauth_refresh_token = token.metadata.get('refreshToken');
+              metadata.oauth_access_token = tokenData.token;
+              if (tokenData.metadata) {
+                metadata.oauth_refresh_token = tokenData.metadata.refreshToken;
               }
+              metadata.oauth_token_expires_at = tokenData.expiresAt.toISOString();
             }
           }
 
-          await preparedExecutor.setAuth(action.metadata);
+          await preparedExecutor.setAuth(metadata);
         } catch (error) {
           if (
             error.message.includes('No access token found') ||
@@ -182,12 +240,12 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
         }
       }
 
-      const res = await preparedExecutor.execute();
+      const response = await preparedExecutor.execute();
 
-      if (typeof res.data === 'object') {
-        return JSON.stringify(res.data);
+      if (typeof response.data === 'object') {
+        return JSON.stringify(response.data);
       }
-      return res.data;
+      return response.data;
     } catch (error) {
       const logMessage = `API call to ${action.metadata.domain} failed`;
       logAxiosError({ message: logMessage, error });

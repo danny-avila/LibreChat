@@ -417,6 +417,8 @@ export type PartMetadata = {
   asset_pointer?: string;
   status?: string;
   action?: boolean;
+  auth?: string;
+  expires_at?: number;
 };
 
 export type ContentPart = (

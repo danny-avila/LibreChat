@@ -119,11 +119,16 @@ export default function useStepHandler({
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
+      const auth = getNonEmptyValue([contentPart.tool_call.auth, existingToolCall?.auth]) ?? '';
+      // TODO: PASS EXPIRES_AT
+      // const expires_at = Number(getNonEmptyValue([contentPart.tool_call.expires_at, existingToolCall?.expires_at]));
 
       const newToolCall: Agents.ToolCall & PartMetadata = {
         id,
         name,
         args,
+        auth,
+        // expires_at,
         type: ToolCallTypes.TOOL_CALL,
       };
 
@@ -285,6 +290,11 @@ export default function useStepHandler({
                 id: toolCallId,
               },
             };
+
+            if (runStepDelta.delta.auth != null) {
+              contentPart.tool_call.auth = runStepDelta.delta.auth;
+              contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
+            }
 
             updatedResponse = updateContent(updatedResponse, runStep.index, contentPart);
           });

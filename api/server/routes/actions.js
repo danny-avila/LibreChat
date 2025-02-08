@@ -95,6 +95,11 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       return res.status(400).send('Mismatched action ID in state parameter');
     }
 
+    if (!decodedState.user) {
+      await flowManager.failFlow(action_id, 'oauth', 'Invalid user ID in state parameter');
+      return res.status(400).send('Invalid user ID in state parameter');
+    }
+
     const flowState = await flowManager.getFlowState(action_id, 'oauth');
     if (!flowState) {
       return res.status(404).send('OAuth flow not found or expired');
@@ -128,11 +133,10 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
     const { access_token, refresh_token, expires_in } = tokenJson;
 
     const tokenData = {
-      userId: flowState.metadata.userId,
+      userId: decodedState.user,
       identifier: action_id,
-      type: 'oauth',
       token: access_token,
-      expiresAt: new Date(Date.now() + expires_in * 1000),
+      expiresIn: parseInt(expires_in, 10) || 3600,
       metadata: {
         refreshToken: refresh_token,
         clientId: flowState.metadata.clientId,

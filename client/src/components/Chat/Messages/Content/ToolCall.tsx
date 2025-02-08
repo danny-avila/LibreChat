@@ -21,6 +21,7 @@ export default function ToolCall({
   args: _args = '',
   output,
   attachments,
+  auth,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -28,6 +29,8 @@ export default function ToolCall({
   args: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
+  auth?: string;
+  expires_at?: number;
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
@@ -59,11 +62,8 @@ export default function ToolCall({
     };
   }, [name]);
 
-  const error = typeof output === 'string' && output.toLowerCase().includes('error processing tool');
-  const needsLogin =
-      typeof output === 'string' &&
-      (output.toLowerCase().includes('no access token') ||
-          output.toLowerCase().includes('expired token'));
+  const error =
+    typeof output === 'string' && output.toLowerCase().includes('error processing tool');
 
   const args = useMemo(() => {
     if (typeof _args === 'string') {
@@ -139,25 +139,28 @@ export default function ToolCall({
         )}
 
         {/*TODO: fix hardcoded action_id*/}
-        {needsLogin && 'Ty2HxVutaMeSDbxkryip6' && (
-          <div className="pl-7 flex flex-col">
-            <div className="text-sm text-gray-600 mb-1">
-              {/* Here we use the original domain value */}
-              {localize('com_assistants_wants_to_talk', domain ?? '' )}
+        {auth != null && auth && (
+          <div className="flex flex-col pl-7">
+            <div className="mb-1 text-sm text-gray-600">
+              {localize('com_assistants_wants_to_talk', domain ?? '')}
             </div>
             <a
               className="inline-flex w-fit items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-              href={'/api/actions/Ty2HxVutaMeSDbxkryip6/oauth/login'}
+              href={auth}
               target="_blank"
               rel="noopener noreferrer"
             >
-              {/* And here as well */}
               {localize('com_assistants_sign_in_with_domain', domain ?? '')}
             </a>
             <p className="mt-1 text-xs text-gray-500">
               {localize('com_assistants_allow_sites_you_trust')}
             </p>
           </div>
+          //   <div class="mb-2 flex gap-2">
+          //   <button class="btn relative btn-primary btn-small">
+          //      <div class="flex items-center justify-center">Sign in with api.github.com</div>
+          //   </button>
+          // </div>
         )}
       </div>
       {attachments?.map((attachment, index) => (

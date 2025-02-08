@@ -99,6 +99,12 @@
  */
 
 /**
+ * @exports LangChainToolCall
+ * @typedef {import('@langchain/core/messages/tool').ToolCall} LangChainToolCall
+ * @memberof typedefs
+ */
+
+/**
  * @exports GraphRunnableConfig
  * @typedef {import('@langchain/core/runnables').RunnableConfig<{
  *  req: ServerRequest;
@@ -109,7 +115,9 @@
  * agent_index: number;
  * last_agent_index: number;
  * hide_sequential_outputs: boolean;
- * }>} GraphRunnableConfig
+ * }> & {
+ * toolCall?: LangChainToolCall & { stepId?: string };
+ * }} GraphRunnableConfig
  * @memberof typedefs
  */
 
