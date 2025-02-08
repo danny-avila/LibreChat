@@ -140,13 +140,15 @@ async function createActionTool({
   name,
   description,
 }) {
-  action.metadata = await decryptMetadata(action.metadata);
   const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
   if (!isDomainAllowed) {
     return null;
   }
-
-  const identifier = `${req.user.id}:${action.action_id}`;
+  const encrypted = {
+    oauth_client_id: action.metadata.oauth_client_id,
+    oauth_client_secret: action.metadata.oauth_client_secret,
+  };
+  action.metadata = await decryptMetadata(action.metadata);
 
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
@@ -157,64 +159,63 @@ async function createActionTool({
       const preparedExecutor = executor.setParams(toolInput);
 
       if (metadata.auth && metadata.auth.type !== AuthTypeEnum.None) {
-        const toolCall = config.toolCall;
-        if (!toolCall.stepId) {
-          throw new Error('Tool call is missing stepId');
-        }
         try {
           const action_id = action.action_id;
-          const requestLogin = async () => {
-            const statePayload = {
-              nonce: nanoid(),
-              action_id,
-              user: req.user.id,
+          const identifier = `${req.user.id}:${action.action_id}`;
+          if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
+            const requestLogin = async () => {
+              const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
+              if (!stepId) {
+                throw new Error('Tool call is missing stepId');
+              }
+              const statePayload = {
+                nonce: nanoid(),
+                user: req.user.id,
+                action_id,
+              };
+
+              const stateToken = jwt.sign(statePayload, JWT_SECRET, { expiresIn: '10m' });
+              try {
+                const redirectUri = `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`;
+                const params = new URLSearchParams({
+                  client_id: metadata.oauth_client_id,
+                  redirect_uri: redirectUri,
+                  scope: metadata.auth.scope,
+                  state: stateToken,
+                });
+
+                const authUrl = `${metadata.auth.authorization_url}?${params.toString()}`;
+                /** @type {ToolCallDelta} */
+                const data = {
+                  id: stepId,
+                  delta: {
+                    type: StepTypes.TOOL_CALLS,
+                    tool_calls: [{ ...toolCall, args: '' }],
+                    auth: authUrl,
+                    expires_at: Date.now() + Time.TWO_MINUTES,
+                  },
+                };
+                sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+                const flowManager = await getFlowStateManager(getLogStores);
+                const result = await flowManager.createFlow(identifier, 'oauth', {
+                  state: stateToken,
+                  userId: req.user.id,
+                  tokenUrl: metadata.auth.client_url,
+                  clientId: encrypted.oauth_client_id,
+                  clientSecret: encrypted.oauth_client_secret,
+                  redirectUri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                });
+                const expiresAt = new Date(Date.now() + result.expires_in * 1000);
+                metadata.oauth_access_token = result.access_token;
+                metadata.oauth_refresh_token = result.refresh_token;
+                metadata.oauth_token_expires_at = expiresAt.toISOString();
+              } catch (error) {
+                const errorMessage = 'Failed to authenticate OAuth tool';
+                logger.error(errorMessage, error);
+                throw new Error(errorMessage);
+              }
             };
 
-            const stateToken = jwt.sign(statePayload, JWT_SECRET, { expiresIn: '10m' });
-            try {
-              const redirectUri = `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`;
-              const params = new URLSearchParams({
-                client_id: metadata.oauth_client_id,
-                redirect_uri: redirectUri,
-                scope: metadata.auth.scope,
-                state: stateToken,
-              });
-
-              const authUrl = `${metadata.auth.authorization_url}?${params.toString()}`;
-              const id = toolCall.stepId;
-              // Clear the args to prevent the client from appending them to the current args
-              toolCall.args = '';
-              delete toolCall.stepId;
-              /** @type {ToolCallDelta} */
-              const data = {
-                id,
-                delta: {
-                  type: StepTypes.TOOL_CALLS,
-                  tool_calls: [toolCall],
-                  auth: authUrl,
-                  expires_at: Date.now() + Time.TWO_MINUTES,
-                },
-              };
-              sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
-              const flowManager = await getFlowStateManager(getLogStores);
-              const result = await flowManager.createFlow(identifier, 'oauth', {
-                state: stateToken,
-                userId: req.user.id,
-                clientId: metadata.oauth_client_id,
-                clientSecret: metadata.oauth_client_secret,
-                redirectUri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
-                tokenUrl: metadata.auth.client_url,
-              });
-              const expiresAt = new Date(Date.now() + result.expires_in * 1000);
-              metadata.oauth_access_token = result.access_token;
-              metadata.oauth_refresh_token = result.refresh_token;
-              metadata.oauth_token_expires_at = expiresAt.toISOString();
-            } catch (error) {
-              logger.error('Error initiating OAuth flow:', error);
-            }
-          };
-          // If OAuth, first check if we have a valid token
-          if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
             const tokenData = await findToken({ userId: req.user.id, identifier });
             if (!tokenData) {
               await requestLogin();
