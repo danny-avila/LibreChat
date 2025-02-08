@@ -11,7 +11,7 @@ const {
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
-const { GraphEvents } = require('@librechat/agents');
+const { GraphEvents, sleep } = require('@librechat/agents');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
@@ -185,7 +185,7 @@ async function createActionTool({
                 });
 
                 const authUrl = `${metadata.auth.authorization_url}?${params.toString()}`;
-                /** @type {ToolCallDelta} */
+                /** @type {{ id: string; delta: AgentToolCallDelta }} */
                 const data = {
                   id: stepId,
                   delta: {
@@ -206,6 +206,10 @@ async function createActionTool({
                   redirectUri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
                 });
                 const expiresAt = new Date(Date.now() + result.expires_in * 1000);
+                data.delta.auth = undefined;
+                data.delta.expires_at = undefined;
+                sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+                await sleep(3000);
                 metadata.oauth_access_token = result.access_token;
                 metadata.oauth_refresh_token = result.refresh_token;
                 metadata.oauth_token_expires_at = expiresAt.toISOString();

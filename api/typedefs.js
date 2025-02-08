@@ -391,6 +391,12 @@
  * @memberof typedefs
  */
 
+/**
+ * @exports AgentToolCallDelta
+ * @typedef {import('librechat-data-provider').Agents.ToolCallDelta} AgentToolCallDelta
+ * @memberof typedefs
+ */
+
 /** Prompts */
 /**
  * @exports TPrompt

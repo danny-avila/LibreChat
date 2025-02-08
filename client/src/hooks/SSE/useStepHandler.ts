@@ -119,17 +119,14 @@ export default function useStepHandler({
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
-      const auth = getNonEmptyValue([contentPart.tool_call.auth, existingToolCall?.auth]) ?? '';
-      // TODO: PASS EXPIRES_AT
-      // const expires_at = Number(getNonEmptyValue([contentPart.tool_call.expires_at, existingToolCall?.expires_at]));
 
       const newToolCall: Agents.ToolCall & PartMetadata = {
         id,
         name,
         args,
-        auth,
-        // expires_at,
         type: ToolCallTypes.TOOL_CALL,
+        auth: contentPart.tool_call.auth,
+        expires_at: contentPart.tool_call.expires_at,
       };
 
       if (finalUpdate) {

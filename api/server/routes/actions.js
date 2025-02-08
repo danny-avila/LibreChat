@@ -108,7 +108,22 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
 
     await flowManager.completeFlow(identifier, 'oauth', tokenJson);
 
-    res.send('Authentication successful. You can close this window and return to your chat.');
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>Authentication Successful</title>
+      </head>
+      <body>
+          <p>Authentication successful. This window will close automatically in 3 seconds.</p>
+          <script>
+              setTimeout(function() {
+                  window.close();
+              }, 3000);
+          </script>
+      </body>
+      </html>
+      `);
   } catch (error) {
     logger.error('Error in OAuth callback:', error);
     await flowManager.failFlow(identifier, 'oauth', error);
