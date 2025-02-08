@@ -81,31 +81,32 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
   const { code, state } = req.query;
 
   const flowManager = await getFlowStateManager(getLogStores);
+  let identifier = `${action_id}`;
   try {
     let decodedState;
     try {
       decodedState = jwt.verify(state, JWT_SECRET);
     } catch (err) {
-      await flowManager.failFlow(action_id, 'oauth', 'Invalid or expired state parameter');
+      await flowManager.failFlow(identifier, 'oauth', 'Invalid or expired state parameter');
       return res.status(400).send('Invalid or expired state parameter');
     }
 
     if (decodedState.action_id !== action_id) {
-      await flowManager.failFlow(action_id, 'oauth', 'Mismatched action ID in state parameter');
+      await flowManager.failFlow(identifier, 'oauth', 'Mismatched action ID in state parameter');
       return res.status(400).send('Mismatched action ID in state parameter');
     }
 
     if (!decodedState.user) {
-      await flowManager.failFlow(action_id, 'oauth', 'Invalid user ID in state parameter');
+      await flowManager.failFlow(identifier, 'oauth', 'Invalid user ID in state parameter');
       return res.status(400).send('Invalid user ID in state parameter');
     }
+    identifier = `${decodedState.user}:${action_id}`;
 
-    const flowState = await flowManager.getFlowState(action_id, 'oauth');
+    const flowState = await flowManager.getFlowState(identifier, 'oauth');
     if (!flowState) {
-      return res.status(404).send('OAuth flow not found or expired');
+      throw new Error('OAuth flow not found');
     }
 
-    // Token exchange
     const body = new URLSearchParams({
       client_id: flowState.metadata.clientId,
       client_secret: flowState.metadata.clientSecret,
@@ -125,7 +126,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
 
     if (!tokenResp.ok) {
       const error = await tokenResp.text();
-      await flowManager.failFlow(action_id, 'oauth', `Error exchanging code: ${error}`);
+      await flowManager.failFlow(identifier, 'oauth', `Error exchanging code: ${error}`);
       return res.status(tokenResp.status).send(`Error exchanging code: ${error}`);
     }
 
@@ -145,19 +146,19 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       },
     };
 
-    const existingToken = await findToken({ identifier: action_id });
+    const existingToken = await findToken({ identifier });
     if (existingToken) {
-      await updateToken({ identifier: action_id }, tokenData);
+      await updateToken({ identifier }, tokenData);
     } else {
       await createToken(tokenData);
     }
 
-    await flowManager.completeFlow(action_id, 'oauth', tokenJson);
+    await flowManager.completeFlow(identifier, 'oauth', tokenJson);
 
     res.send('Authentication successful. You can close this window and return to your chat.');
   } catch (error) {
     logger.error('Error in OAuth callback:', error);
-    await flowManager.failFlow(action_id, 'oauth', error);
+    await flowManager.failFlow(identifier, 'oauth', error);
     res.status(500).send('Authentication failed. Please try again.');
   }
 });

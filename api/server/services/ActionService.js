@@ -146,6 +146,8 @@ async function createActionTool({
     return null;
   }
 
+  const identifier = `${req.user.id}:${action.action_id}`;
+
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
     try {
@@ -180,7 +182,10 @@ async function createActionTool({
 
               const authUrl = `${metadata.auth.authorization_url}?${params.toString()}`;
               const id = toolCall.stepId;
+              // Clear the args to prevent the client from appending them to the current args
+              toolCall.args = '';
               delete toolCall.stepId;
+              /** @type {ToolCallDelta} */
               const data = {
                 id,
                 delta: {
@@ -192,7 +197,7 @@ async function createActionTool({
               };
               sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
               const flowManager = await getFlowStateManager(getLogStores);
-              const result = await flowManager.createFlow(action_id, 'oauth', {
+              const result = await flowManager.createFlow(identifier, 'oauth', {
                 state: stateToken,
                 userId: req.user.id,
                 clientId: metadata.oauth_client_id,
@@ -210,7 +215,7 @@ async function createActionTool({
           };
           // If OAuth, first check if we have a valid token
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
-            const tokenData = await findToken({ identifier: action_id });
+            const tokenData = await findToken({ identifier });
             if (!tokenData) {
               await requestLogin();
               // The flow.createFlow will pause here until OAuth completes or times out
