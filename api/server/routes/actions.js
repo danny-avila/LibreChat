@@ -112,19 +112,72 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
     res.send(`
       <!DOCTYPE html>
       <html>
-      <head>
+        <head>
           <title>Authentication Successful</title>
-      </head>
-      <body>
-          <p>Authentication successful. This window will close automatically in 3 seconds.</p>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+          <style>
+            body {
+              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont;
+              background-color: rgb(249, 250, 251);
+              margin: 0;
+              padding: 2rem;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              min-height: 100vh;
+            }
+            .card {
+              background-color: white;
+              border-radius: 0.5rem;
+              padding: 2rem;
+              max-width: 28rem;
+              width: 100%;
+              box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+              text-align: center;
+            }
+            .heading {
+              color: rgb(17, 24, 39);
+              font-size: 1.875rem;
+              font-weight: 700;
+              margin: 0 0 1rem;
+            }
+            .description {
+              color: rgb(75, 85, 99);
+              font-size: 0.875rem;
+              margin: 0.5rem 0;
+            }
+            .countdown {
+              color: rgb(99, 102, 241);
+              font-weight: 500;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1 class="heading">Authentication Successful</h1>
+            <p class="description">
+              Your authentication was successful. This window will close in 
+              <span class="countdown" id="countdown">3</span> seconds.
+            </p>
+          </div>
           <script>
-              setTimeout(function() {
-                  window.close();
-              }, 3000);
+            let secondsLeft = 3;
+            const countdownElement = document.getElementById('countdown');
+            
+            const countdown = setInterval(() => {
+              secondsLeft--;
+              countdownElement.textContent = secondsLeft;
+              
+              if (secondsLeft <= 0) {
+                clearInterval(countdown);
+                window.close();
+              }
+            }, 1000);
           </script>
-      </body>
+        </body>
       </html>
-      `);
+    `);
   } catch (error) {
     logger.error('Error in OAuth callback:', error);
     await flowManager.failFlow(identifier, 'oauth', error);
