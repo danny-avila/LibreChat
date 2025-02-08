@@ -1,8 +1,10 @@
+const axios = require('axios');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { createToken, findToken, updateToken } = require('~/models/Token');
 const { logger, getFlowStateManager } = require('~/config');
 const { decryptV2 } = require('~/server/utils/crypto');
+const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
@@ -51,7 +53,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
     const client_id = await decryptV2(flowState.metadata.clientId);
     const client_secret = await decryptV2(flowState.metadata.clientSecret);
 
-    const body = new URLSearchParams({
+    const params = new URLSearchParams({
       code,
       client_id,
       client_secret,
@@ -59,22 +61,27 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       redirect_uri: flowState.metadata.redirectUri,
     });
 
-    const tokenResp = await fetch(flowState.metadata.tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body,
-    });
-
-    if (!tokenResp.ok) {
-      const error = await tokenResp.text();
-      await flowManager.failFlow(identifier, 'oauth', `Error exchanging code: ${error}`);
-      return res.status(tokenResp.status).send(`Error exchanging code: ${error}`);
+    let tokenResp;
+    try {
+      tokenResp = await axios({
+        method: 'POST',
+        url: flowState.metadata.tokenUrl,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        data: params.toString(),
+      });
+    } catch (error) {
+      logAxiosError({
+        message: 'Error exchanging OAuth code',
+        error,
+      });
+      await flowManager.failFlow(identifier, 'oauth', `Error exchanging code: ${error?.message}`);
+      return res.status(tokenResp.status).send('Error exchanging code');
     }
 
-    const tokenJson = await tokenResp.json();
+    const tokenJson = tokenResp.data;
     const { access_token, refresh_token, expires_in } = tokenJson;
 
     const tokenData = {
