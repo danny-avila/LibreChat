@@ -1,0 +1,38 @@
+name: ESLint Code Quality Checks
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+      - release/*
+jobs:
+  eslint_checks:
+    name: Run ESLint Linting
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linters using installed ESLint
+        env:
+          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
+        run: npx eslint --config eslint.config.mjs --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif .
+        continue-on-error: true
+
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: eslint-results.sarif
+          wait-for-processing: true
