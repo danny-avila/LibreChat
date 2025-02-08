@@ -135,6 +135,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
 
     const tokenData = {
       identifier,
+      type: 'oauth',
       token: access_token,
       userId: decodedState.user,
       expiresIn: parseInt(expires_in, 10) || 3600,

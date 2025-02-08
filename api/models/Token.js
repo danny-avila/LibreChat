@@ -29,8 +29,7 @@ async function createToken(tokenData) {
       expiresAt,
     };
 
-    const newToken = new Token(newTokenData);
-    return await newToken.save();
+    return await Token.create(newTokenData);
   } catch (error) {
     logger.debug('An error occurred while creating token:', error);
     throw error;
