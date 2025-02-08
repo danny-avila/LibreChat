@@ -47,8 +47,8 @@ const Image = ({
   const { width: scaledWidth, height: scaledHeight } = useMemo(
     () =>
       scaleImage({
-        originalWidth: Number(placeholderDimensions?.width?.split('px')[0]) ?? width,
-        originalHeight: Number(placeholderDimensions?.height?.split('px')[0]) ?? height,
+        originalWidth: Number(placeholderDimensions?.width.split('px')[0]) ?? width,
+        originalHeight: Number(placeholderDimensions?.height.split('px')[0]) ?? height,
         containerRef,
       }),
     [placeholderDimensions, height, width],

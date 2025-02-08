@@ -25,12 +25,12 @@ export default function MultiMessage({
   }, [messagesTree?.length]);
 
   useEffect(() => {
-    if (messagesTree?.length && siblingIdx >= messagesTree?.length) {
+    if (messagesTree?.length && siblingIdx >= messagesTree.length) {
       setSiblingIdx(0);
     }
   }, [siblingIdx, messagesTree?.length, setSiblingIdx]);
 
-  if (!(messagesTree && messagesTree?.length)) {
+  if (!(messagesTree && messagesTree.length)) {
     return null;
   }
 

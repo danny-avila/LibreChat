@@ -70,7 +70,7 @@ const PromptForm = () => {
 
   const selectedPrompt = useMemo(
     () => (prompts.length > 0 ? prompts[selectionIndex] : undefined),
-    [prompts, /* eslint-disable-line react-hooks/exhaustive-deps */ selectionIndex],
+    [prompts,   selectionIndex],
   );
 
   const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();

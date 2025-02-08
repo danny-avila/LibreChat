@@ -8,7 +8,7 @@ export default function PromptCard({ promptGroup }: { promptGroup: TPromptGroup 
         <CategoryIcon className="size-4" category={promptGroup.category || ''} />
       </div>
       <p className="break-word line-clamp-3 text-balance text-gray-600 dark:text-gray-400">
-        {promptGroup?.oneliner || promptGroup?.productionPrompt?.prompt}
+        {promptGroup.oneliner || promptGroup.productionPrompt?.prompt}
       </p>
     </div>
   );

@@ -98,7 +98,7 @@ export default function useMentions({
             endpointsConfig,
           }),
         )
-        ?.filter(Boolean),
+        .filter(Boolean),
       [EModelEndpoint.azureAssistants]: listMap[EModelEndpoint.azureAssistants]
         ?.map(
           assistantMapFn({
@@ -107,7 +107,7 @@ export default function useMentions({
             endpointsConfig,
           }),
         )
-        ?.filter(Boolean),
+        .filter(Boolean),
     }),
     [listMap, assistantMap, endpointsConfig],
   );

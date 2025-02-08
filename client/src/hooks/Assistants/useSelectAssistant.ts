@@ -13,7 +13,7 @@ export default function useSelectAssistant(endpoint: AssistantsEndpoint) {
 
   const onSelect = useCallback(
     (value: string) => {
-      const assistant = assistantMap?.[endpoint]?.[value];
+      const assistant = assistantMap[endpoint]?.[value];
       if (!assistant) {
         return;
       }

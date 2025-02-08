@@ -27,7 +27,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     conversation ?? {};
 
   const currentList = useMemo(
-    () => Object.values(assistantListMap?.[endpoint ?? ''] ?? {}) as Assistant[],
+    () => Object.values(assistantListMap[endpoint ?? ''] ?? {}) as Assistant[],
     [assistantListMap, endpoint],
   );
 

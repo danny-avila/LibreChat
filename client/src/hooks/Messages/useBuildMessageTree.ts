@@ -31,9 +31,9 @@ export default function useBuildMessageTree() {
         for (const message of messages) {
           children.push(
             (await buildMessageTree({
-              messageId: message?.messageId,
+              messageId: message.messageId,
               message: message,
-              messages: message?.children || [],
+              messages: message.children || [],
               branches,
               recursive,
             })) as TMessage,
@@ -41,16 +41,16 @@ export default function useBuildMessageTree() {
         }
       } else {
         let message = messages[0];
-        if (messages?.length > 1) {
+        if (messages.length > 1) {
           const siblingIdx = await getSiblingIdx(messageId);
           message = messages[messages.length - siblingIdx - 1];
         }
 
         children = [
           (await buildMessageTree({
-            messageId: message?.messageId,
+            messageId: message.messageId,
             message: message,
-            messages: message?.children || [],
+            messages: message.children || [],
             branches,
             recursive,
           })) as TMessage,

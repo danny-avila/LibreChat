@@ -95,7 +95,7 @@ export const useAutoSave = ({
 
   const saveText = useCallback(
     (id: string) => {
-      if (!textAreaRef?.current) {
+      if (!textAreaRef.current) {
         return;
       }
       // Save the draft of the current conversation before switching

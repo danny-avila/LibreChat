@@ -11,7 +11,7 @@ export default function FilesListView() {
     <div className="bg-[#f9f9f9] p-0 lg:p-7">
       <div className="m-4 flex w-full flex-row justify-between md:m-2">
         <FilesSectionSelector />
-        {params?.fileId && (
+        {params.fileId && (
           <Button
             className="block lg:hidden"
             variant={'outline'}
