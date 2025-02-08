@@ -7,6 +7,38 @@ const { logger } = require('~/config');
  * @type {mongoose.Model}
  */
 const Token = mongoose.model('Token', tokenSchema);
+/**
+ * Fixes the indexes for the Token collection from legacy TTL indexes to the new expiresAt index.
+ */
+async function fixIndexes() {
+  try {
+    const indexes = await Token.collection.indexes();
+    logger.debug('Existing Token Indexes:', indexes);
+    const unwantedTTLIndexes = indexes.filter(
+      (index) => index.key.createdAt === 1 && index.expireAfterSeconds !== undefined,
+    );
+    for (const index of unwantedTTLIndexes) {
+      logger.debug(`Dropping unwanted Token index: ${index.name}`);
+      await Token.collection.dropIndex(index.name);
+      logger.debug(`Dropped Token index: ${index.name}`);
+    }
+    const hasExpiresAtIndex = indexes.some(
+      (index) => index.key.expiresAt === 1 && index.expireAfterSeconds === 0,
+    );
+    if (!hasExpiresAtIndex) {
+      logger.debug('Creating Token `expiresAt` TTL index.');
+      await Token.collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      logger.debug('Token `expiresAt` TTL index created.');
+    } else {
+      logger.debug('Token `expiresAt` TTL index already exists.');
+    }
+    logger.debug('Token index cleanup completed successfully.');
+  } catch (error) {
+    logger.error('An error occurred while fixing Token indexes:', error);
+  }
+}
+
+fixIndexes();
 
 /**
  * Creates a new Token instance.
