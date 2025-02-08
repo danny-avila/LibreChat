@@ -134,9 +134,9 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
     const { access_token, refresh_token, expires_in } = tokenJson;
 
     const tokenData = {
-      userId: decodedState.user,
-      identifier: action_id,
+      identifier,
       token: access_token,
+      userId: decodedState.user,
       expiresIn: parseInt(expires_in, 10) || 3600,
       metadata: {
         refreshToken: refresh_token,
@@ -146,7 +146,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       },
     };
 
-    const existingToken = await findToken({ identifier });
+    const existingToken = await findToken({ userId: decodedState.user, identifier });
     if (existingToken) {
       await updateToken({ identifier }, tokenData);
     } else {
