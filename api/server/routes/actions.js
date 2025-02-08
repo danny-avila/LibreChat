@@ -4,6 +4,7 @@ const { nanoid } = require('nanoid');
 const { createToken, findToken, updateToken } = require('~/models/Token');
 const { decryptMetadata } = require('~/server/services/ActionService');
 const { logger, getFlowStateManager } = require('~/config');
+const { decryptV2 } = require('~/server/utils/crypto');
 const { getActions } = require('~/models/Action');
 const { getLogStores } = require('~/cache');
 
@@ -107,12 +108,15 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       throw new Error('OAuth flow not found');
     }
 
+    const client_id = await decryptV2(flowState.metadata.clientId);
+    const client_secret = await decryptV2(flowState.metadata.clientSecret);
+
     const body = new URLSearchParams({
-      client_id: flowState.metadata.clientId,
-      client_secret: flowState.metadata.clientSecret,
       code,
-      redirect_uri: flowState.metadata.redirectUri,
+      client_id,
+      client_secret,
       grant_type: 'authorization_code',
+      redirect_uri: flowState.metadata.redirectUri,
     });
 
     const tokenResp = await fetch(flowState.metadata.tokenUrl, {
@@ -141,9 +145,10 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       expiresIn: parseInt(expires_in, 10) || 3600,
       metadata: {
         refreshToken: refresh_token,
+        tokenUrl: flowState.metadata.tokenUrl,
+        /** Encrypted */
         clientId: flowState.metadata.clientId,
         clientSecret: flowState.metadata.clientSecret,
-        tokenUrl: flowState.metadata.tokenUrl,
       },
     };
 
