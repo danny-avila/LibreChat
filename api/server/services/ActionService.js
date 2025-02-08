@@ -215,7 +215,7 @@ async function createActionTool({
           };
           // If OAuth, first check if we have a valid token
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
-            const tokenData = await findToken({ identifier });
+            const tokenData = await findToken({ userId: req.user.id, identifier });
             if (!tokenData) {
               await requestLogin();
               // The flow.createFlow will pause here until OAuth completes or times out
