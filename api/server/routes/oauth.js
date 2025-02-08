@@ -4,6 +4,7 @@ const passport = require('passport');
 const { loginLimiter, checkBan, checkDomainAllowed } = require('~/server/middleware');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const { chooseOpenIdStrategy } = require('~/server/utils/openidHelper');
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ const oauthHandler = async (req, res) => {
 
 router.get('/error', (req, res) => {
   // A single error message is pushed by passport when authentication fails.
-  logger.error('Error in OAuth authentication:', { message: req.session.messages.pop() });
+  logger.error('Error in OAuth authentication:', { message: req.session?.messages?.pop() });
   res.redirect(`${domains.client}/login`);
 });
 
@@ -83,20 +84,32 @@ router.get(
 /**
  * OpenID Routes
  */
-router.get(
-  '/openid',
-  passport.authenticate('openid', {
-    session: false,
-  }),
-);
+router.get('/openid', async (req, res, next) => {
+  try {
+    const strategy = await chooseOpenIdStrategy(req);
+    console.log('OpenID login using strategy:', strategy);
+    passport.authenticate(strategy, {
+      session: false,
+    })(req, res, next);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get(
   '/openid/callback',
-  passport.authenticate('openid', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
+  async (req, res, next) => {
+    try {
+      const strategy = await chooseOpenIdStrategy(req);
+      passport.authenticate(strategy, {
+        failureRedirect: `${domains.client}/oauth/error`,
+        failureMessage: true,
+        session: false,
+      })(req, res, next);
+    } catch (err) {
+      next(err);
+    }
+  },
   oauthHandler,
 );
 
