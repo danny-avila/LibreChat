@@ -1,6 +1,3 @@
-// types/flows.ts
-
-// flowStateManager.ts
 import Keyv from 'keyv';
 import type { Logger } from 'winston';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
@@ -9,6 +6,7 @@ export class FlowStateManager {
   private keyv: Keyv;
   private ttl: number;
   private logger: Logger;
+  private intervals: Set<NodeJS.Timeout>;
 
   private static getDefaultLogger(): Logger {
     return {
@@ -32,6 +30,22 @@ export class FlowStateManager {
     this.keyv = store;
     this.ttl = ttl;
     this.logger = logger || FlowStateManager.getDefaultLogger();
+    this.intervals = new Set();
+    this.setupCleanupHandlers();
+  }
+
+  private setupCleanupHandlers() {
+    const cleanup = () => {
+      this.logger.info('Cleaning up FlowStateManager intervals...');
+      this.intervals.forEach((interval) => clearInterval(interval));
+      this.intervals.clear();
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
+    process.on('SIGQUIT', cleanup);
+    process.on('SIGHUP', cleanup);
   }
 
   private getFlowKey(flowId: string, type: string): string {
@@ -63,12 +77,14 @@ export class FlowStateManager {
 
         if (!flowState) {
           clearInterval(intervalId);
+          this.intervals.delete(intervalId);
           reject(new Error(`${type} flow timed out`));
           return;
         }
 
         if (flowState.status !== 'PENDING') {
           clearInterval(intervalId);
+          this.intervals.delete(intervalId);
           await this.keyv.delete(flowKey);
 
           if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
@@ -81,10 +97,13 @@ export class FlowStateManager {
         elapsedTime += checkInterval;
         if (elapsedTime >= this.ttl) {
           clearInterval(intervalId);
+          this.intervals.delete(intervalId);
           await this.keyv.delete(flowKey);
           reject(new Error(`${type} flow timed out`));
         }
       }, checkInterval);
+
+      this.intervals.add(intervalId);
     });
   }
 
