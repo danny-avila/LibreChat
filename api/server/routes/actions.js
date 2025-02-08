@@ -1,72 +1,12 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { nanoid } = require('nanoid');
 const { createToken, findToken, updateToken } = require('~/models/Token');
-const { decryptMetadata } = require('~/server/services/ActionService');
 const { logger, getFlowStateManager } = require('~/config');
 const { decryptV2 } = require('~/server/utils/crypto');
-const { getActions } = require('~/models/Action');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
-
-/**
- * @typedef {Object} OAuthTokens
- * @property {string} access_token
- * @property {string} refresh_token
- * @property {number} expires_in
- */
-
-/**
- * Initiates OAuth login flow for the specified action.
- *
- * @route GET /actions/:action_id/oauth/login
- * @param {string} req.params.action_id - The ID of the action.
- * @returns {void} Redirects the user to the OAuth provider's login URL.
- */
-router.get('/:action_id/oauth/login', async (req, res) => {
-  const { action_id } = req.params;
-  const [action] = await getActions({ action_id }, true);
-  if (!action) {
-    return res.status(404).send('Action not found');
-  }
-
-  let metadata = await decryptMetadata(action.metadata);
-
-  const statePayload = {
-    nonce: nanoid(),
-    action_id,
-  };
-
-  const stateToken = jwt.sign(statePayload, JWT_SECRET, { expiresIn: '10m' });
-
-  try {
-    const flowManager = await getFlowStateManager(getLogStores);
-    await flowManager.createFlow(action_id, 'oauth', {
-      state: stateToken,
-      userId: action.userId,
-      clientId: metadata.oauth_client_id,
-      clientSecret: metadata.oauth_client_secret,
-      redirectUri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
-      tokenUrl: action.metadata.auth.client_url,
-    });
-
-    const redirectUri = `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`;
-    const params = new URLSearchParams({
-      client_id: metadata.oauth_client_id,
-      redirect_uri: redirectUri,
-      scope: action.metadata.auth.scope,
-      state: stateToken,
-    });
-
-    const authUrl = `${action.metadata.auth.authorization_url}?${params.toString()}`;
-    res.redirect(authUrl);
-  } catch (error) {
-    logger.error('Error initiating OAuth flow:', error);
-    res.status(500).send('Failed to initiate OAuth flow');
-  }
-});
 
 /**
  * Handles the OAuth callback and exchanges the authorization code for tokens.
