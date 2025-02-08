@@ -2,8 +2,8 @@ const axios = require('axios');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { createToken, findToken, updateToken } = require('~/models/Token');
+const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { logger, getFlowStateManager } = require('~/config');
-const { decryptV2 } = require('~/server/utils/crypto');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 
@@ -83,15 +83,16 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
 
     const tokenJson = tokenResp.data;
     const { access_token, refresh_token, expires_in } = tokenJson;
-
+    const token = await encryptV2(access_token);
+    const refreshToken = await encryptV2(refresh_token);
     const tokenData = {
+      token,
       identifier,
       type: 'oauth',
-      token: access_token,
       userId: decodedState.user,
       expiresIn: parseInt(expires_in, 10) || 3600,
       metadata: {
-        refreshToken: refresh_token,
+        refreshToken,
         tokenUrl: flowState.metadata.tokenUrl,
         /** Encrypted */
         clientId: flowState.metadata.clientId,

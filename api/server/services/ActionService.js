@@ -230,9 +230,9 @@ async function createActionTool({
               await requestLogin();
             } else {
               // Valid token exists, add it to metadata for setAuth
-              metadata.oauth_access_token = tokenData.token;
+              metadata.oauth_access_token = await decryptV2(tokenData.token);
               if (tokenData.metadata) {
-                metadata.oauth_refresh_token = tokenData.metadata.refreshToken;
+                metadata.oauth_refresh_token = await decryptV2(tokenData.metadata.refreshToken);
               }
               metadata.oauth_token_expires_at = tokenData.expiresAt.toISOString();
             }
