@@ -6,7 +6,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
-import { TranslationKeys } from '~/hooks';
+import type { TranslationKeys } from '~/hooks';
 
 export type CodeBarProps = {
   lang: string;
