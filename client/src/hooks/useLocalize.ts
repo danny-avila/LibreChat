@@ -18,7 +18,7 @@ export default function useLocalize() {
   }, [lang, i18n]);
 
   const memoizedLocalize = useCallback(
-    (phraseKey: TranslationKeys, options?: TOptions) => t(phraseKey, options),
+    (phraseKey: TranslationKeys | string, options?: TOptions) => t(phraseKey, options),
     [t],
   );
 

@@ -41,7 +41,6 @@ const Conversations = ({
                   paddingLeft: '10px',
                 }}
               >
-                { }
                 {localize(groupName) || groupName}
               </div>
               {convos.map((convo, i) => (
