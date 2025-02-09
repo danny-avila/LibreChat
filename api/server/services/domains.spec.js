@@ -57,6 +57,51 @@ describe('isEmailDomainAllowed', () => {
     const result = await isEmailDomainAllowed(email);
     expect(result).toBe(false);
   });
+
+  it('should return true if disableFakeEmails is false and domain is temporary', async () => {
+    const email = 'user@mailinator.com';
+    getCustomConfig.mockResolvedValue({
+      registration: {
+        disableFakeEmails: false,
+      },
+    });
+    const result = await isEmailDomainAllowed(email);
+    expect(result).toBe(true);
+  });
+
+  it('should return false if disableFakeEmails is true and domain is temporary', async () => {
+    const email = 'user@mailinator.com';
+    getCustomConfig.mockResolvedValue({
+      registration: {
+        disableFakeEmails: true,
+      },
+    });
+    const result = await isEmailDomainAllowed(email);
+    expect(result).toBe(false);
+  });
+
+  it('should return true if disableFakeEmails is true and domain is safe', async () => {
+    const email = 'user@domain1.com';
+    getCustomConfig.mockResolvedValue({
+      registration: {
+        disableFakeEmails: true,
+      },
+    });
+    const result = await isEmailDomainAllowed(email);
+    expect(result).toBe(true);
+  });
+
+  it('should return false if disableFakeEmails is true, domain is temporary and is included in allowedDomains', async () => {
+    const email = 'user@domain1.com';
+    getCustomConfig.mockResolvedValue({
+      registration: {
+        disableFakeEmails: true,
+        allowedDomains: ['mailinator.com'],
+      },
+    });
+    const result = await isEmailDomainAllowed(email);
+    expect(result).toBe(false);
+  });
 });
 
 describe('isActionDomainAllowed', () => {

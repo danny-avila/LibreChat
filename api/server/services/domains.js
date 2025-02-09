@@ -16,13 +16,25 @@ async function isEmailDomainAllowed(email) {
   }
 
   const customConfig = await getCustomConfig();
-  if (!customConfig) {
+  // If no custom config or no registration restrictions, allow all domains
+  if (!customConfig || !customConfig.registration) {
     return true;
-  } else if (!customConfig?.registration?.allowedDomains) {
+  }
+  const { allowedDomains, disableFakeEmails } = customConfig.registration;
+  // If no domain restrictions are configured
+  if (!allowedDomains && !disableFakeEmails) {
     return true;
   }
 
-  return customConfig.registration.allowedDomains.includes(domain);
+  if (allowedDomains && !allowedDomains.includes(domain)) {
+    return false;
+  }
+
+  if (disableFakeEmails && isFakeDomain(domain)) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
