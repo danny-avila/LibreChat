@@ -38,7 +38,7 @@ export default function HideSequential() {
             type="button"
             className="flex items-center space-x-2"
             onClick={() =>
-              // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+
               setValue(
                 AgentCapabilities.hide_sequential_outputs,
                 !getValues(AgentCapabilities.hide_sequential_outputs),

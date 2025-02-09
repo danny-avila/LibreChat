@@ -35,7 +35,7 @@ export default function usePromptGroupsNav() {
   }, [pageSize, name, category, setPageNumber]);
 
   const promptGroups = useMemo(() => {
-    return groupsQuery?.data?.pages?.[pageNumber - 1 + '']?.promptGroups || [];
+    return groupsQuery.data?.pages[pageNumber - 1 + '']?.promptGroups || [];
   }, [groupsQuery.data, pageNumber]);
 
   const nextPage = () => {
