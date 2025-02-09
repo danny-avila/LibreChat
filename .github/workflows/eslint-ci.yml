@@ -5,6 +5,7 @@ on:
       - main
       - dev
       - release/*
+
 jobs:
   eslint_checks:
     name: Run ESLint Linting
@@ -17,41 +18,55 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Ensure full git history so that git diff works
+          fetch-depth: 0
 
-      - name: Use Node.js 20.x
+      - name: Set up Node.js 20.x
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      # Use a paths filter to detect changes in JavaScript/TypeScript files.
+      - name: Filter changed files for ESLint
+        id: file_filter
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            eslint:
+              - '**/*.js'
+              - '**/*.jsx'
+              - '**/*.ts'
+              - '**/*.tsx'
+
+      # Run ESLint only if relevant files changed.
       - name: Run ESLint on changed files
+        if: steps.file_filter.outputs.eslint == 'true'
         env:
           SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
         run: |
           # Extract the base commit SHA from the pull_request event payload.
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           echo "Base commit SHA: $BASE_SHA"
-
+          
           # List files changed between the base commit and current HEAD.
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" HEAD)
-          echo "Changed files: $CHANGED_FILES"
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" HEAD | grep -E '\.(js|jsx|ts|tsx)$')
+          echo "Files to lint:"
+          echo "$CHANGED_FILES"
+          
+          # Run ESLint on the changed files.
+          npx eslint --no-error-on-unmatched-pattern \
+            --config eslint.config.mjs \
+            --format @microsoft/eslint-formatter-sarif \
+            --output-file eslint-results.sarif $CHANGED_FILES || true
 
-          # Filter only JavaScript/TypeScript files (adjust regex as needed).
-          ESLINT_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(js|jsx|ts|tsx)$' || true)
-
-          if [ -z "$ESLINT_FILES" ]; then
-            echo "No JavaScript/TypeScript files changed. Skipping ESLint."
-            # Create an empty SARIF file to satisfy the upload step.
-            echo '{"version": "2.1.0", "runs": []}' > eslint-results.sarif
-          else
-            echo "Running ESLint on files:"
-            echo "$ESLINT_FILES"
-            npx eslint --no-error-on-unmatched-pattern --config eslint.config.mjs --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif $ESLINT_FILES || true
-          fi
+      # If no JavaScript/TypeScript files changed, create an empty SARIF file.
+      - name: Create empty SARIF results file
+        if: steps.file_filter.outputs.eslint != 'true'
+        run: |
+          echo '{"version": "2.1.0", "runs": []}' > eslint-results.sarif
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v3
