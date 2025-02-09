@@ -20,7 +20,7 @@ export type ConversationListParams = {
 
 export type MinimalConversation = Pick<
   s.TConversation,
-  'conversationId' | 'endpoint' | 'title' | 'updatedAt' | 'user'
+  'conversationId' | 'endpoint' | 'title' | 'createdAt' | 'updatedAt' | 'user'
 >;
 
 export type ConversationListResponse = {
