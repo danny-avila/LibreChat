@@ -19,6 +19,8 @@ import type {
   TPlugin,
   ConversationListResponse,
   ConversationListParams,
+  SearchConversationListResponse,
+  SearchConversationListParams,
   Assistant,
   AssistantListParams,
   AssistantListResponse,
@@ -93,19 +95,22 @@ export const useGetConvoIdQuery = (
 };
 
 export const useSearchInfiniteQuery = (
-  params?: ConversationListParams & { searchQuery?: string },
-  config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
+  params?: SearchConversationListParams,
+  config?: UseInfiniteQueryOptions<SearchConversationListResponse, unknown>,
 ) => {
-  return useInfiniteQuery<ConversationListResponse, unknown>(
-    [QueryKeys.searchConversations, params], // Include the searchQuery in the query key
-    ({ pageParam = '1' }) =>
-      dataService.listConversationsByQuery({ ...params, pageNumber: pageParam }),
+  return useInfiniteQuery<SearchConversationListResponse, unknown>(
+    [QueryKeys.searchConversations, params],
+    ({ pageParam = null }) =>
+      dataService
+        .listConversationsByQuery({
+          ...params,
+          nextCursor: pageParam,
+          pageSize: params?.pageSize ?? 20,
+          search: params?.search ?? '',
+        })
+        .then((res) => ({ ...res })) as Promise<SearchConversationListResponse>,
     {
-      getNextPageParam: (lastPage) => {
-        const currentPageNumber = Number(lastPage.pageNumber);
-        const totalPages = Number(lastPage.pages);
-        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
-      },
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

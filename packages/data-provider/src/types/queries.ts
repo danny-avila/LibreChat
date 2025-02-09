@@ -28,6 +28,20 @@ export type ConversationListResponse = {
   nextCursor: string | null;
 };
 
+export type SearchConversationListParams = {
+  nextCursor?: string | null;
+  pageSize?: number;
+  search: string;
+};
+
+export type SearchConversation = Pick<s.TConversation, 'conversationId' | 'title' | 'user'>;
+
+export type SearchConversationListResponse = {
+  conversations: SearchConversation[];
+  messages: s.TMessage[];
+  nextCursor: string | null;
+};
+
 export type ConversationData = InfiniteData<ConversationListResponse>;
 export type ConversationUpdater = (
   data: ConversationData,

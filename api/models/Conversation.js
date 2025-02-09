@@ -189,13 +189,12 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
-  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 25) => {
+  getConvosQueried: async (user, convoIds, cursor = null, limit = 25) => {
     try {
       if (!convoIds || convoIds.length === 0) {
-        return { conversations: [], pages: 1, pageNumber, pageSize };
+        return { conversations: [], nextCursor: null, convoMap: {} };
       }
 
-      const cache = {};
       const convoMap = {};
       const promises = [];
 
@@ -209,28 +208,33 @@ module.exports = {
         ),
       );
 
+      // Fetch all matching conversations and filter out any falsy results
       const results = (await Promise.all(promises)).filter(Boolean);
 
-      results.forEach((convo, i) => {
-        const page = Math.floor(i / pageSize) + 1;
-        if (!cache[page]) {
-          cache[page] = [];
-        }
-        cache[page].push(convo);
+      // Sort conversations by updatedAt descending (most recent first)
+      results.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+      // If a cursor is provided and not "start", filter out recrods newer or equal to the cursor date
+      let filtered = results;
+      if (cursor && cursor !== 'start') {
+        const cursorDate = new Date(cursor);
+        filtered = results.filter((convo) => new Date(convo.updatedAt) < cursorDate);
+      }
+
+      // Retrieve limit + 1 results to determine if there's a next page.
+      const limited = filtered.slice(0, limit + 1);
+      let nextCursor = null;
+      if (limited.length > limit) {
+        const lastConvo = limited.pop();
+        nextCursor = lastConvo.updatedAt.toISOString();
+      }
+
+      // Build convoMap for ease of access if required by caller
+      limited.forEach((convo) => {
         convoMap[convo.conversationId] = convo;
       });
 
-      const totalPages = Math.ceil(results.length / pageSize);
-      cache.pages = totalPages;
-      cache.pageSize = pageSize;
-      return {
-        cache,
-        conversations: cache[pageNumber] || [],
-        pages: totalPages || 1,
-        pageNumber,
-        pageSize,
-        convoMap,
-      };
+      return { conversations: limited, nextCursor, convoMap };
     } catch (error) {
       logger.error('[getConvosQueried] Error getting conversations', error);
       return { message: 'Error fetching conversations' };
