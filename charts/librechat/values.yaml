@@ -141,7 +141,7 @@ config:
     DEBUG_PLUGINS: "true"
     DOMAIN_CLIENT: "https://bai.getbalance.com"
     DOMAIN_SERVER: "https://bai.getbalance.com"
-    ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
+    ENDPOINTS: "bedrock"
     SEARCH: false
     BEDROCK_AWS_DEFAULT_REGION: "us-east-2"
     BEDROCK_AWS_ACCESS_KEY_ID: ""
