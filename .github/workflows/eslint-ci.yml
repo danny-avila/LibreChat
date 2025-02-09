@@ -50,7 +50,7 @@ jobs:
           else
             echo "Running ESLint on files:"
             echo "$ESLINT_FILES"
-            npx eslint --config eslint.config.mjs --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif $ESLINT_FILES || true
+            npx eslint --no-error-on-unmatched-pattern --config eslint.config.mjs --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif $ESLINT_FILES || true
           fi
 
       - name: Upload analysis results to GitHub
