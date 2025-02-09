@@ -11,7 +11,7 @@ export default function FilesListView() {
     <div className="bg-[#f9f9f9] p-0 lg:p-7">
       <div className="m-4 flex w-full flex-row justify-between md:m-2">
         <FilesSectionSelector />
-        {params.fileId && (
+        {params.fileId != null && params.fileId && (
           <Button
             className="block lg:hidden"
             variant={'outline'}
@@ -27,14 +27,14 @@ export default function FilesListView() {
       <div className="flex w-full flex-row divide-x">
         <div
           className={`mr-2 w-full xl:w-1/3 ${
-            params.fileId ? 'hidden w-1/2 lg:block lg:w-1/2' : 'md:w-full'
+            params.fileId != null && params.fileId ? 'hidden w-1/2 lg:block lg:w-1/2' : 'md:w-full'
           }`}
         >
           <FileSidePanel />
         </div>
         <div
           className={`h-[85vh] w-full overflow-y-auto xl:w-2/3 ${
-            params.fileId ? 'lg:w-1/2' : 'hidden md:w-1/2 lg:block'
+            params.fileId != null && params.fileId ? 'lg:w-1/2' : 'hidden md:w-1/2 lg:block'
           }`}
         >
           <Outlet />
