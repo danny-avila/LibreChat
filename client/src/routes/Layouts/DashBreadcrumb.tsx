@@ -67,7 +67,7 @@ export default function DashBreadcrumb() {
               className="flex flex-row items-center gap-1"
               onClick={chatLinkHandler}
             >
-              <ArrowLeft className="icon-xs" />
+              <ArrowLeft className="icon-xs" aria-hidden="true" />
               <span className="hidden md:flex">{localize('com_ui_back_to_chat')}</span>
               <span className="flex md:hidden">{localize('com_ui_chat')}</span>
             </BreadcrumbLink>
@@ -98,7 +98,7 @@ export default function DashBreadcrumb() {
               className="flex flex-row items-center gap-1"
               onClick={promptsLinkHandler}
             >
-              <MessageSquareQuote className="h-4 w-4 dark:text-gray-300" />
+              <MessageSquareQuote className="h-4 w-4 dark:text-gray-300" aria-hidden="true" />
               {localize('com_ui_prompts')}
             </BreadcrumbLink>
           </BreadcrumbItem>

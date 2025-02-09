@@ -69,6 +69,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     <div
       data-testid="convo-icon"
       title={name}
+      aria-hidden="true"
       style={{
         width: size,
         height: size,
