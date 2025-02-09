@@ -216,7 +216,9 @@ export default function Fork({
                       <span>{localize('com_ui_fork_info_1')}</span>
                       <span>{localize('com_ui_fork_info_2')}</span>
                       <span>
-                        {localize('com_ui_fork_info_3', { 0: localize('com_ui_fork_split_target') })}
+                        {localize('com_ui_fork_info_3', {
+                          0: localize('com_ui_fork_split_target'),
+                        })}
                       </span>
                     </div>
                   </HoverCardContent>
@@ -233,7 +235,7 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <GitCommit className="h-5 w-5 rotate-90" />
-                    {localize(optionLabels[ForkOptions.DIRECT_PATH]as TranslationKeys)}
+                    {localize(optionLabels[ForkOptions.DIRECT_PATH] as TranslationKeys)}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_visible')}
@@ -269,9 +271,9 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <ListTree className="h-5 w-5" />
-                    {`${localize(optionLabels[ForkOptions.TARGET_LEVEL] as TranslationKeys)} (${localize(
-                      'com_endpoint_default',
-                    )})`}
+                    {`${localize(
+                      optionLabels[ForkOptions.TARGET_LEVEL] as TranslationKeys,
+                    )} (${localize('com_endpoint_default')})`}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_target')}
