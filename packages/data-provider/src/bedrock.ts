@@ -25,7 +25,7 @@ export const bedrockInputSchema = s.tConversationSchema
     topK: true,
     additionalModelRequestFields: true,
   })
-  .transform(s.removeNullishValues)
+  .transform((obj) => s.removeNullishValues(obj))
   .catch(() => ({}));
 
 export type BedrockConverseInput = z.infer<typeof bedrockInputSchema>;
