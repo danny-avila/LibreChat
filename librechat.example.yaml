@@ -125,7 +125,7 @@ mcpServers:
       - -y
       - "@modelcontextprotocol/server-filesystem"
       - /home/user/LibreChat/
-    iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+    iconPath: /home/user/LibreChat/client/public/assets/logo.png
   mcp-obsidian:
     command: npx
     args:

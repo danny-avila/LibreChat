@@ -144,13 +144,13 @@ export default function Conversation({
   return (
     <div
       className={cn(
-        'group relative mt-2 flex h-9 w-full items-center rounded-lg hover:bg-surface-active-alt',
-        isActiveConvo ? 'bg-surface-active-alt' : '',
+        'group relative mt-2 flex h-9 w-full items-center rounded-lg',
+        isActiveConvo ? 'bg-surface-active hover:bg-surface-active text-white' : 'hover:bg-surface-active-alt',
         isSmallScreen ? 'h-12' : '',
       )}
     >
       {renaming ? (
-        <div className="absolute inset-0 z-20 flex w-full items-center rounded-lg bg-surface-active-alt p-1.5">
+        <div className="absolute inset-0 z-20 flex w-full items-center rounded-lg bg-surface-active p-1.5">
           <input
             ref={inputRef}
             type="text"
@@ -188,7 +188,7 @@ export default function Conversation({
           onClick={clickHandler}
           className={cn(
             'flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg px-2 py-2',
-            isActiveConvo ? 'bg-surface-active-alt' : '',
+            isActiveConvo ? 'bg-surface-active' : '',
           )}
           title={title ?? ''}
         >
@@ -197,6 +197,9 @@ export default function Conversation({
             endpointsConfig={endpointsConfig}
             size={20}
             context="menu-item"
+            iconClassName={cn(
+              isActiveConvo ? 'text-white' : '',
+            )}
           />
           <div
             className="relative line-clamp-1 flex-1 grow overflow-hidden"

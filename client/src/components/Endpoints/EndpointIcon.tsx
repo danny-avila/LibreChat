@@ -13,6 +13,7 @@ export default function EndpointIcon({
   conversation,
   endpointsConfig,
   className = 'mr-0',
+  iconClassName = '',
   assistantMap,
   context,
 }: {
@@ -22,6 +23,7 @@ export default function EndpointIcon({
   context?: 'message' | 'nav' | 'landing' | 'menu-item';
   assistantMap?: TAssistantsMap;
   className?: string;
+  iconClassName?: string;
   size?: number;
 }) {
   const convoIconURL = conversation?.iconURL ?? '';
@@ -60,6 +62,7 @@ export default function EndpointIcon({
         model={conversation?.model}
         error={false}
         className={className}
+        iconClassName={iconClassName}
         isCreatedByUser={false}
         chatGptLabel={undefined}
         modelLabel={undefined}
