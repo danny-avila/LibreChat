@@ -59,8 +59,8 @@ jobs:
           echo "Base commit SHA: $BASE_SHA"
           
           # List files changed between the base commit and current HEAD,
-          # but only include files that are added or modified.
-          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD | grep -E '\.(js|jsx|ts|tsx)$')
+          # but only include files that are not deleted (ACMRTUXB: A, C, M, R, T, U, X, B).
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '\.(js|jsx|ts|tsx)$')
           echo "Files to lint:"
           echo "$CHANGED_FILES"
           
