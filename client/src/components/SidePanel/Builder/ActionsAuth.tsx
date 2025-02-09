@@ -226,16 +226,16 @@ const OAuth = () => {
       <label className="mb-1 block text-sm font-medium">Client ID</label>
       <input
         placeholder="<HIDDEN>"
-        type="new-password"
-        autoComplete="off"
+        type="password"
+        autoComplete="new-password"
         className={inputClasses}
         {...register('oauth_client_id', { required: false })}
       />
       <label className="mb-1 block text-sm font-medium">Client Secret</label>
       <input
         placeholder="<HIDDEN>"
-        type="new-password"
-        autoComplete="off"
+        type="password"
+        autoComplete="new-password"
         className={inputClasses}
         {...register('oauth_client_secret', { required: false })}
       />
