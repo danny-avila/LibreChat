@@ -1,7 +1,7 @@
 name: Question
 description: Ask your question
 title: "[Question]: "
-labels: ["❓question"]
+labels: ["❓ question"]
 body:
   - type: markdown
     attributes:
