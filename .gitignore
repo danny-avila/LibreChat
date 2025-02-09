@@ -108,6 +108,6 @@ uploads/
 release/
 
 # Helm
-helm/**/Chart.lock
+helm/librechat/Chart.lock
 helm/**/charts/
 helm/**/.values.yaml
