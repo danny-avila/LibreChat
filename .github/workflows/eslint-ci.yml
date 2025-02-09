@@ -41,12 +41,6 @@ jobs:
               - added|modified: '**/*.jsx'
               - added|modified: '**/*.ts'
               - added|modified: '**/*.tsx'
-            # Example of shared filters (optional)
-            shared: &shared
-              - common/**
-              - config/**
-            addedOrModifiedAnchors:
-              - added|modified: *shared
 
       # Run ESLint only if relevant files have been added or modified.
       - name: Run ESLint on changed files
