@@ -94,6 +94,7 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+CONFIG_PATH: /app/librechat.yaml
 
 config:
   envSecrets:

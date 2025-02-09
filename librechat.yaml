@@ -71,7 +71,7 @@ interface:
 registration:
   socialLogins: ['github', 'google']
   allowedDomains:
-  - "getbalance.com"
+    - "getbalance.com"
 
 modelSpecs:
   enforce: true
@@ -83,7 +83,9 @@ modelSpecs:
     #   description: "Balance ChatGPT replacement"
     #   preset:
     #     endpoint: "bedrock"
-    #     model: "arn:aws:bedrock:us-east-2:576137783778:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
+    #     model:
+    #       "arn:aws:bedrock:us-east-2:576137783778:inference-profile/
+    #        us.anthropic.claude-3-haiku-20240307-v1:0"
     #     maxContextTokens: 128000 # Maximum context tokens
     #     max_tokens: 4096 # Maximum output tokens
     #     temperature: 0.5
