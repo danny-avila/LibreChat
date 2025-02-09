@@ -1,6 +1,10 @@
 name: Create Translation PR on Version Published
 
 on:
+#  testing
+  pull_request:
+    branches:
+      - main
   push:
     branches: [main]
   repository_dispatch:
@@ -8,8 +12,7 @@ on:
 
 jobs:
   createPullRequest:
-    name: Test2 (conditional step)
-    if: github.event.client_payload.payload.version == 'latest'
+    name: Create Translation PR on Version Published
     runs-on: ubuntu-latest
     permissions:
       contents: write
