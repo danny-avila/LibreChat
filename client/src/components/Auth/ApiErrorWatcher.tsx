@@ -6,7 +6,7 @@ const ApiErrorWatcher = () => {
   const { error } = useApiErrorBoundary();
   const navigate = useNavigate();
   React.useEffect(() => {
-    if (error.response?.status === 500) {
+    if (error?.response?.status === 500) {
       // do something with error
       // navigate('/login');
     }
