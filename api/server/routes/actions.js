@@ -1,10 +1,7 @@
-const axios = require('axios');
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { getAccessToken } = require('~/server/services/TokenService');
 const { logger, getFlowStateManager } = require('~/config');
-const { handleOAuthToken } = require('~/models/Token');
-const { decryptV2 } = require('~/server/utils/crypto');
-const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
@@ -24,7 +21,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
   const { code, state } = req.query;
 
   const flowManager = await getFlowStateManager(getLogStores);
-  let identifier = `${action_id}`;
+  let identifier = action_id;
   try {
     let decodedState;
     try {
@@ -44,72 +41,22 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       return res.status(400).send('Invalid user ID in state parameter');
     }
     identifier = `${decodedState.user}:${action_id}`;
-
     const flowState = await flowManager.getFlowState(identifier, 'oauth');
     if (!flowState) {
       throw new Error('OAuth flow not found');
     }
 
-    const client_id = await decryptV2(flowState.metadata.clientId);
-    const client_secret = await decryptV2(flowState.metadata.clientSecret);
-
-    const params = new URLSearchParams({
+    const tokenData = await getAccessToken({
       code,
-      client_id,
-      client_secret,
-      grant_type: 'authorization_code',
-      redirect_uri: flowState.metadata.redirectUri,
-    });
-
-    let tokenResp;
-    try {
-      tokenResp = await axios({
-        method: 'POST',
-        url: flowState.metadata.tokenUrl,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-        },
-        data: params.toString(),
-      });
-    } catch (error) {
-      logAxiosError({
-        message: 'Error exchanging OAuth code',
-        error,
-      });
-      await flowManager.failFlow(identifier, 'oauth', `Error exchanging code: ${error?.message}`);
-      return res.status(tokenResp.status).send('Error exchanging code');
-    }
-
-    const tokenJson = tokenResp.data;
-    const { access_token, expires_in, refresh_token, refresh_token_expires_in } = tokenJson;
-    const metadata = {
-      tokenUrl: flowState.metadata.tokenUrl,
-      /** Encrypted */
-      clientId: flowState.metadata.clientId,
-      clientSecret: flowState.metadata.clientSecret,
-    };
-    await handleOAuthToken({
-      identifier,
-      token: access_token,
-      expiresIn: expires_in,
       userId: decodedState.user,
-      metadata,
+      identifier,
+      client_url: flowState.metadata.client_url,
+      redirect_uri: flowState.metadata.redirect_uri,
+      /** Encrypted values */
+      encrypted_oauth_client_id: flowState.metadata.encrypted_oauth_client_id,
+      encrypted_oauth_client_secret: flowState.metadata.encrypted_oauth_client_secret,
     });
-
-    if (refresh_token != null && refresh_token_expires_in != null) {
-      await handleOAuthToken({
-        token: refresh_token,
-        type: 'oauth_refresh',
-        userId: decodedState.user,
-        identifier: `${identifier}:refresh`,
-        expiresIn: refresh_token_expires_in,
-        metadata,
-      });
-    }
-
-    await flowManager.completeFlow(identifier, 'oauth', tokenJson);
-
+    await flowManager.completeFlow(identifier, 'oauth', tokenData);
     res.send(`
       <!DOCTYPE html>
       <html>

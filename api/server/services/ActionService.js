@@ -1,3 +1,7 @@
+const jwt = require('jsonwebtoken');
+const { nanoid } = require('nanoid');
+const { tool } = require('@langchain/core/tools');
+const { GraphEvents, sleep } = require('@librechat/agents');
 const {
   Time,
   CacheKeys,
@@ -8,10 +12,7 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
-const jwt = require('jsonwebtoken');
-const { nanoid } = require('nanoid');
-const { tool } = require('@langchain/core/tools');
-const { GraphEvents, sleep } = require('@librechat/agents');
+const { refreshAccessToken } = require('~/server/services/TokenService');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
@@ -202,18 +203,19 @@ async function createActionTool({
                 const result = await flowManager.createFlow(identifier, 'oauth', {
                   state: stateToken,
                   userId: req.user.id,
-                  tokenUrl: metadata.auth.client_url,
-                  clientId: encrypted.oauth_client_id,
-                  clientSecret: encrypted.oauth_client_secret,
-                  redirectUri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                  client_url: metadata.auth.client_url,
+                  redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                  /** Encrypted values */
+                  encrypted_oauth_client_id: encrypted.oauth_client_id,
+                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                 });
-                const expiresAt = new Date(Date.now() + result.expires_in * 1000);
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
                 sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
                 await sleep(3000);
                 metadata.oauth_access_token = result.access_token;
                 metadata.oauth_refresh_token = result.refresh_token;
+                const expiresAt = new Date(Date.now() + result.expires_in * 1000);
                 metadata.oauth_token_expires_at = expiresAt.toISOString();
               } catch (error) {
                 const errorMessage = 'Failed to authenticate OAuth tool';
@@ -222,21 +224,51 @@ async function createActionTool({
               }
             };
 
-            const tokenData = await findToken({ userId: req.user.id, identifier });
-            if (!tokenData) {
-              await requestLogin();
-              // The flow.createFlow will pause here until OAuth completes or times out
-              // When it resolves, result will contain the token data from the OAuth callback
-            } else if (tokenData.expiresAt && new Date() >= tokenData.expiresAt) {
-              // Token exists but is expired, trigger a new OAuth flow
-              await requestLogin();
-            } else {
+            const tokenPromises = [];
+            tokenPromises.push(findToken({ userId: req.user.id, type: 'oauth', identifier }));
+            tokenPromises.push(
+              findToken({
+                userId: req.user.id,
+                type: 'oauth_refresh',
+                identifier: `${identifier}:refresh`,
+              }),
+            );
+            const [tokenData, refreshTokenData] = await Promise.all(tokenPromises);
+
+            if (tokenData) {
               // Valid token exists, add it to metadata for setAuth
               metadata.oauth_access_token = await decryptV2(tokenData.token);
-              if (tokenData.metadata) {
-                metadata.oauth_refresh_token = await decryptV2(tokenData.metadata.refreshToken);
+              if (refreshTokenData) {
+                metadata.oauth_refresh_token = await decryptV2(refreshTokenData.token);
               }
               metadata.oauth_token_expires_at = tokenData.expiresAt.toISOString();
+            } else if (!refreshTokenData) {
+              // No tokens exist, need to authenticate
+              await requestLogin();
+            } else if (refreshTokenData) {
+              // Refresh token is still valid, use it to get new access token
+              try {
+                const refresh_token = await decryptV2(refreshTokenData.token);
+                const refreshData = await refreshAccessToken({
+                  identifier,
+                  refresh_token,
+                  userId: req.user.id,
+                  client_url: metadata.auth.client_url,
+                  encrypted_oauth_client_id: encrypted.oauth_client_id,
+                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                });
+                metadata.oauth_access_token = refreshData.access_token;
+                if (refreshData.refresh_token) {
+                  metadata.oauth_refresh_token = refreshData.refresh_token;
+                }
+                const expiresAt = new Date(Date.now() + refreshData.expires_in * 1000);
+                metadata.oauth_token_expires_at = expiresAt.toISOString();
+              } catch (error) {
+                logger.error('Failed to refresh token, requesting new login:', error);
+                await requestLogin();
+              }
+            } else {
+              await requestLogin();
             }
           }
 
