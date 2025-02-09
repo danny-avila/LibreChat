@@ -69,12 +69,12 @@ const Nav = memo(
     });
 
     const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-    const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
+    const { searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
 
     const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
       useConversationsInfiniteQuery(
         {
-          pageNumber: pageNumber.toString(),
+          cursor: null,
           isArchived: false,
           tags: tags.length === 0 ? undefined : tags,
         },

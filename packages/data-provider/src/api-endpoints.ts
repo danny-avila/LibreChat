@@ -43,10 +43,15 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}${
+export const conversations = (
+  cursor: string | null,
+  isArchived?: boolean,
+  order?: string,
+  tags?: string[],
+) =>
+  `${conversationsRoot}?${cursor ? `cursor=${cursor}` : ''}${
     isArchived === true ? '&isArchived=true' : ''
-  }${tags?.map((tag) => `&tags=${tag}`).join('')}`;
+  }${order ? `&order=${order}` : ''}${tags?.map((tag) => `&tags=${tag}`).join('')}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -62,8 +67,8 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
-export const search = (q: string, pageNumber: string) =>
-  `/api/search?q=${q}&pageNumber=${pageNumber}`;
+export const search = (q: string, cursor?: string | null) =>
+  `/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
 
 export const searchEnabled = () => '/api/search/enable';
 

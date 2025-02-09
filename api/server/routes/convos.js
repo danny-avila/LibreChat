@@ -1,7 +1,7 @@
 const multer = require('multer');
 const express = require('express');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -20,28 +20,25 @@ const router = express.Router();
 router.use(requireJwtAuth);
 
 router.get('/', async (req, res) => {
-  let pageNumber = req.query.pageNumber || 1;
-  pageNumber = parseInt(pageNumber, 10);
-
-  if (isNaN(pageNumber) || pageNumber < 1) {
-    return res.status(400).json({ error: 'Invalid page number' });
-  }
-
-  let pageSize = req.query.pageSize || 25;
-  pageSize = parseInt(pageSize, 10);
-
-  if (isNaN(pageSize) || pageSize < 1) {
-    return res.status(400).json({ error: 'Invalid page size' });
-  }
+  // Limiting pagination as cursor may be undefined if not provided
+  const limit = parseInt(req.query.limit, 10) || 25;
+  const cursor = req.query.cursor;
   const isArchived = req.query.isArchived === 'true';
+
   let tags;
   if (req.query.tags) {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
-  } else {
-    tags = undefined;
   }
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
+  // Support for ordering; expects "asc" or "desc", defaults to descending order.
+  const order = req.query.order || 'desc';
+
+  try {
+    const result = await getConvosByCursor(req.user.id, { cursor, limit, isArchived, tags, order });
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching conversations' });
+  }
 });
 
 router.get('/:conversationId', async (req, res) => {

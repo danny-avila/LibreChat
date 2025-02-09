@@ -124,22 +124,17 @@ export const useConversationsInfiniteQuery = (
     ({ pageParam = '' }) =>
       dataService.listConversations({
         ...params,
-        pageNumber: pageParam?.toString(),
+        cursor: pageParam?.toString(),
         isArchived: params?.isArchived ?? false,
         tags: params?.tags || [],
       }),
     {
-      getNextPageParam: (lastPage) => {
-        const currentPageNumber = Number(lastPage.pageNumber);
-        const totalPages = Number(lastPage.pages); // Convert totalPages to a number
-        // If the current page number is less than total pages, return the next page number
-        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
-      },
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
-      enabled: (config?.enabled ?? true) === true && queriesEnabled,
+      enabled: (config?.enabled ?? true) && queriesEnabled,
     },
   );
 };

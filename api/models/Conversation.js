@@ -148,30 +148,44 @@ module.exports = {
       throw new Error('Failed to save conversations in bulk.');
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false, tags) => {
+  getConvosByCursor: async (
+    user,
+    { cursor, limit = 25, isArchived = false, tags, order = 'desc' } = {},
+  ) => {
     const query = { user };
+
     if (isArchived) {
       query.isArchived = true;
     } else {
       query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
     }
+
     if (Array.isArray(tags) && tags.length > 0) {
       query.tags = { $in: tags };
     }
 
     query.$and = [{ $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] }];
 
+    if (cursor) {
+      query.updatedAt = { $lt: new Date(cursor) };
+    }
+
     try {
-      const totalConvos = (await Conversation.countDocuments(query)) || 1;
-      const totalPages = Math.ceil(totalConvos / pageSize);
       const convos = await Conversation.find(query)
-        .sort({ updatedAt: -1 })
-        .skip((pageNumber - 1) * pageSize)
-        .limit(pageSize)
+        .select('conversationId endpoint title createdAt updatedAt user')
+        .sort({ updatedAt: order === 'asc' ? 1 : -1 })
+        .limit(limit + 1)
         .lean();
-      return { conversations: convos, pages: totalPages, pageNumber, pageSize };
+
+      let nextCursor = null;
+      if (convos.length > limit) {
+        const lastConvo = convos.pop();
+        nextCursor = lastConvo.updatedAt.toISOString();
+      }
+
+      return { conversations: convos, nextCursor };
     } catch (error) {
-      logger.error('[getConvosByPage] Error getting conversations', error);
+      logger.error('[getConvosByCursor] Error getting conversations', error);
       return { message: 'Error getting conversations' };
     }
   },
