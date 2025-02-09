@@ -14,7 +14,7 @@ export const useAutoSave = ({
   setFiles,
 }: {
   conversationId?: string | null;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
   setFiles: SetterOrUpdater<Map<string, ExtendedFile>>;
 }) => {
@@ -51,7 +51,7 @@ export const useAutoSave = ({
   const restoreFiles = useCallback(
     (id: string) => {
       const filesDraft = JSON.parse(
-        localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`) || '[]',
+        (localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`) ?? '') || '[]',
       ) as string[];
 
       if (filesDraft.length === 0) {
@@ -66,7 +66,10 @@ export const useAutoSave = ({
         const tempFileData = fileList?.find((f) => f.temp_file_id === fileId);
         const { fileToRecover, fileIdToRecover } = fileData
           ? { fileToRecover: fileData, fileIdToRecover: fileId }
-          : { fileToRecover: tempFileData, fileIdToRecover: tempFileData?.temp_file_id || fileId };
+          : {
+            fileToRecover: tempFileData,
+            fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
+          };
 
         if (fileToRecover) {
           setFiles((currentFiles) => {
@@ -87,7 +90,7 @@ export const useAutoSave = ({
 
   const restoreText = useCallback(
     (id: string) => {
-      const savedDraft = localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) || '';
+      const savedDraft = (localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) ?? '') || '';
       setValue('text', decodeBase64(savedDraft));
     },
     [setValue],
@@ -95,7 +98,7 @@ export const useAutoSave = ({
 
   const saveText = useCallback(
     (id: string) => {
-      if (!textAreaRef.current) {
+      if (!textAreaRef?.current) {
         return;
       }
       // Save the draft of the current conversation before switching
@@ -115,12 +118,12 @@ export const useAutoSave = ({
     // This useEffect is responsible for setting up and cleaning up the auto-save functionality
     // for the text area input. It saves the text to localStorage with a debounce to prevent
     // excessive writes.
-    if (!saveDrafts || !conversationId) {
+    if (!saveDrafts || conversationId == null || conversationId === '') {
       return;
     }
 
     const handleInput = debounce(() => {
-      if (textAreaRef.current && textAreaRef.current.value) {
+      if (textAreaRef?.current && textAreaRef.current.value) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
           encodeBase64(textAreaRef.current.value),
@@ -130,7 +133,7 @@ export const useAutoSave = ({
       }
     }, 1000);
 
-    const textArea = textAreaRef.current;
+    const textArea = textAreaRef?.current;
     if (textArea) {
       textArea.addEventListener('input', handleInput);
     }
@@ -149,7 +152,7 @@ export const useAutoSave = ({
     // It handles both text and file drafts, ensuring that the user's input is preserved
     // across different conversations.
 
-    if (!saveDrafts || !conversationId) {
+    if (!saveDrafts || conversationId == null || conversationId === '') {
       return;
     }
     if (conversationId === currentConversationId) {
@@ -160,7 +163,7 @@ export const useAutoSave = ({
     setFiles(new Map());
 
     try {
-      if (currentConversationId) {
+      if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }
 
@@ -187,7 +190,12 @@ export const useAutoSave = ({
     // It ensures that the file drafts are kept up-to-date and can be restored
     // when the conversation is revisited.
 
-    if (!saveDrafts || !conversationId || currentConversationId !== conversationId) {
+    if (
+      !saveDrafts ||
+      conversationId == null ||
+      conversationId === '' ||
+      currentConversationId !== conversationId
+    ) {
       return;
     }
 
@@ -202,7 +210,7 @@ export const useAutoSave = ({
   }, [files, conversationId, saveDrafts, currentConversationId, fileIds]);
 
   const clearDraft = useCallback(() => {
-    if (conversationId) {
+    if (conversationId != null && conversationId) {
       localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
       localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
     }
