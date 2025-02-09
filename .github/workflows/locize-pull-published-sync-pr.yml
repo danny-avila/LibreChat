@@ -1,4 +1,4 @@
-name: Locize Version Published Workflow
+name: Create Translation PR on Version Published
 
 on:
   push:
@@ -7,47 +7,40 @@ on:
     types: [locize/versionPublished]
 
 jobs:
-  locize_update:
-    name: Process Locize Version Published Event
+  createPullRequest:
+    name: Test2 (conditional step)
+    if: github.event.client_payload.payload.version == 'latest'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+
     steps:
+      # 1. Check out the repository.
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Display Dispatch Payload
-        run: |
-          echo "Received Version: ${{ github.event.client_payload.payload.version }}"
-          echo "Full Payload: ${{ toJson(github.event.client_payload) }}"
+      # 2. Download translation files from locize.
       - name: Download Translations from locize
         uses: locize/download@v1
         with:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
-          version: ${{ github.event.client_payload.payload.version }}
           path: "client/src/locales"
-          path-mask: "{{language}}/{{namespace}}"
-          clean: true # Ensures old translation files are removed before downloading new ones
 
+      # 3. Create a Pull Request using built-in functionality.
       - name: Create Pull Request
-        id: create_pr
-        uses: peter-evans/create-pull-request@v7.0.6
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update translations from locize"
-          branch: locize-update-${{ github.event.client_payload.payload.version }}
-          delete-branch: true
-          title: "chore: update translations from locize"
+          sign-commits: true
+          commit-message: "🌍 i18n: Update translation.json with latest translations"
+          branch: i18n/locize-translation-update
+          reviewers: danny-avila
+          title: "🌍 i18n: Update translation.json with latest translations"
           body: |
-            This PR updates translations from locize.
-            - Version: `${{ github.event.client_payload.payload.version }}`
-            - Automated update from GitHub Actions
-          labels: "translations, automated"
-          draft: false
-
-      - name: Check PR Outputs
-        if: steps.create_pr.outputs.pull-request-number
-        run: |
-          echo "Pull Request Number - ${{ steps.create_pr.outputs.pull-request-number }}"
-          echo "Pull Request URL - ${{ steps.create_pr.outputs.pull-request-url }}"
+            **Description**:
+            - 🎯 **Objective**: Update `translation.json` with the latest translations from locize.
+            - 🔍 **Details**: This PR is automatically generated upon receiving a versionPublished event with version "latest". It reflects the newest translations provided by locize.
+            - ✅ **Status**: Ready for review.
+          labels: |
+            🌍 i18n
