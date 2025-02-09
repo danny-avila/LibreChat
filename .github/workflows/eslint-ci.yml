@@ -29,19 +29,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Use a paths filter to detect changes in JavaScript/TypeScript files.
+      # Use a paths filter to detect changes in JavaScript/TypeScript files,
+      # but only consider files that are added or modified (ignore deleted files).
       - name: Filter changed files for ESLint
         id: file_filter
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v3
         with:
           filters: |
             eslint:
-              - '**/*.js'
-              - '**/*.jsx'
-              - '**/*.ts'
-              - '**/*.tsx'
+              - added|modified: '**/*.js'
+              - added|modified: '**/*.jsx'
+              - added|modified: '**/*.ts'
+              - added|modified: '**/*.tsx'
 
-      # Run ESLint only if relevant files changed.
+      # Run ESLint only if relevant files have been added or modified.
       - name: Run ESLint on changed files
         if: steps.file_filter.outputs.eslint == 'true'
         env:
@@ -62,7 +63,7 @@ jobs:
             --format @microsoft/eslint-formatter-sarif \
             --output-file eslint-results.sarif $CHANGED_FILES || true
 
-      # If no JavaScript/TypeScript files changed, create an empty SARIF file.
+      # If no JavaScript/TypeScript files were added or modified, create an empty SARIF file.
       - name: Create empty SARIF results file
         if: steps.file_filter.outputs.eslint != 'true'
         run: |
