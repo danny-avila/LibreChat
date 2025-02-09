@@ -1,9 +1,9 @@
 const axios = require('axios');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { createToken, findToken, updateToken } = require('~/models/Token');
-const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { logger, getFlowStateManager } = require('~/config');
+const { handleOAuthToken } = require('~/models/Token');
+const { decryptV2 } = require('~/server/utils/crypto');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 
@@ -82,29 +82,30 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
     }
 
     const tokenJson = tokenResp.data;
-    const { access_token, refresh_token, expires_in } = tokenJson;
-    const token = await encryptV2(access_token);
-    const refreshToken = await encryptV2(refresh_token);
-    const tokenData = {
-      token,
-      identifier,
-      type: 'oauth',
-      userId: decodedState.user,
-      expiresIn: parseInt(expires_in, 10) || 3600,
-      metadata: {
-        refreshToken,
-        tokenUrl: flowState.metadata.tokenUrl,
-        /** Encrypted */
-        clientId: flowState.metadata.clientId,
-        clientSecret: flowState.metadata.clientSecret,
-      },
+    const { access_token, expires_in, refresh_token, refresh_token_expires_in } = tokenJson;
+    const metadata = {
+      tokenUrl: flowState.metadata.tokenUrl,
+      /** Encrypted */
+      clientId: flowState.metadata.clientId,
+      clientSecret: flowState.metadata.clientSecret,
     };
+    await handleOAuthToken({
+      identifier,
+      token: access_token,
+      expiresIn: expires_in,
+      userId: decodedState.user,
+      metadata,
+    });
 
-    const existingToken = await findToken({ userId: decodedState.user, identifier });
-    if (existingToken) {
-      await updateToken({ identifier }, tokenData);
-    } else {
-      await createToken(tokenData);
+    if (refresh_token != null && refresh_token_expires_in != null) {
+      await handleOAuthToken({
+        token: refresh_token,
+        type: 'oauth_refresh',
+        userId: decodedState.user,
+        identifier: `${identifier}:refresh`,
+        expiresIn: refresh_token_expires_in,
+        metadata,
+      });
     }
 
     await flowManager.completeFlow(identifier, 'oauth', tokenJson);
