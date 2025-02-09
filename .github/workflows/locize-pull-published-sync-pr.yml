@@ -37,6 +37,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           sign-commits: true
           commit-message: "🌍 i18n: Update translation.json with latest translations"
+          base: main
           branch: i18n/locize-translation-update
           reviewers: danny-avila
           title: "🌍 i18n: Update translation.json with latest translations"
