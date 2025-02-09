@@ -11,25 +11,21 @@ export type Conversation = {
   conversations: s.TConversation[];
 };
 
-// Parameters for listing conversations (e.g., for pagination)
 export type ConversationListParams = {
-  limit?: number;
-  before?: string | null;
-  after?: string | null;
+  cursor?: string | null;
   order?: 'asc' | 'desc';
-  pageNumber: string;
-  conversationId?: string;
   isArchived?: boolean;
   tags?: string[];
 };
 
-// Type for the response from the conversation list API
+export type MinimalConversation = Pick<
+  s.TConversation,
+  'conversationId' | 'endpoint' | 'title' | 'createdAt' | 'updatedAt' | 'user'
+>;
+
 export type ConversationListResponse = {
-  conversations: s.TConversation[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-  messages: s.TMessage[];
+  conversations: MinimalConversation[];
+  nextCursor: string | null;
 };
 
 export type ConversationData = InfiniteData<ConversationListResponse>;

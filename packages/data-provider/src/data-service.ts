@@ -600,23 +600,22 @@ export function clearAllConversations(): Promise<unknown> {
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  // Assuming params has a pageNumber property
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const isArchived = params?.isArchived ?? false; // Default to false if not provided
-  const tags = params?.tags || []; // Default to an empty array if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
+  const cursor = params?.cursor ?? null;
+  const isArchived = params?.isArchived ?? false;
+  const order = params?.order ?? 'desc';
+  const tags = params?.tags || [];
+  return request.get(endpoints.conversations(cursor, isArchived, order, tags));
 };
 
 export const listConversationsByQuery = (
   params?: q.ConversationListParams & { searchQuery?: string },
 ): Promise<q.ConversationListResponse> => {
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const searchQuery = params?.searchQuery ?? ''; // If no search query is provided, default to an empty string
-  // Update the endpoint to handle a search query
+  const cursor = params?.cursor ?? null;
+  const searchQuery = params?.searchQuery ?? '';
   if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, pageNumber));
+    return request.get(endpoints.search(searchQuery, cursor ?? ''));
   } else {
-    return request.get(endpoints.conversations(pageNumber));
+    return request.get(endpoints.conversations(cursor ?? ''));
   }
 };
 
@@ -627,8 +626,8 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
-export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(pageNumber));
+export function getConversations(cursor: string | null): Promise<t.TGetConversationsResponse> {
+  return request.get(endpoints.conversations(cursor));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {
