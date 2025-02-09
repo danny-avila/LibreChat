@@ -833,9 +833,9 @@
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
-  "com_assistants_action_attempt": "Assistant wants to talk to {0}",
+  "com_assistants_action_attempt": "Assistant wants to talk to {{0}}",
   "com_assistants_attempt_info": "Assistant wants to send the following:",
   "com_assistants_allow_sites_you_trust": "Only allow sites you trust.",
-  "com_ui_sign_in_to_domain": "Sign-in to {0}",
+  "com_ui_sign_in_to_domain": "Sign-in to {{0}}",
   "com_ui_requires_auth": "Requires Authentication"
 }

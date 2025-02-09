@@ -182,7 +182,7 @@ export default function ToolCall({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {localize('com_ui_sign_in_to_domain', authDomain)}
+                {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
               </a>
             </div>
             <p className="flex items-center text-xs text-text-secondary">
@@ -192,9 +192,7 @@ export default function ToolCall({
           </div>
         )}
       </div>
-      {attachments?.map((attachment, index) => (
-        <Attachment attachment={attachment} key={index} />
-      ))}
+      {attachments?.map((attachment, index) => <Attachment attachment={attachment} key={index} />)}
     </Popover.Root>
   );
 }
