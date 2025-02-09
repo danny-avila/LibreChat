@@ -18,6 +18,7 @@ import Search from './Search';
 import Root from './Root';
 import Datall from './Layouts/Datall';
 import WelcomeUser from '~/components/Datall/WelcomeUser';
+import AddBalance from '~/components/Datall/AddBalance';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -55,7 +56,10 @@ export const router = createBrowserRouter([
         children: [{
           path: 'welcome',
           element: <WelcomeUser />,
-        },]
+        },{
+          path: 'add-balance',
+          element: <AddBalance />,
+        }]
       },
     ],
   },

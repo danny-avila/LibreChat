@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const WelcomeUser: React.FC = () => {
   const location = useLocation();
-  const { state } = location;
+  const navigate = useNavigate()
+  // const { state } = location;
 
   const addBalanceHandler = async () => {
     // const response = await axios.post('http://localhost:3090/api/balance' , 20000);
@@ -18,14 +19,23 @@ const WelcomeUser: React.FC = () => {
     console.log('Users you fetch', response);
   };
 
+  const redirectToAddBalanceHandler =()=>{
+    
+    navigate('/datall/add-balance' , {replace: true})
+  }
+
   return (
     <>
-      <div>Welcome dear {state.name} </div>
-      {state.name === 'admin' && (
+     {/* <div>Welcome dear {state.name} </div> */}
+      {/* {state.name === 'admin' && (
         <button onClick={addBalanceHandler} className="bg-red-500 px-2 text-white">
           add balance
         </button>
-      )}
+      )} */}
+      <button onClick={addBalanceHandler} className="bg-red-500 px-2 text-white">
+          add balance
+        </button>
+      <button onClick={redirectToAddBalanceHandler} className="bg-green-500 px-2 text-white">go to addBalance</button>
     </>
   );
 };
