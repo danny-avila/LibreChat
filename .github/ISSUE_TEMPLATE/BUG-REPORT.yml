@@ -10,6 +10,10 @@ body:
         
         Before submitting, please:
         - Search existing [Issues and Discussions](https://github.com/danny-avila/LibreChat/discussions) to see if your bug has already been reported
+        - Use [Discussions](https://github.com/danny-avila/LibreChat/discussions) instead of Issues for:
+          - General inquiries
+          - Help with setup
+          - Questions about whether you're experiencing a bug
   - type: textarea
     id: what-happened
     attributes:
