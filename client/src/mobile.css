@@ -312,3 +312,53 @@
 .chrome-scrollbar::-webkit-scrollbar-track {
   background-color: transparent;  /* Color of the tracking area */
 }
+
+.sp-preview-container {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview-iframe {
+  @apply grow;
+}
+
+.sp-wrapper {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+  20%, 40%, 60%, 80% { transform: translateX(3px); }
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"] {
+  scrollbar-gutter: stable !important;
+  background-color: rgba(21, 21, 21, 0.5) !important;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar {
+  width: 12px !important;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar-thumb {
+  background-color: rgba(56, 56, 56) !important;
+  border-radius: 6px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar-track {
+  background-color: transparent !important;
+}
+
+.cm-content:focus {
+  outline: none !important;
+}

@@ -6,13 +6,17 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
+const { tool } = require('@langchain/core/tools');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
+const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
+const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 /**
  * Validates tool name against regex pattern and updates if necessary.
@@ -82,8 +86,6 @@ async function domainParser(req, domain, inverse = false) {
     return key;
   }
 
-  const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
-
   if (!cachedDomain) {
     return domain.replace(replaceSeparatorRegex, '.');
   }
@@ -101,7 +103,8 @@ async function domainParser(req, domain, inverse = false) {
  *
  * @param {Object} searchParams - The parameters for loading action sets.
  * @param {string} searchParams.user - The user identifier.
- * @param {string} searchParams.assistant_id - The assistant identifier.
+ * @param {string} [searchParams.agent_id]- The agent identifier.
+ * @param {string} [searchParams.assistant_id]- The assistant identifier.
  * @returns {Promise<Action[] | null>} A promise that resolves to an array of actions or `null` if no match.
  */
 async function loadActionSets(searchParams) {
@@ -114,33 +117,48 @@ async function loadActionSets(searchParams) {
  * @param {Object} params - The parameters for loading action sets.
  * @param {Action} params.action - The action set. Necessary for decrypting authentication values.
  * @param {ActionRequest} params.requestBuilder - The ActionRequest builder class to execute the API call.
- * @returns { { _call: (toolInput: Object) => unknown} } An object with `_call` method to execute the tool input.
+ * @param {string | undefined} [params.name] - The name of the tool.
+ * @param {string | undefined} [params.description] - The description for the tool.
+ * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
+ * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createActionTool({ action, requestBuilder }) {
+async function createActionTool({ action, requestBuilder, zodSchema, name, description }) {
   action.metadata = await decryptMetadata(action.metadata);
+  const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+  if (!isDomainAllowed) {
+    return null;
+  }
+  /** @type {(toolInput: Object | string) => Promise<unknown>} */
   const _call = async (toolInput) => {
     try {
-      requestBuilder.setParams(toolInput);
+      const executor = requestBuilder.createExecutor();
+
+      // Chain the operations
+      const preparedExecutor = executor.setParams(toolInput);
+
       if (action.metadata.auth && action.metadata.auth.type !== AuthTypeEnum.None) {
-        await requestBuilder.setAuth(action.metadata);
+        await preparedExecutor.setAuth(action.metadata);
       }
-      const res = await requestBuilder.execute();
+
+      const res = await preparedExecutor.execute();
+
       if (typeof res.data === 'object') {
         return JSON.stringify(res.data);
       }
       return res.data;
     } catch (error) {
-      logger.error(`API call to ${action.metadata.domain} failed`, error);
-      if (error.response) {
-        const { status, data } = error.response;
-        return `API call to ${
-          action.metadata.domain
-        } failed with status ${status}: ${JSON.stringify(data)}`;
-      }
-
-      return `API call to ${action.metadata.domain} failed.`;
+      const logMessage = `API call to ${action.metadata.domain} failed`;
+      logAxiosError({ message: logMessage, error });
     }
   };
+
+  if (name) {
+    return tool(_call, {
+      name: name.replace(replaceSeparatorRegex, '_'),
+      description: description || '',
+      schema: zodSchema,
+    });
+  }
 
   return {
     _call,
@@ -151,7 +169,7 @@ async function createActionTool({ action, requestBuilder }) {
  * Encrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to encrypt.
- * @returns {ActionMetadata} The updated action metadata with encrypted values.
+ * @returns {Promise<ActionMetadata>} The updated action metadata with encrypted values.
  */
 async function encryptMetadata(metadata) {
   const encryptedMetadata = { ...metadata };
@@ -180,7 +198,7 @@ async function encryptMetadata(metadata) {
  * Decrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to decrypt.
- * @returns {ActionMetadata} The updated action metadata with decrypted values.
+ * @returns {Promise<ActionMetadata>} The updated action metadata with decrypted values.
  */
 async function decryptMetadata(metadata) {
   const decryptedMetadata = { ...metadata };

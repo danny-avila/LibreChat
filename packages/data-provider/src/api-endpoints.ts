@@ -10,14 +10,24 @@ export const userPlugins = () => '/api/user/plugins';
 export const deleteUser = () => '/api/user/delete';
 
 export const messages = (conversationId: string, messageId?: string) =>
-  `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
+  `/api/messages/${conversationId}${messageId != null && messageId ? `/${messageId}` : ''}`;
 
 const shareRoot = '/api/share';
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
-export const getSharedLinks = (pageNumber: string, isPublic: boolean) =>
-  `${shareRoot}?pageNumber=${pageNumber}&isPublic=${isPublic}`;
-export const createSharedLink = shareRoot;
-export const updateSharedLink = shareRoot;
+export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
+export const getSharedLinks = (
+  pageSize: number,
+  isPublic: boolean,
+  sortBy: 'title' | 'createdAt',
+  sortDirection: 'asc' | 'desc',
+  search?: string,
+  cursor?: string,
+) =>
+  `${shareRoot}?pageSize=${pageSize}&isPublic=${isPublic}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+    search ? `&search=${search}` : ''
+  }${cursor ? `&cursor=${cursor}` : ''}`;
+export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
+export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
 
 const keysEndpoint = '/api/keys';
 
@@ -34,9 +44,9 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 export const conversationsRoot = '/api/convos';
 
 export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}${tags
-    ?.map((tag) => `&tags=${tag}`)
-    .join('')}`;
+  `${conversationsRoot}?pageNumber=${pageNumber}${
+    isArchived === true ? '&isArchived=true' : ''
+  }${tags?.map((tag) => `&tags=${tag}`).join('')}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -49,6 +59,8 @@ export const deleteConversation = () => `${conversationsRoot}/clear`;
 export const importConversation = () => `${conversationsRoot}/import`;
 
 export const forkConversation = () => `${conversationsRoot}/fork`;
+
+export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
@@ -77,7 +89,8 @@ export const loginFacebook = () => '/api/auth/facebook';
 
 export const loginGoogle = () => '/api/auth/google';
 
-export const refreshToken = (retry?: boolean) => `/api/auth/refresh${retry ? '?retry=true' : ''}`;
+export const refreshToken = (retry?: boolean) =>
+  `/api/auth/refresh${retry === true ? '?retry=true' : ''}`;
 
 export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
@@ -94,19 +107,21 @@ export const config = () => '/api/config';
 export const prompts = () => '/api/prompts';
 
 export const assistants = ({
-  path,
+  path = '',
   options,
   version,
   endpoint,
+  isAvatar,
 }: {
   path?: string;
   options?: object;
   endpoint?: AssistantsEndpoint;
   version: number | string;
+  isAvatar?: boolean;
 }) => {
-  let url = `/api/assistants/v${version}`;
+  let url = isAvatar === true ? `${images()}/assistants` : `/api/assistants/v${version}`;
 
-  if (path) {
+  if (path && path !== '') {
     url += `/${path}`;
   }
 
@@ -115,6 +130,21 @@ export const assistants = ({
       ...(options ?? {}),
       endpoint,
     };
+  }
+
+  if (options && Object.keys(options).length > 0) {
+    const queryParams = new URLSearchParams(options as Record<string, string>).toString();
+    url += `?${queryParams}`;
+  }
+
+  return url;
+};
+
+export const agents = ({ path = '', options }: { path?: string; options?: object }) => {
+  let url = '/api/agents';
+
+  if (path && path !== '') {
+    url += `/${path}`;
   }
 
   if (options && Object.keys(options).length > 0) {
@@ -189,11 +219,12 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 /* Roles */
 export const roles = () => '/api/roles';
 export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
-export const updatePromptPermissions = (roleName: string) =>
-  `${roles()}/${roleName.toLowerCase()}/prompts`;
+export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
+export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 
 /* Conversation Tags */
-export const conversationTags = (tag?: string) => `/api/tags${tag ? `/${tag}` : ''}`;
+export const conversationTags = (tag?: string) =>
+  `/api/tags${tag != null && tag ? `/${encodeURIComponent(tag)}` : ''}`;
 
 export const conversationTagsList = (pageNumber: string, sort?: string, order?: string) =>
   `${conversationTags()}/list?pageNumber=${pageNumber}${sort ? `&sort=${sort}` : ''}${
@@ -201,4 +232,8 @@ export const conversationTagsList = (pageNumber: string, sort?: string, order?: 
   }`;
 
 export const addTagToConversation = (conversationId: string) =>
-  `${conversationsRoot}/tags/${conversationId}`;
+  `${conversationTags()}/convo/${conversationId}`;
+
+export const userTerms = () => '/api/user/terms';
+export const acceptUserTerms = () => '/api/user/terms/accept';
+export const banner = () => '/api/banner';

@@ -6,8 +6,8 @@ const defaultConfig: TEndpointsConfig = {
   [EModelEndpoint.azureOpenAI]: null,
   [EModelEndpoint.azureAssistants]: null,
   [EModelEndpoint.assistants]: null,
+  [EModelEndpoint.agents]: null,
   [EModelEndpoint.openAI]: null,
-  [EModelEndpoint.bingAI]: null,
   [EModelEndpoint.chatGPTBrowser]: null,
   [EModelEndpoint.gptPlugins]: null,
   [EModelEndpoint.google]: null,
@@ -29,7 +29,7 @@ const plugins = selector({
   key: 'plugins',
   get: ({ get }) => {
     const config = get(endpointsConfig) || {};
-    return config?.gptPlugins?.plugins || {};
+    return config.gptPlugins?.plugins || {};
   },
 });
 

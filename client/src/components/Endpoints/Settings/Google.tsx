@@ -165,14 +165,14 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[temperature ?? google.temperature.default]}
               onValueChange={(value) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(google.temperature.default)}
+              onDoubleClick={() => setTemperature(google.temperature.default)}
               max={google.temperature.max}
               min={google.temperature.min}
               step={google.temperature.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
         </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -180,7 +180,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', google.topP.default + '')})
+                  ({localize('com_endpoint_default_with_num', { 0: google.topP.default + '' })})
                 </small>
               </Label>
               <InputNumber
@@ -205,14 +205,14 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[topP ?? google.topP.default]}
               onValueChange={(value) => setTopP(value[0])}
-              doubleClickHandler={() => setTopP(google.topP.default)}
+              onDoubleClick={() => setTopP(google.topP.default)}
               max={google.topP.max}
               min={google.topP.min}
               step={google.topP.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="topp" side={ESide.Left} />
         </HoverCard>
 
         <HoverCard openDelay={300}>
@@ -221,7 +221,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_k')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', google.topK.default + '')})
+                  ({localize('com_endpoint_default_with_num',{ 0: google.topK.default + '' })})
                 </small>
               </Label>
               <InputNumber
@@ -246,14 +246,14 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[topK ?? google.topK.default]}
               onValueChange={(value) => setTopK(value[0])}
-              doubleClickHandler={() => setTopK(google.topK.default)}
+              onDoubleClick={() => setTopK(google.topK.default)}
               max={google.topK.max}
               min={google.topK.min}
               step={google.topK.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="topk" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="topk" side={ESide.Left} />
         </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -261,7 +261,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_max_output_tokens')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', google.maxOutputTokens.default + '')})
+                  ({localize('com_endpoint_default_with_num', { 0: google.maxOutputTokens.default + '' })})
                 </small>
               </Label>
               <InputNumber
@@ -286,7 +286,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[maxOutputTokens ?? google.maxOutputTokens.default]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
-              doubleClickHandler={() => setMaxOutputTokens(google.maxOutputTokens.default)}
+              onDoubleClick={() => setMaxOutputTokens(google.maxOutputTokens.default)}
               max={google.maxOutputTokens.max}
               min={google.maxOutputTokens.min}
               step={google.maxOutputTokens.step}
@@ -294,7 +294,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             />
           </HoverCardTrigger>
           <OptionHover
-            endpoint={conversation?.endpoint ?? ''}
+            endpoint={conversation.endpoint ?? ''}
             type="maxoutputtokens"
             side={ESide.Left}
           />

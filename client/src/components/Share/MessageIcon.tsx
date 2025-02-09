@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TMessage, TPreset, Assistant } from 'librechat-data-provider';
+import type { TMessage, TPreset, Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageEndpointIcon from '../Endpoints/MessageEndpointIcon';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
@@ -9,12 +9,15 @@ import { UserIcon } from '../svg';
 export default function MessageIcon(
   props: Pick<TMessageProps, 'message' | 'conversation'> & {
     assistant?: false | Assistant;
+    agent?: false | Agent;
   },
 ) {
-  const { message, conversation, assistant } = props;
+  const { message, conversation, assistant, agent } = props;
 
   const assistantName = assistant ? (assistant.name as string | undefined) : '';
   const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
+  const agentName = agent ? (agent.name as string | undefined) : '';
+  const agentAvatar = agent ? (agent.metadata?.avatar as string | undefined) : '';
 
   const messageSettings = useMemo(
     () => ({
@@ -27,22 +30,25 @@ export default function MessageIcon(
     [conversation, message],
   );
 
-  const iconURL = messageSettings?.iconURL;
-  let endpoint = messageSettings?.endpoint;
+  const iconURL = messageSettings.iconURL ?? '';
+  let endpoint = messageSettings.endpoint;
   endpoint = getIconEndpoint({ endpointsConfig: undefined, iconURL, endpoint });
 
-  if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
+  if (message?.isCreatedByUser !== true && iconURL && iconURL.includes('http')) {
     return (
       <ConvoIconURL
-        preset={messageSettings as typeof messageSettings & TPreset}
+        iconURL={iconURL}
+        modelLabel={messageSettings.chatGptLabel ?? messageSettings.modelLabel ?? ''}
         context="message"
         assistantAvatar={assistantAvatar}
         assistantName={assistantName}
+        agentAvatar={agentAvatar}
+        agentName={agentName}
       />
     );
   }
 
-  if (message?.isCreatedByUser) {
+  if (message?.isCreatedByUser === true) {
     return (
       <div
         style={{
@@ -62,9 +68,10 @@ export default function MessageIcon(
     <MessageEndpointIcon
       {...messageSettings}
       endpoint={endpoint}
-      iconURL={!assistant ? undefined : assistantAvatar}
+      iconURL={assistant == null ? undefined : assistantAvatar}
       model={message?.model ?? conversation?.model}
       assistantName={assistantName}
+      agentName={agentName}
       size={28.8}
     />
   );

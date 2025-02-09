@@ -1,30 +1,31 @@
 import React from 'react';
 import {
-  Listbox,
-  ListboxButton,
   Label,
-  ListboxOptions,
-  ListboxOption,
+  Listbox,
   Transition,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions,
 } from '@headlessui/react';
-import type { Option, OptionWithIcon } from '~/common';
-import CheckMark from '../svg/CheckMark';
+import type { Option, OptionWithIcon, DropdownValueSetter } from '~/common';
+import CheckMark from '~/components/svg/CheckMark';
+import { useMultiSearch } from './MultiSearch';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
-import { useMultiSearch } from './MultiSearch';
 
 type SelectDropDownProps = {
   id?: string;
   title?: string;
-  value: string | null | Option | OptionWithIcon;
   disabled?: boolean;
-  setValue: (value: string) => void;
+  value: string | null | Option | OptionWithIcon;
+  setValue: DropdownValueSetter | ((value: string) => void);
   tabIndex?: number;
-  availableValues: string[] | Option[] | OptionWithIcon[];
+  availableValues?: string[] | Option[] | OptionWithIcon[];
   emptyTitle?: boolean;
   showAbove?: boolean;
   showLabel?: boolean;
   iconSide?: 'left' | 'right';
+  optionIconSide?: 'left' | 'right';
   renderOption?: () => React.ReactNode;
   containerClassName?: string;
   currentValueClass?: string;
@@ -32,22 +33,37 @@ type SelectDropDownProps = {
   optionsClass?: string;
   subContainerClassName?: string;
   className?: string;
+  placeholder?: string;
   searchClassName?: string;
   searchPlaceholder?: string;
   showOptionIcon?: boolean;
 };
+
+function getOptionText(option: string | Option | OptionWithIcon): string {
+  if (typeof option === 'string') {
+    return option;
+  }
+  if ('label' in option) {
+    return option.label ?? '';
+  }
+  if ('value' in option) {
+    return (option.value ?? '') + '';
+  }
+  return '';
+}
 
 function SelectDropDown({
   title: _title,
   value,
   disabled,
   setValue,
-  tabIndex,
   availableValues,
   showAbove = false,
   showLabel = true,
   emptyTitle = false,
   iconSide = 'right',
+  optionIconSide = 'left',
+  placeholder,
   containerClassName,
   optionsListClass,
   optionsClass,
@@ -57,7 +73,7 @@ function SelectDropDown({
   renderOption,
   searchClassName,
   searchPlaceholder,
-  showOptionIcon,
+  showOptionIcon = false,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -69,21 +85,26 @@ function SelectDropDown({
 
   if (emptyTitle) {
     title = '';
-  } else if (!title) {
+  } else if (!(title ?? '')) {
     title = localize('com_ui_model');
   }
+
+  const values = availableValues ?? [];
 
   // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
   // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
   // reset once the component is unmounted (as per a normal search)
   const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
-    availableOptions: availableValues,
+    availableOptions: values,
     placeholder: searchPlaceholder,
-    getTextKeyOverride: (option) => ((option as Option)?.label || '').toUpperCase(),
+    getTextKeyOverride: (option) => getOptionText(option).toUpperCase(),
     className: searchClassName,
+    disabled,
   });
-  const hasSearchRender = Boolean(searchRender);
-  const options = hasSearchRender ? filteredValues : availableValues;
+  const hasSearchRender = searchRender != null;
+  const options = hasSearchRender ? filteredValues : values;
+
+  const renderIcon = showOptionIcon && value != null && (value as OptionWithIcon).icon != null;
 
   return (
     <div className={cn('flex items-center justify-center gap-2 ', containerClassName ?? '')}>
@@ -94,7 +115,7 @@ function SelectDropDown({
               <ListboxButton
                 data-testid="select-dropdown-button"
                 className={cn(
-                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left dark:border-gray-600 dark:bg-gray-700 sm:text-sm',
+                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left disabled:bg-white dark:border-gray-600 dark:bg-gray-700 sm:text-sm',
                   className ?? '',
                 )}
               >
@@ -119,12 +140,27 @@ function SelectDropDown({
                     {!showLabel && !emptyTitle && (
                       <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
                     )}
-                    {showOptionIcon && value && (value as OptionWithIcon)?.icon && (
+                    {renderIcon && optionIconSide !== 'right' && (
                       <span className="icon-md flex items-center">
                         {(value as OptionWithIcon).icon}
                       </span>
                     )}
-                    {typeof value !== 'string' && value ? value?.label ?? '' : value ?? ''}
+                    {renderIcon && (
+                      <span className="icon-md absolute right-0 mr-8 flex items-center">
+                        {(value as OptionWithIcon).icon}
+                      </span>
+                    )}
+                    {(() => {
+                      if (!value) {
+                        return <span className="text-text-secondary">{placeholder}</span>;
+                      }
+
+                      if (typeof value !== 'string') {
+                        return value.label ?? '';
+                      }
+
+                      return value;
+                    })()}
                   </span>
                 </span>
                 <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -164,7 +200,7 @@ function SelectDropDown({
                       key={'listbox-render-option'}
                       value={null}
                       className={cn(
-                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
+                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-gray-800 hover:bg-gray-20 dark:text-white dark:hover:bg-gray-700',
                         optionsClass ?? '',
                       )}
                     >
@@ -177,10 +213,11 @@ function SelectDropDown({
                       return null;
                     }
 
-                    const currentLabel = typeof option === 'string' ? option : option?.label ?? '';
-                    const currentValue = typeof option === 'string' ? option : option?.value ?? '';
+                    const currentLabel =
+                      typeof option === 'string' ? option : option.label ?? option.value ?? '';
+                    const currentValue = typeof option === 'string' ? option : option.value ?? '';
                     const currentIcon =
-                      typeof option === 'string' ? null : (option?.icon as React.ReactNode) ?? null;
+                      typeof option === 'string' ? null : (option.icon as React.ReactNode) ?? null;
                     let activeValue: string | number | null | Option = value;
                     if (typeof activeValue !== 'string') {
                       activeValue = activeValue?.value ?? '';
@@ -189,11 +226,11 @@ function SelectDropDown({
                     return (
                       <ListboxOption
                         key={i}
-                        value={currentValue}
+                        value={option}
                         className={({ active }) =>
                           cn(
-                            'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
-                            active ? 'bg-surface-tertiary' : '',
+                            'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-gray-800 hover:bg-gray-20 dark:text-white dark:hover:bg-gray-600',
+                            active ? 'bg-surface-active text-text-primary' : '',
                             optionsClass ?? '',
                           )
                         }
@@ -206,7 +243,16 @@ function SelectDropDown({
                               iconSide === 'left' ? 'ml-4' : '',
                             )}
                           >
-                            {currentIcon && <span className="mr-1">{currentIcon}</span>}
+                            {currentIcon != null && (
+                              <span
+                                className={cn(
+                                  'mr-1',
+                                  optionIconSide === 'right' ? 'absolute right-0 pr-2' : '',
+                                )}
+                              >
+                                {currentIcon}
+                              </span>
+                            )}
                             {currentLabel}
                           </span>
                           {currentValue === activeValue && (

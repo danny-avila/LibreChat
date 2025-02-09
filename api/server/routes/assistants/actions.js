@@ -1,27 +1,14 @@
-const { v4 } = require('uuid');
 const express = require('express');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const { nanoid } = require('nanoid');
 const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger } = require('~/config');
 
 const router = express.Router();
-
-/**
- * Retrieves all user's actions
- * @route GET /actions/
- * @param {string} req.params.id - Assistant identifier.
- * @returns {Action[]} 200 - success response - application/json
- */
-router.get('/', async (req, res) => {
-  try {
-    res.json(await getActions());
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 /**
  * Adds or updates actions for a specific assistant.
@@ -43,6 +30,10 @@ router.post('/:assistant_id', async (req, res) => {
     }
 
     let metadata = await encryptMetadata(_metadata);
+    const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
+    if (!isDomainAllowed) {
+      return res.status(400).json({ message: 'Domain not allowed' });
+    }
 
     let { domain } = metadata;
     domain = await domainParser(req, domain, true);
@@ -51,7 +42,7 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No domain provided' });
     }
 
-    const action_id = _action_id ?? v4();
+    const action_id = _action_id ?? nanoid();
     const initialPromises = [];
 
     const { openai } = await getOpenAIClient({ req, res });
@@ -72,7 +63,7 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(404).json({ message: 'Assistant not found' });
     }
 
-    const { actions: _actions = [] } = assistant_data ?? {};
+    const { actions: _actions = [], user: assistant_user } = assistant_data ?? {};
     const actions = [];
     for (const action of _actions) {
       const [_action_domain, current_action_id] = action.split(actionDelimiter);
@@ -108,16 +99,21 @@ router.post('/:assistant_id', async (req, res) => {
 
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
-    promises.push(
-      updateAssistantDoc(
-        { assistant_id },
-        {
-          actions,
-          user: req.user.id,
-        },
-      ),
-    );
-    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
+
+    // Only update user field for new assistant documents
+    const assistantUpdateData = { actions };
+    if (!assistant_data) {
+      assistantUpdateData.user = req.user.id;
+    }
+    promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
+
+    // Only update user field for new actions
+    const actionUpdateData = { metadata, assistant_id };
+    if (!actions_result || !actions_result.length) {
+      // For new actions, use the assistant owner's user ID
+      actionUpdateData.user = assistant_user || req.user.id;
+    }
+    promises.push(updateAction({ action_id }, actionUpdateData));
 
     /** @type {[AssistantDocument, Action]} */
     let [assistantDocument, updatedAction] = await Promise.all(promises);
@@ -178,6 +174,10 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
 
     domain = await domainParser(req, domain, true);
 
+    if (!domain) {
+      return res.status(400).json({ message: 'No domain provided' });
+    }
+
     const updatedTools = tools.filter(
       (tool) => !(tool.function && tool.function.name.includes(domain)),
     );
@@ -185,15 +185,12 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
     await openai.beta.assistants.update(assistant_id, { tools: updatedTools });
 
     const promises = [];
-    promises.push(
-      updateAssistantDoc(
-        { assistant_id },
-        {
-          actions: updatedActions,
-          user: req.user.id,
-        },
-      ),
-    );
+    // Only update user field if assistant document doesn't exist
+    const assistantUpdateData = { actions: updatedActions };
+    if (!assistant_data) {
+      assistantUpdateData.user = req.user.id;
+    }
+    promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
     promises.push(deleteAction({ action_id }));
 
     await Promise.all(promises);

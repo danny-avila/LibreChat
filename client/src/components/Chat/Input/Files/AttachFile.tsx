@@ -1,60 +1,56 @@
-import React from 'react';
-import {
-  EModelEndpoint,
-  supportsFiles,
-  fileConfig as defaultFileConfig,
-  mergeFileConfig,
-} from 'librechat-data-provider';
-import { useGetFileConfig } from '~/data-provider';
+import React, { useRef } from 'react';
+import { FileUpload, TooltipAnchor } from '~/components/ui';
 import { AttachmentIcon } from '~/components/svg';
-import { FileUpload } from '~/components/ui';
-import { useFileHandling } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const AttachFile = ({
-  endpoint,
-  endpointType,
   isRTL,
-  disabled = false,
+  disabled,
+  handleFileChange,
 }: {
-  endpoint: EModelEndpoint | '';
-  endpointType?: EModelEndpoint;
   isRTL: boolean;
   disabled?: boolean | null;
+  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) => {
-  const { handleFileChange } = useFileHandling();
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
-  const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
-
-  if (!supportsFiles[endpointType ?? endpoint ?? ''] || endpointFileConfig?.disabled) {
-    return null;
-  }
+  const localize = useLocalize();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isUploadDisabled = disabled ?? false;
 
   return (
-    <div
-      className={cn(
-        'absolute',
-        isRTL
-          ? 'bottom-2 right-14 md:bottom-3.5 md:right-3'
-          : 'bottom-2 left-2 md:bottom-3.5 md:left-4',
-      )}
-    >
-      <FileUpload handleFileChange={handleFileChange} className="flex">
-        <button
-          disabled={!!disabled}
-          type="button"
-          className="btn relative text-black focus:outline-none focus:ring-2 focus:ring-border-xheavy focus:ring-opacity-50 dark:text-white"
-          aria-label="Attach files"
-          style={{ padding: 0 }}
-        >
-          <div className="flex w-full items-center justify-center gap-2">
-            <AttachmentIcon />
-          </div>
-        </button>
-      </FileUpload>
-    </div>
+    <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
+      <TooltipAnchor
+        role="button"
+        id="attach-file"
+        aria-label={localize('com_sidepanel_attach_files')}
+        disabled={isUploadDisabled}
+        className={cn(
+          'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+          isRTL ? 'bottom-2 right-2' : 'bottom-2 left-2',
+        )}
+        description={localize('com_sidepanel_attach_files')}
+        onKeyDownCapture={(e) => {
+          if (!inputRef.current) {
+            return;
+          }
+          if (e.key === 'Enter' || e.key === ' ') {
+            inputRef.current.value = '';
+            inputRef.current.click();
+          }
+        }}
+        onClick={() => {
+          if (!inputRef.current) {
+            return;
+          }
+          inputRef.current.value = '';
+          inputRef.current.click();
+        }}
+      >
+        <div className="flex w-full items-center justify-center gap-2">
+          <AttachmentIcon />
+        </div>
+      </TooltipAnchor>
+    </FileUpload>
   );
 };
 

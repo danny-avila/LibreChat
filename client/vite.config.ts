@@ -55,13 +55,15 @@ export default defineConfig({
     nodePolyfills(),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
-      registerType: 'prompt', // 'prompt' | 'auto' | 'disabled'
+      registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
       devOptions: {
         enabled: false, // enable/disable registering SW in development mode
       },
+      useCredentials: true,
       workbox: {
         globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        navigateFallbackDenylist: [/^\/oauth/],
       },
       manifest: {
         name: 'LibreChat',
@@ -117,6 +119,14 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             return 'vendor';
           }
+        },
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.name)) {
+            return 'assets/[name][extname]';
+          }
+          return 'assets/[name].[hash][extname]';
         },
       },
       /**

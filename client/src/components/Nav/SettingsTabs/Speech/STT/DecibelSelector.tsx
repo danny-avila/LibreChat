@@ -15,13 +15,13 @@ export default function DecibelSelector() {
       <div className="flex items-center justify-between">
         <div>{localize('com_nav_db_sensitivity')}</div>
         <div className="w-2" />
-        <small className="opacity-40">({localize('com_endpoint_default_with_num', '-45')})</small>
+        <small className="opacity-40">({localize('com_endpoint_default_with_num', { 0: '-45' })})</small>
       </div>
       <div className="flex items-center justify-between">
         <Slider
           value={[decibelValue ?? -45]}
           onValueChange={(value) => setDecibelValue(value[0])}
-          doubleClickHandler={() => setDecibelValue(-45)}
+          onDoubleClick={() => setDecibelValue(-45)}
           min={-100}
           max={-30}
           step={1}

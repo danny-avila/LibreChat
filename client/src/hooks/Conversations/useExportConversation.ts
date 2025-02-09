@@ -20,6 +20,12 @@ import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { cleanupPreset, buildTree } from '~/utils';
 import { useParams } from 'react-router-dom';
 
+type ExportValues = {
+  fieldName: string;
+  fieldValues: string[];
+};
+type ExportEntries = ExportValues[];
+
 export default function useExportConversation({
   conversation,
   filename,
@@ -48,7 +54,7 @@ export default function useExportConversation({
     return dataTree?.length === 0 ? null : dataTree ?? null;
   }, [paramId, conversation?.conversationId, queryClient]);
 
-  const getMessageText = (message: TMessage, format = 'text') => {
+  const getMessageText = (message: TMessage | undefined, format = 'text') => {
     if (!message) {
       return '';
     }
@@ -61,11 +67,11 @@ export default function useExportConversation({
     };
 
     if (!message.content) {
-      return formatText(message.sender, message.text);
+      return formatText(message.sender || '', message.text);
     }
 
     return message.content
-      .map((content) => getMessageContent(message.sender, content))
+      .map((content) => getMessageContent(message.sender || '', content))
       .map((text) => {
         return formatText(text[0], text[1]);
       })
@@ -77,7 +83,7 @@ export default function useExportConversation({
    * Currently, content whose type is `TOOL_CALL` basically returns JSON as is.
    * In the future, different formatted text may be returned for each type.
    */
-  const getMessageContent = (sender: string, content: TMessageContentParts): string[] => {
+  const getMessageContent = (sender: string, content?: TMessageContentParts): string[] => {
     if (!content) {
       return [];
     }
@@ -89,7 +95,9 @@ export default function useExportConversation({
 
     if (content.type === ContentTypes.TEXT) {
       // TEXT
-      return [sender, content[ContentTypes.TEXT].value];
+      const textPart = content[ContentTypes.TEXT];
+      const text = typeof textPart === 'string' ? textPart : textPart.value;
+      return [sender, text];
     }
 
     if (content.type === ContentTypes.TOOL_CALL) {
@@ -154,7 +162,7 @@ export default function useExportConversation({
       messageId: conversation?.conversationId,
       message: null,
       messages: getMessageTree(),
-      branches: !!exportBranches,
+      branches: Boolean(exportBranches),
       recursive: false,
     });
 
@@ -171,7 +179,7 @@ export default function useExportConversation({
       fileName: filename,
       extension: 'csv',
       exportType: exportFromJSON.types.csv,
-      beforeTableEncode: (entries) => [
+      beforeTableEncode: (entries: ExportEntries | undefined) => [
         {
           fieldName: 'sender',
           fieldValues: entries?.find((e) => e.fieldName == 'sender')?.fieldValues ?? [],
@@ -216,7 +224,7 @@ export default function useExportConversation({
       `- title: ${conversation?.title}\n` +
       `- exportAt: ${new Date().toTimeString()}\n`;
 
-    if (includeOptions) {
+    if (includeOptions === true) {
       data += '\n## Options\n';
       const options = cleanupPreset({ preset: conversation as TPreset });
 
@@ -240,7 +248,7 @@ export default function useExportConversation({
         if (message.error) {
           data += '*(This is an error message)*\n';
         }
-        if (message.unfinished) {
+        if (message.unfinished === true) {
           data += '*(This is an unfinished message)*\n';
         }
         data += '\n\n';
@@ -250,7 +258,7 @@ export default function useExportConversation({
       if (messages.error) {
         data += '*(This is an error message)*\n';
       }
-      if (messages.unfinished) {
+      if (messages.unfinished === true) {
         data += '*(This is an unfinished message)*\n';
       }
     }
@@ -272,7 +280,7 @@ export default function useExportConversation({
       `title: ${conversation?.title}\n` +
       `exportAt: ${new Date().toTimeString()}\n`;
 
-    if (includeOptions) {
+    if (includeOptions === true) {
       data += '\nOptions\n########################\n';
       const options = cleanupPreset({ preset: conversation as TPreset });
 
@@ -296,7 +304,7 @@ export default function useExportConversation({
         if (message.error) {
           data += '(This is an error message)\n';
         }
-        if (message.unfinished) {
+        if (message.unfinished === true) {
           data += '(This is an unfinished message)\n';
         }
         data += '\n\n';
@@ -306,7 +314,7 @@ export default function useExportConversation({
       if (messages.error) {
         data += '(This is an error message)\n';
       }
-      if (messages.unfinished) {
+      if (messages.unfinished === true) {
         data += '(This is an unfinished message)\n';
       }
     }
@@ -329,7 +337,7 @@ export default function useExportConversation({
       recursive: recursive,
     };
 
-    if (includeOptions) {
+    if (includeOptions === true) {
       data['options'] = cleanupPreset({ preset: conversation as TPreset });
     }
 
@@ -337,11 +345,11 @@ export default function useExportConversation({
       messageId: conversation?.conversationId,
       message: null,
       messages: getMessageTree(),
-      branches: !!exportBranches,
-      recursive: !!recursive,
+      branches: Boolean(exportBranches),
+      recursive: Boolean(recursive),
     });
 
-    if (recursive && !Array.isArray(messages)) {
+    if (recursive === true && !Array.isArray(messages)) {
       data['messagesTree'] = messages.children;
     } else {
       data['messages'] = messages;

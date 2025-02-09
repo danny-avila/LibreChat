@@ -1,106 +1,197 @@
-import { useState, type FC } from 'react';
+import { useState, useId, useCallback, useMemo, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Constants } from 'librechat-data-provider';
-import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
+import * as Ariakit from '@ariakit/react';
+import { BookmarkPlusIcon } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import type { TConversationTag } from 'librechat-data-provider';
+import type { FC } from 'react';
+import type * as t from '~/common';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
-import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
+import { DropdownPopup, TooltipAnchor } from '~/components/ui';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
-import { useLocalize, useBookmarkSuccess } from '~/hooks';
+import { BookmarkEditDialog } from '~/components/Bookmarks';
+import { useBookmarkSuccess, useLocalize } from '~/hooks';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components';
-import { cn } from '~/utils';
+import { cn, logger } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
 
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
-  const onSuccess = useBookmarkSuccess(conversationId);
-  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
+  const updateConvoTags = useBookmarkSuccess(conversationId);
+  const tags = conversation?.tags;
+  const isTemporary = conversation?.expiredAt != null;
 
-  const [open, setIsOpen] = useState(false);
+  const menuId = useId();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const { mutateAsync, isLoading } = useTagConversationMutation(conversationId);
+  const mutation = useTagConversationMutation(conversationId, {
+    onSuccess: (newTags: string[], vars) => {
+      updateConvoTags(newTags);
+      const tagElement = document.getElementById(vars.tag);
+      console.log('tagElement', tagElement);
+      if (tagElement) {
+        setTimeout(() => tagElement.focus(), 2);
+      }
+    },
+    onError: () => {
+      showToast({
+        message: 'Error adding bookmark',
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+    onMutate: (vars) => {
+      const tagElement = document.getElementById(vars.tag);
+      console.log('tagElement', tagElement);
+      if (tagElement) {
+        setTimeout(() => tagElement.focus(), 2);
+      }
+    },
+  });
 
   const { data } = useConversationTagsQuery();
 
-  const isActiveConvo =
+  const isActiveConvo = Boolean(
     conversation &&
-    conversationId &&
-    conversationId !== Constants.NEW_CONVO &&
-    conversationId !== 'search';
+      conversationId &&
+      conversationId !== Constants.NEW_CONVO &&
+      conversationId !== 'search',
+  );
 
-  if (!isActiveConvo) {
-    return <></>;
-  }
+  const handleSubmit = useCallback(
+    (tag?: string) => {
+      if (tag === undefined || tag === '' || !conversationId) {
+        showToast({
+          message: 'Invalid tag or conversationId',
+          severity: NotificationSeverity.ERROR,
+        });
+        return;
+      }
 
-  const onOpenChange = async (open: boolean) => {
-    if (!open) {
-      setIsOpen(open);
-      return;
-    }
-    if (open && tags && tags.length > 0) {
-      setIsOpen(open);
-    } else {
-      if (conversation && conversationId) {
-        await mutateAsync(
-          {
-            tags: [Constants.SAVED_TAG as 'Saved'],
-          },
-          {
-            onSuccess: (newTags: string[]) => {
-              setTags(newTags);
-              onSuccess(newTags);
-            },
-            onError: () => {
-              console.error('Error adding bookmark');
-            },
-          },
-        );
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags before setting', tags);
+
+      const allTags =
+        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+      const existingTags = allTags.map((t) => t.tag);
+      const filteredTags = tags?.filter((t) => existingTags.includes(t));
+
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after filtering', filteredTags);
+      const newTags =
+        filteredTags?.includes(tag) === true
+          ? filteredTags.filter((t) => t !== tag)
+          : [...(filteredTags ?? []), tag];
+
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
+      mutation.mutate({
+        tags: newTags,
+        tag,
+      });
+    },
+    [tags, conversationId, mutation, queryClient, showToast],
+  );
+
+  const newBookmarkRef = useRef<HTMLButtonElement>(null);
+
+  const dropdownItems: t.MenuItemProps[] = useMemo(() => {
+    const items: t.MenuItemProps[] = [
+      {
+        id: '%___new___bookmark___%',
+        label: localize('com_ui_bookmarks_new'),
+        icon: <BookmarkPlusIcon className="size-4" />,
+        hideOnClick: false,
+        ref: newBookmarkRef,
+        render: (props) => <button {...props} />,
+        onClick: () => setIsDialogOpen(true),
+      },
+    ];
+
+    if (data) {
+      for (const tag of data) {
+        const isSelected = tags?.includes(tag.tag);
+        items.push({
+          id: tag.tag,
+          label: tag.tag,
+          hideOnClick: false,
+          icon:
+            isSelected === true ? (
+              <BookmarkFilledIcon className="size-4" />
+            ) : (
+              <BookmarkIcon className="size-4" />
+            ),
+          onClick: () => handleSubmit(tag.tag),
+          disabled: mutation.isLoading,
+        });
       }
     }
-  };
+
+    return items;
+  }, [tags, data, handleSubmit, mutation.isLoading, localize]);
+
+  if (!isActiveConvo) {
+    return null;
+  }
+
+  if (isTemporary) {
+    return null;
+  }
 
   const renderButtonContent = () => {
-    if (isLoading) {
-      return <Spinner />;
+    if (mutation.isLoading) {
+      return <Spinner aria-label="Spinner" />;
     }
-    if (tags && tags.length > 0) {
-      return <BookmarkFilledIcon className="icon-sm" />;
+    if ((tags?.length ?? 0) > 0) {
+      return <BookmarkFilledIcon className="icon-sm" aria-label="Filled Bookmark" />;
     }
-    return <BookmarkIcon className="icon-sm" />;
+    return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
   };
 
   return (
-    <Root open={open} onOpenChange={onOpenChange}>
-      <Trigger asChild>
-        <button
-          id="header-bookmarks-menu"
-          className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-border-light bg-transparent text-left focus:outline-none focus:ring-0 sm:text-sm',
-            'hover:bg-header-button-hover radix-state-open:bg-header-button-hover',
-            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:outline-offset-2 focus:ring-0 focus-visible:ring-2 focus-visible:ring-ring-primary ',
-          )}
-          title={localize('com_ui_bookmarks')}
-        >
-          {renderButtonContent()}
-        </button>
-      </Trigger>
-      <Portal>
-        <Content
-          className="mt-2 grid max-h-[500px] w-full min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-header-primary text-text-primary shadow-lg"
-          side="bottom"
-          align="start"
-        >
-          {data && conversation && (
-            <BookmarkContext.Provider value={{ bookmarks: data }}>
-              <BookmarkMenuItems conversation={conversation} tags={tags ?? []} setTags={setTags} />
-            </BookmarkContext.Provider>
-          )}
-        </Content>
-      </Portal>
-    </Root>
+    <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
+      <DropdownPopup
+        focusLoop={true}
+        menuId={menuId}
+        isOpen={isMenuOpen}
+        setIsOpen={setIsMenuOpen}
+        keyPrefix={`${conversationId}-bookmark-`}
+        trigger={
+          <TooltipAnchor
+            description={localize('com_ui_bookmarks_add')}
+            render={
+              <Ariakit.MenuButton
+                id="bookmark-menu-button"
+                aria-label={localize('com_ui_bookmarks_add')}
+                className={cn(
+                  'mt-text-sm flex size-10 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
+                  isMenuOpen ? 'bg-surface-hover' : '',
+                )}
+                data-testid="bookmark-menu"
+              >
+                {renderButtonContent()}
+              </Ariakit.MenuButton>
+            }
+          />
+        }
+        items={dropdownItems}
+      />
+      <BookmarkEditDialog
+        tags={tags}
+        open={isDialogOpen}
+        setTags={updateConvoTags}
+        setOpen={setIsDialogOpen}
+        triggerRef={newBookmarkRef}
+        conversationId={conversationId}
+        context="BookmarkMenu - BookmarkEditDialog"
+      />
+    </BookmarkContext.Provider>
   );
 };
 

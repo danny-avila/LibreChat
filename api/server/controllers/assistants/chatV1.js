@@ -1,5 +1,6 @@
 const { v4 } = require('uuid');
 const {
+  Time,
   Constants,
   RunStatus,
   CacheKeys,
@@ -24,6 +25,7 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
+const { createRunBody } = require('~/server/services/createRunBody');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
@@ -31,8 +33,6 @@ const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
-
-const ten_minutes = 1000 * 60 * 10;
 
 /**
  * @route POST /
@@ -54,10 +54,12 @@ const chatV1 = async (req, res) => {
     promptPrefix,
     assistant_id,
     instructions,
+    endpointOption,
     thread_id: _thread_id,
     messageId: _messageId,
     conversationId: convoId,
     parentMessageId: _parentId = Constants.NO_PARENT,
+    clientTimestamp,
   } = req.body;
 
   /** @type {OpenAIClient} */
@@ -283,7 +285,7 @@ const chatV1 = async (req, res) => {
     const { openai: _openai, client } = await getOpenAIClient({
       req,
       res,
-      endpointOption: req.body.endpointOption,
+      endpointOption,
       initAppClient: true,
     });
 
@@ -303,18 +305,14 @@ const chatV1 = async (req, res) => {
     };
 
     /** @type {CreateRunBody | undefined} */
-    const body = {
+    const body = createRunBody({
       assistant_id,
       model,
-    };
-
-    if (promptPrefix) {
-      body.additional_instructions = promptPrefix;
-    }
-
-    if (instructions) {
-      body.instructions = instructions;
-    }
+      promptPrefix,
+      instructions,
+      endpointOption,
+      clientTimestamp,
+    });
 
     const getRequestFileIds = async () => {
       let thread_file_ids = [];
@@ -333,12 +331,12 @@ const chatV1 = async (req, res) => {
     };
 
     const addVisionPrompt = async () => {
-      if (!req.body.endpointOption.attachments) {
+      if (!endpointOption.attachments) {
         return;
       }
 
       /** @type {MongoFile[]} */
-      const attachments = await req.body.endpointOption.attachments;
+      const attachments = await endpointOption.attachments;
       if (attachments && attachments.every((attachment) => checkOpenAIStorage(attachment.source))) {
         return;
       }
@@ -366,11 +364,14 @@ const chatV1 = async (req, res) => {
       visionMessage.content = createVisionPrompt(plural);
       visionMessage = formatMessage({ message: visionMessage, endpoint: EModelEndpoint.openAI });
 
-      visionPromise = openai.chat.completions.create({
-        model: 'gpt-4-vision-preview',
-        messages: [visionMessage],
-        max_tokens: 4000,
-      });
+      visionPromise = openai.chat.completions
+        .create({
+          messages: [visionMessage],
+          max_tokens: 4000,
+        })
+        .catch((error) => {
+          logger.error('[/assistants/chat/] Error creating vision prompt', error);
+        });
 
       const pluralized = plural ? 's' : '';
       body.additional_instructions = `${
@@ -508,7 +509,7 @@ const chatV1 = async (req, res) => {
         });
 
         run_id = run.id;
-        await cache.set(cacheKey, `${thread_id}:${run_id}`, ten_minutes);
+        await cache.set(cacheKey, `${thread_id}:${run_id}`, Time.TEN_MINUTES);
         sendInitialResponse();
 
         // todo: retry logic
@@ -519,7 +520,7 @@ const chatV1 = async (req, res) => {
       /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
       const handlers = {
         [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
-          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, ten_minutes);
+          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, Time.TEN_MINUTES);
           run_id = event.data.id;
           sendInitialResponse();
         },

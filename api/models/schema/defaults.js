@@ -1,5 +1,5 @@
 const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, bingAI, anthropic, chatGPTBrowser]
+  // endpoint: [azureOpenAI, openAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
@@ -10,6 +10,11 @@ const conversationPreset = {
   },
   // for azureOpenAI, openAI, chatGPTBrowser only
   model: {
+    type: String,
+    required: false,
+  },
+  // for bedrock only
+  region: {
     type: String,
     required: false,
   },
@@ -56,29 +61,27 @@ const conversationPreset = {
     type: Number,
     required: false,
   },
-  // for bingai only
-  jailbreak: {
-    type: Boolean,
-  },
-  context: {
-    type: String,
-  },
-  systemMessage: {
-    type: String,
-  },
-  toneStyle: {
-    type: String,
-  },
   file_ids: { type: [{ type: String }], default: undefined },
   // deprecated
   resendImages: {
     type: Boolean,
+  },
+  /* Anthropic only */
+  promptCache: {
+    type: Boolean,
+  },
+  system: {
+    type: String,
   },
   // files
   resendFiles: {
     type: Boolean,
   },
   imageDetail: {
+    type: String,
+  },
+  /* agents */
+  agent_id: {
     type: String,
   },
   /* assistants */
@@ -113,6 +116,10 @@ const conversationPreset = {
   },
   max_tokens: {
     type: Number,
+  },
+  /** omni models only */
+  reasoning_effort: {
+    type: String,
   },
 };
 
@@ -162,12 +169,6 @@ const agentOptions = {
   frequency_penalty: {
     type: Number,
     required: false,
-  },
-  context: {
-    type: String,
-  },
-  systemMessage: {
-    type: String,
   },
 };
 

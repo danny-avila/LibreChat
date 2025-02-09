@@ -1,13 +1,14 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type * as a from '../types/agents';
+import type * as s from '../schemas';
 import type * as t from '../types';
-import type { TMessage, TConversation, TSharedLink, TConversationTag } from '../schemas';
 
 export type Conversation = {
   id: string;
   createdAt: number;
   participants: string[];
   lastMessage: string;
-  conversations: TConversation[];
+  conversations: s.TConversation[];
 };
 
 // Parameters for listing conversations (e.g., for pagination)
@@ -16,7 +17,7 @@ export type ConversationListParams = {
   before?: string | null;
   after?: string | null;
   order?: 'asc' | 'desc';
-  pageNumber: string; // Add this line
+  pageNumber: string;
   conversationId?: string;
   isArchived?: boolean;
   tags?: string[];
@@ -24,39 +25,50 @@ export type ConversationListParams = {
 
 // Type for the response from the conversation list API
 export type ConversationListResponse = {
-  conversations: TConversation[];
+  conversations: s.TConversation[];
   pageNumber: string;
   pageSize: string | number;
   pages: string | number;
-  messages: TMessage[];
+  messages: s.TMessage[];
 };
 
 export type ConversationData = InfiniteData<ConversationListResponse>;
 export type ConversationUpdater = (
   data: ConversationData,
-  conversation: TConversation,
+  conversation: s.TConversation,
 ) => ConversationData;
 
-export type SharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
-  messages: TMessage[];
-};
-export type SharedLinkListParams = Omit<ConversationListParams, 'isArchived' | 'conversationId'> & {
-  isPublic?: boolean;
+export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
+  messages: s.TMessage[];
 };
 
-export type SharedLinksResponse = Omit<ConversationListResponse, 'conversations' | 'messages'> & {
-  sharedLinks: TSharedLink[];
+export interface SharedLinksListParams {
+  pageSize: number;
+  isPublic: boolean;
+  sortBy: 'title' | 'createdAt';
+  sortDirection: 'asc' | 'desc';
+  search?: string;
+  cursor?: string;
+}
+
+export type SharedLinkItem = {
+  shareId: string;
+  title: string;
+  isPublic: boolean;
+  createdAt: Date;
+  conversationId: string;
 };
 
-// Type for the response from the conversation list API
-export type SharedLinkListResponse = {
-  sharedLinks: TSharedLink[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-};
+export interface SharedLinksResponse {
+  links: SharedLinkItem[];
+  nextCursor: string | null;
+  hasNextPage: boolean;
+}
 
-export type SharedLinkListData = InfiniteData<SharedLinkListResponse>;
+export interface SharedLinkQueryData {
+  pages: SharedLinksResponse[];
+  pageParams: (string | null)[];
+}
 
 export type AllPromptGroupsFilterRequest = {
   category: string;
@@ -71,4 +83,10 @@ export type AllPromptGroupsFilterRequest = {
 
 export type AllPromptGroupsResponse = t.TPromptGroup[];
 
-export type ConversationTagsResponse = TConversationTag[];
+export type ConversationTagsResponse = s.TConversationTag[];
+
+export type VerifyToolAuthParams = { toolId: string };
+export type VerifyToolAuthResponse = { authenticated: boolean; message?: string | s.AuthType };
+
+export type GetToolCallParams = { conversationId: string };
+export type ToolCallResults = a.ToolCallResult[];

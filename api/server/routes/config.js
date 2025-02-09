@@ -1,5 +1,5 @@
 const express = require('express');
-const { CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
@@ -32,7 +32,7 @@ router.get('/', async function (req, res) {
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
-  const instanceProject = await getProjectByName('instance', '_id');
+  const instanceProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
 
   const ldap = getLdapConfig();
 
@@ -46,6 +46,11 @@ router.get('/', async function (req, res) {
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
+      appleLoginEnabled:
+          !!process.env.APPLE_CLIENT_ID &&
+          !!process.env.APPLE_TEAM_ID &&
+          !!process.env.APPLE_KEY_ID &&
+          !!process.env.APPLE_PRIVATE_KEY_PATH,
       openidLoginEnabled:
         !!process.env.OPENID_CLIENT_ID &&
         !!process.env.OPENID_CLIENT_SECRET &&

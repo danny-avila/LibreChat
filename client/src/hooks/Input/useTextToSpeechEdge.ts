@@ -1,28 +1,24 @@
 import { useRecoilValue } from 'recoil';
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
-import { useToastContext } from '~/Providers';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import type { VoiceOption } from '~/common';
+import { useToastContext } from '~/Providers/ToastContext';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
-
-interface Voice {
-  value: string;
-  label: string;
-}
 
 interface UseTextToSpeechEdgeReturn {
   generateSpeechEdge: (text: string) => void;
   cancelSpeechEdge: () => void;
-  voices: Voice[];
+  voices: VoiceOption[];
 }
 
 function useTextToSpeechEdge({
   setIsSpeaking,
 }: {
-  setIsSpeaking: (isSpeaking: boolean) => void;
+  setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
 }): UseTextToSpeechEdgeReturn {
   const localize = useLocalize();
-  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
   const voiceName = useRecoilValue(store.voice);
   const ttsRef = useRef<MsEdgeTTS | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
@@ -63,7 +59,7 @@ function useTextToSpeechEdge({
     if (!ttsRef.current) {
       ttsRef.current = new MsEdgeTTS();
     }
-    const availableVoice: Voice | undefined = voices.find((v) => v.value === voiceName);
+    const availableVoice: VoiceOption | undefined = voices.find((v) => v.value === voiceName);
 
     if (availableVoice) {
       ttsRef.current
@@ -71,7 +67,7 @@ function useTextToSpeechEdge({
         .catch((error) => {
           console.error('Error initializing TTS:', error);
           showToast({
-            message: localize('com_nav_tts_init_error', (error as Error).message),
+            message: localize('com_nav_tts_init_error', { 0: (error as Error).message }),
             status: 'error',
           });
         });
@@ -81,7 +77,7 @@ function useTextToSpeechEdge({
         .catch((error) => {
           console.error('Error initializing TTS:', error);
           showToast({
-            message: localize('com_nav_tts_init_error', (error as Error).message),
+            message: localize('com_nav_tts_init_error', { 0: (error as Error).message }),
             status: 'error',
           });
         });
@@ -172,7 +168,7 @@ function useTextToSpeechEdge({
         } catch (error) {
           console.error('Error generating speech:', error);
           showToast({
-            message: localize('com_nav_audio_play_error', (error as Error).message),
+            message: localize('com_nav_audio_play_error', { 0: (error as Error).message }),
             status: 'error',
           });
           setIsSpeaking(false);
@@ -181,7 +177,7 @@ function useTextToSpeechEdge({
 
       generate();
     },
-    [appendNextBuffer, showToast, localize],
+    [setIsSpeaking, appendNextBuffer, showToast, localize],
   );
 
   const cancelSpeechEdge = useCallback(() => {
@@ -202,7 +198,7 @@ function useTextToSpeechEdge({
         status: 'error',
       });
     }
-  }, [showToast, localize]);
+  }, [setIsSpeaking, showToast, localize]);
 
   useEffect(() => {
     if (!isBrowserSupported) {

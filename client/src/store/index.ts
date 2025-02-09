@@ -1,5 +1,4 @@
-import conversation from './conversation';
-import conversations from './conversations';
+import * as artifacts from './artifacts';
 import families from './families';
 import endpoints from './endpoints';
 import user from './user';
@@ -11,11 +10,11 @@ import preset from './preset';
 import prompts from './prompts';
 import lang from './language';
 import settings from './settings';
-
+import misc from './misc';
+import isTemporary from './temporary';
 export default {
+  ...artifacts,
   ...families,
-  ...conversation,
-  ...conversations,
   ...endpoints,
   ...user,
   ...text,
@@ -26,4 +25,6 @@ export default {
   ...preset,
   ...lang,
   ...settings,
+  ...misc,
+  ...isTemporary,
 };

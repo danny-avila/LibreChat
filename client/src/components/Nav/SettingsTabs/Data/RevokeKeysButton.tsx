@@ -2,64 +2,77 @@ import {
   useRevokeAllUserKeysMutation,
   useRevokeUserKeyMutation,
 } from 'librechat-data-provider/react-query';
-import React, { useState, useCallback, useRef } from 'react';
-import { useOnClickOutside } from '~/hooks';
-import DangerButton from '../DangerButton';
+import React, { useState } from 'react';
+import { Button, Label, OGDialog, OGDialogTrigger, Spinner } from '~/components';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useLocalize } from '~/hooks';
 
 export const RevokeKeysButton = ({
-  showText = true,
   endpoint = '',
   all = false,
   disabled = false,
+  setDialogOpen,
 }: {
-  showText?: boolean;
   endpoint?: string;
   all?: boolean;
   disabled?: boolean;
+  setDialogOpen?: (open: boolean) => void;
 }) => {
-  const [confirmClear, setConfirmClear] = useState(false);
+  const localize = useLocalize();
+  const [open, setOpen] = useState(false);
   const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
   const revokeKeysMutation = useRevokeAllUserKeysMutation();
 
-  const contentRef = useRef(null);
-  useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
-
-  const revokeAllUserKeys = useCallback(() => {
-    if (confirmClear) {
-      revokeKeysMutation.mutate({});
-      setConfirmClear(false);
-    } else {
-      setConfirmClear(true);
-    }
-  }, [confirmClear, revokeKeysMutation]);
-
-  const revokeUserKey = useCallback(() => {
-    if (!endpoint) {
+  const handleSuccess = () => {
+    if (!setDialogOpen) {
       return;
-    } else if (confirmClear) {
-      revokeKeyMutation.mutate({});
-      setConfirmClear(false);
-    } else {
-      setConfirmClear(true);
     }
-  }, [confirmClear, revokeKeyMutation, endpoint]);
 
-  const onClick = all ? revokeAllUserKeys : revokeUserKey;
+    setDialogOpen(false);
+  };
+
+  const onClick = () => {
+    if (all) {
+      revokeKeysMutation.mutate({});
+    } else {
+      revokeKeyMutation.mutate({}, { onSuccess: handleSuccess });
+    }
+  };
+
+  const dialogTitle = all
+    ? localize('com_ui_revoke_keys')
+    : localize('com_ui_revoke_key_endpoint', { 0: endpoint });
+
+  const dialogMessage = all
+    ? localize('com_ui_revoke_keys_confirm')
+    : localize('com_ui_revoke_key_confirm');
+
+  const isLoading = revokeKeyMutation.isLoading || revokeKeysMutation.isLoading;
 
   return (
-    <DangerButton
-      ref={contentRef}
-      showText={showText}
-      onClick={onClick}
-      disabled={disabled}
-      confirmClear={confirmClear}
-      id={'revoke-all-user-keys'}
-      actionTextCode={'com_ui_revoke'}
-      infoTextCode={'com_ui_revoke_info'}
-      infoDescriptionCode={'com_nav_info_revoke'}
-      dataTestIdInitial={'revoke-all-keys-initial'}
-      dataTestIdConfirm={'revoke-all-keys-confirm'}
-      mutation={all ? revokeKeysMutation : revokeKeyMutation}
-    />
+    <OGDialog open={open} onOpenChange={setOpen}>
+      <OGDialogTrigger asChild>
+        <Button
+          variant="destructive"
+          className="flex items-center justify-center rounded-lg transition-colors duration-200"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+        >
+          {localize('com_ui_revoke')}
+        </Button>
+      </OGDialogTrigger>
+      <OGDialogTemplate
+        showCloseButton={false}
+        title={dialogTitle}
+        className="max-w-[450px]"
+        main={<Label className="text-left text-sm font-medium">{dialogMessage}</Label>}
+        selection={{
+          selectHandler: onClick,
+          selectClasses:
+            'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
+          selectText: isLoading ? <Spinner /> : localize('com_ui_revoke'),
+        }}
+      />
+    </OGDialog>
   );
 };

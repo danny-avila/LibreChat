@@ -23,7 +23,6 @@ const idSchema = z.string().uuid();
  * @param {string} [params.error] - Any error associated with the message.
  * @param {boolean} [params.unfinished] - Indicates if the message is unfinished.
  * @param {Object[]} [params.files] - An array of files associated with the message.
- * @param {boolean} [params.isEdited] - Indicates if the message was edited.
  * @param {string} [params.finish_reason] - Reason for finishing the message.
  * @param {number} [params.tokenCount] - The number of tokens in the message.
  * @param {string} [params.plugin] - Plugin associated with the message.
@@ -35,82 +34,43 @@ const idSchema = z.string().uuid();
  * @throws {Error} If there is an error in saving the message.
  */
 async function saveMessage(req, params, metadata) {
+  if (!req?.user?.id) {
+    throw new Error('User not authenticated');
+  }
+
+  const validConvoId = idSchema.safeParse(params.conversationId);
+  if (!validConvoId.success) {
+    logger.warn(`Invalid conversation ID: ${params.conversationId}`);
+    logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+    logger.info(`---Invalid conversation ID Params: ${JSON.stringify(params, null, 2)}`);
+    return;
+  }
+
   try {
-    if (!req || !req.user || !req.user.id) {
-      throw new Error('User not authenticated');
-    }
-
-    const {
-      text,
-      error,
-      model,
-      files,
-      plugin,
-      sender,
-      plugins,
-      iconURL,
-      endpoint,
-      isEdited,
-      messageId,
-      unfinished,
-      tokenCount,
-      newMessageId,
-      finish_reason,
-      conversationId,
-      parentMessageId,
-      isCreatedByUser,
-    } = params;
-
-    const validConvoId = idSchema.safeParse(conversationId);
-    if (!validConvoId.success) {
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      if (metadata && metadata?.context) {
-        logger.info(`---\`saveMessage\` context: ${metadata.context}`);
-      }
-
-      logger.info(`---Invalid conversation ID Params:
-
-${JSON.stringify(params, null, 2)}
-
-`);
-      return;
-    }
-
     const update = {
+      ...params,
       user: req.user.id,
-      iconURL,
-      endpoint,
-      messageId: newMessageId || messageId,
-      conversationId,
-      parentMessageId,
-      sender,
-      text,
-      isCreatedByUser,
-      isEdited,
-      finish_reason,
-      error,
-      unfinished,
-      tokenCount,
-      plugin,
-      plugins,
-      model,
+      messageId: params.newMessageId || params.messageId,
     };
 
-    if (files) {
-      update.files = files;
+    if (req?.body?.isTemporary) {
+      const expiredAt = new Date();
+      expiredAt.setDate(expiredAt.getDate() + 30);
+      update.expiredAt = expiredAt;
+    } else {
+      update.expiredAt = null;
     }
 
-    const message = await Message.findOneAndUpdate({ messageId, user: req.user.id }, update, {
-      upsert: true,
-      new: true,
-    });
+    const message = await Message.findOneAndUpdate(
+      { messageId: params.messageId, user: req.user.id },
+      update,
+      { upsert: true, new: true },
+    );
 
     return message.toObject();
   } catch (err) {
     logger.error('Error saving message:', err);
-    if (metadata && metadata?.context) {
-      logger.info(`---\`saveMessage\` context: ${metadata.context}`);
-    }
+    logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
     throw err;
   }
 }
@@ -121,15 +81,17 @@ ${JSON.stringify(params, null, 2)}
  * @async
  * @function bulkSaveMessages
  * @param {Object[]} messages - An array of message objects to save.
+ * @param {boolean} [overrideTimestamp=false] - Indicates whether to override the timestamps of the messages. Defaults to false.
  * @returns {Promise<Object>} The result of the bulk write operation.
  * @throws {Error} If there is an error in saving messages in bulk.
  */
-async function bulkSaveMessages(messages) {
+async function bulkSaveMessages(messages, overrideTimestamp = false) {
   try {
     const bulkOps = messages.map((message) => ({
       updateOne: {
         filter: { messageId: message.messageId },
         update: message,
+        timestamps: !overrideTimestamp,
         upsert: true,
       },
     }));
@@ -212,8 +174,8 @@ async function updateMessageText(req, { messageId, text }) {
  *
  * @async
  * @function updateMessage
- * @param {Object} message - The message object containing update data.
  * @param {Object} req - The request object.
+ * @param {Object} message - The message object containing update data.
  * @param {string} message.messageId - The unique identifier for the message.
  * @param {string} [message.text] - The new text content of the message.
  * @param {Object[]} [message.files] - The files associated with the message.
@@ -228,7 +190,6 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
-    update.isEdited = true;
     const updatedMessage = await Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
@@ -249,7 +210,6 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
-      isEdited: true,
     };
   } catch (err) {
     logger.error('Error updating message:', err);
@@ -312,6 +272,26 @@ async function getMessages(filter, select) {
 }
 
 /**
+ * Retrieves a single message from the database.
+ * @async
+ * @function getMessage
+ * @param {{ user: string, messageId: string }} params - The search parameters
+ * @returns {Promise<TMessage | null>} The message that matches the criteria or null if not found
+ * @throws {Error} If there is an error in retrieving the message
+ */
+async function getMessage({ user, messageId }) {
+  try {
+    return await Message.findOne({
+      user,
+      messageId,
+    }).lean();
+  } catch (err) {
+    logger.error('Error getting message:', err);
+    throw err;
+  }
+}
+
+/**
  * Deletes messages from the database.
  *
  * @async
@@ -338,5 +318,6 @@ module.exports = {
   updateMessage,
   deleteMessagesSince,
   getMessages,
+  getMessage,
   deleteMessages,
 };

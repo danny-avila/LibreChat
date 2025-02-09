@@ -29,7 +29,7 @@ export default function SendMessageKeyEnter({
         id="enterToSend"
         checked={enterToSend}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4"
         data-testid="enterToSend"
       />
     </div>

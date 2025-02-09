@@ -1,6 +1,8 @@
-const { promises: fs } = require('fs');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, AuthType } = require('librechat-data-provider');
 const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
+const { getCustomConfig } = require('~/server/services/Config');
+const { availableTools } = require('~/app/clients/tools');
+const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -25,7 +27,7 @@ const filterUniquePlugins = (plugins) => {
  * @param {TPlugin} plugin The plugin object containing the authentication configuration.
  * @returns {boolean} True if the plugin is authenticated for all required fields, false otherwise.
  */
-const isPluginAuthenticated = (plugin) => {
+const checkPluginAuth = (plugin) => {
   if (!plugin.authConfig || plugin.authConfig.length === 0) {
     return false;
   }
@@ -36,7 +38,7 @@ const isPluginAuthenticated = (plugin) => {
 
     for (const fieldOption of authFieldOptions) {
       const envValue = process.env[fieldOption];
-      if (envValue && envValue.trim() !== '' && envValue !== 'user_provided') {
+      if (envValue && envValue.trim() !== '' && envValue !== AuthType.USER_PROVIDED) {
         isFieldAuthenticated = true;
         break;
       }
@@ -57,14 +59,13 @@ const getAvailablePluginsController = async (req, res) => {
 
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = req.app.locals;
-    const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
-    const jsonData = JSON.parse(pluginManifest);
+    const pluginManifest = availableTools;
 
-    const uniquePlugins = filterUniquePlugins(jsonData);
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
     let authenticatedPlugins = [];
     for (const plugin of uniquePlugins) {
       authenticatedPlugins.push(
-        isPluginAuthenticated(plugin) ? { ...plugin, authenticated: true } : plugin,
+        checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin,
       );
     }
 
@@ -104,22 +105,30 @@ const getAvailableTools = async (req, res) => {
       return;
     }
 
-    const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
+    const pluginManifest = availableTools;
+    const customConfig = await getCustomConfig();
+    if (customConfig?.mcpServers != null) {
+      const mcpManager = await getMCPManager();
+      await mcpManager.loadManifestTools(pluginManifest);
+    }
 
-    const jsonData = JSON.parse(pluginManifest);
     /** @type {TPlugin[]} */
-    const uniquePlugins = filterUniquePlugins(jsonData);
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
 
     const authenticatedPlugins = uniquePlugins.map((plugin) => {
-      if (isPluginAuthenticated(plugin)) {
+      if (checkPluginAuth(plugin)) {
         return { ...plugin, authenticated: true };
       } else {
         return plugin;
       }
     });
 
+    const toolDefinitions = req.app.locals.availableTools;
     const tools = authenticatedPlugins.filter(
-      (plugin) => req.app.locals.availableTools[plugin.pluginKey] !== undefined,
+      (plugin) =>
+        toolDefinitions[plugin.pluginKey] !== undefined ||
+        (plugin.toolkit === true &&
+          Object.keys(toolDefinitions).some((key) => key.startsWith(`${plugin.pluginKey}_`))),
     );
 
     await cache.set(CacheKeys.TOOLS, tools);

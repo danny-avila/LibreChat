@@ -1,19 +1,35 @@
+const path = require('path');
+const crypto = require('crypto');
 const {
   Capabilities,
   EModelEndpoint,
+  isAgentsEndpoint,
+  AgentCapabilities,
   isAssistantsEndpoint,
   defaultRetrievalModels,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
-const { getCitations, citeText } = require('./citations');
+const { Providers } = require('@librechat/agents');
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
-const citationRegex = /\[\^\d+?\^]/g;
+
+/** Helper function to escape special characters in regex
+ * @param {string} string - The string to escape.
+ * @returns {string} The escaped string.
+ */
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
 const base = { message: true, initial: true };
-const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
+const createOnProgress = (
+  { generation = '', onProgress: _onProgress } = {
+    generation: '',
+    onProgress: null,
+  },
+) => {
   let i = 0;
   let tokens = addSpaceIfNeeded(generation);
 
@@ -54,18 +70,9 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   return { onProgress, getPartialText, sendIntermediateMessage };
 };
 
-const handleText = async (response, bing = false) => {
+const handleText = async (response) => {
   let { text } = response;
   response.text = text;
-
-  if (bing) {
-    const links = getCitations(response);
-    if (response.text.match(citationRegex)?.length > 0) {
-      text = citeText(response);
-    }
-    text += links?.length > 0 ? `\n- ${links}` : '';
-  }
-
   return text;
 };
 
@@ -160,8 +167,8 @@ const isUserProvided = (value) => value === 'user_provided';
 /**
  * Generate the configuration for a given key and base URL.
  * @param {string} key
- * @param {string} baseURL
- * @param {string} endpoint
+ * @param {string} [baseURL]
+ * @param {string} [endpoint]
  * @returns {boolean | { userProvide: boolean, userProvideURL?: boolean }}
  */
 function generateConfig(key, baseURL, endpoint) {
@@ -177,7 +184,7 @@ function generateConfig(key, baseURL, endpoint) {
   }
 
   const assistants = isAssistantsEndpoint(endpoint);
-
+  const agents = isAgentsEndpoint(endpoint);
   if (assistants) {
     config.retrievalModels = defaultRetrievalModels;
     config.capabilities = [
@@ -186,6 +193,15 @@ function generateConfig(key, baseURL, endpoint) {
       Capabilities.retrieval,
       Capabilities.actions,
       Capabilities.tools,
+    ];
+  }
+
+  if (agents) {
+    config.capabilities = [
+      AgentCapabilities.execute_code,
+      AgentCapabilities.file_search,
+      AgentCapabilities.actions,
+      AgentCapabilities.tools,
     ];
   }
 
@@ -198,13 +214,57 @@ function generateConfig(key, baseURL, endpoint) {
   return config;
 }
 
+/**
+ * Normalize the endpoint name to system-expected value.
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeEndpointName(name = '') {
+  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
+}
+
+/**
+ * Sanitize a filename by removing any directory components, replacing non-alphanumeric characters
+ * @param {string} inputName
+ * @returns {string}
+ */
+function sanitizeFilename(inputName) {
+  // Remove any directory components
+  let name = path.basename(inputName);
+
+  // Replace any non-alphanumeric characters except for '.' and '-'
+  name = name.replace(/[^a-zA-Z0-9.-]/g, '_');
+
+  // Ensure the name doesn't start with a dot (hidden file in Unix-like systems)
+  if (name.startsWith('.') || name === '') {
+    name = '_' + name;
+  }
+
+  // Limit the length of the filename
+  const MAX_LENGTH = 255;
+  if (name.length > MAX_LENGTH) {
+    const ext = path.extname(name);
+    const nameWithoutExt = path.basename(name, ext);
+    name =
+      nameWithoutExt.slice(0, MAX_LENGTH - ext.length - 7) +
+      '-' +
+      crypto.randomBytes(3).toString('hex') +
+      ext;
+  }
+
+  return name;
+}
+
 module.exports = {
-  createOnProgress,
   isEnabled,
   handleText,
   formatSteps,
+  escapeRegExp,
   formatAction,
-  addSpaceIfNeeded,
   isUserProvided,
   generateConfig,
+  addSpaceIfNeeded,
+  createOnProgress,
+  sanitizeFilename,
+  normalizeEndpointName,
 };

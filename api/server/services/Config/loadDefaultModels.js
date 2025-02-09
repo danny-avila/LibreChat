@@ -3,6 +3,7 @@ const { useAzurePlugins } = require('~/server/services/Config/EndpointService').
 const {
   getOpenAIModels,
   getGoogleModels,
+  getBedrockModels,
   getAnthropicModels,
   getChatGPTBrowserModels,
 } = require('~/server/services/ModelService');
@@ -29,14 +30,15 @@ async function loadDefaultModels(req) {
 
   return {
     [EModelEndpoint.openAI]: openAI,
+    [EModelEndpoint.agents]: openAI,
     [EModelEndpoint.google]: google,
     [EModelEndpoint.anthropic]: anthropic,
     [EModelEndpoint.gptPlugins]: gptPlugins,
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
-    [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,
+    [EModelEndpoint.bedrock]: getBedrockModels(),
   };
 }
 

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
@@ -11,6 +12,11 @@ export type ParametersSchema = {
   properties: Record<string, Reference | Schema>;
   required: string[];
 };
+
+export type OpenAPISchema = OpenAPIV3.SchemaObject &
+  ParametersSchema & {
+    items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
+  };
 
 export type ApiKeyCredentials = {
   api_key: string;
@@ -27,6 +33,16 @@ export type OAuthCredentials = {
 
 export type Credentials = ApiKeyCredentials | OAuthCredentials;
 
+type MediaTypeObject =
+  | undefined
+  | {
+      [media: string]: OpenAPIV3.MediaTypeObject | undefined;
+    };
+
+type RequestBodyObject = Omit<OpenAPIV3.RequestBodyObject, 'content'> & {
+  content: MediaTypeObject;
+};
+
 export function sha1(input: string) {
   return crypto.createHash('sha1').update(input).digest('hex');
 }
@@ -38,6 +54,70 @@ export function createURL(domain: string, path: string) {
   return new URL(fullURL).toString();
 }
 
+const schemaTypeHandlers: Record<string, (schema: OpenAPISchema) => z.ZodTypeAny> = {
+  string: (schema) => {
+    if (schema.enum) {
+      return z.enum(schema.enum as [string, ...string[]]);
+    }
+
+    let stringSchema = z.string();
+    if (schema.minLength !== undefined) {
+      stringSchema = stringSchema.min(schema.minLength);
+    }
+    if (schema.maxLength !== undefined) {
+      stringSchema = stringSchema.max(schema.maxLength);
+    }
+    return stringSchema;
+  },
+  number: (schema) => {
+    let numberSchema = z.number();
+    if (schema.minimum !== undefined) {
+      numberSchema = numberSchema.min(schema.minimum);
+    }
+    if (schema.maximum !== undefined) {
+      numberSchema = numberSchema.max(schema.maximum);
+    }
+    return numberSchema;
+  },
+  integer: (schema) => (schemaTypeHandlers.number(schema) as z.ZodNumber).int(),
+  boolean: () => z.boolean(),
+  array: (schema) => {
+    if (schema.items) {
+      const zodSchema = openAPISchemaToZod(schema.items as OpenAPISchema);
+      if (zodSchema) {
+        return z.array(zodSchema);
+      }
+
+      return z.array(z.unknown());
+    }
+    return z.array(z.unknown());
+  },
+  object: (schema) => {
+    const shape: { [key: string]: z.ZodTypeAny } = {};
+    if (schema.properties) {
+      Object.entries(schema.properties).forEach(([key, value]) => {
+        const zodSchema = openAPISchemaToZod(value as OpenAPISchema);
+        shape[key] = zodSchema || z.unknown();
+        if (schema.required && schema.required.includes(key)) {
+          shape[key] = shape[key].describe(value.description || '');
+        } else {
+          shape[key] = shape[key].optional().describe(value.description || '');
+        }
+      });
+    }
+    return z.object(shape);
+  },
+};
+
+function openAPISchemaToZod(schema: OpenAPISchema): z.ZodTypeAny | undefined {
+  if (schema.type === 'object' && Object.keys(schema.properties || {}).length === 0) {
+    return undefined;
+  }
+
+  const handler = schemaTypeHandlers[schema.type as string] || (() => z.unknown());
+  return handler(schema);
+}
+
 export class FunctionSignature {
   name: string;
   description: string;
@@ -46,11 +126,7 @@ export class FunctionSignature {
   constructor(name: string, description: string, parameters: ParametersSchema) {
     this.name = name;
     this.description = description;
-    if (parameters.properties?.['requestBody']) {
-      this.parameters = parameters.properties?.['requestBody'] as ParametersSchema;
-    } else {
-      this.parameters = parameters;
-    }
+    this.parameters = parameters;
   }
 
   toObjectTool(): FunctionTool {
@@ -64,39 +140,31 @@ export class FunctionSignature {
     };
   }
 }
-
-export class ActionRequest {
-  domain: string;
-  path: string;
-  method: string;
-  operation: string;
-  operationHash?: string;
-  isConsequential: boolean;
-  contentType: string;
-  params?: object;
-
+class RequestConfig {
   constructor(
-    domain: string,
-    path: string,
-    method: string,
-    operation: string,
-    isConsequential: boolean,
-    contentType: string,
-  ) {
-    this.domain = domain;
-    this.path = path;
-    this.method = method;
-    this.operation = operation;
-    this.isConsequential = isConsequential;
-    this.contentType = contentType;
-  }
+    readonly domain: string,
+    readonly basePath: string,
+    readonly method: string,
+    readonly operation: string,
+    readonly isConsequential: boolean,
+    readonly contentType: string,
+  ) {}
+}
 
+class RequestExecutor {
+  path: string;
+  params?: object;
+  private operationHash?: string;
   private authHeaders: Record<string, string> = {};
   private authToken?: string;
 
+  constructor(private config: RequestConfig) {
+    this.path = config.basePath;
+  }
+
   setParams(params: object) {
     this.operationHash = sha1(JSON.stringify(params));
-    this.params = params;
+    this.params = Object.assign({}, params);
 
     for (const [key, value] of Object.entries(params)) {
       const paramPattern = `{${key}}`;
@@ -105,11 +173,12 @@ export class ActionRequest {
         delete (this.params as Record<string, unknown>)[key];
       }
     }
+    return this;
   }
 
   async setAuth(metadata: ActionMetadata) {
     if (!metadata.auth) {
-      return;
+      return this;
     }
 
     const {
@@ -132,15 +201,21 @@ export class ActionRequest {
       oauth_client_secret,
     } = metadata;
 
-    const isApiKey = api_key && type === AuthTypeEnum.ServiceHttp;
-    const isOAuth =
+    const isApiKey = api_key != null && api_key.length > 0 && type === AuthTypeEnum.ServiceHttp;
+    const isOAuth = !!(
+      oauth_client_id != null &&
       oauth_client_id &&
+      oauth_client_secret != null &&
       oauth_client_secret &&
       type === AuthTypeEnum.OAuth &&
+      authorization_url != null &&
       authorization_url &&
+      client_url != null &&
       client_url &&
+      scope != null &&
       scope &&
-      token_exchange_method;
+      token_exchange_method
+    );
 
     if (isApiKey && authorization_type === AuthorizationTypeEnum.Basic) {
       const basicToken = Buffer.from(api_key).toString('base64');
@@ -150,12 +225,13 @@ export class ActionRequest {
     } else if (
       isApiKey &&
       authorization_type === AuthorizationTypeEnum.Custom &&
+      custom_auth_header != null &&
       custom_auth_header
     ) {
       this.authHeaders[custom_auth_header] = api_key;
     } else if (isOAuth) {
-      // TODO: WIP - OAuth support
-      if (!this.authToken) {
+      const authToken = this.authToken ?? '';
+      if (!authToken) {
         const tokenResponse = await axios.post(
           client_url,
           {
@@ -172,16 +248,17 @@ export class ActionRequest {
       }
       this.authHeaders['Authorization'] = `Bearer ${this.authToken}`;
     }
+    return this;
   }
 
   async execute() {
-    const url = createURL(this.domain, this.path);
+    const url = createURL(this.config.domain, this.path);
     const headers = {
       ...this.authHeaders,
-      'Content-Type': this.contentType,
+      'Content-Type': this.config.contentType,
     };
 
-    const method = this.method.toLowerCase();
+    const method = this.config.method.toLowerCase();
 
     if (method === 'get') {
       return axios.get(url, { headers, params: this.params });
@@ -194,13 +271,73 @@ export class ActionRequest {
     } else if (method === 'patch') {
       return axios.patch(url, this.params, { headers });
     } else {
-      throw new Error(`Unsupported HTTP method: ${this.method}`);
+      throw new Error(`Unsupported HTTP method: ${method}`);
     }
+  }
+
+  getConfig() {
+    return this.config;
+  }
+}
+
+export class ActionRequest {
+  private config: RequestConfig;
+
+  constructor(
+    domain: string,
+    path: string,
+    method: string,
+    operation: string,
+    isConsequential: boolean,
+    contentType: string,
+  ) {
+    this.config = new RequestConfig(domain, path, method, operation, isConsequential, contentType);
+  }
+
+  // Add getters to maintain backward compatibility
+  get domain() {
+    return this.config.domain;
+  }
+  get path() {
+    return this.config.basePath;
+  }
+  get method() {
+    return this.config.method;
+  }
+  get operation() {
+    return this.config.operation;
+  }
+  get isConsequential() {
+    return this.config.isConsequential;
+  }
+  get contentType() {
+    return this.config.contentType;
+  }
+
+  createExecutor() {
+    return new RequestExecutor(this.config);
+  }
+
+  // Maintain backward compatibility by delegating to a new executor
+  setParams(params: object) {
+    const executor = this.createExecutor();
+    executor.setParams(params);
+    return executor;
+  }
+
+  async setAuth(metadata: ActionMetadata) {
+    const executor = this.createExecutor();
+    return executor.setAuth(metadata);
+  }
+
+  async execute() {
+    const executor = this.createExecutor();
+    return executor.execute();
   }
 }
 
 export function resolveRef(
-  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | OpenAPIV3.RequestBodyObject,
+  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | RequestBodyObject,
   components?: OpenAPIV3.ComponentsObject,
 ): OpenAPIV3.SchemaObject {
   if ('$ref' in schema && components) {
@@ -219,14 +356,17 @@ function sanitizeOperationId(input: string) {
 }
 
 /** Function to convert OpenAPI spec to function signatures and request builders */
-export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
+export function openapiToFunction(
+  openapiSpec: OpenAPIV3.Document,
+  generateZodSchemas = false,
+): {
   functionSignatures: FunctionSignature[];
   requestBuilders: Record<string, ActionRequest>;
+  zodSchemas?: Record<string, z.ZodTypeAny>;
 } {
   const functionSignatures: FunctionSignature[] = [];
   const requestBuilders: Record<string, ActionRequest> = {};
-
-  // Base URL from OpenAPI spec servers
+  const zodSchemas: Record<string, z.ZodTypeAny> = {};
   const baseUrl = openapiSpec.servers?.[0]?.url ?? '';
 
   // Iterate over each path and method in the OpenAPI spec
@@ -241,19 +381,11 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
       const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
 
-      const parametersSchema: ParametersSchema = { type: 'object', properties: {}, required: [] };
-
-      if (operationObj.requestBody) {
-        const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
-        const content = requestBody.content;
-        const contentType = Object.keys(content)[0];
-        const schema = content[contentType]?.schema;
-        const resolvedSchema = resolveRef(
-          schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
-          openapiSpec.components,
-        );
-        parametersSchema.properties['requestBody'] = resolvedSchema;
-      }
+      const parametersSchema: OpenAPISchema = {
+        type: 'object',
+        properties: {},
+        required: [],
+      };
 
       if (operationObj.parameters) {
         for (const param of operationObj.parameters) {
@@ -263,12 +395,27 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
             openapiSpec.components,
           );
           parametersSchema.properties[paramObj.name] = resolvedSchema;
-          if (paramObj.required) {
+          if (paramObj.required === true) {
             parametersSchema.required.push(paramObj.name);
           }
-          if (paramObj.description && !('$$ref' in parametersSchema.properties[paramObj.name])) {
-            parametersSchema.properties[paramObj.name].description = paramObj.description;
-          }
+        }
+      }
+
+      if (operationObj.requestBody) {
+        const requestBody = operationObj.requestBody as RequestBodyObject;
+        const content = requestBody.content;
+        const contentType = Object.keys(content ?? {})[0];
+        const schema = content?.[contentType]?.schema;
+        const resolvedSchema = resolveRef(
+          schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
+          openapiSpec.components,
+        );
+        parametersSchema.properties = {
+          ...parametersSchema.properties,
+          ...resolvedSchema.properties,
+        };
+        if (resolvedSchema.required) {
+          parametersSchema.required.push(...resolvedSchema.required);
         }
       }
 
@@ -280,15 +427,22 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
         path,
         method,
         operationId,
-        !!operationObj['x-openai-isConsequential'], // Custom extension for consequential actions
-        operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
+        !!(operationObj['x-openai-isConsequential'] ?? false),
+        operationObj.requestBody ? 'application/json' : '',
       );
 
       requestBuilders[operationId] = actionRequest;
+
+      if (generateZodSchemas && Object.keys(parametersSchema.properties).length > 0) {
+        const schema = openAPISchemaToZod(parametersSchema);
+        if (schema) {
+          zodSchemas[operationId] = schema;
+        }
+      }
     }
   }
 
-  return { functionSignatures, requestBuilders };
+  return { functionSignatures, requestBuilders, zodSchemas };
 }
 
 export type ValidationResult = {
@@ -331,10 +485,10 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
     for (const [path, methods] of Object.entries(paths)) {
       for (const [httpMethod, operation] of Object.entries(methods as OpenAPIV3.PathItemObject)) {
         // Ensure operation is a valid operation object
-        const { responses } = operation as OpenAPIV3.OperationObject;
+        const { responses } = operation as OpenAPIV3.OperationObject | { responses: undefined };
         if (typeof operation === 'object' && responses) {
           for (const [statusCode, response] of Object.entries(responses)) {
-            const content = (response as OpenAPIV3.ResponseObject).content;
+            const content = (response as OpenAPIV3.ResponseObject).content as MediaTypeObject;
             if (content && content['application/json'] && content['application/json'].schema) {
               const schema = content['application/json'].schema;
               if ('$ref' in schema && typeof schema.$ref === 'string') {

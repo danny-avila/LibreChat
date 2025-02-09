@@ -6,8 +6,11 @@ const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
+const { processModelSpecs } = require('./start/modelSpecs');
 const { loadAndFormatTools } = require('./ToolService');
+const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
+const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
 /**
@@ -38,14 +41,20 @@ const AppService = async (app) => {
 
   /** @type {Record<string, FunctionTool} */
   const availableTools = loadAndFormatTools({
-    directory: paths.structuredTools,
     adminFilter: filteredTools,
     adminIncluded: includedTools,
+    directory: paths.structuredTools,
   });
+
+  if (config.mcpServers != null) {
+    const mcpManager = await getMCPManager();
+    await mcpManager.initializeMCP(config.mcpServers);
+    await mcpManager.mapAvailableTools(availableTools);
+  }
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
-  const interfaceConfig = loadDefaultInterface(config, configDefaults);
+  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
 
   const defaultLocals = {
     paths,
@@ -94,24 +103,29 @@ const AppService = async (app) => {
     );
   }
 
-  if (endpoints?.[EModelEndpoint.openAI]) {
-    endpointLocals[EModelEndpoint.openAI] = endpoints[EModelEndpoint.openAI];
+  if (endpoints?.[EModelEndpoint.agents]) {
+    endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config);
   }
-  if (endpoints?.[EModelEndpoint.google]) {
-    endpointLocals[EModelEndpoint.google] = endpoints[EModelEndpoint.google];
-  }
-  if (endpoints?.[EModelEndpoint.anthropic]) {
-    endpointLocals[EModelEndpoint.anthropic] = endpoints[EModelEndpoint.anthropic];
-  }
-  if (endpoints?.[EModelEndpoint.gptPlugins]) {
-    endpointLocals[EModelEndpoint.gptPlugins] = endpoints[EModelEndpoint.gptPlugins];
-  }
+
+  const endpointKeys = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.gptPlugins,
+  ];
+
+  endpointKeys.forEach((key) => {
+    if (endpoints?.[key]) {
+      endpointLocals[key] = endpoints[key];
+    }
+  });
 
   app.locals = {
     ...defaultLocals,
-    modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
+    modelSpecs: processModelSpecs(endpoints, config.modelSpecs),
     ...endpointLocals,
   };
 };

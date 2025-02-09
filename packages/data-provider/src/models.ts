@@ -37,7 +37,7 @@ export const tModelSpecSchema = z.object({
 export const specsConfigSchema = z.object({
   enforce: z.boolean().default(false),
   prioritize: z.boolean().default(true),
-  list: z.array(tModelSpecSchema).optional(),
+  list: z.array(tModelSpecSchema).min(1),
 });
 
 export type TSpecsConfig = z.infer<typeof specsConfigSchema>;

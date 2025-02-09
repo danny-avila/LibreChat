@@ -121,7 +121,7 @@ export default function Settings({
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '1')})
+                  ({localize('com_endpoint_default_with_num', { 0: '1' })})
                 </small>
               </Label>
               <InputNumber
@@ -146,7 +146,7 @@ export default function Settings({
               disabled={readonly}
               value={[(temperatureValue as number) ?? 1]}
               onValueChange={(value) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(1)}
+              onDoubleClick={() => setTemperature(1)}
               max={2}
               min={0}
               step={0.01}
@@ -184,7 +184,7 @@ export default function Settings({
               disabled={readonly}
               value={[(topPValue as number) ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
-              doubleClickHandler={() => setTopP(1)}
+              onDoubleClick={() => setTopP(1)}
               max={1}
               min={0}
               step={0.01}
@@ -223,7 +223,7 @@ export default function Settings({
               disabled={readonly}
               value={[(freqPValue as number) ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
-              doubleClickHandler={() => setFreqP(0)}
+              onDoubleClick={() => setFreqP(0)}
               max={2}
               min={-2}
               step={0.01}
@@ -262,7 +262,7 @@ export default function Settings({
               disabled={readonly}
               value={[(presPValue as number) ?? 0]}
               onValueChange={(value) => setPresP(value[0])}
-              doubleClickHandler={() => setPresP(0)}
+              onDoubleClick={() => setPresP(0)}
               max={2}
               min={-2}
               step={0.01}
@@ -319,7 +319,7 @@ export default function Settings({
                     imageDetailNumeric[imageDetail ?? ''] ?? imageDetailNumeric[ImageDetail.auto],
                   ]}
                   onValueChange={(value) => setImageDetail(imageDetailValue[value[0]])}
-                  doubleClickHandler={() => setImageDetail(ImageDetail.auto)}
+                  onDoubleClick={() => setImageDetail(ImageDetail.auto)}
                   max={2}
                   min={0}
                   step={1}

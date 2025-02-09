@@ -1,8 +1,8 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
+import { useToastContext } from '~/Providers/ToastContext';
 import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
 import store from '~/store';
 
 const createFormData = (text: string, voice: string) => {
@@ -13,7 +13,7 @@ const createFormData = (text: string, voice: string) => {
 };
 
 type TUseTTSExternal = {
-  setIsSpeaking: (isSpeaking: boolean) => void;
+  setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   messageId?: string;
   isLast: boolean;
@@ -67,7 +67,7 @@ function useTextToSpeechExternal({
         return playPromise().catch(console.error);
       }
       console.error(error);
-      showToast({ message: localize('com_nav_audio_play_error', error.message), status: 'error' });
+      showToast({ message: localize('com_nav_audio_play_error', { 0: error.message }), status: 'error' });
     });
 
     newAudio.onended = () => {
@@ -87,7 +87,7 @@ function useTextToSpeechExternal({
     setDownloadFile(false);
   };
 
-  const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
+  const { mutate: processAudio } = useTextToSpeechMutation({
     onMutate: (variables) => {
       const inputText = (variables.get('input') ?? '') as string;
       if (inputText.length >= 4096) {
@@ -123,7 +123,7 @@ function useTextToSpeechExternal({
     },
     onError: (error: unknown) => {
       showToast({
-        message: localize('com_nav_audio_process_error', (error as Error).message),
+        message: localize('com_nav_audio_process_error', { 0: (error as Error).message }),
         status: 'error',
       });
     },
@@ -178,13 +178,14 @@ function useTextToSpeechExternal({
       promiseAudioRef.current = null;
       setIsSpeaking(false);
     }
-  }, []);
+  }, [setIsSpeaking]);
 
   useEffect(() => cancelPromiseSpeech, [cancelPromiseSpeech]);
 
-  const isLoading = useMemo(() => {
-    return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
-  }, [isProcessing, globalIsFetching, globalIsPlaying, isLast]);
+  const isLoading = useMemo(
+    () => isLast && globalIsFetching && !globalIsPlaying,
+    [globalIsFetching, globalIsPlaying, isLast],
+  );
 
   const { data: voicesData = [] } = useVoicesQuery();
 

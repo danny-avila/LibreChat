@@ -31,40 +31,40 @@ export default function EndpointIcon({
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
 
-  const assistant =
-    isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint]?.[conversation?.assistant_id ?? ''];
-  const assistantAvatar = (assistant && (assistant?.metadata?.avatar as string)) || '';
-  const assistantName = (assistant && assistant?.name) || '';
+  const assistant = isAssistantsEndpoint(endpoint)
+    ? assistantMap?.[endpoint]?.[conversation?.assistant_id ?? '']
+    : null;
+  const assistantAvatar = (assistant && (assistant.metadata?.avatar as string)) || '';
+  const assistantName = assistant && (assistant.name ?? '');
 
   const iconURL = assistantAvatar || convoIconURL;
 
-  let icon: React.ReactNode | null = null;
   if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
-    icon = ConvoIconURL({
-      preset: {
-        ...(conversation as TPreset),
-        iconURL,
-      },
-      context,
-      endpointIconURL,
-      assistantAvatar,
-      assistantName,
-    });
+    return (
+      <ConvoIconURL
+        iconURL={iconURL}
+        modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
+        context={context}
+        endpointIconURL={endpointIconURL}
+        assistantAvatar={assistantAvatar}
+        assistantName={assistantName ?? ''}
+      />
+    );
   } else {
-    icon = MinimalIcon({
-      size: 20,
-      iconURL: endpointIconURL,
-      endpoint,
-      endpointType,
-      model: conversation?.model,
-      error: false,
-      className,
-      isCreatedByUser: false,
-      chatGptLabel: undefined,
-      modelLabel: undefined,
-      jailbreak: undefined,
-    });
+    return (
+      <MinimalIcon
+        size={20}
+        iconURL={endpointIconURL}
+        endpoint={endpoint}
+        endpointType={endpointType}
+        model={conversation?.model}
+        error={false}
+        className={className}
+        isCreatedByUser={false}
+        chatGptLabel={undefined}
+        modelLabel={undefined}
+        jailbreak={undefined}
+      />
+    );
   }
-
-  return icon;
 }

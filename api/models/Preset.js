@@ -38,7 +38,8 @@ module.exports = {
   savePreset: async (user, { presetId, newPresetId, defaultPreset, ...preset }) => {
     try {
       const setter = { $set: {} };
-      const update = { presetId, ...preset };
+      const { user: _, ...cleanPreset } = preset;
+      const update = { presetId, ...cleanPreset };
       if (preset.tools && Array.isArray(preset.tools)) {
         update.tools =
           preset.tools

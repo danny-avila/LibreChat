@@ -1,0 +1,50 @@
+name: Create Translation PR on Version Published
+
+on:
+#  do not run during PR request only on push and repository_dispatch
+#  pull_request:
+#    branches:
+#      - main
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [locize/versionPublished]
+
+jobs:
+  createPullRequest:
+    name: Create Translation PR on Version Published
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # 1. Check out the repository.
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Download translation files from locize.
+      - name: Download Translations from locize
+        uses: locize/download@v1
+        with:
+          project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
+          path: "client/src/locales"
+
+      # 3. Create a Pull Request using built-in functionality.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "🌍 i18n: Update translation.json with latest translations"
+          base: main
+          branch: i18n/locize-translation-update
+          reviewers: danny-avila
+          title: "🌍 i18n: Update translation.json with latest translations"
+          body: |
+            **Description**:
+            - 🎯 **Objective**: Update `translation.json` with the latest translations from locize.
+            - 🔍 **Details**: This PR is automatically generated upon receiving a versionPublished event with version "latest". It reflects the newest translations provided by locize.
+            - ✅ **Status**: Ready for review.
+          labels: |
+            🌍 i18n

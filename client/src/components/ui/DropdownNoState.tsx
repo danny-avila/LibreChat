@@ -21,6 +21,10 @@ interface DropdownProps {
   testId?: string;
 }
 
+/*
+ * Mainly used for the Speech Voice Selection Dropdown
+ */
+
 const Dropdown: FC<DropdownProps> = ({
   value,
   label = '',

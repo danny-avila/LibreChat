@@ -24,8 +24,9 @@ export default function AutoScrollSwitch({
       <Switch
         id="autoScroll"
         checked={autoScroll}
+        aria-label="Auto-Scroll to latest message on chat open"
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4"
         data-testid="autoScroll"
       />
     </div>

@@ -1,10 +1,10 @@
-const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
+const { spendTokens } = require('~/models/spendTokens');
 const abortControllers = require('./abortControllers');
 const { saveMessage, getConvo } = require('~/models');
-const spendTokens = require('~/models/spendTokens');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
@@ -75,8 +75,9 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
 
     const abortKey = userMessage?.conversationId ?? req.user.id;
     const prevRequest = abortControllers.get(abortKey);
+    const { overrideUserMessageId } = req?.body ?? {};
 
-    if (prevRequest && prevRequest?.abortController) {
+    if (overrideUserMessageId != null && prevRequest && prevRequest?.abortController) {
       const data = prevRequest.abortController.getAbortData();
       getReqData({ userMessage: data?.userMessage });
       const addedAbortKey = `${abortKey}:${responseMessageId}`;
@@ -107,7 +108,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       finish_reason: 'incomplete',
       endpoint: endpointOption.endpoint,
       iconURL: endpointOption.iconURL,
-      model: endpointOption.modelOptions.model,
+      model: endpointOption.modelOptions?.model ?? endpointOption.model_parameters?.model,
       unfinished: false,
       error: false,
       isCreatedByUser: false,
@@ -165,9 +166,17 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  const errorText = error?.message?.includes('"type"')
+  let errorText = error?.message?.includes('"type"')
     ? error.message
     : 'An error occurred while processing your request. Please contact the Admin.';
+
+  if (error?.type === ErrorTypes.INVALID_REQUEST) {
+    errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
+  }
+
+  if (error?.message?.includes('does not support \'system\'')) {
+    errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
+  }
 
   const respondWithError = async (partialText) => {
     let options = {

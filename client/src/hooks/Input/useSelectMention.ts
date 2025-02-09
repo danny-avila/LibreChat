@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
   TPreset,
   TModelSpec,
@@ -23,7 +23,7 @@ export default function useSelectMention({
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
-  assistantMap: TAssistantsMap;
+  assistantMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
 }) {
@@ -40,7 +40,8 @@ export default function useSelectMention({
       const { preset } = spec;
       preset.iconURL = getModelSpecIconURL(spec);
       preset.spec = spec.name;
-      const { endpoint: newEndpoint } = preset;
+      const { endpoint } = preset;
+      const newEndpoint = endpoint ?? '';
       if (!newEndpoint) {
         return;
       }
@@ -58,6 +59,18 @@ export default function useSelectMention({
         conversation,
         endpointsConfig,
       });
+
+      if (newEndpointType) {
+        preset.endpointType = newEndpointType;
+      }
+
+      if (
+        isAssistantsEndpoint(newEndpoint) &&
+        preset.assistant_id != null &&
+        !(preset.model ?? '')
+      ) {
+        preset.model = assistantMap?.[newEndpoint]?.[preset.assistant_id]?.model;
+      }
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
@@ -85,16 +98,25 @@ export default function useSelectMention({
         keepAddedConvos: isModular,
       });
     },
-    [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
+    [
+      conversation,
+      getDefaultConversation,
+      modularChat,
+      newConversation,
+      endpointsConfig,
+      assistantMap,
+    ],
   );
 
   type Kwargs = {
     model?: string;
+    agent_id?: string;
     assistant_id?: string;
   };
 
   const onSelectEndpoint = useCallback(
-    (newEndpoint?: EModelEndpoint | string | null, kwargs: Kwargs = {}) => {
+    (_newEndpoint?: EModelEndpoint | string | null, kwargs: Kwargs = {}) => {
+      const newEndpoint = _newEndpoint ?? '';
       if (!newEndpoint) {
         return;
       }
@@ -113,12 +135,18 @@ export default function useSelectMention({
         endpointsConfig,
       });
 
-      if (kwargs.model) {
-        template.model = kwargs.model;
+      const model = kwargs.model ?? '';
+      if (model) {
+        template.model = model;
       }
 
-      if (kwargs.assistant_id) {
-        template.assistant_id = kwargs.assistant_id;
+      const assistant_id = kwargs.assistant_id ?? '';
+      if (assistant_id) {
+        template.assistant_id = assistant_id;
+      }
+      const agent_id = kwargs.agent_id ?? '';
+      if (agent_id) {
+        template.agent_id = agent_id;
       }
 
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
@@ -215,6 +243,10 @@ export default function useSelectMention({
         onSelectEndpoint(option.type, {
           assistant_id: key,
           model: assistantMap?.[option.type]?.[key]?.model ?? '',
+        });
+      } else if (isAgentsEndpoint(option.type)) {
+        onSelectEndpoint(option.type, {
+          agent_id: key,
         });
       }
     },

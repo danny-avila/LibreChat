@@ -1,16 +1,22 @@
 /* eslint-disable max-len */
 import { z } from 'zod';
 import type { ZodError } from 'zod';
+import type { TModelsConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
-import { specsConfigSchema } from './models';
+import { specsConfigSchema, TSpecsConfig } from './models';
 import { FileSources } from './types/files';
-import { TModelsConfig } from './types';
+import { MCPServersSchema } from './mcp';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
 export const defaultRetrievalModels = [
   'gpt-4o',
+  'o1-preview-2024-09-12',
+  'o1-preview',
+  'o1-mini-2024-09-12',
+  'o1-mini',
+  'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
   'gpt-4o-2024-08-06',
   'gpt-4o-mini',
@@ -109,10 +115,10 @@ export type TAzureModelMapSchema = {
   group: string;
 };
 
-export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema>;
+export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema | undefined>;
 export type TAzureGroupMap = Record<
   string,
-  TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
+  (TAzureBaseSchema & { models: Record<string, TAzureModelConfig | undefined> }) | undefined
 >;
 
 export type TValidatedAzureConfig = {
@@ -134,6 +140,15 @@ export enum Capabilities {
   tools = 'tools',
 }
 
+export enum AgentCapabilities {
+  hide_sequential_outputs = 'hide_sequential_outputs',
+  end_after_tools = 'end_after_tools',
+  execute_code = 'execute_code',
+  file_search = 'file_search',
+  actions = 'actions',
+  tools = 'tools',
+}
+
 export const defaultAssistantsVersion = {
   [EModelEndpoint.assistants]: 2,
   [EModelEndpoint.azureAssistants]: 1,
@@ -141,9 +156,18 @@ export const defaultAssistantsVersion = {
 
 export const baseEndpointSchema = z.object({
   streamRate: z.number().optional(),
+  baseURL: z.string().optional(),
+  titlePrompt: z.string().optional(),
+  titleModel: z.string().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
+
+export const bedrockEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    availableRegions: z.array(z.string()).optional(),
+  }),
+);
 
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -168,7 +192,6 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
-    baseURL: z.string().optional(),
     models: z
       .object({
         default: z.array(z.string()).min(1),
@@ -178,12 +201,30 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       .optional(),
     titleConvo: z.boolean().optional(),
     titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-    titleModel: z.string().optional(),
     headers: z.record(z.any()).optional(),
   }),
 );
 
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
+
+export const agentsEndpointSChema = baseEndpointSchema.merge(
+  z.object({
+    /* agents specific */
+    recursionLimit: z.number().optional(),
+    disableBuilder: z.boolean().optional(),
+    capabilities: z
+      .array(z.nativeEnum(AgentCapabilities))
+      .optional()
+      .default([
+        AgentCapabilities.execute_code,
+        AgentCapabilities.file_search,
+        AgentCapabilities.actions,
+        AgentCapabilities.tools,
+      ]),
+  }),
+);
+
+export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -201,7 +242,6 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     titleConvo: z.boolean().optional(),
     titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-    titleModel: z.string().optional(),
     summarize: z.boolean().optional(),
     summaryModel: z.string().optional(),
     forcePrompt: z.boolean().optional(),
@@ -387,6 +427,87 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+const termsOfServiceSchema = z.object({
+  externalUrl: z.string().optional(),
+  openNewTab: z.boolean().optional(),
+  modalAcceptance: z.boolean().optional(),
+  modalTitle: z.string().optional(),
+  modalContent: z.string().or(z.array(z.string())).optional(),
+});
+
+export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
+
+export const intefaceSchema = z
+  .object({
+    privacyPolicy: z
+      .object({
+        externalUrl: z.string().optional(),
+        openNewTab: z.boolean().optional(),
+      })
+      .optional(),
+    termsOfService: termsOfServiceSchema.optional(),
+    endpointsMenu: z.boolean().optional(),
+    modelSelect: z.boolean().optional(),
+    parameters: z.boolean().optional(),
+    sidePanel: z.boolean().optional(),
+    multiConvo: z.boolean().optional(),
+    bookmarks: z.boolean().optional(),
+    presets: z.boolean().optional(),
+    prompts: z.boolean().optional(),
+    agents: z.boolean().optional(),
+    temporaryChat: z.boolean().optional(),
+  })
+  .default({
+    endpointsMenu: true,
+    modelSelect: true,
+    parameters: true,
+    sidePanel: true,
+    presets: true,
+    multiConvo: true,
+    bookmarks: true,
+    prompts: true,
+    agents: true,
+    temporaryChat: true,
+  });
+
+export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
+
+export type TStartupConfig = {
+  appTitle: string;
+  socialLogins?: string[];
+  interface?: TInterfaceConfig;
+  discordLoginEnabled: boolean;
+  facebookLoginEnabled: boolean;
+  githubLoginEnabled: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
+  appleLoginEnabled: boolean;
+  openidLabel: string;
+  openidImageUrl: string;
+  /** LDAP Auth Configuration */
+  ldap?: {
+    /** LDAP enabled */
+    enabled: boolean;
+    /** Whether LDAP uses username vs. email */
+    username?: boolean;
+  };
+  serverDomain: string;
+  emailLoginEnabled: boolean;
+  registrationEnabled: boolean;
+  socialLoginEnabled: boolean;
+  passwordResetEnabled: boolean;
+  emailEnabled: boolean;
+  checkBalance: boolean;
+  showBirthdayIcon: boolean;
+  helpAndFaqURL: string;
+  customFooter?: string;
+  modelSpecs?: TSpecsConfig;
+  sharedLinksEnabled: boolean;
+  publicSharedLinksEnabled: boolean;
+  analyticsGtmId?: string;
+  instanceProjectId: string;
+};
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -394,34 +515,14 @@ export const configSchema = z.object({
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
-  interface: z
-    .object({
-      privacyPolicy: z
-        .object({
-          externalUrl: z.string().optional(),
-          openNewTab: z.boolean().optional(),
-        })
-        .optional(),
-      termsOfService: z
-        .object({
-          externalUrl: z.string().optional(),
-          openNewTab: z.boolean().optional(),
-        })
-        .optional(),
-      endpointsMenu: z.boolean().optional(),
-      modelSelect: z.boolean().optional(),
-      parameters: z.boolean().optional(),
-      sidePanel: z.boolean().optional(),
-      presets: z.boolean().optional(),
-    })
-    .default({
-      endpointsMenu: true,
-      modelSelect: true,
-      parameters: true,
-      sidePanel: true,
-      presets: true,
-    }),
+  mcpServers: MCPServersSchema.optional(),
+  interface: intefaceSchema,
   fileStrategy: fileSourceSchema.default(FileSources.local),
+  actions: z
+    .object({
+      allowedDomains: z.array(z.string()).optional(),
+    })
+    .optional(),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
@@ -448,7 +549,9 @@ export const configSchema = z.object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
+      [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
+      [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -472,6 +575,7 @@ export enum KnownEndpoints {
   apipie = 'apipie',
   cohere = 'cohere',
   fireworks = 'fireworks',
+  deepseek = 'deepseek',
   groq = 'groq',
   huggingface = 'huggingface',
   mistral = 'mistral',
@@ -481,6 +585,8 @@ export enum KnownEndpoints {
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
+  unify = 'unify',
+  xai = 'xai',
 }
 
 export enum FetchTokenConfig {
@@ -492,28 +598,34 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.assistants,
   EModelEndpoint.azureAssistants,
   EModelEndpoint.azureOpenAI,
-  EModelEndpoint.bingAI,
+  EModelEndpoint.agents,
   EModelEndpoint.chatGPTBrowser,
   EModelEndpoint.gptPlugins,
   EModelEndpoint.google,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
+  EModelEndpoint.bedrock,
 ];
 
 export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistants]: 'Assistants',
+  [EModelEndpoint.agents]: 'Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.bingAI]: 'Bing',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
   [EModelEndpoint.gptPlugins]: 'Plugins',
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
+  [EModelEndpoint.bedrock]: 'AWS Bedrock',
+  [KnownEndpoints.ollama]: 'Ollama',
+  [KnownEndpoints.xai]: 'xAI',
 };
 
 const sharedOpenAIModels = [
+  'gpt-4o-mini',
+  'gpt-4o',
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0125',
   'gpt-4-turbo',
@@ -531,44 +643,85 @@ const sharedOpenAIModels = [
   'gpt-3.5-turbo-0613',
 ];
 
+const sharedAnthropicModels = [
+  'claude-3-5-haiku-20241022',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-5-sonnet-20240620',
+  'claude-3-5-sonnet-latest',
+  'claude-3-opus-20240229',
+  'claude-3-sonnet-20240229',
+  'claude-3-haiku-20240307',
+  'claude-2.1',
+  'claude-2',
+  'claude-1.2',
+  'claude-1',
+  'claude-1-100k',
+  'claude-instant-1',
+  'claude-instant-1-100k',
+];
+
+export const bedrockModels = [
+  'anthropic.claude-3-5-sonnet-20241022-v2:0',
+  'anthropic.claude-3-5-sonnet-20240620-v1:0',
+  'anthropic.claude-3-5-haiku-20241022-v1:0',
+  'anthropic.claude-3-haiku-20240307-v1:0',
+  'anthropic.claude-3-opus-20240229-v1:0',
+  'anthropic.claude-3-sonnet-20240229-v1:0',
+  'anthropic.claude-v2',
+  'anthropic.claude-v2:1',
+  'anthropic.claude-instant-v1',
+  // 'cohere.command-text-v14', // no conversation history
+  // 'cohere.command-light-text-v14', // no conversation history
+  'cohere.command-r-v1:0',
+  'cohere.command-r-plus-v1:0',
+  'meta.llama2-13b-chat-v1',
+  'meta.llama2-70b-chat-v1',
+  'meta.llama3-8b-instruct-v1:0',
+  'meta.llama3-70b-instruct-v1:0',
+  'meta.llama3-1-8b-instruct-v1:0',
+  'meta.llama3-1-70b-instruct-v1:0',
+  'meta.llama3-1-405b-instruct-v1:0',
+  'mistral.mistral-7b-instruct-v0:2',
+  'mistral.mixtral-8x7b-instruct-v0:1',
+  'mistral.mistral-large-2402-v1:0',
+  'mistral.mistral-large-2407-v1:0',
+  'mistral.mistral-small-2402-v1:0',
+  'ai21.jamba-instruct-v1:0',
+  // 'ai21.j2-mid-v1', // no streaming
+  // 'ai21.j2-ultra-v1', no conversation history
+  'amazon.titan-text-lite-v1',
+  'amazon.titan-text-express-v1',
+  'amazon.titan-text-premier-v1:0',
+];
+
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['gpt-4o-mini', 'gpt-4o', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
+  [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
-    'gemini-pro',
-    'gemini-pro-vision',
-    'chat-bison',
-    'chat-bison-32k',
-    'codechat-bison',
-    'codechat-bison-32k',
-    'text-bison',
-    'text-bison-32k',
-    'text-unicorn',
-    'code-gecko',
-    'code-bison',
-    'code-bison-32k',
+    // Shared Google Models between Vertex AI & Gen AI
+    // Gemini 2.0 Models
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-pro-exp-02-05',
+    // Gemini 1.5 Models
+    'gemini-1.5-flash-001',
+    'gemini-1.5-flash-002',
+    'gemini-1.5-pro-001',
+    'gemini-1.5-pro-002',
+    // Gemini 1.0 Models
+    'gemini-1.0-pro-001',
   ],
-  [EModelEndpoint.anthropic]: [
-    'claude-3-5-sonnet-20240620',
-    'claude-3-opus-20240229',
-    'claude-3-sonnet-20240229',
-    'claude-3-haiku-20240307',
-    'claude-2.1',
-    'claude-2',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
-    'claude-instant-1',
-    'claude-instant-1-100k',
-  ],
+  [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
-    'gpt-4o-mini',
-    'gpt-4o',
+    'chatgpt-4o-latest',
     ...sharedOpenAIModels,
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
     'gpt-3.5-turbo-instruct',
   ],
+  [EModelEndpoint.bedrock]: bedrockModels,
 };
 
 const fitlerAssistantModels = (str: string) => {
@@ -581,17 +734,17 @@ export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
+  [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
   [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
+  [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
-  [EModelEndpoint.bingAI]: `/api/ask/${EModelEndpoint.bingAI}`,
   [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
   [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
   [EModelEndpoint.anthropic]: `/api/ask/${EModelEndpoint.anthropic}`,
@@ -600,6 +753,8 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
   [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
+  [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
+  [EModelEndpoint.bedrock]: `/api/${EModelEndpoint.bedrock}/chat`,
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -609,6 +764,8 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.openAI,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.custom,
+  EModelEndpoint.agents,
+  EModelEndpoint.bedrock,
 ]);
 
 export const supportsBalanceCheck = {
@@ -617,23 +774,35 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
+  [EModelEndpoint.bedrock]: true,
 };
 
 export const visionModels = [
   'gpt-4o',
   'gpt-4o-mini',
+  'o1',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
+  'gemini-2.0',
   'gemini-1.5',
+  'gemini-exp',
+  'moondream',
+  'llama3.2-vision',
+  'llama-3.2-90b-vision',
+  'llama-3.2-11b-vision',
+  'llama-3-2-90b-vision',
+  'llama-3-2-11b-vision',
 ];
 export enum VisionModes {
   generative = 'generative',
+  agents = 'agents',
 }
 
 export function validateVisionModel({
@@ -649,7 +818,7 @@ export function validateVisionModel({
     return false;
   }
 
-  if (model === 'gpt-4-turbo-preview') {
+  if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
     return false;
   }
 
@@ -805,6 +974,10 @@ export enum ViolationTypes {
    * Verify Conversation Access violation.
    */
   CONVO_ACCESS = 'convo_access',
+  /**
+   * Tool Call Limit Violation.
+   */
+  TOOL_CALL_LIMIT = 'tool_call_limit',
 }
 
 /**
@@ -831,6 +1004,26 @@ export enum ErrorTypes {
    * Moderation error
    */
   MODERATION = 'moderation',
+  /**
+   * Prompt exceeds max length
+   */
+  INPUT_LENGTH = 'INPUT_LENGTH',
+  /**
+   * Invalid request error, API rejected request
+   */
+  INVALID_REQUEST = 'invalid_request_error',
+  /**
+   * Invalid action request error, likely not on list of allowed domains
+   */
+  INVALID_ACTION = 'invalid_action_error',
+  /**
+   * Invalid request error, API rejected request
+   */
+  NO_SYSTEM_MESSAGES = 'no_system_messages',
+  /**
+   * Google provider returned an error
+   */
+  GOOGLE_ERROR = 'google_error',
 }
 
 /**
@@ -940,13 +1133,15 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.4',
+  VERSION = 'v0.7.6',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.5',
+  CONFIG_VERSION = '1.2.1',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
   NEW_CONVO = 'new',
+  /** Standard value for the conversationId used for search queries */
+  SEARCH = 'search',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
@@ -959,6 +1154,12 @@ export enum Constants {
   DEFAULT_STREAM_RATE = 1,
   /** Saved Tag */
   SAVED_TAG = 'Saved',
+  /** Max number of Conversation starters for Agents/Assistants */
+  MAX_CONVO_STARTERS = 4,
+  /** Global/instance Project Name */
+  GLOBAL_PROJECT_NAME = 'instance',
+  /** Delimiter for MCP tools */
+  mcp_delimiter = '_mcp_',
 }
 
 export enum LocalStorageKeys {
@@ -966,8 +1167,6 @@ export enum LocalStorageKeys {
   APP_TITLE = 'appTitle',
   /** Key for the last conversation setup. */
   LAST_CONVO_SETUP = 'lastConversationSetup',
-  /** Key for the last BingAI Settings */
-  LAST_BING = 'lastBingSettings',
   /** Key for the last selected model. */
   LAST_MODEL = 'lastSelectedModel',
   /** Key for the last selected tools. */
@@ -978,10 +1177,12 @@ export enum LocalStorageKeys {
   FILES_TO_DELETE = 'filesToDelete',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
+  /** Prefix key for the last selected agent ID by index */
+  AGENT_ID_PREFIX = 'agent_id__',
   /** Key for the last selected fork setting */
   FORK_SETTING = 'forkSetting',
   /** Key for remembering the last selected option, instead of manually selecting */
-  REMEMBER_FORK_OPTION = 'rememberForkOption',
+  REMEMBER_FORK_OPTION = 'rememberDefaultFork',
   /** Key for remembering the split at target fork option modifier */
   FORK_SPLIT_AT_TARGET = 'splitAtTarget',
   /** Key for saving text drafts */
@@ -990,6 +1191,10 @@ export enum LocalStorageKeys {
   FILES_DRAFT = 'filesDraft_',
   /** Key for last Selected Prompt Category */
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
+  /** Key for rendering User Messages as Markdown */
+  ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
+  /** Key for displaying analysis tool code input */
+  SHOW_ANALYSIS_CODE = 'showAnalysisCode',
 }
 
 export enum ForkOptions {
@@ -1033,3 +1238,10 @@ export enum SystemCategories {
   NO_CATEGORY = 'sys__no__category__sys',
   SHARED_PROMPTS = 'sys__shared__prompts__sys',
 }
+
+export const providerEndpointMap = {
+  [EModelEndpoint.openAI]: EModelEndpoint.openAI,
+  [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
+  [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
+  [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
+};

@@ -1,6 +1,8 @@
+import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessageProps } from '~/common';
-import Icon from '~/components/Chat/Messages/MessageIcon';
+import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageProps, TMessageIcon } from '~/common';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useMessageHelpers, useLocalize } from '~/hooks';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
@@ -17,9 +19,9 @@ export default function Message(props: TMessageProps) {
     props;
 
   const {
-    ask,
     edit,
     index,
+    agent,
     isLast,
     enterEdit,
     assistant,
@@ -32,8 +34,39 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
   const fontSize = useRecoilValue(store.fontSize);
-  const { content, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const { children, messageId = null, isCreatedByUser } = message ?? {};
+  const name = useMemo(() => {
+    let result = '';
+    if (isCreatedByUser === true) {
+      result = localize('com_user_message');
+    } else if (assistant) {
+      result = assistant.name ?? localize('com_ui_assistant');
+    } else if (agent) {
+      result = agent.name ?? localize('com_ui_agent');
+    }
 
+    return result;
+  }, [assistant, agent, isCreatedByUser, localize]);
+
+  const iconData: TMessageIcon = useMemo(
+    () => ({
+      endpoint: message?.endpoint ?? conversation?.endpoint,
+      model: message?.model ?? conversation?.model,
+      iconURL: message?.iconURL ?? conversation?.iconURL,
+      modelLabel: name,
+      isCreatedByUser: message?.isCreatedByUser,
+    }),
+    [
+      name,
+      conversation?.endpoint,
+      conversation?.iconURL,
+      conversation?.model,
+      message?.model,
+      message?.iconURL,
+      message?.endpoint,
+      message?.isCreatedByUser,
+    ],
+  );
   if (!message) {
     return null;
   }
@@ -51,7 +84,7 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    <Icon message={message} conversation={conversation} assistant={assistant} />
+                    <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
                   </div>
                 </div>
               </div>
@@ -62,32 +95,16 @@ export default function Message(props: TMessageProps) {
                 isCreatedByUser === true ? '' : 'agent-turn',
               )}
             >
-              <div className={cn('select-none font-semibold', fontSize)}>
-                {isCreatedByUser === true
-                  ? localize('com_user_message')
-                  : (assistant && assistant.name) ?? localize('com_ui_assistant')}
-              </div>
+              <div className={cn('select-none font-semibold', fontSize)}>{name}</div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   <ContentParts
-                    ask={ask}
-                    edit={edit}
                     isLast={isLast}
-                    content={content ?? []}
-                    message={message}
-                    messageId={messageId}
-                    enterEdit={enterEdit}
-                    error={!!(error ?? false)}
                     isSubmitting={isSubmitting}
-                    unfinished={unfinished ?? false}
-                    isCreatedByUser={isCreatedByUser ?? true}
-                    siblingIdx={siblingIdx ?? 0}
-                    setSiblingIdx={
-                      setSiblingIdx ??
-                      (() => {
-                        return;
-                      })
-                    }
+                    messageId={message.messageId}
+                    isCreatedByUser={message.isCreatedByUser}
+                    conversationId={conversation?.conversationId}
+                    content={message.content as Array<TMessageContentParts | undefined>}
                   />
                 </div>
               </div>

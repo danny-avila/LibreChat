@@ -30,6 +30,9 @@ const transactionSchema = mongoose.Schema(
     rate: Number,
     rawAmount: Number,
     tokenValue: Number,
+    inputTokens: { type: Number },
+    writeTokens: { type: Number },
+    readTokens: { type: Number },
   },
   {
     timestamps: true,

@@ -1,4 +1,5 @@
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const { normalizeEndpointName } = require('~/server/utils');
 const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -22,4 +23,21 @@ async function getCustomConfig() {
   return customConfig;
 }
 
-module.exports = getCustomConfig;
+/**
+ *
+ * @param {string | EModelEndpoint} endpoint
+ */
+const getCustomEndpointConfig = async (endpoint) => {
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
+    throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
+  }
+
+  const { endpoints = {} } = customConfig;
+  const customEndpoints = endpoints[EModelEndpoint.custom] ?? [];
+  return customEndpoints.find(
+    (endpointConfig) => normalizeEndpointName(endpointConfig.name) === endpoint,
+  );
+};
+
+module.exports = { getCustomConfig, getCustomEndpointConfig };

@@ -1,4 +1,4 @@
-const Balance = require('../../models/Balance');
+const Balance = require('~/models/Balance');
 
 async function balanceController(req, res) {
   const { tokenCredits: balance = '' } =

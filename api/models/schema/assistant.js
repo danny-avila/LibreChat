@@ -19,11 +19,19 @@ const assistantSchema = mongoose.Schema(
       },
       default: undefined,
     },
+    conversation_starters: {
+      type: [String],
+      default: [],
+    },
     access_level: {
       type: Number,
     },
     file_ids: { type: [String], default: undefined },
     actions: { type: [String], default: undefined },
+    append_current_datetime: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

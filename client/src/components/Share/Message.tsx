@@ -6,6 +6,7 @@ import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { MessageContext } from '~/Providers';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
@@ -28,13 +29,20 @@ export default function Message(props: TMessageProps) {
     return null;
   }
 
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const {
+    text = '',
+    children,
+    error = false,
+    messageId = '',
+    unfinished = false,
+    isCreatedByUser = true,
+  } = message;
 
   let messageLabel = '';
   if (isCreatedByUser) {
     messageLabel = 'anonymous';
   } else {
-    messageLabel = message.sender;
+    messageLabel = message.sender ?? '';
   }
 
   return (
@@ -57,26 +65,33 @@ export default function Message(props: TMessageProps) {
               <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
-                  {/* Legacy Plugins */}
-                  {message.plugin && <Plugin plugin={message.plugin} />}
-                  {message.content ? (
-                    <SearchContent message={message} />
-                  ) : (
-                    <MessageContent
-                      edit={false}
-                      error={error}
-                      isLast={false}
-                      ask={() => ({})}
-                      text={text ?? ''}
-                      message={message}
-                      isSubmitting={false}
-                      enterEdit={() => ({})}
-                      unfinished={!!unfinished}
-                      isCreatedByUser={isCreatedByUser ?? true}
-                      siblingIdx={siblingIdx ?? 0}
-                      setSiblingIdx={setSiblingIdx ?? (() => ({}))}
-                    />
-                  )}
+                  <MessageContext.Provider
+                    value={{
+                      messageId,
+                      conversationId: conversation?.conversationId,
+                    }}
+                  >
+                    {/* Legacy Plugins */}
+                    {message.plugin && <Plugin plugin={message.plugin} />}
+                    {message.content ? (
+                      <SearchContent message={message} />
+                    ) : (
+                      <MessageContent
+                        edit={false}
+                        error={error}
+                        isLast={false}
+                        ask={() => ({})}
+                        text={text || ''}
+                        message={message}
+                        isSubmitting={false}
+                        enterEdit={() => ({})}
+                        unfinished={unfinished}
+                        siblingIdx={siblingIdx ?? 0}
+                        isCreatedByUser={isCreatedByUser}
+                        setSiblingIdx={setSiblingIdx ?? (() => ({}))}
+                      />
+                    )}
+                  </MessageContext.Provider>
                 </div>
               </div>
               <SubRow classes="text-xs">
