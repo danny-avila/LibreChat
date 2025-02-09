@@ -27,6 +27,7 @@ const ask = require('./ask');
 const banner = require('./banner');
 
 const addBalance = require('./addBalance')
+const getUsers =require('./getUsers')
 
 module.exports = {
   ask,
@@ -56,5 +57,6 @@ module.exports = {
   categories,
   staticRoute,
   banner,
-  addBalance
+  addBalance,
+  getUsers
 };
