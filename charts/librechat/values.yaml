@@ -139,3 +139,8 @@ config:
     DOMAIN_SERVER: "https://bai.getbalance.com"
     ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
     SEARCH: false
+    BEDROCK_AWS_DEFAULT_REGION: "us-east-2"
+    BEDROCK_AWS_ACCESS_KEY_ID: ""
+    BEDROCK_AWS_SECRET_ACCESS_KEY: ""
+    BEDROCK_AWS_SESSION_TOKEN: ""
+    BEDROCK_AWS_MODELS: "AWS_ARN"
