@@ -6,10 +6,10 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/danny-avila/librechat
+  repository: 223287545160.dkr.ecr.us-east-2.amazonaws.com/devops
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "latest"
+  tag: "bai"
 
 imagePullSecrets: []
 nameOverride: ""
