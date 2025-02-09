@@ -519,6 +519,7 @@
   "com_ui_attachment": "Attachment",
   "com_ui_authentication": "Authentication",
   "com_ui_avatar": "Avatar",
+  "com_ui_go_back": "Go back",
   "com_ui_back_to_chat": "Back to Chat",
   "com_ui_back_to_prompts": "Back to Prompts",
   "com_ui_bookmark_delete_confirm": "Are you sure you want to delete this bookmark?",
