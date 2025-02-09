@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 // eslint-disable-next-line import/no-cycle
 import Message from './Message';
@@ -25,7 +26,7 @@ export default function MultiMessage({
   }, [messagesTree?.length]);
 
   useEffect(() => {
-    if (messagesTree?.length && siblingIdx >= messagesTree.length) {
+    if (messagesTree?.length != null && siblingIdx >= messagesTree.length) {
       setSiblingIdx(0);
     }
   }, [siblingIdx, messagesTree?.length, setSiblingIdx]);
@@ -34,8 +35,7 @@ export default function MultiMessage({
     return null;
   }
 
-  const message = messagesTree[messagesTree.length - siblingIdx - 1];
-
+  const message = messagesTree[messagesTree.length - siblingIdx - 1] as TMessage | null;
   if (!message) {
     return null;
   }
