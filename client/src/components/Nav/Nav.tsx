@@ -205,7 +205,7 @@ const Nav = memo(
                           toggleNav={itemToggleNav}
                           containerRef={containerRef}
                           loadMoreConversations={loadMoreConversations}
-                          isFetchingNextPage={isFetchingNextPage}
+                          isFetchingNextPage={isFetchingNextPage || showLoading}
                         />
                       </div>
                     </div>
