@@ -19,11 +19,14 @@ serviceAccount:
   # Specifies whether a service account should be created
   create: true
   # Annotations to add to the service account
-  annotations: {}
+  annotations: {
+    eks.amazonaws.com/role-arn:
+      arn:aws:iam::223287545160:role/jenkins-master-service-account
+  }
   # The name of the service account to use.
   # If not set and create is true,
   # a name is generated using the fullname template
-  name: ""
+  name: "bai"
 
 podAnnotations: {}
 
