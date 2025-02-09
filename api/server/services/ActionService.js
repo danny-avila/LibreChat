@@ -179,8 +179,9 @@ async function createActionTool({
                 const redirectUri = `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`;
                 const params = new URLSearchParams({
                   client_id: metadata.oauth_client_id,
-                  redirect_uri: redirectUri,
                   scope: metadata.auth.scope,
+                  redirect_uri: redirectUri,
+                  response_type: 'code',
                   state: stateToken,
                 });
 
