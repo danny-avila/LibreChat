@@ -73,21 +73,14 @@ resources: {}
 #     path: /
 #     port: http
 
-# Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+volumeMounts: {}
 
-# Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+volumes: {}
 
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
+
+extraContainers: {}

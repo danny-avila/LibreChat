@@ -6,6 +6,9 @@ metadata:
     {{- include "librechat.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.updateStrategy }}
+  strategy: {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "librechat.selectorLabels" . | nindent 6 }}
@@ -39,6 +42,8 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+          lifecycle:
+            {{- toYaml .Values.lifecycle | nindent 12 }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
@@ -55,6 +60,9 @@ spec:
           {{- if .Values.librechat.imageVolume.enabled }}
           - name: image-volume
             mountPath: "/app/client/public/images"
+          {{- end }}
+          {{- if .Values.volumeMounts }}
+          {{- toYaml .Values.volumeMounts | nindent 10 }}
           {{- end }}
           envFrom:
           - configMapRef:
@@ -78,6 +86,9 @@ spec:
       - name: image-volume
         persistentVolumeClaim:
           claimName: {{ include "librechat.fullname" $ }}-images
+      {{- end }}
+      {{- if .Values.volumes }}
+      {{- toYaml .Values.volumes | nindent 6 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

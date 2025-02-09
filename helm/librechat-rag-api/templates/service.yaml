@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "rag.labels" . | nindent 4 }}
   annotations:
-  {{ .Values.service.annotations | toYaml | indent 4 }}
+  {{- toYaml .Values.service.annotations | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:

@@ -4,29 +4,18 @@
 
 replicaCount: 1
 
+
+
 global:
   librechat:
-    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-    ## For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
-    # Required Values:
-    # - MEILI_MASTER_KEY
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
 
-image:
-  repository: danny-avila/librechat
-  registry: ghcr.io
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
-
-imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
-
 librechat:
-# LibreChat allows Configuration in 2 Ways: Environment Variables and a Config file. For easier Deployment the needed values are predifined here but should be adjusted to your needs.
+   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+   # Required Values:
   configEnv:
     PLUGIN_MODELS: gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
     DEBUG_PLUGINS: "true"
@@ -38,9 +27,13 @@ librechat:
     # Set Config Params here
     # ENV_NAME: env-value
 
-
+    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+    # Required Values:
+    # - MEILI_MASTER_KEY
+  existingSecretName: "librechat-credentials-env"
   
-  # # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
+  # For adding a custom config yaml-file you can set the contents in this var
   configYamlContent: ""
   # configYamlContent: |
   #   version: 1.0.8
@@ -52,15 +45,14 @@ librechat:
   #     privacyPolicy:
   #       externalUrl: 'https://librechat.ai/privacy-policy'
   #       openNewTab: true
-    
+
   #     # Terms of service
   #     termsOfService:
   #       externalUrl: 'https://librechat.ai/tos'
   #       openNewTab: true
-    
-  #   registration:
-  #     socialLogins: ["discord", "facebook", "github", "google", "openid"]
 
+  #   registration:
+  #     socialLogins: ["discord", "facebook", "github", "google", "openid"] 
   #   endpoints:
   #     azureOpenAI:
   #      # Endpoint-level configuration
@@ -93,14 +85,14 @@ librechat:
   #         forcePrompt: false
   #         modelDisplayLabel: "OpenRouter"
 
-
-# # name of existing Yaml configmap, key must be librechat.yaml
+  # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
 
   # Volume used to store image Files uploaded to the Web UI
   imageVolume:
     enabled: true
     size: 10G
+    accessModes: ReadWriteOnce
     # storageClassName: 
 
 # only lite RAG is supported
@@ -108,6 +100,28 @@ librechat-rag-api:
   enabled: false
   # can be azure, openai, huggingface or huggingfacetei
   embeddingsProvider: openai
+
+
+image:
+  repository: danny-avila/librechat
+  registry: ghcr.io
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+
+lifecycle: {}
+# # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example
+#   postStart:
+#     exec:
+#       command: ["/bin/sh", "-c", "npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>"]
+
+
 
 podAnnotations: {}
 podLabels: {}
@@ -122,7 +136,6 @@ securityContext:
   # readOnlyRootFilesystem: true # not supported yet
   runAsNonRoot: true
   runAsUser: 1000
-
 
 service:
   type: ClusterIP
@@ -193,6 +206,10 @@ tolerations: []
 
 affinity: {}
 
+# Strategy for LibreChat deployment updates
+updateStrategy:
+  type: RollingUpdate
+
 # MongoDB Parameters
 mongodb:
   enabled: true
@@ -202,6 +219,7 @@ mongodb:
    - LibreChat
 #  persistence: 
 #    size: 8Gi
+
 
 meilisearch:
   enabled: true

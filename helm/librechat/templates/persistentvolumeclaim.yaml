@@ -5,7 +5,7 @@ metadata:
   name: {{ include "librechat.fullname" $ }}-images
 spec:
   accessModes:
-    - ReadWriteOnce
+    - {{ .Values.librechat.imageVolume.accessModes }}
 {{- if .Values.librechat.imageVolume.storageClassName }}
   storageClassName: {{ .Values.librechat.imageVolume.storageClassName }}
 {{- end }}          
