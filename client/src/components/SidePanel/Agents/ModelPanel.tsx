@@ -221,7 +221,7 @@ export default function Parameters({
               onClick={handleResetParameters}
               className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
               {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
             </button>
           </div>
