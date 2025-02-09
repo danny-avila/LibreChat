@@ -238,7 +238,6 @@ export default function Conversation({
           >
             {title || localize('com_ui_untitled')}
           </div>
-
           <div
             className={cn(
               'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
