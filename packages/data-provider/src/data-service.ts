@@ -608,22 +608,16 @@ export const listConversations = (
 };
 
 export const listConversationsByQuery = (
-  params?: q.ConversationListParams & { searchQuery?: string },
-): Promise<q.ConversationListResponse> => {
-  const cursor = params?.cursor ?? null;
-  const searchQuery = params?.searchQuery ?? '';
+  params?: q.SearchConversationListParams,
+): Promise<q.SearchConversationListResponse> => {
+  const nextCursor = params?.nextCursor ?? null;
+  const pageSize = params?.pageSize ?? 10;
+  const searchQuery = params?.search ?? '';
   if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, cursor ?? ''));
+    return request.get(endpoints.search(searchQuery, pageSize, nextCursor));
   } else {
-    return request.get(endpoints.conversations(cursor ?? ''));
+    return request.get(endpoints.conversations(nextCursor ?? ''));
   }
-};
-
-export const searchConversations = async (
-  q: string,
-  pageNumber: string,
-): Promise<t.TSearchResults> => {
-  return request.get(endpoints.search(q, pageNumber));
 };
 
 export function getConversations(cursor: string | null): Promise<t.TGetConversationsResponse> {
