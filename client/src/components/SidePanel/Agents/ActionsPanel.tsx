@@ -8,13 +8,13 @@ import {
 import { ChevronLeft } from 'lucide-react';
 import type { AgentPanelProps, ActionAuthForm } from '~/common';
 import { Dialog, DialogTrigger, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
+import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useDeleteAgentAction } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
 import { TrashIcon } from '~/components/svg';
 import ActionsInput from './ActionsInput';
-import ActionsAuth from './ActionsAuth';
 import { Panel } from '~/common';
 
 export default function ActionsPanel({
