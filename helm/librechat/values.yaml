@@ -7,15 +7,16 @@ replicaCount: 1
 
 
 global:
+   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+   # Required Values:
+   # - MEILI_MASTER_KEY
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
 
 librechat:
-   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
-   # Required Values:
   configEnv:
     PLUGIN_MODELS: gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
     DEBUG_PLUGINS: "true"
@@ -33,7 +34,7 @@ librechat:
     # - MEILI_MASTER_KEY
   existingSecretName: "librechat-credentials-env"
   
-  # For adding a custom config yaml-file you can set the contents in this var
+  # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
   configYamlContent: ""
   # configYamlContent: |
   #   version: 1.0.8

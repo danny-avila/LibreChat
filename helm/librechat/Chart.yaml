@@ -24,7 +24,7 @@ version: 1.8.7
 # renovate: image=ghcr.io/danny-avila/librechat
 appVersion: "v0.7.6"
 
-home: https://blue-atlas.de
+home: https://www.librechat.ai
 
 dependencies:
   - name: mongodb
@@ -38,4 +38,4 @@ dependencies:
   - name: librechat-rag-api
     version: "0.4.0"
     condition: librechat-rag-api.enabled
-    repository: file://../librechat-rag-api #"https://charts.blue-atlas.de"
+    repository: file://../librechat-rag-api

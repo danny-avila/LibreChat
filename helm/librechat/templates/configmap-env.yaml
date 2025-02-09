@@ -6,12 +6,12 @@ data:
   {{- if (index .Values "librechat-rag-api" "enabled") }}
   RAG_API_URL: http://{{ include "rag.fullname" (index .Subcharts "librechat-rag-api") | lower }}.{{ .Release.Namespace | lower }}.svc.cluster.local:8000 
   {{- end }}
-  {{- if .Values.librechat.configEnv }}
-  {{- toYaml .Values.librechat.configEnv | nindent 2 }}
-  {{- end }}
   {{- if and (not (dig "configEnv" "MEILI_HOST" "" .Values.librechat)) .Values.meilisearch.enabled }}
   MEILI_HOST: http://{{ include "meilisearch.fullname" .Subcharts.meilisearch }}.{{ .Release.Namespace | lower }}.svc.cluster.local:7700
   {{- end }}
   {{- if and (not (dig "configEnv" "MONGO_URI" "" .Values.librechat)) .Values.mongodb.enabled }}
   MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat
+  {{- end }}
+  {{- if .Values.librechat.configEnv }}
+  {{- toYaml .Values.librechat.configEnv | nindent 2 }}
   {{- end }}
