@@ -88,6 +88,9 @@
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
 
+- 🧠 **Reasoning UI**:  
+  - Dynamic Reasoning UI for Chain-of-Thought/Reasoning AI models like DeepSeek-R1
+
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
 
