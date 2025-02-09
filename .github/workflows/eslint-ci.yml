@@ -29,8 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Use a paths filter to detect changes in JavaScript/TypeScript files,
-      # but only consider files that are added or modified (ignore deleted files).
+      # Use a paths filter (v3) to detect changes in JavaScript/TypeScript files,
+      # but only consider files that are added or modified (ignoring deleted files).
       - name: Filter changed files for ESLint
         id: file_filter
         uses: dorny/paths-filter@v3
@@ -41,6 +41,12 @@ jobs:
               - added|modified: '**/*.jsx'
               - added|modified: '**/*.ts'
               - added|modified: '**/*.tsx'
+            # Example of shared filters (optional)
+            shared: &shared
+              - common/**
+              - config/**
+            addedOrModifiedAnchors:
+              - added|modified: *shared
 
       # Run ESLint only if relevant files have been added or modified.
       - name: Run ESLint on changed files
@@ -52,8 +58,9 @@ jobs:
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           echo "Base commit SHA: $BASE_SHA"
           
-          # List files changed between the base commit and current HEAD.
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" HEAD | grep -E '\.(js|jsx|ts|tsx)$')
+          # List files changed between the base commit and current HEAD,
+          # but only include files that are added or modified.
+          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD | grep -E '\.(js|jsx|ts|tsx)$')
           echo "Files to lint:"
           echo "$CHANGED_FILES"
           
@@ -63,11 +70,30 @@ jobs:
             --format @microsoft/eslint-formatter-sarif \
             --output-file eslint-results.sarif $CHANGED_FILES || true
 
-      # If no JavaScript/TypeScript files were added or modified, create an empty SARIF file.
+      # If no JavaScript/TypeScript files were added or modified,
+      # create a valid (non-empty) SARIF file containing one run.
       - name: Create empty SARIF results file
         if: steps.file_filter.outputs.eslint != 'true'
         run: |
-          echo '{"version": "2.1.0", "runs": []}' > eslint-results.sarif
+          cat << 'EOF' > eslint-results.sarif
+          {
+            "version": "2.1.0",
+            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "runs": [
+                  {
+                  "tool": {
+                      "driver": {
+            "name": "ESLint",
+            "informationUri": "https://eslint.org",
+            "version": "0.0.0",
+            "rules": []
+          }
+            },
+            "results": []
+              }
+          ]
+          }
+          EOF
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v3
