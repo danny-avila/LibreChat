@@ -1,10 +1,10 @@
 name: Create Translation PR on Version Published
 
 on:
-#  testing
-  pull_request:
-    branches:
-      - main
+#  do not run during PR request only on push and repository_dispatch
+#  pull_request:
+#    branches:
+#      - main
   push:
     branches: [main]
   repository_dispatch:
