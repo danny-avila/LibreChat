@@ -955,4 +955,12 @@ export default {
   com_ui_2fa_verification_error: 'Error verifying two-factor authentication.',
   com_ui_2fa_verified: 'Successfully verified Two-Factor Authentication',
   com_ui_enter_verification_code: 'Enter the verification code from your authenticator app',
+  com_ui_generate_backup: 'Generate Backup Codes',
+  com_ui_regenerate_backup: 'Regenerate Backup Codes',
+  com_ui_regenerating: 'Regenerating...',
+  com_ui_used: 'Used',
+  com_ui_not_used: 'Not Used',
+  com_ui_backup_codes_regenerated: 'Backup codes have been regenerated successfully.',
+  com_ui_backup_codes_regenerate_error: 'There was an error regenerating backup codes.',
+  com_ui_no_backup_codes: 'No backup codes available. Please generate new ones.',
 };

@@ -346,6 +346,7 @@ export type TDisable2FAResponse = {
 export type TRegenerateBackupCodesResponse = {
   message: string;
   backupCodes: string[];
+  backupCodesHash: string[];
 };
 
 export type TRequestPasswordReset = {

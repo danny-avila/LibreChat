@@ -111,7 +111,7 @@ const regenerateBackupCodesController = async (req, res) => {
       { backupCodes: codeObjects },
       { new: true },
     );
-    res.status(200).json({ message: 'Backup codes regenerated.', backupCodes: plainCodes });
+    res.status(200).json({ message: 'Backup codes regenerated.', backupCodes: plainCodes,  backupCodesHash: codeObjects });
   } catch (err) {
     logger.error('[regenerateBackupCodesController]', err);
     res.status(500).json({ message: err.message });

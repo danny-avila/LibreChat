@@ -3,6 +3,7 @@ import DisplayUsernameMessages from './DisplayUsernameMessages';
 import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
 import EnableTwoFactorItem from './TwoFactorAuthentication';
+import BackupCodesItem from './BackupCodesItem';
 
 function Account() {
   return (
@@ -15,6 +16,9 @@ function Account() {
       </div>
       <div className="pb-3">
         <EnableTwoFactorItem />
+      </div>
+      <div className="pb-3">
+        <BackupCodesItem />
       </div>
       <div className="pb-3">
         <DeleteAccount />
