@@ -181,6 +181,7 @@ async function createActionTool({
                   client_id: metadata.oauth_client_id,
                   scope: metadata.auth.scope,
                   redirect_uri: redirectUri,
+                  access_type: 'offline',
                   response_type: 'code',
                   state: stateToken,
                 });
