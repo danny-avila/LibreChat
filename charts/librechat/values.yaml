@@ -21,7 +21,7 @@ serviceAccount:
   # Annotations to add to the service account
   annotations: {
     eks.amazonaws.com/role-arn:
-      arn:aws:iam::223287545160:role/jenkins-master-service-account
+      arn:aws:iam::223287545160:role/bai-management-service-account
   }
   # The name of the service account to use.
   # If not set and create is true,
