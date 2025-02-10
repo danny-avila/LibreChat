@@ -21,14 +21,14 @@ export class FlowStateManager<T = unknown> {
     if (!options) {
       options = { ttl: 60000 * 3 };
     }
-    const { ttl, logger } = options;
+    const { ci = false, ttl, logger } = options;
 
-    if (!(store instanceof Keyv)) {
+    if (!ci && !(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
     }
 
-    this.keyv = store;
     this.ttl = ttl;
+    this.keyv = store;
     this.logger = logger || FlowStateManager.getDefaultLogger();
     this.intervals = new Set();
     this.setupCleanupHandlers();

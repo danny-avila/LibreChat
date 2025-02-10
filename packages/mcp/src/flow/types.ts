@@ -18,5 +18,6 @@ export interface FlowState<T = unknown> {
 
 export interface FlowManagerOptions {
   ttl: number;
+  ci?: boolean;
   logger?: Logger;
 }
