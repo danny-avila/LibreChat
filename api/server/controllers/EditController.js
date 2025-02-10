@@ -140,6 +140,8 @@ const EditController = async (req, res, next, initializeClient) => {
       sender,
       messageId: responseMessageId,
       parentMessageId: userMessageId ?? parentMessageId,
+    }).catch((err) => {
+      logger.error('[EditController] Error in `handleAbortError`', err);
     });
   }
 };
