@@ -19,7 +19,7 @@ export class FlowStateManager<T = unknown> {
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
-      options = { ttl: 60000 };
+      options = { ttl: 60000 * 3 };
     }
     const { ttl, logger } = options;
 
@@ -86,7 +86,7 @@ export class FlowStateManager<T = unknown> {
 
   private monitorFlow(flowKey: string, type: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const checkInterval = 1000;
+      const checkInterval = 2000;
       let elapsedTime = 0;
 
       const intervalId = setInterval(async () => {

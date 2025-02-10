@@ -26,7 +26,7 @@ async function getFlowStateManager(getLogStores) {
   if (!flowManager) {
     const { FlowStateManager } = await import('librechat-mcp');
     flowManager = new FlowStateManager(getLogStores(CacheKeys.FLOWS), {
-      ttl: Time.TWO_MINUTES,
+      ttl: Time.ONE_MINUTE * 3,
       logger,
     });
   }

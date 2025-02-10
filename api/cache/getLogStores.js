@@ -39,7 +39,7 @@ const messages = isRedisEnabled
 
 const flows = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
-  : new Keyv({ namespace: CacheKeys.FLOWS, ttl: Time.TWO_MINUTES });
+  : new Keyv({ namespace: CacheKeys.FLOWS, ttl: Time.ONE_MINUTE * 3 });
 
 const tokenConfig = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
