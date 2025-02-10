@@ -2,13 +2,14 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+---
 replicaCount: 1
 
 image:
-  repository: ghcr.io/danny-avila/librechat
-  pullPolicy: IfNotPresent
+  repository: 223287545160.dkr.ecr.us-east-2.amazonaws.com/devops
+  pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "latest"
+  tag: "bai"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -18,56 +19,65 @@ serviceAccount:
   # Specifies whether a service account should be created
   create: true
   # Annotations to add to the service account
-  annotations: {}
+  annotations: {
+    eks.amazonaws.com/role-arn:
+      arn:aws:iam::223287545160:role/bai-management-service-account
+  }
   # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
+  # If not set and create is true,
+  # a name is generated using the fullname template
+  name: "bedrock-sa"
 
 podAnnotations: {}
 
 podLabels: {}
 
 podSecurityContext: {}
-  # fsGroup: 2000
+# fsGroup: 2000
 
 securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+# capabilities:
+#   drop:
+#   - ALL
+# readOnlyRootFilesystem: true
+# runAsNonRoot: true
+# runAsUser: 1000
 
 networkPolicies:
   enabled: true
 
 service:
-  type: LoadBalancer
+  type: ClusterIP
   port: 80
 
 ingress:
   enabled: true
-  className: "nginx"
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn:
+      arn:aws:acm:us-east-2:223287545160:certificate/165a4b36-fe02-4f36-bfc2-bd31064215da
+    alb.ingress.kubernetes.io/group.name: management-internal
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+    alb.ingress.kubernetes.io/subnets:
+      subnet-08a821bb9ab550178, subnet-0ad2292cddb2d301f,
+      subnet-083591421998a1e2f
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /
   hosts:
-    - host: chat.example.com
+    - host: bai.getbalance.com
       paths:
-        - path: /
+        - path: /*
           pathType: ImplementationSpecific
   tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
 
 resources: {}
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+# limits:
+#   cpu: 100m
+#   memory: 128Mi
+# requests:
+#   cpu: 100m
+#   memory: 128Mi
 
 autoscaling:
   enabled: false
@@ -81,17 +91,37 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
-  
+CONFIG_PATH: /app/librechat.yaml
+
 config:
   envSecrets:
     # Use this when using one k8s secret for multiply env secrets
     # secretRef: librechat
 
     # Use this when using one k8s secret for each env secret
-    secretKeyRef: []
-#      - name: CREDS_IV
-#        secretName: librechat
-#        secretKey: CREDS_IV
+    secretKeyRef:
+      - name: mongodb-root-password
+        secretName: bai-mongodb
+        secretKey: mongodb-root-password
+      - name: CREDS_KEY
+        secretName: bai-creds
+        secretKey: CREDS_KEY
+      - name: CREDS_IV
+        secretName: bai-creds
+        secretKey: CREDS_IV
+      - name: JWT_SECRET
+        secretName: bai-creds
+        secretKey: JWT_SECRET
+      - name: JWT_REFRESH_SECRET
+        secretName: bai-creds
+        secretKey: JWT_REFRESH_SECRET
+      - name: MEILI_MASTER_KEY
+        secretName: bai-creds
+        secretKey: MEILI_MASTER_KEY
+
+  pod_env:
+    - name: MONGO_URI
+      value: "mongodb://root:$(mongodb-root-password)@bai-mongodb"
 
   env:
     # Full list of possible values
@@ -106,7 +136,10 @@ config:
     DEBUG_LOGGING: "true"
     DEBUG_OPENAI: "true"
     DEBUG_PLUGINS: "true"
-    DOMAIN_CLIENT: ""
-    DOMAIN_SERVER: ""
-    ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
-    SEARCH: false 
+    DOMAIN_CLIENT: "https://bai.getbalance.com"
+    DOMAIN_SERVER: "https://bai.getbalance.com"
+    ENDPOINTS: "bedrock"
+    SEARCH: false
+    BEDROCK_AWS_DEFAULT_REGION: "us-east-2"
+    BEDROCK_AWS_MODELS:
+      "arn:aws:bedrock:us-east-2:223287545160:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"

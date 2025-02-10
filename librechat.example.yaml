@@ -81,7 +81,7 @@ registration:
 #       model: ''
 #       voices: ['']
 
-#  
+#
 #   stt:
 #     openai:
 #       url: ''
@@ -98,7 +98,8 @@ registration:
 #     ipMax: 100
 #     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
 #     userMax: 50
-#     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
+#     userWindowInMinutes:
+#     60  # Rate limit window for conversation imports per user
 
 # Example Actions Object Structure
 actions:
