@@ -1,4 +1,4 @@
-name: Push New Keys & Create Translation PR
+name: Sync Locize Translations & Create Translation PR
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
     types: [locize/versionPublished]
 
 jobs:
-  push-new-keys:
-    name: Push Missing Translation Keys to locize
+  sync-translations:
+    name: Sync Translation Keys with Locize
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -22,23 +22,22 @@ jobs:
       - name: Install locize CLI
         run: npm install -g locize-cli
 
-      # Only push keys if this workflow was triggered by a push event.
-      - name: Push Missing Translation Keys to locize
+      # Sync translations (Push missing keys & remove deleted ones)
+      - name: Sync Locize with Repository
         if: ${{ github.event_name == 'push' }}
         run: |
           cd client/src/locales
-          locize save-missing --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en
+          locize sync --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en
 
-      # When triggered by repository_dispatch, skip pushing new keys.
-      - name: Skip push step on non-push events
+      # When triggered by repository_dispatch, skip sync step.
+      - name: Skip sync step on non-push events
         if: ${{ github.event_name != 'push' }}
-        run: echo "Skipping push of new keys as the event is not a push."
+        run: echo "Skipping sync as the event is not a push."
 
   create-pull-request:
     name: Create Translation PR on Version Published
     runs-on: ubuntu-latest
-    # This job will wait for push-new-keys to complete.
-    needs: push-new-keys
+    needs: sync-translations
     permissions:
       contents: write
       pull-requests: write
