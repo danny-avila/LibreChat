@@ -9,11 +9,14 @@ on:
 jobs:
   detect-unused-i18n-keys:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # Required for posting PR comments
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Find unused i18next keys
+        id: find-unused
         run: |
           echo "🔍 Scanning for unused i18next keys..."
 
@@ -40,13 +43,35 @@ jobs:
             fi
           done
 
-          # Output results in PR checks
+          # Output results
           if [[ ${#UNUSED_KEYS[@]} -gt 0 ]]; then
             echo "🛑 Found ${#UNUSED_KEYS[@]} unused i18n keys:"
+            echo "unused_keys=$(echo "${UNUSED_KEYS[@]}" | jq -R -s -c 'split(" ")')" >> $GITHUB_ENV
             for KEY in "${UNUSED_KEYS[@]}"; do
               echo "::warning title=Unused i18n Key::'$KEY' is defined but not used in the codebase."
             done
-            exit 1  # Fail the PR check if unused keys exist
           else
             echo "✅ No unused i18n keys detected!"
+            echo "unused_keys=[]" >> $GITHUB_ENV
           fi
+
+      - name: Post verified comment on PR
+        if: env.unused_keys != '[]'
+        run: |
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+
+          COMMENT_BODY="### 🚨 Unused i18next Keys Detected:\n\n"
+          for key in $(echo $unused_keys | jq -r '.[]'); do
+            COMMENT_BODY+="- \`$key\`\n"
+          done
+          COMMENT_BODY+="\n> ⚠️ **Please remove these unused keys to keep the translation files clean.**"
+
+          gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -f body="$COMMENT_BODY" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail workflow if unused keys found
+        if: env.unused_keys != '[]'
+        run: exit 1  # This makes the PR fail if unused keys exist
