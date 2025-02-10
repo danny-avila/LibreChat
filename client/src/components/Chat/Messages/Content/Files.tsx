@@ -9,14 +9,14 @@ const Files = ({ message }: { message?: TMessage }) => {
   }, [message?.files]);
 
   const otherFiles = useMemo(() => {
-    return message?.files?.filter((file) => !file.type?.startsWith('image/')) || [];
+    return message?.files?.filter((file) => !(file.type?.startsWith('image/') === true)) || [];
   }, [message?.files]);
 
   return (
     <>
       {otherFiles.length > 0 &&
         otherFiles.map((file) => <FileContainer key={file.file_id} file={file as TFile} />)}
-      {imageFiles &&
+      {imageFiles.length > 0 &&
         imageFiles.map((file) => (
           <Image
             key={file.file_id}
