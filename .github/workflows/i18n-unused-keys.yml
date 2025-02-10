@@ -60,12 +60,15 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
 
+          # Format the unused keys list correctly, filtering out empty entries
+          FILTERED_KEYS=$(echo "$unused_keys" | jq -r '.[]' | grep -v '^\s*$' | sed 's/^/- `/;s/$/`/' )
+
           COMMENT_BODY=$(cat <<EOF
           ### 🚨 Unused i18next Keys Detected
 
           The following translation keys are defined in \`translation.json\` but are **not used** in the codebase:
 
-          $(echo "$unused_keys" | jq -r '.[]' | sed 's/^/- `/;s/$/`/' )
+          $FILTERED_KEYS
 
           ⚠️ **Please remove these unused keys to keep the translation files clean.**
           EOF
