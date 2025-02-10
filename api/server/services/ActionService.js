@@ -198,8 +198,17 @@ async function createActionTool({
                     expires_at: Date.now() + Time.TWO_MINUTES,
                   },
                 };
-                sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
                 const flowManager = await getFlowStateManager(getLogStores);
+                await flowManager.createFlowWithHandler(
+                  `${identifier}:login`,
+                  'oauth_login',
+                  async () => {
+                    sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+                    logger.debug('Sent OAuth login request to client', { action_id, identifier });
+                    return true;
+                  },
+                );
+                logger.debug('Waiting for OAuth Authorization response', { action_id, identifier });
                 const result = await flowManager.createFlow(identifier, 'oauth', {
                   state: stateToken,
                   userId: req.user.id,
@@ -209,6 +218,7 @@ async function createActionTool({
                   encrypted_oauth_client_id: encrypted.oauth_client_id,
                   encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                 });
+                logger.debug('Received OAuth Authorization response', { action_id, identifier });
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
                 sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });

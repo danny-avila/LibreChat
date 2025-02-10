@@ -60,13 +60,15 @@ export class FlowStateManager<T = unknown> {
 
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
+      this.logger.debug(`[${flowKey}] Flow already exists`);
       return this.monitorFlow(flowKey, type);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 250));
 
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
+      this.logger.debug(`[${flowKey}] Flow exists on 2nd check`);
       return this.monitorFlow(flowKey, type);
     }
 
@@ -77,6 +79,7 @@ export class FlowStateManager<T = unknown> {
       createdAt: Date.now(),
     };
 
+    this.logger.debug('Creating initial flow state:', flowKey);
     await this.keyv.set(flowKey, initialState, this.ttl);
     return this.monitorFlow(flowKey, type);
   }
@@ -93,31 +96,40 @@ export class FlowStateManager<T = unknown> {
           if (!flowState) {
             clearInterval(intervalId);
             this.intervals.delete(intervalId);
-            reject(new Error(`${type} flow timed out`));
+            this.logger.error(`[${flowKey}] Flow state not found`);
+            reject(new Error(`${type} Flow state not found`));
             return;
           }
 
           if (flowState.status !== 'PENDING') {
             clearInterval(intervalId);
             this.intervals.delete(intervalId);
-            await this.keyv.delete(flowKey);
+            this.logger.debug(`[${flowKey}] Flow completed`);
 
             if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
               resolve(flowState.result);
             } else if (flowState.status === 'FAILED') {
+              await this.keyv.delete(flowKey);
               reject(new Error(flowState.error ?? `${type} flow failed`));
             }
+            return;
           }
 
           elapsedTime += checkInterval;
           if (elapsedTime >= this.ttl) {
             clearInterval(intervalId);
             this.intervals.delete(intervalId);
+            this.logger.error(
+              `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | TTL: ${this.ttl}`,
+            );
             await this.keyv.delete(flowKey);
             reject(new Error(`${type} flow timed out`));
           }
+          this.logger.debug(
+            `[${flowKey}] Flow state elapsed time: ${elapsedTime}, checking again...`,
+          );
         } catch (error) {
-          this.logger.error('Error checking flow state:', error);
+          this.logger.error(`[${flowKey}] Error checking flow state:`, error);
           clearInterval(intervalId);
           this.intervals.delete(intervalId);
           reject(error);
@@ -196,13 +208,15 @@ export class FlowStateManager<T = unknown> {
     const flowKey = this.getFlowKey(flowId, type);
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
+      this.logger.debug(`[${flowKey}] Flow already exists`);
       return this.monitorFlow(flowKey, type);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 250));
 
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
+      this.logger.debug(`[${flowKey}] Flow exists on 2nd check`);
       return this.monitorFlow(flowKey, type);
     }
 
@@ -212,7 +226,7 @@ export class FlowStateManager<T = unknown> {
       metadata,
       createdAt: Date.now(),
     };
-
+    this.logger.debug(`[${flowKey}] Creating initial flow state`);
     await this.keyv.set(flowKey, initialState, this.ttl);
 
     try {
