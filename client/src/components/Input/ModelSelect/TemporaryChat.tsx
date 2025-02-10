@@ -43,7 +43,7 @@ export const TemporaryChat = () => {
     <div className="sticky bottom-0 border-none bg-surface-tertiary px-6 py-4 ">
       <div className="flex items-center">
         <div className={cn('flex flex-1 items-center gap-2', isActiveConvo && 'opacity-40')}>
-          <MessageCircleDashed className="icon-sm" />
+          <MessageCircleDashed className="icon-sm" aria-hidden="true" />
           <span className="text-sm text-text-primary">{localize('com_ui_temporary_chat')}</span>
         </div>
         <div className="ml-auto flex items-center">

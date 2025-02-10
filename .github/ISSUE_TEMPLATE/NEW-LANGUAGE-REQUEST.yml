@@ -1,0 +1,33 @@
+name: New Language Request
+description: Request to add a new language for LibreChat translations.
+title: "New Language Request: "
+labels: ["enhancement", "i18n"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to submit a new language request! Please fill out the following details so we can review your request.
+  - type: input
+    id: language_name
+    attributes:
+      label: Language Name
+      description: Please provide the full name of the language (e.g., Spanish, Mandarin).
+      placeholder: e.g., Spanish
+    validations:
+      required: true
+  - type: input
+    id: iso_code
+    attributes:
+      label: ISO 639-1 Code
+      description: Please provide the ISO 639-1 code for the language (e.g., es for Spanish). You can refer to [this list](https://www.w3schools.com/tags/ref_language_codes.asp) for valid codes.
+      placeholder: e.g., es
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/danny-avila/LibreChat/blob/main/.github/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

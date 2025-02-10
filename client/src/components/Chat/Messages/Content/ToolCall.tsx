@@ -106,12 +106,12 @@ export default function ToolCall({
 
   const getFinishedText = () => {
     if (isMCPToolCall === true) {
-      return localize('com_assistants_completed_function', function_name);
+      return localize('com_assistants_completed_function', { 0: function_name });
     }
     if (domain != null && domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH) {
-      return localize('com_assistants_completed_action', domain);
+      return localize('com_assistants_completed_action', { 0: domain });
     }
-    return localize('com_assistants_completed_function', function_name);
+    return localize('com_assistants_completed_function', { 0: function_name });
   };
 
   return (
