@@ -28,12 +28,33 @@ jobs:
           echo "Last version: $LAST_VERSION"
           echo "LAST_VERSION=$LAST_VERSION" >> $GITHUB_ENV
 
+      - name: Check if an existing version bump PR exists
+        id: check_existing_pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING_PR=$(gh pr list --state open --json number,title --jq '.[] | select(.title | contains("chore(version)")) | {number: .number, title: .title}')
+          EXISTING_PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
+          EXISTING_PR_VERSION=$(echo "$EXISTING_PR" | grep -oP '\d+\.\d+\.\d+' | head -n 1)
+
+          if [[ -n "$EXISTING_PR_NUMBER" ]]; then
+            echo "Closing existing PR #$EXISTING_PR_NUMBER"
+            gh pr close "$EXISTING_PR_NUMBER" --comment "🚀 Auto-closing this PR in favor of a new version bump."
+            echo "EXISTING_PR_NUMBER=$EXISTING_PR_NUMBER" >> $GITHUB_ENV
+          fi
+
+          if [[ -n "$EXISTING_PR_VERSION" ]]; then
+            echo "EXISTING_PR_VERSION=$EXISTING_PR_VERSION" >> $GITHUB_ENV
+          fi
+
       - name: Determine new version based on PR labels
         id: bump_version
         env:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+          BASE_VERSION: ${{ env.EXISTING_PR_VERSION || env.LAST_VERSION }}
         run: |
           echo "Labels on PR: $PR_LABELS"
+          echo "Base version: $BASE_VERSION"
 
           MAJOR=false
           MINOR=false
@@ -49,14 +70,14 @@ jobs:
             PATCH=true
           fi
 
-          NEW_VERSION=$LAST_VERSION
+          NEW_VERSION=$BASE_VERSION
 
           if [ "$MAJOR" = true ]; then
-            NEW_VERSION=$(semver -i major $LAST_VERSION)
+            NEW_VERSION=$(semver -i major $BASE_VERSION)
           elif [ "$MINOR" = true ]; then
-            NEW_VERSION=$(semver -i minor $LAST_VERSION)
+            NEW_VERSION=$(semver -i minor $BASE_VERSION)
           elif [ "$PATCH" = true ]; then
-            NEW_VERSION=$(semver -i patch $LAST_VERSION)
+            NEW_VERSION=$(semver -i patch $BASE_VERSION)
           fi
 
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
@@ -71,7 +92,7 @@ jobs:
           npm install
           npm ci
 
-      - name: Create or Update Pull Request
+      - name: Create New Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
