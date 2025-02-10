@@ -73,33 +73,40 @@ export class FlowStateManager {
       let elapsedTime = 0;
 
       const intervalId = setInterval(async () => {
-        const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+        try {
+          const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
-        if (!flowState) {
-          clearInterval(intervalId);
-          this.intervals.delete(intervalId);
-          reject(new Error(`${type} flow timed out`));
-          return;
-        }
-
-        if (flowState.status !== 'PENDING') {
-          clearInterval(intervalId);
-          this.intervals.delete(intervalId);
-          await this.keyv.delete(flowKey);
-
-          if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
-            resolve(flowState.result);
-          } else if (flowState.status === 'FAILED') {
-            reject(new Error(flowState.error ?? `${type} flow failed`));
+          if (!flowState) {
+            clearInterval(intervalId);
+            this.intervals.delete(intervalId);
+            reject(new Error(`${type} flow timed out`));
+            return;
           }
-        }
 
-        elapsedTime += checkInterval;
-        if (elapsedTime >= this.ttl) {
+          if (flowState.status !== 'PENDING') {
+            clearInterval(intervalId);
+            this.intervals.delete(intervalId);
+            await this.keyv.delete(flowKey);
+
+            if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
+              resolve(flowState.result);
+            } else if (flowState.status === 'FAILED') {
+              reject(new Error(flowState.error ?? `${type} flow failed`));
+            }
+          }
+
+          elapsedTime += checkInterval;
+          if (elapsedTime >= this.ttl) {
+            clearInterval(intervalId);
+            this.intervals.delete(intervalId);
+            await this.keyv.delete(flowKey);
+            reject(new Error(`${type} flow timed out`));
+          }
+        } catch (error) {
+          this.logger.error('Error checking flow state:', error);
           clearInterval(intervalId);
           this.intervals.delete(intervalId);
-          await this.keyv.delete(flowKey);
-          reject(new Error(`${type} flow timed out`));
+          reject(error);
         }
       }, checkInterval);
 
