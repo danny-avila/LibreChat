@@ -2,7 +2,7 @@ import Keyv from 'keyv';
 import type { Logger } from 'winston';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
-export class FlowStateManager {
+export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
   private logger: Logger;
@@ -54,10 +54,21 @@ export class FlowStateManager {
 
   /**
    * Creates a new flow and waits for its completion
-   * @template T - The type of the expected result
    */
-  async createFlow<T>(flowId: string, type: string, metadata: FlowMetadata = {}): Promise<T> {
+  async createFlow(flowId: string, type: string, metadata: FlowMetadata = {}): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
+
+    let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (existingState) {
+      return this.monitorFlow(flowKey, type);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (existingState) {
+      return this.monitorFlow(flowKey, type);
+    }
 
     const initialState: FlowState = {
       type,
@@ -67,7 +78,10 @@ export class FlowStateManager {
     };
 
     await this.keyv.set(flowKey, initialState, this.ttl);
+    return this.monitorFlow(flowKey, type);
+  }
 
+  private monitorFlow(flowKey: string, type: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 1000;
       let elapsedTime = 0;
@@ -116,9 +130,8 @@ export class FlowStateManager {
 
   /**
    * Completes a flow successfully
-   * @template T - The type of the result data
    */
-  async completeFlow<T>(flowId: string, type: string, result: T): Promise<boolean> {
+  async completeFlow(flowId: string, type: string, result: T): Promise<boolean> {
     const flowKey = this.getFlowKey(flowId, type);
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
@@ -161,10 +174,54 @@ export class FlowStateManager {
 
   /**
    * Gets current flow state
-   * @template T - The type of the expected result
    */
-  async getFlowState<T>(flowId: string, type: string): Promise<FlowState<T> | null> {
+  async getFlowState(flowId: string, type: string): Promise<FlowState<T> | null> {
     const flowKey = this.getFlowKey(flowId, type);
     return this.keyv.get(flowKey);
+  }
+
+  /**
+   * Creates a new flow and waits for its completion, only executing the handler if no existing flow is found
+   * @param flowId - The ID of the flow
+   * @param type - The type of flow
+   * @param handler - Async function to execute if no existing flow is found
+   * @param metadata - Optional metadata for the flow
+   */
+  async createFlowWithHandler(
+    flowId: string,
+    type: string,
+    handler: () => Promise<T>,
+    metadata: FlowMetadata = {},
+  ): Promise<T> {
+    const flowKey = this.getFlowKey(flowId, type);
+    let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (existingState) {
+      return this.monitorFlow(flowKey, type);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (existingState) {
+      return this.monitorFlow(flowKey, type);
+    }
+
+    const initialState: FlowState = {
+      type,
+      status: 'PENDING',
+      metadata,
+      createdAt: Date.now(),
+    };
+
+    await this.keyv.set(flowKey, initialState, this.ttl);
+
+    try {
+      const result = await handler();
+      await this.completeFlow(flowId, type, result);
+      return result;
+    } catch (error) {
+      await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
   }
 }

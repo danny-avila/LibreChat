@@ -187,14 +187,14 @@ async function createActionTool({
                   state: stateToken,
                 });
 
-                const authUrl = `${metadata.auth.authorization_url}?${params.toString()}`;
+                const authURL = `${metadata.auth.authorization_url}?${params.toString()}`;
                 /** @type {{ id: string; delta: AgentToolCallDelta }} */
                 const data = {
                   id: stepId,
                   delta: {
                     type: StepTypes.TOOL_CALLS,
                     tool_calls: [{ ...toolCall, args: '' }],
-                    auth: authUrl,
+                    auth: authURL,
                     expires_at: Date.now() + Time.TWO_MINUTES,
                   },
                 };
@@ -249,14 +249,21 @@ async function createActionTool({
               // Refresh token is still valid, use it to get new access token
               try {
                 const refresh_token = await decryptV2(refreshTokenData.token);
-                const refreshData = await refreshAccessToken({
-                  identifier,
-                  refresh_token,
-                  userId: req.user.id,
-                  client_url: metadata.auth.client_url,
-                  encrypted_oauth_client_id: encrypted.oauth_client_id,
-                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                });
+                const refreshTokens = async () =>
+                  await refreshAccessToken({
+                    identifier,
+                    refresh_token,
+                    userId: req.user.id,
+                    client_url: metadata.auth.client_url,
+                    encrypted_oauth_client_id: encrypted.oauth_client_id,
+                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                  });
+                const flowManager = await getFlowStateManager(getLogStores);
+                const refreshData = await flowManager.createFlowWithHandler(
+                  `${identifier}:refresh`,
+                  'oauth_refresh',
+                  refreshTokens,
+                );
                 metadata.oauth_access_token = refreshData.access_token;
                 if (refreshData.refresh_token) {
                   metadata.oauth_refresh_token = refreshData.refresh_token;
