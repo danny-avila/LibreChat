@@ -7,7 +7,7 @@ replicaCount: 1
 
 image:
   repository: 223287545160.dkr.ecr.us-east-2.amazonaws.com/devops
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
   tag: "bai"
 
@@ -70,9 +70,6 @@ ingress:
         - path: /*
           pathType: ImplementationSpecific
   tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
 
 resources: {}
 # limits:
