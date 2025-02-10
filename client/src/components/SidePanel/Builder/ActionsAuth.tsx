@@ -17,7 +17,7 @@ import {
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function ActionsAuth() {
+export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }) {
   const localize = useLocalize();
   const [openAuthDialog, setOpenAuthDialog] = useState(false);
   const { watch, setValue, trigger } = useFormContext();
@@ -112,15 +112,23 @@ export default function ActionsAuth() {
                 </label>
               </div>
               <div className="flex items-center gap-2">
-                <label htmlFor=":rfc:" className="flex cursor-pointer items-center gap-1">
+                <label
+                  htmlFor=":rfc:"
+                  className={cn(
+                    'flex items-center gap-1',
+                    disableOAuth === true ? 'cursor-not-allowed' : 'cursor-pointer',
+                  )}
+                >
                   <RadioGroup.Item
                     type="button"
                     role="radio"
+                    disabled={disableOAuth}
                     value={AuthTypeEnum.OAuth}
                     id=":rfc:"
                     className={cn(
                       'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
                       'border-border-heavy bg-surface-primary',
+                      disableOAuth === true ? 'cursor-not-allowed' : '',
                     )}
                   >
                     <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />

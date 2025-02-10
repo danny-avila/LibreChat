@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import {
   AuthTypeEnum,
@@ -26,8 +26,6 @@ export default function ActionsPanel({
 }: AgentPanelProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-
-  const [openAuthDialog, setOpenAuthDialog] = useState(false);
   const deleteAgentAction = useDeleteAgentAction({
     onSuccess: () => {
       showToast({
