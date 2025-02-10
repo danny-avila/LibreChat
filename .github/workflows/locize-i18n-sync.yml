@@ -1,23 +1,47 @@
-name: Create Translation PR on Version Published
+name: Push New Keys & Create Translation PR
 
 on:
-#  do not run during PR request only on push and repository_dispatch
-#  pull_request:
-#    branches:
-#      - main
   push:
     branches: [main]
   repository_dispatch:
     types: [locize/versionPublished]
 
 jobs:
-  createPullRequest:
+  push-new-keys:
+    name: Push Missing Translation Keys to locize
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install locize CLI
+        run: npm install -g locize-cli
+
+      # Only push keys if this workflow was triggered by a push event.
+      - name: Push Missing Translation Keys to locize
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          cd client/src/locales
+          locize save-missing --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en
+
+      # When triggered by repository_dispatch, skip pushing new keys.
+      - name: Skip push step on non-push events
+        if: ${{ github.event_name != 'push' }}
+        run: echo "Skipping push of new keys as the event is not a push."
+
+  create-pull-request:
     name: Create Translation PR on Version Published
     runs-on: ubuntu-latest
+    # This job will wait for push-new-keys to complete.
+    needs: push-new-keys
     permissions:
       contents: write
       pull-requests: write
-
     steps:
       # 1. Check out the repository.
       - name: Checkout Repository
@@ -46,5 +70,4 @@ jobs:
             - 🎯 **Objective**: Update `translation.json` with the latest translations from locize.
             - 🔍 **Details**: This PR is automatically generated upon receiving a versionPublished event with version "latest". It reflects the newest translations provided by locize.
             - ✅ **Status**: Ready for review.
-          labels: |
-            🌍 i18n
+          labels: "🌍 i18n"
