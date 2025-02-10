@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import axios from 'axios';
+import _axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
@@ -268,7 +268,7 @@ class RequestExecutor {
     };
 
     const method = this.config.method.toLowerCase();
-
+    const axios = _axios.create();
     if (method === 'get') {
       return axios.get(url, { headers, params: this.params });
     } else if (method === 'post') {
@@ -520,6 +520,7 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
       spec: parsedSpec,
     };
   } catch (error) {
+    console.error(error);
     return { status: false, message: 'Error parsing OpenAPI spec.' };
   }
 }
