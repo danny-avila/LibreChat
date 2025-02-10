@@ -17,7 +17,11 @@ const { logger } = require('~/config');
  * @returns {Promise<void>}
  */
 async function processAccessTokens(tokenData, { userId, identifier }) {
-  const { access_token, expires_in, refresh_token, refresh_token_expires_in } = tokenData;
+  const { access_token, expires_in = 3600, refresh_token, refresh_token_expires_in } = tokenData;
+  if (!access_token) {
+    logger.error('Access token not found: ', tokenData);
+    throw new Error('Access token not found');
+  }
   await handleOAuthToken({
     identifier,
     token: access_token,
