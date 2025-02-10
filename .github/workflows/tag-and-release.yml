@@ -1,0 +1,113 @@
+name: Tag and Release
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  create-tag-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get last version from package.json
+        id: version
+        run: |
+          # Extract the version using jq (make sure jq is installed)
+          LAST_VERSION=$(jq -r '.version' package.json)
+          echo "Last version: $LAST_VERSION"
+          echo "LAST_VERSION=$LAST_VERSION" >> $GITHUB_ENV
+
+      - name: Generate Changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get previous tag (if none exists, use a placeholder)
+          PREV_VERSION=$(git tag --sort=-v:refname | head -n 1)
+          if [ -z "$PREV_VERSION" ]; then
+            PREV_VERSION="Initial_Commit"
+          fi
+
+          # Start building the changelog file
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "## [v${LAST_VERSION}](https://github.com/${{ github.repository }}/releases/tag/v${LAST_VERSION})"
+            echo ""
+            if [ "$PREV_VERSION" != "Initial_Commit" ]; then
+              echo "Updates since v${PREV_VERSION} include:"
+              echo "- https://github.com/${{ github.repository }}/compare/v${PREV_VERSION}...v${LAST_VERSION}"
+            else
+              echo "This is the first release."
+            fi
+            echo ""
+          
+            echo "### ✨ New Features"
+            gh pr list --state merged --search "feat" --json title,number,url --jq \
+              '.[] | "* 🚀 [\(.title) by @\(.url | split("/")[-2])](\(.url))"' || echo "* No new features."
+            echo ""
+          
+            echo "### 🖼️ Style"
+            gh pr list --state merged --search "style" --json title,number,url --jq \
+              '.[] | "* 🎨 [\(.title) by @\(.url | split("/")[-2])](\(.url))"' || echo "* No style updates."
+            echo ""
+          
+            echo "### 👐 Accessibility"
+            gh pr list --state merged --search "a11y" --json title,number,url --jq \
+              '.[] | "* 👐 [\(.title) by @\(.url | split("/")[-2])](\(.url))"' || echo "* No accessibility updates."
+            echo ""
+          
+            echo "### 🌍 Internationalization"
+            gh pr list --state merged --search "i18n" --json title,number,url --jq \
+              '.[] | "* 🌏 [\(.title) by @\(.url | split("/")[-2])](\(.url))"' || echo "* No internationalization updates."
+            echo ""
+          
+            echo "### ⚙️ Other Changes"
+            gh pr list --state merged --search "chore OR refactor OR docs" --json title,number,url --jq \
+              '.[] | "* 📦 [\(.title) by @\(.url | split("/")[-2])](\(.url))"' || echo "* No other changes."
+            echo ""
+          
+            echo "### 🔧 Fixes"
+            gh pr list --state merged --search "fix" --json title,number,url --jq \
+              '.[] | "* 🔧 [\(.title) by @\(.url | split("/")[-2])](\(.url))"' || echo "* No fixes."
+            echo ""
+          
+            echo "## New Contributors"
+            # Use jq’s unique_by to get one PR per new author along with its URL
+            gh pr list --state merged --json author,url --jq \
+              'unique_by(.author.login)[] | "* @" + .author.login + " made their first contribution in " + .url' \
+              || echo "* No new contributors."
+            echo ""
+          
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/v${PREV_VERSION}...v${LAST_VERSION}"
+          } > changelog.md
+
+          # Output the changelog for logging purposes
+          cat changelog.md
+
+          # Save the changelog as a multiline environment variable
+          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
+          cat changelog.md >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Create Git Tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag v${LAST_VERSION}
+          git push origin v${LAST_VERSION}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v${LAST_VERSION} \
+            --title "Release v${LAST_VERSION}" \
+            --notes "$CHANGELOG"

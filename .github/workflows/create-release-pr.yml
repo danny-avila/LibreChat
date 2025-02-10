@@ -1,0 +1,41 @@
+name: Create Release PR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-release-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get last version from package.json
+        id: version
+        run: |
+          LAST_VERSION=$(jq -r '.version' package.json)
+          echo "Last version: $LAST_VERSION"
+          echo "LAST_VERSION=$LAST_VERSION" >> $GITHUB_ENV
+          echo "last_version=$LAST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create New Release Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "chore(release): prepare for v${{ steps.version.outputs.last_version }}"
+          base: release
+          branch: release/v${{ steps.version.outputs.last_version }}
+          reviewers: danny-avila
+          title: "✨ v${{ steps.version.outputs.last_version }}"
+          body: |
+            **Release Details**:
+            - 🚀 **Version**: v${{ steps.version.outputs.last_version }}
+            - 📌 **Branch**: `main` → `release`
+            - 🔄 **Merging this PR will finalize the release.**
+          labels: "🚀 release"
