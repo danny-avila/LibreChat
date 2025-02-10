@@ -639,6 +639,7 @@
   "com_ui_default_post_request": "Default (POST request)",
   "com_ui_token_exchange_method": "Token Exchange Method",
   "com_ui_basic_auth_header": "Basic authorization header",
+  "com_ui_callback_url": "Callback URL",
   "com_ui_enter_api_key": "Enter API Key",
   "com_ui_enter_openapi_schema": "Enter your OpenAPI schema here",
   "com_ui_enter_var": "Enter {{0}}",
