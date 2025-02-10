@@ -36,7 +36,7 @@ async function processAccessTokens(tokenData, { userId, identifier }) {
       type: 'oauth_refresh',
       userId,
       identifier: `${identifier}:refresh`,
-      expiresIn: refresh_token_expires_in ?? 7 * 24 * 60 * 60,
+      expiresIn: refresh_token_expires_in ?? null,
     });
   }
   logger.debug('Access tokens processed');
