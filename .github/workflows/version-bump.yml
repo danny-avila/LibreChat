@@ -1,0 +1,89 @@
+name: Semantic Version Bump (via Labels)
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  versioning:
+    if: github.event.pull_request.merged == true && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: npm install -g semver jq
+
+      - name: Get last version from package.json
+        id: version
+        run: |
+          LAST_VERSION=$(jq -r '.version' package.json)
+          echo "Last version: $LAST_VERSION"
+          echo "LAST_VERSION=$LAST_VERSION" >> $GITHUB_ENV
+
+      - name: Determine new version based on PR labels
+        id: bump_version
+        env:
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          echo "Labels on PR: $PR_LABELS"
+
+          MAJOR=false
+          MINOR=false
+          PATCH=false
+
+          if echo "$PR_LABELS" | grep -qi "💥 breaking change"; then
+            MAJOR=true
+          fi
+          if echo "$PR_LABELS" | grep -qi "✨ feat"; then
+            MINOR=true
+          fi
+          if echo "$PR_LABELS" | grep -qi "🔧 fix"; then
+            PATCH=true
+          fi
+
+          NEW_VERSION=$LAST_VERSION
+
+          if [ "$MAJOR" = true ]; then
+            NEW_VERSION=$(semver -i major $LAST_VERSION)
+          elif [ "$MINOR" = true ]; then
+            NEW_VERSION=$(semver -i minor $LAST_VERSION)
+          elif [ "$PATCH" = true ]; then
+            NEW_VERSION=$(semver -i patch $LAST_VERSION)
+          fi
+
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "Next version: $NEW_VERSION"
+
+      - name: Update package.json version
+        run: |
+          jq --arg version "$NEW_VERSION" '.version = $version' package.json > temp.json && mv temp.json package.json
+
+      - name: Install dependencies and update package-lock.json
+        run: |
+          npm install
+          npm ci
+
+      - name: Create or Update Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "chore(version): bump version to ${{ env.NEW_VERSION }}"
+          base: main
+          branch: version-bump/${{ env.NEW_VERSION }}
+          reviewers: danny-avila
+          title: "chore(version): Bump version to ${{ env.NEW_VERSION }}"
+          body: |
+            **Description**:
+            - 🎯 **Objective**: Update `package.json` and `package-lock.json` with the latest version bump.
+            - 🔍 **Details**: This PR is automatically generated upon merging PRs with the correct versioning labels.
+            - ✅ **Status**: Ready for review.
+          labels: "📦 version update"
