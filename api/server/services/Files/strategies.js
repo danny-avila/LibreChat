@@ -21,6 +21,9 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
+const {
+  uploadFileToFlowise,
+} = require('./Flowise')
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
@@ -127,6 +130,23 @@ const codeOutputStrategy = () => ({
   getDownloadStream: getCodeOutputDownloadStream,
 });
 
+/**
+ * FLowise Strategy Functions
+ *
+ * Note: null values mean that the strategy is not supported.
+ * */
+const flowiseStrategy = () => ({
+  handleFileUpload: uploadFileToFlowise,
+  saveURL: saveFileFromURL,
+  getFileURL: getLocalFileURL,
+  saveBuffer: saveLocalBuffer,
+  deleteFile: deleteLocalFile,
+  processAvatar: processLocalAvatar,
+  handleImageUpload: uploadLocalImage,
+  prepareImagePayload: prepareImagesLocal,
+  getDownloadStream: getLocalFileStream,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -141,6 +161,8 @@ const getStrategyFunctions = (fileSource) => {
     return vectorStrategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
+  } else if (fileSource === FileSources.flowise) {
+    return flowiseStrategy();
   } else {
     throw new Error('Invalid file source');
   }

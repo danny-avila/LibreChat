@@ -381,9 +381,19 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
+  // const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
+  let source;
+  if (isAssistantUpload) {
+    source = assistantSource;
+  } else if (metadata.endpoint === EModelEndpoint.nurieAI) {
+    source = FileSources.flowise;
+    // source = FileSources.local;
+  } else {
+    source = FileSources.vectordb;
+  }
+  console.log(source);
   const { handleFileUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id } = metadata;
+  const { file_id, temp_file_id, convo_id, model } = metadata;
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -404,6 +414,8 @@ const processFileUpload = async ({ req, res, metadata }) => {
     req,
     file,
     file_id,
+    convo_id,
+    model,
     openai,
   });
 

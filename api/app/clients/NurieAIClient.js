@@ -84,6 +84,7 @@ class NurieAIClient extends BaseClient {
 
   /* Required Client methods */
   setOptions(options) {
+    console.log(options);
     this.options = options;
     this.modelOptions = {
       ...this.modelOptions,
@@ -192,16 +193,17 @@ class NurieAIClient extends BaseClient {
   //    * @param {MongoFile[]} files
   //    * @returns {Promise<MongoFile[]>}
   //    */
-  //   async addImageURLs(message, attachments, mode = '') {
-  //     // const { files, image_urls } = await encodeAndFormat(
-  //     //   this.options.req,
-  //     //   attachments,
-  //     //   EModelEndpoint.google,
-  //     //   mode,
-  //     // );
-  //     // message.image_urls = image_urls.length ? image_urls : undefined;
-  //     // return files;
-  //   }
+  async addImageURLs() {
+    // const { files, image_urls } = await encodeAndFormat(
+    //   this.options.req,
+    //   attachments,
+    //   EModelEndpoint.google,
+    //   mode,
+    // );
+    // message.image_urls = image_urls.length ? image_urls : undefined;
+    // return files;
+    return;
+  }
 
   //   /**
   //    * Builds the augmented prompt for attachments
@@ -265,6 +267,10 @@ class NurieAIClient extends BaseClient {
     messages,
     // parentMessageId,
   ) {
+    if (this.options.attachments) {
+      const attachments = await this.options.attachments;
+      this.options.attachments = attachments;
+    }
     // let orderedMessages = this.constructor.getMessagesForConversation({
     //   messages,
     //   parentMessageId,
@@ -446,11 +452,70 @@ class NurieAIClient extends BaseClient {
     const modelName = this.modelOptions?.model;
     const models = await cache.get(orgination);
     const modelId = models[modelName]?.id;
+    let nonImageFiles = [];
+    let imageFiles = [];
+    const defaultFlowiseHttpOptions = {
+      headers: {
+        'x-request-from': 'internal',
+      },
+    };
+
+    if (this.options.attachments) {
+      const { attachments } = this.options;
+      const imageAttachments = attachments.filter(x => x.width);
+      const nonImageAttachments = attachments.filter(x => !x.width);
+      const fetchImageContents = imageAttachments.map(x => axios.get(`${process.env.DOMAIN_CLIENT}${x.filepath}`, {
+        responseType: 'arraybuffer',
+      }));
+      const fetchNonImageContents = nonImageAttachments.map(x => axios.get(x.filepath, defaultFlowiseHttpOptions));
+
+      if (fetchImageContents) {
+        const responses = await Promise.all(fetchImageContents);
+        imageFiles = responses.map((resp, i) => ({
+          base64: 'data:image/png;base64,' + Buffer.from(resp.data, 'binary').toString('base64'),
+          file: imageAttachments[i],
+        }));
+      }
+
+      if (fetchNonImageContents) {
+        const responses = await Promise.all(fetchNonImageContents);
+        nonImageFiles = responses.map((resp, i) => ({
+          text: resp.data,
+          file: nonImageAttachments[i],
+        }));
+      }
+    }
+
     const url = new URL(`${this.baseUrl}/api/v1/internal-prediction/${modelId}`);
     const body = {
       question: payload.text,
       chatId: payload.conversationId,
     };
+    if (nonImageFiles.length || imageFiles.length) {
+      body.uploads = [];
+      if (nonImageFiles.length) {
+        nonImageFiles.forEach(({ text, file }) => {
+          body.uploads.push({
+            data: text,
+            mime: file.type,
+            name: file.file_id + '__' + file.filename,
+            type: 'file:full',
+          });
+        });
+      }
+      if (imageFiles.length) {
+        imageFiles.forEach(({ base64, file }) => {
+          const filename = file.filepath.split('/')[3];
+          body.uploads.push({
+            data: base64,
+            mime: 'image/png',
+            name: file.file_id + '__' + filename,
+            type: 'file',
+          });
+        });
+      }
+    }
+
     const options = {
       headers: {
         'x-request-from': 'internal',

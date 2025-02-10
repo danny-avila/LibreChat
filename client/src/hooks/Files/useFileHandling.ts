@@ -52,6 +52,8 @@ const useFileHandling = (params?: UseFileHandling) => {
     select: (data) => mergeFileConfig(data),
   });
 
+  const convoId = conversation.conversationId;
+  const model = conversation.model;
   const endpoint = useMemo(
     () =>
       params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default',
@@ -157,6 +159,8 @@ const useFileHandling = (params?: UseFileHandling) => {
     startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
     const formData = new FormData();
+    formData.append('convo_id', convoId);
+    formData.append('model', model);
     formData.append('endpoint', endpoint);
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
