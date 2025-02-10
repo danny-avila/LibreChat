@@ -60,11 +60,16 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
 
-          COMMENT_BODY="### 🚨 Unused i18next Keys Detected:\n\n"
-          for key in $(echo $unused_keys | jq -r '.[]'); do
-            COMMENT_BODY+="- \`$key\`\n"
-          done
-          COMMENT_BODY+="\n> ⚠️ **Please remove these unused keys to keep the translation files clean.**"
+          COMMENT_BODY=$(cat <<EOF
+          ### 🚨 Unused i18next Keys Detected
+
+          The following translation keys are defined in \`translation.json\` but are **not used** in the codebase:
+
+          $(echo "$unused_keys" | jq -r '.[]' | sed 's/^/- `/;s/$/`/' )
+
+          ⚠️ **Please remove these unused keys to keep the translation files clean.**
+          EOF
+          )
 
           gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
             -f body="$COMMENT_BODY" \
