@@ -99,6 +99,12 @@
  */
 
 /**
+ * @exports LangChainToolCall
+ * @typedef {import('@langchain/core/messages/tool').ToolCall} LangChainToolCall
+ * @memberof typedefs
+ */
+
+/**
  * @exports GraphRunnableConfig
  * @typedef {import('@langchain/core/runnables').RunnableConfig<{
  *  req: ServerRequest;
@@ -109,7 +115,9 @@
  * agent_index: number;
  * last_agent_index: number;
  * hide_sequential_outputs: boolean;
- * }>} GraphRunnableConfig
+ * }> & {
+ * toolCall?: LangChainToolCall & { stepId?: string };
+ * }} GraphRunnableConfig
  * @memberof typedefs
  */
 
@@ -380,6 +388,12 @@
 /**
  * @exports ToolCallDelta
  * @typedef {import('openai').default.Beta.Threads.Runs.Steps.ToolCallDelta} ToolCallDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentToolCallDelta
+ * @typedef {import('librechat-data-provider').Agents.ToolCallDelta} AgentToolCallDelta
  * @memberof typedefs
  */
 
@@ -948,8 +962,20 @@
  */
 
 /**
+ * @exports Keyv
+ * @typedef {import('keyv')} Keyv
+ * @memberof typedefs
+ */
+
+/**
  * @exports MCPManager
  * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FlowStateManager
+ * @typedef {import('librechat-mcp').FlowStateManager} FlowStateManager
  * @memberof typedefs
  */
 
