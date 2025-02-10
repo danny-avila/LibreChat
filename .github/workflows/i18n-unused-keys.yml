@@ -1,0 +1,51 @@
+name: Detect Unused i18next Strings
+
+on:
+  pull_request:
+    paths:
+      - "client/src/**"
+
+jobs:
+  detect-unused-i18n-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Find unused i18next keys
+        run: |
+          echo "🔍 Scanning for unused i18next keys..."
+
+          # Define paths
+          I18N_FILE="client/src/locales/en/translation.json"
+          SOURCE_DIR="client/src"
+
+          # Check if translation file exists
+          if [[ ! -f "$I18N_FILE" ]]; then
+            echo "::error title=Missing i18n File::Translation file not found: $I18N_FILE"
+            exit 1
+          fi
+
+          # Extract all keys from the JSON file
+          KEYS=$(jq -r 'keys[]' "$I18N_FILE")
+
+          # Track unused keys
+          UNUSED_KEYS=()
+
+          # Check if each key is used in the source code
+          for KEY in $KEYS; do
+            if ! grep -r --include=\*.{js,jsx,ts,tsx} -q "$KEY" "$SOURCE_DIR"; then
+              UNUSED_KEYS+=("$KEY")
+            fi
+          done
+
+          # Output results in PR checks
+          if [[ ${#UNUSED_KEYS[@]} -gt 0 ]]; then
+            echo "🛑 Found ${#UNUSED_KEYS[@]} unused i18n keys:"
+            for KEY in "${UNUSED_KEYS[@]}"; do
+              echo "::warning title=Unused i18n Key::'$KEY' is defined but not used in the codebase."
+            done
+            exit 1  # Fail the PR check if unused keys exist
+          else
+            echo "✅ No unused i18n keys detected!"
+          fi
