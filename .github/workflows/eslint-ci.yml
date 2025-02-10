@@ -1,10 +1,14 @@
 name: ESLint Code Quality Checks
+
 on:
   pull_request:
     branches:
       - main
       - dev
       - release/*
+    paths:
+      - 'api/**'
+      - 'client/**'
 
 jobs:
   eslint_checks:
@@ -29,22 +33,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Use a paths filter (v3) to detect changes in JavaScript/TypeScript files,
-      # but only consider files that are added or modified (ignoring deleted files).
-      - name: Filter changed files for ESLint
-        id: file_filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            eslint:
-              - added|modified: '**/*.js'
-              - added|modified: '**/*.jsx'
-              - added|modified: '**/*.ts'
-              - added|modified: '**/*.tsx'
-
-      # Run ESLint only if relevant files have been added or modified.
+      # Run ESLint on changed files within the api/ and client/ directories.
       - name: Run ESLint on changed files
-        if: steps.file_filter.outputs.eslint == 'true'
         env:
           SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
         run: |
@@ -52,9 +42,8 @@ jobs:
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           echo "Base commit SHA: $BASE_SHA"
           
-          # List files changed between the base commit and current HEAD,
-          # but only include files that are not deleted (ACMRTUXB: A, C, M, R, T, U, X, B).
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '\.(js|jsx|ts|tsx)$')
+          # List files changed between the base commit and HEAD, filtering only those in api/ or client/
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '^(api|client)/.*\.(js|jsx|ts|tsx)$')
           echo "Files to lint:"
           echo "$CHANGED_FILES"
           
@@ -63,31 +52,6 @@ jobs:
             --config eslint.config.mjs \
             --format @microsoft/eslint-formatter-sarif \
             --output-file eslint-results.sarif $CHANGED_FILES || true
-
-      # If no JavaScript/TypeScript files were added or modified,
-      # create a valid (non-empty) SARIF file containing one run.
-      - name: Create empty SARIF results file
-        if: steps.file_filter.outputs.eslint != 'true'
-        run: |
-          cat << 'EOF' > eslint-results.sarif
-          {
-            "version": "2.1.0",
-            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-              "runs": [
-                  {
-                  "tool": {
-                      "driver": {
-            "name": "ESLint",
-            "informationUri": "https://eslint.org",
-            "version": "0.0.0",
-            "rules": []
-          }
-            },
-            "results": []
-              }
-          ]
-          }
-          EOF
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v3
