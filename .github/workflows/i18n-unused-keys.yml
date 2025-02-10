@@ -3,7 +3,6 @@ name: Detect Unused i18next Strings
 on:
   pull_request:
     paths:
-      - ".github/**" # just for testing now.
       - "client/src/**"
 
 jobs:
