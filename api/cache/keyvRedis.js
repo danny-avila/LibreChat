@@ -1,18 +1,15 @@
 const KeyvRedis = require('@keyv/redis');
 const { isEnabled } = require('~/server/utils');
-<<<<<<< HEAD
 const logger = require('~/config/winston');
-=======
 const fs = require('fs');
 const ioredis = require('ioredis');
->>>>>>> 82717228 (feat: Enhance Redis support with cluster configuration and TLS options)
 
 const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA } = process.env;
 
 let keyvRedis;
 
 function mapURI(uri) {
-  const regex = /^(?<scheme>[a-zA-Z]+):\/\/(?<user>[^:]*):?(?<password>[^@]*)?@?(?<host>[^:\/]+):?(?<port>\d+)?/;
+  const regex = /^(?:(?<scheme>\w+):\/\/)?(?:(?<user>[^:@]+)(?::(?<password>[^@]+))?@)?(?<host>[\w.-]+)(?::(?<port>\d{1,5}))?$/;
   const match = uri.match(regex);
 
   if (match) {
