@@ -39,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href=https://github.com/danny-avila/LibreChat/blob/main/.github/TRANSLATION.md">
+  <a href="https://www.librechat.ai/docs/translation">
     <img 
       src="https://img.shields.io/badge/dynamic/json.svg?style=for-the-badge&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated" 
       alt="Translation Progress">
@@ -179,7 +179,7 @@ Contributions, suggestions, bug reports and fixes are welcome!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR.
 
-If you'd like to help translate LibreChat into your language, we'd love your contribution! Improving our translations not only makes LibreChat more accessible to users around the world but also enhances the overall user experience. Please check out our [Translation Guide](.github/TRANSLATION.md).
+If you'd like to help translate LibreChat into your language, we'd love your contribution! Improving our translations not only makes LibreChat more accessible to users around the world but also enhances the overall user experience. Please check out our [Translation Guide](https://www.librechat.ai/docs/translation).
 
 ---
 
