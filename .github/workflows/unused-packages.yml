@@ -1,0 +1,88 @@
+name: Detect Unused NPM Packages
+
+on: [pull_request]
+#    paths:
+#      - "package.json"
+#      - "client/package.json"
+#      - "api/package.json"
+
+jobs:
+  detect-unused-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # Required to comment on PRs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install depcheck
+        run: npm install -g depcheck
+
+      - name: Run depcheck for root package.json
+        id: check-root
+        run: |
+          if [[ -f "package.json" ]]; then
+            UNUSED=$(depcheck --json | jq -r '.dependencies[]' || echo "")
+            echo "ROOT_UNUSED=$UNUSED" >> $GITHUB_ENV
+          fi
+
+      - name: Run depcheck for client/package.json
+        id: check-client
+        run: |
+          if [[ -f "client/package.json" ]]; then
+            cd client
+            UNUSED=$(depcheck --json | jq -r '.dependencies[]' || echo "")
+            echo "CLIENT_UNUSED=$UNUSED" >> $GITHUB_ENV
+            cd ..
+          fi
+
+      - name: Run depcheck for api/package.json
+        id: check-api
+        run: |
+          if [[ -f "api/package.json" ]]; then
+            cd api
+            UNUSED=$(depcheck --json | jq -r '.dependencies[]' || echo "")
+            echo "API_UNUSED=$UNUSED" >> $GITHUB_ENV
+            cd ..
+          fi
+
+      - name: Post comment on PR if unused dependencies are found
+        if: env.ROOT_UNUSED != '' || env.CLIENT_UNUSED != '' || env.API_UNUSED != ''
+        run: |
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+
+          COMMENT_BODY="### 🚨 Unused NPM Packages Detected\n\n"
+          COMMENT_BODY+="The following **unused dependencies** were found:\n\n"
+
+          if [[ ! -z "$ROOT_UNUSED" ]]; then
+            COMMENT_BODY+="#### 📂 Root `package.json`\n"
+            COMMENT_BODY+="$(echo "$ROOT_UNUSED" | sed 's/^/- `/;s/$/`/')\n\n"
+          fi
+
+          if [[ ! -z "$CLIENT_UNUSED" ]]; then
+            COMMENT_BODY+="#### 📂 Client `client/package.json`\n"
+            COMMENT_BODY+="$(echo "$CLIENT_UNUSED" | sed 's/^/- `/;s/$/`/')\n\n"
+          fi
+
+          if [[ ! -z "$API_UNUSED" ]]; then
+            COMMENT_BODY+="#### 📂 API `api/package.json`\n"
+            COMMENT_BODY+="$(echo "$API_UNUSED" | sed 's/^/- `/;s/$/`/')\n\n"
+          fi
+
+          COMMENT_BODY+="⚠️ **Please remove these unused dependencies to keep your project clean.**"
+
+          gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -f body="$COMMENT_BODY" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail workflow if unused dependencies found
+        if: env.ROOT_UNUSED != '' || env.CLIENT_UNUSED != '' || env.API_UNUSED != ''
+        run: exit 1
