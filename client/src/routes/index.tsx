@@ -50,16 +50,19 @@ export const router = createBrowserRouter([
         path: 'reset-password',
         element: <ResetPassword />,
       },
+    ],
+  },
+  {
+    path: 'datall',
+    element: <Datall />,
+    children: [
       {
-        path: 'datall',
-        element: <Datall />,
-        children: [{
-          path: 'welcome',
-          element: <WelcomeUser />,
-        },{
-          path: 'add-balance',
-          element: <AddBalance />,
-        }]
+        path: 'welcome',
+        element: <WelcomeUser />,
+      },
+      {
+        path: 'add-balance',
+        element: <AddBalance />,
       },
     ],
   },

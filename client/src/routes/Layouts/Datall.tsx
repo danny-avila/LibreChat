@@ -8,7 +8,7 @@ const Datall:React.FC =() =>{
 
     // return <>{location.pathname === '/datall/welcome' ? <Outlet/> : <Register /> }</>
     // return <>{location.pathname === '/datall/welcome' ? <Outlet/> : <RegisterWithRole /> }</>
-    return <><Outlet/></>
+    return <div className="flex justify-center"><Outlet/> <div className=" bg-red-400 "></div></div>
 
 }
 
