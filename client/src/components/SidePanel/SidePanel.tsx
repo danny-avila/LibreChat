@@ -14,7 +14,7 @@ import Nav from './Nav';
 
 const defaultMinSize = 20;
 
-const SidePanelGroup = ({
+const SidePanel = ({
   defaultSize,
   panelRef,
   navCollapsedSize = 3,
@@ -195,4 +195,4 @@ const SidePanelGroup = ({
   );
 };
 
-export default memo(SidePanelGroup);
+export default memo(SidePanel);
