@@ -22,7 +22,13 @@ jobs:
           cache: 'npm'
 
       - name: Install depcheck
-        run: npm install -g depcheck
+        run: npm install -g depcheck jq
+
+      - name: Validate JSON files
+        run: |
+          jq empty package.json || (echo "::error title=Invalid JSON::Root package.json is invalid" && exit 1)
+          jq empty client/package.json || (echo "::error title=Invalid JSON::Client package.json is invalid" && exit 1)
+          jq empty api/package.json || (echo "::error title=Invalid JSON::API package.json is invalid" && exit 1)
 
       - name: Run depcheck for root package.json
         id: check-root
@@ -38,9 +44,9 @@ jobs:
         id: check-client
         run: |
           if [[ -f "client/package.json" ]]; then
-            chmod -R 755 client  # Ensure proper permissions
+            chmod -R 755 client
             cd client
-            UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
+            UNUSED=$(depcheck --json | jq -r '.dependencies | @sh' || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
@@ -51,9 +57,9 @@ jobs:
         id: check-api
         run: |
           if [[ -f "api/package.json" ]]; then
-            chmod -R 755 api  # Ensure proper permissions
+            chmod -R 755 api
             cd api
-            UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
+            UNUSED=$(depcheck --json | jq -r '.dependencies | @sh' || echo "")
             echo "API_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
@@ -65,25 +71,25 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
 
-          COMMENT_BODY="### 🚨 Unused NPM Packages Detected\n\n"
-          COMMENT_BODY+="The following **unused dependencies** were found:\n\n"
+          # Format each list separately
+          ROOT_LIST=$(echo "$ROOT_UNUSED" | awk '{print "- `" $0 "`"}')
+          CLIENT_LIST=$(echo "$CLIENT_UNUSED" | awk '{print "- `" $0 "`"}')
+          API_LIST=$(echo "$API_UNUSED" | awk '{print "- `" $0 "`"}')
 
-          if [[ ! -z "$ROOT_UNUSED" ]]; then
-            COMMENT_BODY+="#### 📂 Root `package.json`\n"
-            COMMENT_BODY+="$(echo "$ROOT_UNUSED" | sed 's/ /`\n- `/g' | sed 's/^/- `/;s/$/`/')\n\n"
-          fi
+          COMMENT_BODY=$(cat <<EOF
+          ### 🚨 Unused NPM Packages Detected
 
-          if [[ ! -z "$CLIENT_UNUSED" ]]; then
-            COMMENT_BODY+="#### 📂 Client `client/package.json`\n"
-            COMMENT_BODY+="$(echo "$CLIENT_UNUSED" | sed 's/ /`\n- `/g' | sed 's/^/- `/;s/$/`/')\n\n"
-          fi
+          The following **unused dependencies** were found:
 
-          if [[ ! -z "$API_UNUSED" ]]; then
-            COMMENT_BODY+="#### 📂 API `api/package.json`\n"
-            COMMENT_BODY+="$(echo "$API_UNUSED" | sed 's/ /`\n- `/g' | sed 's/^/- `/;s/$/`/')\n\n"
-          fi
+          $(if [[ ! -z "$ROOT_UNUSED" ]]; then echo "#### 📂 Root \`package.json\`"; echo "$ROOT_LIST"; fi)
 
-          COMMENT_BODY+="⚠️ **Please remove these unused dependencies to keep your project clean.**"
+          $(if [[ ! -z "$CLIENT_UNUSED" ]]; then echo "#### 📂 Client \`client/package.json\`"; echo "$CLIENT_LIST"; fi)
+
+          $(if [[ ! -z "$API_UNUSED" ]]; then echo "#### 📂 API \`api/package.json\`"; echo "$API_LIST"; fi)
+
+          ⚠️ **Please remove these unused dependencies to keep your project clean.**
+          EOF
+          )
 
           gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
             -f body="$COMMENT_BODY" \
