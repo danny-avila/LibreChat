@@ -2,23 +2,36 @@ const Balance = require('~/models/Balance');
 
 async function addBalanceController(req, res) {
   const newBalance = req.body.balance;
-  const userId  =req.body.id
+  const userId = req.body.id;
 
   if (typeof newBalance !== 'number') {
     return res.status(400).json({ message: 'Balance must be a number.' });
-}
+  }
 
   try {
     const currentRecord = await Balance.findOne({ user: userId }).lean();
-    
-console.log('currentRecord:' ,currentRecord)
-    if (!currentRecord) {
-      return res.status(404).json({ message: 'Balance record not found for the user.' });
-    }
-    const updatedBalance = currentRecord.tokenCredits + newBalance;
-    console.log('updatedBalance:',updatedBalance)
 
-    await Balance.updateOne({ user: req.user.id }, { tokenCredits: updatedBalance });
+    let updatedBalance = 0;
+
+    console.log('currentRecord:', currentRecord);
+    if (!currentRecord) {
+      //   return res.status(404).json({ message: 'Balance record not found for the user.' });
+      updatedBalance = newBalance
+    //   const newBalanceRecord = new Balance({
+    //     _id :userId,
+    //     tokenCredits: updatedBalance,
+    //   })
+    //   await newBalanceRecord.save()
+    await Balance.create({
+        user :userId,
+        tokenCredits: updatedBalance,
+    })
+    } else {
+      updatedBalance = currentRecord.tokenCredits + newBalance;
+      await Balance.updateOne({ user: userId }, { tokenCredits: updatedBalance });
+    }
+
+    console.log('updatedBalance:', updatedBalance);
 
     return res
       .status(200)

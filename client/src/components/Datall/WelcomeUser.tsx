@@ -19,10 +19,14 @@ const WelcomeUser: React.FC = () => {
     console.log('Users you fetch', response);
 
     const res = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
-      balance: 100,id: "679e01576bdce0a2128a6036"
-
+      balance: 100,id: "679757526bca82593afec669"
     });
     console.log('add balance:', res);
+
+
+    const res2 = await axios.get('http://localhost:3080/api/getUsers');
+    console.log('Users after add balance fetch', res2);
+
   };
 
   const redirectToAddBalanceHandler =()=>{
