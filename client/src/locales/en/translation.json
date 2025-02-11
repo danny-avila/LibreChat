@@ -1,4 +1,6 @@
 {
+  "com_ui_analyzing": "Analyzing",
+  "com_ui_analyzing_finished": "Finished analyzing",
   "com_a11y_ai_composing": "The AI is still composing.",
   "com_a11y_end": "The AI has finished their reply.",
   "com_a11y_start": "The AI has started their reply.",
