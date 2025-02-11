@@ -8,6 +8,8 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const { SystemRoles } = require('librechat-data-provider');
+const OpenIdDataMapper = require('./OpenId/openidDataMapper');
 
 let crypto;
 try {
@@ -105,6 +107,45 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
+/**
+ * Decodes a JWT token safely.
+ * @param {string} token
+ * @returns {Object|null}
+ */
+function safeDecode(token) {
+  try {
+    const decoded = jwtDecode(token);
+    if (decoded && typeof decoded === 'object') {
+      return decoded;
+    }
+    logger.error('[openidStrategy] Decoded token is not an object.');
+    return null;
+  } catch (error) {
+    logger.error('[openidStrategy] safeDecode: Error decoding token:', error);
+    return null;
+  }
+}
+
+/**
+ * Extracts roles from a decoded token based on the provided path.
+ * @param {Object} decodedToken
+ * @param {string} parameterPath
+ * @returns {string[]}
+ */
+function extractRolesFromToken(decodedToken, parameterPath) {
+  if (!decodedToken) {
+    return [];
+  }
+
+  const roles = parameterPath.split('.').reduce((obj, key) => (obj?.[key] ?? null), decodedToken);
+  if (!Array.isArray(roles)) {
+    logger.error('[openidStrategy] extractRolesFromToken: Roles extracted from token are not in array format.');
+    return [];
+  }
+
+  return roles;
+}
+
 async function setupOpenId() {
   try {
     if (process.env.PROXY) {
@@ -136,6 +177,7 @@ async function setupOpenId() {
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+    const adminRole = process.env.OPENID_ADMIN_ROLE;
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -194,6 +236,30 @@ async function setupOpenId() {
             }
           }
 
+          let customOpenIdData = new Map();
+          if (process.env.OPENID_CUSTOM_DATA) {
+            const dataMapper = OpenIdDataMapper.getMapper(process.env.OPENID_PROVIDER.toLowerCase());
+            customOpenIdData = await dataMapper.mapCustomData(tokenset.access_token, process.env.OPENID_CUSTOM_DATA);
+            const tokenBasedRoles =
+                  requiredRole &&
+                  extractRolesFromToken(
+                    safeDecode(requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token),
+                    requiredRoleParameterPath,
+                  );
+            if (tokenBasedRoles && tokenBasedRoles.length) {
+              customOpenIdData.set('roles', tokenBasedRoles);
+            } else {
+              logger.warn('[openidStrategy] tokenBasedRoles is missing or invalid.');
+            }
+          }
+
+          const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
+          const decodedToken = safeDecode(token);
+          const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
+          const isAdmin = tokenBasedRoles.includes(adminRole);
+          const assignedRole = isAdmin ? SystemRoles.ADMIN : SystemRoles.USER;
+          logger.debug(`[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`);
+
           let username = '';
           if (process.env.OPENID_USERNAME_CLAIM) {
             username = userinfo[process.env.OPENID_USERNAME_CLAIM];
@@ -211,6 +277,8 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
+              role: assignedRole,
+              customOpenIdData: customOpenIdData,
             };
             user = await createUser(user, true, true);
           } else {
@@ -218,6 +286,8 @@ async function setupOpenId() {
             user.openidId = userinfo.sub;
             user.username = username;
             user.name = fullName;
+            user.role = assignedRole;
+            user.customOpenIdData = customOpenIdData;
           }
 
           if (userinfo.picture && !user.avatar?.includes('manual=true')) {

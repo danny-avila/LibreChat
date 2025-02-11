@@ -110,6 +110,7 @@ export type TUser = {
   plugins?: string[];
   createdAt: string;
   updatedAt: string;
+  customOpenIdData: { [key: string]: any };
 };
 
 export type TGetConversationsResponse = {
