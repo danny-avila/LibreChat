@@ -5,9 +5,18 @@ import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function CodeArtifacts() {
-  const localize = useLocalize();
+  const [codeArtifacts, setCodeArtifacts] = useRecoilState<boolean>(store.codeArtifacts);
   const [includeShadcnui, setIncludeShadcnui] = useRecoilState<boolean>(store.includeShadcnui);
   const [customPromptMode, setCustomPromptMode] = useRecoilState<boolean>(store.customPromptMode);
+  const localize = useLocalize();
+
+  const handleCodeArtifactsChange = (value: boolean) => {
+    setCodeArtifacts(value);
+    if (!value) {
+      setIncludeShadcnui(false);
+      setCustomPromptMode(false);
+    }
+  };
 
   const handleIncludeShadcnuiChange = (value: boolean) => {
     setIncludeShadcnui(value);
@@ -25,12 +34,19 @@ export default function CodeArtifacts() {
       <h3 className="text-lg font-medium">{localize('com_ui_artifacts')}</h3>
       <div className="space-y-2">
         <SwitchItem
+          id="codeArtifacts"
+          label={localize('com_ui_artifacts_toggle')}
+          checked={codeArtifacts}
+          onCheckedChange={handleCodeArtifactsChange}
+          hoverCardText="com_nav_info_code_artifacts"
+        />
+        <SwitchItem
           id="includeShadcnui"
           label={localize('com_ui_include_shadcnui')}
           checked={includeShadcnui}
           onCheckedChange={handleIncludeShadcnuiChange}
           hoverCardText="com_nav_info_include_shadcnui"
-          disabled={customPromptMode}
+          disabled={!codeArtifacts || customPromptMode}
         />
         <SwitchItem
           id="customPromptMode"
@@ -38,6 +54,7 @@ export default function CodeArtifacts() {
           checked={customPromptMode}
           onCheckedChange={handleCustomPromptModeChange}
           hoverCardText="com_nav_info_custom_prompt_mode"
+          disabled={!codeArtifacts}
         />
       </div>
     </div>

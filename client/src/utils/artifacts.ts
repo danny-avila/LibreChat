@@ -6,13 +6,17 @@ import type {
 } from '@codesandbox/sandpack-react';
 
 export const getArtifactsMode = ({
+  codeArtifacts,
   includeShadcnui,
   customPromptMode,
 }: {
+  codeArtifacts: boolean;
   includeShadcnui: boolean;
   customPromptMode: boolean;
 }): ArtifactModes | undefined => {
-  if (customPromptMode) {
+  if (!codeArtifacts) {
+    return undefined;
+  } else if (customPromptMode) {
     return ArtifactModes.CUSTOM;
   } else if (includeShadcnui) {
     return ArtifactModes.SHADCNUI;
