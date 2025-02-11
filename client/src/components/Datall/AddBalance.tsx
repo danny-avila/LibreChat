@@ -6,7 +6,8 @@ interface User {
   username: string;
   role: string;
   id: string;
-  email: string
+  email: string,
+  balance: number
 }
 
 const AddBalance: React.FC = () => {
@@ -21,7 +22,8 @@ const AddBalance: React.FC = () => {
         username: item.username,
         role: item.role,
         id: item._id,
-        email: item.email
+        email: item.email,
+        balance:item.balance
       }));
       console.log(res);
       setUsers(filteredUsers);
@@ -33,7 +35,7 @@ const AddBalance: React.FC = () => {
   return (
     <>
       {users.map((item) => (
-        <div className='bg-red-200 color-white mb-2'>{item.name} {item.username} {item.role} {item.id} {item.email}</div>
+        <div className='bg-red-200 color-white mb-2'>{item.name} {item.username} {item.role} {item.id} {item.email} {item.balance}</div>
       ))}
     </>
   );

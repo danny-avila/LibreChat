@@ -8,7 +8,7 @@ const Datall:React.FC =() =>{
 
     // return <>{location.pathname === '/datall/welcome' ? <Outlet/> : <Register /> }</>
     // return <>{location.pathname === '/datall/welcome' ? <Outlet/> : <RegisterWithRole /> }</>
-    return <> <Outlet/></>
+    return <><Outlet/></>
 
 }
 
