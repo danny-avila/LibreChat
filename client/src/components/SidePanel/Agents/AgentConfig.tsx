@@ -10,7 +10,7 @@ import {
   AgentCapabilities,
 } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps } from '~/common';
+import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
@@ -75,6 +75,10 @@ export default function AgentConfig({
   );
   const actionsEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.actions),
+    [agentsConfig],
+  );
+  const artifactsEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.artifacts) ?? false,
     [agentsConfig],
   );
   const fileSearchEnabled = useMemo(
@@ -150,7 +154,7 @@ export default function AgentConfig({
     onSuccess: (data) => {
       setCurrentAgentId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success ')} ${
+        message: `${localize('com_assistants_create_success')} ${
           data.name ?? localize('com_ui_agent')
         }`,
       });
@@ -178,18 +182,10 @@ export default function AgentConfig({
   }, [agent_id, setActivePanel, showToast, localize]);
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
+  let Icon: IconComponentTypes | null | undefined;
   let endpointType: EModelEndpoint | undefined;
   let endpointIconURL: string | undefined;
   let iconKey: string | undefined;
-  let Icon:
-    | React.ComponentType<
-        React.SVGProps<SVGSVGElement> & {
-          endpoint: string;
-          endpointType: EModelEndpoint | undefined;
-          iconURL: string | undefined;
-        }
-      >
-    | undefined;
 
   if (providerValue !== undefined) {
     endpointType = getEndpointField(endpointsConfig, providerValue as string, 'type');

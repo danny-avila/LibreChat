@@ -9,8 +9,9 @@ export type TAgentOption = OptionWithIcon &
   };
 
 export type TAgentCapabilities = {
-  [AgentCapabilities.execute_code]: boolean;
+  [AgentCapabilities.artifacts]: boolean;
   [AgentCapabilities.file_search]: boolean;
+  [AgentCapabilities.execute_code]: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
 };
