@@ -1,3 +1,20 @@
+import {
+  Button,
+  Card,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material';
+import Paper from '@mui/material/Paper';
+import { IconButton } from '@mui/material';
+
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 
@@ -6,8 +23,8 @@ interface User {
   username: string;
   role: string;
   id: string;
-  email: string,
-  balance: number
+  email: string;
+  balance: number;
 }
 
 const AddBalance: React.FC = () => {
@@ -23,7 +40,7 @@ const AddBalance: React.FC = () => {
         role: item.role,
         id: item._id,
         email: item.email,
-        balance:item.balance
+        balance: item.balance,
       }));
       console.log(res);
       setUsers(filteredUsers);
@@ -34,9 +51,45 @@ const AddBalance: React.FC = () => {
 
   return (
     <>
-      {users.map((item) => (
-        <div className='bg-red-200 color-white mb-2'>{item.name} {item.username} {item.role} {item.id} {item.email} {item.balance}</div>
-      ))}
+      <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
+        <TableContainer sx={{ maxHeight: 440 }}>
+          <Table stickyHeader aria-label="sticky table">
+            <TableHead>
+              <TableRow>
+                <TableCell>User_id</TableCell>
+                <TableCell>Username</TableCell>
+                <TableCell>Email</TableCell>
+                <TableCell>Role</TableCell>
+                <TableCell>Balance</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {users.map((item) => (
+                <TableRow>
+                  <TableCell>{item.id}</TableCell>
+                  <TableCell>{item.username}</TableCell>
+                  <TableCell>{item.email}</TableCell>
+                  <TableCell>{item.role}</TableCell>
+                  <TableCell>{item.balance}</TableCell>
+                  <TableCell>
+
+                    <IconButton>
+                      <DeleteIcon />
+                    </IconButton>
+                    <IconButton>
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton>
+                      <AddIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
     </>
   );
 };
