@@ -40,9 +40,9 @@ jobs:
         id: check-root
         run: |
           if [[ -f "package.json" ]]; then
-            UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n- ")' || echo "")
             echo "ROOT_UNUSED<<EOF" >> $GITHUB_ENV
-            echo "$UNUSED" >> $GITHUB_ENV
+            echo "- $UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           fi
 
@@ -52,9 +52,9 @@ jobs:
           if [[ -f "client/package.json" ]]; then
             chmod -R 755 client
             cd client
-            UNUSED=$(depcheck --json | jq -r '.dependencies | @sh' || echo "")
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n- ")' || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
-            echo "$UNUSED" >> $GITHUB_ENV
+            echo "- $UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
             cd ..
           fi
@@ -65,9 +65,9 @@ jobs:
           if [[ -f "api/package.json" ]]; then
             chmod -R 755 api
             cd api
-            UNUSED=$(depcheck --json | jq -r '.dependencies | @sh' || echo "")
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n- ")' || echo "")
             echo "API_UNUSED<<EOF" >> $GITHUB_ENV
-            echo "$UNUSED" >> $GITHUB_ENV
+            echo "- $UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
             cd ..
           fi
@@ -77,20 +77,16 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
 
-          ROOT_LIST=$(echo "$ROOT_UNUSED" | awk '{print "- `" $0 "`"}')
-          CLIENT_LIST=$(echo "$CLIENT_UNUSED" | awk '{print "- `" $0 "`"}')
-          API_LIST=$(echo "$API_UNUSED" | awk '{print "- `" $0 "`"}')
-
           COMMENT_BODY=$(cat <<EOF
           ### 🚨 Unused NPM Packages Detected
 
           The following **unused dependencies** were found:
 
-          $(if [[ ! -z "$ROOT_UNUSED" ]]; then echo "#### 📂 Root \`package.json\`"; echo "$ROOT_LIST"; fi)
+          $(if [[ ! -z "$ROOT_UNUSED" ]]; then echo "#### 📂 Root \`package.json\`"; echo "$ROOT_UNUSED"; fi)
 
-          $(if [[ ! -z "$CLIENT_UNUSED" ]]; then echo "#### 📂 Client \`client/package.json\`"; echo "$CLIENT_LIST"; fi)
+          $(if [[ ! -z "$CLIENT_UNUSED" ]]; then echo "#### 📂 Client \`client/package.json\`"; echo "$CLIENT_UNUSED"; fi)
 
-          $(if [[ ! -z "$API_UNUSED" ]]; then echo "#### 📂 API \`api/package.json\`"; echo "$API_LIST"; fi)
+          $(if [[ ! -z "$API_UNUSED" ]]; then echo "#### 📂 API \`api/package.json\`"; echo "$API_UNUSED"; fi)
 
           ⚠️ **Please remove these unused dependencies to keep your project clean.**
           EOF
