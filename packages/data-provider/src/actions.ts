@@ -22,8 +22,8 @@ export type ParametersSchema = {
 
 export type OpenAPISchema = OpenAPIV3.SchemaObject &
   ParametersSchema & {
-    items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
-  };
+  items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
+};
 
 export type ApiKeyCredentials = {
   api_key: string;
@@ -43,8 +43,8 @@ export type Credentials = ApiKeyCredentials | OAuthCredentials;
 type MediaTypeObject =
   | undefined
   | {
-      [media: string]: OpenAPIV3.MediaTypeObject | undefined;
-    };
+  [media: string]: OpenAPIV3.MediaTypeObject | undefined;
+};
 
 type RequestBodyObject = Omit<OpenAPIV3.RequestBodyObject, 'content'> & {
   content: MediaTypeObject;
@@ -125,6 +125,9 @@ function openAPISchemaToZod(schema: OpenAPISchema): z.ZodTypeAny | undefined {
   return handler(schema);
 }
 
+/**
+ * Class representing a function signature.
+ */
 export class FunctionSignature {
   name: string;
   description: string;
@@ -150,7 +153,7 @@ export class FunctionSignature {
         name: this.name,
         description: this.description,
         parameters,
-        strict: this.strict,
+        ...(this.strict ? { strict: this.strict } : {}),
       },
     };
   }
@@ -374,7 +377,9 @@ function sanitizeOperationId(input: string) {
   return input.replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
-/** Function to convert OpenAPI spec to function signatures and request builders */
+/**
+ * Converts an OpenAPI spec to function signatures and request builders.
+ */
 export function openapiToFunction(
   openapiSpec: OpenAPIV3.Document,
   generateZodSchemas = false,
@@ -473,6 +478,9 @@ export type ValidationResult = {
   spec?: OpenAPIV3.Document;
 };
 
+/**
+ * Validates and parses an OpenAPI spec.
+ */
 export function validateAndParseOpenAPISpec(specString: string): ValidationResult {
   try {
     let parsedSpec;
