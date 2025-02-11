@@ -41,13 +41,21 @@ jobs:
           # Extract the base commit SHA from the pull_request event payload.
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           echo "Base commit SHA: $BASE_SHA"
-          
-          # List files changed between the base commit and HEAD, filtering only those in api/ or client/
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '^(api|client)/.*\.(js|jsx|ts|tsx)$')
-          echo "Files to lint:"
+
+          # Get changed files (only JS/TS files in api/ or client/)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '^(api|client)/.*\.(js|jsx|ts|tsx)$' || true)
+
+          # Debug output
+          echo "Changed files:"
           echo "$CHANGED_FILES"
-          
-          # Run ESLint on the changed files.
+
+          # Ensure there are files to lint before running ESLint
+          if [[ -z "$CHANGED_FILES" ]]; then
+            echo "No matching files changed. Skipping ESLint."
+            exit 0
+          fi
+
+          # Run ESLint
           npx eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
             --format @microsoft/eslint-formatter-sarif \
