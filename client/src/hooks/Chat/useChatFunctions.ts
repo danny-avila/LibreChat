@@ -64,7 +64,6 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
-  const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const includeShadcnui = useRecoilValue(store.includeShadcnui);
   const customPromptMode = useRecoilValue(store.customPromptMode);
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
@@ -170,7 +169,7 @@ export default function useChatFunctions({
         endpointType,
         overrideConvoId,
         overrideUserMessageId,
-        artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
+        artifacts: getArtifactsMode({ includeShadcnui, customPromptMode }),
       },
       convo,
     ) as TEndpointOption;
@@ -228,7 +227,6 @@ export default function useChatFunctions({
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      isEdited: isEditOrContinue,
       iconURL: convo?.iconURL,
       model: convo?.model,
       error: false,

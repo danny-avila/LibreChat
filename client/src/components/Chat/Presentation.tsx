@@ -23,7 +23,6 @@ export default function Presentation({
 }) {
   const { data: startupConfig } = useGetStartupConfig();
   const artifacts = useRecoilValue(store.artifactsState);
-  const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
   const artifactsVisible = useRecoilValue(store.artifactsVisible);
 
@@ -91,13 +90,11 @@ export default function Presentation({
           defaultCollapsed={defaultCollapsed}
           fullPanelCollapse={fullCollapse}
           artifacts={
-            artifactsVisible === true &&
-            codeArtifacts === true &&
-            Object.keys(artifacts ?? {}).length > 0 ? (
-                <EditorProvider>
-                  <Artifacts />
-                </EditorProvider>
-              ) : null
+            artifactsVisible === true && Object.keys(artifacts ?? {}).length > 0 ? (
+              <EditorProvider>
+                <Artifacts />
+              </EditorProvider>
+            ) : null
           }
         >
           <main className="flex h-full flex-col overflow-y-auto" role="main">
