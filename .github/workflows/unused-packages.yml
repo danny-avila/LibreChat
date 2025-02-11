@@ -28,8 +28,10 @@ jobs:
         id: check-root
         run: |
           if [[ -f "package.json" ]]; then
-            UNUSED=$(depcheck --json | jq -r '.dependencies[]' || echo "")
-            echo "ROOT_UNUSED=$UNUSED" >> $GITHUB_ENV
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
+            echo "ROOT_UNUSED<<EOF" >> $GITHUB_ENV
+            echo "$UNUSED" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
           fi
 
       - name: Run depcheck for client/package.json
@@ -37,8 +39,10 @@ jobs:
         run: |
           if [[ -f "client/package.json" ]]; then
             cd client
-            UNUSED=$(depcheck --json | jq -r '.dependencies[]' || echo "")
-            echo "CLIENT_UNUSED=$UNUSED" >> $GITHUB_ENV
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
+            echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
+            echo "$UNUSED" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
             cd ..
           fi
 
@@ -47,8 +51,10 @@ jobs:
         run: |
           if [[ -f "api/package.json" ]]; then
             cd api
-            UNUSED=$(depcheck --json | jq -r '.dependencies[]' || echo "")
-            echo "API_UNUSED=$UNUSED" >> $GITHUB_ENV
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
+            echo "API_UNUSED<<EOF" >> $GITHUB_ENV
+            echo "$UNUSED" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
             cd ..
           fi
 
@@ -62,17 +68,17 @@ jobs:
 
           if [[ ! -z "$ROOT_UNUSED" ]]; then
             COMMENT_BODY+="#### 📂 Root `package.json`\n"
-            COMMENT_BODY+="$(echo "$ROOT_UNUSED" | sed 's/^/- `/;s/$/`/')\n\n"
+            COMMENT_BODY+="$(echo "$ROOT_UNUSED" | sed 's/ /`\n- `/g' | sed 's/^/- `/;s/$/`/')\n\n"
           fi
 
           if [[ ! -z "$CLIENT_UNUSED" ]]; then
             COMMENT_BODY+="#### 📂 Client `client/package.json`\n"
-            COMMENT_BODY+="$(echo "$CLIENT_UNUSED" | sed 's/^/- `/;s/$/`/')\n\n"
+            COMMENT_BODY+="$(echo "$CLIENT_UNUSED" | sed 's/ /`\n- `/g' | sed 's/^/- `/;s/$/`/')\n\n"
           fi
 
           if [[ ! -z "$API_UNUSED" ]]; then
             COMMENT_BODY+="#### 📂 API `api/package.json`\n"
-            COMMENT_BODY+="$(echo "$API_UNUSED" | sed 's/^/- `/;s/$/`/')\n\n"
+            COMMENT_BODY+="$(echo "$API_UNUSED" | sed 's/ /`\n- `/g' | sed 's/^/- `/;s/$/`/')\n\n"
           fi
 
           COMMENT_BODY+="⚠️ **Please remove these unused dependencies to keep your project clean.**"
