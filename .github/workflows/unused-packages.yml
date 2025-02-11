@@ -38,6 +38,7 @@ jobs:
         id: check-client
         run: |
           if [[ -f "client/package.json" ]]; then
+            chmod -R 755 client  # Ensure proper permissions
             cd client
             UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
@@ -50,6 +51,7 @@ jobs:
         id: check-api
         run: |
           if [[ -f "api/package.json" ]]; then
+            chmod -R 755 api  # Ensure proper permissions
             cd api
             UNUSED=$(depcheck --json | jq -r '.dependencies | join(" ")' || echo "")
             echo "API_UNUSED<<EOF" >> $GITHUB_ENV
