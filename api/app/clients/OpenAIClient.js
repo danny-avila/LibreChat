@@ -506,9 +506,8 @@ class OpenAIClient extends BaseClient {
     if (promptPrefix && this.isOmni === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
-        payload[
-          lastUserMessageIndex
-        ].content = `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
+        payload[lastUserMessageIndex].content =
+          `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
       }
     }
 
@@ -1072,10 +1071,24 @@ ${convo}
       return '';
     }
 
-    const reasoningTokens =
-      this.streamHandler.reasoningTokens.length > 0
-        ? `:::thinking\n${this.streamHandler.reasoningTokens.join('')}\n:::\n`
-        : '';
+    let thinkMatch;
+    let remainingText;
+    let reasoningText = '';
+
+    if (this.streamHandler.reasoningTokens.length > 0) {
+      reasoningText = this.streamHandler.reasoningTokens.join('');
+      thinkMatch = reasoningText.match(/<think>([\s\S]*?)<\/think>/)?.[1]?.trim();
+      if (thinkMatch != null && thinkMatch) {
+        const reasoningTokens = `:::thinking\n${thinkMatch}\n:::\n`;
+        remainingText = reasoningText.split(/<\/think>/)?.[1]?.trim() || '';
+        return `${reasoningTokens}${remainingText}${this.streamHandler.tokens.join('')}`;
+      } else if (thinkMatch === '') {
+        remainingText = reasoningText.split(/<\/think>/)?.[1]?.trim() || '';
+        return `${remainingText}${this.streamHandler.tokens.join('')}`;
+      }
+    }
+
+    const reasoningTokens = reasoningText.length > 0 ? `:::thinking\n${reasoningText}\n:::\n` : '';
 
     return `${reasoningTokens}${this.streamHandler.tokens.join('')}`;
   }
@@ -1449,7 +1462,7 @@ ${convo}
         this.options.context !== 'title' &&
         message.content.startsWith('<think>')
       ) {
-        return message.content.replace('<think>', ':::thinking').replace('</think>', ':::');
+        return this.getStreamText();
       }
 
       return message.content;
@@ -1473,13 +1486,17 @@ ${convo}
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
         logger.error('[OpenAIClient] Known OpenAI error:', err);
-        if (intermediateReply.length > 0) {
+        if (this.streamHandler && this.streamHandler.reasoningTokens.length) {
+          return this.getStreamText();
+        } else if (intermediateReply.length > 0) {
           return intermediateReply.join('');
         } else {
           throw err;
         }
       } else if (err instanceof OpenAI.APIError) {
-        if (intermediateReply.length > 0) {
+        if (this.streamHandler && this.streamHandler.reasoningTokens.length) {
+          return this.getStreamText();
+        } else if (intermediateReply.length > 0) {
           return intermediateReply.join('');
         } else {
           throw err;
