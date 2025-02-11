@@ -1,39 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
-import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
-import { Copy, Check, Shield, QrCode, Download } from 'lucide-react';
+import { SmartphoneIcon } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   useEnableTwoFactorMutation,
   useVerifyTwoFactorMutation,
   useConfirmTwoFactorMutation,
   useDisableTwoFactorMutation,
 } from 'librechat-data-provider/react-query';
-import type { TUser } from 'librechat-data-provider';
-import {
-  OGDialog,
-  OGDialogContent,
-  OGDialogHeader,
-  OGDialogTitle,
-  OGDialogTrigger,
-  Input,
-  Button,
-  Spinner,
-  Label,
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSeparator,
-  InputOTPSlot,
-  Progress,
-} from '~/components';
+import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Progress } from '~/components';
+import { SetupPhase, QRPhase, VerifyPhase, BackupPhase, DisablePhase } from './TwoFactorPhases';
+import { DisableTwoFactorToggle } from './DisableTwoFactorToggle';
 import { useAuthContext, useLocalize } from '~/hooks';
-import HoverCardSettings from '../HoverCardSettings';
 import { useToastContext } from '~/Providers';
-import { cn } from '~/utils';
 import store from '~/store';
-import { TVerify2FARequest } from 'librechat-data-provider/src';
 
-type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
+export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
 const TwoFactorAuthentication: React.FC = () => {
   const localize = useLocalize();
@@ -41,22 +24,20 @@ const TwoFactorAuthentication: React.FC = () => {
   const setUser = useSetRecoilState(store.user);
   const { showToast } = useToastContext();
 
-  const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
-  const [phase, setPhase] = useState<Phase>(user?.totpEnabled ? 'disable' : 'setup');
-  const [otpauthUrl, setOtpauthUrl] = useState<string>('');
   const [secret, setSecret] = useState<string>('');
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [verificationToken, setVerificationToken] = useState<string>('');
-  const [disableToken, setDisableToken] = useState<string>('');
-  const [disableBackupCode, setDisableBackupCode] = useState<string>(''); // State for backup code in disable flow
-  const [downloaded, setDownloaded] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
-  const [useBackup, setUseBackup] = useState<boolean>(false);
+  const [otpauthUrl, setOtpauthUrl] = useState<string>('');
+  const [downloaded, setDownloaded] = useState<boolean>(false);
+  const [disableToken, setDisableToken] = useState<string>('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
+  const [verificationToken, setVerificationToken] = useState<string>('');
+  const [disableBackupCode, setDisableBackupCode] = useState<string>('');
+  const [phase, setPhase] = useState<Phase>(user?.totpEnabled ? 'disable' : 'setup');
 
-  const { mutate: enable2FAMutate } = useEnableTwoFactorMutation();
-  const { mutate: verify2FAMutate, isLoading: isVerifying } = useVerifyTwoFactorMutation();
   const { mutate: confirm2FAMutate } = useConfirmTwoFactorMutation();
+  const { mutate: enable2FAMutate, isLoading: isGenerating } = useEnableTwoFactorMutation();
+  const { mutate: verify2FAMutate, isLoading: isVerifying } = useVerifyTwoFactorMutation();
   const { mutate: disable2FAMutate, isLoading: isDisabling } = useDisableTwoFactorMutation();
 
   const steps = ['Setup', 'Scan QR', 'Verify', 'Backup'];
@@ -90,7 +71,6 @@ const TwoFactorAuthentication: React.FC = () => {
     setDisableBackupCode('');
     setPhase(user?.totpEnabled ? 'disable' : 'setup');
     setDownloaded(false);
-    setCopied(false);
     setProgress(0);
   }, [user, otpauthUrl, disable2FAMutate, localize, showToast]);
 
@@ -103,16 +83,9 @@ const TwoFactorAuthentication: React.FC = () => {
         setBackupCodes(backupCodes);
         setPhase('qr');
       },
-      onError: () =>
-        showToast({ message: localize('com_ui_2fa_generate_error'), status: 'error' }),
+      onError: () => showToast({ message: localize('com_ui_2fa_generate_error'), status: 'error' }),
     });
   }, [enable2FAMutate, localize, showToast]);
-
-  const handleCopySecret = useCallback(() => {
-    navigator.clipboard.writeText(secret);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [secret]);
 
   const handleVerify = useCallback(() => {
     if (!verificationToken) {
@@ -133,8 +106,7 @@ const TwoFactorAuthentication: React.FC = () => {
             },
           );
         },
-        onError: () =>
-          showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
+        onError: () => showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
       },
     );
   }, [verificationToken, verify2FAMutate, confirm2FAMutate, localize, showToast]);
@@ -143,7 +115,6 @@ const TwoFactorAuthentication: React.FC = () => {
     if (!backupCodes.length) {
       return;
     }
-
     const blob = new Blob([backupCodes.join('\n')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -157,66 +128,63 @@ const TwoFactorAuthentication: React.FC = () => {
   const handleConfirm = useCallback(() => {
     setDialogOpen(false);
     showToast({ message: localize('com_ui_2fa_enabled') });
-    setUser((prev) => ({ ...prev, totpEnabled: true } as TUser));
+    setUser((prev) => ({ ...prev, totpEnabled: true }) as TUser);
   }, [setUser, localize, showToast]);
 
-  const toggleBackupOn = useCallback(() => {
-    setUseBackup(true);
-  }, []);
+  const handleDisableVerify = useCallback(
+    (token: string, useBackup: boolean) => {
+      // Validate: if not using backup, ensure token has at least 6 digits;
+      // if using backup, ensure backup code has at least 8 characters.
+      if (!useBackup && token.trim().length < 6) {
+        return;
+      }
 
-  const toggleBackupOff = useCallback(() => {
-    setUseBackup(false);
-  }, []);
+      if (useBackup && disableBackupCode.trim().length < 8) {
+        return;
+      }
 
-  const handleDisableVerify = useCallback(() => {
-    // Validate: if not using backup, ensure token has at least 6 digits;
-    // if using backup, ensure backup code has at least 8 characters.
-    if (!useBackup && disableToken.trim().length < 6) {
-      return;
-    }
-    if (useBackup && disableBackupCode.trim().length < 8) {
-      return;
-    }
+      const payload: TVerify2FARequest = {};
+      if (useBackup) {
+        payload.backupCode = disableBackupCode.trim();
+      } else {
+        payload.token = token.trim();
+      }
 
-    const payload: TVerify2FARequest = {};
-    if (useBackup) {
-      payload.backupCode = disableBackupCode.trim();
-    } else {
-      payload.token = disableToken.trim();
-    }
-
-    verify2FAMutate(payload, {
-      onSuccess: () => {
-        disable2FAMutate(undefined, {
-          onSuccess: () => {
-            showToast({ message: localize('com_ui_2fa_disabled') });
-            setDialogOpen(false);
-            setUser((prev) => ({
-              ...prev,
-              totpEnabled: false,
-              totpSecret: '',
-              backupCodes: [],
-            } as TUser));
-            setPhase('setup');
-            setOtpauthUrl('');
-          },
-          onError: () =>
-            showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
-        });
-      },
-      onError: () =>
-        showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
-    });
-  }, [
-    useBackup,
-    disableToken,
-    disableBackupCode,
-    verify2FAMutate,
-    disable2FAMutate,
-    showToast,
-    localize,
-    setUser,
-  ]);
+      verify2FAMutate(payload, {
+        onSuccess: () => {
+          disable2FAMutate(undefined, {
+            onSuccess: () => {
+              showToast({ message: localize('com_ui_2fa_disabled') });
+              setDialogOpen(false);
+              setUser(
+                (prev) =>
+                  ({
+                    ...prev,
+                    totpEnabled: false,
+                    totpSecret: '',
+                    backupCodes: [],
+                  }) as TUser,
+              );
+              setPhase('setup');
+              setOtpauthUrl('');
+            },
+            onError: () =>
+              showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
+          });
+        },
+        onError: () => showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
+      });
+    },
+    [
+      disableToken,
+      disableBackupCode,
+      verify2FAMutate,
+      disable2FAMutate,
+      showToast,
+      localize,
+      setUser,
+    ],
+  );
 
   return (
     <OGDialog
@@ -228,257 +196,98 @@ const TwoFactorAuthentication: React.FC = () => {
         }
       }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <Label className="font-light">{localize('com_nav_2fa')}</Label>
-          <HoverCardSettings side="bottom" text="com_nav_info_2fa" />
-        </div>
-        <OGDialogTrigger asChild>
-          <Button
-            variant={user?.totpEnabled ? 'destructive' : 'outline'}
-            className="flex items-center gap-2"
-            disabled={isVerifying || isDisabling}
+      <DisableTwoFactorToggle
+        enabled={!!user?.totpEnabled}
+        onChange={() => setDialogOpen(true)}
+        disabled={isVerifying || isDisabling || isGenerating}
+      />
+
+      <OGDialogContent className="w-11/12 max-w-lg p-6">
+        <AnimatePresence mode="wait">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-6"
           >
-            <Shield className="h-4 w-4" />
-            {user?.totpEnabled
-              ? localize('com_ui_2fa_disable')
-              : localize('com_ui_2fa_enable')}
-          </Button>
-        </OGDialogTrigger>
-      </div>
-
-      <OGDialogContent className="w-11/12 max-w-md">
-        <OGDialogHeader>
-          <OGDialogTitle className="mb-4 text-xl font-semibold">
-            {localize(
-              user?.totpEnabled
-                ? 'com_ui_2fa_disable_setup'
-                : 'com_ui_2fa_setup',
-            )}
-          </OGDialogTitle>
-          {user?.totpEnabled !== true && phase !== 'disable' && (
-            <div className="space-y-2">
-              <Progress value={progress} className="h-2" />
-              <div className="flex justify-between text-sm text-text-tertiary">
-                {steps.map((step, index) => (
-                  <span
-                    key={step}
-                    className={currentStep >= index ? 'font-medium text-text-primary' : ''}
-                  >
-                    {step}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </OGDialogHeader>
-
-        <div className="mt-4">
-          {/* Initial Setup */}
-          {user?.totpEnabled !== true && phase === 'setup' && (
-            <div className="space-y-4">
-              <Button
-                onClick={handleGenerateQRCode}
-                className="flex w-full items-center justify-center gap-2"
-              >
-                <QrCode className="h-4 w-4" />
-                {localize('com_ui_2fa_generate')}
-              </Button>
-            </div>
-          )}
-
-          {/* QR Code Scan */}
-          {user?.totpEnabled !== true && phase === 'qr' && (
-            <div className="space-y-4">
-              <div className="flex flex-col items-center space-y-4">
-                <QRCodeSVG
-                  value={otpauthUrl}
-                  size={200}
-                  marginSize={2}
-                  className="rounded-2xl p-2"
-                />
-                <div className="w-full space-y-2">
-                  <Label>{localize('com_ui_secret_key')}</Label>
-                  <div className="flex gap-2">
-                    <Input value={secret} readOnly className="font-mono" />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleCopySecret}
-                      aria-label="Copy Secret Key"
-                      className={cn('shrink-0', copied ? 'cursor-default' : '')}
-                    >
-                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    </Button>
+            <OGDialogHeader>
+              <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
+                <SmartphoneIcon className="h-6 w-6 text-primary" />
+                {user?.totpEnabled ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_setup')}
+              </OGDialogTitle>
+              {!user?.totpEnabled && phase !== 'disable' && (
+                <div className="mt-4 space-y-3">
+                  <Progress
+                    value={(steps.indexOf(phasesLabel[phase]) / (steps.length - 1)) * 100}
+                    className="h-2 rounded-full"
+                  />
+                  <div className="flex justify-between text-sm">
+                    {steps.map((step, index) => (
+                      <motion.span
+                        key={step}
+                        animate={{
+                          color:
+                            currentStep >= index ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                        }}
+                        className="font-medium"
+                      >
+                        {step}
+                      </motion.span>
+                    ))}
                   </div>
                 </div>
-              </div>
-              <Button onClick={() => setPhase('verify')} className="w-full">
-                {localize('com_ui_continue')}
-              </Button>
-            </div>
-          )}
+              )}
+            </OGDialogHeader>
 
-          {/* Verification */}
-          {user?.totpEnabled !== true && phase === 'verify' && (
-            <div className="space-y-8">
-              <div className="flex justify-center">
-                <Label className="text-center font-normal">
-                  {localize('com_ui_enter_verification_code')}
-                </Label>
-              </div>
-              <div className="flex justify-center">
-                <InputOTP
-                  pattern={REGEXP_ONLY_DIGITS}
-                  value={verificationToken}
-                  onChange={(value) => setVerificationToken(value)}
-                  maxLength={6}
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} />
-                    <InputOTPSlot index={1} />
-                    <InputOTPSlot index={2} />
-                  </InputOTPGroup>
-                  <InputOTPSeparator />
-                  <InputOTPGroup>
-                    <InputOTPSlot index={3} />
-                    <InputOTPSlot index={4} />
-                    <InputOTPSlot index={5} />
-                  </InputOTPGroup>
-                </InputOTP>
-              </div>
-              <Button
-                onClick={handleVerify}
-                disabled={isVerifying || !verificationToken}
-                className="w-full"
-              >
-                {isVerifying && <Spinner className="mr-2" />}
-                {localize('com_ui_verify')}
-              </Button>
-            </div>
-          )}
+            <AnimatePresence mode="wait">
+              {phase === 'setup' && (
+                <SetupPhase
+                  isGenerating={isGenerating}
+                  onGenerate={handleGenerateQRCode}
+                  onNext={() => setPhase('qr')}
+                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                />
+              )}
 
-          {/* Backup Codes */}
-          {user?.totpEnabled !== true && phase === 'backup' && (
-            <div className="space-y-8">
-              <Label className="font-light">
-                {localize('com_ui_save_backup_codes')}
-              </Label>
-              <div className="grid grid-cols-2 gap-4 rounded-xl bg-surface-secondary p-4 font-mono text-sm">
-                {backupCodes.map((code, index) => (
-                  <div
-                    key={code}
-                    className="flex items-center space-x-2 rounded-lg border border-surface-tertiary bg-surface-tertiary p-2"
-                  >
-                    <span className="select-none text-xs text-text-secondary">
-                      #{index + 1}
-                    </span>
-                    <span className="font-medium tracking-wider">{code}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleDownload}
-                  className="flex-1 gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  {localize('com_ui_download_backup')}
-                </Button>
-                <Button
-                  onClick={handleConfirm}
-                  disabled={!downloaded}
-                  className="flex-1"
-                >
-                  {localize('com_ui_done')}
-                </Button>
-              </div>
-            </div>
-          )}
+              {phase === 'qr' && (
+                <QRPhase
+                  secret={secret}
+                  otpauthUrl={otpauthUrl}
+                  onNext={() => setPhase('verify')}
+                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                />
+              )}
 
-          {/* Disable 2FA */}
-          {user?.totpEnabled === true && phase === 'disable' && (
-            <div className="space-y-10">
-              <div className="flex justify-center">
-                {!useBackup && (
-                  <InputOTP
-                    pattern={REGEXP_ONLY_DIGITS}
-                    value={disableToken}
-                    onChange={(value) => setDisableToken(value)}
-                    maxLength={6}
-                  >
-                    <InputOTPGroup>
-                      <InputOTPSlot index={0} />
-                      <InputOTPSlot index={1} />
-                      <InputOTPSlot index={2} />
-                    </InputOTPGroup>
-                    <InputOTPSeparator />
-                    <InputOTPGroup>
-                      <InputOTPSlot index={3} />
-                      <InputOTPSlot index={4} />
-                      <InputOTPSlot index={5} />
-                    </InputOTPGroup>
-                  </InputOTP>
-                )}
-                {useBackup && (
-                  <div className="my-4 flex justify-center text-text-primary">
-                    <InputOTP
-                      maxLength={8}
-                      value={disableBackupCode}
-                      onChange={(value) => setDisableBackupCode(value)}
-                      pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
-                    >
-                      <InputOTPGroup>
-                        <InputOTPSlot index={0} />
-                        <InputOTPSlot index={1} />
-                        <InputOTPSlot index={2} />
-                        <InputOTPSlot index={3} />
-                        <InputOTPSlot index={4} />
-                        <InputOTPSlot index={5} />
-                        <InputOTPSlot index={6} />
-                        <InputOTPSlot index={7} />
-                      </InputOTPGroup>
-                    </InputOTP>
-                  </div>
-                )}
-              </div>
-              <Button
-                variant="destructive"
-                onClick={handleDisableVerify}
-                disabled={
-                  (useBackup
-                    ? disableBackupCode.length < 8
-                    : disableToken.length < 6) || isDisabling
-                }
-                className="flex w-full items-center justify-center gap-2"
-              >
-                {isDisabling && <Spinner className="mr-2" />}
-                <Shield className="h-4 w-4" />
-                {localize('com_ui_2fa_disable')}
-              </Button>
-              <div className="mt-4 flex justify-center">
-                {!useBackup ? (
-                  <button
-                    type="button"
-                    onClick={toggleBackupOn}
-                    className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
-                  >
-                    {localize('com_ui_use_backup_code')}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={toggleBackupOff}
-                    className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
-                  >
-                    {localize('com_ui_use_2fa_code')}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+              {phase === 'verify' && (
+                <VerifyPhase
+                  token={verificationToken}
+                  onTokenChange={setVerificationToken}
+                  isVerifying={isVerifying}
+                  onNext={handleVerify}
+                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                />
+              )}
+
+              {phase === 'backup' && (
+                <BackupPhase
+                  backupCodes={backupCodes}
+                  onDownload={handleDownload}
+                  downloaded={downloaded}
+                  onNext={handleConfirm}
+                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                />
+              )}
+
+              {phase === 'disable' && (
+                <DisablePhase
+                  onDisable={handleDisableVerify}
+                  isDisabling={isDisabling}
+                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                />
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </AnimatePresence>
       </OGDialogContent>
     </OGDialog>
   );

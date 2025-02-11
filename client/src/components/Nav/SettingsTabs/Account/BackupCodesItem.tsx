@@ -1,52 +1,48 @@
 import React, { useState } from 'react';
+import { RefreshCcw, ShieldX } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useRegenerateBackupCodesMutation } from 'librechat-data-provider/react-query';
+import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogContent,
-  OGDialogHeader,
   OGDialogTitle,
   OGDialogTrigger,
   Button,
   Label,
   Spinner,
 } from '~/components';
-import { RefreshCcw } from 'lucide-react';
 import { useAuthContext, useLocalize } from '~/hooks';
-import { useRegenerateBackupCodesMutation } from 'librechat-data-provider/react-query';
 import { useToastContext } from '~/Providers';
-import HoverCardSettings from '~/components/Nav/SettingsTabs/HoverCardSettings';
-import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
 const BackupCodesItem: React.FC = () => {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const setUser = useSetRecoilState(store.user);
   const { showToast } = useToastContext();
-
-  // Control the dialog open state.
+  const setUser = useSetRecoilState(store.user);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
 
   const { mutate: regenerateBackupCodes, isLoading } = useRegenerateBackupCodesMutation();
 
-  // Regenerate backup codes, update user state, and automatically download the backup codes file.
   const handleRegenerate = () => {
     regenerateBackupCodes(undefined, {
       onSuccess: (data: TRegenerateBackupCodesResponse) => {
-        // Convert each code hash into a TBackupCode object.
         const newBackupCodes: TBackupCode[] = data.backupCodesHash.map((codeHash) => ({
           codeHash,
           used: false,
           usedAt: null,
         }));
 
-        // Update the user state with the new backup codes.
-        setUser((prev) => ({ ...prev, backupCodes: newBackupCodes } as TUser));
-        showToast({ message: localize('com_ui_backup_codes_regenerated') });
+        setUser((prev) => ({ ...prev, backupCodes: newBackupCodes }) as TUser);
+        showToast({
+          message: localize('com_ui_backup_codes_regenerated'),
+          status: 'success',
+        });
 
-        // Automatically download the backup codes as a plain text file.
         if (newBackupCodes.length) {
-          const codesString = data.backupCodes.map((code) => code).join('\n');
+          const codesString = data.backupCodes.join('\n');
           const blob = new Blob([codesString], { type: 'text/plain;charset=utf-8' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -64,7 +60,6 @@ const BackupCodesItem: React.FC = () => {
     });
   };
 
-  // Only render if two-factor authentication is enabled.
   if (!user?.totpEnabled) {
     return null;
   }
@@ -72,79 +67,101 @@ const BackupCodesItem: React.FC = () => {
   return (
     <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-3">
           <Label className="font-light">{localize('com_ui_backup_codes')}</Label>
-          <HoverCardSettings side="bottom" text="com_nav_info_2fa" />
         </div>
         <OGDialogTrigger asChild>
-          <Button variant="outline" className="flex items-center gap-2">
-            {localize('com_ui_backup_codes')}
-          </Button>
+          <Button variant="outline">{localize('com_endpoint_show')}</Button>
         </OGDialogTrigger>
       </div>
 
-      <OGDialogContent className="w-11/12 max-w-md">
-        <OGDialogHeader>
-          <OGDialogTitle className="mb-4 text-xl font-semibold">
-            {localize('com_ui_backup_codes')}
-          </OGDialogTitle>
-        </OGDialogHeader>
-        <div className="mt-4">
-          {user.backupCodes?.length ? (
-            <>
-              <div className="grid grid-cols-2 gap-4 rounded-xl bg-surface-secondary p-4 font-mono text-sm">
-                {user.backupCodes.map((code, index) => {
-                  // Determine the backup code state text.
-                  const stateText = code.used ? localize('com_ui_used') : localize('com_ui_not_used');
+      <OGDialogContent className="w-11/12 max-w-lg">
+        <OGDialogTitle className="mb-6 text-2xl font-semibold">
+          {localize('com_ui_backup_codes')}
+        </OGDialogTitle>
 
-                  // Conditional styling:
-                  // - Used codes get red tones.
-                  // - Unused codes get green tones.
-                  const bgClass = code.used ? 'bg-red-100' : 'bg-green-100';
-                  const borderClass = code.used ? 'border-red-400' : 'border-green-400';
-                  const textClass = code.used ? 'text-red-700' : 'text-green-700';
-
-                  return (
-                    <div
-                      key={code.codeHash}
-                      className={`flex flex-col rounded-lg border p-2 ${bgClass} ${borderClass}`}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <span className="select-none text-xs text-text-secondary">
-                          #{index + 1}
-                        </span>
-                        <span className={`font-medium tracking-wider ${textClass}`}>
-                          {stateText}
-                        </span>
-                      </div>
-                      {code.used && code.usedAt && (
-                        <div className="mt-1 ml-6 text-xs text-gray-600">
-                          {new Date(code.usedAt).toLocaleDateString()}
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mt-4"
+          >
+            {user.backupCodes?.length ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  {user.backupCodes.map((code, index) => {
+                    const isUsed = code.used;
+                    return (
+                      <motion.div
+                        key={code.codeHash}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        // className="rounded-lg bg-surface-tertiary p-3"
+                        className={`flex flex-col rounded-xl border p-4 backdrop-blur-sm transition-colors ${
+                          isUsed
+                            ? 'border-red-200 bg-red-50/80 dark:border-red-800 dark:bg-red-900/20'
+                            : 'border-green-200 bg-green-50/80 dark:border-green-800 dark:bg-green-900/20'
+                        } `}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-text-secondary">
+                            #{index + 1}
+                          </span>
+                          <span
+                            className={`rounded-full px-3 py-1 text-sm font-medium ${
+                              isUsed
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                            }`}
+                          >
+                            {isUsed ? localize('com_ui_used') : localize('com_ui_not_used')}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex gap-2 mt-3">
-                <Button onClick={handleRegenerate} disabled={isLoading} className="flex-1 gap-2">
-                  <RefreshCcw className="h-4 w-4" />
-                  {isLoading
-                    ? localize('com_ui_regenerating')
-                    : localize('com_ui_regenerate_backup')}
+                        {isUsed && code.usedAt && (
+                          <span className="mt-2 text-xs text-gray-500">
+                            {new Date(code.usedAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+                <div className="mt-12 flex justify-center">
+                  <Button
+                    onClick={handleRegenerate}
+                    disabled={isLoading}
+                    variant="default"
+                    className="px-8 py-3 transition-all disabled:opacity-50"
+                  >
+                    {isLoading ? (
+                      <Spinner className="mr-2" />
+                    ) : (
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                    )}
+                    {isLoading
+                      ? localize('com_ui_regenerating')
+                      : localize('com_ui_regenerate_backup')}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-4 p-6 text-center">
+                <ShieldX className="h-12 w-12 text-text-primary" />
+                <p className="text-lg text-text-secondary">{localize('com_ui_no_backup_codes')}</p>
+                <Button
+                  onClick={handleRegenerate}
+                  disabled={isLoading}
+                  className="mt-2 rounded-full bg-primary px-8 py-3 shadow-lg transition-all hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {isLoading && <Spinner className="mr-2" />}
+                  {localize('com_ui_generate_backup')}
                 </Button>
               </div>
-            </>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-text-secondary">{localize('com_ui_no_backup_codes')}</p>
-              <Button onClick={handleRegenerate} disabled={isLoading} className="flex gap-2 items-center">
-                {isLoading && <Spinner className="mr-2" />}
-                {localize('com_ui_generate_backup')}
-              </Button>
-            </div>
-          )}
-        </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </OGDialogContent>
     </OGDialog>
   );
