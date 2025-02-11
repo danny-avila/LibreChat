@@ -35,9 +35,30 @@ jobs:
           # Track unused keys
           UNUSED_KEYS=()
 
+          # Find keys dynamically referenced (e.g., `com_ui_${label}_error`)
+          DYNAMIC_KEYS=$(grep -rEo --include=\*.{js,jsx,ts,tsx} '\b[A-Za-z0-9_]+\${[^}]+}[A-Za-z0-9_]*\b' "$SOURCE_DIR" | sed 's/${.*}//g' | sort -u)
+
+          # Merge extracted static keys and dynamic key prefixes
+          ALL_REFERENCED_KEYS=$(grep -rEo --include=\*.{js,jsx,ts,tsx} '\b[A-Za-z0-9_.-]+\b' "$SOURCE_DIR" | sort -u)
+
           # Check if each key is used in the source code
           for KEY in $KEYS; do
-            if ! grep -r --include=\*.{js,jsx,ts,tsx} -q "$KEY" "$SOURCE_DIR"; then
+            FOUND=false
+            # Check if the key is directly found
+            if echo "$ALL_REFERENCED_KEYS" | grep -q "^$KEY$"; then
+              FOUND=true
+            fi
+
+            # Check if the key matches a dynamic pattern (prefix check)
+            for DYNAMIC_KEY in $DYNAMIC_KEYS; do
+              if [[ "$KEY" == "$DYNAMIC_KEY"* ]]; then
+                FOUND=true
+                break
+              fi
+            done
+
+            # If not found, add to unused keys
+            if [ "$FOUND" = false ]; then
               UNUSED_KEYS+=("$KEY")
             fi
           done
