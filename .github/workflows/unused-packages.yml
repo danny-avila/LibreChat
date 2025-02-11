@@ -6,6 +6,7 @@ on: [pull_request]
 #      - "client/package.json"
 #      - "api/package.json"
 
+
 jobs:
   detect-unused-packages:
     runs-on: ubuntu-latest
@@ -22,13 +23,18 @@ jobs:
           cache: 'npm'
 
       - name: Install depcheck
-        run: npm install -g depcheck jq
+        run: npm install -g depcheck
 
       - name: Validate JSON files
         run: |
-          jq empty package.json || (echo "::error title=Invalid JSON::Root package.json is invalid" && exit 1)
-          jq empty client/package.json || (echo "::error title=Invalid JSON::Client package.json is invalid" && exit 1)
-          jq empty api/package.json || (echo "::error title=Invalid JSON::API package.json is invalid" && exit 1)
+          if command -v jq &> /dev/null; then
+            jq empty package.json || (echo "::error title=Invalid JSON::Root package.json is invalid" && exit 1)
+            jq empty client/package.json || (echo "::error title=Invalid JSON::Client package.json is invalid" && exit 1)
+            jq empty api/package.json || (echo "::error title=Invalid JSON::API package.json is invalid" && exit 1)
+          else
+            echo "::error title=jq Not Found::jq is not installed on the runner"
+            exit 1
+          fi
 
       - name: Run depcheck for root package.json
         id: check-root
@@ -71,7 +77,6 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
 
-          # Format each list separately
           ROOT_LIST=$(echo "$ROOT_UNUSED" | awk '{print "- `" $0 "`"}')
           CLIENT_LIST=$(echo "$CLIENT_UNUSED" | awk '{print "- `" $0 "`"}')
           API_LIST=$(echo "$API_UNUSED" | awk '{print "- `" $0 "`"}')
