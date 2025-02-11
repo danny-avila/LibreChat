@@ -3,6 +3,7 @@ import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
 import type { ContentTypes } from './runs';
 import type { Agents } from './agents';
 import type { TFile } from './files';
+import { ArtifactModes } from 'src/artifacts';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -204,6 +205,7 @@ export type Agent = {
   created_at: number;
   avatar: AgentAvatar | null;
   instructions: string | null;
+  additional_instructions?: string | null;
   tools?: string[];
   projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
@@ -217,6 +219,7 @@ export type Agent = {
   agent_ids?: string[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
+  artifacts?: ArtifactModes;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -231,7 +234,7 @@ export type AgentCreateParams = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
-} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs'>;
+} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts'>;
 
 export type AgentUpdateParams = {
   name?: string | null;
@@ -247,7 +250,7 @@ export type AgentUpdateParams = {
   projectIds?: string[];
   removeProjectIds?: string[];
   isCollaborative?: boolean;
-} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs'>;
+} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts'>;
 
 export type AgentListParams = {
   limit?: number;

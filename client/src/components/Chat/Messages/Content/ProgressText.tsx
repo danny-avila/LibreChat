@@ -42,6 +42,7 @@ export default function ProgressText({
   authText,
   hasInput = true,
   popover = false,
+  isExpanded = false,
 }: {
   progress: number;
   onClick?: () => void;
@@ -50,8 +51,9 @@ export default function ProgressText({
   authText?: string;
   hasInput?: boolean;
   popover?: boolean;
+  isExpanded?: boolean;
 }) {
-  const text = progress < 1 ? authText ?? inProgressText : finishedText;
+  const text = progress < 1 ? (authText ?? inProgressText) : finishedText;
   return (
     <Wrapper popover={popover}>
       <button
@@ -61,7 +63,13 @@ export default function ProgressText({
         onClick={onClick}
       >
         {text}
-        <svg width="16" height="17" viewBox="0 0 16 17" fill="none">
+        <svg
+          width="16"
+          height="17"
+          viewBox="0 0 16 17"
+          fill="none"
+          className={isExpanded ? 'rotate-180' : 'rotate-0'}
+        >
           <path
             className={hasInput ? '' : 'stroke-transparent'}
             d="M11.3346 7.83203L8.00131 11.1654L4.66797 7.83203"
