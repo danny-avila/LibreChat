@@ -109,7 +109,6 @@
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
-    "ajv": "^8.17.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "remark-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
