@@ -6,6 +6,7 @@ import type {
   ConversationListResponse,
   SearchConversationListResponse,
 } from 'librechat-data-provider';
+import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
   useHasAccess,
@@ -122,7 +123,7 @@ const Nav = memo(
         );
       },
       isFetchingNext: searchQuery
-        ? searchQueryRes?.isFetchingNextPage ?? false
+        ? (searchQueryRes?.isFetchingNextPage ?? false)
         : isFetchingNextPage,
     });
 
