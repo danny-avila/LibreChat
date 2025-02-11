@@ -37,7 +37,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
                 <TextareaAutosize
                   id={`input-${idx}`}
                   disabled={readonly}
-                  value={example?.input?.content || ''}
+                  value={example.input.content || ''}
                   onChange={(e) => setExample(idx, 'input', e.target.value ?? null)}
                   placeholder="Set example input. Example is ignored if empty."
                   className={cn(
@@ -62,7 +62,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
                 <TextareaAutosize
                   id={`output-${idx}`}
                   disabled={readonly}
-                  value={example?.output?.content || ''}
+                  value={example.output.content || ''}
                   onChange={(e) => setExample(idx, 'output', e.target.value ?? null)}
                   placeholder={'Set example output. Example is ignored if empty.'}
                   className={cn(

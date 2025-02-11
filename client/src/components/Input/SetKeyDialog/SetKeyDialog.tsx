@@ -163,7 +163,7 @@ const SetKeyDialog = ({
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogTemplate
         title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
-        className="w-11/12 max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        className="w-11/12 max-w-2xl"
         showCancelButton={false}
         main={
           <div className="grid w-full items-center gap-2">
@@ -180,6 +180,7 @@ const SetKeyDialog = ({
               onChange={handleExpirationChange}
               options={expirationOptions.map((option) => option.label)}
               sizeClasses="w-[185px]"
+              portal={false}
             />
             <div className="mt-2" />
             <FormProvider {...methods}>

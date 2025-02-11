@@ -57,6 +57,8 @@ class BaseClient {
     this.continued;
     /** @type {TMessage[]} */
     this.currentMessages = [];
+    /** @type {import('librechat-data-provider').VisionModes | undefined} */
+    this.visionMode;
   }
 
   setOptions() {
@@ -1095,7 +1097,7 @@ class BaseClient {
         file_id: { $in: fileIds },
       });
 
-      await this.addImageURLs(message, files);
+      await this.addImageURLs(message, files, this.visionMode);
 
       this.message_file_map[message.messageId] = files;
       return message;

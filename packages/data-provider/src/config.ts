@@ -455,6 +455,7 @@ export const intefaceSchema = z
     presets: z.boolean().optional(),
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
+    temporaryChat: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -466,6 +467,7 @@ export const intefaceSchema = z
     bookmarks: true,
     prompts: true,
     agents: true,
+    temporaryChat: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
@@ -697,18 +699,19 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
-    'gemini-pro',
-    'gemini-pro-vision',
-    'chat-bison',
-    'chat-bison-32k',
-    'codechat-bison',
-    'codechat-bison-32k',
-    'text-bison',
-    'text-bison-32k',
-    'text-unicorn',
-    'code-gecko',
-    'code-bison',
-    'code-bison-32k',
+    // Shared Google Models between Vertex AI & Gen AI
+    // Gemini 2.0 Models
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-pro-exp-02-05',
+    // Gemini 1.5 Models
+    'gemini-1.5-flash-001',
+    'gemini-1.5-flash-002',
+    'gemini-1.5-pro-001',
+    'gemini-1.5-pro-002',
+    // Gemini 1.0 Models
+    'gemini-1.0-pro-001',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
@@ -929,6 +932,10 @@ export enum CacheKeys {
    * Key for in-progress messages.
    */
   MESSAGES = 'messages',
+  /**
+   * Key for in-progress flow states.
+   */
+  FLOWS = 'flows',
 }
 
 /**
@@ -1017,6 +1024,10 @@ export enum ErrorTypes {
    * Invalid request error, API rejected request
    */
   NO_SYSTEM_MESSAGES = 'no_system_messages',
+  /**
+   * Google provider returned an error
+   */
+  GOOGLE_ERROR = 'google_error',
 }
 
 /**

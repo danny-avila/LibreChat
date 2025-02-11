@@ -38,7 +38,7 @@ export default function FileSearchCheckbox() {
             type="button"
             className="flex items-center space-x-2"
             onClick={() =>
-              // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+
               setValue(AgentCapabilities.file_search, !getValues(AgentCapabilities.file_search), {
                 shouldDirty: true,
               })

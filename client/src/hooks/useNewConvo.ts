@@ -38,6 +38,7 @@ const useNewConvo = (index = 0) => {
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
+  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
@@ -195,6 +196,9 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos?: boolean;
     } = {}) {
       pauseGlobalAudio();
+      if (isTemporary) {
+        setIsTemporary(false);
+      }
 
       const templateConvoId = _template.conversationId ?? '';
       const paramEndpoint =

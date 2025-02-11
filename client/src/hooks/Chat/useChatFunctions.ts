@@ -71,6 +71,7 @@ export default function useChatFunctions({
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
   const getSender = useGetSender();
+  const isTemporary = useRecoilValue(store.isTemporary);
 
   const queryClient = useQueryClient();
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
@@ -293,6 +294,7 @@ export default function useChatFunctions({
       isContinued,
       isRegenerate,
       initialResponse,
+      isTemporary,
     };
 
     if (isRegenerate) {

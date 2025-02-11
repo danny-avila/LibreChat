@@ -590,6 +590,8 @@ export const tConversationSchema = z.object({
   greeting: z.string().optional(),
   spec: z.string().nullable().optional(),
   iconURL: z.string().nullable().optional(),
+  /* temporary chat */
+  expiredAt: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -875,12 +877,18 @@ export const gptPluginsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export function removeNullishValues<T extends Record<string, unknown>>(obj: T): Partial<T> {
+export function removeNullishValues<T extends Record<string, unknown>>(
+  obj: T,
+  removeEmptyStrings?: boolean,
+): Partial<T> {
   const newObj: Partial<T> = { ...obj };
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
     const value = newObj[key];
     if (value === undefined || value === null) {
+      delete newObj[key];
+    }
+    if (removeEmptyStrings && typeof value === 'string' && value === '') {
       delete newObj[key];
     }
   });
@@ -933,8 +941,7 @@ export const compactAssistantSchema = tConversationSchema
     greeting: true,
     spec: true,
   })
-  // will change after adding temperature
-  .transform(removeNullishValues)
+  .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));
 
 export const agentsSchema = tConversationSchema
@@ -1136,7 +1143,7 @@ export const compactPluginsSchema = tConversationSchema
   })
   .catch(() => ({}));
 
-const tBannerSchema = z.object({
+export const tBannerSchema = z.object({
   bannerId: z.string(),
   message: z.string(),
   displayFrom: z.string(),
@@ -1158,5 +1165,5 @@ export const compactAgentsSchema = tConversationSchema
     instructions: true,
     additional_instructions: true,
   })
-  .transform(removeNullishValues)
+  .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));

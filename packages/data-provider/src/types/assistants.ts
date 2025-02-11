@@ -38,6 +38,8 @@ export type FunctionTool = {
     description: string;
     name: string;
     parameters: Record<string, unknown>;
+    strict?: boolean;
+    additionalProperties?: boolean; // must be false if strict is true https://platform.openai.com/docs/guides/structured-outputs/some-type-specific-keywords-are-not-yet-supported
   };
 };
 
@@ -417,6 +419,8 @@ export type PartMetadata = {
   asset_pointer?: string;
   status?: string;
   action?: boolean;
+  auth?: string;
+  expires_at?: number;
 };
 
 export type ContentPart = (
@@ -504,6 +508,12 @@ export type ActionMetadata = {
   raw_spec?: string;
   oauth_client_id?: string;
   oauth_client_secret?: string;
+};
+
+export type ActionMetadataRuntime = ActionMetadata & {
+  oauth_access_token?: string;
+  oauth_refresh_token?: string;
+  oauth_token_expires_at?: Date;
 };
 
 /* Assistant types */
