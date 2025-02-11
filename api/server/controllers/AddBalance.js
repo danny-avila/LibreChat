@@ -2,13 +2,14 @@ const Balance = require('~/models/Balance');
 
 async function addBalanceController(req, res) {
   const newBalance = req.body.balance;
+  const userId  =req.body.id
 
   if (typeof newBalance !== 'number') {
     return res.status(400).json({ message: 'Balance must be a number.' });
 }
 
   try {
-    const currentRecord = await Balance.findOne({ user: req.user.id }).lean();
+    const currentRecord = await Balance.findOne({ user: userId }).lean();
     
 console.log('currentRecord:' ,currentRecord)
     if (!currentRecord) {
