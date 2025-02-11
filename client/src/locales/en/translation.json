@@ -856,5 +856,11 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_ui_no_data": "something needs to go here. was empty",
+  "com_files_table": "something needs to go here. was empty",
+  "com_ui_global_group": "something needs to go here. was empty",
+  "com_ui_no_valid_items": "something needs to go here. was empty",
+  "chat_direction_left_to_right": "something needs to go here. was empty",
+  "chat_direction_right_to_left": "something needs to go here. was empty"
 }

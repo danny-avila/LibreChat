@@ -3,7 +3,7 @@ import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
 import { TooltipAnchor, Button } from '~/components';
-import { useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
@@ -30,7 +30,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                   const variant = getVariant(link);
                   return isCollapsed ? (
                     <TooltipAnchor
-                      description={localize(link.title)}
+                      description={localize(link.title as TranslationKeys)}
                       side="left"
                       key={`nav-link-${index}`}
                       render={
@@ -48,7 +48,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           }}
                         >
                           <link.icon className="h-4 w-4 text-text-secondary" />
-                          <span className="sr-only">{localize(link.title)}</span>
+                          <span className="sr-only">{localize(link.title as TranslationKeys)}</span>
                         </Button>
                       }
                     />
@@ -75,7 +75,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                               }}
                             >
                               <link.icon className="mr-2 h-4 w-4" />
-                              {localize(link.title)}
+                              {localize(link.title as TranslationKeys)}
                               {link.label != null && link.label && (
                                 <span
                                   className={cn(
