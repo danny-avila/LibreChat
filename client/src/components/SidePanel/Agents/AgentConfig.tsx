@@ -26,6 +26,7 @@ import AgentAvatar from './AgentAvatar';
 import { Spinner } from '~/components';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
+import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import { Panel } from '~/common';
@@ -342,6 +343,8 @@ export default function AgentConfig({
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
             {/* File Search */}
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {/* Artifacts */}
+            {artifactsEnabled && <Artifacts />}
           </div>
         )}
         {/* Agent Tools & Actions */}
