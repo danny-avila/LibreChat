@@ -52,7 +52,6 @@
     "@radix-ui/react-toast": "^1.1.5",
     "@tanstack/react-query": "^4.28.0",
     "@tanstack/react-table": "^8.11.7",
-    "axios": "^1.7.9",
     "class-variance-authority": "^0.6.0",
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",
