@@ -35,11 +35,34 @@ jobs:
             exit 1
           fi
 
+      - name: Extract used dependencies from scripts
+        id: extract-used
+        run: |
+          extract_scripts_deps() {
+            local package_file=$1
+            if [[ -f "$package_file" ]]; then
+              jq -r '.scripts | to_entries[].value' "$package_file" | \
+                grep -oE '([a-zA-Z0-9_-]+)' | sort -u > used_deps.txt
+            else
+              touch used_deps.txt
+            fi
+          }
+
+          extract_scripts_deps "package.json"
+          mv used_deps.txt root_used_deps.txt
+
+          extract_scripts_deps "client/package.json"
+          mv used_deps.txt client_used_deps.txt
+
+          extract_scripts_deps "api/package.json"
+          mv used_deps.txt api_used_deps.txt
+
       - name: Run depcheck for root package.json
         id: check-root
         run: |
           if [[ -f "package.json" ]]; then
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat root_used_deps.txt | sort) || echo "")
             echo "ROOT_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
@@ -52,6 +75,7 @@ jobs:
             chmod -R 755 client
             cd client
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt | sort) || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
@@ -65,6 +89,7 @@ jobs:
             chmod -R 755 api
             cd api
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../api_used_deps.txt | sort) || echo "")
             echo "API_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
