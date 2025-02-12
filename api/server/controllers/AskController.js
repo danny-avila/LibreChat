@@ -150,11 +150,11 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   } catch (error) {
     const partialText = getText && getText();
     handleAbortError(res, req, error, {
+      sender,
       partialText,
       conversationId,
-      sender,
       messageId: responseMessageId,
-      parentMessageId: userMessageId ?? parentMessageId,
+      parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
     }).catch((err) => {
       logger.error('[AskController] Error in `handleAbortError`', err);
     });
