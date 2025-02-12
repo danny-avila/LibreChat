@@ -124,21 +124,16 @@ function SocialLoginRender({ startupConfig, mode, onPasskeyClick }: SocialLoginR
           {startupConfig.passkeyLoginEnabled && (
 
             <div className="mt-2 flex gap-x-2">
-              <a
+              <button
                 aria-label={passkeyLabel}
                 className="flex w-full items-center space-x-3 rounded-2xl border border-border-light bg-surface-primary px-5 py-3 text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
-                data-testid='passkey'
-                href=''
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onPasskeyClick) {
-                    onPasskeyClick();
-                  }
-                }}
+                data-testid="passkey"
+                type="button"
+                onClick={onPasskeyClick}
               >
                 <PasskeyIcon />
                 <p>{passkeyLabel}</p>
-              </a>
+              </button>
             </div>
           )}
         </div>

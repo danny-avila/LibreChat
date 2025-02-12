@@ -92,7 +92,6 @@ function AuthLayout({
               {header}
             </h1>
           )}
-          {/* Conditionally render the default content or the PasskeyAuth component */}
           {showPasskey ? (
             <PasskeyAuth mode={mode} onBack={() => setShowPasskey(false)} />
           ) : (

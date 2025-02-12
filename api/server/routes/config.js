@@ -51,7 +51,7 @@ router.get('/', async function (req, res) {
           !!process.env.APPLE_TEAM_ID &&
           !!process.env.APPLE_KEY_ID &&
           !!process.env.APPLE_PRIVATE_KEY_PATH,
-      passkeyLoginEnabled : !!process.env.PASSKEY_ENABLED && !!process.env.RP_ID,
+      passkeyLoginEnabled: !!process.env.PASSKEY_ENABLED && !!process.env.RP_ID,
       openidLoginEnabled:
         !!process.env.OPENID_CLIENT_ID &&
         !!process.env.OPENID_CLIENT_SECRET &&
