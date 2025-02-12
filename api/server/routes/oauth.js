@@ -56,6 +56,9 @@ router.get(
   oauthHandler,
 );
 
+/**
+ * Facebook Routes
+ */
 router.get(
   '/facebook',
   passport.authenticate('facebook', {
@@ -77,6 +80,9 @@ router.get(
   oauthHandler,
 );
 
+/**
+ * OpenID Routes
+ */
 router.get(
   '/openid',
   passport.authenticate('openid', {
@@ -94,6 +100,9 @@ router.get(
   oauthHandler,
 );
 
+/**
+ * GitHub Routes
+ */
 router.get(
   '/github',
   passport.authenticate('github', {
@@ -112,6 +121,10 @@ router.get(
   }),
   oauthHandler,
 );
+
+/**
+ * Discord Routes
+ */
 router.get(
   '/discord',
   passport.authenticate('discord', {
@@ -127,6 +140,26 @@ router.get(
     failureMessage: true,
     session: false,
     scope: ['identify', 'email'],
+  }),
+  oauthHandler,
+);
+
+/**
+ * Apple Routes
+ */
+router.get(
+  '/apple',
+  passport.authenticate('apple', {
+    session: false,
+  }),
+);
+
+router.post(
+  '/apple/callback',
+  passport.authenticate('apple', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
   }),
   oauthHandler,
 );

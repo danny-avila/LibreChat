@@ -49,8 +49,6 @@ export type UpdatePresetOptions = MutationOptions<types.TPreset, types.TPreset>;
 
 export type DeletePresetOptions = MutationOptions<PresetDeleteResponse, types.TPreset | undefined>;
 
-export type LogoutOptions = MutationOptions<unknown, undefined>;
-
 /* Assistant mutations */
 
 export type AssistantAvatarVariables = {
@@ -315,3 +313,26 @@ export type TDeleteSharedLinkResponse = {
   shareId: string;
   message: string;
 };
+
+export type TEditArtifactRequest = {
+  index: number;
+  messageId: string;
+  original: string;
+  updated: string;
+};
+
+export type TEditArtifactResponse = Pick<types.TMessage, 'content' | 'text' | 'conversationId'>;
+
+export type EditArtifactOptions = MutationOptions<
+  TEditArtifactResponse,
+  TEditArtifactRequest,
+  unknown,
+  Error
+>;
+
+export type TLogoutResponse = {
+  message: string;
+  redirect?: string;
+};
+
+export type LogoutOptions = MutationOptions<TLogoutResponse, undefined>;

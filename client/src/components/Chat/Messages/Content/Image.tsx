@@ -9,12 +9,12 @@ const scaleImage = ({
   originalHeight,
   containerRef,
 }: {
-  originalWidth: number;
-  originalHeight: number;
+  originalWidth?: number;
+  originalHeight?: number;
   containerRef: React.RefObject<HTMLDivElement>;
 }) => {
   const containerWidth = containerRef.current?.offsetWidth ?? 0;
-  if (containerWidth === 0 || originalWidth === undefined || originalHeight === undefined) {
+  if (containerWidth === 0 || originalWidth == null || originalHeight == null) {
     return { width: 'auto', height: 'auto' };
   }
   const aspectRatio = originalWidth / originalHeight;
@@ -35,8 +35,8 @@ const Image = ({
   height: number;
   width: number;
   placeholderDimensions?: {
-    height: string;
-    width: string;
+    height?: string;
+    width?: string;
   };
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -47,8 +47,8 @@ const Image = ({
   const { width: scaledWidth, height: scaledHeight } = useMemo(
     () =>
       scaleImage({
-        originalWidth: Number(placeholderDimensions?.width?.split('px')[0]) ?? width,
-        originalHeight: Number(placeholderDimensions?.height?.split('px')[0]) ?? height,
+        originalWidth: Number(placeholderDimensions?.width?.split('px')[0] ?? width),
+        originalHeight: Number(placeholderDimensions?.height?.split('px')[0] ?? height),
         containerRef,
       }),
     [placeholderDimensions, height, width],

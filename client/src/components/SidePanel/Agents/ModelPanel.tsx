@@ -2,12 +2,12 @@ import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { getSettingsKeys } from 'librechat-data-provider';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { agentSettings } from '~/components/SidePanel/Parameters/settings';
 import { getEndpointField, cn, cardStyle } from '~/utils';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { SelectDropDown } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
@@ -221,8 +221,8 @@ export default function Parameters({
               onClick={handleResetParameters}
               className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
             >
-              <RotateCcw className="h-4 w-4" />
-              {localize('com_ui_reset_var', localize('com_ui_model_parameters'))}
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
             </button>
           </div>
         </div>

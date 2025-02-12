@@ -121,13 +121,14 @@ const MessageRender = memo(
 
     return (
       <div
+        id={msg.messageId}
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
           baseClasses,
           layoutClasses,
           latestCardClasses,
           showRenderClasses,
-          'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+          'message-render focus:outline-none focus:ring-2 focus:ring-border-xheavy',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {

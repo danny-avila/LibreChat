@@ -12,9 +12,9 @@ import {
   HoverCardContent,
 } from '~/components/ui';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
-import { useToastContext, useChatContext } from '~/Providers';
-import { useLocalize, useNavigateToConvo } from '~/hooks';
+import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -112,10 +112,9 @@ export default function Fork({
   latestMessageId?: string;
 }) {
   const localize = useLocalize();
-  const { index } = useChatContext();
   const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
-  const { navigateToConvo } = useNavigateToConvo(index);
+  const { navigateToConvo } = useNavigateToConvo();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
@@ -202,7 +201,7 @@ export default function Fork({
             align="center"
           >
             <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
-              {localize(activeSetting)}
+              {localize(activeSetting as TranslationKeys)}
               <HoverCard openDelay={50}>
                 <HoverCardTrigger asChild>
                   <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50" />
@@ -217,7 +216,9 @@ export default function Fork({
                       <span>{localize('com_ui_fork_info_1')}</span>
                       <span>{localize('com_ui_fork_info_2')}</span>
                       <span>
-                        {localize('com_ui_fork_info_3', localize('com_ui_fork_split_target'))}
+                        {localize('com_ui_fork_info_3', {
+                          0: localize('com_ui_fork_split_target'),
+                        })}
                       </span>
                     </div>
                   </HoverCardContent>
@@ -234,7 +235,7 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <GitCommit className="h-5 w-5 rotate-90" />
-                    {localize(optionLabels[ForkOptions.DIRECT_PATH])}
+                    {localize(optionLabels[ForkOptions.DIRECT_PATH] as TranslationKeys)}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_visible')}
@@ -252,7 +253,7 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <GitBranchPlus className="h-4 w-4 rotate-180" />
-                    {localize(optionLabels[ForkOptions.INCLUDE_BRANCHES])}
+                    {localize(optionLabels[ForkOptions.INCLUDE_BRANCHES] as TranslationKeys)}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_branches')}
@@ -270,9 +271,9 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <ListTree className="h-5 w-5" />
-                    {`${localize(optionLabels[ForkOptions.TARGET_LEVEL])} (${localize(
-                      'com_endpoint_default',
-                    )})`}
+                    {`${localize(
+                      optionLabels[ForkOptions.TARGET_LEVEL] as TranslationKeys,
+                    )} (${localize('com_endpoint_default')})`}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_target')}

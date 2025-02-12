@@ -120,13 +120,15 @@ const ContentRender = memo(
 
     return (
       <div
+        id={msg.messageId}
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
           baseClasses,
-          isCard ? cardClasses : chatSpaceClasses,
+          isCard === true ? cardClasses : chatSpaceClasses,
           conditionalClasses.latestCard,
           conditionalClasses.cardRender,
           conditionalClasses.focus,
+          'message-render',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {

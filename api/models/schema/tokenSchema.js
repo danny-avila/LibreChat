@@ -10,6 +10,10 @@ const tokenSchema = new Schema({
   email: {
     type: String,
   },
+  type: String,
+  identifier: {
+    type: String,
+  },
   token: {
     type: String,
     required: true,
@@ -22,6 +26,10 @@ const tokenSchema = new Schema({
   expiresAt: {
     type: Date,
     required: true,
+  },
+  metadata: {
+    type: Map,
+    of: Schema.Types.Mixed,
   },
 });
 

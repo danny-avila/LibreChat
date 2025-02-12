@@ -10,7 +10,7 @@ export const userPlugins = () => '/api/user/plugins';
 export const deleteUser = () => '/api/user/delete';
 
 export const messages = (conversationId: string, messageId?: string) =>
-  `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
+  `/api/messages/${conversationId}${messageId != null && messageId ? `/${messageId}` : ''}`;
 
 const shareRoot = '/api/share';
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;

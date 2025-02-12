@@ -6,7 +6,7 @@ import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from './ErrorMessage';
 import { Spinner } from '~/components/svg';
-import { useLocalize } from '~/hooks';
+import { useLocalize, TranslationKeys } from '~/hooks';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
@@ -56,7 +56,7 @@ const Registration: React.FC = () => {
     },
   });
 
-  const renderInput = (id: string, label: string, type: string, validation: object) => (
+  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => (
     <div className="mb-4">
       <div className="relative">
         <input
@@ -114,7 +114,7 @@ const Registration: React.FC = () => {
               : 'com_auth_registration_success_insecure',
           ) +
             ' ' +
-            localize('com_auth_email_verification_redirecting', countdown.toString())}
+            localize('com_auth_email_verification_redirecting', { 0: countdown.toString() })}
         </div>
       )}
       {!startupConfigError && !isFetching && (

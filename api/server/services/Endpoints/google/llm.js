@@ -1,21 +1,42 @@
 const { Providers } = require('@librechat/agents');
 const { AuthKeys } = require('librechat-data-provider');
+const { isEnabled } = require('~/server/utils');
 
-// Example internal constant from your code
-const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
+function getThresholdMapping(model) {
+  const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
+  const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
+
+  if (gemini1Pattern.test(model)) {
+    return (value) => {
+      if (value === 'OFF') {
+        return 'BLOCK_NONE';
+      }
+      return value;
+    };
+  }
+
+  if (restrictedPattern.test(model)) {
+    return (value) => {
+      if (value === 'OFF' || value === 'HARM_BLOCK_THRESHOLD_UNSPECIFIED') {
+        return 'BLOCK_NONE';
+      }
+      return value;
+    };
+  }
+
+  return (value) => value;
+}
 
 /**
  *
- * @param {boolean} isGemini2
- * @returns {Array<{category: string, threshold: string}>}
+ * @param {string} model
+ * @returns {Array<{category: string, threshold: string}> | undefined}
  */
-function getSafetySettings(isGemini2) {
-  const mapThreshold = (value) => {
-    if (isGemini2 && value === 'BLOCK_NONE') {
-      return 'OFF';
-    }
-    return value;
-  };
+function getSafetySettings(model) {
+  if (isEnabled(process.env.GOOGLE_EXCLUDE_SAFETY_SETTINGS)) {
+    return undefined;
+  }
+  const mapThreshold = getThresholdMapping(model);
 
   return [
     {
@@ -87,23 +108,13 @@ function getLLMConfig(credentials, options = {}) {
     maxRetries: 2,
   };
 
-  const isGemini2 = llmConfig.model.includes('gemini-2.0');
-  const isGenerativeModel = llmConfig.model.includes('gemini');
-  const isChatModel = !isGenerativeModel && llmConfig.model.includes('chat');
-  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(llmConfig.model);
-
-  llmConfig.safetySettings = getSafetySettings(isGemini2);
+  /** Used only for Safety Settings */
+  llmConfig.safetySettings = getSafetySettings(llmConfig.model);
 
   let provider;
 
-  if (project_id && isTextModel) {
+  if (project_id) {
     provider = Providers.VERTEXAI;
-  } else if (project_id && isChatModel) {
-    provider = Providers.VERTEXAI;
-  } else if (project_id) {
-    provider = Providers.VERTEXAI;
-  } else if (!EXCLUDED_GENAI_MODELS.test(llmConfig.model)) {
-    provider = Providers.GOOGLE;
   } else {
     provider = Providers.GOOGLE;
   }
@@ -165,4 +176,5 @@ function getLLMConfig(credentials, options = {}) {
 
 module.exports = {
   getLLMConfig,
+  getSafetySettings,
 };

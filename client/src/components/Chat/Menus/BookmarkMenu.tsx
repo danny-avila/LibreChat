@@ -28,6 +28,7 @@ const BookmarkMenu: FC = () => {
   const conversationId = conversation?.conversationId ?? '';
   const updateConvoTags = useBookmarkSuccess(conversationId);
   const tags = conversation?.tags;
+  const isTemporary = conversation?.expiredAt != null;
 
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -136,6 +137,10 @@ const BookmarkMenu: FC = () => {
   }, [tags, data, handleSubmit, mutation.isLoading, localize]);
 
   if (!isActiveConvo) {
+    return null;
+  }
+
+  if (isTemporary) {
     return null;
   }
 
