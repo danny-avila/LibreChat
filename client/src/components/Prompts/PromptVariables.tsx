@@ -30,7 +30,7 @@ const PromptVariables = ({
   return (
     <div className="rounded-xl border border-border-light bg-transparent p-4 shadow-md ">
       <h3 className="flex items-center gap-2 py-2 text-lg font-semibold text-text-primary">
-        <Variable className="icon-sm" />
+        <Variable className="icon-sm" aria-hidden="true" />
         {localize('com_ui_variables')}
       </h3>
       <div className="flex flex-col space-y-4">

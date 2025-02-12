@@ -217,7 +217,7 @@ export default function useEventHandlers({
           const parentId = requestMessage.parentMessageId;
           if (
             parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase()?.includes('new chat') ?? false)
+            (title?.toLowerCase().includes('new chat') ?? false)
           ) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);
@@ -301,7 +301,7 @@ export default function useEventHandlers({
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
           if (
             parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase()?.includes('new chat') ?? false)
+            (title?.toLowerCase().includes('new chat') ?? false)
           ) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);

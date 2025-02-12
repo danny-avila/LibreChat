@@ -1,0 +1,147 @@
+name: Detect Unused NPM Packages
+
+on: [pull_request]
+
+jobs:
+  detect-unused-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install depcheck
+        run: npm install -g depcheck
+
+      - name: Validate JSON files
+        run: |
+          for FILE in package.json client/package.json api/package.json; do
+            if [[ -f "$FILE" ]]; then
+              jq empty "$FILE" || (echo "::error title=Invalid JSON::$FILE is invalid" && exit 1)
+            fi
+          done
+
+      - name: Extract Dependencies Used in Scripts
+        id: extract-used-scripts
+        run: |
+          extract_deps_from_scripts() {
+            local package_file=$1
+            if [[ -f "$package_file" ]]; then
+              jq -r '.scripts | to_entries[].value' "$package_file" | \
+                grep -oE '([a-zA-Z0-9_-]+)' | sort -u > used_scripts.txt
+            else
+              touch used_scripts.txt
+            fi
+          }
+
+          extract_deps_from_scripts "package.json"
+          mv used_scripts.txt root_used_deps.txt
+
+          extract_deps_from_scripts "client/package.json"
+          mv used_scripts.txt client_used_deps.txt
+
+          extract_deps_from_scripts "api/package.json"
+          mv used_scripts.txt api_used_deps.txt
+
+      - name: Extract Dependencies Used in Source Code
+        id: extract-used-code
+        run: |
+          extract_deps_from_code() {
+            local folder=$1
+            local output_file=$2
+            if [[ -d "$folder" ]]; then
+              grep -rEho "require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)" "$folder" --include=\*.{js,ts,mjs,cjs} | \
+                sed -E "s/require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)/\1/" > "$output_file"
+          
+              grep -rEho "import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{js,ts,mjs,cjs} | \
+                sed -E "s/import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file"
+          
+              sort -u "$output_file" -o "$output_file"
+            else
+              touch "$output_file"
+            fi
+          }
+
+          extract_deps_from_code "." root_used_code.txt
+          extract_deps_from_code "client" client_used_code.txt
+          extract_deps_from_code "api" api_used_code.txt
+
+      - name: Run depcheck for root package.json
+        id: check-root
+        run: |
+          if [[ -f "package.json" ]]; then
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat root_used_deps.txt root_used_code.txt | sort) || echo "")
+            echo "ROOT_UNUSED<<EOF" >> $GITHUB_ENV
+            echo "$UNUSED" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
+
+      - name: Run depcheck for client/package.json
+        id: check-client
+        run: |
+          if [[ -f "client/package.json" ]]; then
+            chmod -R 755 client
+            cd client
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt ../client_used_code.txt | sort) || echo "")
+            echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
+            echo "$UNUSED" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            cd ..
+          fi
+
+      - name: Run depcheck for api/package.json
+        id: check-api
+        run: |
+          if [[ -f "api/package.json" ]]; then
+            chmod -R 755 api
+            cd api
+            UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../api_used_deps.txt ../api_used_code.txt | sort) || echo "")
+            echo "API_UNUSED<<EOF" >> $GITHUB_ENV
+            echo "$UNUSED" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            cd ..
+          fi
+
+      - name: Post comment on PR if unused dependencies are found
+        if: env.ROOT_UNUSED != '' || env.CLIENT_UNUSED != '' || env.API_UNUSED != ''
+        run: |
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+
+          ROOT_LIST=$(echo "$ROOT_UNUSED" | awk '{print "- `" $0 "`"}')
+          CLIENT_LIST=$(echo "$CLIENT_UNUSED" | awk '{print "- `" $0 "`"}')
+          API_LIST=$(echo "$API_UNUSED" | awk '{print "- `" $0 "`"}')
+
+          COMMENT_BODY=$(cat <<EOF
+          ### 🚨 Unused NPM Packages Detected
+
+          The following **unused dependencies** were found:
+
+          $(if [[ ! -z "$ROOT_UNUSED" ]]; then echo "#### 📂 Root \`package.json\`"; echo ""; echo "$ROOT_LIST"; echo ""; fi)
+
+          $(if [[ ! -z "$CLIENT_UNUSED" ]]; then echo "#### 📂 Client \`client/package.json\`"; echo ""; echo "$CLIENT_LIST"; echo ""; fi)
+
+          $(if [[ ! -z "$API_UNUSED" ]]; then echo "#### 📂 API \`api/package.json\`"; echo ""; echo "$API_LIST"; echo ""; fi)
+
+          ⚠️ **Please remove these unused dependencies to keep your project clean.**
+          EOF
+          )
+
+          gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -f body="$COMMENT_BODY" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail workflow if unused dependencies found
+        if: env.ROOT_UNUSED != '' || env.CLIENT_UNUSED != '' || env.API_UNUSED != ''
+        run: exit 1
