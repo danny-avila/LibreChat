@@ -2,6 +2,7 @@ import {
   Button,
   Card,
   Modal,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -21,7 +22,6 @@ import { useEffect, useState } from 'react';
 import BalanceModal from './BalanceModal';
 // import Modal from './Modal';
 
-
 interface User {
   name: string;
   username: string;
@@ -34,10 +34,8 @@ interface User {
 const AddBalance: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
 
-  const[balanceModal , setBalanceModal] =useState(false)
-  const [selectedUserId ,setSelectedUserId] = useState<string>('')
-
-
+  const [balanceModal, setBalanceModal] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
 
   const getUsers = async () => {
     const res = await axios.get('http://localhost:3090/api/getUsers');
@@ -55,24 +53,30 @@ const AddBalance: React.FC = () => {
   };
 
   useEffect(() => {
-    
-
     getUsers();
   }, []);
 
-
-
-  const AddBalanceHandler = async(user:User) =>{
-    setBalanceModal(true)
-    setSelectedUserId(user.id)
-    console.log(user)
-   
-  }
+  const AddBalanceHandler = async (user: User) => {
+    setBalanceModal(true);
+    setSelectedUserId(user.id);
+    console.log(user);
+  };
 
   return (
     <>
-    
-    <BalanceModal open={balanceModal} onClose={()=>setBalanceModal(false)} userId={selectedUserId} refreshUsers={getUsers}/>
+      <Stack direction="row" sx={{ justifyContent: 'space-between' ,my: 2}}>
+        <Typography variant='h4'>User Management</Typography>
+        <Button variant="outlined" startIcon={<AddIcon />}>
+          Add User
+        </Button>
+      </Stack>
+
+      <BalanceModal
+        open={balanceModal}
+        onClose={() => setBalanceModal(false)}
+        userId={selectedUserId}
+        refreshUsers={getUsers}
+      />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
         <TableContainer sx={{ maxHeight: 440 }}>
           <Table stickyHeader aria-label="sticky table">
@@ -95,14 +99,13 @@ const AddBalance: React.FC = () => {
                   <TableCell>{item.role}</TableCell>
                   <TableCell>{item.balance}</TableCell>
                   <TableCell>
-
                     <IconButton>
                       <DeleteIcon />
                     </IconButton>
                     <IconButton>
                       <EditIcon />
                     </IconButton>
-                    <IconButton onClick={()=>AddBalanceHandler(item)}>
+                    <IconButton onClick={() => AddBalanceHandler(item)}>
                       <AddIcon />
                     </IconButton>
                   </TableCell>
