@@ -59,8 +59,8 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
 
-          # Format the unused keys list correctly, filtering out empty entries
-          FILTERED_KEYS=$(echo "$unused_keys" | jq -r '.[]' | grep -v '^\s*$' | sed 's/^/- `/;s/$/`/' )
+          # Format the unused keys list as checkboxes for easy manual checking.
+          FILTERED_KEYS=$(echo "$unused_keys" | jq -r '.[]' | grep -v '^\s*$' | sed 's/^/- [ ] `/;s/$/`/' )
 
           COMMENT_BODY=$(cat <<EOF
           ### 🚨 Unused i18next Keys Detected
@@ -81,4 +81,4 @@ jobs:
 
       - name: Fail workflow if unused keys found
         if: env.unused_keys != '[]'
-        run: exit 1  # This makes the PR fail if unused keys exist
+        run: exit 1
