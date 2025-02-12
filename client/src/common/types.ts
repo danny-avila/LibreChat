@@ -106,7 +106,7 @@ export type IconsRecord = {
 export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
-  title: string;
+  title: TranslationKeys;
   label?: string;
   icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
@@ -370,12 +370,12 @@ export type TDangerButtonProps = {
   showText?: boolean;
   mutation?: UseMutationResult<unknown>;
   onClick: () => void;
-  infoTextCode: string;
-  actionTextCode: string;
+  infoTextCode: TranslationKeys;
+  actionTextCode: TranslationKeys;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
-  infoDescriptionCode?: string;
-  confirmActionTextCode?: string;
+  infoDescriptionCode?: TranslationKeys;
+  confirmActionTextCode?: TranslationKeys;
 };
 
 export type TDialogProps = {
