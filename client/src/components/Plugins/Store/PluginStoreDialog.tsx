@@ -1,13 +1,16 @@
 import { Search, X } from 'lucide-react';
-import { Dialog } from '@headlessui/react';
-import { useState, useEffect } from 'react';
-import {
-  useAvailablePluginsQuery,
-  useUpdateUserPluginsMutation,
-} from 'librechat-data-provider/react-query';
-import type { TError, TPluginAction } from 'librechat-data-provider';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { useState, useEffect, useCallback } from 'react';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
-import { useLocalize, usePluginDialogHelpers, useSetIndexOptions, useAuthContext } from '~/hooks';
+import {
+  usePluginDialogHelpers,
+  useSetIndexOptions,
+  usePluginInstall,
+  useAuthContext,
+  useLocalize,
+} from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
@@ -16,7 +19,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { data: availablePlugins } = useAvailablePluginsQuery();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
   const { setTools } = useSetIndexOptions();
 
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
@@ -44,50 +46,49 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setSelectedPlugin,
   } = usePluginDialogHelpers();
 
-  const handleInstallError = (error: TError) => {
-    setError(true);
-    if (error.response?.data?.message) {
-      setErrorMessage(error.response?.data?.message);
-    }
-    setTimeout(() => {
-      setError(false);
-      setErrorMessage('');
-    }, 5000);
-  };
+  const handleInstallError = useCallback(
+    (error: TError) => {
+      setError(true);
+      if (error.response?.data?.message) {
+        setErrorMessage(error.response.data.message);
+      }
+      setTimeout(() => {
+        setError(false);
+        setErrorMessage('');
+      }, 5000);
+    },
+    [setError, setErrorMessage],
+  );
 
-  const handleInstall = (pluginAction: TPluginAction) => {
-    updateUserPlugins.mutate(pluginAction, {
-      onError: (error: unknown) => {
-        handleInstallError(error as TError);
-      },
-    });
+  const { installPlugin, uninstallPlugin } = usePluginInstall({
+    onInstallError: handleInstallError,
+    onUninstallError: handleInstallError,
+    onUninstallSuccess: (_data, variables) => {
+      setTools(variables.pluginKey, true);
+    },
+  });
+
+  const handleInstall = (pluginAction: TPluginAction, plugin?: TPlugin) => {
+    if (!plugin) {
+      return;
+    }
+    installPlugin(pluginAction, plugin);
     setShowPluginAuthForm(false);
   };
 
-  const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate(
-      { pluginKey: plugin, action: 'uninstall', auth: null },
-      {
-        onError: (error: unknown) => {
-          handleInstallError(error as TError);
-        },
-        onSuccess: () => {
-          setTools(plugin, true);
-        },
-      },
-    );
-  };
-
   const onPluginInstall = (pluginKey: string) => {
-    const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
-    setSelectedPlugin(getAvailablePluginFromKey);
+    const plugin = availablePlugins?.find((p) => p.pluginKey === pluginKey);
+    if (!plugin) {
+      return;
+    }
+    setSelectedPlugin(plugin);
 
-    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+    const { authConfig, authenticated } = plugin ?? {};
 
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
-      handleInstall({ pluginKey, action: 'install', auth: null });
+      handleInstall({ pluginKey, action: 'install', auth: null }, plugin);
     }
   };
 
@@ -107,10 +108,17 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setSearchChanged(false);
       }
     }
-
-    // Disabled due to state setters erroneously being flagged as dependencies
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
+  }, [
+    availablePlugins,
+    itemsPerPage,
+    user,
+    searchValue,
+    filteredPlugins,
+    searchChanged,
+    setMaxPage,
+    setCurrentPage,
+    setSearchChanged,
+  ]);
 
   return (
     <Dialog
@@ -126,16 +134,16 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       <div className="fixed inset-0 bg-gray-600/65 transition-opacity dark:bg-black/80" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel
-          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-800 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+        <DialogPanel
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-700 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
         >
-          <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
+          <div className="flex items-center justify-between border-b-[1px] border-black/10 p-6 pb-4 dark:border-white/10">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
-                <Dialog.Title className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
+                <DialogTitle className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
                   {localize('com_nav_plugin_store')}
-                </Dialog.Title>
+                </DialogTitle>
               </div>
             </div>
             <div>
@@ -165,21 +173,24 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div className="p-4 sm:p-6 sm:pt-4">
               <PluginAuthForm
                 plugin={selectedPlugin}
-                onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
+                onSubmit={(action: TPluginAction) => handleInstall(action, selectedPlugin)}
               />
             </div>
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
-              <div className="flex items-center justify-center space-x-4">
-                <Search className="h-6 w-6 text-gray-500" />
-                <input
-                  type="text"
-                  value={searchValue}
-                  onChange={handleSearch}
-                  placeholder={localize('com_nav_plugin_search')}
-                  className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                />
+              <div className="flex items-center">
+                <div className="relative flex items-center">
+                  <Search className="absolute left-2 h-6 w-6 text-gray-500" />
+                  <input
+                    type="text"
+                    value={searchValue}
+                    onChange={handleSearch}
+                    placeholder={localize('com_nav_plugin_search')}
+                    className="
+                    text-token-text-primary flex rounded-md border border-border-heavy bg-surface-tertiary py-2 pl-10 pr-2"
+                  />
+                </div>
               </div>
               <div
                 ref={gridRef}
@@ -195,7 +206,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                         plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
                         onInstall={() => onPluginInstall(plugin.pluginKey)}
-                        onUninstall={() => onPluginUninstall(plugin.pluginKey)}
+                        onUninstall={() => uninstallPlugin(plugin.pluginKey)}
                       />
                     ))}
               </div>
@@ -226,7 +237,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div> */}
             </div>
           </div>
-        </Dialog.Panel>
+        </DialogPanel>
       </div>
     </Dialog>
   );

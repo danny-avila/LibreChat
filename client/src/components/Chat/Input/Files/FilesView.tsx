@@ -1,40 +1,33 @@
 import { FileSources, FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '~/components';
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
-import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 export default function Files({ open, onOpenChange }) {
+  const localize = useLocalize();
+
   const { data: files = [] } = useGetFiles<TFile[]>({
     select: (files) =>
       files.map((file) => {
-        if (file.source === FileSources.local || file.source === FileSources.openai) {
-          file.context = file.context ?? FileContext.unknown;
-          return file;
-        } else {
-          return {
-            ...file,
-            context: file.context ?? FileContext.unknown,
-            source: FileSources.local,
-          };
-        }
+        file.context = file.context ?? FileContext.unknown;
+        file.filterSource = file.source === FileSources.firebase ? FileSources.local : file.source;
+        return file;
       }),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('overflow-x-auto shadow-2xl dark:bg-gray-900 dark:text-white')}>
-        <DialogHeader>
-          <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            My Files
-          </DialogTitle>
-        </DialogHeader>
-        <div className="overflow-x-auto p-0 sm:p-6 sm:pt-4">
-          <DataTable columns={columns} data={files} />
-          <div className="mt-5 sm:mt-4" />
-        </div>
-      </DialogContent>
-    </Dialog>
+    <OGDialog open={open} onOpenChange={onOpenChange}>
+      <OGDialogContent
+        title={localize('com_nav_my_files')}
+        className="w-11/12 bg-background text-text-primary shadow-2xl"
+      >
+        <OGDialogHeader>
+          <OGDialogTitle>{localize('com_nav_my_files')}</OGDialogTitle>
+        </OGDialogHeader>
+        <DataTable columns={columns} data={files} />
+      </OGDialogContent>
+    </OGDialog>
   );
 }

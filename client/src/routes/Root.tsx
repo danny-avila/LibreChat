@@ -1,82 +1,89 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
-  useAuthContext,
-  useServerStream,
-  useConversation,
-  useAssistantsMap,
-  useFileMap,
-} from '~/hooks';
-import { AssistantsMapContext, FileMapContext } from '~/Providers';
+  AgentsMapContext,
+  AssistantsMapContext,
+  FileMapContext,
+  SearchContext,
+  SetConvoProvider,
+} from '~/Providers';
+import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
+import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
-import store from '~/store';
+import { Banner } from '~/components/Banners';
 
 export default function Root() {
-  const location = useLocation();
-  const { newConversation } = useConversation();
-  const { isAuthenticated } = useAuthContext();
+  const navigate = useNavigate();
+  const [showTerms, setShowTerms] = useState(false);
+  const [bannerHeight, setBannerHeight] = useState(0);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
-  const submission = useRecoilValue(store.submission);
-  useServerStream(submission ?? null);
-
-  const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
-  const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setModelsConfig = useSetRecoilState(store.modelsConfig);
-
-  const fileMap = useFileMap({ isAuthenticated });
+  const { isAuthenticated, logout } = useAuthContext();
   const assistantsMap = useAssistantsMap({ isAuthenticated });
-  const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
-  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
+  const agentsMap = useAgentsMap({ isAuthenticated });
+  const fileMap = useFileMap({ isAuthenticated });
+  const search = useSearch({ isAuthenticated });
+
+  const { data: config } = useGetStartupConfig();
+  const { data: termsData } = useUserTermsQuery({
+    enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
+  });
 
   useEffect(() => {
-    localStorage.setItem('navVisible', JSON.stringify(navVisible));
-  }, [navVisible]);
-
-  useEffect(() => {
-    if (modelsQuery.data && location.state?.from?.pathname.includes('/chat')) {
-      setModelsConfig(modelsQuery.data);
-      // Note: passing modelsQuery.data prevents navigation
-      newConversation({}, undefined, modelsQuery.data);
-    } else if (modelsQuery.data) {
-      setModelsConfig(modelsQuery.data);
-    } else if (modelsQuery.isError) {
-      console.error('Failed to get models', modelsQuery.error);
+    if (termsData) {
+      setShowTerms(!termsData.termsAccepted);
     }
-  }, [modelsQuery.data, modelsQuery.isError]);
+  }, [termsData]);
 
-  useEffect(() => {
-    if (searchEnabledQuery.data) {
-      setIsSearchEnabled(searchEnabledQuery.data);
-    } else if (searchEnabledQuery.isError) {
-      console.error('Failed to get search enabled', searchEnabledQuery.error);
-    }
-  }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
+  const handleAcceptTerms = () => {
+    setShowTerms(false);
+  };
+
+  const handleDeclineTerms = () => {
+    setShowTerms(false);
+    logout();
+    navigate('/login');
+  };
 
   if (!isAuthenticated) {
     return null;
   }
 
   return (
-    <FileMapContext.Provider value={fileMap}>
-      <AssistantsMapContext.Provider value={assistantsMap}>
-        <div className="flex h-dvh">
-          <div className="relative z-0 flex h-full w-full overflow-hidden">
-            <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
-            <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-              <MobileNav setNavVisible={setNavVisible} />
-              <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
-            </div>
-          </div>
-        </div>
-      </AssistantsMapContext.Provider>
-    </FileMapContext.Provider>
+    <SetConvoProvider>
+      <SearchContext.Provider value={search}>
+        <FileMapContext.Provider value={fileMap}>
+          <AssistantsMapContext.Provider value={assistantsMap}>
+            <AgentsMapContext.Provider value={agentsMap}>
+              <Banner onHeightChange={setBannerHeight} />
+              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
+                <div className="relative z-0 flex h-full w-full overflow-hidden">
+                  <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+                  <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+                    <MobileNav setNavVisible={setNavVisible} />
+                    <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+                  </div>
+                </div>
+              </div>
+            </AgentsMapContext.Provider>
+            {config?.interface?.termsOfService?.modalAcceptance === true && (
+              <TermsAndConditionsModal
+                open={showTerms}
+                onOpenChange={setShowTerms}
+                onAccept={handleAcceptTerms}
+                onDecline={handleDeclineTerms}
+                title={config.interface.termsOfService.modalTitle}
+                modalContent={config.interface.termsOfService.modalContent}
+              />
+            )}
+          </AssistantsMapContext.Provider>
+        </FileMapContext.Provider>
+      </SearchContext.Provider>
+    </SetConvoProvider>
   );
 }

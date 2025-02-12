@@ -5,7 +5,9 @@ import { useChatContext } from '~/Providers';
 
 export default function PluginsView({ conversation, models, isPreset = false }) {
   const { showAgentSettings } = useChatContext();
-  const { setOption, setAgentOption } = useSetIndexOptions(isPreset ? conversation : null);
+  const { setOption, setTools, setAgentOption, checkPluginSelection } = useSetIndexOptions(
+    isPreset ? conversation : null,
+  );
   if (!conversation) {
     return null;
   }
@@ -13,6 +15,12 @@ export default function PluginsView({ conversation, models, isPreset = false }) 
   return showAgentSettings ? (
     <AgentSettings conversation={conversation} setOption={setAgentOption} models={models} />
   ) : (
-    <Settings conversation={conversation} setOption={setOption} models={models} />
+    <Settings
+      conversation={conversation}
+      setOption={setOption}
+      setTools={setTools}
+      checkPluginSelection={checkPluginSelection}
+      models={models}
+    />
   );
 }

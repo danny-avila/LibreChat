@@ -2,6 +2,9 @@ const { CacheKeys } = require('librechat-data-provider');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
+/**
+ * @param {ServerRequest} req
+ */
 const getModelsConfig = async (req) => {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   let modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
@@ -14,7 +17,7 @@ const getModelsConfig = async (req) => {
 
 /**
  * Loads the models from the config.
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {

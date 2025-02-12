@@ -4,17 +4,24 @@ const { getEnvironmentVariable } = require('@langchain/core/utils/env');
 
 class GoogleSearchResults extends Tool {
   static lc_name() {
-    return 'GoogleSearchResults';
+    return 'google';
   }
 
   constructor(fields = {}) {
     super(fields);
-    this.envVarApiKey = 'GOOGLE_API_KEY';
+    this.name = 'google';
+    this.envVarApiKey = 'GOOGLE_SEARCH_API_KEY';
     this.envVarSearchEngineId = 'GOOGLE_CSE_ID';
     this.override = fields.override ?? false;
-    this.apiKey = fields.apiKey ?? getEnvironmentVariable(this.envVarApiKey);
+    this.apiKey = fields[this.envVarApiKey] ?? getEnvironmentVariable(this.envVarApiKey);
     this.searchEngineId =
-      fields.searchEngineId ?? getEnvironmentVariable(this.envVarSearchEngineId);
+      fields[this.envVarSearchEngineId] ?? getEnvironmentVariable(this.envVarSearchEngineId);
+
+    if (!this.override && (!this.apiKey || !this.searchEngineId)) {
+      throw new Error(
+        `Missing ${this.envVarApiKey} or ${this.envVarSearchEngineId} environment variable.`,
+      );
+    }
 
     this.kwargs = fields?.kwargs ?? {};
     this.name = 'google';

@@ -1,4 +1,4 @@
-const languages = new Set([
+export const languages = new Set([
   'adoc',
   'apacheconf',
   'arm',
@@ -315,7 +315,7 @@ const languages = new Set([
   'zephir',
 ]);
 
-const langSubset = [
+export const langSubset = [
   'python',
   'javascript',
   'java',
@@ -353,4 +353,75 @@ const langSubset = [
   'yaml',
 ];
 
-export { languages, langSubset };
+enum Languages {
+  c = 'c',
+  cpp = 'cpp',
+  d = 'd',
+  f90 = 'f90',
+  go = 'go',
+  java = 'java',
+  js = 'js',
+  php = 'php',
+  py = 'py',
+  rs = 'rs',
+  ts = 'ts',
+}
+
+// Create a mapping of common variations to the enum values
+const languageAliases: Record<string, Languages | undefined> = {
+  // C
+  c: Languages.c,
+
+  // C++
+  cpp: Languages.cpp,
+  'c++': Languages.cpp,
+  cplusplus: Languages.cpp,
+
+  // D
+  d: Languages.d,
+
+  // Fortran
+  f90: Languages.f90,
+  fortran: Languages.f90,
+  fortran90: Languages.f90,
+
+  // Go
+  go: Languages.go,
+  golang: Languages.go,
+
+  // Java
+  java: Languages.java,
+
+  // JavaScript
+  js: Languages.js,
+  javascript: Languages.js,
+  node: Languages.js,
+  nodejs: Languages.js,
+
+  // PHP
+  php: Languages.php,
+
+  // Python
+  py: Languages.py,
+  python: Languages.py,
+  python3: Languages.py,
+
+  // Rust
+  rs: Languages.rs,
+  rust: Languages.rs,
+
+  // TypeScript
+  ts: Languages.ts,
+  typescript: Languages.ts,
+};
+
+export function normalizeLanguage(lang: string): Languages | string {
+  const normalizedLang = lang.toLowerCase().trim();
+  const validLang = languageAliases[normalizedLang];
+
+  if (!validLang) {
+    return '';
+  }
+
+  return validLang;
+}

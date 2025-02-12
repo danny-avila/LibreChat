@@ -6,9 +6,6 @@ module.exports = {
   // darkMode: 'class',
   darkMode: ['class'],
   theme: {
-    // colors: {
-    //   'gpt-dark-gray': '#171717',
-    // },
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
@@ -19,7 +16,7 @@ module.exports = {
     // },
     extend: {
       width: {
-        'authPageWidth': '370px',
+        authPageWidth: '370px',
       },
       keyframes: {
         'accordion-down': {
@@ -32,6 +29,7 @@ module.exports = {
         },
       },
       animation: {
+        'fade-in': 'fadeIn 0.5s ease-out forwards',
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
       },
@@ -43,12 +41,12 @@ module.exports = {
           200: '#e3e3e3',
           300: '#cdcdcd',
           400: '#999696',
-          500: '#686262',
-          600: '#3d3d3f',
-          700: '#262626', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
-          750: '#333333',
-          800: '#212121', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
-          900: '#0d0d0d', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
+          500: '#595959',
+          600: '#424242',
+          700: '#2f2f2f',
+          800: '#212121',
+          850: '#171717',
+          900: '#0d0d0d',
         },
         green: {
           50: '#f1f9f7',
@@ -64,16 +62,72 @@ module.exports = {
           900: '#031f29',
         },
         'brand-purple': '#ab68ff',
-        'text-primary': 'var(--gray-800)',
-        'text-secondary': 'var(--gray-600)',
-        'text-tertiary': 'var(--gray-500)',
-        'surface-primary': 'var(--white)',
-        'surface-secondary': 'var(--gray-50)',
-        'surface-tertiary': 'var(--gray-100)',
-        'border-light': 'var(--gray-100)',
-        'border-medium': 'var(--gray-200)',
-        'border-heavy': 'var(--gray-300)',
-        'border-xheavy': 'var(--gray-400',
+        'presentation': 'var(--presentation)',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-secondary-alt': 'var(--text-secondary-alt)',
+        'text-tertiary': 'var(--text-tertiary)',
+        'ring-primary': 'var(--ring-primary)',
+        'header-primary': 'var(--header-primary)',
+        'header-hover': 'var(--header-hover)',
+        'header-button-hover': 'var(--header-button-hover)',
+        'surface-active': 'var(--surface-active)',
+        'surface-active-alt': 'var(--surface-active-alt)',
+        'surface-hover': 'var(--surface-hover)',
+        'surface-hover-alt': 'var(--surface-hover-alt)',
+        'surface-primary': 'var(--surface-primary)',
+        'surface-primary-alt': 'var(--surface-primary-alt)',
+        'surface-primary-contrast': 'var(--surface-primary-contrast)',
+        'surface-secondary': 'var(--surface-secondary)',
+        'surface-secondary-alt': 'var(--surface-secondary-alt)',
+        'surface-tertiary': 'var(--surface-tertiary)',
+        'surface-tertiary-alt': 'var(--surface-tertiary-alt)',
+        'surface-dialog': 'var(--surface-dialog)',
+        'surface-submit': 'var(--surface-submit)',
+        'surface-submit-hover': 'var(--surface-submit-hover)',
+        'surface-destructive': 'var(--surface-destructive)',
+        'surface-destructive-hover': 'var(--surface-destructive-hover)',
+        'border-light': 'var(--border-light)',
+        'border-medium': 'var(--border-medium)',
+        'border-medium-alt': 'var(--border-medium-alt)',
+        'border-heavy': 'var(--border-heavy)',
+        'border-xheavy': 'var(--border-xheavy)',
+        /* These are test styles */
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ['switch-unchecked']: 'hsl(var(--switch-unchecked))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
     },
   },

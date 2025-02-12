@@ -1,7 +1,7 @@
 const { getResponseSender } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvo } = require('~/models');
+const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
 const EditController = async (req, res, next, initializeClient) => {
@@ -23,13 +23,12 @@ const EditController = async (req, res, next, initializeClient) => {
     isContinued,
     conversationId,
     ...endpointOption,
+    modelsConfig: endpointOption.modelsConfig ? 'exists' : '',
   });
 
-  let metadata;
   let userMessage;
+  let userMessagePromise;
   let promptTokens;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
@@ -38,11 +37,12 @@ const EditController = async (req, res, next, initializeClient) => {
   const userMessageId = parentMessageId;
   const user = req.user.id;
 
-  const addMetadata = (data) => (metadata = data);
   const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
         userMessage = data[key];
+      } else if (key === 'userMessagePromise') {
+        userMessagePromise = data[key];
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
@@ -53,59 +53,41 @@ const EditController = async (req, res, next, initializeClient) => {
 
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
-    onProgress: ({ text: partialText }) => {
-      const currentTimestamp = Date.now();
-
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
-        saveMessage({
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId ?? userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished: true,
-          isEdited: true,
-          error: false,
-          user,
-        });
-      }
-
-      if (saveDelay < 500) {
-        saveDelay = 500;
-      }
-    },
   });
 
-  const getAbortData = () => ({
-    conversationId,
-    messageId: responseMessageId,
-    sender,
-    parentMessageId: overrideParentMessageId ?? userMessageId,
-    text: getPartialText(),
-    userMessage,
-    promptTokens,
-  });
-
-  const { abortController, onStart } = createAbortController(req, res, getAbortData);
-
-  res.on('close', () => {
-    logger.debug('[EditController] Request closed');
-    if (!abortController) {
-      return;
-    } else if (abortController.signal.aborted) {
-      return;
-    } else if (abortController.requestCompleted) {
-      return;
-    }
-
-    abortController.abort();
-    logger.debug('[EditController] Request aborted on close');
-  });
+  let getText;
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
+
+    getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
+
+    const getAbortData = () => ({
+      conversationId,
+      userMessagePromise,
+      messageId: responseMessageId,
+      sender,
+      parentMessageId: overrideParentMessageId ?? userMessageId,
+      text: getText(),
+      userMessage,
+      promptTokens,
+    });
+
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
+
+    res.on('close', () => {
+      logger.debug('[EditController] Request closed');
+      if (!abortController) {
+        return;
+      } else if (abortController.signal.aborted) {
+        return;
+      } else if (abortController.requestCompleted) {
+        return;
+      }
+
+      abortController.abort();
+      logger.debug('[EditController] Request aborted on close');
+    });
 
     let response = await client.sendMessage(text, {
       user,
@@ -118,20 +100,15 @@ const EditController = async (req, res, next, initializeClient) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
-        text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     });
 
-    if (metadata) {
-      response = { ...response, ...metadata };
-    }
-
-    const conversation = await getConvo(user, conversationId);
+    const { conversation = {} } = await client.responsePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
@@ -149,16 +126,22 @@ const EditController = async (req, res, next, initializeClient) => {
       });
       res.end();
 
-      await saveMessage({ ...response, user });
+      await saveMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/controllers/EditController.js - response end' },
+      );
     }
   } catch (error) {
-    const partialText = getPartialText();
+    const partialText = getText();
     handleAbortError(res, req, error, {
       partialText,
       conversationId,
       sender,
       messageId: responseMessageId,
       parentMessageId: userMessageId ?? parentMessageId,
+    }).catch((err) => {
+      logger.error('[EditController] Error in `handleAbortError`', err);
     });
   }
 };

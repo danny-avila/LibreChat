@@ -8,7 +8,7 @@ const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
 
 /**
- * Converts an image file to the WebP format. The function first resizes the image based on the specified
+ * Converts an image file to the target format. The function first resizes the image based on the specified
  * resolution.
  *
  * @param {Object} params - The params object.
@@ -21,12 +21,12 @@ const { logger } = require('~/config');
  *
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
  *          A promise that resolves to an object containing:
- *            - filepath: The path where the converted WebP image is saved.
+ *            - filepath: The path where the converted image is saved.
  *            - bytes: The size of the converted image in bytes.
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadImageToFirebase({ req, file, endpoint, resolution = 'high' }) {
+async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution = 'high' }) {
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const {
@@ -38,16 +38,17 @@ async function uploadImageToFirebase({ req, file, endpoint, resolution = 'high' 
   const userId = req.user.id;
 
   let webPBuffer;
-  let fileName = path.basename(inputFilePath);
-  if (extension.toLowerCase() === '.webp') {
+  let fileName = `${file_id}__${path.basename(inputFilePath)}`;
+  const targetExtension = `.${req.app.locals.imageOutputType}`;
+  if (extension.toLowerCase() === targetExtension) {
     webPBuffer = resizedBuffer;
   } else {
-    webPBuffer = await sharp(resizedBuffer).toFormat('webp').toBuffer();
+    webPBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
     // Replace or append the correct extension
     const extRegExp = new RegExp(path.extname(fileName) + '$');
-    fileName = fileName.replace(extRegExp, '.webp');
+    fileName = fileName.replace(extRegExp, targetExtension);
     if (!path.extname(fileName)) {
-      fileName += '.webp';
+      fileName += targetExtension;
     }
   }
 
@@ -79,7 +80,7 @@ async function prepareImageURL(req, file) {
  * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
  *
  * @param {object} params - The parameters object.
- * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
+ * @param {Buffer} params.buffer - The Buffer containing the avatar image.
  * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.

@@ -41,29 +41,10 @@ router.get('/', async function (req, res) {
       return;
     }
 
-    const messages = (
-      await Message.meiliSearch(
-        q,
-        {
-          attributesToHighlight: ['text'],
-          highlightPreTag: '**',
-          highlightPostTag: '**',
-        },
-        true,
-      )
-    ).hits.map((message) => {
-      const { _formatted, ...rest } = message;
-      return {
-        ...rest,
-        searchResult: true,
-        text: _formatted.text,
-      };
-    });
+    const messages = (await Message.meiliSearch(q, undefined, true)).hits;
     const titles = (await Conversation.meiliSearch(q)).hits;
+
     const sortedHits = reduceHits(messages, titles);
-    // debugging:
-    // logger.debug('user:', user, 'message hits:', messages.length, 'convo hits:', titles.length);
-    // logger.debug('sorted hits:', sortedHits.length);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
 
     const activeMessages = [];
@@ -86,8 +67,7 @@ router.get('/', async function (req, res) {
       delete result.cache;
     }
     delete result.convoMap;
-    // for debugging
-    // logger.debug(result, messages.length);
+
     res.status(200).send(result);
   } catch (error) {
     logger.error('[/search] Error while searching messages & conversations', error);

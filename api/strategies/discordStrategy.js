@@ -1,49 +1,27 @@
 const { Strategy: DiscordStrategy } = require('passport-discord');
-const { createNewUser, handleExistingUser } = require('./process');
-const { logger } = require('~/config');
-const User = require('~/models/User');
+const socialLogin = require('./socialLogin');
 
-const discordLogin = async (accessToken, refreshToken, profile, cb) => {
-  try {
-    const email = profile.email;
-    const discordId = profile.id;
-
-    // TODO: remove direct access of User model
-    const oldUser = await User.findOne({ email });
-    const ALLOW_SOCIAL_REGISTRATION =
-      process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
-    let avatarUrl;
-
-    if (profile.avatar) {
-      const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
-      avatarUrl = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
-    } else {
-      const defaultAvatarNum = Number(profile.discriminator) % 5;
-      avatarUrl = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
-    }
-
-    if (oldUser) {
-      await handleExistingUser(oldUser, avatarUrl);
-      return cb(null, oldUser);
-    }
-
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'discord',
-        providerKey: 'discordId',
-        providerId: discordId,
-        username: profile.username,
-        name: profile.global_name,
-      });
-      return cb(null, newUser);
-    }
-  } catch (err) {
-    logger.error('[discordLogin]', err);
-    return cb(err);
+const getProfileDetails = ({ profile }) => {
+  let avatarUrl;
+  if (profile.avatar) {
+    const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
+    avatarUrl = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
+  } else {
+    const defaultAvatarNum = Number(profile.discriminator) % 5;
+    avatarUrl = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
   }
+
+  return {
+    email: profile.email,
+    id: profile.id,
+    avatarUrl,
+    username: profile.username,
+    name: profile.global_name,
+    emailVerified: true,
+  };
 };
+
+const discordLogin = socialLogin('discord', getProfileDetails);
 
 module.exports = () =>
   new DiscordStrategy(

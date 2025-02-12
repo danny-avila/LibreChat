@@ -1,46 +1,21 @@
 import React from 'react';
-import { useRecoilState } from 'recoil';
-import * as Tabs from '@radix-ui/react-tabs';
-import { SettingsTabValues } from 'librechat-data-provider';
-import { Switch } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import DisplayUsernameMessages from './DisplayUsernameMessages';
+import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
-import store from '~/store';
 
-function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
-  const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
-  const localize = useLocalize();
-
-  const handleCheckedChange = (value: boolean) => {
-    setUsernameDisplay(value);
-    if (onCheckedChange) {
-      onCheckedChange(value);
-    }
-  };
-
+function Account() {
   return (
-    <Tabs.Content
-      value={SettingsTabValues.ACCOUNT}
-      role="tabpanel"
-      className="w-full md:min-h-[300px]"
-    >
-      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <Avatar />
-        </div>
-        <div className="flex items-center justify-between">
-          <div> {localize('com_nav_user_name_display')} </div>
-          <Switch
-            id="UsernameDisplay"
-            checked={UsernameDisplay}
-            onCheckedChange={handleCheckedChange}
-            className="ml-4 mt-2"
-            data-testid="UsernameDisplay"
-          />
-        </div>
+    <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
+      <div className="pb-3">
+        <Avatar />
       </div>
-      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700"></div>
-    </Tabs.Content>
+      <div className="pb-3">
+        <DeleteAccount />
+      </div>
+      <div className="pb-3">
+        <DisplayUsernameMessages />
+      </div>
+    </div>
   );
 }
 

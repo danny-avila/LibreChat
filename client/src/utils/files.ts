@@ -1,4 +1,6 @@
-import { excelMimeTypes } from 'librechat-data-provider';
+import { excelMimeTypes, QueryKeys } from 'librechat-data-provider';
+import type { QueryClient } from '@tanstack/react-query';
+import type { TFile } from 'librechat-data-provider';
 import SheetPaths from '~/components/svg/Files/SheetPaths';
 import TextPaths from '~/components/svg/Files/TextPaths';
 import FilePaths from '~/components/svg/Files/FilePaths';
@@ -25,6 +27,12 @@ const codeFile = {
   title: 'Code',
 };
 
+const artifact = {
+  paths: CodePaths,
+  fill: '#2D305C',
+  title: 'Code',
+};
+
 export const fileTypes = {
   /* Category matches */
   file: {
@@ -37,8 +45,10 @@ export const fileTypes = {
 
   /* Partial matches */
   csv: spreadsheet,
+  'application/pdf': textDocument,
   pdf: textDocument,
   'text/x-': codeFile,
+  artifact: artifact,
 
   /* Exact matches */
   // 'application/json':,
@@ -105,7 +115,21 @@ export const getFileType = (
  * @example
  * formatDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
  */
-export function formatDate(dateString) {
+export function formatDate(dateString: string, isSmallScreen = false) {
+  if (!dateString) {
+    return '';
+  }
+
+  const date = new Date(dateString);
+
+  if (isSmallScreen) {
+    return date.toLocaleDateString('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+      year: '2-digit',
+    });
+  }
+
   const months = [
     'Jan',
     'Feb',
@@ -120,11 +144,49 @@ export function formatDate(dateString) {
     'Nov',
     'Dec',
   ];
-  const date = new Date(dateString);
 
   const day = date.getDate();
   const month = months[date.getMonth()];
   const year = date.getFullYear();
 
   return `${day} ${month} ${year}`;
+}
+
+/**
+ * Adds a file to the query cache
+ */
+export function addFileToCache(queryClient: QueryClient, newfile: TFile) {
+  const currentFiles = queryClient.getQueryData<TFile[]>([QueryKeys.files]);
+
+  if (!currentFiles) {
+    console.warn('No current files found in cache, skipped updating file query cache');
+    return;
+  }
+
+  const fileIndex = currentFiles.findIndex((file) => file.file_id === newfile.file_id);
+
+  if (fileIndex > -1) {
+    console.warn('File already exists in cache, skipped updating file query cache');
+    return;
+  }
+
+  queryClient.setQueryData<TFile[]>(
+    [QueryKeys.files],
+    [
+      {
+        ...newfile,
+      },
+      ...currentFiles,
+    ],
+  );
+}
+
+export function formatBytes(bytes: number, decimals = 2) {
+  if (bytes === 0) {
+    return 0;
+  }
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm));
 }

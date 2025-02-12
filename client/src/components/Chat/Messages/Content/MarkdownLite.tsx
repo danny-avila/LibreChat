@@ -6,39 +6,53 @@ import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
+import { code, codeNoExecution, a, p } from './Markdown';
+import { CodeBlockProvider, ArtifactProvider } from '~/Providers';
 import { langSubset } from '~/utils';
-import { code, p } from './Markdown';
 
-const MarkdownLite = memo(({ content = '' }: { content?: string }) => {
-  const rehypePlugins: PluggableList = [
-    [rehypeKatex, { output: 'mathml' }],
-    [
-      rehypeHighlight,
-      {
-        detect: true,
-        ignoreMissing: true,
-        subset: langSubset,
-      },
-    ],
-  ];
-
-  return (
-    <ReactMarkdown
-      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
-      rehypePlugins={rehypePlugins}
-      linkTarget="_new"
-      components={
+const MarkdownLite = memo(
+  ({ content = '', codeExecution = true }: { content?: string; codeExecution?: boolean }) => {
+    const rehypePlugins: PluggableList = [
+      [rehypeKatex, { output: 'mathml' }],
+      [
+        rehypeHighlight,
         {
-          code,
-          p,
-        } as {
-          [nodeType: string]: React.ElementType;
-        }
-      }
-    >
-      {content}
-    </ReactMarkdown>
-  );
-});
+          detect: true,
+          ignoreMissing: true,
+          subset: langSubset,
+        },
+      ],
+    ];
+
+    return (
+      <ArtifactProvider>
+        <CodeBlockProvider>
+          <ReactMarkdown
+            remarkPlugins={[
+              /** @ts-ignore */
+              supersub,
+              remarkGfm,
+              [remarkMath, { singleDollarTextMath: true }],
+            ]}
+            /** @ts-ignore */
+            rehypePlugins={rehypePlugins}
+            // linkTarget="_new"
+            components={
+              {
+                code: codeExecution ? code : codeNoExecution,
+                a,
+                p,
+              } as {
+                [nodeType: string]: React.ElementType;
+              }
+            }
+          >
+            {content}
+          </ReactMarkdown>
+        </CodeBlockProvider>
+      </ArtifactProvider>
+    );
+  },
+);
 
 export default MarkdownLite;

@@ -27,15 +27,14 @@
     }
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
-  "exclude": ["node_modules"],
+  "exclude": ["node_modules", "vite.config.ts"],
   "include": [
     "src/**/*",
     "test/**/*",
     "../e2e/**/*",
-    "setupTests.js",
-    "vite.config.ts",
+    "test/setupTests.js",
     "env.d.ts",
-    "../vite.config.ts"
+    "../config/translations/**/*.ts"
   ],
   "references": [
     {

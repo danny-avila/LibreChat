@@ -1,7 +1,7 @@
 const { Constants } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
-jest.mock('../../../lib/db/connectDb');
+jest.mock('~/lib/db/connectDb');
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),
@@ -30,7 +30,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-jest.mock('langchain/chat_models/openai', () => {
+jest.mock('@langchain/openai', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
@@ -61,7 +61,7 @@ describe('BaseClient', () => {
   const options = {
     // debug: true,
     modelOptions: {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       temperature: 0,
     },
   };
@@ -88,6 +88,19 @@ describe('BaseClient', () => {
     const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = { content: 'Please respond to the question.' };
     const result = TestClient.addInstructions(messages, instructions);
+    const expected = [
+      { content: 'Please respond to the question.' },
+      { content: 'Hello' },
+      { content: 'How are you?' },
+      { content: 'Goodbye' },
+    ];
+    expect(result).toEqual(expected);
+  });
+
+  test('returns the input messages with instructions properly added when addInstructions() with legacy flag', () => {
+    const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
+    const instructions = { content: 'Please respond to the question.' };
+    const result = TestClient.addInstructions(messages, instructions, true);
     const expected = [
       { content: 'Hello' },
       { content: 'How are you?' },
@@ -146,7 +159,7 @@ describe('BaseClient', () => {
       expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
     const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
 
-    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
     expect(result.summaryIndex).toEqual(expectedIndex);
@@ -182,72 +195,12 @@ describe('BaseClient', () => {
       expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
     const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
 
-    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
     expect(result.summaryIndex).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
-  });
-
-  test('handles context strategy correctly in handleContextStrategy()', async () => {
-    TestClient.addInstructions = jest
-      .fn()
-      .mockReturnValue([
-        { content: 'Hello' },
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ]);
-    TestClient.getMessagesWithinTokenLimit = jest.fn().mockReturnValue({
-      context: [
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ],
-      remainingContextTokens: 80,
-      messagesToRefine: [{ content: 'Hello' }],
-      summaryIndex: 3,
-    });
-
-    TestClient.getTokenCount = jest.fn().mockReturnValue(40);
-
-    const instructions = { content: 'Please provide more details.' };
-    const orderedMessages = [
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' },
-    ];
-    const formattedMessages = [
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' },
-    ];
-    const expectedResult = {
-      payload: [
-        {
-          role: 'system',
-          content: 'Refined answer',
-        },
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ],
-      promptTokens: expect.any(Number),
-      tokenCountMap: {},
-      messages: expect.any(Array),
-    };
-
-    TestClient.shouldSummarize = true;
-    const result = await TestClient.handleContextStrategy({
-      instructions,
-      orderedMessages,
-      formattedMessages,
-    });
-
-    expect(result).toEqual(expectedResult);
   });
 
   describe('getMessagesForConversation', () => {
@@ -565,18 +518,24 @@ describe('BaseClient', () => {
       const getReqData = jest.fn();
       const opts = { getReqData };
       const response = await TestClient.sendMessage('Hello, world!', opts);
-      expect(getReqData).toHaveBeenCalledWith({
-        userMessage: expect.objectContaining({ text: 'Hello, world!' }),
-        conversationId: response.conversationId,
-        responseMessageId: response.messageId,
-      });
+      expect(getReqData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: expect.objectContaining({ text: 'Hello, world!' }),
+          conversationId: response.conversationId,
+          responseMessageId: response.messageId,
+        }),
+      );
     });
 
     test('onStart is called with the correct arguments', async () => {
       const onStart = jest.fn();
       const opts = { onStart };
       await TestClient.sendMessage('Hello, world!', opts);
-      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ text: 'Hello, world!' }));
+
+      expect(onStart).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'Hello, world!' }),
+        expect.any(String),
+      );
     });
 
     test('saveMessageToDatabase is called with the correct arguments', async () => {
@@ -609,9 +568,9 @@ describe('BaseClient', () => {
     test('getTokenCount for response is called with the correct arguments', async () => {
       const tokenCountMap = {}; // Mock tokenCountMap
       TestClient.buildMessages.mockReturnValue({ prompt: [], tokenCountMap });
-      TestClient.getTokenCount = jest.fn();
+      TestClient.getTokenCountForResponse = jest.fn();
       const response = await TestClient.sendMessage('Hello, world!', {});
-      expect(TestClient.getTokenCount).toHaveBeenCalledWith(response.text);
+      expect(TestClient.getTokenCountForResponse).toHaveBeenCalledWith(response);
     });
 
     test('returns an object with the correct shape', async () => {
@@ -626,6 +585,141 @@ describe('BaseClient', () => {
           conversationId: expect.any(String),
         }),
       );
+    });
+
+    test('userMessagePromise is awaited before saving response message', async () => {
+      // Mock the saveMessageToDatabase method
+      TestClient.saveMessageToDatabase = jest.fn().mockImplementation(() => {
+        return new Promise((resolve) => setTimeout(resolve, 100)); // Simulate a delay
+      });
+
+      // Send a message
+      const messagePromise = TestClient.sendMessage('Hello, world!');
+
+      // Wait a short time to ensure the user message save has started
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Check that saveMessageToDatabase has been called once (for the user message)
+      expect(TestClient.saveMessageToDatabase).toHaveBeenCalledTimes(1);
+
+      // Wait for the message to be fully processed
+      await messagePromise;
+
+      // Check that saveMessageToDatabase has been called twice (once for user message, once for response)
+      expect(TestClient.saveMessageToDatabase).toHaveBeenCalledTimes(2);
+
+      // Check the order of calls
+      const calls = TestClient.saveMessageToDatabase.mock.calls;
+      expect(calls[0][0].isCreatedByUser).toBe(true); // First call should be for user message
+      expect(calls[1][0].isCreatedByUser).toBe(false); // Second call should be for response message
+    });
+  });
+
+  describe('getMessagesWithinTokenLimit with instructions', () => {
+    test('should always include instructions when present', async () => {
+      TestClient.maxContextTokens = 50;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      expect(result.context[0]).toBe(instructions);
+      expect(result.remainingContextTokens).toBe(2);
+    });
+
+    test('should handle case when messages exceed limit but instructions must be preserved', async () => {
+      TestClient.maxContextTokens = 30;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      // Should only include instructions and the last message that fits
+      expect(result.context).toHaveLength(1);
+      expect(result.context[0].content).toBe(instructions.content);
+      expect(result.messagesToRefine).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(7); // 30 - 20 - 3 (assistant label)
+    });
+
+    test('should work correctly without instructions (1/2)', async () => {
+      TestClient.maxContextTokens = 50;
+      const messages = [
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+      });
+
+      expect(result.context).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(22); // 50 - 10 - 15 - 3(assistant label)
+      expect(result.messagesToRefine).toHaveLength(0);
+    });
+
+    test('should work correctly without instructions (2/2)', async () => {
+      TestClient.maxContextTokens = 30;
+      const messages = [
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 20 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+      });
+
+      expect(result.context).toHaveLength(1);
+      expect(result.remainingContextTokens).toBe(7);
+      expect(result.messagesToRefine).toHaveLength(1);
+    });
+
+    test('should handle case when only instructions fit within limit', async () => {
+      TestClient.maxContextTokens = 25;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      expect(result.context).toHaveLength(1);
+      expect(result.context[0]).toBe(instructions);
+      expect(result.messagesToRefine).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(2); // 25 - 20 - 3(assistant label)
     });
   });
 });

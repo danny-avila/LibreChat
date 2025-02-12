@@ -7,16 +7,24 @@ const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
-} = require('langchain/prompts');
+} = require('@langchain/core/prompts');
 
 const initializeCustomAgent = async ({
   tools,
   model,
   pastMessages,
+  customName,
+  customInstructions,
   currentDateString,
   ...rest
 }) => {
   let prompt = CustomAgent.createPrompt(tools, { currentDateString, model: model.modelName });
+  if (customName) {
+    prompt = `You are "${customName}".\n${prompt}`;
+  }
+  if (customInstructions) {
+    prompt = `${prompt}\n${customInstructions}`;
+  }
 
   const chatPrompt = ChatPromptTemplate.fromMessages([
     new SystemMessagePromptTemplate(prompt),

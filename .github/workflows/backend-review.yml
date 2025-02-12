@@ -33,16 +33,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Data Provider
+      - name: Install Data Provider Package
         run: npm run build:data-provider
+
+      - name: Install MCP Package
+        run: npm run build:mcp
+
+      - name: Create empty auth.json file
+        run: |
+          mkdir -p api/data
+          echo '{}' > api/data/auth.json
+
+      - name: Check for Circular dependency in rollup
+        working-directory: ./packages/data-provider
+        run: |
+          output=$(npm run rollup:api)
+          echo "$output"
+          if echo "$output" | grep -q "Circular dependency"; then
+            echo "Error: Circular dependency detected!"
+            exit 1
+          fi
+
+      - name: Prepare .env.test file
+        run: cp api/test/.env.test.example api/test/.env.test
 
       - name: Run unit tests
         run: cd api && npm run test:ci
 
       - name: Run librechat-data-provider unit tests
         run: cd packages/data-provider && npm run test:ci
-
-      - name: Run linters
-        uses: wearerequired/lint-action@v2
-        with:
-          eslint: true

@@ -1,27 +1,14 @@
-const { v4 } = require('uuid');
 const express = require('express');
-const { actionDelimiter } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistant');
+const { nanoid } = require('nanoid');
+const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
-const { updateAssistant, getAssistant } = require('~/models/Assistant');
-const { encryptMetadata } = require('~/server/services/ActionService');
+const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger } = require('~/config');
 
 const router = express.Router();
-
-/**
- * Retrieves all user's actions
- * @route GET /actions/
- * @param {string} req.params.id - Assistant identifier.
- * @returns {Action[]} 200 - success response - application/json
- */
-router.get('/', async (req, res) => {
-  try {
-    res.json(await getActions({ user: req.user.id }));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 /**
  * Adds or updates actions for a specific assistant.
@@ -42,22 +29,27 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    let metadata = encryptMetadata(_metadata);
+    let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
+    const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
+    if (!isDomainAllowed) {
+      return res.status(400).json({ message: 'Domain not allowed' });
+    }
 
-    const { domain } = metadata;
+    let { domain } = metadata;
+    domain = await domainParser(req, domain, true);
+
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });
     }
 
-    const action_id = _action_id ?? v4();
+    const action_id = _action_id ?? nanoid();
     const initialPromises = [];
 
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
-    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
-    !!_action_id && initialPromises.push(getActions({ user: req.user.id, action_id }, true));
+    !!_action_id && initialPromises.push(getActions({ action_id }, true));
 
     /** @type {[AssistantDocument, Assistant, [Action|undefined]]} */
     const [assistant_data, assistant, actions_result] = await Promise.all(initialPromises);
@@ -71,17 +63,10 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(404).json({ message: 'Assistant not found' });
     }
 
-    const { actions: _actions = [] } = assistant_data ?? {};
+    const { actions: _actions = [], user: assistant_user } = assistant_data ?? {};
     const actions = [];
     for (const action of _actions) {
-      const [action_domain, current_action_id] = action.split(actionDelimiter);
-      if (action_domain === domain && !_action_id) {
-        // TODO: dupe check on the frontend
-        return res.status(400).json({
-          message: `Action sets cannot have duplicate domains - ${domain} already exists on another action`,
-        });
-      }
-
+      const [_action_domain, current_action_id] = action.split(actionDelimiter);
       if (current_action_id === action_id) {
         continue;
       }
@@ -112,27 +97,42 @@ router.post('/:assistant_id', async (req, res) => {
         })),
       );
 
+    let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
-    promises.push(
-      updateAssistant(
-        { assistant_id, user: req.user.id },
-        {
-          actions,
-        },
-      ),
-    );
-    promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    promises.push(updateAction({ action_id, user: req.user.id }, { metadata, assistant_id }));
 
-    /** @type {[AssistantDocument, Assistant, Action]} */
-    const resolved = await Promise.all(promises);
+    // Only update user field for new assistant documents
+    const assistantUpdateData = { actions };
+    if (!assistant_data) {
+      assistantUpdateData.user = req.user.id;
+    }
+    promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
+
+    // Only update user field for new actions
+    const actionUpdateData = { metadata, assistant_id };
+    if (!actions_result || !actions_result.length) {
+      // For new actions, use the assistant owner's user ID
+      actionUpdateData.user = assistant_user || req.user.id;
+    }
+    promises.push(updateAction({ action_id }, actionUpdateData));
+
+    /** @type {[AssistantDocument, Action]} */
+    let [assistantDocument, updatedAction] = await Promise.all(promises);
     const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
     for (let field of sensitiveFields) {
-      if (resolved[2].metadata[field]) {
-        delete resolved[2].metadata[field];
+      if (updatedAction.metadata[field]) {
+        delete updatedAction.metadata[field];
       }
     }
-    res.json(resolved);
+
+    /* Map Azure OpenAI model to the assistant as defined by config */
+    if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+      updatedAssistant = {
+        ...updatedAssistant,
+        model: req.body.model,
+      };
+    }
+
+    res.json([assistantDocument, updatedAssistant, updatedAction]);
   } catch (error) {
     const message = 'Trouble updating the Assistant Action';
     logger.error(message, error);
@@ -147,21 +147,20 @@ router.post('/:assistant_id', async (req, res) => {
  * @param {string} req.params.action_id - The ID of the action to delete.
  * @returns {Object} 200 - success response - application/json
  */
-router.delete('/:assistant_id/:action_id', async (req, res) => {
+router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
   try {
-    const { assistant_id, action_id } = req.params;
-
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { assistant_id, action_id, model } = req.params;
+    req.body.model = model;
+    const { openai } = await getOpenAIClient({ req, res });
 
     const initialPromises = [];
-    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
 
     /** @type {[AssistantDocument, Assistant]} */
     const [assistant_data, assistant] = await Promise.all(initialPromises);
 
-    const { actions } = assistant_data ?? {};
+    const { actions = [] } = assistant_data ?? {};
     const { tools = [] } = assistant ?? {};
 
     let domain = '';
@@ -173,21 +172,26 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
       return true;
     });
 
+    domain = await domainParser(req, domain, true);
+
+    if (!domain) {
+      return res.status(400).json({ message: 'No domain provided' });
+    }
+
     const updatedTools = tools.filter(
       (tool) => !(tool.function && tool.function.name.includes(domain)),
     );
 
+    await openai.beta.assistants.update(assistant_id, { tools: updatedTools });
+
     const promises = [];
-    promises.push(
-      updateAssistant(
-        { assistant_id, user: req.user.id },
-        {
-          actions: updatedActions,
-        },
-      ),
-    );
-    promises.push(openai.beta.assistants.update(assistant_id, { tools: updatedTools }));
-    promises.push(deleteAction({ action_id, user: req.user.id }));
+    // Only update user field if assistant document doesn't exist
+    const assistantUpdateData = { actions: updatedActions };
+    if (!assistant_data) {
+      assistantUpdateData.user = req.user.id;
+    }
+    promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
+    promises.push(deleteAction({ action_id }));
 
     await Promise.all(promises);
     res.status(200).json({ message: 'Action deleted successfully' });

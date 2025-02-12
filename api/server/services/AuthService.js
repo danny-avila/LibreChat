@@ -1,62 +1,62 @@
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { errorsToString } = require('librechat-data-provider');
+const { webcrypto } = require('node:crypto');
+const { SystemRoles, errorsToString } = require('librechat-data-provider');
+const {
+  findUser,
+  countUsers,
+  createUser,
+  updateUser,
+  getUserById,
+  generateToken,
+  deleteUserById,
+} = require('~/models/userMethods');
+const {
+  createToken,
+  findToken,
+  deleteTokens,
+  findSession,
+  deleteSession,
+  createSession,
+  generateRefreshToken,
+} = require('~/models');
+const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const Token = require('~/models/schema/tokenSchema');
-const { sendEmail } = require('~/server/utils');
-const Session = require('~/models/Session');
 const { logger } = require('~/config');
-const User = require('~/models/User');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
 
-async function isDomainAllowed(email) {
-  if (!email) {
-    return false;
-  }
-
-  const domain = email.split('@')[1];
-
-  if (!domain) {
-    return false;
-  }
-
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return true;
-  } else if (!customConfig?.registration?.allowedDomains) {
-    return true;
-  }
-
-  return customConfig.registration.allowedDomains.includes(domain);
-}
-
 const isProduction = process.env.NODE_ENV === 'production';
+const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**
  * Logout user
  *
- * @param {String} userId
- * @param {*} refreshToken
+ * @param {ServerRequest} req
+ * @param {string} refreshToken
  * @returns
  */
-const logoutUser = async (userId, refreshToken) => {
+const logoutUser = async (req, refreshToken) => {
   try {
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const userId = req.user._id;
+    const session = await findSession({ userId: userId, refreshToken });
 
-    // Find the session with the matching user and refreshTokenHash
-    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
     if (session) {
       try {
-        await Session.deleteOne({ _id: session._id });
+        await deleteSession({ sessionId: session._id });
       } catch (deleteErr) {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
       }
+    }
+
+    try {
+      req.session.destroy();
+    } catch (destroyErr) {
+      logger.error('[logoutUser] Failed to destroy session.', destroyErr);
     }
 
     return { status: 200, message: 'Logout successful' };
@@ -66,12 +66,102 @@ const logoutUser = async (userId, refreshToken) => {
 };
 
 /**
- * Register a new user
- *
- * @param {Object} user <email, password, name, username>
- * @returns
+ * Creates Token and corresponding Hash for verification
+ * @returns {[string, string]}
  */
-const registerUser = async (user) => {
+const createTokenHash = () => {
+  const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const hash = bcrypt.hashSync(token, 10);
+  return [token, hash];
+};
+
+/**
+ * Send Verification Email
+ * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
+ * @returns {Promise<void>}
+ */
+const sendVerificationEmail = async (user) => {
+  const [verifyToken, hash] = createTokenHash();
+
+  const verificationLink = `${
+    domains.client
+  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  await sendEmail({
+    email: user.email,
+    subject: 'Verify your email',
+    payload: {
+      appName: process.env.APP_TITLE || 'LibreChat',
+      name: user.name,
+      verificationLink: verificationLink,
+      year: new Date().getFullYear(),
+    },
+    template: 'verifyEmail.handlebars',
+  });
+
+  await createToken({
+    userId: user._id,
+    email: user.email,
+    token: hash,
+    createdAt: Date.now(),
+    expiresIn: 900,
+  });
+
+  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+};
+
+/**
+ * Verify Email
+ * @param {Express.Request} req
+ */
+const verifyEmail = async (req) => {
+  const { email, token } = req.body;
+  const decodedEmail = decodeURIComponent(email);
+
+  const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
+
+  if (!user) {
+    logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
+    return new Error('User not found');
+  }
+
+  if (user.emailVerified) {
+    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    return { message: 'Email already verified', status: 'success' };
+  }
+
+  let emailVerificationData = await findToken({ email: decodedEmail });
+
+  if (!emailVerificationData) {
+    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
+    return new Error('Invalid or expired password reset token');
+  }
+
+  const isValid = bcrypt.compareSync(token, emailVerificationData.token);
+
+  if (!isValid) {
+    logger.warn(
+      `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
+    );
+    return new Error('Invalid or expired email verification token');
+  }
+
+  const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
+  if (!updatedUser) {
+    logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
+    return new Error('Failed to update user verification status');
+  }
+
+  await deleteTokens({ token: emailVerificationData.token });
+  logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
+  return { message: 'Email verification was successful', status: 'success' };
+};
+/**
+ * Register a new user.
+ * @param {MongoUser} user <email, password, name, username>
+ * @param {Partial<MongoUser>} [additionalData={}]
+ * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
+ */
+const registerUser = async (user, additionalData = {}) => {
   const { error } = registerSchema.safeParse(user);
   if (error) {
     const errorMessage = errorsToString(error.errors);
@@ -81,13 +171,14 @@ const registerUser = async (user) => {
       { name: 'Validation error:', value: errorMessage },
     );
 
-    return { status: 422, message: errorMessage };
+    return { status: 404, message: errorMessage };
   }
 
   const { email, password, name, username } = user;
 
+  let newUserId;
   try {
-    const existingUser = await User.findOne({ email }).lean();
+    const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
       logger.info(
@@ -98,89 +189,114 @@ const registerUser = async (user) => {
 
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // TODO: We should change the process to always email and be generic is signup works or fails (user enum)
-      return { status: 500, message: 'Something went wrong' };
+      return { status: 200, message: genericVerificationMessage };
     }
 
-    if (!(await isDomainAllowed(email))) {
-      const errorMessage = 'Registration from this domain is not allowed.';
+    if (!(await isEmailDomainAllowed(email))) {
+      const errorMessage =
+        'The email address provided cannot be used. Please use a different email address.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
       return { status: 403, message: errorMessage };
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = (await User.countDocuments({})) === 0;
+    const isFirstRegisteredUser = (await countUsers()) === 0;
 
-    const newUser = await new User({
+    const salt = bcrypt.genSaltSync(10);
+    const newUserData = {
       provider: 'local',
       email,
-      password,
       username,
       name,
       avatar: null,
-      role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
-    });
+      role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
+      password: bcrypt.hashSync(password, salt),
+      ...additionalData,
+    };
 
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync(newUser.password, salt);
-    newUser.password = hash;
-    await newUser.save();
+    const emailEnabled = checkEmailConfig();
+    const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
+    const newUser = await createUser(newUserData, disableTTL, true);
+    newUserId = newUser._id;
+    if (emailEnabled && !newUser.emailVerified) {
+      await sendVerificationEmail({
+        _id: newUserId,
+        email,
+        name,
+      });
+    } else {
+      await updateUser(newUserId, { emailVerified: true });
+    }
 
-    return { status: 200, user: newUser };
+    return { status: 200, message: genericVerificationMessage };
   } catch (err) {
-    return { status: 500, message: err?.message || 'Something went wrong' };
+    logger.error('[registerUser] Error in registering user:', err);
+    if (newUserId) {
+      const result = await deleteUserById(newUserId);
+      logger.warn(
+        `[registerUser] [Email: ${email}] [Temporary User deleted: ${JSON.stringify(result)}]`,
+      );
+    }
+    return { status: 500, message: 'Something went wrong' };
   }
 };
 
 /**
  * Request password reset
- *
- * @param {String} email
- * @returns
+ * @param {Express.Request} req
  */
-const requestPasswordReset = async (email) => {
-  const user = await User.findOne({ email }).lean();
+const requestPasswordReset = async (req) => {
+  const { email } = req.body;
+  const user = await findUser({ email }, 'email _id');
+  const emailEnabled = checkEmailConfig();
+
+  logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
+
   if (!user) {
-    return new Error('Email does not exist');
+    logger.warn(`[requestPasswordReset] [No user found] [Email: ${email}] [IP: ${req.ip}]`);
+    return {
+      message: 'If an account with that email exists, a password reset link has been sent to it.',
+    };
   }
 
-  let token = await Token.findOne({ userId: user._id });
-  if (token) {
-    await token.deleteOne();
-  }
+  await deleteTokens({ userId: user._id });
 
-  let resetToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(resetToken, 10);
+  const [resetToken, hash] = createTokenHash();
 
-  await new Token({
+  await createToken({
     userId: user._id,
     token: hash,
     createdAt: Date.now(),
-  }).save();
+    expiresIn: 900,
+  });
 
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
-  const emailEnabled =
-    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-    !!process.env.EMAIL_USERNAME &&
-    !!process.env.EMAIL_PASSWORD &&
-    !!process.env.EMAIL_FROM;
-
   if (emailEnabled) {
-    sendEmail(
-      user.email,
-      'Password Reset Request',
-      {
+    await sendEmail({
+      email: user.email,
+      subject: 'Password Reset Request',
+      payload: {
+        appName: process.env.APP_TITLE || 'LibreChat',
         name: user.name,
         link: link,
+        year: new Date().getFullYear(),
       },
-      'requestPasswordReset.handlebars',
+      template: 'requestPasswordReset.handlebars',
+    });
+    logger.info(
+      `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
     );
-    return { link: '' };
   } else {
+    logger.info(
+      `[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
+    );
     return { link };
   }
+
+  return {
+    message: 'If an account with that email exists, a password reset link has been sent to it.',
+  };
 };
 
 /**
@@ -192,7 +308,9 @@ const requestPasswordReset = async (email) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await Token.findOne({ userId });
+  let passwordResetToken = await findToken({
+    userId,
+  });
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -205,51 +323,53 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
+  const user = await updateUser(userId, { password: hash });
 
-  await User.updateOne({ _id: userId }, { $set: { password: hash } }, { new: true });
+  if (checkEmailConfig()) {
+    await sendEmail({
+      email: user.email,
+      subject: 'Password Reset Successfully',
+      payload: {
+        appName: process.env.APP_TITLE || 'LibreChat',
+        name: user.name,
+        year: new Date().getFullYear(),
+      },
+      template: 'passwordReset.handlebars',
+    });
+  }
 
-  const user = await User.findById({ _id: userId });
-
-  sendEmail(
-    user.email,
-    'Password Reset Successfully',
-    {
-      name: user.name,
-    },
-    'passwordReset.handlebars',
-  );
-
-  await passwordResetToken.deleteOne();
-
+  await deleteTokens({ token: passwordResetToken.token });
+  logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
 
 /**
  * Set Auth Tokens
  *
- * @param {String} userId
+ * @param {String | ObjectId} userId
  * @param {Object} res
  * @param {String} sessionId
  * @returns
  */
 const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
-    const user = await User.findOne({ _id: userId });
-    const token = await user.generateToken();
+    const user = await getUserById(userId);
+    const token = await generateToken(user);
 
     let session;
+    let refreshToken;
     let refreshTokenExpires;
-    if (sessionId) {
-      session = await Session.findById(sessionId);
-      refreshTokenExpires = session.expiration.getTime();
-    } else {
-      session = new Session({ user: userId });
-      const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-      const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
-      refreshTokenExpires = Date.now() + expires;
-    }
 
-    const refreshToken = await session.generateRefreshToken();
+    if (sessionId) {
+      session = await findSession({ sessionId: sessionId }, { lean: false });
+      refreshTokenExpires = session.expiration.getTime();
+      refreshToken = await generateRefreshToken(session);
+    } else {
+      const result = await createSession(userId);
+      session = result.session;
+      refreshToken = result.refreshToken;
+      refreshTokenExpires = session.expiration.getTime();
+    }
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
@@ -265,11 +385,71 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
   }
 };
 
+/**
+ * Resend Verification Email
+ * @param {Object} req
+ * @param {Object} req.body
+ * @param {String} req.body.email
+ * @returns {Promise<{status: number, message: string}>}
+ */
+const resendVerificationEmail = async (req) => {
+  try {
+    const { email } = req.body;
+    await deleteTokens(email);
+    const user = await findUser({ email }, 'email _id name');
+
+    if (!user) {
+      logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
+      return { status: 200, message: genericVerificationMessage };
+    }
+
+    const [verifyToken, hash] = createTokenHash();
+
+    const verificationLink = `${
+      domains.client
+    }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+
+    await sendEmail({
+      email: user.email,
+      subject: 'Verify your email',
+      payload: {
+        appName: process.env.APP_TITLE || 'LibreChat',
+        name: user.name,
+        verificationLink: verificationLink,
+        year: new Date().getFullYear(),
+      },
+      template: 'verifyEmail.handlebars',
+    });
+
+    await createToken({
+      userId: user._id,
+      email: user.email,
+      token: hash,
+      createdAt: Date.now(),
+      expiresIn: 900,
+    });
+
+    logger.info(`[resendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+
+    return {
+      status: 200,
+      message: genericVerificationMessage,
+    };
+  } catch (error) {
+    logger.error(`[resendVerificationEmail] Error resending verification email: ${error.message}`);
+    return {
+      status: 500,
+      message: 'Something went wrong.',
+    };
+  }
+};
+
 module.exports = {
-  registerUser,
   logoutUser,
-  isDomainAllowed,
-  requestPasswordReset,
-  resetPassword,
+  verifyEmail,
+  registerUser,
   setAuthTokens,
+  resetPassword,
+  requestPasswordReset,
+  resendVerificationEmail,
 };

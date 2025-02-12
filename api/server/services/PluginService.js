@@ -7,6 +7,7 @@ const { logger } = require('~/config');
  *
  * @param {string} userId - The unique identifier of the user for whom the plugin authentication value is to be retrieved.
  * @param {string} authField - The specific authentication field (e.g., 'API_KEY', 'URL') whose value is to be retrieved and decrypted.
+ * @param {boolean} throwError - Whether to throw an error if the authentication value does not exist. Defaults to `true`.
  * @returns {Promise<string|null>} A promise that resolves to the decrypted authentication value if found, or `null` if no such authentication value exists for the given user and field.
  *
  * The function throws an error if it encounters any issue during the retrieval or decryption process, or if the authentication value does not exist.
@@ -22,16 +23,19 @@ const { logger } = require('~/config');
  * @throws {Error} Throws an error if there's an issue during the retrieval or decryption process, or if the authentication value does not exist.
  * @async
  */
-const getUserPluginAuthValue = async (userId, authField) => {
+const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
   try {
     const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
     if (!pluginAuth) {
       throw new Error(`No plugin auth ${authField} found for user ${userId}`);
     }
 
-    const decryptedValue = decrypt(pluginAuth.value);
+    const decryptedValue = await decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {
+    if (!throwError) {
+      return null;
+    }
     logger.error('[getUserPluginAuthValue]', err);
     throw err;
   }
@@ -64,7 +68,7 @@ const getUserPluginAuthValue = async (userId, authField) => {
 
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
-    const encryptedValue = encrypt(value);
+    const encryptedValue = await encrypt(value);
     const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
     if (pluginAuth) {
       const pluginAuth = await PluginAuth.updateOne(
@@ -88,7 +92,17 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   }
 };
 
-const deleteUserPluginAuth = async (userId, authField) => {
+const deleteUserPluginAuth = async (userId, authField, all = false) => {
+  if (all) {
+    try {
+      const response = await PluginAuth.deleteMany({ userId });
+      return response;
+    } catch (err) {
+      logger.error('[deleteUserPluginAuth]', err);
+      return err;
+    }
+  }
+
   try {
     return await PluginAuth.deleteOne({ userId, authField });
   } catch (err) {

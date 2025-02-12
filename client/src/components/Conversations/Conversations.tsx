@@ -1,30 +1,30 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { parseISO, isToday } from 'date-fns';
-import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { groupConversationsByDate } from '~/utils';
-import Conversation from './Conversation';
 import Convo from './Convo';
 
-export default function Conversations({
+const Conversations = ({
   conversations,
   moveToTop,
   toggleNav,
 }: {
-  conversations: TConversation[];
+  conversations: Array<TConversation | null>;
   moveToTop: () => void;
   toggleNav: () => void;
-}) {
-  const location = useLocation();
-  const { pathname } = location;
-  const ConvoItem = pathname.includes('chat') ? Conversation : Convo;
+}) => {
+  const localize = useLocalize();
   const groupedConversations = useMemo(
     () => groupConversationsByDate(conversations),
     [conversations],
   );
-  const firstTodayConvoId = conversations.find((convo) =>
-    isToday(parseISO(convo.updatedAt)),
-  )?.conversationId;
+  const firstTodayConvoId = useMemo(
+    () =>
+      conversations.find((convo) => convo && convo.updatedAt && isToday(parseISO(convo.updatedAt)))
+        ?.conversationId,
+    [conversations],
+  );
 
   return (
     <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">
@@ -33,18 +33,18 @@ export default function Conversations({
           {groupedConversations.map(([groupName, convos]) => (
             <div key={groupName}>
               <div
+                className="text-text-secondary"
                 style={{
-                  color: '#aaa',
                   fontSize: '0.7rem',
                   marginTop: '20px',
                   marginBottom: '5px',
                   paddingLeft: '10px',
                 }}
               >
-                {groupName}
+                {localize(groupName as TranslationKeys) || groupName}
               </div>
               {convos.map((convo, i) => (
-                <ConvoItem
+                <Convo
                   key={`${groupName}-${convo.conversationId}-${i}`}
                   isLatestConvo={convo.conversationId === firstTodayConvoId}
                   conversation={convo}
@@ -64,4 +64,6 @@ export default function Conversations({
       </div>
     </div>
   );
-}
+};
+
+export default memo(Conversations);

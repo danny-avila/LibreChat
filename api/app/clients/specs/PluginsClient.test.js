@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { Constants } = require('librechat-data-provider');
-const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+const { HumanMessage, AIMessage } = require('@langchain/core/messages');
 const PluginsClient = require('../PluginsClient');
 
 jest.mock('~/lib/db/connectDb');
@@ -55,8 +55,8 @@ describe('PluginsClient', () => {
 
         const chatMessages = orderedMessages.map((msg) =>
           msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
-            ? new HumanChatMessage(msg.text)
-            : new AIChatMessage(msg.text),
+            ? new HumanMessage(msg.text)
+            : new AIMessage(msg.text),
         );
 
         TestAgent.currentMessages = orderedMessages;
@@ -194,6 +194,7 @@ describe('PluginsClient', () => {
       expect(client.getFunctionModelName('')).toBe('gpt-3.5-turbo');
     });
   });
+
   describe('Azure OpenAI tests specific to Plugins', () => {
     // TODO: add more tests for Azure OpenAI integration with Plugins
     // let client;
@@ -218,6 +219,96 @@ describe('PluginsClient', () => {
       expect(testClient.agentOptions.model).toBe(model);
 
       spy.mockRestore();
+    });
+  });
+
+  describe('sendMessage with filtered tools', () => {
+    let TestAgent;
+    const apiKey = 'fake-api-key';
+    const mockTools = [{ name: 'tool1' }, { name: 'tool2' }, { name: 'tool3' }, { name: 'tool4' }];
+
+    beforeEach(() => {
+      TestAgent = new PluginsClient(apiKey, {
+        tools: mockTools,
+        modelOptions: {
+          model: 'gpt-3.5-turbo',
+          temperature: 0,
+          max_tokens: 2,
+        },
+        agentOptions: {
+          model: 'gpt-3.5-turbo',
+        },
+      });
+
+      TestAgent.options.req = {
+        app: {
+          locals: {},
+        },
+      };
+
+      TestAgent.sendMessage = jest.fn().mockImplementation(async () => {
+        const { filteredTools = [], includedTools = [] } = TestAgent.options.req.app.locals;
+
+        if (includedTools.length > 0) {
+          const tools = TestAgent.options.tools.filter((plugin) =>
+            includedTools.includes(plugin.name),
+          );
+          TestAgent.options.tools = tools;
+        } else {
+          const tools = TestAgent.options.tools.filter(
+            (plugin) => !filteredTools.includes(plugin.name),
+          );
+          TestAgent.options.tools = tools;
+        }
+
+        return {
+          text: 'Mocked response',
+          tools: TestAgent.options.tools,
+        };
+      });
+    });
+
+    test('should filter out tools when filteredTools is provided', async () => {
+      TestAgent.options.req.app.locals.filteredTools = ['tool1', 'tool3'];
+      const response = await TestAgent.sendMessage('Test message');
+      expect(response.tools).toHaveLength(2);
+      expect(response.tools).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'tool2' }),
+          expect.objectContaining({ name: 'tool4' }),
+        ]),
+      );
+    });
+
+    test('should only include specified tools when includedTools is provided', async () => {
+      TestAgent.options.req.app.locals.includedTools = ['tool2', 'tool4'];
+      const response = await TestAgent.sendMessage('Test message');
+      expect(response.tools).toHaveLength(2);
+      expect(response.tools).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'tool2' }),
+          expect.objectContaining({ name: 'tool4' }),
+        ]),
+      );
+    });
+
+    test('should prioritize includedTools over filteredTools', async () => {
+      TestAgent.options.req.app.locals.filteredTools = ['tool1', 'tool3'];
+      TestAgent.options.req.app.locals.includedTools = ['tool1', 'tool2'];
+      const response = await TestAgent.sendMessage('Test message');
+      expect(response.tools).toHaveLength(2);
+      expect(response.tools).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'tool1' }),
+          expect.objectContaining({ name: 'tool2' }),
+        ]),
+      );
+    });
+
+    test('should not modify tools when no filters are provided', async () => {
+      const response = await TestAgent.sendMessage('Test message');
+      expect(response.tools).toHaveLength(4);
+      expect(response.tools).toEqual(expect.arrayContaining(mockTools));
     });
   });
 });

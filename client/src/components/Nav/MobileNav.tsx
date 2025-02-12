@@ -1,5 +1,8 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, Constants } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import type { Dispatch, SetStateAction } from 'react';
 import { useLocalize, useNewConvo } from '~/hooks';
 import store from '~/store';
@@ -10,17 +13,24 @@ export default function MobileNav({
   setNavVisible: Dispatch<SetStateAction<boolean>>;
 }) {
   const localize = useLocalize();
-  const { newConversation } = useNewConvo(0);
+  const queryClient = useQueryClient();
+  const { newConversation } = useNewConvo();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const { title = 'New Chat' } = conversation || {};
 
   return (
-    <div className="text-token-primary border-token-border-medium bg-token-surface-primary sticky top-0 z-10 flex min-h-[40px] items-center border-b bg-white dark:bg-gray-800 dark:text-white md:hidden">
+    <div className="bg-token-main-surface-primary sticky top-0 z-10 flex min-h-[40px] items-center justify-center bg-white pl-1 dark:bg-gray-800 dark:text-white md:hidden">
       <button
         type="button"
         data-testid="mobile-header-new-chat-button"
-        className="inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white active:opacity-50 dark:hover:text-white"
-        onClick={() => setNavVisible((prev) => !prev)}
+        aria-label={localize('com_nav_open_sidebar')}
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
+        onClick={() =>
+          setNavVisible((prev) => {
+            localStorage.setItem('navVisible', JSON.stringify(!prev));
+            return !prev;
+          })
+        }
       >
         <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
         <svg
@@ -39,13 +49,20 @@ export default function MobileNav({
           />
         </svg>
       </button>
-      <h1 className="flex-1 text-center text-base font-normal">
-        {title || localize('com_ui_new_chat')}
+      <h1 className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-center text-sm font-normal">
+        {title ?? localize('com_ui_new_chat')}
       </h1>
       <button
         type="button"
-        className="inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white active:opacity-50 dark:hover:text-white"
-        onClick={() => newConversation()}
+        aria-label={localize('com_ui_new_chat')}
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
+        onClick={() => {
+          queryClient.setQueryData<TMessage[]>(
+            [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+            [],
+          );
+          newConversation();
+        }}
       >
         <svg
           width="24"

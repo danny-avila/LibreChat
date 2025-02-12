@@ -1,39 +1,49 @@
-const abortMiddleware = require('./abortMiddleware');
-const checkBan = require('./checkBan');
-const uaParser = require('./uaParser');
-const setHeaders = require('./setHeaders');
-const loginLimiter = require('./loginLimiter');
-const validateModel = require('./validateModel');
-const requireJwtAuth = require('./requireJwtAuth');
-const uploadLimiters = require('./uploadLimiters');
-const registerLimiter = require('./registerLimiter');
-const messageLimiters = require('./messageLimiters');
-const requireLocalAuth = require('./requireLocalAuth');
-const validateEndpoint = require('./validateEndpoint');
-const concurrentLimiter = require('./concurrentLimiter');
-const validateMessageReq = require('./validateMessageReq');
-const buildEndpointOption = require('./buildEndpointOption');
+const validatePasswordReset = require('./validatePasswordReset');
 const validateRegistration = require('./validateRegistration');
+const validateImageRequest = require('./validateImageRequest');
+const buildEndpointOption = require('./buildEndpointOption');
+const validateMessageReq = require('./validateMessageReq');
+const checkDomainAllowed = require('./checkDomainAllowed');
+const concurrentLimiter = require('./concurrentLimiter');
+const validateEndpoint = require('./validateEndpoint');
+const requireLocalAuth = require('./requireLocalAuth');
+const canDeleteAccount = require('./canDeleteAccount');
+const requireLdapAuth = require('./requireLdapAuth');
+const abortMiddleware = require('./abortMiddleware');
+const checkInviteUser = require('./checkInviteUser');
+const requireJwtAuth = require('./requireJwtAuth');
+const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
+const setHeaders = require('./setHeaders');
+const validate = require('./validate');
+const limiters = require('./limiters');
+const uaParser = require('./uaParser');
+const checkBan = require('./checkBan');
 const noIndex = require('./noIndex');
+const roles = require('./roles');
 
 module.exports = {
-  ...uploadLimiters,
   ...abortMiddleware,
-  ...messageLimiters,
+  ...validate,
+  ...limiters,
+  ...roles,
+  noIndex,
   checkBan,
   uaParser,
   setHeaders,
-  loginLimiter,
+  moderateText,
+  validateModel,
   requireJwtAuth,
-  registerLimiter,
+  checkInviteUser,
+  requireLdapAuth,
   requireLocalAuth,
+  canDeleteAccount,
   validateEndpoint,
   concurrentLimiter,
+  checkDomainAllowed,
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,
-  validateModel,
-  moderateText,
-  noIndex,
+  validateImageRequest,
+  validatePasswordReset,
 };

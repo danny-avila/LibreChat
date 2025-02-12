@@ -17,6 +17,7 @@ export const files: TFile[] = [
     updatedAt: '2024-01-23T18:25:48.153Z',
     usage: 0,
     user: '652ac880c4102a77fe54c5db',
+    embedded: false,
   },
   {
     _id: '65b004abd70ce86b9146e861',
@@ -34,6 +35,7 @@ export const files: TFile[] = [
     usage: 0,
     user: '652ac880c4102a77fe54c5db',
     width: 1024,
+    embedded: false,
   },
   {
     _id: '65b00495d70ce86b9146adc1',
@@ -51,6 +53,7 @@ export const files: TFile[] = [
     usage: 0,
     user: '652ac880c4102a77fe54c5db',
     width: 1024,
+    embedded: false,
   },
   {
     _id: '65b00494d70ce86b9146ace6',
@@ -68,5 +71,6 @@ export const files: TFile[] = [
     usage: 0,
     user: '652ac880c4102a77fe54c5db',
     width: 1024,
+    embedded: false,
   },
 ];

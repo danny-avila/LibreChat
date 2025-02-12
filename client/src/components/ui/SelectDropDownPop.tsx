@@ -4,6 +4,7 @@ import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
 import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import { useMultiSearch } from './MultiSearch';
 
 type SelectDropDownProps = {
   id?: string;
@@ -17,6 +18,7 @@ type SelectDropDownProps = {
   showLabel?: boolean;
   iconSide?: 'left' | 'right';
   renderOption?: () => React.ReactNode;
+  footer?: React.ReactNode;
 };
 
 function SelectDropDownPop({
@@ -27,6 +29,7 @@ function SelectDropDownPop({
   showAbove = false,
   showLabel = true,
   emptyTitle = false,
+  footer,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -42,34 +45,43 @@ function SelectDropDownPop({
     title = localize('com_ui_model');
   }
 
+  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
+    availableOptions: availableValues,
+  });
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
+
   return (
     <Root>
-      <div className={'flex items-center justify-center gap-2 '}>
+      <div className={'flex items-center justify-center gap-2'}>
         <div className={'relative w-full'}>
           <Trigger asChild>
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'pointer-cursor relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
+                'pointer-cursor relative flex flex-col rounded-lg border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
+                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
+                'min-w-[200px] max-w-[215px] sm:min-w-full sm:max-w-full',
               )}
+              aria-label={`Select ${title}`}
+              aria-haspopup="false"
             >
               {' '}
               {showLabel && (
-                <label className="block text-xs text-gray-700 dark:text-gray-500 ">{title}</label>
+                <label className="block text-xs text-gray-700 dark:text-gray-500">{title}</label>
               )}
-              <span className="inline-flex w-full ">
+              <span className="inline-flex w-full">
                 <span
                   className={cn(
-                    'flex h-6 items-center gap-1  text-sm text-gray-800 dark:text-white',
+                    'flex h-6 items-center gap-1 text-sm text-text-primary',
                     !showLabel ? 'text-xs' : '',
                     'min-w-[75px] font-normal',
                   )}
                 >
-                  {/* {!showLabel && !emptyTitle && (
-                    <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
-                  )} */}
-                  {typeof value !== 'string' && value ? value?.label ?? '' : value ?? ''}
+                  {typeof value !== 'string' && value ? (value.label ?? '') : (value ?? '')}
                 </span>
               </span>
               <span className="absolute inset-y-0 right-0 flex items-center pr-2">
@@ -80,7 +92,7 @@ function SelectDropDownPop({
                   viewBox="0 0 24 24"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="h-4 w-4  text-gray-400"
+                  className="h-4 w-4 text-gray-400"
                   height="1em"
                   width="1em"
                   xmlns="http://www.w3.org/2000/svg"
@@ -95,9 +107,13 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white lg:max-h-[52vh]"
+              className={cn(
+                'mr-3 mt-2 max-h-[52vh] w-full max-w-[85vw] overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white sm:max-w-full lg:max-h-[52vh]',
+                hasSearchRender && 'relative',
+              )}
             >
-              {availableValues.map((option) => {
+              {searchRender}
+              {options.map((option) => {
                 return (
                   <MenuItem
                     key={option}
@@ -108,6 +124,7 @@ function SelectDropDownPop({
                   />
                 );
               })}
+              {footer}
             </Content>
           </Portal>
         </div>

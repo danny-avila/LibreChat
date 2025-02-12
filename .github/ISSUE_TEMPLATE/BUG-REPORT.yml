@@ -1,18 +1,42 @@
 name: Bug Report
 description: File a bug report
 title: "[Bug]: "
-labels: ["bug"]
+labels: ["🐛 bug"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report!
+        
+        Before submitting, please:
+        - Search existing [Issues and Discussions](https://github.com/danny-avila/LibreChat/discussions) to see if your bug has already been reported
+        - Use [Discussions](https://github.com/danny-avila/LibreChat/discussions) instead of Issues for:
+          - General inquiries
+          - Help with setup
+          - Questions about whether you're experiencing a bug
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
       description: Also tell us, what did you expect to happen?
       placeholder: Please give as many details as possible
+    validations:
+      required: true
+  - type: textarea
+    id: version-info
+    attributes:
+      label: Version Information
+      description: |
+        If using Docker, please run and provide the output of:
+        ```bash
+        docker images | grep librechat
+        ```
+        
+        If running from source, please run and provide the output of:
+        ```bash
+        git rev-parse HEAD
+        ```
+      placeholder: Paste the output here
     validations:
       required: true
   - type: textarea
@@ -39,7 +63,21 @@ body:
     id: logs
     attributes:
       label: Relevant log output
-      description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
+      description: |
+        Please paste relevant logs that were created when reproducing the error.
+        
+        Log locations:
+        - Docker: Project root directory ./logs
+        - npm: ./api/logs
+        
+        There are two types of logs that can help diagnose the issue:
+        - debug logs (debug-YYYY-MM-DD.log)
+        - error logs (error-YYYY-MM-DD.log)
+        
+        Error logs contain exact stack traces and are especially helpful, but both can provide valuable information.
+        Please only include the relevant portions of logs that correspond to when you reproduced the error.
+
+        For UI-related issues, browser console logs can be very helpful. You can provide these as screenshots or paste the text here.
       render: shell
   - type: textarea
     id: screenshots
@@ -50,7 +88,7 @@ body:
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/danny-avila/LibreChat/blob/main/CODE_OF_CONDUCT.md)
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/danny-avila/LibreChat/blob/main/.github/CODE_OF_CONDUCT.md)
       options:
         - label: I agree to follow this project's Code of Conduct
           required: true

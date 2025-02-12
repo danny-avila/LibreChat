@@ -1,0 +1,26 @@
+name: Lint for accessibility issues
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/**'
+  workflow_dispatch:
+    inputs:
+      run_workflow:
+        description: 'Set to true to run this workflow'
+        required: true
+        default: 'false'
+
+jobs:
+  axe-linter:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'danny-avila/LibreChat') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_workflow == 'true')
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dequelabs/axe-linter-action@v1
+        with:
+          api_key: ${{ secrets.AXE_LINTER_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

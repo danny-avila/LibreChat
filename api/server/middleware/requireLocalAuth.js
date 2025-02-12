@@ -21,7 +21,13 @@ const requireLocalAuth = (req, res, next) => {
       log({
         title: '(requireLocalAuth) Error: No user',
       });
-      return res.status(422).send(info);
+      return res.status(404).send(info);
+    }
+    if (info && info.message) {
+      log({
+        title: '(requireLocalAuth) Error: ' + info.message,
+      });
+      return res.status(422).send({ message: info.message });
     }
     req.user = user;
     next();

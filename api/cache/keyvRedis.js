@@ -1,6 +1,6 @@
 const KeyvRedis = require('@keyv/redis');
-const { logger } = require('~/config');
 const { isEnabled } = require('~/server/utils');
+const logger = require('~/config/winston');
 
 const { REDIS_URI, USE_REDIS } = process.env;
 

@@ -1,40 +1,16 @@
 const { Strategy: GitHubStrategy } = require('passport-github2');
-const { createNewUser, handleExistingUser } = require('./process');
-const { logger } = require('~/config');
-const User = require('~/models/User');
+const socialLogin = require('./socialLogin');
 
-const githubLogin = async (accessToken, refreshToken, profile, cb) => {
-  try {
-    const email = profile.emails[0].value;
-    const githubId = profile.id;
-    const oldUser = await User.findOne({ email });
-    const ALLOW_SOCIAL_REGISTRATION =
-      process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
-    const avatarUrl = profile.photos[0].value;
+const getProfileDetails = ({ profile }) => ({
+  email: profile.emails[0].value,
+  id: profile.id,
+  avatarUrl: profile.photos[0].value,
+  username: profile.username,
+  name: profile.displayName,
+  emailVerified: profile.emails[0].verified,
+});
 
-    if (oldUser) {
-      await handleExistingUser(oldUser, avatarUrl);
-      return cb(null, oldUser);
-    }
-
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'github',
-        providerKey: 'githubId',
-        providerId: githubId,
-        username: profile.username,
-        name: profile.displayName,
-        emailVerified: profile.emails[0].verified,
-      });
-      return cb(null, newUser);
-    }
-  } catch (err) {
-    logger.error('[githubLogin]', err);
-    return cb(err);
-  }
-};
+const githubLogin = socialLogin('github', getProfileDetails);
 
 module.exports = () =>
   new GitHubStrategy(
@@ -44,6 +20,15 @@ module.exports = () =>
       callbackURL: `${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`,
       proxy: false,
       scope: ['user:email'],
+      ...(process.env.GITHUB_ENTERPRISE_BASE_URL && {
+        authorizationURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/authorize`,
+        tokenURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/access_token`,
+        userProfileURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user`,
+        userEmailURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user/emails`,
+        ...(process.env.GITHUB_ENTERPRISE_USER_AGENT && {
+          userAgent: process.env.GITHUB_ENTERPRISE_USER_AGENT,
+        }),
+      }),
     },
     githubLogin,
   );

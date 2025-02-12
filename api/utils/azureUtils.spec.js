@@ -199,7 +199,7 @@ describe('constructAzureURL', () => {
   test('replaces both placeholders when both properties are provided', () => {
     const url = constructAzureURL({
       baseURL: 'https://example.com/${INSTANCE_NAME}/${DEPLOYMENT_NAME}',
-      azure: {
+      azureOptions: {
         azureOpenAIApiInstanceName: 'instance1',
         azureOpenAIApiDeploymentName: 'deployment1',
       },
@@ -210,7 +210,7 @@ describe('constructAzureURL', () => {
   test('replaces only INSTANCE_NAME when only azureOpenAIApiInstanceName is provided', () => {
     const url = constructAzureURL({
       baseURL: 'https://example.com/${INSTANCE_NAME}/${DEPLOYMENT_NAME}',
-      azure: {
+      azureOptions: {
         azureOpenAIApiInstanceName: 'instance2',
       },
     });
@@ -220,7 +220,7 @@ describe('constructAzureURL', () => {
   test('replaces only DEPLOYMENT_NAME when only azureOpenAIApiDeploymentName is provided', () => {
     const url = constructAzureURL({
       baseURL: 'https://example.com/${INSTANCE_NAME}/${DEPLOYMENT_NAME}',
-      azure: {
+      azureOptions: {
         azureOpenAIApiDeploymentName: 'deployment2',
       },
     });
@@ -230,12 +230,12 @@ describe('constructAzureURL', () => {
   test('does not replace any placeholders when azure object is empty', () => {
     const url = constructAzureURL({
       baseURL: 'https://example.com/${INSTANCE_NAME}/${DEPLOYMENT_NAME}',
-      azure: {},
+      azureOptions: {},
     });
     expect(url).toBe('https://example.com//');
   });
 
-  test('returns baseURL as is when azure object is not provided', () => {
+  test('returns baseURL as is when `azureOptions` object is not provided', () => {
     const url = constructAzureURL({
       baseURL: 'https://example.com/${INSTANCE_NAME}/${DEPLOYMENT_NAME}',
     });
@@ -245,7 +245,7 @@ describe('constructAzureURL', () => {
   test('returns baseURL as is when no placeholders are set', () => {
     const url = constructAzureURL({
       baseURL: 'https://example.com/my_custom_instance/my_deployment',
-      azure: {
+      azureOptions: {
         azureOpenAIApiInstanceName: 'instance1',
         azureOpenAIApiDeploymentName: 'deployment1',
       },
@@ -258,7 +258,7 @@ describe('constructAzureURL', () => {
       'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}';
     const url = constructAzureURL({
       baseURL,
-      azure: {
+      azureOptions: {
         azureOpenAIApiInstanceName: 'instance1',
         azureOpenAIApiDeploymentName: 'deployment1',
       },

@@ -1,10 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import {
-  useUserKeyQuery,
-  useGetEndpointsQuery,
-  useUpdateUserKeysMutation,
-} from 'librechat-data-provider/react-query';
+import { useUserKeyQuery, useUpdateUserKeysMutation } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery } from '~/data-provider';
 
 const useUserKey = (endpoint: string) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
@@ -21,16 +18,17 @@ const useUserKey = (endpoint: string) => {
 
   const updateKey = useUpdateUserKeysMutation();
   const checkUserKey = useUserKeyQuery(keyName);
+
   const getExpiry = useCallback(() => {
     if (checkUserKey.data) {
-      return checkUserKey.data.expiresAt;
+      return checkUserKey.data.expiresAt || 'never';
     }
   }, [checkUserKey.data]);
 
   const checkExpiry = useCallback(() => {
     const expiresAt = getExpiry();
     if (!expiresAt) {
-      return false;
+      return true;
     }
 
     const expiresAtDate = new Date(expiresAt);
@@ -41,8 +39,8 @@ const useUserKey = (endpoint: string) => {
   }, [getExpiry]);
 
   const saveUserKey = useCallback(
-    (userKey: string, expiresAt: number) => {
-      const dateStr = new Date(expiresAt).toISOString();
+    (userKey: string, expiresAt: number | null) => {
+      const dateStr = expiresAt ? new Date(expiresAt).toISOString() : '';
       updateKey.mutate({
         name: keyName,
         value: userKey,

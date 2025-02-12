@@ -6,9 +6,9 @@ const user = atom<TUser | undefined>({
   default: undefined,
 });
 
-const availableTools = atom<TPlugin[]>({
+const availableTools = atom<Record<string, TPlugin>>({
   key: 'availableTools',
-  default: [],
+  default: {},
 });
 
 export default {

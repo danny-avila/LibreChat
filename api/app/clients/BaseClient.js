@@ -1,8 +1,18 @@
 const crypto = require('crypto');
-const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
-const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
+const fetch = require('node-fetch');
+const {
+  supportsBalanceCheck,
+  isAgentsEndpoint,
+  isParamEndpoint,
+  EModelEndpoint,
+  ErrorTypes,
+  Constants,
+} = require('librechat-data-provider');
+const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
+const { truncateToolCallOutputs } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
+const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -16,13 +26,46 @@ class BaseClient {
       month: 'long',
       day: 'numeric',
     });
+    this.fetch = this.fetch.bind(this);
+    /** @type {boolean} */
+    this.skipSaveConvo = false;
+    /** @type {boolean} */
+    this.skipSaveUserMessage = false;
+    /** @type {ClientDatabaseSavePromise} */
+    this.userMessagePromise;
+    /** @type {ClientDatabaseSavePromise} */
+    this.responsePromise;
+    /** @type {string} */
+    this.user;
+    /** @type {string} */
+    this.conversationId;
+    /** @type {string} */
+    this.responseMessageId;
+    /** @type {TAttachment[]} */
+    this.attachments;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'prompt_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'completion_tokens';
+    /** @type {Set<string>} */
+    this.savedMessageIds = new Set();
+    /**
+     * Flag to determine if the client re-submitted the latest assistant message.
+     * @type {boolean | undefined} */
+    this.continued;
+    /** @type {TMessage[]} */
+    this.currentMessages = [];
+    /** @type {import('librechat-data-provider').VisionModes | undefined} */
+    this.visionMode;
   }
 
   setOptions() {
     throw new Error('Method \'setOptions\' must be implemented.');
   }
 
-  getCompletion() {
+  async getCompletion() {
     throw new Error('Method \'getCompletion\' must be implemented.');
   }
 
@@ -42,19 +85,57 @@ class BaseClient {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
-  async getTokenCountForResponse(response) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
+  /**
+   * @returns {string}
+   */
+  getResponseModel() {
+    if (isAgentsEndpoint(this.options.endpoint) && this.options.agent && this.options.agent.id) {
+      return this.options.agent.id;
+    }
+
+    return this.modelOptions?.model ?? this.model;
   }
 
-  async addPreviousAttachments(messages) {
-    return messages;
+  /**
+   * Abstract method to get the token count for a message. Subclasses must implement this method.
+   * @param {TMessage} responseMessage
+   * @returns {number}
+   */
+  getTokenCountForResponse(responseMessage) {
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', responseMessage);
   }
 
+  /**
+   * Abstract method to record token usage. Subclasses must implement this method.
+   * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
+   * @param {number} promptTokens
+   * @param {number} completionTokens
+   * @returns {Promise<void>}
+   */
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       promptTokens,
       completionTokens,
     });
+  }
+
+  /**
+   * Makes an HTTP request and logs the process.
+   *
+   * @param {RequestInfo} url - The URL to make the request to. Can be a string or a Request object.
+   * @param {RequestInit} [init] - Optional init options for the request.
+   * @returns {Promise<Response>} - A promise that resolves to the response of the fetch request.
+   */
+  async fetch(_url, init) {
+    let url = _url;
+    if (this.options.directEndpoint) {
+      url = this.options.reverseProxyUrl;
+    }
+    logger.debug(`Making request to ${url}`);
+    if (typeof Bun !== 'undefined') {
+      return await fetch(url, init);
+    }
+    return await fetch(url, init);
   }
 
   getBuildMessagesOptions() {
@@ -66,19 +147,45 @@ class BaseClient {
     await stream.processTextStream(onProgress);
   }
 
+  /**
+   * @returns {[string|undefined, string|undefined]}
+   */
+  processOverideIds() {
+    /** @type {Record<string, string | undefined>} */
+    let { overrideConvoId, overrideUserMessageId } = this.options?.req?.body ?? {};
+    if (overrideConvoId) {
+      const [conversationId, index] = overrideConvoId.split(Constants.COMMON_DIVIDER);
+      overrideConvoId = conversationId;
+      if (index !== '0') {
+        this.skipSaveConvo = true;
+      }
+    }
+    if (overrideUserMessageId) {
+      const [userMessageId, index] = overrideUserMessageId.split(Constants.COMMON_DIVIDER);
+      overrideUserMessageId = userMessageId;
+      if (index !== '0') {
+        this.skipSaveUserMessage = true;
+      }
+    }
+
+    return [overrideConvoId, overrideUserMessageId];
+  }
+
   async setMessageOptions(opts = {}) {
     if (opts && opts.replaceOptions) {
       this.setOptions(opts);
     }
 
+    const [overrideConvoId, overrideUserMessageId] = this.processOverideIds();
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = opts.conversationId ?? crypto.randomUUID();
+    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
-    const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
+    const userMessageId =
+      overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
@@ -89,6 +196,8 @@ class BaseClient {
       head = responseMessageId;
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
+
+    this.responseMessageId = responseMessageId;
 
     return {
       ...opts,
@@ -138,11 +247,12 @@ class BaseClient {
         userMessage,
         conversationId,
         responseMessageId,
+        sender: this.sender,
       });
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage);
+      opts.onStart(userMessage, responseMessageId);
     }
 
     return {
@@ -159,17 +269,24 @@ class BaseClient {
   /**
    * Adds instructions to the messages array. If the instructions object is empty or undefined,
    * the original messages array is returned. Otherwise, the instructions are added to the messages
-   * array, preserving the last message at the end.
+   * array either at the beginning (default) or preserving the last message at the end.
    *
    * @param {Array} messages - An array of messages.
    * @param {Object} instructions - An object containing instructions to be added to the messages.
+   * @param {boolean} [beforeLast=false] - If true, adds instructions before the last message; if false, adds at the beginning.
    * @returns {Array} An array containing messages and instructions, or the original messages if instructions are empty.
    */
-  addInstructions(messages, instructions) {
-    const payload = [];
+  addInstructions(messages, instructions, beforeLast = false) {
     if (!instructions || Object.keys(instructions).length === 0) {
       return messages;
     }
+
+    if (!beforeLast) {
+      return [instructions, ...messages];
+    }
+
+    // Legacy behavior: add instructions before the last message
+    const payload = [];
     if (messages.length > 1) {
       payload.push(...messages.slice(0, -1));
     }
@@ -184,6 +301,9 @@ class BaseClient {
   }
 
   async handleTokenCountMap(tokenCountMap) {
+    if (this.clientName === EModelEndpoint.agents) {
+      return;
+    }
     if (this.currentMessages.length === 0) {
       return;
     }
@@ -232,25 +352,38 @@ class BaseClient {
    * If the token limit would be exceeded by adding a message, that message is not added to the context and remains in the original array.
    * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the context array at the end to maintain the original order of the messages.
    *
-   * @param {Array} _messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
-   * @param {number} [maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
-   * @returns {Object} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
+   * @param {Object} params
+   * @param {TMessage[]} params.messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @param {number} [params.maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
+   * @param {{ role: 'system', content: text, tokenCount: number }} [params.instructions] - Instructions already added to the context at index 0.
+   * @returns {Promise<{
+   *  context: TMessage[],
+   *  remainingContextTokens: number,
+   *  messagesToRefine: TMessage[],
+   *  summaryIndex: number,
+   * }>} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
    *    `summaryIndex` is the index of the first message in the `messagesToRefine` array.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
-  async getMessagesWithinTokenLimit(_messages, maxContextTokens) {
+  async getMessagesWithinTokenLimit({ messages: _messages, maxContextTokens, instructions }) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
-    let currentTokenCount = 3;
     let summaryIndex = -1;
-    let remainingContextTokens = maxContextTokens ?? this.maxContextTokens;
+    let currentTokenCount = 3;
+    const instructionsTokenCount = instructions?.tokenCount ?? 0;
+    let remainingContextTokens =
+      (maxContextTokens ?? this.maxContextTokens) - instructionsTokenCount;
     const messages = [..._messages];
 
     const context = [];
+
     if (currentTokenCount < remainingContextTokens) {
       while (messages.length > 0 && currentTokenCount < remainingContextTokens) {
+        if (messages.length === 1 && instructions) {
+          break;
+        }
         const poppedMessage = messages.pop();
         const { tokenCount } = poppedMessage;
 
@@ -262,6 +395,11 @@ class BaseClient {
           break;
         }
       }
+    }
+
+    if (instructions) {
+      context.push(_messages[0]);
+      messages.shift();
     }
 
     const prunedMemory = messages;
@@ -276,19 +414,50 @@ class BaseClient {
     };
   }
 
-  async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
+  async handleContextStrategy({
+    instructions,
+    orderedMessages,
+    formattedMessages,
+    buildTokenMap = true,
+  }) {
     let _instructions;
     let tokenCount;
 
     if (instructions) {
       ({ tokenCount, ..._instructions } = instructions);
     }
+
     _instructions && logger.debug('[BaseClient] instructions tokenCount: ' + tokenCount);
-    let payload = this.addInstructions(formattedMessages, _instructions);
+    if (tokenCount && tokenCount > this.maxContextTokens) {
+      const info = `${tokenCount} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(`Instructions token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
+    }
+
+    if (this.clientName === EModelEndpoint.agents) {
+      const { dbMessages, editedIndices } = truncateToolCallOutputs(
+        orderedMessages,
+        this.maxContextTokens,
+        this.getTokenCountForMessage.bind(this),
+      );
+
+      if (editedIndices.length > 0) {
+        logger.debug('[BaseClient] Truncated tool call outputs:', editedIndices);
+        for (const index of editedIndices) {
+          formattedMessages[index].content = dbMessages[index].content;
+        }
+        orderedMessages = dbMessages;
+      }
+    }
+
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
 
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
-      await this.getMessagesWithinTokenLimit(orderedWithInstructions);
+      await this.getMessagesWithinTokenLimit({
+        messages: orderedWithInstructions,
+        instructions,
+      });
 
     logger.debug('[BaseClient] Context Count (1/2)', {
       remainingContextTokens,
@@ -300,7 +469,9 @@ class BaseClient {
     let { shouldSummarize } = this;
 
     // Calculate the difference in length to determine how many messages were discarded if any
-    const { length } = payload;
+    let payload;
+    let { length } = formattedMessages;
+    length += instructions != null ? 1 : 0;
     const diff = length - context.length;
     const firstMessage = orderedWithInstructions[0];
     const usePrevSummary =
@@ -310,17 +481,31 @@ class BaseClient {
       this.previous_summary.messageId === firstMessage.messageId;
 
     if (diff > 0) {
-      payload = payload.slice(diff);
+      payload = formattedMessages.slice(diff);
       logger.debug(
         `[BaseClient] Difference between original payload (${length}) and context (${context.length}): ${diff}`,
       );
     }
 
+    payload = this.addInstructions(payload ?? formattedMessages, _instructions);
+
     const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
     if (payload.length === 0 && !shouldSummarize && latestMessage) {
-      throw new Error(
-        `Prompt token count of ${latestMessage.tokenCount} exceeds max token count of ${this.maxContextTokens}.`,
+      const info = `${latestMessage.tokenCount} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(`Prompt token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
+    } else if (
+      _instructions &&
+      payload.length === 1 &&
+      payload[0].content === _instructions.content
+    ) {
+      const info = `${tokenCount + 3} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(
+        `Including instructions, the prompt token count exceeds remaining max token count (${info}).`,
       );
+      throw new Error(errorMessage);
     }
 
     if (usePrevSummary) {
@@ -345,19 +530,23 @@ class BaseClient {
       maxContextTokens: this.maxContextTokens,
     });
 
-    let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
-      const { messageId } = message;
-      if (!messageId) {
+    /** @type {Record<string, number> | undefined} */
+    let tokenCountMap;
+    if (buildTokenMap) {
+      tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+        const { messageId } = message;
+        if (!messageId) {
+          return map;
+        }
+
+        if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
+          map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
+        }
+
+        map[messageId] = orderedWithInstructions[index].tokenCount;
         return map;
-      }
-
-      if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
-        map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
-      }
-
-      map[messageId] = orderedWithInstructions[index].tokenCount;
-      return map;
-    }, {});
+      }, {});
+    }
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
@@ -376,6 +565,14 @@ class BaseClient {
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
+    if (opts.progressCallback) {
+      opts.onProgress = opts.progressCallback.call(null, {
+        ...(opts.progressOptions ?? {}),
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
+    }
+
     const { generation = '' } = opts;
 
     // It's not necessary to push to currentMessages
@@ -389,7 +586,7 @@ class BaseClient {
           conversationId,
           parentMessageId: userMessage.messageId,
           isCreatedByUser: false,
-          model: this.modelOptions.model,
+          model: this.modelOptions?.model ?? this.model,
           sender: this.sender,
           text: generation,
         };
@@ -397,6 +594,7 @@ class BaseClient {
       } else {
         latestMessage.text = generation;
       }
+      this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
     }
@@ -424,8 +622,14 @@ class BaseClient {
       this.handleTokenCountMap(tokenCountMap);
     }
 
-    if (!isEdited) {
-      await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    if (!isEdited && !this.skipSaveUserMessage) {
+      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      this.savedMessageIds.add(userMessage.messageId);
+      if (typeof opts?.getReqData === 'function') {
+        opts.getReqData({
+          userMessagePromise: this.userMessagePromise,
+        });
+      }
     }
 
     if (
@@ -439,27 +643,43 @@ class BaseClient {
           user: this.user,
           tokenType: 'prompt',
           amount: promptTokens,
-          model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          model: this.modelOptions?.model ?? this.model,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
     }
 
+    /** @type {string|string[]|undefined} */
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
+    /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
       isEdited,
-      model: this.modelOptions.model,
+      model: this.getResponseModel(),
       sender: this.sender,
-      text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      iconURL: this.options.iconURL,
+      endpoint: this.options.endpoint,
+      ...(this.metadata ?? {}),
     };
+
+    if (typeof completion === 'string') {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion;
+    } else if (
+      Array.isArray(completion) &&
+      isParamEndpoint(this.options.endpoint, this.options.endpointType)
+    ) {
+      responseMessage.text = '';
+      responseMessage.content = completion;
+    } else if (Array.isArray(completion)) {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
+    }
 
     if (
       tokenCountMap &&
@@ -467,17 +687,107 @@ class BaseClient {
       this.getTokenCountForResponse &&
       this.getTokenCount
     ) {
-      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-      const completionTokens = this.getTokenCount(completion);
-      await this.recordTokenUsage({ promptTokens, completionTokens });
+      let completionTokens;
+
+      /**
+       * Metadata about input/output costs for the current message. The client
+       * should provide a function to get the current stream usage metadata; if not,
+       * use the legacy token estimations.
+       * @type {StreamUsage | null} */
+      const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
+
+      if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
+        responseMessage.tokenCount = usage[this.outputTokensKey];
+        completionTokens = responseMessage.tokenCount;
+        await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
+      } else {
+        responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+        completionTokens = responseMessage.tokenCount;
+      }
+
+      await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+
+    if (this.userMessagePromise) {
+      await this.userMessagePromise;
+    }
+
+    if (this.artifactPromises) {
+      responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
+    }
+
+    if (this.options.attachments) {
+      try {
+        saveOptions.files = this.options.attachments.map((attachments) => attachments.file_id);
+      } catch (error) {
+        logger.error('[BaseClient] Error mapping attachments for conversation', error);
+      }
+    }
+
+    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.savedMessageIds.add(responseMessage.messageId);
     delete responseMessage.tokenCount;
     return responseMessage;
   }
 
-  async getConversation(conversationId, user = null) {
-    return await getConvo(user, conversationId);
+  /**
+   * Stream usage should only be used for user message token count re-calculation if:
+   * - The stream usage is available, with input tokens greater than 0,
+   * - the client provides a function to calculate the current token count,
+   * - files are being resent with every message (default behavior; or if `false`, with no attachments),
+   * - the `promptPrefix` (custom instructions) is not set.
+   *
+   * In these cases, the legacy token estimations would be more accurate.
+   *
+   * TODO: included system messages in the `orderedMessages` accounting, potentially as a
+   * separate message in the UI. ChatGPT does this through "hidden" system messages.
+   * @param {object} params
+   * @param {StreamUsage} params.usage
+   * @param {Record<string, number>} params.tokenCountMap
+   * @param {TMessage} params.userMessage
+   * @param {object} params.opts
+   */
+  async updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts }) {
+    /** @type {boolean} */
+    const shouldUpdateCount =
+      this.calculateCurrentTokenCount != null &&
+      Number(usage[this.inputTokensKey]) > 0 &&
+      (this.options.resendFiles ||
+        (!this.options.resendFiles && !this.options.attachments?.length)) &&
+      !this.options.promptPrefix;
+
+    if (!shouldUpdateCount) {
+      return;
+    }
+
+    const userMessageTokenCount = this.calculateCurrentTokenCount({
+      currentMessageId: userMessage.messageId,
+      tokenCountMap,
+      usage,
+    });
+
+    if (userMessageTokenCount === userMessage.tokenCount) {
+      return;
+    }
+
+    userMessage.tokenCount = userMessageTokenCount;
+    /*
+      Note: `AskController` saves the user message, so we update the count of its `userMessage` reference
+    */
+    if (typeof opts?.getReqData === 'function') {
+      opts.getReqData({
+        userMessage,
+      });
+    }
+    /*
+      Note: we update the user message to be sure it gets the calculated token count;
+      though `AskController` saves the user message, EditController does not
+    */
+    await this.userMessagePromise;
+    await this.updateMessageInDatabase({
+      messageId: userMessage.messageId,
+      tokenCount: userMessageTokenCount,
+    });
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
@@ -527,18 +837,52 @@ class BaseClient {
     return _messages;
   }
 
+  /**
+   * Save a message to the database.
+   * @param {TMessage} message
+   * @param {Partial<TConversation>} endpointOptions
+   * @param {string | null} user
+   */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({ ...message, endpoint: this.options.endpoint, user, unfinished: false });
-    await saveConvo(user, {
-      conversationId: message.conversationId,
-      endpoint: this.options.endpoint,
-      endpointType: this.options.endpointType,
-      ...endpointOptions,
-    });
+    if (this.user && user !== this.user) {
+      throw new Error('User mismatch.');
+    }
+
+    const savedMessage = await saveMessage(
+      this.options.req,
+      {
+        ...message,
+        endpoint: this.options.endpoint,
+        unfinished: false,
+        user,
+      },
+      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
+    );
+
+    if (this.skipSaveConvo) {
+      return { message: savedMessage };
+    }
+
+    const conversation = await saveConvo(
+      this.options.req,
+      {
+        conversationId: message.conversationId,
+        endpoint: this.options.endpoint,
+        endpointType: this.options.endpointType,
+        ...endpointOptions,
+      },
+      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo' },
+    );
+
+    return { message: savedMessage, conversation };
   }
 
+  /**
+   * Update a message in the database.
+   * @param {Partial<TMessage>} message
+   */
   async updateMessageInDatabase(message) {
-    await updateMessage(message);
+    await updateMessage(this.options.req, message);
   }
 
   /**
@@ -558,11 +902,11 @@ class BaseClient {
    * the message is considered a root message.
    *
    * @param {Object} options - The options for the function.
-   * @param {Array} options.messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
+   * @param {TMessage[]} options.messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
    * @param {string} options.parentMessageId - The ID of the parent message to start the traversal from.
    * @param {Function} [options.mapMethod] - An optional function to map over the ordered messages. If provided, it will be applied to each message in the resulting array.
    * @param {boolean} [options.summary=false] - If set to true, the traversal modifies messages with 'summary' and 'summaryTokenCount' properties and stops at the message with a 'summary' property.
-   * @returns {Array} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if the 'summary' option is true, and ending with the message identified by 'parentMessageId'.
+   * @returns {TMessage[]} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if the 'summary' option is true, and ending with the message identified by 'parentMessageId'.
    */
   static getMessagesForConversation({
     messages,
@@ -639,8 +983,9 @@ class BaseClient {
     // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
     let tokensPerMessage = 3;
     let tokensPerName = 1;
+    const model = this.modelOptions?.model ?? this.model;
 
-    if (this.modelOptions.model === 'gpt-3.5-turbo-0301') {
+    if (model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
       tokensPerName = -1;
     }
@@ -652,6 +997,24 @@ class BaseClient {
             continue;
           }
 
+          if (item.type === 'tool_call' && item.tool_call != null) {
+            const toolName = item.tool_call?.name || '';
+            if (toolName != null && toolName && typeof toolName === 'string') {
+              numTokens += this.getTokenCount(toolName);
+            }
+
+            const args = item.tool_call?.args || '';
+            if (args != null && args && typeof args === 'string') {
+              numTokens += this.getTokenCount(args);
+            }
+
+            const output = item.tool_call?.output || '';
+            if (output != null && output && typeof output === 'string') {
+              numTokens += this.getTokenCount(output);
+            }
+            continue;
+          }
+
           const nestedValue = item[item.type];
 
           if (!nestedValue) {
@@ -660,8 +1023,12 @@ class BaseClient {
 
           processValue(nestedValue);
         }
-      } else {
+      } else if (typeof value === 'string') {
         numTokens += this.getTokenCount(value);
+      } else if (typeof value === 'number') {
+        numTokens += this.getTokenCount(value.toString());
+      } else if (typeof value === 'boolean') {
+        numTokens += this.getTokenCount(value.toString());
       }
     };
 
@@ -682,6 +1049,75 @@ class BaseClient {
     }
 
     return await this.sendCompletion(payload, opts);
+  }
+
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {Promise<TMessage[]>}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendFiles) {
+      return _messages;
+    }
+
+    const seen = new Set();
+    const attachmentsProcessed =
+      this.options.attachments && !(this.options.attachments instanceof Promise);
+    if (attachmentsProcessed) {
+      for (const attachment of this.options.attachments) {
+        seen.add(attachment.file_id);
+      }
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = [];
+      for (const file of message.files) {
+        if (seen.has(file.file_id)) {
+          continue;
+        }
+        fileIds.push(file.file_id);
+        seen.add(file.file_id);
+      }
+
+      if (fileIds.length === 0) {
+        return message;
+      }
+
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      await this.addImageURLs(message, files, this.visionMode);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+    return messages;
   }
 }
 

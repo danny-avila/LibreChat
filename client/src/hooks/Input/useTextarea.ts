@@ -1,86 +1,78 @@
 import debounce from 'lodash/debounce';
-import React, { useEffect, useRef, useCallback } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import type { KeyboardEvent } from 'react';
+import {
+  forceResize,
+  insertTextAtCursor,
+  getEntityName,
+  getEntity,
+  checkIfScrollable,
+} from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
+import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
+import { globalAudioId } from '~/common';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
-const getAssistantName = ({
-  name,
-  localize,
-}: {
-  name?: string;
-  localize: (phraseKey: string, ...values: string[]) => string;
-}) => {
-  if (name && name.length > 0) {
-    return name;
-  } else {
-    return localize('com_ui_assistant');
-  }
-};
-
 export default function useTextarea({
-  setText,
-  submitMessage,
+  textAreaRef,
+  submitButtonRef,
+  setIsScrollable,
   disabled = false,
 }: {
-  setText: SetterOrUpdater<string>;
-  submitMessage: () => void;
+  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  submitButtonRef: React.RefObject<HTMLButtonElement>;
+  setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
 }) {
-  const assistantMap = useAssistantsMapContext();
-  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
-    useChatContext();
-  const isComposing = useRef(false);
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { handleFiles } = useFileHandling();
-  const getSender = useGetSender();
   const localize = useLocalize();
+  const getSender = useGetSender();
+  const isComposing = useRef(false);
+  const agentsMap = useAgentsMapContext();
+  const { handleFiles } = useFileHandling();
+  const assistantMap = useAssistantsMapContext();
+  const checkHealth = useInteractionHealthCheck();
+  const enterToSend = useRecoilValue(store.enterToSend);
 
-  const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
+  const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
+    useChatContext();
+  const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
+
+  const { endpoint = '' } = conversation || {};
+  const { entity, isAgent, isAssistant } = getEntity({
+    endpoint,
+    agentsMap,
+    assistantMap,
+    agent_id: conversation?.agent_id,
+    assistant_id: conversation?.assistant_id,
+  });
+  const entityName = entity?.name ?? '';
+
   const isNotAppendable =
-    ((latestMessage?.unfinished && !isSubmitting) || latestMessage?.error) &&
-    endpoint !== EModelEndpoint.assistants;
+    (((latestMessage?.unfinished ?? false) && !isSubmitting) || (latestMessage?.error ?? false)) &&
+    !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
-  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || '';
-
-  // auto focus to input, when enter a conversation.
   useEffect(() => {
-    if (!conversationId) {
-      return;
+    const prompt = activePrompt ?? '';
+    if (prompt && textAreaRef.current) {
+      insertTextAtCursor(textAreaRef.current, prompt);
+      forceResize(textAreaRef.current);
+      setActivePrompt(undefined);
     }
-
-    // Prevents Settings from not showing on new conversation, also prevents showing toneStyle change without jailbreak
-    if (conversationId === 'new' || !jailbreak) {
-      setShowBingToneSetting(false);
-    }
-
-    if (conversationId !== 'search') {
-      textAreaRef.current?.focus();
-    }
-    // setShowBingToneSetting is a recoil setter, so it doesn't need to be in the dependency array
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, jailbreak]);
+  }, [activePrompt, setActivePrompt, textAreaRef]);
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      textAreaRef.current?.focus();
-    }, 100);
-
-    return () => clearTimeout(timeoutId);
-  }, [isSubmitting]);
-
-  useEffect(() => {
-    if (textAreaRef.current?.value) {
+    const currentValue = textAreaRef.current?.value ?? '';
+    if (currentValue) {
       return;
     }
 
@@ -88,16 +80,29 @@ export default function useTextarea({
       if (disabled) {
         return localize('com_endpoint_config_placeholder');
       }
+      const currentEndpoint = conversation?.endpoint ?? '';
+      const currentAgentId = conversation?.agent_id ?? '';
+      const currentAssistantId = conversation?.assistant_id ?? '';
+      if (isAgent && (!currentAgentId || !agentsMap?.[currentAgentId])) {
+        return localize('com_endpoint_agent_placeholder');
+      } else if (
+        isAssistant &&
+        (!currentAssistantId || !assistantMap?.[currentEndpoint]?.[currentAssistantId])
+      ) {
+        return localize('com_endpoint_assistant_placeholder');
+      }
+
       if (isNotAppendable) {
         return localize('com_endpoint_message_not_appendable');
       }
 
-      const sender =
-        conversation?.endpoint === EModelEndpoint.assistants
-          ? getAssistantName({ name: assistantName, localize })
-          : getSender(conversation as TEndpointOption);
+      const sender = isAssistant || isAgent
+        ? getEntityName({ name: entityName, isAgent, localize })
+        : getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+      return `${localize(
+        'com_endpoint_message_new', { 0: sender ? sender : localize('com_endpoint_ai') },
+      )}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -111,6 +116,7 @@ export default function useTextarea({
 
       if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
         textAreaRef.current?.setAttribute('placeholder', placeholder);
+        forceResize(textAreaRef.current);
       }
     };
 
@@ -118,37 +124,79 @@ export default function useTextarea({
     debouncedSetPlaceholder();
 
     return () => debouncedSetPlaceholder.cancel();
-  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender, assistantName]);
+  }, [
+    isAgent,
+    localize,
+    disabled,
+    getSender,
+    agentsMap,
+    entityName,
+    textAreaRef,
+    isAssistant,
+    assistantMap,
+    conversation,
+    latestMessage,
+    isNotAppendable,
+  ]);
 
-  const handleKeyDown = (e: KeyEvent) => {
-    if (e.key === 'Enter' && isSubmitting) {
-      return;
-    }
+  const handleKeyDown = useCallback(
+    (e: KeyEvent) => {
+      if (textAreaRef.current && checkIfScrollable(textAreaRef.current)) {
+        const scrollable = checkIfScrollable(textAreaRef.current);
+        scrollable && setIsScrollable(scrollable);
+      }
+      if (e.key === 'Enter' && isSubmitting) {
+        return;
+      }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-    }
+      checkHealth();
 
-    if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
-      submitMessage();
-    }
-  };
+      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+      const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
 
-  const handleKeyUp = (e: KeyEvent) => {
-    const target = e.target as HTMLTextAreaElement;
+      // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
+      const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
-    if (e.keyCode === 8 && target.value.trim() === '') {
-      setText(target.value);
-    }
+      if (isNonShiftEnter && filesLoading) {
+        e.preventDefault();
+      }
 
-    if (e.key === 'Enter' && e.shiftKey) {
-      return console.log('Enter + Shift');
-    }
+      if (isNonShiftEnter) {
+        e.preventDefault();
+      }
 
-    if (isSubmitting) {
-      return;
-    }
-  };
+      if (
+        e.key === 'Enter' &&
+        !enterToSend &&
+        !isCtrlEnter &&
+        textAreaRef.current &&
+        !isComposingInput
+      ) {
+        e.preventDefault();
+        insertTextAtCursor(textAreaRef.current, '\n');
+        forceResize(textAreaRef.current);
+        return;
+      }
+
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposingInput) {
+        const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
+        if (globalAudio) {
+          console.log('Unmuting global audio');
+          globalAudio.muted = false;
+        }
+        submitButtonRef.current?.click();
+      }
+    },
+    [
+      isSubmitting,
+      checkHealth,
+      filesLoading,
+      enterToSend,
+      setIsScrollable,
+      textAreaRef,
+      submitButtonRef,
+    ],
+  );
 
   const handleCompositionStart = () => {
     isComposing.current = true;
@@ -160,36 +208,35 @@ export default function useTextarea({
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      e.preventDefault();
-
-      const pastedData = e.clipboardData.getData('text/plain');
       const textArea = textAreaRef.current;
-
       if (!textArea) {
         return;
       }
 
-      const start = textArea.selectionStart;
-      const end = textArea.selectionEnd;
+      const clipboardData = e.clipboardData as DataTransfer | undefined;
+      if (!clipboardData) {
+        return;
+      }
 
-      const newValue =
-        textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-      setText(newValue);
-
-      if (e.clipboardData && e.clipboardData.files.length > 0) {
-        e.preventDefault();
+      if (clipboardData.files.length > 0) {
         setFilesLoading(true);
-        handleFiles(e.clipboardData.files);
+        const timestampedFiles: File[] = [];
+        for (const file of clipboardData.files) {
+          const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
+            type: file.type,
+          });
+          timestampedFiles.push(newFile);
+        }
+        handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setText],
+    [handleFiles, setFilesLoading, textAreaRef],
   );
 
   return {
     textAreaRef,
-    handleKeyDown,
-    handleKeyUp,
     handlePaste,
+    handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
   };

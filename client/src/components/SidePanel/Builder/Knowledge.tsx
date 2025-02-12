@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  EModelEndpoint,
+  mergeFileConfig,
   retrievalMimeTypes,
   fileConfig as defaultFileConfig,
-  mergeFileConfig,
 } from 'librechat-data-provider';
+import type { AssistantsEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
@@ -26,9 +26,11 @@ const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function Knowledge({
+  endpoint,
   assistant_id,
   files: _files,
 }: {
+  endpoint: AssistantsEndpoint;
   assistant_id: string;
   files?: [string, ExtendedFile][];
 }) {
@@ -40,7 +42,7 @@ export default function Knowledge({
     select: (data) => mergeFileConfig(data),
   });
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.assistants,
+    overrideEndpoint: endpoint,
     additionalMetadata: { assistant_id },
     fileSetter: setFiles,
   });
@@ -51,9 +53,10 @@ export default function Knowledge({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.assistants];
+  const endpointFileConfig = fileConfig.endpoints[endpoint] as EndpointFileConfig | undefined;
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
-  if (endpointFileConfig?.disabled) {
+  if (isUploadDisabled) {
     return null;
   }
 
