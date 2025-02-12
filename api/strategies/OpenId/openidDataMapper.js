@@ -141,7 +141,6 @@ class MicrosoftDataMapper extends BaseDataMapper {
  * Map provider names to their specific data mappers.
  */
 const PROVIDER_MAPPERS = {
-  // Fully Working
   microsoft: MicrosoftDataMapper,
 };
 

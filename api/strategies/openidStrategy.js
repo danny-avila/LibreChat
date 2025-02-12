@@ -177,7 +177,11 @@ async function setupOpenId() {
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
-    const adminRole = process.env.OPENID_ADMIN_ROLE;
+    const adminRolesEnv = process.env.OPENID_ADMIN_ROLE;
+    const adminRoles = adminRolesEnv
+      ? adminRolesEnv.split(',').map(role => role.trim())
+      : [];
+
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -256,7 +260,7 @@ async function setupOpenId() {
           const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
           const decodedToken = safeDecode(token);
           const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
-          const isAdmin = tokenBasedRoles.includes(adminRole);
+          const isAdmin = tokenBasedRoles.some(role => adminRoles.includes(role));
           const assignedRole = isAdmin ? SystemRoles.ADMIN : SystemRoles.USER;
           logger.debug(`[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`);
 
