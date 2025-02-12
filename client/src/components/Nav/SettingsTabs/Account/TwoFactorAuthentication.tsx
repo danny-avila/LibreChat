@@ -32,7 +32,6 @@ const TwoFactorAuthentication: React.FC = () => {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [verificationToken, setVerificationToken] = useState<string>('');
-  const [disableBackupCode, setDisableBackupCode] = useState<string>('');
   const [phase, setPhase] = useState<Phase>(user?.totpEnabled ? 'disable' : 'setup');
 
   const { mutate: confirm2FAMutate } = useConfirmTwoFactorMutation();
@@ -68,7 +67,6 @@ const TwoFactorAuthentication: React.FC = () => {
     setBackupCodes([]);
     setVerificationToken('');
     setDisableToken('');
-    setDisableBackupCode('');
     setPhase(user?.totpEnabled ? 'disable' : 'setup');
     setDownloaded(false);
     setProgress(0);
@@ -139,13 +137,13 @@ const TwoFactorAuthentication: React.FC = () => {
         return;
       }
 
-      if (useBackup && disableBackupCode.trim().length < 8) {
+      if (useBackup && token.trim().length < 8) {
         return;
       }
 
       const payload: TVerify2FARequest = {};
       if (useBackup) {
-        payload.backupCode = disableBackupCode.trim();
+        payload.backupCode = token.trim();
       } else {
         payload.token = token.trim();
       }
@@ -175,15 +173,7 @@ const TwoFactorAuthentication: React.FC = () => {
         onError: () => showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
       });
     },
-    [
-      disableToken,
-      disableBackupCode,
-      verify2FAMutate,
-      disable2FAMutate,
-      showToast,
-      localize,
-      setUser,
-    ],
+    [disableToken, verify2FAMutate, disable2FAMutate, showToast, localize, setUser],
   );
 
   return (
