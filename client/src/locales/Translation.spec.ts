@@ -36,6 +36,7 @@ describe('i18next translation tests', () => {
 
   it('should return an empty string for an invalid key', () => {
     i18n.changeLanguage('en');
+    // @ts-ignore
     expect(i18n.t('invalid-key')).toBe('');
   });
 
