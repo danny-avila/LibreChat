@@ -28,7 +28,7 @@ function ChatView({ index = 0 }: { index?: number }) {
     select: useCallback(
       (data: TMessage[]) => {
         const dataTree = buildTree({ messages: data, fileMap });
-        return dataTree?.length === 0 ? null : dataTree ?? null;
+        return dataTree?.length === 0 ? null : (dataTree ?? null);
       },
       [fileMap],
     ),
@@ -62,7 +62,7 @@ function ChatView({ index = 0 }: { index?: number }) {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
-          <Presentation useSidePanel={true}>
+          <Presentation>
             {content}
             <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
               <ChatForm index={index} />

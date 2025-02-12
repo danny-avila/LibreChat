@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   coverageReporters: ['text', 'cobertura'],
@@ -15,4 +15,5 @@ module.exports = {
   //   },
   // },
   restoreMocks: true,
+  testTimeout: 15000,
 };

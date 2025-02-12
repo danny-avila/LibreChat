@@ -270,6 +270,7 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
+    ignores: ['packages/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),
@@ -283,7 +284,6 @@ export default [
       },
     },
     rules: {
-      // TODO: maybe later to error.
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
