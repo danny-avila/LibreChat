@@ -11,6 +11,7 @@ import {
   Button,
   Label,
   Spinner,
+  TooltipAnchor,
 } from '~/components';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
@@ -71,7 +72,9 @@ const BackupCodesItem: React.FC = () => {
           <Label className="font-light">{localize('com_ui_backup_codes')}</Label>
         </div>
         <OGDialogTrigger asChild>
-          <Button variant="outline">{localize('com_endpoint_show')}</Button>
+          <Button aria-label="Show Backup Codes" variant="outline">
+            {localize('com_endpoint_show')}
+          </Button>
         </OGDialogTrigger>
       </div>
 
@@ -92,38 +95,56 @@ const BackupCodesItem: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   {user.backupCodes.map((code, index) => {
                     const isUsed = code.used;
+                    const description = `Backup code number ${index + 1}, ${
+                      isUsed
+                        ? `used on ${code.usedAt ? new Date(code.usedAt).toLocaleDateString() : 'an unknown date'}`
+                        : 'not used yet'
+                    }`;
+
                     return (
                       <motion.div
                         key={code.codeHash}
+                        role="listitem"
+                        tabIndex={0}
+                        aria-label={description}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        // className="rounded-lg bg-surface-tertiary p-3"
-                        className={`flex flex-col rounded-xl border p-4 backdrop-blur-sm transition-colors ${
+                        onFocus={() => {
+                          const announcement = new CustomEvent('announce', {
+                            detail: { message: description },
+                          });
+                          document.dispatchEvent(announcement);
+                        }}
+                        className={`flex flex-col rounded-xl border p-4 backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                           isUsed
                             ? 'border-red-200 bg-red-50/80 dark:border-red-800 dark:bg-red-900/20'
                             : 'border-green-200 bg-green-50/80 dark:border-green-800 dark:bg-green-900/20'
                         } `}
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between" aria-hidden="true">
                           <span className="text-sm font-medium text-text-secondary">
                             #{index + 1}
                           </span>
-                          <span
-                            className={`rounded-full px-3 py-1 text-sm font-medium ${
-                              isUsed
-                                ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                                : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                            }`}
-                          >
-                            {isUsed ? localize('com_ui_used') : localize('com_ui_not_used')}
-                          </span>
+                          <TooltipAnchor
+                            description={
+                              code.usedAt ? new Date(code.usedAt).toLocaleDateString() : ''
+                            }
+                            disabled={!isUsed}
+                            focusable={false}
+                            render={
+                              <span
+                                className={`rounded-full px-3 py-1 text-sm font-medium ${
+                                  isUsed
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                    : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                }`}
+                              >
+                                {isUsed ? localize('com_ui_used') : localize('com_ui_not_used')}
+                              </span>
+                            }
+                          />
                         </div>
-                        {isUsed && code.usedAt && (
-                          <span className="mt-2 text-xs text-gray-500">
-                            {new Date(code.usedAt).toLocaleDateString()}
-                          </span>
-                        )}
                       </motion.div>
                     );
                   })}

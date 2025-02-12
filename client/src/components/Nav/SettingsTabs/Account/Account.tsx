@@ -4,8 +4,11 @@ import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
 import EnableTwoFactorItem from './TwoFactorAuthentication';
 import BackupCodesItem from './BackupCodesItem';
+import { useAuthContext } from '~/hooks';
 
 function Account() {
+  const user = useAuthContext();
+
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="pb-3">
@@ -14,12 +17,18 @@ function Account() {
       <div className="pb-3">
         <Avatar />
       </div>
-      <div className="pb-3">
-        <EnableTwoFactorItem />
-      </div>
-      <div className="pb-3">
-        <BackupCodesItem />
-      </div>
+      {user?.user?.provider === 'local' && (
+        <>
+          <div className="pb-3">
+            <EnableTwoFactorItem />
+          </div>
+          {user?.user?.totpEnabled && (
+            <div className="pb-3">
+              <BackupCodesItem />
+            </div>
+          )}
+        </>
+      )}
       <div className="pb-3">
         <DeleteAccount />
       </div>

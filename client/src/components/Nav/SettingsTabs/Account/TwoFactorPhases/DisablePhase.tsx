@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
-import { Button, InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from '~/components';
+import {
+  Button,
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+  InputOTPSeparator,
+  Spinner,
+} from '~/components';
 import { useLocalize } from '~/hooks';
 
 const fadeAnimation = {
@@ -35,9 +42,14 @@ export const DisablePhase: React.FC<DisablePhaseProps> = ({ onDisable, isDisabli
         >
           {useBackup ? (
             <InputOTPGroup>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <InputOTPSlot key={i} index={i} />
-              ))}
+              <InputOTPSlot index={0} />
+              <InputOTPSlot index={1} />
+              <InputOTPSlot index={2} />
+              <InputOTPSlot index={3} />
+              <InputOTPSlot index={4} />
+              <InputOTPSlot index={5} />
+              <InputOTPSlot index={6} />
+              <InputOTPSlot index={7} />
             </InputOTPGroup>
           ) : (
             <>
@@ -62,7 +74,8 @@ export const DisablePhase: React.FC<DisablePhaseProps> = ({ onDisable, isDisabli
         disabled={isDisabling || token.length !== (useBackup ? 8 : 6)}
         className="w-full rounded-xl px-6 py-3 transition-all disabled:opacity-50"
       >
-        {localize('com_ui_2fa_disable')}
+        {isDisabling === true && <Spinner className="mr-2" />}
+        {isDisabling ? localize('com_ui_disabling') : localize('com_ui_2fa_disable')}
       </Button>
       <button
         onClick={() => setUseBackup(!useBackup)}
