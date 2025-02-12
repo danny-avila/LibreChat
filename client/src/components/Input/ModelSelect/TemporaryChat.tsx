@@ -40,13 +40,15 @@ export const TemporaryChat = () => {
   };
 
   return (
-    <div className="sticky bottom-0 border-none bg-surface-tertiary px-6 py-4 ">
-      <div className="flex items-center">
-        <div className={cn('flex flex-1 items-center gap-2', isActiveConvo && 'opacity-40')}>
-          <MessageCircleDashed className="icon-sm" />
-          <span className="text-sm text-text-primary">{localize('com_ui_temporary_chat')}</span>
+    <div className="sticky bottom-0 mt-auto w-full border-none bg-surface-tertiary px-6 py-4">
+      <div className="flex items-center justify-between">
+        <div className={cn('flex items-center gap-2', isActiveConvo && 'opacity-40')}>
+          <MessageCircleDashed className="icon-sm" aria-hidden="true" />
+          <span className="truncate text-sm text-text-primary">
+            {localize('com_ui_temporary_chat')}
+          </span>
         </div>
-        <div className="ml-auto flex items-center">
+        <div className="flex flex-shrink-0 items-center">
           <Switch
             id="temporary-chat-switch"
             checked={isTemporary}
