@@ -3,6 +3,11 @@ const { isEnabled } = require('~/server/utils');
 const { findUser } = require('~/models');
 const { logger } = require('~/config');
 
+/**
+ * Returns a function that handles the social login flow for a given provider.
+ * @param {string} provider - The provider name (e.g. 'google', 'facebook').
+ * @param {Function} getProfileDetails - A function to extract user details from the provider profile.
+ */
 const socialLogin =
   (provider, getProfileDetails) => async (accessToken, refreshToken, idToken, profile, cb) => {
     try {
@@ -31,6 +36,8 @@ const socialLogin =
         });
         return cb(null, newUser);
       }
+
+      return cb(null, null);
     } catch (err) {
       logger.error(`[${provider}Login]`, err);
       return cb(err);
