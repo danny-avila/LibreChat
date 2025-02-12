@@ -1,6 +1,7 @@
 import {
   Button,
   Card,
+  Modal,
   Table,
   TableBody,
   TableCell,
@@ -17,6 +18,9 @@ import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
+import BalanceModal from './BalanceModal';
+// import Modal from './Modal';
+
 
 interface User {
   name: string;
@@ -29,6 +33,12 @@ interface User {
 
 const AddBalance: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+
+  const[balanceModal , setBalanceModal] =useState(true)
+
+
+
+
 
   useEffect(() => {
     const getUsers = async () => {
@@ -49,8 +59,17 @@ const AddBalance: React.FC = () => {
     getUsers();
   }, []);
 
+
+
+  const AddBalanceHandler = async(user:User) =>{
+    setBalanceModal(true)
+    console.log(user)
+  }
+
   return (
     <>
+    
+    <BalanceModal open={balanceModal} onClose={()=>setBalanceModal(false)}/>
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
         <TableContainer sx={{ maxHeight: 440 }}>
           <Table stickyHeader aria-label="sticky table">
@@ -66,7 +85,7 @@ const AddBalance: React.FC = () => {
             </TableHead>
             <TableBody>
               {users.map((item) => (
-                <TableRow>
+                <TableRow key={item.id}>
                   <TableCell>{item.id}</TableCell>
                   <TableCell>{item.username}</TableCell>
                   <TableCell>{item.email}</TableCell>
@@ -80,7 +99,7 @@ const AddBalance: React.FC = () => {
                     <IconButton>
                       <EditIcon />
                     </IconButton>
-                    <IconButton>
+                    <IconButton onClick={()=>AddBalanceHandler(item)}>
                       <AddIcon />
                     </IconButton>
                   </TableCell>
