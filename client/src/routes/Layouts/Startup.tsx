@@ -3,9 +3,9 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
-import { useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize } from '~/hooks';
 
-const headerMap = {
+const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
   '/register': 'com_auth_create_account',
   '/forgot-password': 'com_auth_reset_password',
@@ -13,8 +13,8 @@ const headerMap = {
 };
 
 export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: boolean }) {
-  const [error, setError] = useState<string | null>(null);
-  const [headerText, setHeaderText] = useState<string | null>(null);
+  const [error, setError] = useState<TranslationKeys | null>(null);
+  const [headerText, setHeaderText] = useState<TranslationKeys | null>(null);
   const [startupConfig, setStartupConfig] = useState<TStartupConfig | null>(null);
   const {
     data,

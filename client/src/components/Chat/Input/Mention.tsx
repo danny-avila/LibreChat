@@ -6,7 +6,7 @@ import type { MentionOption, ConvoGenerator } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
-import { useLocalize, useCombobox } from '~/hooks';
+import { useLocalize, useCombobox, TranslationKeys } from '~/hooks';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 
@@ -24,7 +24,7 @@ export default function Mention({
   newConversation: ConvoGenerator;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   commandChar?: string;
-  placeholder?: string;
+  placeholder?: TranslationKeys;
   includeAssistants?: boolean;
 }) {
   const localize = useLocalize();
@@ -162,7 +162,7 @@ export default function Mention({
       <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
           // The user expects focus to transition to the input field when the popover is opened
-          // eslint-disable-next-line jsx-a11y/no-autofocus
+
           autoFocus
           ref={inputRef}
           placeholder={localize(placeholder)}
