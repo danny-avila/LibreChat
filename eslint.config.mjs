@@ -287,7 +287,11 @@ export default [
     },
     rules: {
       // i18n
-      'i18next/no-literal-string': ['error', { mode: 'jsx-text-only' }],
+      'i18next/no-literal-string': [
+        'error', {
+          mode: 'jsx-text-only',
+          'should-validate-template': true,
+        }],
       //
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': 'off',

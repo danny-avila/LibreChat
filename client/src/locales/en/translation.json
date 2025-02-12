@@ -679,6 +679,8 @@
   "com_ui_happy_birthday": "It's my 1st birthday!",
   "com_ui_hide_qr": "Hide QR Code",
   "com_ui_host": "Host",
+  "com_ui_azure": "Azure",
+  "com_ui_openai": "OpenAI",
   "com_ui_idea": "Ideas",
   "com_ui_image_gen": "Image Gen",
   "com_ui_import_conversation": "Import",
