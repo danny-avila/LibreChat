@@ -52,6 +52,10 @@ export namespace Agents {
     id?: string;
     /** If provided, the output of the tool call */
     output?: string;
+    /** Auth URL */
+    auth?: string;
+    /** Expiration time */
+    expires_at?: number;
   };
 
   export type ToolEndEvent = {
@@ -190,6 +194,8 @@ export namespace Agents {
   export type ToolCallDelta = {
     type: StepTypes.TOOL_CALLS | string;
     tool_calls?: ToolCallChunk[];
+    auth?: string;
+    expires_at?: number;
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;
   export interface ExtendedMessageContent {

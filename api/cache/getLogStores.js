@@ -37,6 +37,10 @@ const messages = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.ONE_MINUTE })
   : new Keyv({ namespace: CacheKeys.MESSAGES, ttl: Time.ONE_MINUTE });
 
+const flows = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
+  : new Keyv({ namespace: CacheKeys.FLOWS, ttl: Time.ONE_MINUTE * 3 });
+
 const tokenConfig = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
   : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: Time.THIRTY_MINUTES });
@@ -88,6 +92,7 @@ const namespaces = {
   [CacheKeys.MODEL_QUERIES]: modelQueries,
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,
+  [CacheKeys.FLOWS]: flows,
 };
 
 /**

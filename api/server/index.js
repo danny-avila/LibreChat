@@ -104,6 +104,7 @@ const startServer = async () => {
   app.use('/webauthn', routes.authWebAuthn);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
+  app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);

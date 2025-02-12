@@ -96,6 +96,14 @@ module.exports = {
         update.conversationId = newConversationId;
       }
 
+      if (req.body.isTemporary) {
+        const expiredAt = new Date();
+        expiredAt.setDate(expiredAt.getDate() + 30);
+        update.expiredAt = expiredAt;
+      } else {
+        update.expiredAt = null;
+      }
+
       /** Note: the resulting Model object is necessary for Meilisearch operations */
       const conversation = await Conversation.findOneAndUpdate(
         { conversationId, user: req.user.id },
@@ -143,6 +151,9 @@ module.exports = {
     if (Array.isArray(tags) && tags.length > 0) {
       query.tags = { $in: tags };
     }
+
+    query.$and = [{ $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] }];
+
     try {
       const totalConvos = (await Conversation.countDocuments(query)) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
@@ -172,6 +183,7 @@ module.exports = {
           Conversation.findOne({
             user,
             conversationId: convo.conversationId,
+            $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
           }).lean(),
         ),
       );

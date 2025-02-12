@@ -1,9 +1,8 @@
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { EModelEndpoint, CacheKeys, Constants, googleSettings } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
+const initializeClient = require('./initialize');
 const { isEnabled } = require('~/server/utils');
 const { saveConvo } = require('~/models');
-const { logger } = require('~/config');
-const initializeClient = require('./initialize');
 
 const addTitle = async (req, { text, response, client }) => {
   const { TITLE_CONVO = 'true' } = process.env ?? {};
@@ -14,22 +13,16 @@ const addTitle = async (req, { text, response, client }) => {
   if (client.options.titleConvo === false) {
     return;
   }
-
-  const DEFAULT_TITLE_MODEL = 'gemini-pro';
   const { GOOGLE_TITLE_MODEL } = process.env ?? {};
-
-  let model = GOOGLE_TITLE_MODEL ?? DEFAULT_TITLE_MODEL;
+  const providerConfig = req.app.locals[EModelEndpoint.google];
+  let model =
+    providerConfig?.titleModel ??
+    GOOGLE_TITLE_MODEL ??
+    client.options?.modelOptions.model ??
+    googleSettings.model.default;
 
   if (GOOGLE_TITLE_MODEL === Constants.CURRENT_MODEL) {
     model = client.options?.modelOptions.model;
-
-    if (client.isVisionModel) {
-      logger.warn(
-        `current_model was specified for Google title request, but the model ${model} cannot process a text-only conversation. Falling back to ${DEFAULT_TITLE_MODEL}`,
-      );
-
-      model = DEFAULT_TITLE_MODEL;
-    }
   }
 
   const titleEndpointOptions = {

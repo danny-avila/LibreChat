@@ -159,7 +159,9 @@ const MessageContent = ({
 
   return (
     <>
-      {thinkingContent && <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>}
+      {thinkingContent.length > 0 && (
+        <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>
+      )}
       <DisplayMessage
         key={`display-${messageId}`}
         showCursor={showRegularCursor}

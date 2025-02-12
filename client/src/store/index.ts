@@ -11,6 +11,7 @@ import prompts from './prompts';
 import lang from './language';
 import settings from './settings';
 import misc from './misc';
+import isTemporary from './temporary';
 export default {
   ...artifacts,
   ...families,
@@ -25,4 +26,5 @@ export default {
   ...lang,
   ...settings,
   ...misc,
+  ...isTemporary,
 };

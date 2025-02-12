@@ -52,6 +52,15 @@ async function saveMessage(req, params, metadata) {
       user: req.user.id,
       messageId: params.newMessageId || params.messageId,
     };
+
+    if (req?.body?.isTemporary) {
+      const expiredAt = new Date();
+      expiredAt.setDate(expiredAt.getDate() + 30);
+      update.expiredAt = expiredAt;
+    } else {
+      update.expiredAt = null;
+    }
+
     const message = await Message.findOneAndUpdate(
       { messageId: params.messageId, user: req.user.id },
       update,

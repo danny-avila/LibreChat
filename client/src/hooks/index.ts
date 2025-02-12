@@ -22,6 +22,7 @@ export { default as useToast } from './useToast';
 export { default as useTimeout } from './useTimeout';
 export { default as useNewConvo } from './useNewConvo';
 export { default as useLocalize } from './useLocalize';
+export type { TranslationKeys } from './useLocalize';
 export { default as useMediaQuery } from './useMediaQuery';
 export { default as useScrollToRef } from './useScrollToRef';
 export { default as useLocalStorage } from './useLocalStorage';

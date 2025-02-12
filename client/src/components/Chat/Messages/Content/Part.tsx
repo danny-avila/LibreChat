@@ -81,6 +81,8 @@ const Part = memo(({ part, isSubmitting, attachments, showCursor, isCreatedByUse
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          auth={toolCall.auth}
+          expires_at={toolCall.expires_at}
         />
       );
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
