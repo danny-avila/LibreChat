@@ -1,4 +1,3 @@
-
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TModelsConfig } from './types';
@@ -43,9 +42,8 @@ export const fileSourceSchema = z.nativeEnum(FileSources);
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
 
 // Helper type to determine the default value or undefined based on whether the field has a default
-type DefaultValue<T> = T extends z.ZodDefault<z.ZodTypeAny>
-  ? ReturnType<T['_def']['defaultValue']>
-  : undefined;
+type DefaultValue<T> =
+  T extends z.ZodDefault<z.ZodTypeAny> ? ReturnType<T['_def']['defaultValue']> : undefined;
 
 // Extract default values or undefined from the schema shape
 type ExtractDefaults<T> = {
@@ -145,6 +143,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
+  artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
 }
@@ -218,6 +217,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
       .default([
         AgentCapabilities.execute_code,
         AgentCapabilities.file_search,
+        AgentCapabilities.artifacts,
         AgentCapabilities.actions,
         AgentCapabilities.tools,
       ]),
@@ -1067,6 +1067,7 @@ export enum ImageDetailCost {
   /**
    * Additional Cost added to High Resolution Total Cost
    */
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
   ADDITIONAL = 85,
 }
 
@@ -1137,7 +1138,7 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.6',
+  VERSION = 'v0.7.7-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.2.1',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */

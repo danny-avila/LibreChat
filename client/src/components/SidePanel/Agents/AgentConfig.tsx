@@ -10,7 +10,7 @@ import {
   AgentCapabilities,
 } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps } from '~/common';
+import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
@@ -26,6 +26,7 @@ import AgentAvatar from './AgentAvatar';
 import { Spinner } from '~/components';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
+import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import { Panel } from '~/common';
@@ -75,6 +76,10 @@ export default function AgentConfig({
   );
   const actionsEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.actions),
+    [agentsConfig],
+  );
+  const artifactsEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.artifacts) ?? false,
     [agentsConfig],
   );
   const fileSearchEnabled = useMemo(
@@ -178,18 +183,10 @@ export default function AgentConfig({
   }, [agent_id, setActivePanel, showToast, localize]);
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
+  let Icon: IconComponentTypes | null | undefined;
   let endpointType: EModelEndpoint | undefined;
   let endpointIconURL: string | undefined;
   let iconKey: string | undefined;
-  let Icon:
-    | React.ComponentType<
-        React.SVGProps<SVGSVGElement> & {
-          endpoint: string;
-          endpointType: EModelEndpoint | undefined;
-          iconURL: string | undefined;
-        }
-      >
-    | undefined;
 
   if (providerValue !== undefined) {
     endpointType = getEndpointField(endpointsConfig, providerValue as string, 'type');
@@ -337,7 +334,7 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
-        {(codeEnabled || fileSearchEnabled) && (
+        {(codeEnabled || fileSearchEnabled || artifactsEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
               {localize('com_assistants_capabilities')}
@@ -346,6 +343,8 @@ export default function AgentConfig({
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
             {/* File Search */}
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {/* Artifacts */}
+            {artifactsEnabled && <Artifacts />}
           </div>
         )}
         {/* Agent Tools & Actions */}

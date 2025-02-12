@@ -68,8 +68,8 @@ export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 export type LastSelectedModels = Record<t.EModelEndpoint, string>;
 
 export type LocalizeFunction = (
-    phraseKey: TranslationKeys,
-    options?: Record<string, string | number>
+  phraseKey: TranslationKeys,
+  options?: Record<string, string | number>,
 ) => string;
 
 export type ChatFormValues = { text: string };
@@ -89,6 +89,7 @@ export type IconMapProps = {
   iconURL?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   endpoint?: string | null;
+  endpointType?: string;
   assistantName?: string;
   agentName?: string;
   avatar?: string;
