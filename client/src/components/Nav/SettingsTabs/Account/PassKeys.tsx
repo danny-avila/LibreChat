@@ -41,16 +41,16 @@ export default function PassKeys() {
             {user.passkeys.map((passkey: TPasskey) => (
               <div key={passkey.id} className="rounded-lg border p-3 bg-gray-50 dark:bg-gray-800">
                 <p className="text-sm">
-                  <strong>ID:</strong> {passkey.id}
+                  <strong>{localize('com_nav_settings_passkey_label_id')}</strong> {passkey.id}
                 </p>
                 <p className="text-sm break-all">
-                  <strong>Public Key:</strong> {Buffer.from(passkey.publicKey).toString('base64')}
+                  <strong>{localize('com_nav_settings_passkey_label_public_key')}</strong> {Buffer.from(passkey.publicKey).toString('base64')}
                 </p>
                 <p className="text-sm">
-                  <strong>Usage Counter:</strong> {passkey.counter}
+                  <strong>{localize('com_nav_settings_passkey_label_usage_counter')}</strong> {passkey.counter}
                 </p>
                 <p className="text-sm">
-                  <strong>Transports:</strong> {passkey.transports.length > 0 ? passkey.transports.join(', ') : 'None'}
+                  <strong>{localize('com_nav_settings_passkey_label_transports')}</strong> {passkey.transports.length > 0 ? passkey.transports.join(', ') : localize('com_nav_settings_passkey_none')}
                 </p>
               </div>
             ))}

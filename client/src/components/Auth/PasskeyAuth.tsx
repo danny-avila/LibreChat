@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize } from '~/hooks';
 
 type PasskeyAuthProps = {
   mode: 'login' | 'register';
-  onBack?: () => void; // Optional callback to return to normal login/register view
+  onBack?: () => void;
 };
 
 const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
@@ -11,10 +11,84 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Utility for showing errors using localized keys
+  const alertError = (key: TranslationKeys, error: any) => {
+    console.error(`${localize(key)} error:`, error);
+    alert(
+      `${localize(key)}: ${error.message}. ${localize('com_auth_passkey_try_again')}`
+    );
+  };
+
+  // Convert login challenge options from the server
+  const processLoginOptions = (options: any) => {
+    options.challenge = base64URLToArrayBuffer(options.challenge);
+    if (options.allowCredentials) {
+      options.allowCredentials = options.allowCredentials.map((cred: any) => ({
+        ...cred,
+        id: base64URLToArrayBuffer(cred.id),
+      }));
+    }
+    return options;
+  };
+
+  // Convert registration challenge options from the server
+  const processRegistrationOptions = (options: any) => {
+    options.challenge = base64URLToArrayBuffer(options.challenge);
+    options.user.id = base64URLToArrayBuffer(options.user.id);
+    if (options.excludeCredentials) {
+      options.excludeCredentials = options.excludeCredentials.map((cred: any) => ({
+        ...cred,
+        id: base64URLToArrayBuffer(cred.id),
+      }));
+    }
+    return options;
+  };
+
+  // Format the authentication response from navigator.credentials.get()
+  const getAuthenticationResponse = (credential: PublicKeyCredential) => ({
+    id: credential.id,
+    rawId: arrayBufferToBase64URL(credential.rawId),
+    type: credential.type,
+    response: {
+      authenticatorData: arrayBufferToBase64URL(
+        (credential.response as any).authenticatorData
+      ),
+      clientDataJSON: arrayBufferToBase64URL(
+        (credential.response as any).clientDataJSON
+      ),
+      signature: arrayBufferToBase64URL(
+        (credential.response as any).signature
+      ),
+      userHandle: (credential.response as any).userHandle
+        ? arrayBufferToBase64URL((credential.response as any).userHandle)
+        : null,
+    },
+  });
+
+  // Format the registration response from navigator.credentials.create()
+  const getRegistrationResponse = (credential: PublicKeyCredential) => ({
+    id: credential.id,
+    rawId: arrayBufferToBase64URL(credential.rawId),
+    type: credential.type,
+    response: {
+      clientDataJSON: arrayBufferToBase64URL(
+        (credential.response as any).clientDataJSON
+      ),
+      attestationObject: arrayBufferToBase64URL(
+        (credential.response as any).attestationObject
+      ),
+    },
+  });
+
   // --- PASSKEY LOGIN FLOW ---
   async function handlePasskeyLogin() {
     if (!email) {
+      // (You may wish to replace this literal with a localized string if available.)
       return alert('Email is required for login.');
+    }
+    if (typeof PublicKeyCredential === 'undefined') {
+      alert(localize('com_auth_passkey_not_supported'));
+      return;
     }
     setLoading(true);
     try {
@@ -23,37 +97,25 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
         {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
-        },
+        }
       );
       if (!challengeResponse.ok) {
         const errorData = await challengeResponse.json();
-        throw new Error(errorData.error || 'Failed to get challenge');
+        throw new Error(
+          errorData.error || localize('com_auth_passkey_error')
+        );
       }
-      const options = await challengeResponse.json();
-      options.challenge = base64URLToArrayBuffer(options.challenge);
-      if (options.allowCredentials) {
-        options.allowCredentials = options.allowCredentials.map((cred: any) => ({
-          ...cred,
-          id: base64URLToArrayBuffer(cred.id),
-        }));
-      }
-      const credential = await navigator.credentials.get({ publicKey: options });
+      let options = await challengeResponse.json();
+      options = processLoginOptions(options);
+
+      const credential = (await navigator.credentials.get({
+        publicKey: options,
+      })) as PublicKeyCredential;
       if (!credential) {
-        throw new Error('Failed to obtain credential');
+        throw new Error(localize('com_auth_passkey_no_credentials'));
       }
-      const authenticationResponse = {
-        id: credential.id,
-        rawId: arrayBufferToBase64URL(credential.rawId),
-        type: credential.type,
-        response: {
-          authenticatorData: arrayBufferToBase64URL((credential.response as any).authenticatorData),
-          clientDataJSON: arrayBufferToBase64URL((credential.response as any).clientDataJSON),
-          signature: arrayBufferToBase64URL((credential.response as any).signature),
-          userHandle: (credential.response as any).userHandle
-            ? arrayBufferToBase64URL((credential.response as any).userHandle)
-            : null,
-        },
-      };
+
+      const authenticationResponse = getAuthenticationResponse(credential);
       const loginCallbackResponse = await fetch('/webauthn/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,13 +123,15 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
       });
       const result = await loginCallbackResponse.json();
       if (result.user) {
+        alert(localize('com_auth_passkey_login_success'));
         window.location.href = '/';
       } else {
-        throw new Error(result.error || 'Authentication failed');
+        throw new Error(
+          result.error || localize('com_auth_passkey_error')
+        );
       }
     } catch (error: any) {
-      console.error('Passkey login error:', error);
-      alert('Authentication failed: ' + error.message);
+      alertError('com_auth_passkey_failed', error);
     } finally {
       setLoading(false);
     }
@@ -76,7 +140,12 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
   // --- PASSKEY REGISTRATION FLOW ---
   async function handlePasskeyRegister() {
     if (!email) {
+      // (You may wish to replace this literal with a localized string if available.)
       return alert('Email is required for registration.');
+    }
+    if (typeof PublicKeyCredential === 'undefined') {
+      alert(localize('com_auth_passkey_not_supported'));
+      return;
     }
     setLoading(true);
     try {
@@ -85,34 +154,25 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
         {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
-        },
+        }
       );
       if (!challengeResponse.ok) {
         const errorData = await challengeResponse.json();
-        throw new Error(errorData.error || 'Failed to get challenge');
+        throw new Error(
+          errorData.error || localize('com_auth_passkey_error')
+        );
       }
-      const options = await challengeResponse.json();
-      options.challenge = base64URLToArrayBuffer(options.challenge);
-      options.user.id = base64URLToArrayBuffer(options.user.id);
-      if (options.excludeCredentials) {
-        options.excludeCredentials = options.excludeCredentials.map((cred: any) => ({
-          ...cred,
-          id: base64URLToArrayBuffer(cred.id),
-        }));
-      }
-      const credential = await navigator.credentials.create({ publicKey: options });
+      let options = await challengeResponse.json();
+      options = processRegistrationOptions(options);
+
+      const credential = (await navigator.credentials.create({
+        publicKey: options,
+      })) as PublicKeyCredential;
       if (!credential) {
-        throw new Error('Failed to create credential');
+        throw new Error(localize('com_auth_passkey_create_error'));
       }
-      const registrationResponse = {
-        id: credential.id,
-        rawId: arrayBufferToBase64URL(credential.rawId),
-        type: credential.type,
-        response: {
-          clientDataJSON: arrayBufferToBase64URL((credential.response as any).clientDataJSON),
-          attestationObject: arrayBufferToBase64URL((credential.response as any).attestationObject),
-        },
-      };
+
+      const registrationResponse = getRegistrationResponse(credential);
       const registerCallbackResponse = await fetch('/webauthn/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -120,13 +180,15 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
       });
       const result = await registerCallbackResponse.json();
       if (result.user) {
+        alert(localize('com_auth_passkey_register_success'));
         window.location.href = '/login';
       } else {
-        throw new Error(result.error || 'Registration failed');
+        throw new Error(
+          result.error || localize('com_auth_passkey_error')
+        );
       }
     } catch (error: any) {
-      console.error('Passkey registration error:', error);
-      alert('Registration failed: ' + error.message);
+      alertError('com_auth_passkey_registration_failed', error);
     } finally {
       setLoading(false);
     }
@@ -180,8 +242,8 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
             ? localize('com_auth_loading')
             : localize(
               mode === 'login'
-                ? 'com_auth_passkey_login'
-                : 'com_auth_passkey_register',
+                ? 'com_auth_passkey_login_success'
+                : 'com_auth_passkey_register_success'
             )}
         </button>
       </form>
