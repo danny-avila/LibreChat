@@ -252,6 +252,7 @@
   "com_endpoint_preset_import": "Preset Imported!",
   "com_endpoint_preset_import_error": "There was an error importing your preset. Please try again.",
   "com_endpoint_preset_name": "Preset Name",
+  "com_endpoint_preset_custom_name_placeholder": "something needs to go here. was empty",
   "com_endpoint_preset_save_error": "There was an error saving your preset. Please try again.",
   "com_endpoint_preset_selected": "Preset Active!",
   "com_endpoint_preset_selected_title": "Active!",
