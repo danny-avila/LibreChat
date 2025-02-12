@@ -21,8 +21,8 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-const { WebAuthnStrategy } = require('passport-simple-webauthn2');
 const { mongoUserStore, mongoChallengeStore } = require('~/cache');
+const { WebAuthnStrategy } = require('passport-simple-webauthn2');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
