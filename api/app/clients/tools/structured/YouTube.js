@@ -153,8 +153,8 @@ Example: url="abc123" maxResults=20`,
       }),
     },
   );
-
-  const transcriptTool = tool(
+  
+const transcriptTool = tool(
     async ({ url }) => {
       const videoId = extractVideoId(url);
       if (!videoId) {
@@ -162,6 +162,7 @@ Example: url="abc123" maxResults=20`,
       }
 
       try {
+        // Manually created English subtitles
         try {
           const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
           return parseTranscript(transcript);
@@ -169,6 +170,15 @@ Example: url="abc123" maxResults=20`,
           logger.error(e);
         }
 
+        // Auto-generated English subtitles
+        try {
+          const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en-auto' });
+          return parseTranscript(transcript);
+        } catch (e) {
+          logger.error(e);
+        }
+
+        // Manually created German subtitles
         try {
           const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'de' });
           return parseTranscript(transcript);
@@ -176,6 +186,15 @@ Example: url="abc123" maxResults=20`,
           logger.error(e);
         }
 
+        // Auto-generated German subtitles
+        try {
+          const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'de-auto' });
+          return parseTranscript(transcript);
+        } catch (e) {
+          logger.error(e);
+        }
+
+        // Fallback: Try to fetch any available transcript
         const transcript = await YoutubeTranscript.fetchTranscript(videoId);
         return parseTranscript(transcript);
       } catch (error) {
@@ -189,7 +208,7 @@ Example: url="abc123" maxResults=20`,
 - Returns: Full video transcript as plain text
 - Use for: Content analysis, summarization, translation reference
 - This is the "Go-to" tool for analyzing actual video content
-- Attempts to fetch English first, then German, then any available language
+- Attempts to fetch in order: English manual, English auto, German manual, German auto, then any available language
 Example: url="https://youtube.com/watch?v=abc123"`,
       schema: z.object({
         url: z.string().describe('YouTube video URL or ID'),
