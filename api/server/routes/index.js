@@ -1,3 +1,4 @@
+const authWebAuthn = require('./authWebAuthn');
 const assistants = require('./assistants');
 const categories = require('./categories');
 const tokenizer = require('./tokenizer');
@@ -55,5 +56,6 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  authWebAuthn,
   banner,
 };
