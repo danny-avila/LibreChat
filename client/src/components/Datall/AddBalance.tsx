@@ -34,27 +34,28 @@ interface User {
 const AddBalance: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
 
-  const[balanceModal , setBalanceModal] =useState(true)
+  const[balanceModal , setBalanceModal] =useState(false)
+  const [selectedUserId ,setSelectedUserId] = useState<string>('')
 
 
 
+  const getUsers = async () => {
+    const res = await axios.get('http://localhost:3090/api/getUsers');
 
+    const filteredUsers = res.data.map((item: any) => ({
+      name: item.name,
+      username: item.username,
+      role: item.role,
+      id: item._id,
+      email: item.email,
+      balance: item.balance,
+    }));
+    console.log(res);
+    setUsers(filteredUsers);
+  };
 
   useEffect(() => {
-    const getUsers = async () => {
-      const res = await axios.get('http://localhost:3090/api/getUsers');
-
-      const filteredUsers = res.data.map((item: any) => ({
-        name: item.name,
-        username: item.username,
-        role: item.role,
-        id: item._id,
-        email: item.email,
-        balance: item.balance,
-      }));
-      console.log(res);
-      setUsers(filteredUsers);
-    };
+    
 
     getUsers();
   }, []);
@@ -63,13 +64,15 @@ const AddBalance: React.FC = () => {
 
   const AddBalanceHandler = async(user:User) =>{
     setBalanceModal(true)
+    setSelectedUserId(user.id)
     console.log(user)
+   
   }
 
   return (
     <>
     
-    <BalanceModal open={balanceModal} onClose={()=>setBalanceModal(false)}/>
+    <BalanceModal open={balanceModal} onClose={()=>setBalanceModal(false)} userId={selectedUserId} refreshUsers={getUsers}/>
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
         <TableContainer sx={{ maxHeight: 440 }}>
           <Table stickyHeader aria-label="sticky table">

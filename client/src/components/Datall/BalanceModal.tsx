@@ -6,6 +6,8 @@ import { number } from 'zod';
 interface BalanceModalProps {
   open: boolean;
   onClose: () => void;
+  userId: string
+  refreshUsers: ()=> Promise<void>
 }
 
 const style = {
@@ -27,6 +29,23 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
 
 
 const addBalanceHandler =  async()=>{
+
+
+
+    console.log(balance)
+
+
+
+const res = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
+    balance: balance ,id: props.userId
+  });
+  console.log('add balance:', res);
+  props.refreshUsers()
+  props.onClose()
+  setBalance('')
+
+
+    
 }
 
 
