@@ -123,7 +123,7 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
       });
       const result = await loginCallbackResponse.json();
       if (result.user) {
-        alert(localize('com_auth_passkey_login_success'));
+        // alert(localize('com_auth_passkey_login_success'));
         window.location.href = '/';
       } else {
         throw new Error(
@@ -180,7 +180,7 @@ const PasskeyAuth: React.FC<PasskeyAuthProps> = ({ mode, onBack }) => {
       });
       const result = await registerCallbackResponse.json();
       if (result.user) {
-        alert(localize('com_auth_passkey_register_success'));
+        // alert(localize('com_auth_passkey_register_success'));
         window.location.href = '/login';
       } else {
         throw new Error(

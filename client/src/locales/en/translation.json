@@ -792,6 +792,8 @@
   "com_auth_passkey_register_success": "Successfully registered with passkey",
   "com_auth_passkey_login_success": "Successfully logged in with passkey",
   "com_auth_passkey_try_again": "Please try again",
+  "com_auth_passkey_login": "Login with Passkey",
+  "com_auth_passkey_register": "Register with Passkey",
   "com_nav_settings_passkey_label_id": "ID:",
   "com_nav_settings_passkey_label_public_key": "Public Key:",
   "com_nav_settings_passkey_label_usage_counter": "Usage Counter:",
