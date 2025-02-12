@@ -861,5 +861,11 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_auth_passkey_login": "Login with Passkey",
+  "com_auth_passkey_register": "Register with Passkey",
+  "com_auth_loading": "Loading...",
+  "com_auth_back_to_register": "Back to registration",
+  "com_nav_passkeys": "Passkeys",
+  "com_nav_view_passkeys": "View Passkeys"
 }

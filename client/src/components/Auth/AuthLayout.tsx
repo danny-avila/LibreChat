@@ -5,6 +5,8 @@ import SocialLoginRender from './SocialLoginRender';
 import { ThemeSelector } from '~/components/ui';
 import { Banner } from '../Banners';
 import Footer from './Footer';
+import { useState } from 'react';
+import PasskeyAuth from '~/components/Auth/PasskeyAuth';
 
 const ErrorRender = ({ children }: { children: React.ReactNode }) => (
   <div className="mt-16 flex justify-center">
@@ -57,6 +59,12 @@ function AuthLayout({
     return null;
   };
 
+  // Determine the mode from the URL: if the pathname contains "register" then mode is "register", else "login"
+  const mode = pathname.includes('register') ? 'register' : 'login';
+
+  // Local state to toggle between the default form (children) and the passkey view.
+  const [showPasskey, setShowPasskey] = useState(false);
+
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
@@ -84,9 +92,20 @@ function AuthLayout({
               {header}
             </h1>
           )}
-          {children}
-          {(pathname.includes('login') || pathname.includes('register')) && (
-            <SocialLoginRender startupConfig={startupConfig} />
+          {/* Conditionally render the default content or the PasskeyAuth component */}
+          {showPasskey ? (
+            <PasskeyAuth mode={mode} onBack={() => setShowPasskey(false)} />
+          ) : (
+            <>
+              {children}
+              {(pathname.includes('login') || pathname.includes('register')) && (
+                <SocialLoginRender
+                  startupConfig={startupConfig}
+                  mode={mode}
+                  onPasskeyClick={() => setShowPasskey(true)}
+                />
+              )}
+            </>
           )}
         </div>
       </div>
