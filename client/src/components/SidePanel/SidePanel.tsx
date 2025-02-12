@@ -234,6 +234,8 @@ const SidePanel = ({
           id="controls-nav"
           order={artifacts != null ? 3 : 2}
           aria-label={localize('com_ui_controls')}
+          {/*remove this later*/}
+          role="region"
           collapsedSize={collapsedSize}
           defaultSize={currentLayout[currentLayout.length - 1]}
           collapsible={true}
