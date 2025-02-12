@@ -22,37 +22,25 @@ try {
  * Downloads an image from a URL using an access token.
  * @param {string} url
  * @param {string} accessToken
- * @returns {Promise<Buffer>}
+ * @returns {Promise<Buffer|string>}
  */
 const downloadImage = async (url, accessToken) => {
-  if (!url) {
-    return '';
-  }
+  if (!url) {return '';}
+
+  const options = {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    ...(process.env.PROXY && { agent: new HttpsProxyAgent(process.env.PROXY) }),
+  };
 
   try {
-    const options = {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    };
-
-    if (process.env.PROXY) {
-      options.agent = new HttpsProxyAgent(process.env.PROXY);
-    }
-
     const response = await fetch(url, options);
-
-    if (response.ok) {
-      const buffer = await response.buffer();
-      return buffer;
-    } else {
+    if (!response.ok) {
       throw new Error(`${response.statusText} (HTTP ${response.status})`);
     }
+    return await response.buffer();
   } catch (error) {
-    logger.error(
-      `[openidStrategy] downloadImage: Error downloading image at URL "${url}": ${error}`,
-    );
+    logger.error(`[openidStrategy] Error downloading image at URL "${url}": ${error}`);
     return '';
   }
 };
@@ -67,25 +55,21 @@ const downloadImage = async (url, accessToken) => {
  * @param {string} [userinfo.email] - The user's email address
  * @returns {string} The determined full name of the user
  */
-function getFullName(userinfo) {
+const getFullName = (userinfo) => {
   if (process.env.OPENID_NAME_CLAIM) {
     return userinfo[process.env.OPENID_NAME_CLAIM];
   }
-
   if (userinfo.given_name && userinfo.family_name) {
     return `${userinfo.given_name} ${userinfo.family_name}`;
   }
-
   if (userinfo.given_name) {
     return userinfo.given_name;
   }
-
   if (userinfo.family_name) {
     return userinfo.family_name;
   }
-
   return userinfo.username || userinfo.email;
-}
+};
 
 /**
  * Converts an input into a string suitable for a username.
@@ -97,34 +81,27 @@ function getFullName(userinfo) {
  * @param {string} [defaultValue=''] - The default value to return if the input is falsy.
  * @returns {string} The processed input as a string suitable for a username.
  */
-function convertToUsername(input, defaultValue = '') {
-  if (typeof input === 'string') {
-    return input;
-  } else if (Array.isArray(input)) {
-    return input.join('_');
-  }
-
+const convertToUsername = (input, defaultValue = '') => {
+  if (typeof input === 'string') {return input;}
+  if (Array.isArray(input)) {return input.join('_');}
   return defaultValue;
-}
+};
 
 /**
- * Decodes a JWT token safely.
+ * Safely decodes a JWT token.
  * @param {string} token
  * @returns {Object|null}
  */
-function safeDecode(token) {
+const safeDecode = (token) => {
   try {
     const decoded = jwtDecode(token);
-    if (decoded && typeof decoded === 'object') {
-      return decoded;
-    }
+    if (decoded && typeof decoded === 'object') {return decoded;}
     logger.error('[openidStrategy] Decoded token is not an object.');
-    return null;
   } catch (error) {
-    logger.error('[openidStrategy] safeDecode: Error decoding token:', error);
-    return null;
+    logger.error('[openidStrategy] Error decoding token:', error);
   }
-}
+  return null;
+};
 
 /**
  * Extracts roles from a decoded token based on the provided path.
@@ -132,30 +109,56 @@ function safeDecode(token) {
  * @param {string} parameterPath
  * @returns {string[]}
  */
-function extractRolesFromToken(decodedToken, parameterPath) {
-  if (!decodedToken) {
-    return [];
-  }
-
+const extractRolesFromToken = (decodedToken, parameterPath) => {
+  if (!decodedToken) {return [];}
+  if (!parameterPath) {return [];}
   const roles = parameterPath.split('.').reduce((obj, key) => (obj?.[key] ?? null), decodedToken);
   if (!Array.isArray(roles)) {
-    logger.error('[openidStrategy] extractRolesFromToken: Roles extracted from token are not in array format.');
+    logger.error('[openidStrategy] Roles extracted from token are not in array format.');
     return [];
   }
-
   return roles;
-}
+};
+
+/**
+ * Updates the user's avatar if a valid picture URL is provided.
+ * @param {Object} user
+ * @param {string | undefined} pictureUrl - The URL of the user's avatar.
+ * @param {string} accessToken
+ * @returns {Promise<Object>} The updated user object.
+ */
+const updateUserAvatar = async (user, pictureUrl, accessToken) => {
+  // The type annotation /** @type {string | undefined} */ is maintained via the JSDoc above.
+  if (!pictureUrl || (user.avatar && user.avatar.includes('manual=true'))) {return user;}
+
+  const fileName = crypto
+    ? (await hashToken(user.openidId)) + '.png'
+    : `${user.openidId}.png`;
+
+  const imageBuffer = await downloadImage(pictureUrl, accessToken);
+  if (imageBuffer) {
+    const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+    const imagePath = await saveBuffer({
+      fileName,
+      userId: user._id.toString(),
+      buffer: imageBuffer,
+    });
+    user.avatar = imagePath ?? '';
+  }
+  return user;
+};
 
 async function setupOpenId() {
   try {
+    // Configure proxy if defined.
     if (process.env.PROXY) {
       const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-      custom.setHttpOptionsDefaults({
-        agent: proxyAgent,
-      });
-      logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
+      custom.setHttpOptionsDefaults({ agent: proxyAgent });
+      logger.info(`[openidStrategy] Proxy agent added: ${process.env.PROXY}`);
     }
+
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
+
     /* Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
       - id_token_signed_response_alg      // defaults to 'RS256'
       - request_object_signing_alg        // defaults to 'RS256'
@@ -169,158 +172,112 @@ async function setupOpenId() {
       client_secret: process.env.OPENID_CLIENT_SECRET,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     };
+
     if (isEnabled(process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM)) {
       clientMetadata.id_token_signed_response_alg =
         issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
     }
+
     const client = new issuer.Client(clientMetadata);
+
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
     const adminRolesEnv = process.env.OPENID_ADMIN_ROLE;
     const adminRoles = adminRolesEnv
-      ? adminRolesEnv.split(',').map(role => role.trim())
+      ? adminRolesEnv.split(',').map((role) => role.trim())
       : [];
 
     const openidLogin = new OpenIDStrategy(
       {
         client,
-        params: {
-          scope: process.env.OPENID_SCOPE,
-        },
+        params: { scope: process.env.OPENID_SCOPE },
       },
       async (tokenset, userinfo, done) => {
         try {
-          logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
-          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+          logger.info(`[openidStrategy] Verifying login for openidId: ${userinfo.sub}`);
+          logger.debug('[openidStrategy] Tokenset and userinfo:', { tokenset, userinfo });
 
-          let user = await findUser({ openidId: userinfo.sub });
-          logger.info(
-            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
-          );
-
-          if (!user) {
-            user = await findUser({ email: userinfo.email });
-            logger.info(
-              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
-                userinfo.email
-              } for openidId: ${userinfo.sub}`,
-            );
-          }
+          // Find an existing user by openidId or email.
+          let user =
+            (await findUser({ openidId: userinfo.sub })) ||
+            (await findUser({ email: userinfo.email }));
 
           const fullName = getFullName(userinfo);
+          const username = process.env.OPENID_USERNAME_CLAIM
+            ? userinfo[process.env.OPENID_USERNAME_CLAIM]
+            : convertToUsername(userinfo.username || userinfo.given_name || userinfo.email);
 
-          if (requiredRole) {
-            let decodedToken = '';
-            if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
-            } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
-            }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
+          // Use the token specified by configuration to extract roles.
+          const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
+          const decodedToken = safeDecode(token);
+          const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
 
-            if (!found) {
-              logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
-              );
-            }
-
-            if (!roles.includes(requiredRole)) {
-              return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
-              });
-            }
+          // Ensure the required role exists.
+          if (requiredRole && !tokenBasedRoles.includes(requiredRole)) {
+            return done(null, false, {
+              message: `You must have the "${requiredRole}" role to log in.`,
+            });
           }
 
+          // Determine system role.
+          const isAdmin = tokenBasedRoles.some((role) => adminRoles.includes(role));
+          const assignedRole = isAdmin ? SystemRoles.ADMIN : SystemRoles.USER;
+          logger.debug(`[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`);
+
+          // Map custom OpenID data if configured.
           let customOpenIdData = new Map();
           if (process.env.OPENID_CUSTOM_DATA) {
-            const dataMapper = OpenIdDataMapper.getMapper(process.env.OPENID_PROVIDER.toLowerCase());
-            customOpenIdData = await dataMapper.mapCustomData(tokenset.access_token, process.env.OPENID_CUSTOM_DATA);
-            const tokenBasedRoles =
-                  requiredRole &&
-                  extractRolesFromToken(
-                    safeDecode(requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token),
-                    requiredRoleParameterPath,
-                  );
-            if (tokenBasedRoles && tokenBasedRoles.length) {
+            const dataMapper = OpenIdDataMapper.getMapper(
+              process.env.OPENID_PROVIDER.toLowerCase(),
+            );
+            customOpenIdData = await dataMapper.mapCustomData(
+              tokenset.access_token,
+              process.env.OPENID_CUSTOM_DATA,
+            );
+            if (tokenBasedRoles.length) {
               customOpenIdData.set('roles', tokenBasedRoles);
             } else {
               logger.warn('[openidStrategy] tokenBasedRoles is missing or invalid.');
             }
           }
 
-          const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
-          const decodedToken = safeDecode(token);
-          const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
-          const isAdmin = tokenBasedRoles.some(role => adminRoles.includes(role));
-          const assignedRole = isAdmin ? SystemRoles.ADMIN : SystemRoles.USER;
-          logger.debug(`[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`);
-
-          let username = '';
-          if (process.env.OPENID_USERNAME_CLAIM) {
-            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
-          } else {
-            username = convertToUsername(
-              userinfo.username || userinfo.given_name || userinfo.email,
-            );
-          }
-
+          // Create or update the user.
           if (!user) {
+            user = await createUser(
+              {
+                provider: 'openid',
+                openidId: userinfo.sub,
+                username,
+                email: userinfo.email || '',
+                emailVerified: userinfo.email_verified || false,
+                name: fullName,
+                role: assignedRole,
+                customOpenIdData,
+              },
+              true,
+              true,
+            );
+          } else {
             user = {
+              ...user,
               provider: 'openid',
               openidId: userinfo.sub,
               username,
-              email: userinfo.email || '',
-              emailVerified: userinfo.email_verified || false,
               name: fullName,
               role: assignedRole,
-              customOpenIdData: customOpenIdData,
+              customOpenIdData,
             };
-            user = await createUser(user, true, true);
-          } else {
-            user.provider = 'openid';
-            user.openidId = userinfo.sub;
-            user.username = username;
-            user.name = fullName;
-            user.role = assignedRole;
-            user.customOpenIdData = customOpenIdData;
           }
 
-          if (userinfo.picture && !user.avatar?.includes('manual=true')) {
-            /** @type {string | undefined} */
-            const imageUrl = userinfo.picture;
+          // Update the user's avatar if available.
+          user = await updateUserAvatar(user, userinfo.picture, tokenset.access_token);
 
-            let fileName;
-            if (crypto) {
-              fileName = (await hashToken(userinfo.sub)) + '.png';
-            } else {
-              fileName = userinfo.sub + '.png';
-            }
-
-            const imageBuffer = await downloadImage(imageUrl, tokenset.access_token);
-            if (imageBuffer) {
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
-              const imagePath = await saveBuffer({
-                fileName,
-                userId: user._id.toString(),
-                buffer: imageBuffer,
-              });
-              user.avatar = imagePath ?? '';
-            }
-          }
-
+          // Persist updated user data.
           user = await updateUser(user._id, user);
 
           logger.info(
-            `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
+            `[openidStrategy] Login success for openidId: ${user.openidId} | email: ${user.email} | username: ${user.username}`,
             {
               user: {
                 openidId: user.openidId,
@@ -330,10 +287,9 @@ async function setupOpenId() {
               },
             },
           );
-
           done(null, user);
         } catch (err) {
-          logger.error('[openidStrategy] login failed', err);
+          logger.error('[openidStrategy] Login failed', err);
           done(err);
         }
       },
