@@ -155,6 +155,7 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  artifacts: '',
   isCollaborative: false,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,

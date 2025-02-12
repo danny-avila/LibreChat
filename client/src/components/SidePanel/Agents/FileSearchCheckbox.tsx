@@ -29,7 +29,7 @@ export default function FileSearchCheckbox() {
                 {...field}
                 checked={field.value}
                 onCheckedChange={field.onChange}
-                className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
+                className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
               />
             )}
@@ -38,7 +38,6 @@ export default function FileSearchCheckbox() {
             type="button"
             className="flex items-center space-x-2"
             onClick={() =>
-
               setValue(AgentCapabilities.file_search, !getValues(AgentCapabilities.file_search), {
                 shouldDirty: true,
               })
@@ -51,7 +50,7 @@ export default function FileSearchCheckbox() {
               {localize('com_agents_enable_file_search')}
             </label>
             <HoverCardTrigger>
-              <CircleHelpIcon className="h-5 w-5 text-gray-500" />
+              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
             </HoverCardTrigger>
           </button>
           <HoverCardPortal>

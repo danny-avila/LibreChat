@@ -506,9 +506,8 @@ class OpenAIClient extends BaseClient {
     if (promptPrefix && this.isOmni === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
-        payload[
-          lastUserMessageIndex
-        ].content = `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
+        payload[lastUserMessageIndex].content =
+          `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
       }
     }
 
@@ -1067,14 +1066,36 @@ ${convo}
     });
   }
 
-  getStreamText() {
+  /**
+   *
+   * @param {string[]} [intermediateReply]
+   * @returns {string}
+   */
+  getStreamText(intermediateReply) {
     if (!this.streamHandler) {
-      return '';
+      return intermediateReply?.join('') ?? '';
+    }
+
+    let thinkMatch;
+    let remainingText;
+    let reasoningText = '';
+
+    if (this.streamHandler.reasoningTokens.length > 0) {
+      reasoningText = this.streamHandler.reasoningTokens.join('');
+      thinkMatch = reasoningText.match(/<think>([\s\S]*?)<\/think>/)?.[1]?.trim();
+      if (thinkMatch != null && thinkMatch) {
+        const reasoningTokens = `:::thinking\n${thinkMatch}\n:::\n`;
+        remainingText = reasoningText.split(/<\/think>/)?.[1]?.trim() || '';
+        return `${reasoningTokens}${remainingText}${this.streamHandler.tokens.join('')}`;
+      } else if (thinkMatch === '') {
+        remainingText = reasoningText.split(/<\/think>/)?.[1]?.trim() || '';
+        return `${remainingText}${this.streamHandler.tokens.join('')}`;
+      }
     }
 
     const reasoningTokens =
-      this.streamHandler.reasoningTokens.length > 0
-        ? `:::thinking\n${this.streamHandler.reasoningTokens.join('')}\n:::\n`
+      reasoningText.length > 0
+        ? `:::thinking\n${reasoningText.replace('<think>', '').replace('</think>', '').trim()}\n:::\n`
         : '';
 
     return `${reasoningTokens}${this.streamHandler.tokens.join('')}`;
@@ -1314,11 +1335,19 @@ ${convo}
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
         });
+        /** @type {OpenAI.OpenAI.CompletionCreateParamsStreaming} */
+        const params = {
+          ...modelOptions,
+          stream: true,
+        };
+        if (
+          this.options.endpoint === EModelEndpoint.openAI ||
+          this.options.endpoint === EModelEndpoint.azureOpenAI
+        ) {
+          params.stream_options = { include_usage: true };
+        }
         const stream = await openai.beta.chat.completions
-          .stream({
-            ...modelOptions,
-            stream: true,
-          })
+          .stream(params)
           .on('abort', () => {
             /* Do nothing here */
           })
@@ -1449,7 +1478,7 @@ ${convo}
         this.options.context !== 'title' &&
         message.content.startsWith('<think>')
       ) {
-        return message.content.replace('<think>', ':::thinking').replace('</think>', ':::');
+        return this.getStreamText();
       }
 
       return message.content;
@@ -1458,7 +1487,7 @@ ${convo}
         err?.message?.includes('abort') ||
         (err instanceof OpenAI.APIError && err?.message?.includes('abort'))
       ) {
-        return intermediateReply.join('');
+        return this.getStreamText(intermediateReply);
       }
       if (
         err?.message?.includes(
@@ -1473,14 +1502,18 @@ ${convo}
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
         logger.error('[OpenAIClient] Known OpenAI error:', err);
-        if (intermediateReply.length > 0) {
-          return intermediateReply.join('');
+        if (this.streamHandler && this.streamHandler.reasoningTokens.length) {
+          return this.getStreamText();
+        } else if (intermediateReply.length > 0) {
+          return this.getStreamText(intermediateReply);
         } else {
           throw err;
         }
       } else if (err instanceof OpenAI.APIError) {
-        if (intermediateReply.length > 0) {
-          return intermediateReply.join('');
+        if (this.streamHandler && this.streamHandler.reasoningTokens.length) {
+          return this.getStreamText();
+        } else if (intermediateReply.length > 0) {
+          return this.getStreamText(intermediateReply);
         } else {
           throw err;
         }
