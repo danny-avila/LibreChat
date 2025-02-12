@@ -20,6 +20,7 @@ import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import BalanceModal from './BalanceModal';
+import AddUserModal from './AddUserModal';
 // import Modal from './Modal';
 
 interface User {
@@ -36,6 +37,8 @@ const AddBalance: React.FC = () => {
 
   const [balanceModal, setBalanceModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
+
+  const [addUserModal, setAddUserModal] = useState(true);
 
   const getUsers = async () => {
     const res = await axios.get('http://localhost:3090/api/getUsers');
@@ -64,17 +67,24 @@ const AddBalance: React.FC = () => {
 
   return (
     <>
-      <Stack direction="row" sx={{ justifyContent: 'space-between' ,my: 2}}>
-        <Typography variant='h4'>User Management</Typography>
+      {/* header */}
+      <Stack direction="row" sx={{ justifyContent: 'space-between', my: 2 }}>
+        <Typography variant="h4">User Management</Typography>
         <Button variant="outlined" startIcon={<AddIcon />}>
           Add User
         </Button>
       </Stack>
-
+      {/* balance modal */}
       <BalanceModal
         open={balanceModal}
         onClose={() => setBalanceModal(false)}
         userId={selectedUserId}
+        refreshUsers={getUsers}
+      />
+      {/* add-user modal */}
+      <AddUserModal
+        open={addUserModal}
+        onClose={() => setAddUserModal(false)}
         refreshUsers={getUsers}
       />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">

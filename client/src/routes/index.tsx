@@ -19,6 +19,7 @@ import Root from './Root';
 import Datall from './Layouts/Datall';
 import WelcomeUser from '~/components/Datall/WelcomeUser';
 import AddBalance from '~/components/Datall/AddBalance';
+import RegisterWithRole from '~/components/Datall/RegisterWithRole';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -63,6 +64,10 @@ export const router = createBrowserRouter([
       {
         path: 'add-balance',
         element: <AddBalance />,
+      },
+      {
+        path: 'register-with-role',
+        element: <RegisterWithRole />,
       },
     ],
   },
