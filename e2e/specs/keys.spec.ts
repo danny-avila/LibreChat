@@ -3,23 +3,6 @@
 //
 // const initialNewChatSelector = '[data-testid="nav-new-chat-button"]';
 //
-// /**
-//  * Helper: If the Terms & Conditions modal appears, click its "Accept" button.
-//  * Assumes that the accept button contains the text "Accept" (case-insensitive).
-//  */
-// async function acceptTermsIfPresent(page) {
-//   // Wait up to 10 seconds for the modal dialog to appear.
-//   const dialog = await page.waitForSelector('role=dialog', { timeout: 10000 }).catch(() => null);
-//   if (dialog) {
-//     // Wait for the "I accept" button to become visible (up to 10 seconds).
-//     const acceptButton = await page.waitForSelector('button:has-text("I accept")', { timeout: 10000 }).catch(() => null);
-//     if (acceptButton) {
-//       await acceptButton.click();
-//       // Wait for the dialog to be detached (up to 10 seconds).
-//       await page.waitForSelector('role=dialog', { state: 'detached', timeout: 10000 });
-//     }
-//   }
-// }
 //
 // const enterTestKey = async (page: Page, expectedEndpointText: string) => {
 //   // Open a new conversation
