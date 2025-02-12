@@ -1208,7 +1208,9 @@ export enum ForkOptions {
   /** Key for including branches */
   INCLUDE_BRANCHES = 'includeBranches',
   /** Key for target level fork (default) */
-  TARGET_LEVEL = '',
+  TARGET_LEVEL = 'targetLevel',
+  /** Default option */
+  DEFAULT = 'default',
 }
 
 /**
