@@ -4,15 +4,18 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   generate-unreleased-changelog-pr:
     permissions:
-      contents: write    # Required for pushing new branches and commits.
+      contents: write    # Needed for pushing commits and creating branches.
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout the repository on main with full history.
+      # 1. Checkout the repository on main.
       - name: Checkout Repository on Main
         uses: actions/checkout@v4
         with:
@@ -80,7 +83,7 @@ jobs:
           # Append the remainder of the original changelog (starting from the first version header).
           awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md >> CHANGELOG_TMP.md
           
-          # Replace the old file with the updated file.
+          # Replace the original file with the updated file.
           mv CHANGELOG_TMP.md CHANGELOG.md
           
           # Remove the temporary file.
@@ -96,7 +99,7 @@ jobs:
           git commit -m "Update CHANGELOG.md with new unreleased changes" || echo "No changes to commit"
           git push origin changelog/unreleased-update
 
-      # 8. Create or update the Pull Request.
+      # 8. Create (or update) the Pull Request.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
@@ -108,4 +111,4 @@ jobs:
             **Description**:
             - This PR updates the Unreleased section in CHANGELOG.md.
             - It compares the current main branch with the latest version tag (determined as ${{ steps.get_latest_tag.outputs.tag }}),
-              regenerates the Unreleased changelog, removes the old Unreleased block (if any), and inserts the new content.
+              regenerates the Unreleased changelog, removes any old Unreleased block, and inserts the new content.
