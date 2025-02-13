@@ -56,7 +56,7 @@
   },
   "label_extractor": [
     {
-      "pattern": "^\\s*(feat|fix|chore|docs|refactor|ci|style|a11y|i18n):",
+      "pattern": "^\\s*(feat|fix|chore|docs|refactor|ci|style|a11y|i18n)\\s*:(?!.*\\b(?:feat|fix|chore|docs|refactor|ci|style|a11y|i18n)\\s*:)",
       "target": "$1",
       "flags": "i",
       "on_property": "title",
@@ -70,7 +70,7 @@
       "method": "match"
     }
   ],
-  "template": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n#{{CHANGELOG}}\n\n---\n\n## [{{TO_TAG}}] - {{TO_TAG_DATE}}\n\nChanges from {{FROM_TAG}} to {{TO_TAG}}.\n\n[See full release details][release-{{TO_TAG}}]\n\n[release-{{TO_TAG}}]: https://github.com/{{OWNER}}/{{REPO}}/releases/tag/{{TO_TAG}}\n",
+  "template": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n#{{CHANGELOG}}\n\n---\n\n## [#{{TO_TAG}}] - #{{TO_TAG_DATE}}\n\nChanges from #{{FROM_TAG}} to #{{TO_TAG}}.\n\n[See full release details][release-#{{TO_TAG}}]\n\n[release-#{{TO_TAG}}]: https://github.com/#{{OWNER}}/#{{REPO}}/releases/tag/#{{TO_TAG}}\n",
   "pr_template": "- #{{TITLE}} by **@#{{AUTHOR}}** in [##{{NUMBER}}](#{{URL}})",
   "empty_template": "- no changes"
 }
