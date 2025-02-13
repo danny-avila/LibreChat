@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { useSetRecoilState } from 'recoil';
 import type { ContextType } from '~/common';
 import {
   AgentsMapContext,
@@ -8,11 +9,19 @@ import {
   SearchContext,
   SetConvoProvider,
 } from '~/Providers';
-import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
+import {
+  useAuthContext,
+  useAssistantsMap,
+  useAgentsMap,
+  useFileMap,
+  useSearch,
+  useLocalStorage,
+} from '~/hooks';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
+import store from '~/store';
 
 export default function Root() {
   const navigate = useNavigate();
@@ -24,6 +33,8 @@ export default function Root() {
   });
 
   const { isAuthenticated, logout } = useAuthContext();
+  const [isEncryptionEnabled] = useLocalStorage('isEncryptionEnabled', false);
+  const setIsEncryptionEnabledRecoil = useSetRecoilState(store.isEncryptionEnabled);
   const assistantsMap = useAssistantsMap({ isAuthenticated });
   const agentsMap = useAgentsMap({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
@@ -33,6 +44,10 @@ export default function Root() {
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
+
+  useEffect(() => {
+    setIsEncryptionEnabledRecoil(isEncryptionEnabled);
+  }, [isEncryptionEnabled, setIsEncryptionEnabledRecoil]);
 
   useEffect(() => {
     if (termsData) {

@@ -1,31 +1,172 @@
 const express = require('express');
 const { ContentTypes } = require('librechat-data-provider');
-const {
-  saveConvo,
-  saveMessage,
-  getMessage,
-  getMessages,
-  updateMessage,
-  deleteMessages,
-} = require('~/models');
+const { Message } = require('~/models/Message');
+const { saveConvo, saveMessage, getMessages, updateMessage, deleteMessages } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { countTokens } = require('~/server/utils');
+const { countTokens, decrypt, encrypt } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
 router.use(requireJwtAuth);
 
+const isEncrypted = (text) => {
+  if (!text || typeof text !== 'string') {
+    return false;
+  }
+  const parts = text.split(':');
+  return parts.length === 2 && parts[0].length === 32;
+};
+
+router.post('/encrypt', async (req, res) => {
+  logger.info('Encrypting messages');
+  try {
+    const encryptionKey = req.headers['x-encryption-key'];
+    if (!encryptionKey) {
+      return res.status(400).json({ error: 'Encryption key required' });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Find all messages for this user
+    const messages = await Message.find({ user: req.user.id });
+    if (!messages) {
+      return res.status(404).json({ error: 'No messages found' });
+    }
+
+    logger.info(`Found ${messages.length} messages to encrypt for user ${req.user.id}`);
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const message of messages) {
+      try {
+        const messageToEncrypt = { ...message.toObject() };
+
+        // Only encrypt if not already encrypted
+        if (messageToEncrypt.text && !isEncrypted(messageToEncrypt.text)) {
+          messageToEncrypt.text = encrypt(messageToEncrypt.text, encryptionKey);
+        }
+
+        // Encrypt content if it exists and not already encrypted
+        if (messageToEncrypt.content) {
+          messageToEncrypt.content = messageToEncrypt.content.map((item) => {
+            if (item.text && !isEncrypted(item.text)) {
+              return { ...item, text: encrypt(item.text, encryptionKey) };
+            }
+            return item;
+          });
+        }
+
+        // Save the encrypted message
+        await Message.findOneAndUpdate({ _id: message._id }, messageToEncrypt, { new: true });
+        successCount++;
+      } catch (error) {
+        errorCount++;
+        logger.error(`Error processing message ${message.messageId}:`, error);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        total: messages.length,
+        success: successCount,
+        errors: errorCount,
+      },
+    });
+  } catch (error) {
+    logger.error('Error encrypting messages:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+router.post('/decrypt', async (req, res) => {
+  logger.info('Decrypting messages');
+  try {
+    const encryptionKey = req.headers['x-encryption-key'];
+    if (!encryptionKey) {
+      return res.status(400).json({ error: 'Encryption key required' });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Find all messages for this user
+    const messages = await Message.find({ user: req.user.id });
+    if (!messages) {
+      return res.status(404).json({ error: 'No messages found' });
+    }
+
+    logger.info(`Found ${messages.length} messages to decrypt for user ${req.user.id}`);
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const message of messages) {
+      try {
+        const decryptedMessage = { ...message.toObject() };
+
+        // Decrypt text if it exists and is encrypted
+        if (decryptedMessage.text && isEncrypted(decryptedMessage.text)) {
+          decryptedMessage.text = decrypt(decryptedMessage.text, encryptionKey);
+        }
+
+        // Decrypt content if it exists
+        if (decryptedMessage.content) {
+          decryptedMessage.content = decryptedMessage.content.map((item) => {
+            if (item.text && isEncrypted(item.text)) {
+              return { ...item, text: decrypt(item.text, encryptionKey) };
+            }
+            return item;
+          });
+        }
+
+        // Save the decrypted message
+        await Message.findOneAndUpdate({ _id: message._id }, decryptedMessage, { new: true });
+        successCount++;
+      } catch (error) {
+        errorCount++;
+        logger.error(`Error processing message ${message.messageId}:`, error);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        total: messages.length,
+        success: successCount,
+        errors: errorCount,
+      },
+    });
+  } catch (error) {
+    logger.error('Error decrypting messages:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 router.post('/artifact/:messageId', async (req, res) => {
   try {
-    const { messageId } = req.params;
+    const { messageId, conversationId } = req.params;
     const { index, original, updated } = req.body;
 
     if (typeof index !== 'number' || index < 0 || original == null || updated == null) {
       return res.status(400).json({ error: 'Invalid request parameters' });
     }
 
-    const message = await getMessage({ user: req.user.id, messageId });
+    const filter = {
+      conversationId,
+      messageId,
+      encryptionKey:
+        req.headers['x-encryption-enabled'] === 'true'
+          ? req.headers['x-encryption-key']
+          : undefined,
+    };
+    const message = await getMessages(filter, '-_id -__v -user');
+
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
@@ -78,11 +219,17 @@ router.post('/artifact/:messageId', async (req, res) => {
   }
 });
 
-/* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
 router.get('/:conversationId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const messages = await getMessages({ conversationId }, '-_id -__v -user');
+    const filter = {
+      conversationId,
+      encryptionKey:
+        req.headers['x-encryption-enabled'] === 'true'
+          ? req.headers['x-encryption-key']
+          : undefined,
+    };
+    const messages = await getMessages(filter, '-_id -__v -user');
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
@@ -112,7 +259,15 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
 router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
-    const message = await getMessages({ conversationId, messageId }, '-_id -__v -user');
+    const filter = {
+      conversationId,
+      messageId,
+      encryptionKey:
+        req.headers['x-encryption-enabled'] === 'true'
+          ? req.headers['x-encryption-key']
+          : undefined,
+    };
+    const message = await getMessages(filter, '-_id -__v -user');
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
@@ -138,7 +293,15 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
       return res.status(400).json({ error: 'Invalid index' });
     }
 
-    const message = (await getMessages({ conversationId, messageId }, 'content tokenCount'))?.[0];
+    const filter = {
+      conversationId,
+      messageId,
+      encryptionKey:
+        req.headers['x-encryption-enabled'] === 'true'
+          ? req.headers['x-encryption-key']
+          : undefined,
+    };
+    const message = (await getMessages(filter, 'content tokenCount'))?.[0];
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
@@ -178,7 +341,15 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { messageId } = req.params;
-    await deleteMessages({ messageId });
+    const filter = {
+      messageId,
+      user: req.user.id,
+      encryptionKey:
+        req.headers['x-encryption-enabled'] === 'true'
+          ? req.headers['x-encryption-key']
+          : undefined,
+    };
+    await deleteMessages(filter);
     res.status(204).send();
   } catch (error) {
     logger.error('Error deleting message:', error);

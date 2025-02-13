@@ -7,6 +7,7 @@ const cryptoUtils = require('./crypto');
 const queue = require('./queue');
 const files = require('./files');
 const math = require('./math');
+const encryptionUtil = require('./encryptionUtil');
 
 /**
  * Check if email configuration is set
@@ -26,6 +27,7 @@ module.exports = {
   checkEmailConfig,
   ...cryptoUtils,
   ...handleText,
+  ...encryptionUtil,
   countTokens,
   removePorts,
   sendEmail,

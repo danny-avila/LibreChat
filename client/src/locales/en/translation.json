@@ -784,5 +784,7 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
+  "com_nav_encryption": "Encryption",
+  "com_nav_info_encryption": "Your messages will be encrypted using a key derived from your password. The password itself is never stored - only the derived key is used for encryption on backend side. IMPORTANT: If you forget your password, you will not be able to decrypt your messages as the encryption key cannot be recovered. Make sure to save your password in a secure location.",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }

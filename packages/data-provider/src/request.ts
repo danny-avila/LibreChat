@@ -4,6 +4,30 @@ import * as endpoints from './api-endpoints';
 import { setTokenHeader } from './headers-helpers';
 import type * as t from './types';
 
+const getEncryptionHeaders = (): Record<string, string> => {
+  if (typeof localStorage === 'undefined') {
+    return {};
+  }
+  const isEncryptionEnabled = localStorage.getItem('isEncryptionEnabled') === 'true';
+  const encryptionKey = localStorage.getItem('encryptionKey');
+  if (isEncryptionEnabled && encryptionKey) {
+    return {
+      'x-encryption-enabled': 'true',
+      'x-encryption-key': encryptionKey,
+    };
+  }
+  return {};
+};
+axios.interceptors.request.use((config) => {
+  const headers = config.headers ?? axios.defaults.headers.common;
+  const encryptionHeaders = getEncryptionHeaders();
+  config.headers = new axios.AxiosHeaders({
+    ...headers,
+    ...encryptionHeaders,
+  });
+  return config;
+});
+
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   const response = await axios.get(url, { ...options });
   return response.data;

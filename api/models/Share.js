@@ -2,8 +2,9 @@ const { nanoid } = require('nanoid');
 const { Constants } = require('librechat-data-provider');
 const { Conversation } = require('~/models/Conversation');
 const SharedLink = require('./schema/shareSchema');
-const { getMessages } = require('./Message');
 const logger = require('~/config/winston');
+const { getMessages } = require('./Message');
+const { decrypt } = require('~/server/utils/encryptionUtil');
 
 class ShareServiceError extends Error {
   constructor(message, code) {
@@ -63,7 +64,15 @@ function anonymizeMessages(messages, newConvoId) {
   });
 }
 
-async function getSharedMessages(shareId) {
+const isEncrypted = (text) => {
+  if (!text || typeof text !== 'string') {
+    return false;
+  }
+  const parts = text.split(':');
+  return parts.length === 2 && parts[0].length === 32;
+};
+
+async function getSharedMessages(shareId, encryptionKey) {
   try {
     const share = await SharedLink.findOne({ shareId, isPublic: true })
       .populate({
@@ -77,6 +86,27 @@ async function getSharedMessages(shareId) {
       return null;
     }
 
+    // Decrypt messages if encryption key provided
+    if (encryptionKey) {
+      share.messages = share.messages.map((message) => {
+        if (message.text && isEncrypted(message.text)) {
+          message.text = decrypt(message.text, encryptionKey);
+        }
+        if (message.content) {
+          message.content = message.content.map((item) => {
+            if (item.text && isEncrypted(item.text)) {
+              return {
+                ...item,
+                text: decrypt(item.text, encryptionKey),
+              };
+            }
+            return item;
+          });
+        }
+        return message;
+      });
+    }
+
     const newConvoId = anonymizeConvoId(share.conversationId);
     const result = {
       ...share,
@@ -86,7 +116,7 @@ async function getSharedMessages(shareId) {
 
     return result;
   } catch (error) {
-    logger.error('[getShare] Error getting share link', {
+    logger.error('[getShare] Error getting share link:', {
       error: error.message,
       shareId,
     });
@@ -187,13 +217,13 @@ async function deleteAllSharedLinks(user) {
   }
 }
 
-async function createSharedLink(user, conversationId) {
+async function createSharedLink(user, conversationId, encryptionKey) {
   if (!user || !conversationId) {
     throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
   }
 
   try {
-    const [existingShare, conversationMessages] = await Promise.all([
+    const [existingShare, messages] = await Promise.all([
       SharedLink.findOne({ conversationId, isPublic: true }).select('-_id -__v -user').lean(),
       getMessages({ conversationId }),
     ]);
@@ -207,11 +237,31 @@ async function createSharedLink(user, conversationId) {
     const conversation = await Conversation.findOne({ conversationId }).lean();
     const title = conversation?.title || 'Untitled';
 
+    // Ensure messages are decrypted before sharing
+    let sharableMessages = messages;
+    if (encryptionKey) {
+      sharableMessages = messages.map((message) => {
+        const decryptedMessage = { ...message };
+        if (message.text && isEncrypted(message.text)) {
+          decryptedMessage.text = decrypt(message.text, encryptionKey);
+        }
+        if (message.content) {
+          decryptedMessage.content = message.content.map((item) => {
+            if (item.text && isEncrypted(item.text)) {
+              return { ...item, text: decrypt(item.text, encryptionKey) };
+            }
+            return item;
+          });
+        }
+        return decryptedMessage;
+      });
+    }
+
     const shareId = nanoid();
     await SharedLink.create({
       shareId,
       conversationId,
-      messages: conversationMessages,
+      messages: sharableMessages,
       title,
       user,
     });
@@ -243,7 +293,7 @@ async function getSharedLink(user, conversationId) {
 
     return { shareId: share.shareId, success: true };
   } catch (error) {
-    logger.error('[getSharedLink] Error getting shared link', {
+    logger.error('[getSharedLink] Error getting shared link:', {
       error: error.message,
       user,
       conversationId,
@@ -289,7 +339,7 @@ async function updateSharedLink(user, shareId) {
 
     return { shareId: newShareId, conversationId: updatedShare.conversationId };
   } catch (error) {
-    logger.error('[updateSharedLink] Error updating shared link', {
+    logger.error('[updateSharedLink] Error updating shared link:', {
       error: error.message,
       user,
       shareId,
@@ -337,4 +387,5 @@ module.exports = {
   deleteSharedLink,
   getSharedMessages,
   deleteAllSharedLinks,
+  isEncrypted,
 };

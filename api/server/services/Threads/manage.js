@@ -93,6 +93,8 @@ async function saveUserMessage(req, params) {
     text: params.text,
     isCreatedByUser: true,
     tokenCount,
+    encryptionKey: req.headers['x-encryption-key'],
+    isEncrypted: req.headers['x-encryption-enabled'] === 'true',
   };
 
   const convo = {
@@ -109,7 +111,11 @@ async function saveUserMessage(req, params) {
     convo.file_ids = params.file_ids;
   }
 
-  const message = await recordMessage(userMessage);
+  const message = await recordMessage({
+    ...userMessage,
+    encryptionKey: req.headers['x-encryption-key'],
+    isEncrypted: req.headers['x-encryption-enabled'] === 'true',
+  });
   await saveConvo(req, convo, {
     context: 'api/server/services/Threads/manage.js #saveUserMessage',
   });
@@ -154,6 +160,8 @@ async function saveAssistantMessage(req, params) {
     text: params.text,
     unfinished: false,
     // tokenCount,
+    encryptionKey: req.headers['x-encryption-key'],
+    isEncrypted: req.headers['x-encryption-enabled'] === 'true',
   });
 
   await saveConvo(
@@ -228,17 +236,26 @@ async function syncMessages({
 
   const modifyPromises = [];
   const recordPromises = [];
+  const encryptionHeaders = {
+    encryptionKey: openai.req.headers['x-encryption-key'],
+    isEncrypted: openai.req.headers['x-encryption-enabled'] === 'true',
+  };
 
   /**
-   *
    * Modify API message and save newMessage to DB
    *
    * @param {Object} params - The parameters object
    * @param {TMessage} params.dbMessage
-   * @param {dbMessage} params.apiMessage
+   * @param {ThreadMessage} params.apiMessage
    */
   const processNewMessage = async ({ dbMessage, apiMessage }) => {
-    recordPromises.push(recordMessage({ ...dbMessage, user: openai.req.user.id }));
+    recordPromises.push(
+      recordMessage({
+        ...dbMessage,
+        user: openai.req.user.id,
+        ...encryptionHeaders,
+      }),
+    );
 
     if (!apiMessage.id.includes('msg_')) {
       return;
@@ -337,7 +354,6 @@ async function syncMessages({
     if (msg.role === 'user' && msg.file_ids?.length) {
       return [...acc, ...msg.file_ids];
     }
-
     return acc;
   }, []);
 

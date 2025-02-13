@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { encrypt, decrypt } = require('~/server/utils/encryptionUtil');
 const mongoMeili = require('~/models/plugins/mongoMeili');
 const messageSchema = mongoose.Schema(
   {
@@ -140,6 +141,180 @@ const messageSchema = mongoose.Schema(
   },
   { timestamps: true },
 );
+
+messageSchema.statics.getEncryptionKey = function () {
+  return this.getOptions()?.encryptionKey;
+};
+
+messageSchema.pre('save', function (next) {
+  const encryptionKey = this.constructor.getEncryptionKey();
+  if (!encryptionKey) {
+    return next();
+  }
+
+  try {
+    if (this.text) {
+      this.text = encrypt(this.text, encryptionKey);
+    }
+    if (this.content) {
+      this.content = this.content.map((item) => {
+        if (item.text) {
+          return { ...item, text: encrypt(item.text, encryptionKey) };
+        }
+        return item;
+      });
+    }
+    if (this.summary) {
+      this.summary = encrypt(this.summary, encryptionKey);
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Post-find middleware to decrypt data
+messageSchema.post('find', function (docs) {
+  const encryptionKey = this.getOptions()?.encryptionKey;
+  if (!docs || !encryptionKey) {
+    return;
+  }
+
+  docs.forEach((doc) => {
+    if (!doc) {
+      return;
+    }
+
+    try {
+      const isPlainObject = !doc.toObject;
+
+      if (doc.text) {
+        if (isPlainObject) {
+          doc.text = decrypt(doc.text, encryptionKey);
+        } else {
+          doc.text = decrypt(doc.text, encryptionKey);
+          doc.markModified('text');
+        }
+      }
+      if (doc.content) {
+        doc.content = doc.content.map((item) => {
+          if (item.text) {
+            return { ...item, text: decrypt(item.text, encryptionKey) };
+          }
+          return item;
+        });
+        if (!isPlainObject) {
+          doc.markModified('content');
+        }
+      }
+    } catch (error) {
+      console.error('Decryption error:', error);
+    }
+  });
+});
+
+messageSchema.post('findOne', function (doc) {
+  const encryptionKey = this.getOptions()?.encryptionKey;
+  if (!doc || !encryptionKey) {
+    return;
+  }
+
+  try {
+    if (doc.text) {
+      doc.text = decrypt(doc.text, encryptionKey);
+    }
+    if (doc.content) {
+      doc.content = doc.content.map((item) => {
+        if (item.text) {
+          return { ...item, text: decrypt(item.text, encryptionKey) };
+        }
+        return item;
+      });
+    }
+  } catch (error) {
+    console.error('Decryption error:', error);
+  }
+});
+
+messageSchema.pre('findOneAndUpdate', function (next) {
+  const encryptionKey = this.getOptions()?.encryptionKey;
+  if (!encryptionKey) {
+    return next();
+  }
+
+  try {
+    const update = this.getUpdate();
+    if (update.text) {
+      update.text = encrypt(update.text, encryptionKey);
+    }
+    if (update.content) {
+      update.content = update.content.map((item) => {
+        if (item.text) {
+          return { ...item, text: encrypt(item.text, encryptionKey) };
+        }
+        return item;
+      });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+messageSchema.pre('updateOne', function (next) {
+  const encryptionKey = this.getOptions()?.encryptionKey;
+  if (!encryptionKey) {
+    return next();
+  }
+
+  try {
+    const update = this.getUpdate();
+    if (update.text) {
+      update.text = encrypt(update.text, encryptionKey);
+    }
+    if (update.content) {
+      update.content = update.content.map((item) => {
+        if (item.text) {
+          return { ...item, text: encrypt(item.text, encryptionKey) };
+        }
+        return item;
+      });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+messageSchema.pre('bulkWrite', function (next) {
+  const encryptionKey = this.getOptions()?.encryptionKey;
+  if (!encryptionKey) {
+    return next();
+  }
+
+  try {
+    const operations = this.getOperations();
+    operations.forEach((op) => {
+      if (op.updateOne && op.updateOne.update) {
+        const update = op.updateOne.update;
+        if (update.text) {
+          update.text = encrypt(update.text, encryptionKey);
+        }
+        if (update.content) {
+          update.content = update.content.map((item) => {
+            if (item.text) {
+              return { ...item, text: encrypt(item.text, encryptionKey) };
+            }
+            return item;
+          });
+        }
+      }
+    });
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   messageSchema.plugin(mongoMeili, {

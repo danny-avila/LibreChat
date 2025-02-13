@@ -1,5 +1,10 @@
 import { atom } from 'recoil';
 
+const isEncryptionEnabled = atom<boolean>({
+  key: 'isEncryptionEnabled',
+  default: false,
+});
+
 const isSearchEnabled = atom<boolean | null>({
   key: 'isSearchEnabled',
   default: null,
@@ -16,6 +21,7 @@ const isSearching = atom({
 });
 
 export default {
+  isEncryptionEnabled,
   isSearchEnabled,
   searchQuery,
   isSearching,

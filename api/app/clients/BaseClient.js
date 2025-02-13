@@ -793,7 +793,12 @@ class BaseClient {
   async loadHistory(conversationId, parentMessageId = null) {
     logger.debug('[BaseClient] Loading history:', { conversationId, parentMessageId });
 
-    const messages = (await getMessages({ conversationId })) ?? [];
+    const messages =
+      (await getMessages({
+        conversationId,
+        encryptionKey: this.options.req?.headers['x-encryption-key'],
+        isEncrypted: this.options.req?.headers['x-encryption-enabled'] === 'true',
+      })) ?? [];
 
     if (messages.length === 0) {
       return [];
@@ -856,7 +861,11 @@ class BaseClient {
         unfinished: false,
         user,
       },
-      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
+      {
+        context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage',
+        encryptionKey: this.options.req?.headers['x-encryption-key'],
+        isEncrypted: this.options.req?.headers['x-encryption-enabled'] === 'true',
+      },
     );
 
     if (this.skipSaveConvo) {
@@ -882,7 +891,12 @@ class BaseClient {
    * @param {Partial<TMessage>} message
    */
   async updateMessageInDatabase(message) {
-    await updateMessage(this.options.req, message);
+    await updateMessage(this.options.req, {
+      ...message,
+      // Pass encryption headers to the update operation
+      encryptionKey: this.options.req?.headers['x-encryption-key'],
+      isEncrypted: this.options.req?.headers['x-encryption-enabled'] === 'true',
+    });
   }
 
   /**

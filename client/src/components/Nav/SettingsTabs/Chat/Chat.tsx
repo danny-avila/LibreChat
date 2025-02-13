@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import EncryptionSettings from './EncryptionSettings';
 import MaximizeChatSpace from './MaximizeChatSpace';
 import FontSizeSelector from './FontSizeSelector';
 import SendMessageKeyEnter from './EnterToSend';
@@ -19,6 +20,9 @@ function Chat() {
       </div>
       <div className="pb-3">
         <ChatDirection />
+      </div>
+      <div className="pb-3">
+        <EncryptionSettings />
       </div>
       <div className="pb-3">
         <SendMessageKeyEnter />

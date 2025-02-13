@@ -16,6 +16,7 @@ import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { useEncryptionHeaders } from '~/hooks/useEncryptionHeaders';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -41,6 +42,7 @@ export default function useSSE(
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const encryptionHeaders = useEncryptionHeaders();
 
   const {
     setMessages,
@@ -96,8 +98,13 @@ export default function useSSE(
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...encryptionHeaders,
+      },
     });
+    console.log('SSE Headers:', sse.headers);
 
     sse.addEventListener('attachment', (e: MessageEvent) => {
       try {
@@ -196,6 +203,7 @@ export default function useSSE(
           sse.headers = {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
+            ...encryptionHeaders,
           };
 
           request.dispatchTokenUpdatedEvent(token);
@@ -234,6 +242,6 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [submission]);
 }

@@ -24,11 +24,17 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
 
   const searchQuery = useRecoilValue(store.searchQuery);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
+  const isEncryptionEnabled = useRecoilValue(store.isEncryptionEnabled);
 
-  const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
+  const searchEnabledQuery = useGetSearchEnabledQuery({
+    enabled: isAuthenticated && !isEncryptionEnabled,
+  });
+
   const searchQueryRes = useSearchInfiniteQuery(
     { pageNumber: pageNumber.toString(), searchQuery: searchQuery, isArchived: false },
-    { enabled: isAuthenticated && !!searchQuery.length },
+    {
+      enabled: isAuthenticated && !!searchQuery.length && !isEncryptionEnabled,
+    },
   ) as UseInfiniteQueryResult<ConversationListResponse, unknown> | undefined;
 
   useEffect(() => {
@@ -42,7 +48,7 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
     }
     navigate('/c/new', { replace: true });
     /* Disabled eslint rule because we don't want to run this effect when location changes */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [navigate, searchQuery]);
 
   useEffect(() => {
