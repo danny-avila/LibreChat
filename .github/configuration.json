@@ -2,33 +2,23 @@
   "categories": [
     {
       "title": "### ✨ New Features",
-      "labels": ["✨ enhancement", "Enhancement", "feat"]
+      "labels": ["feat"]
     },
     {
       "title": "### 🌍 Internationalization",
-      "labels": ["🌍 i18n", "Internationalization", "i18n"]
+      "labels": ["i18n"]
     },
     {
       "title": "### 👐 Accessibility",
-      "labels": ["♿ a11y", "Accessibility", "a11y"]
+      "labels": ["a11y"]
     },
     {
       "title": "### 🔧 Fixes",
-      "labels": ["🐛 bug", "🔧 fix", "💥 breaking change", "🔥 hotfix", "Fix", "fix"]
+      "labels": ["Fix", "fix"]
     },
     {
       "title": "### ⚙️ Other Changes",
       "labels": [
-        "🎨 design",
-        "🧹 chore",
-        "🤖 ci/cd",
-        "📝 documentation",
-        "⚡ performance",
-        "🔨 refactor",
-        "🛠️ tech debt",
-        "🧪 tests",
-        "🔒 security",
-        "📦 dependencies",
         "ci",
         "style",
         "docs",
