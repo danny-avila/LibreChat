@@ -22,18 +22,6 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # 2. Reattach to main branch (in case of detached HEAD).
-      - name: Reattach to Main Branch
-        run: |
-          git fetch origin main
-          git checkout main
-
-      # 3. Set Git Author Identity.
-      - name: Set Git Author Identity
-        run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
       # 4. Get the latest version tag.
       - name: Get Latest Tag
         id: get_latest_tag
@@ -55,12 +43,6 @@ jobs:
           outputFile: CHANGELOG-unreleased.md
           fromTag: ${{ steps.get_latest_tag.outputs.tag }}
           toTag: main
-
-      # 6. Create a new branch from main for the changelog update.
-      - name: Create New Branch from Main
-        run: |
-          # Create (or reset) the branch based on origin/main
-          git checkout -B changelog/unreleased-update
 
       # 7. Update CHANGELOG.md with the new Unreleased section.
       - name: Update CHANGELOG.md
@@ -99,14 +81,6 @@ jobs:
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 8. Commit and push the changes on the new branch.
-      - name: Commit and Push Changes
-        run: |
-          git add CHANGELOG.md
-          # Commit (allowing an empty commit if nothing changed)
-          git commit -m "Update CHANGELOG.md with new unreleased changes" || echo "No changes to commit"
-          git push origin changelog/unreleased-update
-
       # 9. Create (or update) the Pull Request.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
@@ -114,6 +88,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           base: main
           branch: "changelog/unreleased-update"
+          sign-commits: true
+          commit-message: "action: update Unreleased changelog"
           title: "action: update Unreleased changelog"
           body: |
             **Description**:
