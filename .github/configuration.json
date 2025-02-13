@@ -56,7 +56,7 @@
   },
   "label_extractor": [
     {
-      "pattern": "^(?:[^A-Za-z0-9]*)(feat|fix|chore|docs|refactor|ci|style|a11y|i18n):",
+      "pattern": "^\\s*(feat|fix|chore|docs|refactor|ci|style|a11y|i18n):",
       "target": "$1",
       "flags": "i",
       "on_property": "title",

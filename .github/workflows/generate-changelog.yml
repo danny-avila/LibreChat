@@ -2,6 +2,9 @@ name: Generate Changelog
 
 # Trigger push to main and on tag pushes (e.g., v1.0.0)
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
