@@ -1,0 +1,48 @@
+name: Generate Changelog
+
+# Trigger on tag pushes (e.g., v1.0.0)
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  generate-changelog:
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout your repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Generate the changelog file (CHANGELOG.md) using the custom configuration
+      - name: Generate Changelog File
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v5.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          configuration: "configuration.json"
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          outputFile: CHANGELOG.md
+
+      # 3. Display the generated changelog (helpful for debugging)
+      - name: Display Generated Changelog
+        run: |
+          echo "===== Begin CHANGELOG.md ====="
+          cat CHANGELOG.md
+          echo "===== End CHANGELOG.md ====="
+
+      # 4. Upload the changelog as an artifact for later retrieval
+      - name: Upload Changelog Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: CHANGELOG.md
