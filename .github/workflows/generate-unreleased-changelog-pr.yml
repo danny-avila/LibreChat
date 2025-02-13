@@ -1,9 +1,6 @@
 name: Generate Unreleased Changelog PR
 
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
@@ -11,15 +8,15 @@ on:
 jobs:
   generate-unreleased-changelog-pr:
     permissions:
-      contents: write  # Required for pushing new branches and commits.
+      contents: write    # Required for pushing new branches and commits.
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
       # 1. Checkout the repository on main with full history.
-      - name: Checkout Repository
+      - name: Checkout Repository on Main
         uses: actions/checkout@v4
         with:
-#          ref: main
+          ref: main
           fetch-depth: 0
 
       # 2. Set Git Author Identity.
@@ -50,7 +47,12 @@ jobs:
           fromTag: ${{ steps.get_latest_tag.outputs.tag }}
           toTag: main
 
-      # 5. Update CHANGELOG.md with the new Unreleased section.
+      # 5. Create a new branch from main for the changelog update.
+      - name: Create New Branch from Main
+        run: |
+          git checkout -b changelog/unreleased-update
+
+      # 6. Update CHANGELOG.md with the new Unreleased section.
       - name: Update CHANGELOG.md
         run: |
           # Create CHANGELOG.md if it doesn't exist.
@@ -87,18 +89,14 @@ jobs:
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 6. Create (or reset) a new branch from main, commit, and force-push the updated CHANGELOG.md.
-      - name: Create New Branch and Push Changes
+      # 7. Commit and push the changes on the new branch.
+      - name: Commit and Push Changes
         run: |
-          # Ensure we're on main, then reset (or create) the branch.
-          git checkout main
-          git checkout -B changelog/unreleased-update
           git add CHANGELOG.md
-          # Allow an empty commit if there are no changes.
-          git commit --allow-empty -m "Update CHANGELOG.md with new unreleased changes"
-          git push --force origin changelog/unreleased-update
+          git commit -m "Update CHANGELOG.md with new unreleased changes" || echo "No changes to commit"
+          git push origin changelog/unreleased-update
 
-      # 7. Create or update the Pull Request.
+      # 8. Create or update the Pull Request.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
