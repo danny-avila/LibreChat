@@ -43,7 +43,7 @@ jobs:
           fromTag: ${{ steps.get_latest_tag.outputs.tag }}
           toTag: main
 
-      # 4. Update CHANGELOG.md with the new Unreleased section.
+      # 4. Update (or create) CHANGELOG.md with the new Unreleased section.
       - name: Update CHANGELOG.md with new Unreleased section
         run: |
           if [ ! -f CHANGELOG.md ]; then
@@ -52,30 +52,33 @@ jobs:
             echo "" >> CHANGELOG.md
             echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
             echo "" >> CHANGELOG.md
-            # Append the newly generated Unreleased changelog.
+            # Append the freshly generated Unreleased changelog.
             cat CHANGELOG-unreleased.md >> CHANGELOG.md
           else
             echo "Updating existing CHANGELOG.md…"
-            # Check if a "## [Unreleased]" section already exists.
+            # If an "Unreleased" section exists, split based on it.
             if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
-              # Existing Unreleased section: split header and tail.
               awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > header.md
               awk 'flag{print} /^---/{flag=1; print}' CHANGELOG.md > tail.md
             else
-              # No Unreleased section: assume the first release header starts with "## [v" and split there.
+              # Otherwise, split using the first release header (assumed to start with "## [v")
               awk '/^## \[v/{exit} {print}' CHANGELOG.md > header.md
               awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md > tail.md
             fi
-
-            # Combine header, the freshly generated Unreleased changelog, and the tail.
+            # Combine header, new Unreleased changelog, and tail.
             cat header.md CHANGELOG-unreleased.md tail.md > CHANGELOG.md.new
             mv CHANGELOG.md.new CHANGELOG.md
           fi
-
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 5. Create a pull request with the updated CHANGELOG.md.
+      # 5. Commit the updated or new CHANGELOG.md.
+      - name: Commit changes
+        run: |
+          git add CHANGELOG.md
+          git commit -m "action: update Unreleased changelog" || echo "No changes to commit"
+
+      # 6. Create a pull request with the new file introduced.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
@@ -87,6 +90,6 @@ jobs:
           title: "action: update Unreleased changelog"
           body: |
             **Description**:
-            - This PR updates the Unreleased section in CHANGELOG.md.
+            - This PR introduces (or updates) the CHANGELOG.md file with the new Unreleased section.
             - It compares the current main branch with the latest version tag (determined as ${{ steps.get_latest_tag.outputs.tag }}),
-              regenerates the Unreleased changelog, removes the old Unreleased block (if any), and inserts the new content.
+              regenerates the Unreleased changelog, and then creates a commit that adds the new file if it was deleted.
