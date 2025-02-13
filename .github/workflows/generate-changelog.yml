@@ -1,11 +1,10 @@
 name: Generate Changelog
 
-# Trigger on tag pushes (e.g., v1.0.0)
+# Trigger push to main and on tag pushes (e.g., v1.0.0)
 on:
-  pull_request:
+  push:
     branches:
       - main
-  push:
     tags:
       - 'v*.*.*'
 
