@@ -73,7 +73,7 @@ jobs:
           cat CHANGELOG.md
 
       # 5. Ensure the changelog branch exists and push if needed
-      - name: Ensure Changelog Branch Exists
+      - name: Ensure Changelog Branch Exists and Clean Working Directory
         run: |
           git fetch origin
           if git show-ref --verify --quiet refs/remotes/origin/changelog/unreleased-update; then
@@ -84,6 +84,13 @@ jobs:
             echo "Branch does not exist. Creating new branch."
             git checkout -b changelog/unreleased-update
           fi
+
+          # Ensure working directory is clean before rebasing
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Unstaged changes detected. Stashing..."
+            git stash push --include-untracked
+          fi
+
           git pull --rebase origin main || true
 
       # 6. Auto-resolve conflicts in CHANGELOG.md if necessary
