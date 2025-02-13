@@ -59,21 +59,27 @@ jobs:
             echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
             echo "" >> CHANGELOG.md
           fi
-          
+      
           echo "Updating CHANGELOG.md…"
-          
-          # Check if a "## [Unreleased]" section already exists.          
+      
+          # Extract the existing changelog content before the "## [Unreleased]" section (if exists).
           if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
-            awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > header.md
-            awk 'flag{print} /^---/{flag=1; print}' CHANGELOG.md > tail.md
+            awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           else
-            awk '/^## \[v/{exit} {print}' CHANGELOG.md > header.md
-            awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md > tail.md
+            awk '/^## \[v/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           fi
-          
-          cat header.md CHANGELOG-unreleased.md tail.md > CHANGELOG.md.new
-          mv CHANGELOG.md.new CHANGELOG.md
-          
+      
+          # Append the new Unreleased changelog
+          echo "" >> CHANGELOG_TMP.md
+          cat CHANGELOG-unreleased.md >> CHANGELOG_TMP.md
+          echo "" >> CHANGELOG_TMP.md
+      
+          # Append the rest of the changelog (excluding the old Unreleased section)
+          awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md >> CHANGELOG_TMP.md
+      
+          # Replace the old changelog file with the updated one
+          mv CHANGELOG_TMP.md CHANGELOG.md
+      
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
