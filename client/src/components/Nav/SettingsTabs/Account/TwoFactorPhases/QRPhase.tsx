@@ -59,7 +59,7 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
         </div>
       </div>
       <Button onClick={onNext} className="w-full">
-        Continue
+        {localize('com_ui_continue')}
       </Button>
     </motion.div>
   );
