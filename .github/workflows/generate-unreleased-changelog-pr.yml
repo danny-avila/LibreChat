@@ -26,7 +26,7 @@ jobs:
       - name: Get Latest Tag
         id: get_latest_tag
         run: |
-          LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+          LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1) || echo "none")
           echo "Latest tag: $LATEST_TAG"
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
@@ -47,7 +47,6 @@ jobs:
       # 4. Update CHANGELOG.md with the new Unreleased section.
       - name: Update CHANGELOG.md with new Unreleased section
         run: |
-          # Ensure CHANGELOG.md exists; if not, create a basic header.
           if [ ! -f CHANGELOG.md ]; then
             echo "# Changelog" > CHANGELOG.md
             echo "" >> CHANGELOG.md
@@ -72,40 +71,33 @@ jobs:
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 5. Ensure the changelog branch exists and push if needed
-      - name: Ensure Changelog Branch Exists and Clean Working Directory
+      # 5. Ensure Changelog Branch Exists
+      - name: Create or Checkout Changelog Branch
         run: |
           git fetch origin
-          if git show-ref --verify --quiet refs/remotes/origin/changelog/unreleased-update; then
-            echo "Branch exists on remote. Checking out..."
+
+          # Check if remote branch exists
+          if git ls-remote --exit-code --heads origin changelog/unreleased-update; then
+            echo "Branch exists. Checking out..."
             git checkout changelog/unreleased-update
-            git reset --hard origin/main
+            git pull origin changelog/unreleased-update
           else
-            echo "Branch does not exist. Creating new branch."
+            echo "Branch does not exist. Creating it."
             git checkout -b changelog/unreleased-update
           fi
 
-          # Ensure working directory is clean before rebasing
-          if [[ -n $(git status --porcelain) ]]; then
-            echo "Unstaged changes detected. Stashing..."
-            git stash push --include-untracked
-          fi
-
-          git pull --rebase origin main || true
-
-      # 6. Auto-resolve conflicts in CHANGELOG.md if necessary
-      - name: Auto-resolve conflicts in CHANGELOG.md
+      # 6. Commit and Push Changes
+      - name: Commit and Push Changelog Updates
         run: |
-          if git diff --name-only --diff-filter=U | grep -q "CHANGELOG.md"; then
-            echo "Merge conflict detected in CHANGELOG.md. Resolving..."
-            git checkout --ours CHANGELOG.md || true
-            git add CHANGELOG.md
-            git commit --no-edit || true
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
           else
-            echo "No merge conflicts detected."
+            git commit -m "action: update Unreleased changelog"
+            git push origin changelog/unreleased-update
           fi
 
-      # 7. Create a pull request with the updated CHANGELOG.md.
+      # 7. Create Pull Request
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
