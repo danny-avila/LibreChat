@@ -137,6 +137,7 @@ const BackupCodesItem: React.FC = () => {
                             }
                             disabled={!isUsed}
                             focusable={false}
+                            className={isUsed ? 'cursor-pointer' : 'cursor-default'}
                             render={
                               <span
                                 className={`rounded-full px-3 py-1 text-sm font-medium ${
