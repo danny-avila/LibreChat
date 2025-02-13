@@ -1,19 +1,16 @@
 name: Generate Unreleased Changelog PR
 
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
 
 jobs:
   generate-unreleased-changelog-pr:
-    permissions:
-      contents: write  # Required for pushing new branches and commits.
-      pull-requests: write
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # Required for pushing new branches and commits.
+      pull-requests: write
     steps:
       # 1. Checkout the repository with full history.
       - name: Checkout Repository
@@ -78,7 +75,7 @@ jobs:
           git add CHANGELOG.md
           git commit -m "action: update Unreleased changelog" || echo "No changes to commit"
 
-      # 6. Create a pull request with the new file introduced.
+      # 6. Create a pull request using a unique branch name.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
@@ -86,10 +83,11 @@ jobs:
           sign-commits: true
           commit-message: "action: update Unreleased changelog"
           base: main
-          branch: "changelog/unreleased-update"
+          # Use a unique branch name (using the run ID ensures no prior branch exists).
+          branch: "changelog/unreleased-update-${{ github.run_id }}"
           title: "action: update Unreleased changelog"
           body: |
             **Description**:
             - This PR introduces (or updates) the CHANGELOG.md file with the new Unreleased section.
-            - It compares the current main branch with the latest version tag (determined as ${{ steps.get_latest_tag.outputs.tag }}),
+            - It compares the current main branch with the latest version tag (${{ steps.get_latest_tag.outputs.tag }}),
               regenerates the Unreleased changelog, and then creates a commit that adds the new file if it was deleted.
