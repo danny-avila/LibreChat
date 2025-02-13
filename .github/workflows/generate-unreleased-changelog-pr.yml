@@ -59,27 +59,30 @@ jobs:
             echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
             echo "" >> CHANGELOG.md
           fi
-      
+          
           echo "Updating CHANGELOG.md…"
-      
+          
           # Extract the existing changelog content before the "## [Unreleased]" section (if exists).
           if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
             awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           else
             awk '/^## \[v/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           fi
-      
+          
           # Append the new Unreleased changelog
           echo "" >> CHANGELOG_TMP.md
           cat CHANGELOG-unreleased.md >> CHANGELOG_TMP.md
           echo "" >> CHANGELOG_TMP.md
-      
+          
           # Append the rest of the changelog (excluding the old Unreleased section)
           awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md >> CHANGELOG_TMP.md
-      
+          
           # Replace the old changelog file with the updated one
           mv CHANGELOG_TMP.md CHANGELOG.md
-      
+          
+          # Remove the temporary file so that only CHANGELOG.md is tracked
+          rm -f CHANGELOG-unreleased.md
+          
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
