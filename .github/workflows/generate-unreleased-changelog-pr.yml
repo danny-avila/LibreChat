@@ -15,20 +15,19 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-
       # 1. Checkout the repository with full history.
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Set Git Author Identity for GitHub Actions
+      # 2. Set Git Author Identity
       - name: Set Git Author Identity
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-      # 3. Get the latest version tag (to compare against).
+      # 3. Get the latest version tag.
       - name: Get Latest Tag
         id: get_latest_tag
         run: |
@@ -51,8 +50,9 @@ jobs:
           toTag: main
 
       # 5. Update CHANGELOG.md with the new Unreleased section.
-      - name: Update CHANGELOG.md with new Unreleased section
+      - name: Update CHANGELOG.md
         run: |
+          # Create CHANGELOG.md if it doesn't exist.
           if [ ! -f CHANGELOG.md ]; then
             echo "# Changelog" > CHANGELOG.md
             echo "" >> CHANGELOG.md
@@ -62,63 +62,43 @@ jobs:
           
           echo "Updating CHANGELOG.md…"
           
-          # Extract the existing changelog content before the "## [Unreleased]" section (if exists).
+          # Extract content before the "## [Unreleased]" or version section.
           if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
             awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           else
             awk '/^## \[v/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           fi
           
-          # Append the new Unreleased changelog
+          # Append the generated Unreleased changelog.
           echo "" >> CHANGELOG_TMP.md
           cat CHANGELOG-unreleased.md >> CHANGELOG_TMP.md
           echo "" >> CHANGELOG_TMP.md
           
-          # Append the rest of the changelog (excluding the old Unreleased section)
+          # Append the remainder of the original changelog (starting from the first version header).
           awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md >> CHANGELOG_TMP.md
           
-          # Replace the old changelog file with the updated one
+          # Replace the old file with the updated file.
           mv CHANGELOG_TMP.md CHANGELOG.md
           
-          # Remove the temporary file so that only CHANGELOG.md is tracked
+          # Remove the temporary file.
           rm -f CHANGELOG-unreleased.md
           
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 6. Ensure Changelog Branch Exists
-      - name: Create or Checkout Changelog Branch
+      # 6. Create a new branch, commit, and push the updated CHANGELOG.md.
+      - name: Create New Branch and Push Changes
         run: |
-          git fetch origin
-
-          # Check if remote branch exists
-          if git ls-remote --exit-code --heads origin changelog/unreleased-update; then
-            echo "Branch exists. Checking out..."
-            git checkout changelog/unreleased-update
-            git pull origin changelog/unreleased-update
-          else
-            echo "Branch does not exist. Creating it."
-            git checkout -b changelog/unreleased-update
-          fi
-
-      # 7. Commit and Push Changes
-      - name: Commit and Push Changelog Updates
-        run: |
+          git checkout -b changelog/unreleased-update
           git add CHANGELOG.md
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "action: update Unreleased changelog"
-            git push origin changelog/unreleased-update
-          fi
+          git commit -m "Update CHANGELOG.md with new unreleased changes"
+          git push origin changelog/unreleased-update
 
-      # 8. Create Pull Request
+      # 7. Create or update the Pull Request.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          sign-commits: true
-          commit-message: "action: update Unreleased changelog"
           base: main
           branch: "changelog/unreleased-update"
           title: "action: update Unreleased changelog"
