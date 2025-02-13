@@ -32,7 +32,8 @@
         "ci",
         "style",
         "docs",
-        "refactor"
+        "refactor",
+        "chore"
       ]
     }
   ],
