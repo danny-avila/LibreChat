@@ -53,6 +53,13 @@
     "order": "ASC",
     "on_property": "mergedAt"
   },
+  "tag_resolver": {
+    "method": "semver",
+    "filter": {
+      "pattern": "^(v?\\d+\\.\\d+\\.\\d+)$",
+      "flags": "i"
+    }
+  },
   "label_extractor": [
     {
       "pattern": "^(?:[^A-Za-z0-9]*)(feat|fix|chore|docs|refactor|ci|style|a11y|i18n):",
@@ -69,7 +76,7 @@
       "method": "match"
     }
   ],
-  "template": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n#{{CHANGELOG}}\n\n<details>\n<summary>Uncategorized</summary>\n\n#{{UNCATEGORIZED}}\n</details>\n\n---\n\n## [#{{TO_TAG}} - #{{TO_TAG_DATE}}]\n\nChanges from #{{FROM_TAG}} to #{{TO_TAG}}.\n\n[See full release details][release-#{{TO_TAG}}]\n\n[release-#{{TO_TAG}}]: https://github.com/#{{OWNER}}/#{{REPO}}/releases/tag/#{{TO_TAG}}\n",
+  "template": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n#{{CHANGELOG}}\n\n<details>\n<summary>Uncategorized</summary>\n\n#{{UNCATEGORIZED}}\n</details>\n\n---\n\n## #{{TO_TAG}} - #{{TO_TAG_DATE}}\n\nChanges from #{{FROM_TAG}} to #{{TO_TAG}}.\n\n[See full release details][release-#{{TO_TAG}}]\n\n[release-#{{TO_TAG}}]: https://github.com/#{{OWNER}}/#{{REPO}}/releases/tag/#{{TO_TAG}}\n",
   "pr_template": "- #{{TITLE}} by **@#{{AUTHOR}}** in [##{{NUMBER}}](#{{URL}})",
   "empty_template": "- no changes"
 }
