@@ -27,7 +27,7 @@ const BackupCodesItem: React.FC = () => {
 
   const { mutate: regenerateBackupCodes, isLoading } = useRegenerateBackupCodesMutation();
 
-  const handleRegenerate = () => {
+  const fetchBackupCodes = (auto: boolean = false) => {
     regenerateBackupCodes(undefined, {
       onSuccess: (data: TRegenerateBackupCodesResponse) => {
         const newBackupCodes: TBackupCode[] = data.backupCodesHash.map((codeHash) => ({
@@ -42,7 +42,8 @@ const BackupCodesItem: React.FC = () => {
           status: 'success',
         });
 
-        if (newBackupCodes.length) {
+        // Trigger file download only when user explicitly clicks the button.
+        if (!auto && newBackupCodes.length) {
           const codesString = data.backupCodes.join('\n');
           const blob = new Blob([codesString], { type: 'text/plain;charset=utf-8' });
           const url = URL.createObjectURL(blob);
@@ -61,6 +62,10 @@ const BackupCodesItem: React.FC = () => {
     });
   };
 
+  const handleRegenerate = () => {
+    fetchBackupCodes(false);
+  };
+
   if (!user?.totpEnabled) {
     return null;
   }
@@ -73,7 +78,7 @@ const BackupCodesItem: React.FC = () => {
         </div>
         <OGDialogTrigger asChild>
           <Button aria-label="Show Backup Codes" variant="outline">
-            {localize('com_endpoint_show')}
+            {localize('com_ui_show')}
           </Button>
         </OGDialogTrigger>
       </div>
@@ -174,7 +179,8 @@ const BackupCodesItem: React.FC = () => {
                 <Button
                   onClick={handleRegenerate}
                   disabled={isLoading}
-                  className="mt-2 rounded-full bg-primary px-8 py-3 shadow-lg transition-all hover:bg-primary/90 disabled:opacity-50"
+                  variant="default"
+                  className="px-8 py-3 transition-all disabled:opacity-50"
                 >
                   {isLoading && <Spinner className="mr-2" />}
                   {localize('com_ui_generate_backup')}

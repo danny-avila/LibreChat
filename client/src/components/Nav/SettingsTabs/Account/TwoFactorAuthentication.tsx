@@ -18,6 +18,12 @@ import store from '~/store';
 
 export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
+const phaseVariants = {
+  initial: { opacity: 0, scale: 0.95 },
+  animate: { opacity: 1, scale: 1, transition: { duration: 0.3, ease: 'easeOut' } },
+  exit: { opacity: 0, scale: 0.95, transition: { duration: 0.3, ease: 'easeIn' } },
+};
+
 const TwoFactorAuthentication: React.FC = () => {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -25,7 +31,6 @@ const TwoFactorAuthentication: React.FC = () => {
   const { showToast } = useToastContext();
 
   const [secret, setSecret] = useState<string>('');
-  const [progress, setProgress] = useState<number>(0);
   const [otpauthUrl, setOtpauthUrl] = useState<string>('');
   const [downloaded, setDownloaded] = useState<boolean>(false);
   const [disableToken, setDisableToken] = useState<string>('');
@@ -50,10 +55,6 @@ const TwoFactorAuthentication: React.FC = () => {
 
   const currentStep = steps.indexOf(phasesLabel[phase]);
 
-  useEffect(() => {
-    setProgress((currentStep / (steps.length - 1)) * 100);
-  }, [currentStep]);
-
   const resetState = useCallback(() => {
     if (user?.totpEnabled !== true && otpauthUrl) {
       disable2FAMutate(undefined, {
@@ -69,7 +70,6 @@ const TwoFactorAuthentication: React.FC = () => {
     setDisableToken('');
     setPhase(user?.totpEnabled ? 'disable' : 'setup');
     setDownloaded(false);
-    setProgress(0);
   }, [user, otpauthUrl, disable2FAMutate, localize, showToast]);
 
   const handleGenerateQRCode = useCallback(() => {
@@ -125,9 +125,22 @@ const TwoFactorAuthentication: React.FC = () => {
 
   const handleConfirm = useCallback(() => {
     setDialogOpen(false);
+    setPhase('disable');
     showToast({ message: localize('com_ui_2fa_enabled') });
-    setUser((prev) => ({ ...prev, totpEnabled: true }) as TUser);
-  }, [setUser, localize, showToast]);
+    setUser(
+      (prev) =>
+        ({
+          ...prev,
+          totpEnabled: true,
+          backupCodes: backupCodes.map((code) => ({
+            code,
+            codeHash: code,
+            used: false,
+            usedAt: null,
+          })),
+        }) as TUser,
+    );
+  }, [setUser, localize, showToast, backupCodes]);
 
   const handleDisableVerify = useCallback(
     (token: string, useBackup: boolean) => {
@@ -195,9 +208,11 @@ const TwoFactorAuthentication: React.FC = () => {
       <OGDialogContent className="w-11/12 max-w-lg p-6">
         <AnimatePresence mode="wait">
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            key={phase}
+            variants={phaseVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             className="space-y-6"
           >
             <OGDialogHeader>
