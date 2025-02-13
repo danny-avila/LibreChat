@@ -19,7 +19,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: main
+#          ref: main
           fetch-depth: 0
 
       # 2. Set Git Author Identity.
@@ -87,15 +87,16 @@ jobs:
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 6. Create a new branch from main, commit, and push the updated CHANGELOG.md.
+      # 6. Create (or reset) a new branch from main, commit, and force-push the updated CHANGELOG.md.
       - name: Create New Branch and Push Changes
         run: |
-          # Ensure we're on main before creating a new branch.
+          # Ensure we're on main, then reset (or create) the branch.
           git checkout main
-          git checkout -b changelog/unreleased-update
+          git checkout -B changelog/unreleased-update
           git add CHANGELOG.md
-          git commit -m "Update CHANGELOG.md with new unreleased changes"
-          git push origin changelog/unreleased-update
+          # Allow an empty commit if there are no changes.
+          git commit --allow-empty -m "Update CHANGELOG.md with new unreleased changes"
+          git push --force origin changelog/unreleased-update
 
       # 7. Create or update the Pull Request.
       - name: Create Pull Request
