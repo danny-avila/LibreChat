@@ -72,19 +72,31 @@ jobs:
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 5. Rebase the changelog branch onto main to minimize conflicts.
-      - name: Rebase changelog branch onto main
+      # 5. Ensure the changelog branch exists and push if needed
+      - name: Ensure Changelog Branch Exists
         run: |
           git fetch origin
-          git checkout changelog/unreleased-update || git checkout -b changelog/unreleased-update
-          git rebase origin/main || true
+          if git show-ref --verify --quiet refs/remotes/origin/changelog/unreleased-update; then
+            echo "Branch exists on remote. Checking out..."
+            git checkout changelog/unreleased-update
+            git reset --hard origin/main
+          else
+            echo "Branch does not exist. Creating new branch."
+            git checkout -b changelog/unreleased-update
+          fi
+          git pull --rebase origin main || true
 
-      # 6. Auto-resolve conflicts in CHANGELOG.md
+      # 6. Auto-resolve conflicts in CHANGELOG.md if necessary
       - name: Auto-resolve conflicts in CHANGELOG.md
         run: |
-          git checkout --ours CHANGELOG.md || true
-          git add CHANGELOG.md
-          git commit --no-edit || true
+          if git diff --name-only --diff-filter=U | grep -q "CHANGELOG.md"; then
+            echo "Merge conflict detected in CHANGELOG.md. Resolving..."
+            git checkout --ours CHANGELOG.md || true
+            git add CHANGELOG.md
+            git commit --no-edit || true
+          else
+            echo "No merge conflicts detected."
+          fi
 
       # 7. Create a pull request with the updated CHANGELOG.md.
       - name: Create Pull Request
