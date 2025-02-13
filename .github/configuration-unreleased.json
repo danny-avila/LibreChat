@@ -31,7 +31,8 @@
     "❓ question",
     "🚫 wontfix",
     "🚀 release",
-    "version"
+    "version",
+    "action"
   ],
   "base_branches": ["main"],
   "sort": {
@@ -49,6 +50,13 @@
     {
       "pattern": "^(?:[^A-Za-z0-9]*)(v\\d+\\.\\d+\\.\\d+(?:-rc\\d+)?).*",
       "target": "version",
+      "flags": "i",
+      "on_property": "title",
+      "method": "match"
+    },
+    {
+      "pattern": "^(?:[^A-Za-z0-9]*)(action)\\b.*",
+      "target": "action",
       "flags": "i",
       "on_property": "title",
       "method": "match"

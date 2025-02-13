@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 jobs:
   generate-unreleased-changelog-pr:
@@ -46,6 +43,7 @@ jobs:
 
       # 7. Update CHANGELOG.md with the new Unreleased section.
       - name: Update CHANGELOG.md
+        id: update_changelog
         run: |
           # Create CHANGELOG.md if it doesn't exist.
           if [ ! -f CHANGELOG.md ]; then
@@ -57,7 +55,7 @@ jobs:
           
           echo "Updating CHANGELOG.md…"
           
-          # Extract content before the "## [Unreleased]" or version header.
+          # Extract content before the "## [Unreleased]" (or first version header if missing).
           if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
             awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > CHANGELOG_TMP.md
           else
@@ -75,14 +73,25 @@ jobs:
           # Replace the old file with the updated file.
           mv CHANGELOG_TMP.md CHANGELOG.md
           
-          # Remove the temporary file.
+          # Remove the temporary generated file.
           rm -f CHANGELOG-unreleased.md
           
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 9. Create (or update) the Pull Request.
+      # 8. Check if CHANGELOG.md has any updates.
+      - name: Check for CHANGELOG.md changes
+        id: changelog_changes
+        run: |
+          if git diff --quiet CHANGELOG.md; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      # 9. Create (or update) the Pull Request only if there are changes.
       - name: Create Pull Request
+        if: steps.changelog_changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
