@@ -13,8 +13,8 @@ jobs:
   generate-unreleased-changelog-pr:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
+      contents: write   # Required for pushing new branches and commits.
+      pull-requests: write
     steps:
       # 1. Checkout the repository.
       - name: Checkout Repository
