@@ -15,13 +15,14 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout the repository with full history.
+      # 1. Checkout the repository on main with full history.
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
-      # 2. Set Git Author Identity
+      # 2. Set Git Author Identity.
       - name: Set Git Author Identity
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -86,9 +87,11 @@ jobs:
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
 
-      # 6. Create a new branch, commit, and push the updated CHANGELOG.md.
+      # 6. Create a new branch from main, commit, and push the updated CHANGELOG.md.
       - name: Create New Branch and Push Changes
         run: |
+          # Ensure we're on main before creating a new branch.
+          git checkout main
           git checkout -b changelog/unreleased-update
           git add CHANGELOG.md
           git commit -m "Update CHANGELOG.md with new unreleased changes"
