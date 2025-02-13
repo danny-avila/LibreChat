@@ -28,7 +28,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          configuration: "configuration.json"
+          configuration: ".github/configuration.json"
           owner: ${{ github.repository_owner }}
           repo: ${{ github.event.repository.name }}
           outputFile: CHANGELOG.md
