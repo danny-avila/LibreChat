@@ -1,7 +1,6 @@
 name: Generate Unreleased Changelog PR
 
 on:
-#  just for testing to see if it works.
   pull_request:
     branches:
       - main
@@ -11,14 +10,17 @@ on:
 
 jobs:
   generate-unreleased-changelog-pr:
-    runs-on: ubuntu-latest
     permissions:
-      contents: write   # Required for pushing new branches and commits.
+      contents: write  # Required for pushing new branches and commits.
       pull-requests: write
+    runs-on: ubuntu-latest
     steps:
-      # 1. Checkout the repository.
+
+      # 1. Checkout the repository with full history.
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # 2. Get the latest version tag (to compare against).
       - name: Get Latest Tag
