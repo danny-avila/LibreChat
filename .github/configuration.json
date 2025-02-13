@@ -46,19 +46,13 @@
     "❌ invalid",
     "❓ question",
     "🚫 wontfix",
-    "🚀 release"
+    "🚀 release",
+    "version"
   ],
   "base_branches": ["main"],
   "sort": {
     "order": "ASC",
     "on_property": "mergedAt"
-  },
-  "tag_resolver": {
-    "method": "semver",
-    "filter": {
-      "pattern": "^(v?\\d+\\.\\d+\\.\\d+)$",
-      "flags": "i"
-    }
   },
   "label_extractor": [
     {
