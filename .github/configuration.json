@@ -30,7 +30,9 @@
         "🔒 security",
         "📦 dependencies",
         "ci",
-        "style"
+        "style",
+        "docs",
+        "refactor"
       ]
     }
   ],
@@ -52,14 +54,29 @@
   },
   "label_extractor": [
     {
-      "pattern": "^(?:.*?\\s)?(feat|fix|chore|docs|refactor|ci|style|a11y|i18n):",
+      "pattern": "^(?:[^A-Za-z0-9]*)(feat|fix|chore|docs|refactor|ci|style|a11y|i18n):",
       "target": "$1",
+      "flags": "i",
+      "on_property": "title",
+      "method": "match"
+    },
+    {
+      "pattern": "^(?:[^A-Za-z0-9]*)(v\\d+\\.\\d+\\.\\d+(?:-rc\\d+)?).*",
+      "target": "version",
       "flags": "i",
       "on_property": "title",
       "method": "match"
     }
   ],
-  "template": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n#{{CHANGELOG}}\n\n<details>\n<summary>Uncategorized</summary>\n\n#{{UNCATEGORIZED}}\n</details>\n\n---\n\n## Release Notes for **#{{TO_TAG}}** - *#{{TO_TAG_DATE}}*\n",
+  "custom_placeholders": [
+    {
+      "name": "RELEASE_VERSION",
+      "pattern": "^v?(.*)$",
+      "target": "$1",
+      "on_property": "TO_TAG"
+    }
+  ],
+  "template": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n#{{CHANGELOG}}\n\n<details>\n<summary>Uncategorized</summary>\n\n#{{UNCATEGORIZED}}\n</details>\n\n---\n\n## [#{{RELEASE_VERSION}} - #{{TO_TAG_DATE}}]\n\n[See full release details][release-#{{RELEASE_VERSION}}]\n\n[release-#{{RELEASE_VERSION}}]: https://github.com/#{{OWNER}}/#{{REPO}}/releases/tag/v#{{RELEASE_VERSION}}\n",
   "pr_template": "- #{{TITLE}} by **@#{{AUTHOR}}** in [##{{NUMBER}}](#{{URL}})",
   "empty_template": "- no changes"
 }
