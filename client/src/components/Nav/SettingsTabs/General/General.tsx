@@ -52,7 +52,7 @@ export const LangSelector = ({
     { value: 'auto', label: localize('com_nav_lang_auto') },
     { value: 'en-US', label: localize('com_nav_lang_english') },
     { value: 'zh-CN', label: localize('com_nav_lang_chinese') },
-    { value: 'zh-TW', label: localize('com_nav_lang_traditionalchinese') },
+    { value: 'zh-Hant', label: localize('com_nav_lang_traditional_chinese') },
     { value: 'ar-EG', label: localize('com_nav_lang_arabic') },
     { value: 'de-DE', label: localize('com_nav_lang_german') },
     { value: 'es-ES', label: localize('com_nav_lang_spanish') },
