@@ -46,35 +46,31 @@ jobs:
       # 4. Update CHANGELOG.md with the new Unreleased section.
       - name: Update CHANGELOG.md with new Unreleased section
         run: |
-          # Ensure CHANGELOG.md exists; if not, create a basic header.
           if [ ! -f CHANGELOG.md ]; then
+            echo "CHANGELOG.md not found. Creating a new one..."
             echo "# Changelog" > CHANGELOG.md
             echo "" >> CHANGELOG.md
             echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
             echo "" >> CHANGELOG.md
-          fi
-          
-          echo "Updating CHANGELOG.md…"
-          
-          # Check if a "## [Unreleased]" section already exists.
-          if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
-            # Existing Unreleased section: use that to split header and tail.
-            awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > header.md
-            awk 'flag{print} /^---/{flag=1; print}' CHANGELOG.md > tail.md
+            # Append the newly generated Unreleased changelog.
+            cat CHANGELOG-unreleased.md >> CHANGELOG.md
           else
-            # No Unreleased section: assume the first release header starts with "## [v" and split there.
-            awk '/^## \[v/{exit} {print}' CHANGELOG.md > header.md
-            awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md > tail.md
+            echo "Updating existing CHANGELOG.md…"
+            # Check if a "## [Unreleased]" section already exists.
+            if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
+              # Existing Unreleased section: split header and tail.
+              awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > header.md
+              awk 'flag{print} /^---/{flag=1; print}' CHANGELOG.md > tail.md
+            else
+              # No Unreleased section: assume the first release header starts with "## [v" and split there.
+              awk '/^## \[v/{exit} {print}' CHANGELOG.md > header.md
+              awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md > tail.md
+            fi
+
+            # Combine header, the freshly generated Unreleased changelog, and the tail.
+            cat header.md CHANGELOG-unreleased.md tail.md > CHANGELOG.md.new
+            mv CHANGELOG.md.new CHANGELOG.md
           fi
-
-          echo "Header:"
-          cat header.md
-          echo "Tail:"
-          cat tail.md
-
-          # Combine header, the freshly generated Unreleased changelog, and the tail.
-          cat header.md CHANGELOG-unreleased.md tail.md > CHANGELOG.md.new
-          mv CHANGELOG.md.new CHANGELOG.md
 
           echo "Final CHANGELOG.md:"
           cat CHANGELOG.md
