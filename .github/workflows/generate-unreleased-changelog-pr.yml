@@ -1,0 +1,95 @@
+name: Generate Unreleased Changelog PR
+
+on:
+#  just for testing to see if it works.
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  generate-unreleased-changelog-pr:
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout the repository.
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Get the latest version tag (to compare against).
+      - name: Get Latest Tag
+        id: get_latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+          echo "Latest tag: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      # 3. Generate the Unreleased changelog.
+      - name: Generate Unreleased Changelog
+        id: generate_unreleased
+        uses: mikepenz/release-changelog-builder-action@v5.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          configuration: ".github/configuration-unreleased.json"
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          outputFile: CHANGELOG-unreleased.md
+          fromTag: ${{ steps.get_latest_tag.outputs.tag }}
+          toTag: main
+
+      # 4. Update CHANGELOG.md with the new Unreleased section.
+      - name: Update CHANGELOG.md with new Unreleased section
+        run: |
+          # Ensure CHANGELOG.md exists; if not, create a basic header.
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+          
+          echo "Updating CHANGELOG.md…"
+          
+          # Check if a "## [Unreleased]" section already exists.          
+          if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
+            # Existing Unreleased section: use that to split header and tail.
+            awk '/^## \[Unreleased\]/{exit} {print}' CHANGELOG.md > header.md
+            awk 'flag{print} /^---/{flag=1; print}' CHANGELOG.md > tail.md
+          else
+            # No Unreleased section: assume the first release header starts with "## [v" and split there.
+            awk '/^## \[v/{exit} {print}' CHANGELOG.md > header.md
+            awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.md > tail.md
+          fi
+
+          echo "Header:"
+          cat header.md
+          echo "Tail:"
+          cat tail.md
+
+          # Combine header, the freshly generated Unreleased changelog, and the tail.
+          cat header.md CHANGELOG-unreleased.md tail.md > CHANGELOG.md.new
+          mv CHANGELOG.md.new CHANGELOG.md
+
+          echo "Final CHANGELOG.md:"
+          cat CHANGELOG.md
+
+      # 5. Create a pull request with the updated CHANGELOG.md.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "action: update Unreleased changelog"
+          base: main
+          branch: "changelog/unreleased-update"
+          title: "action: update Unreleased changelog"
+          body: |
+            **Description**:
+            - This PR updates the Unreleased section in CHANGELOG.md.
+            - It compares the current main branch with the latest version tag (determined as ${{ steps.get_latest_tag.outputs.tag }}),
+              regenerates the Unreleased changelog, removes the old Unreleased block (if any), and inserts the new content.

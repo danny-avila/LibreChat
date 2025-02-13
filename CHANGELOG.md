@@ -2,28 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-### ✨ New Features
-
-- 🪄 feat: Agent Artifacts by **@danny-avila** in [#5804](https://github.com/danny-avila/LibreChat/pull/5804)
-
-### 🌍 Internationalization
-
-- 🔄 chore: Enforce 18next Language Keys by **@rubentalstra** in [#5803](https://github.com/danny-avila/LibreChat/pull/5803)
-
-### 🔧 Fixes
-
-- 🔄 chore: Enforce 18next Language Keys by **@rubentalstra** in [#5803](https://github.com/danny-avila/LibreChat/pull/5803)
-
-### ⚙️ Other Changes
-
-- 🔄 chore: Enforce 18next Language Keys by **@rubentalstra** in [#5803](https://github.com/danny-avila/LibreChat/pull/5803)
-- 🔃 refactor: Parent Message ID Handling on Error, Update Translations, Bump Agents by **@danny-avila** in [#5833](https://github.com/danny-avila/LibreChat/pull/5833)
-
-
----
-
 ## [v0.7.7-rc1] - 2025-02-11
 
 Changes from v0.7.6 to v0.7.7-rc1.
@@ -59,7 +37,6 @@ Changes from v0.7.6 to v0.7.7-rc1.
 - 💬 feat: Temporary Chats by **@ohneda** in [#5493](https://github.com/danny-avila/LibreChat/pull/5493)
 - 📜 feat: Configure JSON Log Truncation Size by **@thelinuxkid** in [#5215](https://github.com/danny-avila/LibreChat/pull/5215)
 - 📱 feat: improve mobile viewport behavior with interactive-widget meta by **@ssiegel** in [#5675](https://github.com/danny-avila/LibreChat/pull/5675)
-- 🌎 i18n: React-i18next & i18next Integration by **@rubentalstra** in [#5720](https://github.com/danny-avila/LibreChat/pull/5720)
 - ✨feat: OAuth for Actions by **@rubentalstra** in [#5693](https://github.com/danny-avila/LibreChat/pull/5693)
 - 🔨 feat: Use `x-strict` attribute in OpenAPI Actions for Strict Function Definition by **@owengo** in [#4639](https://github.com/danny-avila/LibreChat/pull/4639)
 
@@ -70,15 +47,12 @@ Changes from v0.7.6 to v0.7.7-rc1.
 - 🌍 i18n: Fix "Balance" Localization For De by **@leondape** in [#5656](https://github.com/danny-avila/LibreChat/pull/5656)
 - 🌍 i18n: "Balance" Localization For ZhTraditional by **@SN-Koarashi** in [#5682](https://github.com/danny-avila/LibreChat/pull/5682)
 - 🌎 i18n: React-i18next & i18next Integration by **@rubentalstra** in [#5720](https://github.com/danny-avila/LibreChat/pull/5720)
-- 🤖 ci: locize-pull-published-sync-pr.yml by **@rubentalstra** in [#5762](https://github.com/danny-avila/LibreChat/pull/5762)
 - 🌍 i18n: Update translation.json with latest translations by **@github-actions[bot]** in [#5764](https://github.com/danny-avila/LibreChat/pull/5764)
 - 🌍 i18n: Update translation.json with latest translations by **@github-actions[bot]** in [#5765](https://github.com/danny-avila/LibreChat/pull/5765)
 - 🌍 i18n: Update translation.json with latest translations by **@github-actions[bot]** in [#5789](https://github.com/danny-avila/LibreChat/pull/5789)
 
 ### 👐 Accessibility
 
-- ♿ fix: Improve Accessibility in Endpoints Menu/Navigation by **@danny-avila** in [#5123](https://github.com/danny-avila/LibreChat/pull/5123)
-- 🎨 feat: enhance Chat Input UI, File Mgmt. UI, Bookmarks a11y by **@berry-13** in [#5112](https://github.com/danny-avila/LibreChat/pull/5112)
 - ♿️ a11y: Enhance Accessibility in ToolSelectDialog, ThemeSelector and ChatGroupItem by **@berry-13** in [#5395](https://github.com/danny-avila/LibreChat/pull/5395)
 - 🔍 a11y: MultiSearch Clear Input by **@danny-avila** in [#5718](https://github.com/danny-avila/LibreChat/pull/5718)
 - 🔇 a11y: Silence Unnecessary Icons for Screen Readers by **@kangabell** in [#5726](https://github.com/danny-avila/LibreChat/pull/5726)
@@ -118,8 +92,6 @@ Changes from v0.7.6 to v0.7.7-rc1.
 - 🔧 fix: Wrong import `useGetStartupConfig` by **@rubentalstra** in [#5692](https://github.com/danny-avila/LibreChat/pull/5692)
 - 🚀 fix: Resolve Google Client Issues, CDN Screenshots, Update Models by **@danny-avila** in [#5703](https://github.com/danny-avila/LibreChat/pull/5703)
 - 💬 fix: Temporary Chat PR's broken components and improved UI by **@berry-13** in [#5705](https://github.com/danny-avila/LibreChat/pull/5705)
-- 🧹 chore: Migrate to Flat ESLint Config & Update Prettier Settings by **@rubentalstra** in [#5737](https://github.com/danny-avila/LibreChat/pull/5737)
-- 📦 chore: Bump Packages by **@rubentalstra** in [#5791](https://github.com/danny-avila/LibreChat/pull/5791)
 - 🧠 fix: Handle Reasoning Chunk Edge Cases by **@danny-avila** in [#5800](https://github.com/danny-avila/LibreChat/pull/5800)
 
 ### ⚙️ Other Changes
