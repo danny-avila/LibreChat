@@ -59,7 +59,7 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
 
       return {
         host: value.host,
-        port: value.port
+        port: value.port,
       };
     });
     const cluster = new ioredis.Cluster(hosts, { redisOptions });
