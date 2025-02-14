@@ -482,6 +482,7 @@ export type TStartupConfig = {
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   appleLoginEnabled: boolean;
+  passkeyLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
   /** LDAP Auth Configuration */

@@ -1,21 +1,35 @@
-import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon, AppleIcon } from '~/components';
-
+import {
+  GoogleIcon,
+  FacebookIcon,
+  OpenIDIcon,
+  GithubIcon,
+  DiscordIcon,
+  AppleIcon,
+  PasskeyIcon,
+} from '~/components';
 import SocialButton from './SocialButton';
-
 import { useLocalize } from '~/hooks';
-
 import { TStartupConfig } from 'librechat-data-provider';
+import React from 'react';
 
-function SocialLoginRender({
-  startupConfig,
-}: {
+type SocialLoginRenderProps = {
   startupConfig: TStartupConfig | null | undefined;
-}) {
+  mode: 'login' | 'register';
+  onPasskeyClick?: () => void;
+};
+
+function SocialLoginRender({ startupConfig, mode, onPasskeyClick }: SocialLoginRenderProps) {
   const localize = useLocalize();
 
   if (!startupConfig) {
     return null;
   }
+
+  // Compute the passkey label based on mode.
+  const passkeyLabel =
+      mode === 'register'
+        ? localize('com_auth_passkey_register')
+        : localize('com_auth_passkey_login');
 
   const providerComponents = {
     discord: startupConfig.discordLoginEnabled && (
@@ -107,6 +121,21 @@ function SocialLoginRender({
         )}
         <div className="mt-2">
           {startupConfig.socialLogins?.map((provider) => providerComponents[provider] || null)}
+          {startupConfig.passkeyLoginEnabled && (
+
+            <div className="mt-2 flex gap-x-2">
+              <button
+                aria-label={passkeyLabel}
+                className="flex w-full items-center space-x-3 rounded-2xl border border-border-light bg-surface-primary px-5 py-3 text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
+                data-testid="passkey"
+                type="button"
+                onClick={onPasskeyClick}
+              >
+                <PasskeyIcon />
+                <p>{passkeyLabel}</p>
+              </button>
+            </div>
+          )}
         </div>
       </>
     )

@@ -39,6 +39,13 @@ const Session = mongoose.Schema({
   },
 });
 
+const passkeySchema = mongoose.Schema({
+  id: { type: String, required: true },
+  publicKey: { type: Buffer, required: true },
+  counter: { type: Number, default: 0 },
+  transports: { type: [String], default: [] },
+});
+
 /** @type {MongooseSchema<MongoUser>} */
 const userSchema = mongoose.Schema(
   {
@@ -116,6 +123,10 @@ const userSchema = mongoose.Schema(
       type: String,
       unique: true,
       sparse: true,
+    },
+    passkeys: {
+      type: [passkeySchema],
+      default: [],
     },
     plugins: {
       type: Array,

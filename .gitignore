@@ -100,10 +100,13 @@ auth.json
 /images
 
 !client/src/components/Nav/SettingsTabs/Data/
+!/client/src/@types/i18next.d.ts
 
 # User uploads
 uploads/
 
 # owner
 release/
-!/client/src/@types/i18next.d.ts
+
+# Apple Private Key
+*.p8

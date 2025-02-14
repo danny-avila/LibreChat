@@ -100,6 +100,13 @@ export type TError = {
   };
 };
 
+export type TPasskey = {
+  id: string;
+  publicKey: Buffer;
+  counter: number;
+  transports: string[];
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -109,6 +116,7 @@ export type TUser = {
   role: string;
   provider: string;
   plugins?: string[];
+  passkeys?: TPasskey[];
   createdAt: string;
   updatedAt: string;
 };
