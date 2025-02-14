@@ -12,6 +12,7 @@ import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
+import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
 
 export type TMessageActions = Pick<
   TMessageProps,
@@ -110,6 +111,25 @@ export default function useMessageActions(props: TMessageActions) {
     }
   }, [message, agent, assistant, UsernameDisplay, user, localize]);
 
+  const feedbackMutation = useUpdateFeedbackMutation(conversation?.conversationId || '');
+  const handleFeedbackPositive = useCallback(() => {
+    if (conversation && message) {
+      feedbackMutation.mutate({
+        messageId: message.messageId,
+        feedback: 'positive',
+      });
+    }
+  }, [conversation, message, feedbackMutation]);
+
+  const handleFeedbackNegative = useCallback(() => {
+    if (conversation && message) {
+      feedbackMutation.mutate({
+        messageId: message.messageId,
+        feedback: 'negative',
+      });
+    }
+  }, [conversation, message, feedbackMutation]);
+
   return {
     ask,
     edit,
@@ -125,5 +145,7 @@ export default function useMessageActions(props: TMessageActions) {
     copyToClipboard,
     setLatestMessage,
     regenerateMessage,
+    handleFeedbackPositive,
+    handleFeedbackNegative,
   };
 }

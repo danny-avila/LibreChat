@@ -237,3 +237,6 @@ export const addTagToConversation = (conversationId: string) =>
 export const userTerms = () => '/api/user/terms';
 export const acceptUserTerms = () => '/api/user/terms/accept';
 export const banner = () => '/api/banner';
+
+export const feedback = (conversationId: string, messageId: string) =>
+  `/api/messages/${conversationId}/${messageId}/feedback`;

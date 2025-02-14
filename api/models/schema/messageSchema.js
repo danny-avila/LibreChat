@@ -137,6 +137,10 @@ const messageSchema = mongoose.Schema(
     expiredAt: {
       type: Date,
     },
+    feedback: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

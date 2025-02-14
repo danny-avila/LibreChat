@@ -774,3 +774,11 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
+
+export function updateFeedback(
+  conversationId: string,
+  messageId: string,
+  feedback: string,
+): Promise<unknown> {
+  return request.put(endpoints.feedback(conversationId, messageId), { feedback });
+}

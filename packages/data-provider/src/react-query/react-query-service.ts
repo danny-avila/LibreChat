@@ -376,3 +376,25 @@ export const useGetCustomConfigSpeechQuery = (
     },
   );
 };
+
+export const useUpdateFeedbackMutation = (
+  conversationId: string,
+): UseMutationResult<
+  unknown,
+  unknown,
+  { messageId: string; feedback: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    ({ messageId, feedback }: { messageId: string; feedback: string }) =>
+      dataService.updateFeedback(conversationId, messageId, feedback),
+    {
+      onSuccess: () => {
+        // Invalidate messages for this conversation so that any UI shows the updated feedback.
+        queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
+      },
+    },
+  );
+};

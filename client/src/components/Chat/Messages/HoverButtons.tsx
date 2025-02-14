@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components/svg';
+import {
+  EditIcon,
+  Clipboard,
+  CheckMark,
+  ContinueIcon,
+  RegenerateIcon,
+  ThumbUpIcon,
+  ThumbDownIcon,
+} from '~/components/svg';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
@@ -20,6 +28,9 @@ type THoverButtons = {
   latestMessage: TMessage | null;
   isLast: boolean;
   index: number;
+  // Optional props for feedback callbacks
+  onFeedbackPositive?: () => void;
+  onFeedbackNegative?: () => void;
 };
 
 export default function HoverButtons({
@@ -34,6 +45,8 @@ export default function HoverButtons({
   handleContinue,
   latestMessage,
   isLast,
+  onFeedbackPositive,
+  onFeedbackNegative,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
@@ -167,6 +180,34 @@ export default function HoverButtons({
           <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
+      {!isCreatedByUser && (onFeedbackPositive || onFeedbackNegative) && (
+        <>
+          {onFeedbackPositive && (
+            <button
+              className={cn(
+                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200'
+              )}
+              onClick={onFeedbackPositive}
+              type="button"
+              title={localize('com_ui_feedback_positive') || 'Positive feedback'}
+            >
+              <ThumbUpIcon size="19" />
+            </button>
+          )}
+          {onFeedbackNegative && (
+            <button
+              className={cn(
+                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200'
+              )}
+              onClick={onFeedbackNegative}
+              type="button"
+              title={localize('com_ui_feedback_negative') || 'Negative feedback'}
+            >
+              <ThumbDownIcon size="19" />
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

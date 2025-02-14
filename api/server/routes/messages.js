@@ -175,6 +175,19 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
+router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (req, res) => {
+  try {
+    const { conversationId, messageId } = req.params;
+    const { feedback } = req.body;
+
+    const result = await updateMessage(req, { messageId, feedback });
+    return res.status(200).json(result);
+  } catch (error) {
+    logger.error('Error updating message:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { messageId } = req.params;

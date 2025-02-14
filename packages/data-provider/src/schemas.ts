@@ -483,6 +483,7 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  feedback: z.string().nullable().optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
@@ -502,6 +503,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  feedback?: string;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
