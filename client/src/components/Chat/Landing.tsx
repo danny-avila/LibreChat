@@ -23,18 +23,6 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const [welcomeMessage, setWelcomeMessage] = useState<string>('');
-
-  useEffect(() => {
-    const fetchWelcomeMessage = async () => {
-      const message = await getWelcomeMessage();
-      setWelcomeMessage(message);
-    };
-
-    fetchWelcomeMessage();
-  }, []);
-
-  const localize = useLocalize();
-
   let { endpoint = '' } = conversation ?? {};
 
   if (
@@ -44,12 +32,23 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   ) {
     endpoint = EModelEndpoint.openAI;
   }
-
-  const iconURL = conversation?.iconURL;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
   const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpoint, {
     select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
   });
+
+  useEffect(() => {
+    const fetchWelcomeMessage = async () => {
+      const message = await getWelcomeMessage();
+      setWelcomeMessage(message);
+    };
+
+    fetchWelcomeMessage();
+  }, [documentsMap]);
+
+  const localize = useLocalize();
+
+  const iconURL = conversation?.iconURL;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const { entity, isAgent, isAssistant } = getEntity({
     endpoint,
@@ -99,8 +98,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     }
 
     const currentAgent = await axios.get('/api/models/current');
-    return currentAgent.data.description;
-    // return localize('com_nav_welcome_message');
+    return currentAgent.data?.description ?? localize('com_nav_welcome_message');
   };
 
   return (
