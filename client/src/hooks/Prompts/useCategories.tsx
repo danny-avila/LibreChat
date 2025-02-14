@@ -2,14 +2,14 @@ import { useGetCategories } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 
-const loadingCategories:  { label: TranslationKeys; value: string }[] = [
+const loadingCategories: { label: TranslationKeys; value: string }[] = [
   {
     label: 'com_ui_loading',
     value: '',
   },
 ];
 
-const emptyCategory: { label: TranslationKeys; value: string }[] = {
+const emptyCategory: { label: TranslationKeys; value: string } = {
   label: 'com_ui_empty_category',
   value: '',
 };
