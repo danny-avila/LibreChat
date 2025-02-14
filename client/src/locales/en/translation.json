@@ -784,5 +784,15 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
+  "com_ui_loading": "Loading...",
+  "com_ui_finance": "Finance",
+  "com_ui_idea": "Ideas",
+  "com_ui_misc": "Misc.",
+  "com_ui_roleplay": "Roleplay",
+  "com_ui_shop": "Shopping",
+  "com_ui_teach_or_explain": "Learning",
+  "com_ui_travel": "Travel",
+  "com_ui_write": "Writing",
+  "com_ui_empty_category": "-",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }
