@@ -1,9 +1,8 @@
 name: Generate Unreleased Changelog PR
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: "0 0 * * 1"  # Runs every Monday at 00:00 UTC
 
 jobs:
   generate-unreleased-changelog-pr:
