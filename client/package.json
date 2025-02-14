@@ -65,6 +65,7 @@
     "framer-motion": "^11.5.4",
     "html-to-image": "^1.11.11",
     "i18next": "^24.2.2",
+    "i18next-browser-languagedetector": "^8.0.3",
     "input-otp": "^1.4.2",
     "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
