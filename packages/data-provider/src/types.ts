@@ -82,6 +82,7 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
+// TODO `label` needs to be changed to the proper `TranslationKeys`
 export type TCategory = {
   id?: string;
   value: string;
