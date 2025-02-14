@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { EModelEndpoint, Constants, getConfigDefaults } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
@@ -15,11 +15,17 @@ import { TooltipAnchor } from '~/components/ui';
 import { BirthdayIcon } from '~/components/svg';
 import ConvoStarter from './ConvoStarter';
 
+const defaultInterface = getConfigDefaults().interface;
+
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
+  const interfaceConfig = useMemo(
+    () => startupConfig?.interface ?? defaultInterface,
+    [startupConfig],
+  );
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const localize = useLocalize();
   const { submitMessage } = useSubmitMessage();
@@ -85,9 +91,10 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     if (conversation?.greeting) {return conversation.greeting;}
     if (isAssistant) {return localize('com_nav_welcome_assistant');}
     if (isAgent) {return localize('com_nav_welcome_agent');}
-    return typeof startupConfig?.customWelcomeMessage === 'string'
-      ? startupConfig.customWelcomeMessage
-      : localize('com_nav_welcome_message');
+    return interfaceConfig.customWelcome;
+    // return typeof interfaceConfig?.customWelcome === 'string'
+    //   ? interfaceConfig.customWelcome
+    //   : localize('com_nav_welcome_message');
   };
 
   return (
@@ -119,8 +126,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
             <div className="max-w-md text-center text-sm font-normal text-text-primary">
               {description ||
-                (typeof startupConfig?.customWelcomeMessage === 'string'
-                  ? startupConfig.customWelcomeMessage
+                (typeof interfaceConfig?.customWelcome === 'string'
+                  ? interfaceConfig.customWelcome
                   : localize('com_nav_welcome_message'))}
             </div>
             {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">

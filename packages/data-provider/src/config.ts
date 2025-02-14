@@ -446,6 +446,7 @@ export const intefaceSchema = z
       })
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
+    customWelcome: z.string().optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
@@ -501,7 +502,6 @@ export type TStartupConfig = {
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
-  customWelcomeMessage?: string;
   modelSpecs?: TSpecsConfig;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
