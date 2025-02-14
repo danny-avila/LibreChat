@@ -1,41 +1,42 @@
 const { logger } = require('~/config');
 // const { Categories } = require('./schema/categories');
+
 const options = [
   {
     label: 'idea',
-    value: 'idea',
+    value: 'com_ui_idea',
   },
   {
     label: 'travel',
-    value: 'travel',
+    value: 'com_ui_travel',
   },
   {
     label: 'teach_or_explain',
-    value: 'teach_or_explain',
+    value: 'com_ui_teach_or_explain',
   },
   {
     label: 'write',
-    value: 'write',
+    value: 'com_ui_write',
   },
   {
     label: 'shop',
-    value: 'shop',
+    value: 'com_ui_shop',
   },
   {
     label: 'code',
-    value: 'code',
+    value: 'com_ui_code',
   },
   {
     label: 'misc',
-    value: 'misc',
+    value: 'com_ui_misc',
   },
   {
     label: 'roleplay',
-    value: 'roleplay',
+    value: 'com_ui_roleplay',
   },
   {
     label: 'finance',
-    value: 'finance',
+    value: 'com_ui_finance',
   },
 ];
 
