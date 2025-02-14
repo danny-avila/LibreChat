@@ -9,39 +9,40 @@ const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA } = process.env;
 let keyvRedis;
 
 function mapURI(uri) {
-  const regex = /^(?:(?<scheme>\w+):\/\/)?(?:(?<user>[^:@]+)(?::(?<password>[^@]+))?@)?(?<host>[\w.-]+)(?::(?<port>\d{1,5}))?$/;
+  const regex =
+    /^(?:(?<scheme>\w+):\/\/)?(?:(?<user>[^:@]+)(?::(?<password>[^@]+))?@)?(?<host>[\w.-]+)(?::(?<port>\d{1,5}))?$/;
   const match = uri.match(regex);
 
   if (match) {
-      const { scheme, user, password, host, port } = match.groups;
+    const { scheme, user, password, host, port } = match.groups;
 
-      return {
-          scheme: scheme || 'none',
-          user: user || null,
-          password: password || null,
-          host: host || null,
-          port: port || null,
-      };
+    return {
+      scheme: scheme || 'none',
+      user: user || null,
+      password: password || null,
+      host: host || null,
+      port: port || null,
+    };
   } else {
-      // Handle cases without a scheme
-      const parts = uri.split(':');
-      if (parts.length === 2) {
-          return {
-              scheme: 'none',
-              user: null,
-              password: null,
-              host: parts[0],
-              port: parts[1],
-          };
-      }
-
+    // Handle cases without a scheme
+    const parts = uri.split(':');
+    if (parts.length === 2) {
       return {
-          scheme: 'none',
-          user: null,
-          password: null,
-          host: uri,
-          port: null,
+        scheme: 'none',
+        user: null,
+        password: null,
+        host: parts[0],
+        port: parts[1],
       };
+    }
+
+    return {
+      scheme: 'none',
+      user: null,
+      password: null,
+      host: uri,
+      port: null,
+    };
   }
 }
 
