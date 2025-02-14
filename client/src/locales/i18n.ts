@@ -11,7 +11,8 @@ import translationEt from './et/translation.json';
 import translationFr from './fr/translation.json';
 import translationIt from './it/translation.json';
 import translationPl from './pl/translation.json';
-import translationPt from './pt/translation.json';
+import translationPt_BR from './pt-BR/translation.json';
+import translationPt_PT from './pt-PT/translation.json';
 import translationRu from './ru/translation.json';
 import translationJa from './ja/translation.json';
 import translationSv from './sv/translation.json';
@@ -38,7 +39,8 @@ export const resources = {
   fr: { translation: translationFr },
   it: { translation: translationIt },
   pl: { translation: translationPl },
-  pt: { translation: translationPt },
+  'pt-BR': { translation: translationPt_BR },
+  'pt-PT': { translation: translationPt_PT },
   ru: { translation: translationRu },
   ja: { translation: translationJa },
   sv: { translation: translationSv },

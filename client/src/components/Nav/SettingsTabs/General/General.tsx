@@ -61,6 +61,7 @@ export const LangSelector = ({
     { value: 'it-IT', label: localize('com_nav_lang_italian') },
     { value: 'pl-PL', label: localize('com_nav_lang_polish') },
     { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
+    { value: 'pt-PT', label: localize('com_nav_lang_portuguese') },
     { value: 'ru-RU', label: localize('com_nav_lang_russian') },
     { value: 'ja-JP', label: localize('com_nav_lang_japanese') },
     { value: 'sv-SE', label: localize('com_nav_lang_swedish') },
