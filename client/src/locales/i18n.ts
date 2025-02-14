@@ -65,7 +65,7 @@ i18n
     },
     fallbackNS: 'translation',
     ns: ['translation'],
-    debug: true,
+    debug: false,
     defaultNS,
     resources,
     interpolation: { escapeValue: false },
