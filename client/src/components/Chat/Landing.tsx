@@ -32,6 +32,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   ) {
     endpoint = EModelEndpoint.openAI;
   }
+  const iconURL = conversation?.iconURL;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
+
   const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpoint, {
     select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
   });
@@ -46,9 +49,6 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   }, [documentsMap]);
 
   const localize = useLocalize();
-
-  const iconURL = conversation?.iconURL;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const { entity, isAgent, isAssistant } = getEntity({
     endpoint,
