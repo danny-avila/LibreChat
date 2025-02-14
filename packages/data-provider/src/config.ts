@@ -501,6 +501,7 @@ export type TStartupConfig = {
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
+  customWelcomeMessage?: string;
   modelSpecs?: TSpecsConfig;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
