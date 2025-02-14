@@ -137,7 +137,7 @@ const TwoFactorScreen: React.FC = React.memo(() => {
             data-testid="login-button"
             type="submit"
             disabled={isLoading}
-            className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+            className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-80 dark:bg-green-600 dark:hover:bg-green-700"
           >
             {isLoading ? 'Verifying...' : 'Verify'}
           </button>
