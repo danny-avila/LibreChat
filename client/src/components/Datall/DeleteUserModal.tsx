@@ -14,7 +14,7 @@ interface DeleteUserModalProps {
   open: boolean;
   onClose: () => void;
   refreshUsers: () => Promise<void>;
-  user: User;
+  user: User ;
 }
 
 const style = {

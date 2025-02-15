@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react';
 import BalanceModal from './BalanceModal';
 import AddUserModal from './AddUserModal';
 import DeleteUserModal from './DeleteUserModal';
+import EditUserModal from './EditUserModal';
 // import Modal from './Modal';
 
 interface User {
@@ -38,10 +39,11 @@ const AddBalance: React.FC = () => {
 
   const [balanceModal, setBalanceModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
-  const [selectedUser ,setSelectedUser] =useState<User>()
+  const [selectedUser, setSelectedUser] = useState<User>();
 
   const [addUserModal, setAddUserModal] = useState(false);
-  const [deleteUserModal,setDeleteUserModal] =useState(false)
+  const [deleteUserModal, setDeleteUserModal] = useState(false);
+  const [editUserModal, setEditUserModal] = useState(false);
 
   const getUsers = async () => {
     const res = await axios.get('http://localhost:3090/api/getUsers');
@@ -68,20 +70,24 @@ const AddBalance: React.FC = () => {
     console.log(user);
   };
 
-  const deleteBalanceHandler = async(user: User) =>{
+  const deleteUserHandler = async (user: User) => {
     // console.log('delete' ,user)
-    setDeleteUserModal(true)
+    setDeleteUserModal(true);
     setSelectedUserId(user.id);
-    setSelectedUser(user)
-  
-  }
+    setSelectedUser(user);
+  };
+
+  const editUserHandler = async (user: User) => {
+    setEditUserModal(true);
+    setSelectedUser(user);
+  };
 
   return (
     <>
       {/* header */}
       <Stack direction="row" sx={{ justifyContent: 'space-between', my: 2 }}>
         <Typography variant="h4">User Management</Typography>
-        <Button variant="outlined" startIcon={<AddIcon />} onClick={()=>setAddUserModal(true)}>
+        <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAddUserModal(true)}>
           Add User
         </Button>
       </Stack>
@@ -98,9 +104,20 @@ const AddBalance: React.FC = () => {
         onClose={() => setAddUserModal(false)}
         refreshUsers={getUsers}
       />
+      {/* edit user modal */}
+      <EditUserModal
+        open={editUserModal}
+        onClose={() => setEditUserModal(false)}
+        refreshUsers={getUsers}
+      />
 
       {/* delete-user modal */}
-      <DeleteUserModal open={deleteUserModal} onClose={()=>setDeleteUserModal(false)} refreshUsers={getUsers} user={selectedUser}/>
+      <DeleteUserModal
+        open={deleteUserModal}
+        onClose={() => setDeleteUserModal(false)}
+        refreshUsers={getUsers}
+        user={selectedUser}
+      />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
         <TableContainer sx={{ maxHeight: 440 }}>
           <Table stickyHeader aria-label="sticky table">
@@ -123,10 +140,10 @@ const AddBalance: React.FC = () => {
                   <TableCell>{item.role}</TableCell>
                   <TableCell>{item.balance}</TableCell>
                   <TableCell>
-                    <IconButton>
-                      <DeleteIcon onClick={()=>deleteBalanceHandler(item)}/>
+                    <IconButton onClick={() => deleteUserHandler(item)} >
+                      <DeleteIcon />
                     </IconButton>
-                    <IconButton>
+                    <IconButton onClick={() => editUserHandler(item)} >
                       <EditIcon />
                     </IconButton>
                     <IconButton onClick={() => addBalanceHandler(item)}>
