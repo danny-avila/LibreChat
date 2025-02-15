@@ -222,8 +222,12 @@ const MessageRender = memo(
               {!feedbackSubmitted ? (
                 <FeedbackTagOptions
                   tagChoices={rated.ratingContent?.tagChoices || []}
-                  onSelectTag={(tag) => {
-                    handleFeedback('thumbsDown', { ratingContent: { tags: [tag] } });
+                  onSelectTag={(tag, text) => {
+                    const ratingContent = {
+                      tags: [tag],
+                      ...(text ? { text } : {}),
+                    };
+                    handleFeedback('thumbsDown', { ratingContent });
                     setFeedbackSubmitted(true);
                     setShowThankYou(true);
                     setTimeout(() => {
