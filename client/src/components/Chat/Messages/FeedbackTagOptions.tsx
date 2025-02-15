@@ -17,6 +17,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [text, setText] = useState('');
+  const [isDismissed, setIsDismissed] = useState(false);
 
   const inlineOptions = tagChoices.slice(0, 3);
   const hasMore = tagChoices.length > 3;
@@ -34,38 +35,50 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
 
   return (
     <>
-      <div className="mt-3 w-full">
-        <div className="min-h-[96px] w-full">
-          <div className="relative mt-2 flex w-full flex-col gap-3 rounded-lg border border-token-border-light p-4">
-            <div className="text-sm text-token-text-secondary">Tell us more:</div>
-            <div className="flex flex-wrap gap-3">
-              {inlineOptions.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => handleInlineTagClick(tag)}
-                  className="rounded-lg border border-token-border-light px-3 py-1 text-sm text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary"
-                >
-                  {tag}
-                </button>
-              ))}
-              {hasMore && (
+      {!isDismissed && (
+        <div className="mt-3 w-full relative">
+          <div className="min-h-[96px] w-full">
+            <div className="relative mt-2 flex w-full flex-col gap-3 rounded-lg border border-token-border-light p-4">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-token-text-secondary">Tell us more:</div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsDialogOpen(true);
-                    setSelectedTag(null);
-                    setText('');
-                  }}
-                  className="rounded-lg border border-token-border-light px-3 py-1 text-sm text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary"
+                  onClick={() => setIsDismissed(true)}
+                  className="text-xl text-token-text-secondary hover:text-token-text-primary"
+                  aria-label="Dismiss feedback options"
                 >
-                  More...
+                  &times;
                 </button>
-              )}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {inlineOptions.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleInlineTagClick(tag)}
+                    className="rounded-lg border border-token-border-light px-3 py-1 text-sm text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary"
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {hasMore && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDialogOpen(true);
+                      setSelectedTag(null);
+                      setText('');
+                    }}
+                    className="rounded-lg border border-token-border-light px-3 py-1 text-sm text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary"
+                  >
+                    More...
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Dialog for additional feedback */}
       <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
