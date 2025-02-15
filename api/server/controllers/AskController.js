@@ -4,6 +4,13 @@ const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
+let crypto;
+try {
+  crypto = require('crypto');
+} catch (err) {
+  logger.error('[openidStrategy] crypto support is disabled!', err);
+}
+
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
@@ -74,14 +81,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     res.on('close', () => {
       logger.debug('[AskController] Request closed');
-      if (!abortController) {
-        return;
-      } else if (abortController.signal.aborted) {
-        return;
-      } else if (abortController.requestCompleted) {
-        return;
-      }
-
+      if (!abortController) {return;}
+      if (abortController.signal.aborted || abortController.requestCompleted) {return;}
       abortController.abort();
       logger.debug('[AskController] Request aborted on close');
     });
@@ -95,10 +96,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       onStart,
       abortController,
       progressCallback,
-      progressOptions: {
-        res,
-        // parentMessageId: overrideParentMessageId || userMessageId,
-      },
+      progressOptions: { res },
     };
 
     /** @type {TMessage} */
@@ -114,6 +112,58 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       conversation.model = endpointOption.modelOptions.model;
       delete userMessage.image_urls;
     }
+
+    // --- Encryption Branch ---
+    // Only encrypt if the user has set up encryption (i.e. non-empty encryptionPublicKey)
+    if (
+      req.user.encryptionPublicKey &&
+      req.user.encryptionPublicKey.trim() !== '' &&
+      response.text &&
+      crypto
+    ) {
+      try {
+        // Reconstruct the user's RSA public key in PEM format.
+        const pubKeyBase64 = req.user.encryptionPublicKey;
+        const pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${pubKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+
+        // Generate a random 256-bit AES key and a 12-byte IV.
+        const aesKey = crypto.randomBytes(32);
+        const iv = crypto.randomBytes(12);
+
+        // Encrypt the response text using AES-GCM.
+        const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
+        let ciphertext = cipher.update(response.text, 'utf8', 'base64');
+        ciphertext += cipher.final('base64');
+        const authTag = cipher.getAuthTag().toString('base64');
+
+        // Encrypt the AES key using the client's RSA public key.
+        let encryptedKey;
+        try {
+          encryptedKey = crypto.publicEncrypt(
+            {
+              key: pemPublicKey,
+              padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+              oaepHash: 'sha256',
+            },
+            aesKey,
+          ).toString('base64');
+        } catch (err) {
+          logger.error('Error encrypting AES key:', err);
+          throw new Error('Encryption failure');
+        }
+
+        // Replace the plaintext response with the encrypted payload.
+        response.text = ciphertext;
+        response.iv = iv.toString('base64');
+        response.authTag = authTag;
+        response.encryptedKey = encryptedKey;
+        logger.debug('[AskController] Response message encrypted.');
+      } catch (encError) {
+        logger.error('[AskController] Error during response encryption:', encError);
+        // Optionally, you may choose to return plaintext if encryption fails.
+      }
+    }
+    // --- End Encryption Branch ---
 
     if (!abortController.signal.aborted) {
       sendMessage(res, {

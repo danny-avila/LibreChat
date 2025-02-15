@@ -1,4 +1,4 @@
-import { memo, Suspense, useMemo } from 'react';
+import React, { memo, Suspense, useMemo, useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
@@ -13,6 +13,77 @@ import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useAuthContext } from '~/hooks/AuthContext';
+
+/**
+ * Helper: Converts a base64 string to an ArrayBuffer.
+ */
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const binaryStr = window.atob(base64);
+  const len = binaryStr.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return bytes.buffer;
+};
+
+/**
+ * Helper: Decrypts an encrypted chat message using the provided RSA private key.
+ * Expects the message object to have: text (ciphertext), iv, authTag, and encryptedKey.
+ */
+async function decryptChatMessage(
+  msg: { text: string; iv: string; authTag: string; encryptedKey: string },
+  privateKey: CryptoKey
+): Promise<string> {
+  // Convert base64 values to ArrayBuffers.
+  const ciphertextBuffer = base64ToArrayBuffer(msg.text);
+  const ivBuffer = new Uint8Array(base64ToArrayBuffer(msg.iv));
+  const authTagBuffer = new Uint8Array(base64ToArrayBuffer(msg.authTag));
+  const encryptedKeyBuffer = base64ToArrayBuffer(msg.encryptedKey);
+
+  // Decrypt the AES key using RSA-OAEP.
+  let aesKeyRaw: ArrayBuffer;
+  try {
+    aesKeyRaw = await window.crypto.subtle.decrypt(
+      { name: 'RSA-OAEP' },
+      privateKey,
+      encryptedKeyBuffer
+    );
+  } catch (err) {
+    console.error('Failed to decrypt AES key:', err);
+    throw err;
+  }
+
+  // Import the AES key.
+  const aesKey = await window.crypto.subtle.importKey(
+    'raw',
+    aesKeyRaw,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+
+  // Combine ciphertext and auth tag (Web Crypto expects them appended).
+  const ciphertextBytes = new Uint8Array(ciphertextBuffer);
+  const combined = new Uint8Array(ciphertextBytes.length + authTagBuffer.length);
+  combined.set(ciphertextBytes);
+  combined.set(authTagBuffer, ciphertextBytes.length);
+
+  // Decrypt the message using AES-GCM.
+  let decryptedBuffer: ArrayBuffer;
+  try {
+    decryptedBuffer = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: ivBuffer },
+      aesKey,
+      combined.buffer
+    );
+  } catch (err) {
+    console.error('Failed to decrypt message:', err);
+    throw err;
+  }
+  return new TextDecoder().decode(decryptedBuffer);
+}
 
 export const ErrorMessage = ({
   text,
@@ -40,12 +111,7 @@ export const ErrorMessage = ({
       >
         <DelayedRender delay={5500}>
           <Container message={message}>
-            <div
-              className={cn(
-                'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
-                className,
-              )}
-            >
+            <div className={cn('rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200', className)}>
               {localize('com_ui_error_connection')}
             </div>
           </Container>
@@ -58,10 +124,7 @@ export const ErrorMessage = ({
       <div
         role="alert"
         aria-live="assertive"
-        className={cn(
-          'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
-          className,
-        )}
+        className={cn('rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200', className)}
       >
         <Error text={text} />
       </div>
@@ -69,41 +132,65 @@ export const ErrorMessage = ({
   );
 };
 
-const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
+const DisplayMessage = ({ text, isCreatedByUser, message, showCursor, className = '' }: TDisplayProps) => {
   const { isSubmitting, latestMessage } = useChatContext();
+  const { user } = useAuthContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
-  const showCursorState = useMemo(
-    () => showCursor === true && isSubmitting,
-    [showCursor, isSubmitting],
-  );
-  const isLatestMessage = useMemo(
-    () => message.messageId === latestMessage?.messageId,
-    [message.messageId, latestMessage?.messageId],
-  );
+  const showCursorState = useMemo(() => showCursor === true && isSubmitting, [showCursor, isSubmitting]);
+  const isLatestMessage = useMemo(() => message.messageId === latestMessage?.messageId, [message.messageId, latestMessage?.messageId]);
+
+  // State to hold the final text to display (decrypted if needed)
+  const [displayText, setDisplayText] = useState<string>(text);
+  const [decryptionError, setDecryptionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (message.encryptedKey && user?.decryptedPrivateKey) {
+      // Attempt to decrypt the message using our helper.
+      decryptChatMessage(
+        {
+          text: message.text,
+          iv: message.iv,
+          authTag: message.authTag,
+          encryptedKey: message.encryptedKey,
+        },
+        user.decryptedPrivateKey
+      )
+        .then((plainText) => {
+          setDisplayText(plainText);
+          setDecryptionError(null);
+        })
+        .catch((err) => {
+          console.error('Error decrypting message:', err);
+          setDecryptionError('Decryption error');
+          setDisplayText('');
+        });
+    } else {
+      // If no encryption metadata or no private key, display plain text.
+      setDisplayText(text);
+      setDecryptionError(null);
+    }
+  }, [text, message, user]);
 
   let content: React.ReactElement;
   if (!isCreatedByUser) {
-    content = (
-      <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
-    );
+    content = <Markdown content={displayText} showCursor={showCursorState} isLatestMessage={isLatestMessage} />;
   } else if (enableUserMsgMarkdown) {
-    content = <MarkdownLite content={text} />;
+    content = <MarkdownLite content={displayText} />;
   } else {
-    content = <>{text}</>;
+    content = <>{displayText}</>;
   }
 
   return (
     <Container message={message}>
-      <div
-        className={cn(
-          isSubmitting ? 'submitting' : '',
-          showCursorState && !!text.length ? 'result-streaming' : '',
-          'markdown prose message-content dark:prose-invert light w-full break-words',
-          isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-          isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
-        )}
-      >
-        {content}
+      <div className={cn(
+        isSubmitting ? 'submitting' : '',
+        showCursorState && !!displayText.length ? 'result-streaming' : '',
+        'markdown prose message-content dark:prose-invert light w-full break-words',
+        isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+        isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
+        className
+      )}>
+        {decryptionError ? <span className="text-red-500">{decryptionError}</span> : content}
       </div>
     </Container>
   );
@@ -162,12 +249,7 @@ const MessageContent = ({
       {thinkingContent.length > 0 && (
         <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>
       )}
-      <DisplayMessage
-        key={`display-${messageId}`}
-        showCursor={showRegularCursor}
-        text={regularContent}
-        {...props}
-      />
+      <DisplayMessage key={`display-${messageId}`} showCursor={showRegularCursor} text={regularContent} {...props} />
       {unfinishedMessage}
     </>
   );

@@ -167,17 +167,20 @@ const updateUserEncryptionController = async (req, res) => {
   try {
     const { encryptionPublicKey, encryptedPrivateKey, encryptionSalt, encryptionIV } = req.body;
 
-    // Validate required parameters
-    if (!encryptionPublicKey || !encryptedPrivateKey || !encryptionSalt || !encryptionIV) {
+    // Allow disabling encryption by passing null for all fields.
+    const allNull = encryptionPublicKey === null && encryptedPrivateKey === null && encryptionSalt === null && encryptionIV === null;
+    const allPresent = encryptionPublicKey && encryptedPrivateKey && encryptionSalt && encryptionIV;
+
+    if (!allNull && !allPresent) {
       return res.status(400).json({ message: 'Missing encryption parameters.' });
     }
 
-    // Use the helper function to update the user.
+    // Update the user record with the provided encryption parameters (or null to disable)
     const updatedUser = await updateUser(req.user.id, {
-      encryptionPublicKey,
-      encryptedPrivateKey,
-      encryptionSalt,
-      encryptionIV,
+      encryptionPublicKey: encryptionPublicKey || null,
+      encryptedPrivateKey: encryptedPrivateKey || null,
+      encryptionSalt: encryptionSalt || null,
+      encryptionIV: encryptionIV || null,
     });
 
     if (!updatedUser) {

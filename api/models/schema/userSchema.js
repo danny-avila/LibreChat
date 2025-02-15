@@ -27,10 +27,10 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
  * @property {Date} [expiresAt] - Optional expiration date of the file
- * @property {string} [encryptionPublicKey] - The user's public key for E2EE (client-generated)
- * @property {string} [encryptedPrivateKey] - The user's private key encrypted with a user-defined passphrase
- * @property {string} [encryptionSalt] - The salt used for PBKDF2 during encryption
- * @property {string} [encryptionIV] - The initialization vector used for encryption (AES-GCM)
+ * @property {string} [encryptionPublicKey] - The user's encryption public key
+ * @property {string} [encryptedPrivateKey] - The user's encrypted private key
+ * @property {string} [encryptionSalt] - The salt used for key derivation (e.g., PBKDF2)
+ * @property {string} [encryptionIV] - The IV used for encrypting the private key
  * @property {Date} [createdAt] - Date when the user was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the user was last updated (added by timestamps)
  */
@@ -136,26 +136,21 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // --- New Fields for E2EE ---
     encryptionPublicKey: {
       type: String,
-      required: false,
-      // Provided by the client after key generation.
+      default: null,
     },
     encryptedPrivateKey: {
       type: String,
-      required: false,
-      // The private key encrypted on the client with the user’s encryption passphrase.
+      default: null,
     },
     encryptionSalt: {
       type: String,
-      required: false,
-      // Salt used for PBKDF2 when encrypting the private key.
+      default: null,
     },
     encryptionIV: {
       type: String,
-      required: false,
-      // IV used for AES-GCM encryption of the private key.
+      default: null,
     },
   },
 

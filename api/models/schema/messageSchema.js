@@ -54,11 +54,6 @@ const messageSchema = mongoose.Schema(
       type: String,
       meiliIndex: true,
     },
-    // If the message is encrypted (and stored in 'text'),
-    // then this field should hold the IV used during encryption.
-    messageEncryptionIV: {
-      type: String,
-    },
     summary: {
       type: String,
     },
@@ -141,6 +136,18 @@ const messageSchema = mongoose.Schema(
     */
     expiredAt: {
       type: Date,
+    },
+    iv: {
+      type: String,
+      default: null,
+    },
+    authTag: {
+      type: String,
+      default: null,
+    },
+    encryptedKey: {
+      type: String,
+      default: null,
     },
   },
   { timestamps: true },
