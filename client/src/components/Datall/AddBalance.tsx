@@ -70,7 +70,7 @@ const AddBalance: React.FC = () => {
       {/* header */}
       <Stack direction="row" sx={{ justifyContent: 'space-between', my: 2 }}>
         <Typography variant="h4">User Management</Typography>
-        <Button variant="outlined" startIcon={<AddIcon />}>
+        <Button variant="outlined" startIcon={<AddIcon />} onClick={()=>setAddUserModal(true)}>
           Add User
         </Button>
       </Stack>

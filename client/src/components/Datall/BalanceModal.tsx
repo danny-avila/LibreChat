@@ -6,8 +6,8 @@ import { number } from 'zod';
 interface BalanceModalProps {
   open: boolean;
   onClose: () => void;
-  userId: string
-  refreshUsers: ()=> Promise<void>
+  userId: string;
+  refreshUsers: () => Promise<void>;
 }
 
 const style = {
@@ -25,30 +25,20 @@ const style = {
 };
 
 const BalanceModal: React.FC<BalanceModalProps> = (props) => {
-    const [balance,setBalance] =useState<number | "">('')
+  const [balance, setBalance] = useState<number | ''>('');
 
+  const addBalanceHandler = async () => {
+    console.log(balance);
 
-const addBalanceHandler =  async()=>{
-
-
-
-    console.log(balance)
-
-
-
-const res = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
-    balance: balance ,id: props.userId
-  });
-  console.log('add balance:', res);
-  props.refreshUsers()
-  props.onClose()
-  setBalance('')
-
-
-    
-}
-
-
+    const res = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
+      balance: balance,
+      id: props.userId,
+    });
+    console.log('add balance:', res);
+    props.refreshUsers();
+    props.onClose();
+    setBalance('');
+  };
 
   return (
     <Modal
@@ -64,12 +54,17 @@ const res = await axios.post('http://localhost:3080/api/addBalance/add_balance',
         <Typography id="modal-modal-description" sx={{ mt: 2 }}>
           write the amount of balance you want add:
         </Typography>
-        <Stack spacing={{xs:2}}>
-
-            <TextField label='Enter a number' type='number' value={balance} onChange={(event)=>setBalance(+event.target.value)}/>
-        <Button variant='outlined' onClick={addBalanceHandler}>ADD</Button>
+        <Stack spacing={{ xs: 2 }}>
+          <TextField
+            label="Enter a number"
+            type="number"
+            value={balance}
+            onChange={(event) => setBalance(+event.target.value)}
+          />
+          <Button variant="outlined" onClick={addBalanceHandler}>
+            ADD
+          </Button>
         </Stack>
-        
       </Box>
     </Modal>
   );
