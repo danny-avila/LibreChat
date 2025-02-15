@@ -28,6 +28,7 @@ const providerConfigMap = {
   [EModelEndpoint.bedrock]: getBedrockOptions,
   [EModelEndpoint.google]: initGoogle,
   [Providers.OLLAMA]: initCustom,
+  [Providers.DEEPSEEK]: initCustom,
 };
 
 /**
@@ -100,8 +101,10 @@ const initializeAgentOptions = async ({
 
   const provider = agent.provider;
   let getOptions = providerConfigMap[provider];
-
-  if (!getOptions) {
+  if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
+    agent.provider = provider.toLowerCase();
+    getOptions = providerConfigMap[agent.provider];
+  } else if (!getOptions) {
     const customEndpointConfig = await getCustomEndpointConfig(provider);
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
