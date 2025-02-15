@@ -51,7 +51,7 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
         <Typography id="modal-modal-title" variant="h6" component="h2">
           Add Balance
         </Typography>
-        <Typography id="modal-modal-description" sx={{ mt: 2 }}>
+        <Typography id="modal-modal-description" sx={{ my: 2 }}>
           write the amount of balance you want add:
         </Typography>
         <Stack spacing={{ xs: 2 }}>
@@ -60,8 +60,9 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
             type="number"
             value={balance}
             onChange={(event) => setBalance(+event.target.value)}
+            sx={{mt:2}}
           />
-          <Button variant="outlined" onClick={addBalanceHandler}>
+          <Button variant="outlined" onClick={addBalanceHandler} sx={{mt:2}}>
             ADD
           </Button>
         </Stack>

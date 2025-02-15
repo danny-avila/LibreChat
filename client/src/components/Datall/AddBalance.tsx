@@ -21,6 +21,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import BalanceModal from './BalanceModal';
 import AddUserModal from './AddUserModal';
+import DeleteUserModal from './DeleteUserModal';
 // import Modal from './Modal';
 
 interface User {
@@ -37,8 +38,10 @@ const AddBalance: React.FC = () => {
 
   const [balanceModal, setBalanceModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedUser ,setSelectedUser] =useState<User>()
 
-  const [addUserModal, setAddUserModal] = useState(true);
+  const [addUserModal, setAddUserModal] = useState(false);
+  const [deleteUserModal,setDeleteUserModal] =useState(false)
 
   const getUsers = async () => {
     const res = await axios.get('http://localhost:3090/api/getUsers');
@@ -67,9 +70,10 @@ const AddBalance: React.FC = () => {
 
   const deleteBalanceHandler = async(user: User) =>{
     // console.log('delete' ,user)
-
-    const res= await axios.delete(`http://localhost:3090/api/deleteUser/${user.id}`)
-    console.log(res) 
+    setDeleteUserModal(true)
+    setSelectedUserId(user.id);
+    setSelectedUser(user)
+  
   }
 
   return (
@@ -94,6 +98,9 @@ const AddBalance: React.FC = () => {
         onClose={() => setAddUserModal(false)}
         refreshUsers={getUsers}
       />
+
+      {/* delete-user modal */}
+      <DeleteUserModal open={deleteUserModal} onClose={()=>setDeleteUserModal(false)} refreshUsers={getUsers} user={selectedUser}/>
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
         <TableContainer sx={{ maxHeight: 440 }}>
           <Table stickyHeader aria-label="sticky table">
