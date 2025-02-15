@@ -112,6 +112,7 @@ export type TUser = {
   createdAt: string;
   updatedAt: string;
   encryptionPublicKey?: string;
+  decryptedPrivateKey?: string;
   encryptedPrivateKey?: string; // Encrypted as a Base64 string
   encryptionSalt?: string;      // Base64 encoded salt used for PBKDF2
   encryptionIV?: string;        // Base64 encoded IV for AES-GCM
