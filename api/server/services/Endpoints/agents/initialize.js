@@ -22,13 +22,14 @@ const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const providerConfigMap = {
+  [Providers.OLLAMA]: initCustom,
+  [Providers.DEEPSEEK]: initCustom,
+  [Providers.OPENROUTER]: initCustom,
   [EModelEndpoint.openAI]: initOpenAI,
+  [EModelEndpoint.google]: initGoogle,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
-  [EModelEndpoint.google]: initGoogle,
-  [Providers.OLLAMA]: initCustom,
-  [Providers.DEEPSEEK]: initCustom,
 };
 
 /**

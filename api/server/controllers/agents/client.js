@@ -21,11 +21,6 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
-  extractBaseURL,
-  // constructAzureURL,
-  // genAzureChatCompletion,
-} = require('~/utils');
-const {
   formatMessage,
   formatAgentMessages,
   formatContentStrings,
@@ -477,19 +472,6 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      const baseURL = extractBaseURL(this.completionsUrl);
-      logger.debug('[api/server/controllers/agents/client.js] chatCompletion', {
-        baseURL,
-        payload,
-      });
-
-      // if (this.useOpenRouter) {
-      //   opts.defaultHeaders = {
-      //     'HTTP-Referer': 'https://librechat.ai',
-      //     'X-Title': 'LibreChat',
-      //   };
-      // }
-
       // if (this.options.headers) {
       //   opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
       // }
@@ -626,7 +608,7 @@ class AgentClient extends BaseClient {
         let systemContent = [
           systemMessage,
           agent.instructions ?? '',
-          i !== 0 ? agent.additional_instructions ?? '' : '',
+          i !== 0 ? (agent.additional_instructions ?? '') : '',
         ]
           .join('\n')
           .trim();
