@@ -28,7 +28,7 @@ type THoverButtons = {
   latestMessage: TMessage | null;
   isLast: boolean;
   index: number;
-  handleFeedback: (rating: 'thumbsUp' | 'thumbsDown') => void;
+  handleFeedback: (rating: 'thumbsUp' | 'thumbsDown', extraPayload?: any) => void;
   rated: TMessageFeedback | undefined;
 };
 
@@ -77,6 +77,10 @@ export default function HoverButtons({
   const { isCreatedByUser, error } = message;
 
   const safeRated: TMessageFeedback = rated || { rating: null };
+
+  // Use != null so that both null and undefined are treated as "no rating"
+  const currentRating = message.rating != null ? message.rating : safeRated.rating;
+  const disableFeedback = message.rating != null || safeRated.rating != null;
 
   const renderRegenerate = () => {
     if (!regenerateEnabled) {
@@ -130,7 +134,7 @@ export default function HoverButtons({
       )}
       {!isCreatedByUser && (
         <>
-          {safeRated.rating !== 'thumbsDown' && (
+          {currentRating !== 'thumbsDown' && (
             <button
               className={cn(
                 'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
@@ -138,13 +142,13 @@ export default function HoverButtons({
               onClick={() => handleFeedback('thumbsUp')}
               type="button"
               title={localize('com_ui_feedback_positive')}
-              disabled={safeRated.rating !== null}
+              disabled={disableFeedback}
             >
-              <ThumbUpIcon size="19" bold={safeRated.rating === 'thumbsUp'} />
+              <ThumbUpIcon size="19" bold={currentRating === 'thumbsUp'} />
             </button>
           )}
 
-          {safeRated.rating !== 'thumbsUp' && (
+          {currentRating !== 'thumbsUp' && (
             <button
               className={cn(
                 'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
@@ -152,9 +156,9 @@ export default function HoverButtons({
               onClick={() => handleFeedback('thumbsDown')}
               type="button"
               title={localize('com_ui_feedback_negative')}
-              disabled={safeRated.rating !== null}
+              disabled={disableFeedback}
             >
-              <ThumbDownIcon size="19" bold={safeRated.rating === 'thumbsDown'} />
+              <ThumbDownIcon size="19" bold={currentRating === 'thumbsDown'} />
             </button>
           )}
         </>
