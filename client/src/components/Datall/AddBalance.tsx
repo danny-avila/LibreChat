@@ -59,11 +59,18 @@ const AddBalance: React.FC = () => {
     getUsers();
   }, []);
 
-  const AddBalanceHandler = async (user: User) => {
+  const addBalanceHandler = async (user: User) => {
     setBalanceModal(true);
     setSelectedUserId(user.id);
     console.log(user);
   };
+
+  const deleteBalanceHandler = async(user: User) =>{
+    // console.log('delete' ,user)
+
+    const res= await axios.delete(`http://localhost:3090/api/deleteUser/${user.id}`)
+    console.log(res) 
+  }
 
   return (
     <>
@@ -110,12 +117,12 @@ const AddBalance: React.FC = () => {
                   <TableCell>{item.balance}</TableCell>
                   <TableCell>
                     <IconButton>
-                      <DeleteIcon />
+                      <DeleteIcon onClick={()=>deleteBalanceHandler(item)}/>
                     </IconButton>
                     <IconButton>
                       <EditIcon />
                     </IconButton>
-                    <IconButton onClick={() => AddBalanceHandler(item)}>
+                    <IconButton onClick={() => addBalanceHandler(item)}>
                       <AddIcon />
                     </IconButton>
                   </TableCell>
