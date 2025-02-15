@@ -7,6 +7,7 @@ const {
   deleteMessages,
   deleteUserById,
   deleteAllUserSessions,
+  updateUser,
 } = require('~/models');
 const User = require('~/models/User');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
@@ -162,6 +163,34 @@ const resendVerificationController = async (req, res) => {
   }
 };
 
+const updateUserEncryptionController = async (req, res) => {
+  try {
+    const { encryptionPublicKey, encryptedPrivateKey, encryptionSalt, encryptionIV } = req.body;
+
+    // Validate required parameters
+    if (!encryptionPublicKey || !encryptedPrivateKey || !encryptionSalt || !encryptionIV) {
+      return res.status(400).json({ message: 'Missing encryption parameters.' });
+    }
+
+    // Use the helper function to update the user.
+    const updatedUser = await updateUser(req.user.id, {
+      encryptionPublicKey,
+      encryptedPrivateKey,
+      encryptionSalt,
+      encryptionIV,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('[updateUserEncryptionController]', error);
+    res.status(500).json({ message: 'Something went wrong updating encryption keys.' });
+  }
+};
+
 module.exports = {
   getUserController,
   getTermsStatusController,
@@ -170,4 +199,5 @@ module.exports = {
   verifyEmailController,
   updateUserPluginsController,
   resendVerificationController,
+  updateUserEncryptionController,
 };

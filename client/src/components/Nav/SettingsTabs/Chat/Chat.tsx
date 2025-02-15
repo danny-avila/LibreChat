@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import EncryptionPassphrase from './EncryptionPassphrase';
 import MaximizeChatSpace from './MaximizeChatSpace';
 import FontSizeSelector from './FontSizeSelector';
 import SendMessageKeyEnter from './EnterToSend';
@@ -34,6 +35,9 @@ function Chat() {
       </div>
       <div className="pb-3">
         <ScrollButton />
+      </div>
+      <div className="pb-3">
+        <EncryptionPassphrase />
       </div>
       <ForkSettings />
       <div className="pb-3">

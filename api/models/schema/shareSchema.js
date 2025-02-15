@@ -23,6 +23,13 @@ const shareSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // --- Field for re-encrypting the conversation key for the forked user ---
+    encryptionKeys: [
+      {
+        user: { type: String, index: true },
+        encryptedKey: { type: String },
+      },
+    ],
   },
   { timestamps: true },
 );

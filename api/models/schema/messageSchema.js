@@ -54,6 +54,11 @@ const messageSchema = mongoose.Schema(
       type: String,
       meiliIndex: true,
     },
+    // If the message is encrypted (and stored in 'text'),
+    // then this field should hold the IV used during encryption.
+    messageEncryptionIV: {
+      type: String,
+    },
     summary: {
       type: String,
     },

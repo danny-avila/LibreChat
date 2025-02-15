@@ -111,6 +111,10 @@ export type TUser = {
   plugins?: string[];
   createdAt: string;
   updatedAt: string;
+  encryptionPublicKey?: string;
+  encryptedPrivateKey?: string; // Encrypted as a Base64 string
+  encryptionSalt?: string;      // Base64 encoded salt used for PBKDF2
+  encryptionIV?: string;        // Base64 encoded IV for AES-GCM
 };
 
 export type TGetConversationsResponse = {
@@ -473,3 +477,21 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+/**
+ * Request type for updating user encryption keys.
+ */
+export type UpdateUserEncryptionRequest = {
+  encryptionPublicKey: string;
+  encryptedPrivateKey: string;
+  encryptionSalt: string;
+  encryptionIV: string;
+};
+
+/**
+ * Response type for updating user encryption keys.
+ */
+export type UpdateUserEncryptionResponse = {
+  success: boolean;
+  message?: string;
+};
