@@ -778,7 +778,7 @@ export function getBanner(): Promise<t.TBannerResponse> {
 export function updateFeedback(
   conversationId: string,
   messageId: string,
-  feedback: string,
-): Promise<unknown> {
-  return request.put(endpoints.feedback(conversationId, messageId), { feedback });
+  payload: t.TUpdateFeedbackRequest,
+): Promise<t.TUpdateFeedbackResponse> {
+  return request.put(endpoints.feedback(conversationId, messageId), payload);
 }

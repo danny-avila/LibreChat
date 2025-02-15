@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useRecoilState } from 'recoil';
-import type { TConversation, TMessage } from 'librechat-data-provider';
+import type { TConversation, TMessage, TMessageFeedback } from 'librechat-data-provider';
 import {
   EditIcon,
   Clipboard,
@@ -28,9 +28,8 @@ type THoverButtons = {
   latestMessage: TMessage | null;
   isLast: boolean;
   index: number;
-  // Optional props for feedback callbacks
-  onFeedbackPositive?: () => void;
-  onFeedbackNegative?: () => void;
+  handleFeedback: (rating: 'thumbsUp' | 'thumbsDown') => void;
+  rated: TMessageFeedback | undefined;
 };
 
 export default function HoverButtons({
@@ -45,8 +44,8 @@ export default function HoverButtons({
   handleContinue,
   latestMessage,
   isLast,
-  onFeedbackPositive,
-  onFeedbackNegative,
+  handleFeedback,
+  rated,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
@@ -76,6 +75,8 @@ export default function HoverButtons({
   }
 
   const { isCreatedByUser, error } = message;
+
+  const safeRated: TMessageFeedback = rated || { rating: null };
 
   const renderRegenerate = () => {
     if (!regenerateEnabled) {
@@ -126,6 +127,37 @@ export default function HoverButtons({
             'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           )}
         />
+      )}
+      {!isCreatedByUser && (
+        <>
+          {safeRated.rating !== 'thumbsDown' && (
+            <button
+              className={cn(
+                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+              )}
+              onClick={() => handleFeedback('thumbsUp')}
+              type="button"
+              title={localize('com_ui_feedback_positive')}
+              disabled={safeRated.rating !== null}
+            >
+              <ThumbUpIcon size="19" bold={safeRated.rating === 'thumbsUp'} />
+            </button>
+          )}
+
+          {safeRated.rating !== 'thumbsUp' && (
+            <button
+              className={cn(
+                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+              )}
+              onClick={() => handleFeedback('thumbsDown')}
+              type="button"
+              title={localize('com_ui_feedback_negative')}
+              disabled={safeRated.rating !== null}
+            >
+              <ThumbDownIcon size="19" bold={safeRated.rating === 'thumbsDown'} />
+            </button>
+          )}
+        </>
       )}
       {isEditableEndpoint && (
         <button
@@ -180,34 +212,6 @@ export default function HoverButtons({
           <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
-      {!isCreatedByUser && (onFeedbackPositive || onFeedbackNegative) && (
-        <>
-          {onFeedbackPositive && (
-            <button
-              className={cn(
-                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200'
-              )}
-              onClick={onFeedbackPositive}
-              type="button"
-              title={localize('com_ui_feedback_positive') || 'Positive feedback'}
-            >
-              <ThumbUpIcon size="19" />
-            </button>
-          )}
-          {onFeedbackNegative && (
-            <button
-              className={cn(
-                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200'
-              )}
-              onClick={onFeedbackNegative}
-              type="button"
-              title={localize('com_ui_feedback_negative') || 'Negative feedback'}
-            >
-              <ThumbDownIcon size="19" />
-            </button>
-          )}
-        </>
-      )}
     </div>
   );
 }
