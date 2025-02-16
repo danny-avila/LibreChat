@@ -8,37 +8,25 @@ const { logger } = require('~/config');
  * @param {Error} options.error - The Axios error object.
  */
 const logAxiosError = ({ message, error }) => {
-  const timedOutMessage = 'Cannot read properties of undefined (reading \'status\')';
   if (error.response) {
-    logger.error(
-      `${message} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
-        error.message ? error.message : ''
-      }. Error response data:\n`,
-      {
-        headers: error.response?.headers,
-        status: error.response?.status,
-        data: error.response?.data,
-      },
-    );
+    const { status, headers, data } = error.response;
+    logger.error(`${message} The server responded with status ${status}: ${error.message}`, {
+      status,
+      headers,
+      data,
+    });
   } else if (error.request) {
+    const { method, url } = error.config || {};
     logger.error(
-      `${message} The request was made but no response was received: ${
-        error.message ? error.message : ''
-      }. Error Request:\n`,
-      {
-        request: error.request,
-      },
+      `${message} No response received for ${method ? method.toUpperCase() : ''} ${url || ''}: ${error.message}`,
+      { requestInfo: { method, url } },
     );
-  } else if (error?.message?.includes(timedOutMessage)) {
+  } else if (error?.message?.includes('Cannot read properties of undefined (reading \'status\')')) {
     logger.error(
-      `${message}\nThe request either timed out or was unsuccessful. Error message:\n`,
-      error,
+      `${message} It appears the request timed out or was unsuccessful: ${error.message}`,
     );
   } else {
-    logger.error(
-      `${message}\nSomething happened in setting up the request. Error message:\n`,
-      error,
-    );
+    logger.error(`${message} An error occurred while setting up the request: ${error.message}`);
   }
 };
 
