@@ -88,11 +88,13 @@ module.exports = {
    */
   saveConvo: async (req, { conversationId, newConversationId, ...convo }, metadata) => {
     try {
-      if (metadata && metadata?.context) {
+      if (metadata?.context) {
         logger.debug(`[saveConvo] ${metadata.context}`);
       }
+
       const messages = await getMessages({ conversationId }, '_id');
       const update = { ...convo, messages, user: req.user.id };
+
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
@@ -150,25 +152,43 @@ module.exports = {
   },
   getConvosByCursor: async (
     user,
-    { cursor, limit = 25, isArchived = false, tags, order = 'desc' } = {},
+    { cursor, limit = 25, isArchived = false, tags, search, order = 'desc' } = {},
   ) => {
-    const query = { user };
+    const filters = [{ user }];
 
     if (isArchived) {
-      query.isArchived = true;
+      filters.push({ isArchived: true });
     } else {
-      query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+      filters.push({ $or: [{ isArchived: false }, { isArchived: { $exists: false } }] });
     }
 
     if (Array.isArray(tags) && tags.length > 0) {
-      query.tags = { $in: tags };
+      filters.push({ tags: { $in: tags } });
     }
 
-    query.$and = [{ $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] }];
+    filters.push({ $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] });
+
+    if (search) {
+      try {
+        const meiliResults = await Conversation.meiliSearch(search);
+        const matchingIds = Array.isArray(meiliResults.hits)
+          ? meiliResults.hits.map((result) => result.conversationId)
+          : [];
+        if (!matchingIds.length) {
+          return { conversations: [], nextCursor: null };
+        }
+        filters.push({ conversationId: { $in: matchingIds } });
+      } catch (error) {
+        logger.error('[getConvosByCursor] Error during meiliSearch', error);
+        return { message: 'Error during meiliSearch' };
+      }
+    }
 
     if (cursor) {
-      query.updatedAt = { $lt: new Date(cursor) };
+      filters.push({ updatedAt: { $lt: new Date(cursor) } });
     }
+
+    const query = filters.length === 1 ? filters[0] : { $and: filters };
 
     try {
       const convos = await Conversation.find(query)
@@ -191,37 +211,26 @@ module.exports = {
   },
   getConvosQueried: async (user, convoIds, cursor = null, limit = 25) => {
     try {
-      if (!convoIds || convoIds.length === 0) {
+      if (!convoIds?.length) {
         return { conversations: [], nextCursor: null, convoMap: {} };
       }
 
-      const convoMap = {};
-      const promises = [];
+      const conversationIds = convoIds.map((convo) => convo.conversationId);
 
-      convoIds.forEach((convo) =>
-        promises.push(
-          Conversation.findOne({
-            user,
-            conversationId: convo.conversationId,
-            $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
-          }).lean(),
-        ),
-      );
+      const results = await Conversation.find({
+        user,
+        conversationId: { $in: conversationIds },
+        $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
+      }).lean();
 
-      // Fetch all matching conversations and filter out any falsy results
-      const results = (await Promise.all(promises)).filter(Boolean);
-
-      // Sort conversations by updatedAt descending (most recent first)
       results.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
-      // If a cursor is provided and not "start", filter out recrods newer or equal to the cursor date
       let filtered = results;
       if (cursor && cursor !== 'start') {
         const cursorDate = new Date(cursor);
         filtered = results.filter((convo) => new Date(convo.updatedAt) < cursorDate);
       }
 
-      // Retrieve limit + 1 results to determine if there's a next page.
       const limited = filtered.slice(0, limit + 1);
       let nextCursor = null;
       if (limited.length > limit) {
@@ -229,7 +238,7 @@ module.exports = {
         nextCursor = lastConvo.updatedAt.toISOString();
       }
 
-      // Build convoMap for ease of access if required by caller
+      const convoMap = {};
       limited.forEach((convo) => {
         convoMap[convo.conversationId] = convo;
       });
@@ -275,10 +284,22 @@ module.exports = {
    * logger.error(result); // { n: 5, ok: 1, deletedCount: 5, messages: { n: 10, ok: 1, deletedCount: 10 } }
    */
   deleteConvos: async (user, filter) => {
-    let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
-    const ids = toRemove.map((instance) => instance.conversationId);
-    let deleteCount = await Conversation.deleteMany({ ...filter, user });
-    deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
-    return deleteCount;
+    try {
+      const userFilter = { ...filter, user };
+
+      const conversations = await Conversation.find(userFilter).select('conversationId');
+      const conversationIds = conversations.map((c) => c.conversationId);
+
+      const deleteConvoResult = await Conversation.deleteMany(userFilter);
+
+      const deleteMessagesResult = await deleteMessages({
+        conversationId: { $in: conversationIds },
+      });
+
+      return { ...deleteConvoResult, messages: deleteMessagesResult };
+    } catch (error) {
+      logger.error('[deleteConvos] Error deleting conversations and messages', error);
+      throw error;
+    }
   },
 };

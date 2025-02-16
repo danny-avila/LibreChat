@@ -120,28 +120,32 @@ export const useSearchInfiniteQuery = (
 };
 
 export const useConversationsInfiniteQuery = (
-  params?: ConversationListParams,
+  params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useInfiniteQuery<ConversationListResponse, unknown>(
-    params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
-    ({ pageParam = '' }) =>
+  const { pageSize, isArchived, sortBy, sortDirection, tags, search } = params;
+
+  return useInfiniteQuery<ConversationListResponse>({
+    queryKey: [
+      isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
+      { pageSize, isArchived, sortBy, sortDirection, tags, search },
+    ],
+    queryFn: ({ pageParam }) =>
       dataService.listConversations({
-        ...params,
         cursor: pageParam?.toString(),
-        isArchived: params?.isArchived ?? false,
-        tags: params?.tags || [],
+        pageSize,
+        isArchived,
+        sortBy,
+        sortDirection,
+        tags,
+        search,
       }),
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: (config?.enabled ?? true) && queriesEnabled,
-    },
-  );
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes
+    ...config,
+  });
 };
 
 export const useSharedLinksQuery = (

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { useArchiveConversationMutation } from '~/data-provider';
+import { useArchiveConvoMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import useLocalize, { TranslationKeys } from '../useLocalize';
@@ -17,7 +17,7 @@ export default function useArchiveHandler(
   const { newConversation } = useNewConvo();
   const { conversationId: currentConvoId } = useParams();
 
-  const archiveConvoMutation = useArchiveConversationMutation(conversationId ?? '');
+  const archiveConvoMutation = useArchiveConvoMutation(conversationId ?? '');
 
   return async (e?: MouseEvent | FocusEvent | KeyboardEvent) => {
     if (e) {
