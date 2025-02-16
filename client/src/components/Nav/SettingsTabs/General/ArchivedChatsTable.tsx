@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-// If TypeScript complains about lodash/debounce, consider installing @types/lodash or add a declaration file.
 import debounce from 'lodash/debounce';
 import { TrashIcon, ArchiveRestore } from 'lucide-react';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
