@@ -109,6 +109,7 @@ export type TUser = {
   role: string;
   provider: string;
   plugins?: string[];
+  decryptedPrivateKey?: CryptoKey | string;
   createdAt: string;
   updatedAt: string;
 };

@@ -53,10 +53,67 @@ const deriveKey = async (passphrase: string, salt: Uint8Array): Promise<CryptoKe
   return derivedKey;
 };
 
+/**
+ * Decrypts the user's encrypted private key using the provided passphrase.
+ */
+async function decryptUserPrivateKey(
+  encryptedPrivateKeyBase64: string,
+  saltBase64: string,
+  ivBase64: string,
+  passphrase: string
+): Promise<CryptoKey> {
+  // Convert salt and IV to Uint8Array.
+  const salt = new Uint8Array(window.atob(saltBase64).split('').map(c => c.charCodeAt(0)));
+  const iv = new Uint8Array(window.atob(ivBase64).split('').map(c => c.charCodeAt(0)));
+
+  // Derive symmetric key from passphrase.
+  const encoder = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.importKey(
+    'raw',
+    encoder.encode(passphrase),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  const symmetricKey = await window.crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['decrypt']
+  );
+
+  // Decrypt the encrypted private key.
+  const encryptedPrivateKeyBuffer = new Uint8Array(
+    window.atob(encryptedPrivateKeyBase64)
+      .split('')
+      .map(c => c.charCodeAt(0))
+  );
+  const decryptedBuffer = await window.crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    symmetricKey,
+    encryptedPrivateKeyBuffer
+  );
+  // Import the decrypted key as a CryptoKey.
+  return await window.crypto.subtle.importKey(
+    'pkcs8',
+    decryptedBuffer,
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    true,
+    ['decrypt']
+  );
+}
+
 const UserKeysSettings: FC = () => {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const setUser = useSetRecoilState(store.user);
+  const setDecryptedPrivateKey = useSetRecoilState(store.decryptedPrivateKey);
   const { showToast } = useToastContext();
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [passphrase, setPassphrase] = useState<string>('');
@@ -69,15 +126,6 @@ const UserKeysSettings: FC = () => {
     },
   });
 
-  /**
-   * Activation flow:
-   * 1. Generate a new RSA-OAEP key pair.
-   * 2. Export the public and private keys.
-   * 3. Generate a random salt (16 bytes) and IV (12 bytes) for AES-GCM.
-   * 4. Derive a symmetric key from the passphrase using PBKDF2.
-   * 5. Encrypt the private key with AES-GCM.
-   * 6. Return the base64-encoded encryption fields.
-   */
   const activateEncryption = async (): Promise<{
     encryptionPublicKey: string;
     encryptedPrivateKey: string;
@@ -153,9 +201,6 @@ const UserKeysSettings: FC = () => {
     }
   };
 
-  /**
-   * Disable encryption flow: update the encryption fields to null.
-   */
   const disableEncryption = async (): Promise<void> => {
     try {
       await setEncryption({
@@ -165,7 +210,6 @@ const UserKeysSettings: FC = () => {
         encryptionIV: null,
       });
       showToast({ message: localize('com_ui_upload_success') });
-      // Update local user state with null encryption fields.
       setUser((prev) => ({
         ...prev,
         encryptionPublicKey: null,
@@ -173,6 +217,7 @@ const UserKeysSettings: FC = () => {
         encryptionSalt: null,
         encryptionIV: null,
       }) as TUser);
+      setDecryptedPrivateKey(null);
     } catch (error) {
       console.error('Error disabling encryption:', error);
     }
@@ -182,14 +227,20 @@ const UserKeysSettings: FC = () => {
     const newEncryption = await activateEncryption();
     if (newEncryption) {
       try {
-        // Call the mutation to update the backend with new encryption fields.
         await setEncryption(newEncryption);
         showToast({ message: localize('com_ui_upload_success') });
-        // Update local user state with the new encryption keys.
         setUser((prev) => ({
           ...prev,
           ...newEncryption,
         }) as TUser);
+        // Decrypt the private key and store it in the atom.
+        const decryptedKey = await decryptUserPrivateKey(
+          newEncryption.encryptedPrivateKey,
+          newEncryption.encryptionSalt,
+          newEncryption.encryptionIV,
+          passphrase
+        );
+        setDecryptedPrivateKey(decryptedKey);
       } catch (error) {
         console.error('Mutation error:', error);
       }
@@ -204,7 +255,6 @@ const UserKeysSettings: FC = () => {
 
   return (
     <>
-      {/* List item style */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <Key className="flex w-[20px] h-[20px]" />
@@ -232,15 +282,11 @@ const UserKeysSettings: FC = () => {
           )}
         </div>
       </div>
-
-      {/* Optionally display current public key */}
       {user?.encryptionPublicKey && (
         <div className="pt-2 text-xs text-gray-500">
           {localize('com_nav_chat_current_public_key')}: {user.encryptionPublicKey.slice(0, 30)}...
         </div>
       )}
-
-      {/* Dialog for setting/updating keys */}
       <OGDialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <OGDialogContent className="w-11/12 max-w-sm" style={{ borderRadius: '12px' }}>
           <OGDialogHeader>

@@ -11,7 +11,14 @@ const availableTools = atom<Record<string, TPlugin>>({
   default: {},
 });
 
+// New atom to hold the decrypted private key (as a CryptoKey)
+const decryptedPrivateKey = atom<CryptoKey | null>({
+  key: 'decryptedPrivateKey',
+  default: null,
+});
+
 export default {
   user,
   availableTools,
+  decryptedPrivateKey,
 };
