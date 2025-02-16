@@ -108,6 +108,7 @@ const AddBalance: React.FC = () => {
       <EditUserModal
         open={editUserModal}
         onClose={() => setEditUserModal(false)}
+        user={selectedUser}
         refreshUsers={getUsers}
       />
 
@@ -115,8 +116,8 @@ const AddBalance: React.FC = () => {
       <DeleteUserModal
         open={deleteUserModal}
         onClose={() => setDeleteUserModal(false)}
-        refreshUsers={getUsers}
         user={selectedUser}
+        refreshUsers={getUsers}
       />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
         <TableContainer sx={{ maxHeight: 440 }}>

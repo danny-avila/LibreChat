@@ -85,8 +85,9 @@ const startServer = async () => {
   /* API Endpoints */
 
   app.use('/api/addBalance', routes.addBalance);
-  app.use('/api/getUsers',routes.getUsers)
-  app.use('/api/deleteUser', routes.deleteUser)
+  app.use('/api/getUsers', routes.getUsers);
+  app.use('/api/deleteUser', routes.deleteUser);
+  app.use('/api/editUser', routes.editUser);
 
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
