@@ -127,19 +127,20 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     ) {
       console.log('submit');
 
-      const user = {
+      const editedUser = {
         email: email,
         name: fullName,
         username: fullName,
         confirm_password: confirmPassword,
         password: password,
+        role: role
       };
 
       try {
-        const response = await axios.post('http://localhost:3090/api/auth/register', user);
+        const response = await axios.put(`http://localhost:3090/api/editUser/${props.user.id}`, {editedUser:editedUser});
         // const response = await axios.post(`http://localhost:3090${registerPath}`, user );
 
-        console.log('User Created:');
+        console.log('User Edited: response');
         props.onClose();
         setFullName('');
         setEmail('');
