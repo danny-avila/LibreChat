@@ -12,6 +12,8 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
+import { SelectChangeEvent } from '@mui/material';
+
 
 interface User {
   name: string;
@@ -56,7 +58,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
   const [fullNameError, setFullNameError] = useState<string>('');
   const [emailError, setEmailError] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
-  const [confirmPasswordError, setConfirmPasswordError] = useState<string>('');
+//   const [confirmPasswordError, setConfirmPasswordError] = useState<string>('');
 
   const [role, setRole] = useState<UserRole['role']>('USER');
 
@@ -68,7 +70,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
       setEmail(props.user.email);
       setRole(props.user.role as 'ADMIN' | 'USER')
       setPassword('');
-      setConfirmPassword('');
+    //   setConfirmPassword('');
     }
   }, [props.user]);
 
@@ -99,16 +101,16 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     }
   };
 
-  const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setConfirmPassword(e.target.value);
-    if (e.target.value.trim() !== password) {
-      setConfirmPasswordError('Password is wrong.');
-    } else {
-      setConfirmPasswordError('');
-    }
-  };
+//   const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
+//     setConfirmPassword(e.target.value);
+//     if (e.target.value.trim() !== password) {
+//       setConfirmPasswordError('Password is wrong.');
+//     } else {
+//       setConfirmPasswordError('');
+//     }
+//   };
 
-  const roleChangeHandler = (e: React.ChangeEvent<HTMLSelectElement>)=>{
+  const roleChangeHandler = (e: SelectChangeEvent<'ADMIN' | 'USER'>)=>{
     setRole(e.target.value  as UserRole['role'])
   }
 
@@ -118,35 +120,42 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     if (
       fullName.length &&
       email.length &&
-      password.length &&
-      confirmPassword.length &&
       fullNameError.length === 0 &&
-      emailError.length === 0 &&
-      passwordError.length === 0 &&
-      confirmPasswordError.length === 0
-    ) {
+      emailError.length === 0) {
       console.log('submit');
 
-      const editedUser = {
-        email: email,
-        name: fullName,
-        username: fullName,
-        confirm_password: confirmPassword,
-        password: password,
-        role: role
-      };
+    //   const editedUser = {
+    //     email: email,
+    //     name: fullName,
+    //     username: fullName,
+    //     confirm_password: confirmPassword,
+    //     password: password,
+    //     role: role
+    //   };
+
+
+
+      const editedUser: Partial<User> = {
+        ...(fullName && { name: fullName }),
+        ...(fullName && { username: fullName }),  // Only include if fullName is not empty
+        ...(email && { email }), // Only include if email is not empty
+        ...(password && { password }), // Only include if password is not empty
+        ...(role && { role }), // Only include if role is selected
+      }
+    
+      console.log(editedUser)
+
 
       try {
         const response = await axios.put(`http://localhost:3090/api/editUser/${props.user.id}`, {editedUser:editedUser});
-        // const response = await axios.post(`http://localhost:3090${registerPath}`, user );
 
-        console.log('User Edited: response');
+        console.log('User Edited: ',response);
         props.onClose();
         setFullName('');
         setEmail('');
         setPassword('');
         setFullName('');
-        setConfirmPassword('');
+        // setConfirmPassword('');
         setFormError('');
         props.refreshUsers();
       } catch (error) {
@@ -207,7 +216,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                 />
                 <FormHelperText sx={{ color: 'red' }}>{passwordError}</FormHelperText>
               </FormControl>
-              <FormControl>
+              {/* <FormControl>
                 <TextField
                   label="confirm_password"
                   type="text"
@@ -216,7 +225,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                   error={confirmPasswordError.length !== 0}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{confirmPasswordError}</FormHelperText>
-              </FormControl>
+              </FormControl> */}
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
 
               <Button variant="outlined" type="submit">
