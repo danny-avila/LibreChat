@@ -87,10 +87,15 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   // Retrieve full user record from DB (including encryption parameters)
   const dbUser = await getUserById(userId, 'encryptionPublicKey encryptedPrivateKey encryptionSalt encryptionIV');
 
-  // If the user has provided an encryption public key, rebuild the PEM format.
+  // Build clientOptions including the encryptionPublicKey (if available)
+  const clientOptions = {
+    encryptionPublicKey: dbUser?.encryptionPublicKey,
+  };
+
+  // Rebuild PEM format if encryptionPublicKey is available
   let pemPublicKey = null;
-  if (dbUser?.encryptionPublicKey && dbUser.encryptionPublicKey.trim() !== '') {
-    const pubKeyBase64 = dbUser.encryptionPublicKey;
+  if (clientOptions.encryptionPublicKey && clientOptions.encryptionPublicKey.trim() !== '') {
+    const pubKeyBase64 = clientOptions.encryptionPublicKey;
     pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${pubKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
   }
 
@@ -113,7 +118,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   let getText;
   try {
-    const { client } = await initializeClient({ req, res, endpointOption });
+    // Pass clientOptions (which includes encryptionPublicKey) along with other parameters to initializeClient
+    const { client } = await initializeClient({ req, res, endpointOption, ...clientOptions });
     const { onProgress: progressCallback, getPartialText } = createOnProgress();
     getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
 
@@ -176,7 +182,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
         logger.debug('[AskController] User message encrypted.');
       } catch (encError) {
         logger.error('[AskController] Error encrypting user message:', encError);
-        // Optionally, you could choose to throw an error or fallback.
       }
     }
 
@@ -191,7 +196,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
         logger.debug('[AskController] Response message encrypted.');
       } catch (encError) {
         logger.error('[AskController] Error encrypting response message:', encError);
-        // Optionally, you can choose to send plaintext or handle the error.
       }
     }
     // --- End Encryption Branch ---

@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const fetch = require('node-fetch');
 const {
   supportsBalanceCheck,
@@ -8,13 +7,55 @@ const {
   ErrorTypes,
   Constants,
 } = require('librechat-data-provider');
-const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
+const { getMessages, saveMessage, updateMessage, saveConvo, getUserById } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const { truncateToolCallOutputs } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
+
+let crypto;
+try {
+  crypto = require('crypto');
+} catch (err) {
+  logger.error('[AskController] crypto support is disabled!', err);
+}
+
+/**
+ * Helper function to encrypt plaintext using AES-256-GCM and then RSA-encrypt the AES key.
+ * @param {string} plainText - The plaintext to encrypt.
+ * @param {string} pemPublicKey - The RSA public key in PEM format.
+ * @returns {Object} An object containing the ciphertext, iv, authTag, and encryptedKey.
+ */
+function encryptText(plainText, pemPublicKey) {
+  // Generate a random 256-bit AES key and a 12-byte IV.
+  const aesKey = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(12);
+
+  // Encrypt the plaintext using AES-256-GCM.
+  const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
+  let ciphertext = cipher.update(plainText, 'utf8', 'base64');
+  ciphertext += cipher.final('base64');
+  const authTag = cipher.getAuthTag().toString('base64');
+
+  // Encrypt the AES key using the user's RSA public key.
+  const encryptedKey = crypto.publicEncrypt(
+    {
+      key: pemPublicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    aesKey,
+  ).toString('base64');
+
+  return {
+    ciphertext,
+    iv: iv.toString('base64'),
+    authTag,
+    encryptedKey,
+  };
+}
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -844,18 +885,64 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    if (this.user && user !== this.user) {
+    // Normalize the user information:
+    // If "user" is an object, use it; otherwise, if a string is passed use req.user (if available)
+    const currentUser =
+      user && typeof user === 'object'
+        ? user
+        : (this.options.req && this.options.req.user
+          ? this.options.req.user
+          : { id: user });
+    const currentUserId = currentUser.id || currentUser;
+
+    // Check if the client’s stored user matches the current user.
+    // (this.user might have been set earlier in setMessageOptions)
+    const storedUserId =
+      this.user && typeof this.user === 'object' ? this.user.id : this.user;
+    if (storedUserId && currentUserId && storedUserId !== currentUserId) {
       throw new Error('User mismatch.');
     }
 
+    // console.log('User ID:', currentUserId);
+
+    const dbUser = await getUserById(currentUserId, 'encryptionPublicKey');
+
+    // --- NEW ENCRYPTION BLOCK: Encrypt AI response if encryptionPublicKey exists ---
+    if (dbUser.encryptionPublicKey && message && message.text) {
+      try {
+        // Rebuild the PEM format if necessary.
+        const pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${dbUser.encryptionPublicKey
+          .match(/.{1,64}/g)
+          .join('\n')}\n-----END PUBLIC KEY-----`;
+        const { ciphertext, iv, authTag, encryptedKey } = encryptText(
+          message.text,
+          pemPublicKey,
+        );
+        message.text = ciphertext;
+        message.iv = iv;
+        message.authTag = authTag;
+        message.encryptedKey = encryptedKey;
+        logger.debug('[BaseClient.saveMessageToDatabase] Encrypted message text');
+      } catch (err) {
+        logger.error('[BaseClient.saveMessageToDatabase] Error encrypting message text', err);
+      }
+    }
+    // --- End Encryption Block ---
+
+    // Build update parameters including encryption fields.
+    const updateParams = {
+      ...message,
+      endpoint: this.options.endpoint,
+      unfinished: false,
+      user: currentUserId, // store the user id (ensured to be a string)
+      iv: message.iv ?? null,
+      authTag: message.authTag ?? null,
+      encryptedKey: message.encryptedKey ?? null,
+    };
+
     const savedMessage = await saveMessage(
       this.options.req,
-      {
-        ...message,
-        endpoint: this.options.endpoint,
-        unfinished: false,
-        user,
-      },
+      updateParams,
       { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
 
