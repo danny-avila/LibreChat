@@ -45,7 +45,7 @@ async function createRun({
 
   /** @type {'reasoning_content' | 'reasoning'} */
   let reasoningKey;
-  if (llmConfig.configuration?.baseURL.includes(KnownEndpoints.openrouter)) {
+  if (llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter)) {
     reasoningKey = 'reasoning';
   }
   if (/o1(?!-(?:mini|preview)).*$/.test(llmConfig.model)) {

@@ -58,7 +58,7 @@ function getLLMConfig(apiKey, options = {}) {
 
   /** @type {OpenAIClientOptions['configuration']} */
   const configOptions = {};
-  if (useOpenRouter || reverseProxyUrl.includes(KnownEndpoints.openrouter)) {
+  if (useOpenRouter || (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter))) {
     llmConfig.include_reasoning = true;
     configOptions.baseURL = reverseProxyUrl;
     configOptions.defaultHeaders = Object.assign(
