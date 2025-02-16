@@ -1,7 +1,8 @@
 const User = require('~/models/User');
 
-async function editUserController(req, res) {
+const bcrypt = require('bcryptjs');
 
+async function editUserController(req, res) {
   try {
     const findedUser = await User.findOne({ _id: req.params.id }).lean();
 
@@ -9,20 +10,23 @@ async function editUserController(req, res) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const mergedObj = Object.assign({}, findedUser, req.body.editedUser);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(req.body.editedUser.password, salt);
+
+    const mergedObj = Object.assign({}, findedUser, {
+      ...req.body.editedUser,
+      password: hashedPassword,
+    });
 
     console.log('FINDED USER BY ID ===>', findedUser);
     console.log('EDITED USER FROM REQUEST ===>', req.body.editedUser);
     console.log('MERGED OBJECT ===>', mergedObj);
 
+    console.log('hashedPassword', hashedPassword);
 
-    const result = await User.updateOne(
-      { _id: req.params.id }, 
-      { ...mergedObj },
-    );
+    const result = await User.updateOne({ _id: req.params.id }, { ...mergedObj });
     return res.status(200).json(result);
   } catch (error) {
-    console.log('why error');
     return res.status(500).json(error);
   }
 }
