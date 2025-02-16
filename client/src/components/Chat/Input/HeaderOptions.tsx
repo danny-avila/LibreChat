@@ -1,12 +1,12 @@
 import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
-import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
+import { Root, Anchor } from '@radix-ui/react-popover';
 import {
-  tConvoUpdateSchema,
   EModelEndpoint,
   isParamEndpoint,
   isAgentsEndpoint,
+  tConvoUpdateSchema,
 } from 'librechat-data-provider';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
@@ -47,7 +47,6 @@ export default function HeaderOptions({
     if (endpoint && noSettings[endpoint]) {
       setShowPopover(false);
     }
-
   }, [endpoint, noSettings]);
 
   const saveAsPreset = () => {
