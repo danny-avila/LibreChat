@@ -600,11 +600,16 @@ export function clearAllConversations(): Promise<unknown> {
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  const cursor = params?.cursor ?? null;
+  const cursor = params?.cursor;
+  const pageSize = params?.pageSize ?? 25;
   const isArchived = params?.isArchived ?? false;
-  const order = params?.order ?? 'desc';
+  const sortBy = params?.sortBy;
+  const sortDirection = params?.sortDirection;
   const tags = params?.tags || [];
-  return request.get(endpoints.conversations(cursor, isArchived, order, tags));
+  const search = params?.search || '';
+  return request.get(
+    endpoints.conversations(cursor, pageSize, isArchived, sortBy, sortDirection, tags, search),
+  );
 };
 
 export const listConversationsByQuery = (
@@ -620,7 +625,7 @@ export const listConversationsByQuery = (
   }
 };
 
-export function getConversations(cursor: string | null): Promise<t.TGetConversationsResponse> {
+export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
   return request.get(endpoints.conversations(cursor));
 }
 

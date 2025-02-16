@@ -8,9 +8,10 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
 const { deleteToolCalls } = require('~/models/ToolCall');
+const { isEnabled, sleep } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
   [EModelEndpoint.assistants]: require('~/server/services/Endpoints/assistants'),
@@ -20,21 +21,26 @@ const router = express.Router();
 router.use(requireJwtAuth);
 
 router.get('/', async (req, res) => {
-  // Limiting pagination as cursor may be undefined if not provided
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
-  const isArchived = req.query.isArchived === 'true';
+  const isArchived = isEnabled(req.query.isArchived);
+  const search = req.query.search;
+  const order = req.query.order || 'desc';
 
   let tags;
   if (req.query.tags) {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
-  // Support for ordering; expects "asc" or "desc", defaults to descending order.
-  const order = req.query.order || 'desc';
-
   try {
-    const result = await getConvosByCursor(req.user.id, { cursor, limit, isArchived, tags, order });
+    const result = await getConvosByCursor(req.user.id, {
+      cursor,
+      limit,
+      isArchived,
+      tags,
+      search,
+      order,
+    });
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: 'Error fetching conversations' });

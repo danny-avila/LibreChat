@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+// If TypeScript complains about lodash/debounce, consider installing @types/lodash or add a declaration file.
 import debounce from 'lodash/debounce';
-import { Search, TrashIcon, MessageCircle, ArchiveRestore } from 'lucide-react';
-import type { TConversation } from 'librechat-data-provider';
+import { TrashIcon, ArchiveRestore } from 'lucide-react';
+import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
   Button,
   OGDialog,
@@ -10,94 +10,68 @@ import {
   OGDialogHeader,
   OGDialogTitle,
   Label,
-  Separator,
-  Skeleton,
+  TooltipAnchor,
   Spinner,
 } from '~/components';
 import {
-  useConversationsInfiniteQuery,
   useArchiveConvoMutation,
+  useConversationsInfiniteQuery,
   useDeleteConversationMutation,
 } from '~/data-provider';
-import { useAuthContext, useLocalize, useMediaQuery } from '~/hooks';
+import { useLocalize, useMediaQuery } from '~/hooks';
+import { MinimalIcon } from '~/components/Endpoints';
 import DataTable from '~/components/ui/DataTable';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import { cn, formatDate } from '~/utils';
+import { formatDate } from '~/utils';
 
-const DEFAULT_PARAMS = {
+const DEFAULT_PARAMS: ConversationListParams = {
+  pageSize: 25,
   isArchived: true,
-  search: '',
   sortBy: 'createdAt',
   sortDirection: 'desc',
-  // use nextCursor for pagination
+  search: '',
 };
 
-export default function ArchivedChatsTable() {
+export default function ArchivedChatsTable({
+  isOpen,
+  onOpenChange,
+}: {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+}) {
   const localize = useLocalize();
-  const { isAuthenticated } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { showToast } = useToastContext();
 
-  const [queryParams, setQueryParams] = useState(DEFAULT_PARAMS);
-  const [deleteConversation, setDeleteConversation] = useState<TConversation | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [queryParams, setQueryParams] = useState<ConversationListParams>(DEFAULT_PARAMS);
+  const [deleteConversation, setDeleteConversation] = useState<TConversation | null>(null);
 
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
-      enabled: isAuthenticated,
+      enabled: isOpen,
       staleTime: 0,
       cacheTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
 
-  const unarchiveMutation = useArchiveConvoMutation();
-  const deleteMutation = useDeleteConversationMutation({
-    onSuccess: async () => {
-      showToast({
-        message: localize('com_ui_delete_success'),
-        severity: NotificationSeverity.SUCCESS,
-      });
-      setIsDeleteOpen(false);
-      setDeleteConversation(null);
-      await refetch();
-    },
-    onError: (error) => {
-      console.error('Delete error:', error);
-      showToast({
-        message: localize('com_ui_delete_error'),
-        severity: NotificationSeverity.ERROR,
-      });
-    },
-  });
-
-  const handleUnarchive = useCallback(
-    (conversationId: string) => {
-      unarchiveMutation.mutate({ conversationId, isArchived: false });
-    },
-    [unarchiveMutation],
-  );
-
-  const allConversations: TConversation[] = useMemo(() => {
-    if (!data?.pages) {
-      return [];
-    }
-    return data.pages.flatMap((page) => page.conversations ?? []);
-  }, [data]);
+  const unarchiveMutation = useArchiveConvoMutation('');
 
   const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
     setQueryParams((prev) => ({
       ...prev,
-      sortBy: sortField,
+      sortBy: sortField as 'title' | 'createdAt',
       sortDirection: sortOrder,
     }));
   }, []);
 
   const handleFilterChange = useCallback((value: string) => {
+    const encodedValue = encodeURIComponent(value.trim());
     setQueryParams((prev) => ({
       ...prev,
-      search: encodeURIComponent(value.trim()),
+      search: encodedValue,
     }));
   }, []);
 
@@ -105,11 +79,47 @@ export default function ArchivedChatsTable() {
     () => debounce(handleFilterChange, 300),
     [handleFilterChange],
   );
+
   useEffect(() => {
     return () => {
       debouncedFilterChange.cancel();
     };
   }, [debouncedFilterChange]);
+
+  const allConversations = useMemo(() => {
+    if (!data?.pages) {
+      return [];
+    }
+    return data.pages.flatMap((page) => page.conversations.filter(Boolean));
+  }, [data?.pages]);
+
+  const deleteMutation = useDeleteConversationMutation({
+    onSuccess: async () => {
+      setIsDeleteOpen(false);
+      await refetch();
+    },
+    onError: (error) => {
+      console.error('Delete error:', error);
+      showToast({
+        message: localize('com_ui_archive_delete_error') as string,
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
+
+  const handleUnarchive = useCallback(
+    (conversationId: string) => {
+      unarchiveMutation.mutate(
+        { conversationId, isArchived: false },
+        {
+          onSuccess: () => {
+            refetch();
+          },
+        },
+      );
+    },
+    [unarchiveMutation, refetch],
+  );
 
   const handleFetchNextPage = useCallback(async () => {
     if (!hasNextPage || isFetchingNextPage) {
@@ -122,26 +132,29 @@ export default function ArchivedChatsTable() {
     () => [
       {
         accessorKey: 'title',
-        header: ({ column }) => {
-          return (
-            <Button
-              variant="ghost"
-              className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() => handleSort('title', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
-            >
-              {localize('com_nav_archive_name')}
-            </Button>
-          );
-        },
-        cell: ({ row }) => {
+        header: ({ column }: { column: any }) => (
+          <Button
+            variant="ghost"
+            className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+            onClick={() => handleSort('title', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
+          >
+            {localize('com_nav_archive_name')}
+          </Button>
+        ),
+        cell: ({ row }: { row: any }) => {
           const { conversationId, title } = row.original;
           return (
             <button
               type="button"
-              className="flex items-center gap-1 truncate"
+              className="flex items-center gap-2 truncate"
               onClick={() => window.open(`/c/${conversationId}`, '_blank')}
             >
-              <MessageCircle className="size-4" />
+              <MinimalIcon
+                endpoint={row.original.endpoint}
+                size={28}
+                isCreatedByUser={false}
+                iconClassName="size-4"
+              />
               <span className="underline">{title}</span>
             </button>
           );
@@ -153,20 +166,17 @@ export default function ArchivedChatsTable() {
       },
       {
         accessorKey: 'createdAt',
-        header: ({ column }) => {
-          return (
-            <Button
-              variant="ghost"
-              className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('createdAt', column.getIsSorted() === 'asc' ? 'desc' : 'asc')
-              }
-            >
-              {localize('com_nav_archive_created_at')}
-            </Button>
-          );
-        },
-        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        header: ({ column }: { column: any }) => (
+          <Button
+            variant="ghost"
+            className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+            onClick={() => handleSort('createdAt', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
+          >
+            {localize('com_nav_archive_created_at')}
+          </Button>
+        ),
+        cell: ({ row }: { row: any }) =>
+          formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
           size: isSmallScreen ? '30%' : '35%',
           mobileSize: '30%',
@@ -179,29 +189,39 @@ export default function ArchivedChatsTable() {
             {localize('com_assistants_actions')}
           </Label>
         ),
-        cell: ({ row }) => {
+        cell: ({ row }: { row: any }) => {
           const conversation = row.original;
           return (
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={localize('com_ui_unarchive')}
-                onClick={() => handleUnarchive(conversation.conversationId)}
-              >
-                <ArchiveRestore className="size-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={localize('com_ui_delete')}
-                onClick={() => {
-                  setDeleteConversation(conversation);
-                  setIsDeleteOpen(true);
-                }}
-              >
-                <TrashIcon className="size-4" />
-              </Button>
+              <TooltipAnchor
+                description={localize('com_ui_unarchive')}
+                render={
+                  <Button
+                    variant="ghost"
+                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    onClick={() => handleUnarchive(conversation.conversationId)}
+                    title={localize('com_ui_unarchive')}
+                  >
+                    <ArchiveRestore className="size-4" />
+                  </Button>
+                }
+              />
+              <TooltipAnchor
+                description={localize('com_ui_delete')}
+                render={
+                  <Button
+                    variant="ghost"
+                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    onClick={() => {
+                      setDeleteConversation(row.original);
+                      setIsDeleteOpen(true);
+                    }}
+                    title={localize('com_ui_delete')}
+                  >
+                    <TrashIcon className="size-4" />
+                  </Button>
+                }
+              />
             </div>
           );
         },
@@ -214,18 +234,6 @@ export default function ArchivedChatsTable() {
     [handleSort, handleUnarchive, isSmallScreen, localize],
   );
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 10 }, (_, index) => (
-          <div key={index} className="flex items-center">
-            <Skeleton className="h-4 w-40" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   return (
     <>
       <DataTable
@@ -237,13 +245,14 @@ export default function ArchivedChatsTable() {
         fetchNextPage={handleFetchNextPage}
         hasNextPage={hasNextPage}
         isFetchingNextPage={isFetchingNextPage}
+        isLoading={isLoading}
         showCheckboxes={false}
       />
 
-      <OGDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+      <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>
         <OGDialogContent
-          title={localize('com_ui_delete_archived_chat')}
-          className="max-w-[450px] bg-background text-text-primary shadow-2xl"
+          title={localize('com_ui_delete_confirm') + ' ' + (deleteConversation?.title ?? '')}
+          className="w-11/12 max-w-md"
         >
           <OGDialogHeader>
             <OGDialogTitle>
@@ -257,7 +266,9 @@ export default function ArchivedChatsTable() {
             <Button
               variant="destructive"
               onClick={() =>
-                deleteMutation.mutate({ conversationId: deleteConversation?.conversationId ?? '' })
+                deleteMutation.mutate({
+                  conversationId: deleteConversation?.conversationId ?? '',
+                })
               }
               disabled={deleteMutation.isLoading}
             >

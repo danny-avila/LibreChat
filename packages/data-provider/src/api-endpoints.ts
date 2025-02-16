@@ -44,14 +44,17 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 export const conversationsRoot = '/api/convos';
 
 export const conversations = (
-  nextCursor: string | null,
+  cursor?: string,
+  pageSize?: number,
   isArchived?: boolean,
-  order?: string,
+  sortBy?: 'title' | 'createdAt' | 'updatedAt',
+  sortDirection?: 'asc' | 'desc',
   tags?: string[],
+  search?: string,
 ) =>
-  `${conversationsRoot}?${nextCursor ? `cursor=${nextCursor}` : ''}${
-    isArchived === true ? '&isArchived=true' : ''
-  }${order ? `&order=${order}` : ''}${tags?.map((tag) => `&tags=${tag}`).join('')}`;
+  `${conversationsRoot}?${cursor ? `cursor=${cursor}&` : ''}pageSize=${pageSize}&isArchived=${isArchived}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+    tags ? tags.map((tag) => `&tags=${tag}`).join('') : ''
+  }${search ? `&search=${search}` : ''}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 

@@ -12,10 +12,13 @@ export type Conversation = {
 };
 
 export type ConversationListParams = {
-  cursor?: string | null;
-  order?: 'asc' | 'desc';
+  cursor?: string;
+  pageSize: number;
   isArchived?: boolean;
+  sortBy?: 'title' | 'createdAt' | 'updatedAt';
+  sortDirection?: 'asc' | 'desc';
   tags?: string[];
+  search?: string;
 };
 
 export type MinimalConversation = Pick<
