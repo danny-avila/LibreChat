@@ -1,5 +1,5 @@
 const { Run, Providers } = require('@librechat/agents');
-const { providerEndpointMap } = require('librechat-data-provider');
+const { providerEndpointMap, KnownEndpoints } = require('librechat-data-provider');
 
 /**
  * @typedef {import('@librechat/agents').t} t
@@ -7,6 +7,7 @@ const { providerEndpointMap } = require('librechat-data-provider');
  * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
  * @typedef {import('@librechat/agents').EventHandler} EventHandler
  * @typedef {import('@librechat/agents').GraphEvents} GraphEvents
+ * @typedef {import('@librechat/agents').LLMConfig} LLMConfig
  * @typedef {import('@librechat/agents').IState} IState
  */
 
@@ -32,6 +33,7 @@ async function createRun({
   streamUsage = true,
 }) {
   const provider = providerEndpointMap[agent.provider] ?? agent.provider;
+  /** @type {LLMConfig} */
   const llmConfig = Object.assign(
     {
       provider,
@@ -41,6 +43,11 @@ async function createRun({
     agent.model_parameters,
   );
 
+  /** @type {'reasoning_content' | 'reasoning'} */
+  let reasoningKey;
+  if (llmConfig.configuration?.baseURL.includes(KnownEndpoints.openrouter)) {
+    reasoningKey = 'reasoning';
+  }
   if (/o1(?!-(?:mini|preview)).*$/.test(llmConfig.model)) {
     llmConfig.streaming = false;
     llmConfig.disableStreaming = true;
@@ -50,6 +57,7 @@ async function createRun({
   const graphConfig = {
     signal,
     llmConfig,
+    reasoningKey,
     tools: agent.tools,
     instructions: agent.instructions,
     additional_instructions: agent.additional_instructions,
