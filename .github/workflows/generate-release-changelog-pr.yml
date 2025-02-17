@@ -1,0 +1,94 @@
+name: Generate Release Changelog PR
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  generate-release-changelog-pr:
+    permissions:
+      contents: write    # Needed for pushing commits and creating branches.
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout the repository (with full history).
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Generate the release changelog using our custom configuration.
+      - name: Generate Release Changelog
+        id: generate_release
+        uses: mikepenz/release-changelog-builder-action@v5.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          configuration: ".github/configuration-release.json"
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          outputFile: CHANGELOG-release.md
+
+      # 3. Update the main CHANGELOG.md:
+      #    - If it doesn't exist, create it with a basic header.
+      #    - Remove the "Unreleased" section (if present).
+      #    - Prepend the new release changelog above previous releases.
+      #    - Remove all temporary files before committing.
+      - name: Update CHANGELOG.md
+        run: |
+          # Determine the release tag, e.g. "v1.2.3"
+          TAG=${GITHUB_REF##*/}
+          echo "Using release tag: $TAG"
+          
+          # Ensure CHANGELOG.md exists; if not, create a basic header.
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+
+          echo "Updating CHANGELOG.md…"
+          
+          # Remove the "Unreleased" section (from "## [Unreleased]" until the first occurrence of '---') if it exists.
+          if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
+            awk '/^## \[Unreleased\]/{flag=1} flag && /^---/{flag=0; next} !flag' CHANGELOG.md > CHANGELOG.cleaned
+          else
+            cp CHANGELOG.md CHANGELOG.cleaned
+          fi
+
+          # Split the cleaned file into:
+          #   - header.md: content before the first release header ("## [v...").
+          #   - tail.md: content from the first release header onward.
+          awk '/^## \[v/{exit} {print}' CHANGELOG.cleaned > header.md
+          awk 'f{print} /^## \[v/{f=1; print}' CHANGELOG.cleaned > tail.md
+
+          # Combine header, the new release changelog, and the tail.
+          echo "Combining updated changelog parts..."
+          cat header.md CHANGELOG-release.md > CHANGELOG.md.new
+          echo "" >> CHANGELOG.md.new
+          cat tail.md >> CHANGELOG.md.new
+
+          mv CHANGELOG.md.new CHANGELOG.md
+
+          # Remove temporary files.
+          rm -f CHANGELOG.cleaned header.md tail.md CHANGELOG-release.md
+
+          echo "Final CHANGELOG.md content:"
+          cat CHANGELOG.md
+
+      # 4. Create (or update) the Pull Request with the updated CHANGELOG.md.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "chore: update CHANGELOG for release ${GITHUB_REF##*/}"
+          base: main
+          branch: "changelog/${GITHUB_REF##*/}"
+          reviewers: danny-avila
+          title: "chore: update CHANGELOG for release ${GITHUB_REF##*/}"
+          body: |
+            **Description**:
+            - This PR updates the CHANGELOG.md by removing the "Unreleased" section and adding new release notes for release ${GITHUB_REF##*/} above previous releases.
