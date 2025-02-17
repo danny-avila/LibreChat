@@ -1,6 +1,7 @@
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
 const { generate2FATempToken } = require('~/server/services/twoFactorService');
+const { getUserById } = require('~/models');
 
 const loginController = async (req, res) => {
   try {
@@ -8,7 +9,7 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if (req.user.totpEnabled) {
+    if (req.user.backupCodes.length > 0) {
       const tempToken = generate2FATempToken(req.user._id);
       return res.status(200).json({ twoFAPending: true, tempToken });
     }

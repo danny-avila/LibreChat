@@ -26,16 +26,15 @@ const verify2FA = async (req, res) => {
     }
 
     let payload;
-
     try {
       payload = jwt.verify(tempToken, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await getUserById(payload.userId);
-
-    if (!user || !user.totpEnabled) {
+    const user = await getUserById(payload.userId, '+totpSecret');
+    // Ensure that the user exists and has backup codes (i.e. 2FA enabled)
+    if (!user || !(user.backupCodes && user.backupCodes.length > 0)) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }
 
@@ -65,9 +64,13 @@ const verify2FA = async (req, res) => {
       return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
     }
 
+    // Prepare user data for response.
+    // If the user is a plain object (from lean queries), we create a shallow copy.
     const userData = user.toObject ? user.toObject() : { ...user };
+    // Remove sensitive fields
     delete userData.password;
     delete userData.__v;
+    delete userData.totpSecret; // Ensure totpSecret is not returned
     userData.id = user._id.toString();
 
     const authToken = await setAuthTokens(user._id, res);

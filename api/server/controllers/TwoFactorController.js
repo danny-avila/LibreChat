@@ -4,7 +4,7 @@ const {
   generateBackupCodes,
   verifyTOTP,
 } = require('~/server/services/twoFactorService');
-const { User, updateUser } = require('~/models');
+const { updateUser, getUserById } = require('~/models');
 const { logger } = require('~/config');
 
 /**
@@ -28,10 +28,9 @@ const enable2FAController = async (req, res) => {
     const secret = generateTOTPSecret();
     const { plainCodes, codeObjects } = await generateBackupCodes();
 
-    const user = await User.findByIdAndUpdate(
+    const user = await updateUser(
       userId,
       { totpSecret: secret, backupCodes: codeObjects },
-      { new: true },
     );
 
     const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}`;
@@ -50,7 +49,7 @@ const verify2FAController = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await User.findById(userId);
+    const user = await getUserById(userId);
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
@@ -88,15 +87,13 @@ const confirm2FAController = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
-    const user = await User.findById(userId);
+    const user = await getUserById(userId);
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
     if (await verifyTOTP(user.totpSecret, token)) {
-      user.totpEnabled = true;
-      await user.save();
       return res.status(200).json();
     }
 
@@ -110,10 +107,9 @@ const confirm2FAController = async (req, res) => {
 const disable2FAController = async (req, res) => {
   try {
     const userId = req.user.id;
-    await User.findByIdAndUpdate(
+    await updateUser(
       userId,
-      { totpEnabled: false, totpSecret: '', backupCodes: [] },
-      { new: true },
+      { totpSecret: null, backupCodes: [] },
     );
     res.status(200).json();
   } catch (err) {
@@ -126,7 +122,10 @@ const regenerateBackupCodesController = async (req, res) => {
   try {
     const userId = req.user.id;
     const { plainCodes, codeObjects } = await generateBackupCodes();
-    await User.findByIdAndUpdate(userId, { backupCodes: codeObjects }, { new: true });
+    await updateUser(
+      userId,
+      {  backupCodes: codeObjects },
+    );
     res.status(200).json({
       backupCodes: plainCodes,
       backupCodesHash: codeObjects,

@@ -22,7 +22,7 @@ function Account() {
           <div className="pb-3">
             <EnableTwoFactorItem />
           </div>
-          {user?.user?.totpEnabled && (
+          {user?.user?.backupCodes.length > 0 && (
             <div className="pb-3">
               <BackupCodesItem />
             </div>

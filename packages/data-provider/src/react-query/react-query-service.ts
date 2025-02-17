@@ -377,17 +377,6 @@ export const useGetCustomConfigSpeechQuery = (
   );
 };
 
-export const useGetBannerQuery = (
-  config?: UseQueryOptions<t.TBannerResponse>,
-): QueryObserverResult<t.TBannerResponse> => {
-  return useQuery<t.TBannerResponse>([QueryKeys.banner], () => dataService.getBanner(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
 export const useEnableTwoFactorMutation = (): UseMutationResult<
     t.TEnable2FAResponse,
     unknown,

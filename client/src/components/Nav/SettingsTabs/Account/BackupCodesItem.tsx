@@ -66,10 +66,6 @@ const BackupCodesItem: React.FC = () => {
     fetchBackupCodes(false);
   };
 
-  if (!user?.totpEnabled) {
-    return null;
-  }
-
   return (
     <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
       <div className="flex items-center justify-between">
