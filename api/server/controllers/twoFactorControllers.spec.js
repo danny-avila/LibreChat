@@ -32,6 +32,14 @@ jest.mock('~/config', () => ({
   },
 }));
 
+jest.mock('~/server/services/twoFactorService', () => ({
+  enable2FAController: jest.fn(),
+  verify2FAController: jest.fn(),
+  confirm2FAController: jest.fn(),
+  disable2FAController: jest.fn(),
+  regenerateBackupCodesController: jest.fn(),
+}));
+
 describe('2FA Controllers', () => {
   let req, res;
 
