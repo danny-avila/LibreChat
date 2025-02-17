@@ -31,6 +31,7 @@ import { Spinner } from '~/components/svg';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 import Action from './Action';
+import { TooltipAnchor } from '~/components/ui/Tooltip';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -428,24 +429,26 @@ export default function AssistantPanel({
                   </button>
                 )}
                 {actionsEnabled === true && (
-                  <button
-                    type="button"
-                    disabled={!assistant_id}
-                    onClick={() => {
-                      if (!assistant_id) {
-                        return showToast({
-                          message: localize('com_assistants_actions_disabled'),
-                          status: 'warning',
-                        });
-                      }
-                      setActivePanel(Panel.actions);
-                    }}
-                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  <TooltipAnchor
+                    description={localize('com_assistants_actions_disabled')}
+                    className="relative w-full"
+                    showOnHover={!assistant_id}
+                    tabIndex={0}
+                    accessibleWhenDisabled
                   >
-                    <div className="flex w-full items-center justify-center gap-2">
-                      {localize('com_assistants_add_actions')}
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      disabled={!assistant_id}
+                      onClick={() => {
+                        setActivePanel(Panel.actions);
+                      }}
+                      className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                    >
+                      <div className="flex w-full items-center justify-center gap-2">
+                        {localize('com_assistants_add_actions')}
+                      </div>
+                    </button>
+                  </TooltipAnchor>
                 )}
               </div>
             </div>
