@@ -19,10 +19,8 @@ jest.mock('~/config', () => ({
   },
 }));
 
-// Now require the dependencies and the functions to test
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const twoFactorControllers = require('~/server/controllers/twoFactorController');
+const twoFactorControllers = require('../../server/controllers/twoFactorController');
 const {
   enable2FAController,
   verify2FAController,
@@ -30,10 +28,9 @@ const {
   disable2FAController,
   regenerateBackupCodesController,
 } = twoFactorControllers;
-const twoFactorService = require('~/server/services/twoFactorService');
+const twoFactorService = require('../../server/services/twoFactorService');
 const models = require('~/models');
-const authService = require('~/server/services/AuthService');
-const { logger } = require('~/config'); // Destructure for clarity
+const { logger } = require('../../config');
 
 describe('2FA Controllers', () => {
   let req, res;

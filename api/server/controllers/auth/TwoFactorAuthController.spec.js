@@ -25,11 +25,10 @@ jest.mock('~/config', () => ({
 // Now require the dependencies and the function to test
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const twoFactorService = require('~/server/services/twoFactorService');
-const models = require('~/models');
-const authService = require('~/server/services/AuthService');
-const logger = require('~/config');
-const { verify2FA } = require('~/server/controllers/auth/TwoFactorAuthController');
+const twoFactorService = require('../../../server/services/twoFactorService');
+const models = require('../../../models');
+const authService = require('../../../server/services/AuthService');
+const { verify2FA } = require('../../../server/controllers/auth/TwoFactorAuthController');
 
 describe('verify2FA', () => {
   let req, res;
