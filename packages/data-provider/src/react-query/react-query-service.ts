@@ -147,6 +147,7 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
   return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries([QueryKeys.name, variables.name]);
+      queryClient.invalidateQueries([QueryKeys.models]); // force models reload after user key update
     },
   });
 };
