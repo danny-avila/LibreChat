@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { RefreshCcw, ShieldX } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRegenerateBackupCodesMutation } from 'librechat-data-provider/react-query';
 import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -13,6 +12,7 @@ import {
   Spinner,
   TooltipAnchor,
 } from '~/components';
+import { useRegenerateBackupCodesMutation } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import { useSetRecoilState } from 'recoil';
@@ -91,10 +91,10 @@ const BackupCodesItem: React.FC = () => {
             exit={{ opacity: 0, y: -20 }}
             className="mt-4"
           >
-            {user.backupCodes?.length ? (
+            {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  {user.backupCodes.map((code, index) => {
+                  {user?.backupCodes.map((code, index) => {
                     const isUsed = code.used;
                     const description = `Backup code number ${index + 1}, ${
                       isUsed

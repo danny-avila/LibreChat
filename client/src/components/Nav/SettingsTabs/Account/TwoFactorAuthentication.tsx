@@ -1,13 +1,7 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { SmartphoneIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  useEnableTwoFactorMutation,
-  useVerifyTwoFactorMutation,
-  useConfirmTwoFactorMutation,
-  useDisableTwoFactorMutation,
-} from 'librechat-data-provider/react-query';
 import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Progress } from '~/components';
 import { SetupPhase, QRPhase, VerifyPhase, BackupPhase, DisablePhase } from './TwoFactorPhases';
@@ -15,6 +9,12 @@ import { DisableTwoFactorToggle } from './DisableTwoFactorToggle';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
+import {
+  useConfirmTwoFactorMutation,
+  useDisableTwoFactorMutation,
+  useEnableTwoFactorMutation,
+  useVerifyTwoFactorMutation,
+} from '~/data-provider';
 
 export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
@@ -37,7 +37,7 @@ const TwoFactorAuthentication: React.FC = () => {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [verificationToken, setVerificationToken] = useState<string>('');
-  const [phase, setPhase] = useState<Phase>(user?.backupCodes?.length > 0 ? 'disable' : 'setup');
+  const [phase, setPhase] = useState<Phase>(Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? 'disable' : 'setup');
 
   const { mutate: confirm2FAMutate } = useConfirmTwoFactorMutation();
   const { mutate: enable2FAMutate, isLoading: isGenerating } = useEnableTwoFactorMutation();
@@ -68,7 +68,7 @@ const TwoFactorAuthentication: React.FC = () => {
     setBackupCodes([]);
     setVerificationToken('');
     setDisableToken('');
-    setPhase(user?.backupCodes?.length > 0 ? 'disable' : 'setup');
+    setPhase(Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? 'disable' : 'setup');
     setDownloaded(false);
   }, [user, otpauthUrl, disable2FAMutate, localize, showToast]);
 
@@ -76,7 +76,6 @@ const TwoFactorAuthentication: React.FC = () => {
     enable2FAMutate(undefined, {
       onSuccess: ({ otpauthUrl, backupCodes }) => {
         setOtpauthUrl(otpauthUrl);
-        // Extract secret from the otpauth URL (assumes the secret is present)
         setSecret(otpauthUrl.split('secret=')[1].split('&')[0]);
         setBackupCodes(backupCodes);
         setPhase('qr');
@@ -198,7 +197,7 @@ const TwoFactorAuthentication: React.FC = () => {
       }}
     >
       <DisableTwoFactorToggle
-        enabled={user?.backupCodes?.length > 0}
+        enabled={Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0}
         onChange={() => setDialogOpen(true)}
         disabled={isVerifying || isDisabling || isGenerating}
       />
@@ -216,9 +215,9 @@ const TwoFactorAuthentication: React.FC = () => {
             <OGDialogHeader>
               <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
                 <SmartphoneIcon className="h-6 w-6 text-primary" />
-                {user?.backupCodes?.length > 0 ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_setup')}
+                {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_setup')}
               </OGDialogTitle>
-              {user?.backupCodes?.length > 0 && phase !== 'disable' && (
+              {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 && phase !== 'disable' && (
                 <div className="mt-4 space-y-3">
                   <Progress
                     value={(steps.indexOf(phasesLabel[phase]) / (steps.length - 1)) * 100}

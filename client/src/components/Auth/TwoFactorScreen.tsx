@@ -2,9 +2,9 @@ import React, { useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
-import { useVerifyTwoFactorTempMutation } from 'librechat-data-provider/react-query';
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot, Label } from '~/components';
 import { useLocalize } from '~/hooks';
+import { useVerifyTwoFactorTempMutation } from '~/data-provider';
 
 interface VerifyPayload {
   tempToken: string;
