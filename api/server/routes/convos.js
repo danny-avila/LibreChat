@@ -1,16 +1,17 @@
 const multer = require('multer');
 const express = require('express');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
 const { deleteToolCalls } = require('~/models/ToolCall');
+const { isEnabled, sleep } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
   [EModelEndpoint.assistants]: require('~/server/services/Endpoints/assistants'),
@@ -20,28 +21,30 @@ const router = express.Router();
 router.use(requireJwtAuth);
 
 router.get('/', async (req, res) => {
-  let pageNumber = req.query.pageNumber || 1;
-  pageNumber = parseInt(pageNumber, 10);
+  const limit = parseInt(req.query.limit, 10) || 25;
+  const cursor = req.query.cursor;
+  const isArchived = isEnabled(req.query.isArchived);
+  const search = req.query.search;
+  const order = req.query.order || 'desc';
 
-  if (isNaN(pageNumber) || pageNumber < 1) {
-    return res.status(400).json({ error: 'Invalid page number' });
-  }
-
-  let pageSize = req.query.pageSize || 25;
-  pageSize = parseInt(pageSize, 10);
-
-  if (isNaN(pageSize) || pageSize < 1) {
-    return res.status(400).json({ error: 'Invalid page size' });
-  }
-  const isArchived = req.query.isArchived === 'true';
   let tags;
   if (req.query.tags) {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
-  } else {
-    tags = undefined;
   }
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
+  try {
+    const result = await getConvosByCursor(req.user.id, {
+      cursor,
+      limit,
+      isArchived,
+      tags,
+      search,
+      order,
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching conversations' });
+  }
 });
 
 router.get('/:conversationId', async (req, res) => {

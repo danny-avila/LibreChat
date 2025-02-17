@@ -43,10 +43,18 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}${
-    isArchived === true ? '&isArchived=true' : ''
-  }${tags?.map((tag) => `&tags=${tag}`).join('')}`;
+export const conversations = (
+  cursor?: string,
+  pageSize?: number,
+  isArchived?: boolean,
+  sortBy?: 'title' | 'createdAt' | 'updatedAt',
+  sortDirection?: 'asc' | 'desc',
+  tags?: string[],
+  search?: string,
+) =>
+  `${conversationsRoot}?${cursor ? `cursor=${cursor}&` : ''}pageSize=${pageSize}&isArchived=${isArchived}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+    tags ? tags.map((tag) => `&tags=${tag}`).join('') : ''
+  }${search ? `&search=${search}` : ''}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -62,8 +70,10 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
-export const search = (q: string, pageNumber: string) =>
-  `/api/search?q=${q}&pageNumber=${pageNumber}`;
+export const search = (q: string, pageSize?: number, nextCursor?: string | null) =>
+  `/api/search?q=${q}${pageSize ? `&pageSize=${pageSize}` : ''}${
+    nextCursor ? `&cursor=${nextCursor}` : ''
+  }`;
 
 export const searchEnabled = () => '/api/search/enable';
 
