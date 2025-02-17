@@ -10,7 +10,7 @@ module.exports = {
     './test/__mocks__/fetchEventSource.js',
   ],
   moduleNameMapper: {
-    '^~/(.*)$': '<rootDir>/$1',
+    '~/(.*)': '<rootDir>/$1',
     '~/data/auth.json': '<rootDir>/__mocks__/auth.mock.json',
   },
 };
