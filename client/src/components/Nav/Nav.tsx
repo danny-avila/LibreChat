@@ -189,6 +189,7 @@ const Nav = ({
                     )}
                   </div>
                   <AccountSettings />
+                   
                 </nav>
               </div>
             </div>

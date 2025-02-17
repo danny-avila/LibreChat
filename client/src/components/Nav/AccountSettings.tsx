@@ -11,9 +11,12 @@ import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
+import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
+import { useNavigate } from 'react-router-dom';
 
 function AccountSettings() {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -24,6 +27,10 @@ function AccountSettings() {
 
   const avatarSrc = useAvatar(user);
   const name = user?.avatar ?? user?.username ?? '';
+
+  const adminPanelHandler = () => {
+    navigate('/datall/add-balance')
+  };
 
   return (
     <Select.SelectProvider>
@@ -78,12 +85,18 @@ function AccountSettings() {
         {startupConfig?.checkBalance === true &&
           balanceQuery.data != null &&
           !isNaN(parseFloat(balanceQuery.data)) && (
-          <>
-            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-              {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
-            </div>
-            <DropdownMenuSeparator />
-          </>
+            <>
+              <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+                {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
+              </div>
+              <DropdownMenuSeparator />
+            </>
+          )}
+        {user?.role === 'ADMIN' && (
+          <Select.SelectItem value="" onClick={adminPanelHandler} className="select-item text-sm">
+            <AdminPanelSettingsOutlinedIcon />
+            Amdin Panel
+          </Select.SelectItem>
         )}
         <Select.SelectItem
           value=""
