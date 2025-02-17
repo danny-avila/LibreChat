@@ -1,9 +1,59 @@
 const { getResponseSender, Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage } = require('~/models');
+const { saveMessage, getUserById } = require('~/models');
 const { logger } = require('~/config');
 
+let crypto;
+try {
+  crypto = require('crypto');
+} catch (err) {
+  logger.error('[AskController] crypto support is disabled!', err);
+}
+
+/**
+ * Helper function to encrypt plaintext using AES-256-GCM and then RSA-encrypt the AES key.
+ * @param {string} plainText - The plaintext to encrypt.
+ * @param {string} pemPublicKey - The RSA public key in PEM format.
+ * @returns {Object} An object containing the ciphertext, iv, authTag, and encryptedKey.
+ */
+function encryptText(plainText, pemPublicKey) {
+  // Generate a random 256-bit AES key and a 12-byte IV.
+  const aesKey = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(12);
+
+  // Encrypt the plaintext using AES-256-GCM.
+  const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
+  let ciphertext = cipher.update(plainText, 'utf8', 'base64');
+  ciphertext += cipher.final('base64');
+  const authTag = cipher.getAuthTag().toString('base64');
+
+  // Encrypt the AES key using the user's RSA public key.
+  const encryptedKey = crypto.publicEncrypt(
+    {
+      key: pemPublicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    aesKey,
+  ).toString('base64');
+
+  return {
+    ciphertext,
+    iv: iv.toString('base64'),
+    authTag,
+    encryptedKey,
+  };
+}
+
+/**
+ * AskController
+ * - Initializes the client.
+ * - Obtains the response from the language model.
+ * - Retrieves the full user record (to get encryption parameters).
+ * - If the user has encryption enabled (i.e. encryptionPublicKey is provided),
+ *   encrypts both the request (userMessage) and the response before saving.
+ */
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
@@ -32,7 +82,22 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     modelDisplayLabel,
   });
   const newConvo = !conversationId;
-  const user = req.user.id;
+  const userId = req.user.id; // User ID from authentication
+
+  // Retrieve full user record from DB (including encryption parameters)
+  const dbUser = await getUserById(userId, 'encryptionPublicKey encryptedPrivateKey encryptionSalt encryptionIV');
+
+  // Build clientOptions including the encryptionPublicKey (if available)
+  const clientOptions = {
+    encryptionPublicKey: dbUser?.encryptionPublicKey,
+  };
+
+  // Rebuild PEM format if encryptionPublicKey is available
+  let pemPublicKey = null;
+  if (clientOptions.encryptionPublicKey && clientOptions.encryptionPublicKey.trim() !== '') {
+    const pubKeyBase64 = clientOptions.encryptionPublicKey;
+    pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${pubKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+  }
 
   const getReqData = (data = {}) => {
     for (let key in data) {
@@ -52,11 +117,10 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   let getText;
-
   try {
-    const { client } = await initializeClient({ req, res, endpointOption });
+    // Pass clientOptions (which includes encryptionPublicKey) along with other parameters to initializeClient
+    const { client } = await initializeClient({ req, res, endpointOption, ...clientOptions });
     const { onProgress: progressCallback, getPartialText } = createOnProgress();
-
     getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
 
     const getAbortData = () => ({
@@ -74,20 +138,14 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     res.on('close', () => {
       logger.debug('[AskController] Request closed');
-      if (!abortController) {
-        return;
-      } else if (abortController.signal.aborted) {
-        return;
-      } else if (abortController.requestCompleted) {
-        return;
-      }
-
+      if (!abortController) { return; }
+      if (abortController.signal.aborted || abortController.requestCompleted) { return; }
       abortController.abort();
       logger.debug('[AskController] Request aborted on close');
     });
 
     const messageOptions = {
-      user,
+      user: userId,
       parentMessageId,
       conversationId,
       overrideParentMessageId,
@@ -95,16 +153,14 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       onStart,
       abortController,
       progressCallback,
-      progressOptions: {
-        res,
-        // parentMessageId: overrideParentMessageId || userMessageId,
-      },
+      progressOptions: { res },
     };
 
-    /** @type {TMessage} */
+    // Get the response from the language model client.
     let response = await client.sendMessage(text, messageOptions);
     response.endpoint = endpointOption.endpoint;
 
+    // Ensure the conversation has a title.
     const { conversation = {} } = await client.responsePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
@@ -114,6 +170,35 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       conversation.model = endpointOption.modelOptions.model;
       delete userMessage.image_urls;
     }
+
+    // --- Encrypt the user message if encryption is enabled ---
+    if (pemPublicKey && userMessage && userMessage.text) {
+      try {
+        const { ciphertext, iv, authTag, encryptedKey } = encryptText(userMessage.text, pemPublicKey);
+        userMessage.text = ciphertext;
+        userMessage.iv = iv;
+        userMessage.authTag = authTag;
+        userMessage.encryptedKey = encryptedKey;
+        logger.debug('[AskController] User message encrypted.');
+      } catch (encError) {
+        logger.error('[AskController] Error encrypting user message:', encError);
+      }
+    }
+
+    // --- Encrypt the AI response if encryption is enabled ---
+    if (pemPublicKey && response.text) {
+      try {
+        const { ciphertext, iv, authTag, encryptedKey } = encryptText(response.text, pemPublicKey);
+        response.text = ciphertext;
+        response.iv = iv;
+        response.authTag = authTag;
+        response.encryptedKey = encryptedKey;
+        logger.debug('[AskController] Response message encrypted.');
+      } catch (encError) {
+        logger.error('[AskController] Error encrypting response message:', encError);
+      }
+    }
+    // --- End Encryption Branch ---
 
     if (!abortController.signal.aborted) {
       sendMessage(res, {
@@ -128,15 +213,15 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       if (!client.savedMessageIds.has(response.messageId)) {
         await saveMessage(
           req,
-          { ...response, user },
-          { context: 'api/server/controllers/AskController.js - response end' },
+          { ...response, user: userId },
+          { context: 'AskController - response end' },
         );
       }
     }
 
     if (!client.skipSaveUserMessage) {
       await saveMessage(req, userMessage, {
-        context: 'api/server/controllers/AskController.js - don\'t skip saving user message',
+        context: 'AskController - save user message',
       });
     }
 
@@ -156,7 +241,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
     }).catch((err) => {
-      logger.error('[AskController] Error in `handleAbortError`', err);
+      logger.error('[AskController] Error in handleAbortError', err);
     });
   }
 };

@@ -67,4 +67,5 @@ export enum MutationKeys {
   deleteAgentAction = 'deleteAgentAction',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
+  updateUserEncryption = 'updateUserEncryption',
 }

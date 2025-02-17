@@ -27,6 +27,10 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
  * @property {Date} [expiresAt] - Optional expiration date of the file
+ * @property {string} [encryptionPublicKey] - The user's encryption public key
+ * @property {string} [encryptedPrivateKey] - The user's encrypted private key
+ * @property {string} [encryptionSalt] - The salt used for key derivation (e.g., PBKDF2)
+ * @property {string} [encryptionIV] - The IV used for encrypting the private key
  * @property {Date} [createdAt] - Date when the user was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the user was last updated (added by timestamps)
  */
@@ -131,6 +135,22 @@ const userSchema = mongoose.Schema(
     termsAccepted: {
       type: Boolean,
       default: false,
+    },
+    encryptionPublicKey: {
+      type: String,
+      default: null,
+    },
+    encryptedPrivateKey: {
+      type: String,
+      default: null,
+    },
+    encryptionSalt: {
+      type: String,
+      default: null,
+    },
+    encryptionIV: {
+      type: String,
+      default: null,
     },
   },
 

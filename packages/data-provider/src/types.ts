@@ -41,11 +41,11 @@ export type TEndpointOption = {
 
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
-    isContinued: boolean;
-    conversationId: string | null;
-    messages?: TMessages;
-    isTemporary: boolean;
-  };
+  isContinued: boolean;
+  conversationId: string | null;
+  messages?: TMessages;
+  isTemporary: boolean;
+};
 
 export type TSubmission = {
   artifacts?: string;
@@ -109,6 +109,7 @@ export type TUser = {
   role: string;
   provider: string;
   plugins?: string[];
+  decryptedPrivateKey?: CryptoKey | string;
   createdAt: string;
   updatedAt: string;
 };
@@ -473,3 +474,21 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+/**
+ * Request type for updating user encryption keys.
+ */
+export type UpdateUserEncryptionRequest = {
+  encryptionPublicKey: string | null;
+  encryptedPrivateKey: string | null;
+  encryptionSalt: string | null;
+  encryptionIV: string | null;
+};
+
+/**
+ * Response type for updating user encryption keys.
+ */
+export type UpdateUserEncryptionResponse = {
+  success: boolean;
+  message?: string;
+};

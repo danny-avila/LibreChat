@@ -897,7 +897,7 @@ export const useUploadAssistantAvatarMutation = (
   unknown // context
 > => {
   return useMutation([MutationKeys.assistantAvatarUpload], {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     mutationFn: ({ postCreation, ...variables }: t.AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
     ...(options || {}),
@@ -1066,5 +1066,26 @@ export const useAcceptTermsMutation = (
     },
     onError: options?.onError,
     onMutate: options?.onMutate,
+  });
+};
+
+export const useSetUserEncryptionMutation = (
+  options?: {
+    onSuccess?: (
+      data: t.UpdateUserEncryptionResponse,
+      variables: t.UpdateUserEncryptionRequest,
+      context?: unknown
+    ) => void;
+    onError?: (
+      error: unknown,
+      variables: t.UpdateUserEncryptionRequest,
+      context?: unknown
+    ) => void;
+  }
+): UseMutationResult<t.UpdateUserEncryptionResponse, unknown, t.UpdateUserEncryptionRequest, unknown> => {
+  return useMutation([MutationKeys.updateUserEncryption], {
+    mutationFn: (variables: t.UpdateUserEncryptionRequest) =>
+      dataService.updateUserEncryption(variables),
+    ...(options || {}),
   });
 };

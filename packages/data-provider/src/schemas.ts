@@ -483,14 +483,17 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  iv: z.string().nullable().optional(),
+  authTag: z.string().nullable().optional(),
+  encryptedKey: z.string().nullable().optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
-      expiresAt: number;
-    } & TAttachmentMetadata);
+  expiresAt: number;
+} & TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
@@ -502,6 +505,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  messageEncryptionIV?: string;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
@@ -780,11 +784,11 @@ export const googleSchema = tConversationSchema
   }));
 
 /**
-   * TODO: Map the following fields:
-  - presence_penalty -> presencePenalty
-  - frequency_penalty -> frequencyPenalty
-  - stop -> stopSequences
-   */
+ * TODO: Map the following fields:
+ - presence_penalty -> presencePenalty
+ - frequency_penalty -> frequencyPenalty
+ - stop -> stopSequences
+ */
 export const googleGenConfigSchema = z
   .object({
     maxOutputTokens: coerceNumber.optional(),

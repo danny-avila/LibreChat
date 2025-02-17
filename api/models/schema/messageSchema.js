@@ -137,6 +137,18 @@ const messageSchema = mongoose.Schema(
     expiredAt: {
       type: Date,
     },
+    iv: {
+      type: String,
+      default: null,
+    },
+    authTag: {
+      type: String,
+      default: null,
+    },
+    encryptedKey: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

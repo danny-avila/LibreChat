@@ -234,6 +234,6 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [submission]);
 }

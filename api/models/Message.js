@@ -2,6 +2,7 @@ const { z } = require('zod');
 const Message = require('./schema/messageSchema');
 const { logger } = require('~/config');
 
+// Validate conversation ID as a UUID (if your conversation IDs follow UUID format)
 const idSchema = z.string().uuid();
 
 /**
@@ -28,8 +29,11 @@ const idSchema = z.string().uuid();
  * @param {string} [params.plugin] - Plugin associated with the message.
  * @param {string[]} [params.plugins] - An array of plugins associated with the message.
  * @param {string} [params.model] - The model used to generate the message.
- * @param {Object} [metadata] - Additional metadata for this operation
- * @param {string} [metadata.context] - The context of the operation
+ * @param {string} [params.iv] - (Optional) Base64-encoded initialization vector for encryption.
+ * @param {string} [params.authTag] - (Optional) Base64-encoded authentication tag from AES-GCM.
+ * @param {string} [params.encryptedKey] - (Optional) Base64-encoded AES key encrypted with RSA.
+ * @param {Object} [metadata] - Additional metadata for this operation.
+ * @param {string} [metadata.context] - The context of the operation.
  * @returns {Promise<TMessage>} The updated or newly inserted message document.
  * @throws {Error} If there is an error in saving the message.
  */
@@ -51,6 +55,9 @@ async function saveMessage(req, params, metadata) {
       ...params,
       user: req.user.id,
       messageId: params.newMessageId || params.messageId,
+      iv: params.iv ?? null,
+      authTag: params.authTag ?? null,
+      encryptedKey: params.encryptedKey ?? null,
     };
 
     if (req?.body?.isTemporary) {
@@ -90,7 +97,12 @@ async function bulkSaveMessages(messages, overrideTimestamp = false) {
     const bulkOps = messages.map((message) => ({
       updateOne: {
         filter: { messageId: message.messageId },
-        update: message,
+        update: {
+          ...message,
+          iv: message.iv ?? null,
+          authTag: message.authTag ?? null,
+          encryptedKey: message.encryptedKey ?? null,
+        },
         timestamps: !overrideTimestamp,
         upsert: true,
       },
@@ -119,14 +131,7 @@ async function bulkSaveMessages(messages, overrideTimestamp = false) {
  * @returns {Promise<Object>} The updated or newly inserted message document.
  * @throws {Error} If there is an error in saving the message.
  */
-async function recordMessage({
-  user,
-  endpoint,
-  messageId,
-  conversationId,
-  parentMessageId,
-  ...rest
-}) {
+async function recordMessage({ user, endpoint, messageId, conversationId, parentMessageId, ...rest }) {
   try {
     // No parsing of convoId as may use threadId
     const message = {
@@ -136,6 +141,9 @@ async function recordMessage({
       conversationId,
       parentMessageId,
       ...rest,
+      iv: rest.iv ?? null,
+      authTag: rest.authTag ?? null,
+      encryptedKey: rest.encryptedKey ?? null,
     };
 
     return await Message.findOneAndUpdate({ user, messageId }, message, {
@@ -190,12 +198,15 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
+    // Ensure encryption fields are explicitly updated (if provided)
+    update.iv = update.iv ?? null;
+    update.authTag = update.authTag ?? null;
+    update.encryptedKey = update.encryptedKey ?? null;
+
     const updatedMessage = await Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
-      {
-        new: true,
-      },
+      { new: true },
     );
 
     if (!updatedMessage) {
@@ -225,11 +236,11 @@ async function updateMessage(req, message, metadata) {
  *
  * @async
  * @function deleteMessagesSince
- * @param {Object} params - The parameters object.
  * @param {Object} req - The request object.
+ * @param {Object} params - The parameters object.
  * @param {string} params.messageId - The unique identifier for the message.
  * @param {string} params.conversationId - The identifier of the conversation.
- * @returns {Promise<Number>} The number of deleted messages.
+ * @returns {Promise<number>} The number of deleted messages.
  * @throws {Error} If there is an error in deleting messages.
  */
 async function deleteMessagesSince(req, { messageId, conversationId }) {
@@ -263,7 +274,6 @@ async function getMessages(filter, select) {
     if (select) {
       return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
     }
-
     return await Message.find(filter).sort({ createdAt: 1 }).lean();
   } catch (err) {
     logger.error('Error getting messages:', err);
@@ -281,10 +291,7 @@ async function getMessages(filter, select) {
  */
 async function getMessage({ user, messageId }) {
   try {
-    return await Message.findOne({
-      user,
-      messageId,
-    }).lean();
+    return await Message.findOne({ user, messageId }).lean();
   } catch (err) {
     logger.error('Error getting message:', err);
     throw err;

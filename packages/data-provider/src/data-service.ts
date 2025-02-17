@@ -774,3 +774,9 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
+
+export const updateUserEncryption = (
+  payload: t.UpdateUserEncryptionRequest,
+): Promise<t.UpdateUserEncryptionResponse> => {
+  return request.put(endpoints.encryption(), payload);
+};
