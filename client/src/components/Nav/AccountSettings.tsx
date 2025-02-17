@@ -29,7 +29,7 @@ function AccountSettings() {
   const name = user?.avatar ?? user?.username ?? '';
 
   const adminPanelHandler = () => {
-    navigate('/datall/add-balance')
+    navigate('/panel-admin/user-management')
   };
 
   return (

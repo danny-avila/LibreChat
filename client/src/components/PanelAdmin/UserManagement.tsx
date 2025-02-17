@@ -34,7 +34,7 @@ interface User {
   balance: number;
 }
 
-const AddBalance: React.FC = () => {
+const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
 
   const [balanceModal, setBalanceModal] = useState(false);
@@ -161,4 +161,4 @@ const AddBalance: React.FC = () => {
   );
 };
 
-export default AddBalance;
+export default UserManagement;

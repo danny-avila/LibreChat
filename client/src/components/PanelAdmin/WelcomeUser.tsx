@@ -31,7 +31,7 @@ const WelcomeUser: React.FC = () => {
 
   const redirectToAddBalanceHandler =()=>{
     
-    navigate('/datall/add-balance' , {replace: true})
+    navigate('/panel-admin/user-management' , {replace: true})
   }
 
   return (
