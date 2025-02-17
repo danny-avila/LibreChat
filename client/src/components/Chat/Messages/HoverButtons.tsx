@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { useRecoilState } from 'recoil';
-import type { TConversation, TMessage } from 'librechat-data-provider';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components/svg';
+import type { TConversation, TMessage, TMessageFeedback } from 'librechat-data-provider';
+import {
+  EditIcon,
+  Clipboard,
+  CheckMark,
+  ContinueIcon,
+  RegenerateIcon,
+  ThumbUpIcon,
+  ThumbDownIcon,
+} from '~/components/svg';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
@@ -20,6 +28,8 @@ type THoverButtons = {
   latestMessage: TMessage | null;
   isLast: boolean;
   index: number;
+  handleFeedback: (rating: 'thumbsUp' | 'thumbsDown', extraPayload?: any) => void;
+  rated: TMessageFeedback | undefined;
 };
 
 export default function HoverButtons({
@@ -34,6 +44,8 @@ export default function HoverButtons({
   handleContinue,
   latestMessage,
   isLast,
+  handleFeedback,
+  rated,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
@@ -63,6 +75,12 @@ export default function HoverButtons({
   }
 
   const { isCreatedByUser, error } = message;
+
+  const safeRated: TMessageFeedback = rated || { rating: null };
+
+  // Use != null so that both null and undefined are treated as "no rating"
+  const currentRating = message.rating != null ? message.rating : safeRated.rating;
+  const disableFeedback = message.rating != null || safeRated.rating != null;
 
   const renderRegenerate = () => {
     if (!regenerateEnabled) {
@@ -113,6 +131,37 @@ export default function HoverButtons({
             'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           )}
         />
+      )}
+      {!isCreatedByUser && (
+        <>
+          {currentRating !== 'thumbsDown' && (
+            <button
+              className={cn(
+                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+              )}
+              onClick={() => handleFeedback('thumbsUp')}
+              type="button"
+              title={localize('com_ui_feedback_positive')}
+              disabled={disableFeedback}
+            >
+              <ThumbUpIcon size="19" bold={currentRating === 'thumbsUp'} />
+            </button>
+          )}
+
+          {currentRating !== 'thumbsUp' && (
+            <button
+              className={cn(
+                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+              )}
+              onClick={() => handleFeedback('thumbsDown')}
+              type="button"
+              title={localize('com_ui_feedback_negative')}
+              disabled={disableFeedback}
+            >
+              <ThumbDownIcon size="19" bold={currentRating === 'thumbsDown'} />
+            </button>
+          )}
+        </>
       )}
       {isEditableEndpoint && (
         <button

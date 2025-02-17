@@ -792,6 +792,8 @@
   "com_ui_version_var": "Version {{0}}",
   "com_ui_versions": "Versions",
   "com_ui_view_source": "View source chat",
+  "com_ui_feedback_positive": "Good response",
+  "com_ui_feedback_negative": "Bad response",
   "com_ui_write": "Writing",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
