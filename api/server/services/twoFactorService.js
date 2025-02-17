@@ -1,5 +1,7 @@
 const { sign } = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
+const { hashBackupCode } = require('~/server/utils/crypto');
+const { updateUser } = require('~/models/userMethods');
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -162,10 +164,42 @@ const generateBackupCodes = async (count = 10) => {
   return { plainCodes, codeObjects };
 };
 
+/**
+ * Verifies a backup code and updates the user's backup codes if valid
+ * @param {Object} params
+ * @param {TUser | undefined} [params.user] - The user object
+ * @param {string | undefined} [params.backupCode] - The backup code to verify
+ * @returns {Promise<boolean>} - Whether the backup code was valid
+ */
+const verifyBackupCode = async ({ user, backupCode }) => {
+  if (!backupCode || !user || !Array.isArray(user.backupCodes)) {
+    return false;
+  }
+
+  const hashedInput = await hashBackupCode(backupCode.trim());
+  const matchingCode = user.backupCodes.find(
+    (codeObj) => codeObj.codeHash === hashedInput && !codeObj.used,
+  );
+
+  if (matchingCode) {
+    const updatedBackupCodes = user.backupCodes.map((codeObj) =>
+      codeObj.codeHash === hashedInput && !codeObj.used
+        ? { ...codeObj, used: true, usedAt: new Date() }
+        : codeObj,
+    );
+
+    await updateUser(user._id, { backupCodes: updatedBackupCodes });
+    return true;
+  }
+
+  return false;
+};
+
 module.exports = {
-  generateTOTPSecret,
-  generateTOTP,
   verifyTOTP,
+  generateTOTP,
+  verifyBackupCode,
+  generateTOTPSecret,
   generateBackupCodes,
   generate2FATempToken,
 };
