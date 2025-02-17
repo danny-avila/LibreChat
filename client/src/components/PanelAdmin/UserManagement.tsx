@@ -25,6 +25,9 @@ import AddUserModal from './AddUserModal';
 import DeleteUserModal from './DeleteUserModal';
 import EditUserModal from './EditUserModal';
 // import Modal from './Modal';
+import useAuthRedirect from '~/routes/useAuthRedirect';
+import { useAuthContext } from '~/hooks';
+import { useNavigate } from 'react-router-dom';
 
 interface User {
   name: string;
@@ -46,6 +49,9 @@ const UserManagement: React.FC = () => {
   const [deleteUserModal, setDeleteUserModal] = useState(false);
   const [editUserModal, setEditUserModal] = useState(false);
 
+  const { user } = useAuthContext();
+  const navigate = useNavigate();
+
   const getUsers = async () => {
     const res = await axios.get('http://localhost:3090/api/getUsers');
 
@@ -61,9 +67,26 @@ const UserManagement: React.FC = () => {
     setUsers(filteredUsers);
   };
 
+  // useEffect(() => {
+  //   getUsers();
+  // }, []);
+
+  // useEffect(()=>{
+  //   console.log(user )
+  //   if(user !== undefined && user.role !== "ADMIN"){
+  //     navigate('/c')
+  //   }
+  // },[])
+
   useEffect(() => {
-    getUsers();
-  }, []);
+    if (user && user.role !== 'ADMIN') {
+      navigate('/c');
+    } else if (!user) {
+      navigate('/login');
+    } else {
+      getUsers();
+    }
+  }, [user, navigate]);
 
   const addBalanceHandler = async (user: User) => {
     setBalanceModal(true);

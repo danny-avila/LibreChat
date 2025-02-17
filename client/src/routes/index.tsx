@@ -53,24 +53,7 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  {
-    path: 'panel-admin',
-    element: <PanelAdmin /> ,
-    children: [
-      {
-        path: 'welcome',
-        element: <WelcomeUser />,
-      },
-      {
-        path: 'user-management',
-        element: <UserManagement />,
-      },
-      {
-        path: 'register-with-role',
-        element: <RegisterWithRole />,
-      },
-    ],
-  },
+  
   {
     path: 'verify',
     element: <VerifyEmail />,
@@ -90,6 +73,28 @@ export const router = createBrowserRouter([
           },
         ],
       },
+
+
+
+      {
+        path: 'panel-admin',
+        element: <PanelAdmin /> ,
+        children: [
+          {
+            path: 'welcome',
+            element: <WelcomeUser />,
+          },
+          {
+            path: 'user-management',
+            element: <UserManagement />,
+          },
+          {
+            path: 'register-with-role',
+            element: <RegisterWithRole />,
+          },
+        ],
+      },
+
       dashboardRoutes,
       {
         path: '/',
