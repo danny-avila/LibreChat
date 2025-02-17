@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { Providers } = require('@librechat/agents');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
 const { inputSchema, logAxiosError, extractBaseURL, processModelData } = require('~/utils');
@@ -57,7 +58,7 @@ const fetchModels = async ({
     return models;
   }
 
-  if (name && name.toLowerCase().startsWith('ollama')) {
+  if (name && name.toLowerCase().startsWith(Providers.OLLAMA)) {
     return await OllamaClient.fetchModels(baseURL);
   }
 
