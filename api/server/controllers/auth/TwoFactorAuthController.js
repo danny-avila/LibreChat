@@ -32,7 +32,7 @@ const verify2FA = async (req, res) => {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await getUserById(payload.userId, '+totpSecret');
+    const user = await getUserById(payload.userId);
     // Ensure that the user exists and has backup codes (i.e. 2FA enabled)
     if (!user || !(user.backupCodes && user.backupCodes.length > 0)) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
