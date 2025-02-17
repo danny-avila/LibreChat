@@ -9,6 +9,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import Paper from '@mui/material/Paper';
@@ -141,15 +142,21 @@ const UserManagement: React.FC = () => {
                   <TableCell>{item.role}</TableCell>
                   <TableCell>{item.balance}</TableCell>
                   <TableCell>
-                    <IconButton onClick={() => deleteUserHandler(item)} >
-                      <DeleteIcon />
-                    </IconButton>
-                    <IconButton onClick={() => editUserHandler(item)} >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => addBalanceHandler(item)}>
-                      <AddIcon />
-                    </IconButton>
+                    <Tooltip title="delete user">
+                      <IconButton onClick={() => deleteUserHandler(item)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="edit user">
+                      <IconButton onClick={() => editUserHandler(item)}>
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="add balance">
+                      <IconButton onClick={() => addBalanceHandler(item)}>
+                        <AddIcon />
+                      </IconButton>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
