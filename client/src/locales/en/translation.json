@@ -87,6 +87,7 @@
   "com_auth_email_verification_redirecting": "Redirecting in {{0}} seconds...",
   "com_auth_email_verification_resend_prompt": "Didn't receive the email?",
   "com_auth_email_verification_success": "Email verified successfully",
+  "com_auth_email_verifying_ellipsis": "Verifying...",
   "com_auth_error_create": "There was an error attempting to register your account. Please try again.",
   "com_auth_error_invalid_reset_token": "This password reset token is no longer valid.",
   "com_auth_error_login": "Unable to login with the information provided. Please check your credentials and try again.",

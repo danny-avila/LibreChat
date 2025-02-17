@@ -108,14 +108,11 @@ export const useVerifyTwoFactorMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(
-    (payload: t.TVerify2FARequest) => dataService.verifyTwoFactor(payload),
-    {
-      onSuccess: (data) => {
-        queryClient.setQueryData([QueryKeys.user, '2fa'], data);
-      },
+  return useMutation((payload: t.TVerify2FARequest) => dataService.verifyTwoFactor(payload), {
+    onSuccess: (data) => {
+      queryClient.setQueryData([QueryKeys.user, '2fa'], data);
     },
-  );
+  });
 };
 
 export const useConfirmTwoFactorMutation = (): UseMutationResult<
@@ -125,14 +122,11 @@ export const useConfirmTwoFactorMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(
-    (payload: t.TVerify2FARequest) => dataService.confirmTwoFactor(payload),
-    {
-      onSuccess: (data) => {
-        queryClient.setQueryData([QueryKeys.user, '2fa'], data);
-      },
+  return useMutation((payload: t.TVerify2FARequest) => dataService.confirmTwoFactor(payload), {
+    onSuccess: (data) => {
+      queryClient.setQueryData([QueryKeys.user, '2fa'], data);
     },
-  );
+  });
 };
 
 export const useDisableTwoFactorMutation = (): UseMutationResult<
@@ -163,18 +157,17 @@ export const useRegenerateBackupCodesMutation = (): UseMutationResult<
   });
 };
 
-export const useVerifyTwoFactorTempMutation = (): UseMutationResult<
-  t.TVerify2FATempResponse,
-  unknown,
-  t.TVerify2FATempRequest,
-  unknown
-> => {
+export const useVerifyTwoFactorTempMutation = (
+  options?: t.MutationOptions<t.TVerify2FATempResponse, t.TVerify2FATempRequest, unknown, unknown>,
+): UseMutationResult<t.TVerify2FATempResponse, unknown, t.TVerify2FATempRequest, unknown> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TVerify2FATempRequest) => dataService.verifyTwoFactorTemp(payload),
     {
-      onSuccess: (data) => {
+      ...(options || {}),
+      onSuccess: (data, ...args) => {
         queryClient.setQueryData([QueryKeys.user, '2fa'], data);
+        options?.onSuccess?.(data, ...args);
       },
     },
   );

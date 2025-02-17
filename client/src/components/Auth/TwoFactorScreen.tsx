@@ -3,8 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot, Label } from '~/components';
-import { useLocalize } from '~/hooks';
 import { useVerifyTwoFactorTempMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 interface VerifyPayload {
   tempToken: string;
@@ -28,8 +29,28 @@ const TwoFactorScreen: React.FC = React.memo(() => {
     formState: { errors },
   } = useForm<TwoFactorFormInputs>();
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const [useBackup, setUseBackup] = useState<boolean>(false);
-  const { mutate: verifyTempMutate, isLoading } = useVerifyTwoFactorTempMutation();
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const { mutate: verifyTempMutate } = useVerifyTwoFactorTempMutation({
+    onSuccess: (result) => {
+      if (result.token != null && result.token !== '') {
+        window.location.href = '/';
+      }
+    },
+    onMutate: () => {
+      setIsLoading(true);
+    },
+    onError: (error: unknown) => {
+      setIsLoading(false);
+      const err = error as { response?: { data?: { message?: unknown } } };
+      const errorMsg =
+        typeof err.response?.data?.message === 'string'
+          ? err.response.data.message
+          : 'Error verifying 2FA';
+      showToast({ message: errorMsg, status: 'error' });
+    },
+  });
 
   const onSubmit = useCallback(
     (data: TwoFactorFormInputs) => {
@@ -39,21 +60,7 @@ const TwoFactorScreen: React.FC = React.memo(() => {
       } else if (data.token != null && data.token !== '') {
         payload.token = data.token;
       }
-      verifyTempMutate(payload, {
-        onSuccess: (result) => {
-          if (result.token != null && result.token !== '') {
-            window.location.href = '/';
-          }
-        },
-        onError: (error: unknown) => {
-          const err = error as { response?: { data?: { message?: unknown } } };
-          const errorMsg =
-            typeof err.response?.data?.message === 'string'
-              ? err.response.data.message
-              : 'Error verifying 2FA';
-          alert(errorMsg);
-        },
-      });
+      verifyTempMutate(payload);
     },
     [tempToken, useBackup, verifyTempMutate],
   );
@@ -133,13 +140,13 @@ const TwoFactorScreen: React.FC = React.memo(() => {
         )}
         <div className="flex items-center justify-between">
           <button
+            type="submit"
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
-            type="submit"
             disabled={isLoading}
             className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-80 dark:bg-green-600 dark:hover:bg-green-700"
           >
-            {isLoading ? 'Verifying...' : 'Verify'}
+            {isLoading ? localize('com_auth_email_verifying_ellipsis') : localize('com_ui_verify')}
           </button>
         </div>
         <div className="mt-4 flex justify-center">
