@@ -28,7 +28,8 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@ariakit/react": "^0.4.11",
+    "@ariakit/react": "^0.4.15",
+    "@ariakit/react-core": "^0.4.15",
     "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
@@ -63,6 +64,7 @@
     "framer-motion": "^11.5.4",
     "html-to-image": "^1.11.11",
     "i18next": "^24.2.2",
+    "i18next-browser-languagedetector": "^8.0.3",
     "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
