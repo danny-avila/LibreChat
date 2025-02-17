@@ -30,7 +30,7 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
   const addBalanceHandler = async () => {
     console.log(balance);
 
-    const res = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
+    const res = await axios.post('http://localhost:3080/api/addBalance/', {
       balance: balance,
       id: props.userId,
     });

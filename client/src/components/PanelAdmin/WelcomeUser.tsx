@@ -9,7 +9,7 @@ const WelcomeUser: React.FC = () => {
   const addBalanceHandler = async () => {
     // const response = await axios.post('http://localhost:3090/api/balance' , 20000);
 
-    // const response = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
+    // const response = await axios.post('http://localhost:3080/api/addBalance/', {
     //   balance: 30000,
     // });
     // console.log('add balance', response);
@@ -18,7 +18,7 @@ const WelcomeUser: React.FC = () => {
     const response = await axios.get('http://localhost:3080/api/getUsers');
     console.log('Users you fetch', response);
 
-    const res = await axios.post('http://localhost:3080/api/addBalance/add_balance', {
+    const res = await axios.post('http://localhost:3080/api/addBalance/', {
       balance: 100,id: "679757526bca82593afec669"
     });
     console.log('add balance:', res);

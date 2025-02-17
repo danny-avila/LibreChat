@@ -135,7 +135,6 @@ const UserManagement: React.FC = () => {
         user={selectedUser}
         refreshUsers={getUsers}
       />
-
       {/* delete-user modal */}
       <DeleteUserModal
         open={deleteUserModal}
