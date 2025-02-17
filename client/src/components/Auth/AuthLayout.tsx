@@ -85,7 +85,8 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          {(pathname.includes('login') || pathname.includes('register')) && (
+          {!pathname.includes('2fa') &&
+            (pathname.includes('login') || pathname.includes('register')) && (
             <SocialLoginRender startupConfig={startupConfig} />
           )}
         </div>
