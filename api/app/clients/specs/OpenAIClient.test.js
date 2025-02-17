@@ -249,6 +249,34 @@ describe('OpenAIClient', () => {
       expect(client.completionsUrl).toBe('https://example.com/completions');
       expect(client.langchainProxy).toBe('https://example.com/completions');
     });
+
+    it('should set default timeout and maxRetries when creating OpenAI client', async () => {
+      const mockMessages = [{ role: 'user', content: 'test' }];
+      await client.chatCompletion({ payload: mockMessages });
+      expect(OpenAI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeout: 10 * 60 * 1000,
+          maxRetries: 2,
+        }),
+      );
+    });
+
+    it('should use custom timeout and maxRetries from options when provided', async () => {
+      const customOptions = {
+        ...defaultOptions,
+        timeout: 5000,
+        maxRetries: 3,
+      };
+      const customClient = new OpenAIClient('test-api-key', customOptions);
+      const mockMessages = [{ role: 'user', content: 'test' }];
+      await customClient.chatCompletion({ payload: mockMessages });
+      expect(OpenAI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeout: 5000,
+          maxRetries: 3,
+        }),
+      );
+    });
   });
 
   describe('setOptions with Simplified Azure Integration', () => {
