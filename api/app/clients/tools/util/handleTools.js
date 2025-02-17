@@ -17,6 +17,7 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  WebNavigator,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -185,6 +186,7 @@ const loadTools = async ({
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
+    web_navigator: WebNavigator,
     wolfram: StructuredWolfram,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
