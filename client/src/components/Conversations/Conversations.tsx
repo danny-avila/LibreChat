@@ -1,8 +1,8 @@
 import { useMemo, memo } from 'react';
 import { parseISO, isToday } from 'date-fns';
 import { TConversation } from 'librechat-data-provider';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { groupConversationsByDate } from '~/utils';
-import { useLocalize } from '~/hooks';
 import Convo from './Convo';
 
 const Conversations = ({
@@ -41,8 +41,7 @@ const Conversations = ({
                   paddingLeft: '10px',
                 }}
               >
-                {/* eslint-disable-next-line @typescript-eslint/strict-boolean-expressions */}
-                {localize(groupName) || groupName}
+                {localize(groupName as TranslationKeys) || groupName}
               </div>
               {convos.map((convo, i) => (
                 <Convo

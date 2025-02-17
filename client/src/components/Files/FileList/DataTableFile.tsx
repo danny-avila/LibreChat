@@ -244,9 +244,10 @@ export default function DataTableFile<TData, TValue>({
       <div className="ml-4 mr-4 mt-4 flex h-auto items-center justify-end space-x-2 py-4 sm:ml-0 sm:mr-0 sm:h-0">
         <div className="text-muted-foreground ml-2 flex-1 text-sm">
           {localize(
-            'com_files_number_selected',
-            `${table.getFilteredSelectedRowModel().rows.length}`,
-            `${table.getFilteredRowModel().rows.length}`,
+            'com_files_number_selected', {
+              0: `${table.getFilteredSelectedRowModel().rows.length}`,
+              1: `${table.getFilteredRowModel().rows.length}`,
+            },
           )}
         </div>
         <Button

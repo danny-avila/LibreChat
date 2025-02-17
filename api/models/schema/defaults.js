@@ -117,6 +117,10 @@ const conversationPreset = {
   max_tokens: {
     type: Number,
   },
+  /** omni models only */
+  reasoning_effort: {
+    type: String,
+  },
 };
 
 const agentOptions = {
@@ -165,12 +169,6 @@ const agentOptions = {
   frequency_penalty: {
     type: Number,
     required: false,
-  },
-  context: {
-    type: String,
-  },
-  systemMessage: {
-    type: String,
   },
 };
 

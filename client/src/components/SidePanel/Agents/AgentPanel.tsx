@@ -120,6 +120,7 @@ export default function AgentPanel({
 
       const {
         name,
+        artifacts,
         description,
         instructions,
         model: _model,
@@ -139,6 +140,7 @@ export default function AgentPanel({
           agent_id,
           data: {
             name,
+            artifacts,
             description,
             instructions,
             model,
@@ -162,6 +164,7 @@ export default function AgentPanel({
 
       create.mutate({
         name,
+        artifacts,
         description,
         instructions,
         model,
@@ -184,7 +187,7 @@ export default function AgentPanel({
 
   const canEditAgent = useMemo(() => {
     const canEdit =
-      agentQuery.data?.isCollaborative ?? false
+      (agentQuery.data?.isCollaborative ?? false)
         ? true
         : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
 

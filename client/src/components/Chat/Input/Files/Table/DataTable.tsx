@@ -220,8 +220,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <span className="hidden sm:inline">
             {localize(
               'com_files_number_selected',
-              `${table.getFilteredSelectedRowModel().rows.length}`,
-              `${table.getFilteredRowModel().rows.length}`,
+              {
+                0: `${table.getFilteredSelectedRowModel().rows.length}`,
+                1: `${table.getFilteredRowModel().rows.length}`,
+              },
             )}
           </span>
           <span className="sm:hidden">

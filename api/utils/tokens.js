@@ -49,11 +49,14 @@ const cohereModels = {
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
   gemini: 30720, // -2048 from max
-  'gemini-pro-vision': 12288, // -4096 from max
-  'gemini-exp': 8000,
-  'gemini-2.0-flash-thinking-exp': 30720, // -2048 from max
-  'gemini-2.0': 1048576,
-  'gemini-1.5': 1048576,
+  'gemini-pro-vision': 12288,
+  'gemini-exp': 2000000,
+  'gemini-2.0': 2000000,
+  'gemini-2.0-flash': 1000000,
+  'gemini-2.0-flash-lite': 1000000,
+  'gemini-1.5': 1000000,
+  'gemini-1.5-flash': 1000000,
+  'gemini-1.5-flash-8b': 1000000,
   'text-bison-32k': 32758, // -10 from max
   'chat-bison-32k': 32758, // -10 from max
   'code-bison-32k': 32758, // -10 from max

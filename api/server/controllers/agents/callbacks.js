@@ -199,6 +199,22 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
         aggregateContent({ event, data });
       },
     },
+    [GraphEvents.ON_REASONING_DELTA]: {
+      /**
+       * Handle ON_REASONING_DELTA event.
+       * @param {string} event - The event name.
+       * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
+       */
+      handle: (event, data, metadata) => {
+        if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
+        aggregateContent({ event, data });
+      },
+    },
   };
 
   return handlers;

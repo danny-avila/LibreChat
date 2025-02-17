@@ -101,6 +101,17 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   const basicToolInstances = [new Calculator(), ...createYouTubeTools({ override: true })];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+    let toolName = formattedTool[Tools.function].name;
+    toolName = toolkits.some((toolkit) => toolName.startsWith(toolkit.pluginKey))
+      ? toolName.split('_')[0]
+      : toolName;
+    if (filter.has(toolName) && included.size === 0) {
+      continue;
+    }
+
+    if (included.size > 0 && !included.has(toolName)) {
+      continue;
+    }
     tools.push(formattedTool);
   }
 
@@ -398,11 +409,12 @@ async function processRequiredActions(client, requiredActions) {
  * Processes the runtime tool calls and returns the tool classes.
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
+ * @param {ServerResponse} params.res - The request object.
  * @param {Agent} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
-async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
+async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   }
@@ -535,6 +547,8 @@ async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
 
       if (requestBuilder) {
         const tool = await createActionTool({
+          req,
+          res,
           action: actionSet,
           requestBuilder,
           zodSchema,

@@ -217,7 +217,7 @@ export default function useEventHandlers({
           const parentId = requestMessage.parentMessageId;
           if (
             parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase()?.includes('new chat') ?? false)
+            (title?.toLowerCase().includes('new chat') ?? false)
           ) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);
@@ -275,7 +275,7 @@ export default function useEventHandlers({
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
-      const { messages, userMessage, isRegenerate = false } = submission;
+      const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
       const initialResponse = {
         ...submission.initialResponse,
         parentMessageId: userMessage.messageId,
@@ -301,7 +301,7 @@ export default function useEventHandlers({
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
           if (
             parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase()?.includes('new chat') ?? false)
+            (title?.toLowerCase().includes('new chat') ?? false)
           ) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);
@@ -317,6 +317,9 @@ export default function useEventHandlers({
           return update;
         });
 
+        if (isTemporary) {
+          return;
+        }
         queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
           if (!convoData) {
             return convoData;
@@ -357,7 +360,12 @@ export default function useEventHandlers({
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
       const { requestMessage, responseMessage, conversation, runMessages } = data;
-      const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
+      const {
+        messages,
+        conversation: submissionConvo,
+        isRegenerate = false,
+        isTemporary = false,
+      } = submission;
 
       setShowStopButton(false);
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
@@ -401,6 +409,7 @@ export default function useEventHandlers({
       if (
         genTitle &&
         isNewConvo &&
+        !isTemporary &&
         requestMessage &&
         requestMessage.parentMessageId === Constants.NO_PARENT
       ) {

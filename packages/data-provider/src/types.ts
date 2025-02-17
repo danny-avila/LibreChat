@@ -44,6 +44,7 @@ export type TPayload = Partial<TMessage> &
     isContinued: boolean;
     conversationId: string | null;
     messages?: TMessages;
+    isTemporary: boolean;
   };
 
 export type TSubmission = {
@@ -53,6 +54,7 @@ export type TSubmission = {
   userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;
+  isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
   conversationId?: string;
@@ -80,6 +82,7 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
+// TODO `label` needs to be changed to the proper `TranslationKeys`
 export type TCategory = {
   id?: string;
   value: string;

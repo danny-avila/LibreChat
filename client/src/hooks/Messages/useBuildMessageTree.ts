@@ -20,19 +20,19 @@ export default function useBuildMessageTree() {
     recursive = false,
   }: {
     messageId: string | null | undefined;
-    message: TMessage | null;
-    messages: TMessage[] | null;
+    message: Partial<TMessage> | null;
+    messages: Array<Partial<TMessage> | undefined> | null;
     branches?: boolean;
     recursive?: boolean;
-  }): Promise<TMessage | TMessage[]> => {
-    let children: TMessage[] = [];
-    if (messages?.length) {
+  }): Promise<TMessage | Array<Partial<TMessage> | undefined>> => {
+    let children: Array<Partial<TMessage> | undefined> = [];
+    if (messages?.length != null && messages.length > 0) {
       if (branches) {
         for (const message of messages) {
           children.push(
             (await buildMessageTree({
               messageId: message?.messageId,
-              message: message,
+              message: message as TMessage,
               messages: message?.children || [],
               branches,
               recursive,
@@ -41,7 +41,7 @@ export default function useBuildMessageTree() {
         }
       } else {
         let message = messages[0];
-        if (messages?.length > 1) {
+        if (messages.length > 1) {
           const siblingIdx = await getSiblingIdx(messageId);
           message = messages[messages.length - siblingIdx - 1];
         }
@@ -49,7 +49,7 @@ export default function useBuildMessageTree() {
         children = [
           (await buildMessageTree({
             messageId: message?.messageId,
-            message: message,
+            message: message as TMessage,
             messages: message?.children || [],
             branches,
             recursive,
@@ -59,16 +59,16 @@ export default function useBuildMessageTree() {
     }
 
     if (recursive && message) {
-      return { ...message, children: children };
+      return { ...(message as TMessage), children: children as TMessage[] };
     } else {
       let ret: TMessage[] = [];
       if (message) {
         const _message = { ...message };
         delete _message.children;
-        ret = [_message];
+        ret = [_message as TMessage];
       }
       for (const child of children) {
-        ret = ret.concat(child);
+        ret = ret.concat(child as TMessage);
       }
       return ret;
     }
