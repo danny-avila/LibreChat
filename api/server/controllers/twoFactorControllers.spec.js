@@ -1,3 +1,16 @@
+const crypto = require('crypto');
+const twoFactorControllers = require('~/server/controllers/twoFactorController');
+const {
+  enable2FAController,
+  verify2FAController,
+  confirm2FAController,
+  disable2FAController,
+  regenerateBackupCodesController,
+} = twoFactorControllers;
+const twoFactorService = require('~/server/services/twoFactorService');
+const models = require('~/models');
+const { logger } = require('~/config');
+
 jest.mock('~/server/services/twoFactorService', () => ({
   generateTOTPSecret: jest.fn(),
   generateBackupCodes: jest.fn(),
@@ -18,19 +31,6 @@ jest.mock('~/config', () => ({
     error: jest.fn(),
   },
 }));
-
-const crypto = require('crypto');
-const twoFactorControllers = require('../../server/controllers/twoFactorController');
-const {
-  enable2FAController,
-  verify2FAController,
-  confirm2FAController,
-  disable2FAController,
-  regenerateBackupCodesController,
-} = twoFactorControllers;
-const twoFactorService = require('../../server/services/twoFactorService');
-const models = require('~/models');
-const { logger } = require('../../config');
 
 describe('2FA Controllers', () => {
   let req, res;
