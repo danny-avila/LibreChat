@@ -18,6 +18,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/app/clients/tools/util');
 const { getAgent } = require('~/models/Agent');
+const { getAssistant } = require('~/models/Assistant');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -78,7 +79,7 @@ router.delete('/', async (req, res) => {
       });
     }
 
-    /* Handle entity unlinking even if no valid files to delete */
+    /* Handle agent unlinking even if no valid files to delete */
     if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
       const agent = await getAgent({
         id: req.body.agent_id,
@@ -88,7 +89,21 @@ router.delete('/', async (req, res) => {
       const agentFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
       await processDeleteRequest({ req, files: agentFiles });
-      res.status(200).json({ message: 'File associations removed successfully' });
+      res.status(200).json({ message: 'File associations removed successfully from agent' });
+      return;
+    }
+
+    /* Handle assistant unlinking even if no valid files to delete */
+    if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
+      const assistant = await getAssistant({
+        id: req.body.assistant_id,
+      });
+
+      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
+
+      await processDeleteRequest({ req, files: assistantFiles });
+      res.status(200).json({ message: 'File associations removed successfully from assistant' });
       return;
     }
 
