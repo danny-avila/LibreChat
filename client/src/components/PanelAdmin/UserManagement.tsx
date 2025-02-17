@@ -49,6 +49,8 @@ const UserManagement: React.FC = () => {
   const [deleteUserModal, setDeleteUserModal] = useState(false);
   const [editUserModal, setEditUserModal] = useState(false);
 
+  const [loading, setLoading] = useState(true);
+
   const { user } = useAuthContext();
   const navigate = useNavigate();
 
@@ -78,15 +80,39 @@ const UserManagement: React.FC = () => {
   //   }
   // },[])
 
+
+  // useEffect(() => {
+  //   if (user && user.role !== 'ADMIN') {
+  //     navigate('/c');
+  //   } else if (!user) {
+  //     navigate('/login');
+  //   } else {
+  //     getUsers();
+  //   }
+  // }, [user, navigate]);
+
+
+
   useEffect(() => {
-    if (user && user.role !== 'ADMIN') {
-      navigate('/c');
-    } else if (!user) {
-      navigate('/login');
-    } else {
-      getUsers();
+    const checkUser = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setLoading(false); 
+    };
+
+    checkUser();
+  }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user) {
+        navigate('/login');
+      } else if (user.role !== 'ADMIN') {
+        navigate('/c');
+      } else {
+        getUsers(); 
+      }
     }
-  }, [user, navigate]);
+  }, [loading, user, navigate]);
 
   const addBalanceHandler = async (user: User) => {
     setBalanceModal(true);
@@ -105,6 +131,13 @@ const UserManagement: React.FC = () => {
     setEditUserModal(true);
     setSelectedUser(user);
   };
+
+
+
+  if (loading) {
+    return <p className='flex justify-center items-center'>Loading...</p>; 
+  }
+
 
   return (
     <>
