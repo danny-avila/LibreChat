@@ -582,6 +582,7 @@ export enum KnownEndpoints {
   mlx = 'mlx',
   ollama = 'ollama',
   openrouter = 'openrouter',
+  novitaai = 'novitaai',
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
