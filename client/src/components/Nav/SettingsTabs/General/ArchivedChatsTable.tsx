@@ -25,7 +25,6 @@ import { useToastContext } from '~/Providers';
 import { formatDate } from '~/utils';
 
 const DEFAULT_PARAMS: ConversationListParams = {
-  pageSize: 25,
   isArchived: true,
   sortBy: 'createdAt',
   sortDirection: 'desc',
@@ -49,7 +48,6 @@ export default function ArchivedChatsTable({
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
-      enabled: isOpen,
       staleTime: 0,
       cacheTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
@@ -89,7 +87,7 @@ export default function ArchivedChatsTable({
     if (!data?.pages) {
       return [];
     }
-    return data.pages.flatMap((page) => page.conversations.filter(Boolean));
+    return data.pages.flatMap((page) => page?.conversations?.filter(Boolean) ?? []);
   }, [data?.pages]);
 
   const deleteMutation = useDeleteConversationMutation({
@@ -259,7 +257,7 @@ export default function ArchivedChatsTable({
             </OGDialogTitle>
           </OGDialogHeader>
           <div className="flex justify-end gap-4 pt-4">
-            <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>
+            <Button aria-label="cancel" variant="outline" onClick={() => setIsDeleteOpen(false)}>
               {localize('com_ui_cancel')}
             </Button>
             <Button

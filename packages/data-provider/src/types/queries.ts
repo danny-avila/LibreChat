@@ -13,7 +13,6 @@ export type Conversation = {
 
 export type ConversationListParams = {
   cursor?: string;
-  pageSize: number;
   isArchived?: boolean;
   sortBy?: 'title' | 'createdAt' | 'updatedAt';
   sortDirection?: 'asc' | 'desc';

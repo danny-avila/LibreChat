@@ -290,6 +290,10 @@ module.exports = {
       const conversations = await Conversation.find(userFilter).select('conversationId');
       const conversationIds = conversations.map((c) => c.conversationId);
 
+      if (!conversationIds.length) {
+        throw new Error('Conversation not found or already deleted.');
+      }
+
       const deleteConvoResult = await Conversation.deleteMany(userFilter);
 
       const deleteMessagesResult = await deleteMessages({
