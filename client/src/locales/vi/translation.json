@@ -205,7 +205,6 @@
   "com_ui_enter": "Nhập",
   "com_ui_examples": "Ví dụ",
   "com_ui_happy_birthday": "Đây là sinh nhật đầu tiên của tôi!",
-  "com_ui_import": "Nhập khẩu",
   "com_ui_import_conversation_error": "Đã xảy ra lỗi khi nhập khẩu cuộc trò chuyện của bạn",
   "com_ui_import_conversation_info": "Nhập khẩu cuộc trò chuyện từ một tệp JSON",
   "com_ui_import_conversation_success": "Đã nhập khẩu cuộc trò chuyện thành công",

@@ -614,7 +614,6 @@
   "com_ui_hide_qr": "QR-Code ausblenden",
   "com_ui_host": "Host",
   "com_ui_image_gen": "Bildgenerierung",
-  "com_ui_import": "Importieren",
   "com_ui_import_conversation_error": "Beim Importieren Ihrer Konversationen ist ein Fehler aufgetreten",
   "com_ui_import_conversation_file_type_error": "Nicht unterstützter Importtyp",
   "com_ui_import_conversation_info": "Konversationen aus einer JSON-Datei importieren",

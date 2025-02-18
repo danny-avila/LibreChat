@@ -458,7 +458,6 @@
   "com_ui_happy_birthday": "On 1. syntymäpäiväni!",
   "com_ui_host": "Host",
   "com_ui_image_gen": "Kuvanluonti",
-  "com_ui_import": "Tuo",
   "com_ui_import_conversation_error": "Keskustelujesi tuonnissa tapahtui virhe",
   "com_ui_import_conversation_file_type_error": "Tiedostotyyppi ei ole tuettu tuonnissa",
   "com_ui_import_conversation_info": "Tuo keskusteluja JSON-tiedostosta",

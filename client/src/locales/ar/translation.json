@@ -584,7 +584,6 @@
   "com_ui_happy_birthday": "إنه عيد ميلادي الأول!",
   "com_ui_host": "مُضيف",
   "com_ui_image_gen": "توليد الصور",
-  "com_ui_import": "استيراد",
   "com_ui_import_conversation_error": "حدث خطأ أثناء استيراد محادثاتك",
   "com_ui_import_conversation_file_type_error": "نوع الملف غير مدعوم للاستيراد",
   "com_ui_import_conversation_info": "استيراد محادثات من ملف JSON",

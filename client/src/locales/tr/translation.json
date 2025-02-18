@@ -602,7 +602,6 @@
   "com_ui_hide_qr": "QR Kodunu Gizle",
   "com_ui_host": "Host",
   "com_ui_image_gen": "Görüntü Oluştur",
-  "com_ui_import": "İçe Aktar",
   "com_ui_import_conversation_error": "Konuşmalarınızı içe aktarma sırasında bir hata oluştu",
   "com_ui_import_conversation_file_type_error": "Desteklenmeyen içe aktarma türü",
   "com_ui_import_conversation_info": "JSON dosyasından konuşmaları içe aktar",

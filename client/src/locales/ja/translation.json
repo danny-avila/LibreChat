@@ -584,7 +584,6 @@
   "com_ui_happy_birthday": "初めての誕生日です！",
   "com_ui_host": "ホスト",
   "com_ui_image_gen": "画像生成",
-  "com_ui_import": "インポート",
   "com_ui_import_conversation_error": "会話のインポート時にエラーが発生しました",
   "com_ui_import_conversation_file_type_error": "サポートされていないインポート形式です",
   "com_ui_import_conversation_info": "JSONファイルから会話をインポートする",
