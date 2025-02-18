@@ -360,7 +360,7 @@ const OAuth = () => {
         className={inputClasses}
         {...register('oauth_client_secret', { required: false })}
       />
-      {oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow && (
+      {(oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow || oauth_flow == null)   && (
         <>
         <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
         <input
