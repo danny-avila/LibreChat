@@ -5,6 +5,7 @@ import {
   FormControl,
   FormHelperText,
   Modal,
+  Stack,
   TextField,
   Typography,
 } from '@mui/material';
@@ -82,6 +83,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
 
   const submitHandler = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    console.log('sub')
 
     if (
       fullName.length &&
@@ -130,7 +132,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
     <>
       <Modal open={props.open} onClose={props.onClose}>
         <Box sx={{ ...style }}>
-          <Typography id="modal-modal-title" variant="h6" sx={{color:'#2d6a4f' ,mb:2}}>
+          <Typography id="modal-modal-title" variant="h6" sx={{ color: '#2d6a4f', mb: 2 }}>
             Add User
           </Typography>
 
@@ -143,7 +145,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={fullNameHandler}
                   value={fullName}
                   error={fullNameError.length !== 0}
-                  sx={{maxWidth: '320px'}}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{fullNameError}</FormHelperText>
               </FormControl>
@@ -154,7 +156,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={emailHandler}
                   value={email}
                   error={emailError.length !== 0}
-                  sx={{maxWidth: '320px'}}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{emailError}</FormHelperText>
               </FormControl>
@@ -165,7 +167,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={passwordHandler}
                   value={password}
                   error={passwordError.length !== 0}
-                  sx={{maxWidth: '320px'}}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{passwordError}</FormHelperText>
               </FormControl>
@@ -176,25 +178,46 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={confirmPasswordHandler}
                   value={confirmPassword}
                   error={confirmPasswordError.length !== 0}
-                  sx={{maxWidth: '320px'}}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{confirmPasswordError}</FormHelperText>
               </FormControl>
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
+              <Stack
+            direction="row"
+            spacing={2}
+            sx={{ width: '100%', justifyContent: 'space-between' }}
+          >
+            <Button
+              variant="outlined"
+              onClick={props.onClose}
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                borderColor: '#74c69d',
+                color: '#74c69d',
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              type="submit"              
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                backgroundColor: '#74c69d',
+                color: '#fff',
+                borderColor: '#74c69d',
+              }}
+            >
+              Continue
+            </Button>
+          </Stack>
 
-              <Button
-                variant="outlined"
-                type="submit"
-                sx={{
-                  fontWeight: 'bold',
-                  maxWidth: '320px',
-                  borderColor: '#74c69d',
-                  color: '#74c69d',
-                  '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
-                }}
-              >
-                Continue
-              </Button>
+
+
+              
             </Box>
           </form>
         </Box>

@@ -57,16 +57,48 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
         <Typography variant="body2">ID: {props?.user?.id}</Typography>
         <Typography variant="body2">Email: {props?.user?.email}</Typography>
         <Stack spacing={2} sx={{ mt: 2, maxWidth: '320px', width: '100%' }}>
-        <Button variant="outlined" onClick={deleteUserHandler} sx={{
-            mt:2,
-            fontWeight: 'bold',
-            maxWidth: '320px',
-            borderColor: '#74c69d',
-            color: '#74c69d',
-            '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
-          }}>
-          Yes delete it
-        </Button>
+       
+
+
+
+
+
+
+
+        <Stack
+            direction="row"
+            spacing={2}
+            sx={{ width: '100%', justifyContent: 'space-between' }}
+          >
+            <Button
+              variant="outlined"
+              onClick={props.onClose}
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                borderColor: '#74c69d',
+                color: '#74c69d',
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              type="submit"
+              onClick={deleteUserHandler}
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                backgroundColor: '#74c69d',
+                color: '#fff',
+                borderColor: '#74c69d',
+              }}
+            >
+              Continue
+            </Button>
+          </Stack>
+
+
         </Stack>
       </Box>
     </Modal>

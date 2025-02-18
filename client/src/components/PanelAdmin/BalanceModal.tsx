@@ -15,7 +15,7 @@ const style = {
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
-  width:350,
+  width: 350,
   bgcolor: 'background.paper',
   border: '2px solid #2d6a4f',
   boxShadow: 24,
@@ -47,8 +47,8 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
       aria-labelledby="parent-modal-title"
       aria-describedby="parent-modal-description"
     >
-      <Box sx={{ ...style}}>
-        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{color:'#2d6a4f'}}>
+      <Box sx={{ ...style }}>
+        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ color: '#2d6a4f' }}>
           Add Balance
         </Typography>
         <Typography id="modal-modal-description" sx={{ my: 2 }}>
@@ -60,9 +60,9 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
             type="number"
             value={balance}
             onChange={(event) => setBalance(+event.target.value)}
-            sx={{mt:2,maxWidth: '320px'}}
+            sx={{ mt: 2, maxWidth: '320px' }}
           />
-          <Button variant="outlined" onClick={addBalanceHandler}  sx={{
+          {/* <Button variant="outlined" onClick={addBalanceHandler}  sx={{
             mt:2,
             fontWeight: 'bold',
             maxWidth: '320px',
@@ -71,7 +71,40 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
             '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
           }}>
             ADD
-          </Button>
+          </Button> */}
+
+          <Stack
+            direction="row"
+            spacing={2}
+            sx={{ width: '100%', justifyContent: 'space-between' }}
+          >
+            <Button
+              variant="outlined"
+              onClick={props.onClose}
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                borderColor: '#74c69d',
+                color: '#74c69d',
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              type="submit"
+              onClick={addBalanceHandler}
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                backgroundColor: '#74c69d',
+                color: '#fff',
+                borderColor: '#74c69d',
+              }}
+            >
+              Continue
+            </Button>
+          </Stack>
         </Stack>
       </Box>
     </Modal>

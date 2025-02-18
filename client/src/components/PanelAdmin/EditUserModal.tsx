@@ -7,6 +7,7 @@ import {
   MenuItem,
   Modal,
   Select,
+  Stack,
   TextField,
   Typography,
 } from '@mui/material';
@@ -225,19 +226,47 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
               </FormControl> */}
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
 
-              <Button
-                variant="outlined"
-                type="submit"
-                sx={{
-                  fontWeight: 'bold',
-                  maxWidth: '320px',
-                  borderColor: '#74c69d',
-                  color: '#74c69d',
-                  '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
-                }}
-              >
-                Continue
-              </Button>
+
+
+
+              <Stack
+            direction="row"
+            spacing={2}
+            sx={{ width: '100%', justifyContent: 'space-between' }}
+          >
+            <Button
+              variant="outlined"
+              onClick={props.onClose}
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                borderColor: '#74c69d',
+                color: '#74c69d',
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              type="submit"
+              
+              sx={{
+                fontWeight: 'bold',
+                flex: 1,
+                backgroundColor: '#74c69d',
+                color: '#fff',
+                borderColor: '#74c69d',
+              }}
+            >
+              Continue
+            </Button>
+          </Stack>
+
+
+
+
+
+        
             </Box>
           </form>
         </Box>

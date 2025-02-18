@@ -180,7 +180,7 @@ const UserManagement: React.FC = () => {
         refreshUsers={getUsers}
       />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
-        <TableContainer sx={{ maxHeight: 440 }}>
+        <TableContainer sx={{ maxHeight: '85vh' }}>
           <Table stickyHeader aria-label="sticky table">
             <TableHead>
               <TableRow>
