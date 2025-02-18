@@ -40,6 +40,7 @@ const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset')
 const { createToken, findToken, updateToken, deleteTokens } = require('./Token');
 const Balance = require('./Balance');
 const User = require('./User');
+const Group = require('./Group');
 const Key = require('./Key');
 
 module.exports = {
@@ -92,6 +93,7 @@ module.exports = {
   countActiveSessions,
 
   User,
+  Group,
   Key,
   Balance,
 };

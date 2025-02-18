@@ -32,6 +32,8 @@
     "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
+    "create-group": "node config/create-group.js",
+    "assign-group": "node config/assign-group.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
