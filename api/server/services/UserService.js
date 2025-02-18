@@ -52,7 +52,36 @@ const getUserKey = async ({ userId, name }) => {
   }
   return await decrypt(keyValue.value);
 };
-
+/**
+ * Retrieves and decrypts the key object including expiry date for a given user identified by userId and identifier name.
+ * @param {Object} params - The parameters object.
+ * @param {string} params.userId - The unique identifier for the user.
+ * @param {string} params.name - The name associated with the key.
+ * @returns {Promise<Record<string,string>>} The decrypted key object.
+ * @throws {Error} Throws an error if the key is not found, there is a problem during key retrieval, parsing or decryption
+ * @description This function searches for a user's key in the database using their userId and name.
+ *              If found, it decrypts the value of the key and returns it as object including expiry date.
+ *              If no key is found, it throws an error indicating that there is no user key available.
+ */
+const getUserKeyWithExpiry = async ({ userId, name }) => {
+  const keyValue = await Key.findOne({ userId, name }).lean();
+  if (!keyValue) {
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.NO_USER_KEY,
+      }),
+    );
+  }
+  try {
+    return { ...JSON.parse(await decrypt(keyValue.value)), expiresAt: keyValue.expiresAt };
+  } catch (e) {
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.INVALID_USER_KEY,
+      }),
+    );
+  }
+};
 /**
  * Retrieves, decrypts, and parses the key values for a given user identified by userId and name.
  * @param {Object} params - The parameters object.
@@ -176,6 +205,7 @@ module.exports = {
   deleteUserKey,
   getUserKeyValues,
   getUserKeyExpiry,
+  getUserKeyWithExpiry,
   checkUserKeyExpiry,
   updateUserPluginsService,
 };
