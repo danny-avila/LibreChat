@@ -118,6 +118,12 @@ config:
       - name: MEILI_MASTER_KEY
         secretName: bai-creds
         secretKey: MEILI_MASTER_KEY
+      - name: GOOGLE_CLIENT_ID
+        secretName: bai.google.creds
+        secretKey: GOOGLE_CLIENT_ID
+      - name: GOOGLE_CLIENT_SECRET
+        secretName: bai.google.creds
+        secretKey: GOOGLE_CLIENT_SECRET
 
   pod_env:
     - name: MONGO_URI
