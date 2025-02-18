@@ -584,7 +584,6 @@
   "com_ui_happy_birthday": "這是我的第一個生日！",
   "com_ui_host": "主機",
   "com_ui_image_gen": "影像生成",
-  "com_ui_import": "匯入",
   "com_ui_import_conversation_error": "匯入對話時發生錯誤",
   "com_ui_import_conversation_file_type_error": "不支援的匯入檔案類型",
   "com_ui_import_conversation_info": "從 JSON 文件匯入對話",
