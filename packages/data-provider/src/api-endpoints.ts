@@ -1,5 +1,24 @@
 import type { AssistantsEndpoint } from './schemas';
 
+// Testing this buildQuery function
+const buildQuery = (params: Record<string, unknown>): string => {
+  const query = Object.entries(params)
+    .filter(([, value]) => {
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return value !== undefined && value !== null && value !== '';
+    })
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.map((v) => `${key}=${encodeURIComponent(v)}`).join('&');
+      }
+      return `${key}=${encodeURIComponent(String(value))}`;
+    })
+    .join('&');
+  return query ? `?${query}` : '';
+};
+
 export const health = () => '/health';
 export const user = () => '/api/user';
 
@@ -45,16 +64,22 @@ export const conversationsRoot = '/api/convos';
 
 export const conversations = (
   cursor?: string,
-  pageSize?: number,
   isArchived?: boolean,
   sortBy?: 'title' | 'createdAt' | 'updatedAt',
   sortDirection?: 'asc' | 'desc',
   tags?: string[],
   search?: string,
-) =>
-  `${conversationsRoot}?${cursor ? `cursor=${cursor}&` : ''}pageSize=${pageSize}&isArchived=${isArchived}&sortBy=${sortBy}&sortDirection=${sortDirection}${
-    tags ? tags.map((tag) => `&tags=${tag}`).join('') : ''
-  }${search ? `&search=${search}` : ''}`;
+) => {
+  const params = {
+    cursor,
+    isArchived,
+    sortBy,
+    sortDirection,
+    tags,
+    search,
+  };
+  return `${conversationsRoot}${buildQuery(params)}`;
+};
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -62,7 +87,9 @@ export const genTitle = () => `${conversationsRoot}/gen_title`;
 
 export const updateConversation = () => `${conversationsRoot}/update`;
 
-export const deleteConversation = () => `${conversationsRoot}/clear`;
+export const deleteConversation = () => `${conversationsRoot}`;
+
+export const deleteAllConversation = () => `${conversationsRoot}/all`;
 
 export const importConversation = () => `${conversationsRoot}/import`;
 

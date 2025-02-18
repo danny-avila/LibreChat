@@ -79,22 +79,28 @@ router.post('/gen_title', async (req, res) => {
   }
 });
 
-router.post('/clear', async (req, res) => {
+router.delete('/', async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body.arg;
-  if (conversationId) {
-    filter = { conversationId };
+
+  // Prevent deletion of all conversations
+  if (!conversationId && !source && !thread_id && !endpoint) {
+    return res.status(400).json({
+      error: 'no parameters provided',
+    });
   }
 
-  if (source === 'button' && !conversationId) {
+  if (conversationId) {
+    filter = { conversationId };
+  } else if (source === 'button') {
     return res.status(200).send('No conversationId provided');
   }
 
   if (
-    typeof endpoint != 'undefined' &&
+    typeof endpoint !== 'undefined' &&
     Object.prototype.propertyIsEnumerable.call(assistantClients, endpoint)
   ) {
-    /** @type {{ openai: OpenAI}} */
+    /** @type {{ openai: OpenAI }} */
     const { openai } = await assistantClients[endpoint].initializeClient({ req, res });
     try {
       const response = await openai.beta.threads.del(thread_id);
@@ -104,12 +110,20 @@ router.post('/clear', async (req, res) => {
     }
   }
 
-  // for debugging deletion source
-  // logger.debug('source:', source);
-
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);
     await deleteToolCalls(req.user.id, filter.conversationId);
+    res.status(201).json(dbResponse);
+  } catch (error) {
+    logger.error('Error clearing conversations', error);
+    res.status(500).send('Error clearing conversations');
+  }
+});
+
+router.delete('/all', async (req, res) => {
+  try {
+    const dbResponse = await deleteConvos(req.user.id, {});
+    await deleteToolCalls(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

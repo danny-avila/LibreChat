@@ -78,7 +78,6 @@ const Nav = memo(
 
     const { data, fetchNextPage, isFetchingNextPage, refetch } = useConversationsInfiniteQuery(
       {
-        pageSize: 25,
         isArchived: false,
         tags: tags.length === 0 ? undefined : tags,
       },

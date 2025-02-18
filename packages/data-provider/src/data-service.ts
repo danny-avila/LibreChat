@@ -589,26 +589,24 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  //todo: this should be a DELETE request
-  return request.post(endpoints.deleteConversation(), { arg: payload });
+  return request.deleteWithOptions(endpoints.deleteConversation(), { data: { arg: payload } });
 }
 
 export function clearAllConversations(): Promise<unknown> {
-  return request.post(endpoints.deleteConversation(), { arg: {} });
+  return request.delete(endpoints.deleteAllConversation());
 }
 
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
   const cursor = params?.cursor;
-  const pageSize = params?.pageSize ?? 25;
   const isArchived = params?.isArchived ?? false;
   const sortBy = params?.sortBy;
   const sortDirection = params?.sortDirection;
   const tags = params?.tags || [];
   const search = params?.search || '';
   return request.get(
-    endpoints.conversations(cursor, pageSize, isArchived, sortBy, sortDirection, tags, search),
+    endpoints.conversations(cursor, isArchived, sortBy, sortDirection, tags, search),
   );
 };
 
