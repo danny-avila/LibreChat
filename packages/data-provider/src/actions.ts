@@ -210,6 +210,7 @@ class RequestExecutor {
       client_url,
       scope,
       token_exchange_method,
+      oauth_flow,
     } = metadata.auth;
 
     const {
@@ -235,7 +236,8 @@ class RequestExecutor {
       client_url &&
       scope != null &&
       scope &&
-      token_exchange_method
+      token_exchange_method &&
+      oauth_flow
     );
 
     if (isApiKey && authorization_type === AuthorizationTypeEnum.Basic) {

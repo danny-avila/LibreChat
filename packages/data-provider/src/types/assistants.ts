@@ -492,6 +492,11 @@ export enum TokenExchangeMethodEnum {
   BasicAuthHeader = 'basic_auth_header',
 }
 
+export enum OAuthFlowTypeEnum {
+  AuthorizationCodeFlow = 'auth_code_flow',
+  ClientCredentialFlow = 'client_cred_flow',
+}
+
 export type ActionAuth = {
   authorization_type?: AuthorizationTypeEnum;
   custom_auth_header?: string;
@@ -501,6 +506,7 @@ export type ActionAuth = {
   client_url?: string;
   scope?: string;
   token_exchange_method?: TokenExchangeMethodEnum;
+  oauth_flow?: OAuthFlowTypeEnum
 };
 
 export type ActionMetadata = {
