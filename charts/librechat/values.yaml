@@ -130,7 +130,7 @@ config:
     # https://github.com/danny-avila/LibreChat/blob/main/.env.example
     ALLOW_EMAIL_LOGIN: 'true'
     ALLOW_REGISTRATION: 'true'
-    ALLOW_SOCIAL_LOGIN: 'false'
+    ALLOW_SOCIAL_LOGIN: 'true'
     ALLOW_SOCIAL_REGISTRATION: 'false'
     APP_TITLE: 'Librechat'
     CUSTOM_FOOTER: 'Provided with ❤️'
