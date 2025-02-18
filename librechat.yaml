@@ -11,36 +11,35 @@ cache: true
 interface:
   endpointsMenu: false
   modelSelect: false
-  parameters: true
-  sidePanel: true
+  parameters: false
+  sidePanel: false
   presets: false
   prompts: false
   bookmarks: false
   multiConvo: false
-  agents: true
+  agents: false
 
 # Example Registration Object Structure (optional)
 registration:
-  socialLogins: ['github', 'google']
+  socialLogins: ['google']
   allowedDomains:
-    - "getbalance.com"
+    - 'getbalance.com'
 
 modelSpecs:
   enforce: true
   prioritize: true
   list:
-    - name: "claude-3-haiku-balance"
-      label: "Balance Assistant"
+    - name: 'claude-3-haiku-balance'
+      label: 'Flower'
       default: true
-      description: "Balance aware assistant"
+      description: 'Balance aware assistant'
       preset:
-        endpoint: "bedrock"
-        model:
-          "arn:aws:bedrock:us-east-2:223287545160:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
-        maxContextTokens: 128000  # Maximum context tokens
-        max_tokens: 4096  # Maximum output tokens
+        endpoint: 'bedrock'
+        model: 'arn:aws:bedrock:us-east-2:223287545160:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0'
+        maxContextTokens: 128000 # Maximum context tokens
+        max_tokens: 4096 # Maximum output tokens
         temperature: 0.5
-        modelLabel: "Balance Assistant"
+        modelLabel: 'Balance Assistant'
         greeting: |
           Balance infrastructure aware assistant
         system: |
@@ -97,9 +96,9 @@ modelSpecs:
 # Example Actions Object Structure
 actions:
   allowedDomains:
-    - "swapi.dev"
-    - "librechat.ai"
-    - "google.com"
+    - 'swapi.dev'
+    - 'librechat.ai'
+    - 'google.com'
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -131,11 +130,10 @@ actions:
 endpoints:
   bedrock:
     streamRate: 35
-    titleModel:
-      'anthropic.claude-3-haiku-20240307-v1:0'
-    availableRegions:
-      - "us-east-2"
+    titleModel: 'arn:aws:bedrock:us-east-2:223287545160:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0'
 
+    availableRegions:
+      - 'us-east-2'
 
   # assistants:
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
@@ -255,7 +253,6 @@ endpoints:
   #   forcePrompt: false
   #   modelDisplayLabel: 'Portkey'
   #   iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
-
 # fileConfig:
 #   endpoints:
 #     assistants:
