@@ -29,7 +29,6 @@ const verify2FA = async (req, res) => {
 
     let verified = false;
     if (token && (await verifyTOTP(secret, token))) {
-    // if (token && (await verifyTOTP(user.totpSecret, token))) {
       verified = true;
     } else if (backupCode) {
       verified = await verifyBackupCode({ user, backupCode });

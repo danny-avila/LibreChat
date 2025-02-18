@@ -19,7 +19,6 @@ const enable2FAController = async (req, res) => {
 
     const encryptedSecret = await encryptV2(secret);
     const user = await updateUser(userId, { totpSecret: encryptedSecret, backupCodes: codeObjects });
-    // const user = await updateUser(userId, { totpSecret: secret, backupCodes: codeObjects });
 
     const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}`;
 
@@ -46,7 +45,6 @@ const verify2FAController = async (req, res) => {
     const secret = await getTOTPSecret(user.totpSecret);
 
     if (token && (await verifyTOTP(secret, token))) {
-    // if (token && (await verifyTOTP(user.totpSecret, token))) {
       return res.status(200).json();
     } else if (backupCode) {
       const verified = await verifyBackupCode({ user, backupCode });
@@ -76,7 +74,6 @@ const confirm2FAController = async (req, res) => {
     const secret = await getTOTPSecret(user.totpSecret);
 
     if (await verifyTOTP(secret, token)) {
-    // if (await verifyTOTP(user.totpSecret, token)) {
       return res.status(200).json();
     }
 
