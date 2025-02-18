@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { verifyTOTP, verifyBackupCode } = require('~/server/services/twoFactorService');
+const { verifyTOTP, verifyBackupCode, getTOTPSecret } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { getUserById } = require('~/models/userMethods');
 const { logger } = require('~/config');
@@ -24,9 +24,11 @@ const verify2FA = async (req, res) => {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }
 
-    let verified = false;
+    // Use the new getTOTPSecret function to retrieve (and decrypt if necessary) the TOTP secret.
+    const secret = await getTOTPSecret(user.totpSecret);
 
-    if (token && (await verifyTOTP(user.totpSecret, token))) {
+    let verified = false;
+    if (token && (await verifyTOTP(secret, token))) {
       verified = true;
     } else if (backupCode) {
       verified = await verifyBackupCode({ user, backupCode });
@@ -39,7 +41,7 @@ const verify2FA = async (req, res) => {
     // Prepare user data for response.
     // If the user is a plain object (from lean queries), we create a shallow copy.
     const userData = user.toObject ? user.toObject() : { ...user };
-    // Remove sensitive fields
+    // Remove sensitive fields.
     delete userData.password;
     delete userData.__v;
     delete userData.totpSecret;
