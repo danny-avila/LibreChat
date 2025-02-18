@@ -57,6 +57,8 @@ interface:
 
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
+  customWelcome: "Welcome to LibreChat! Enjoy your experience."
+
   endpointsMenu: true
   modelSelect: true
   parameters: true
@@ -81,7 +83,7 @@ registration:
 #       model: ''
 #       voices: ['']
 
-#  
+#
 #   stt:
 #     openai:
 #       url: ''
@@ -234,10 +236,10 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
-      
+
     # Portkey AI Example
     - name: "Portkey"
-      apiKey: "dummy"  
+      apiKey: "dummy"
       baseURL: 'https://api.portkey.ai/v1'
       headers:
           x-portkey-api-key: '${PORTKEY_API_KEY}'
