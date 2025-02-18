@@ -164,15 +164,7 @@ async function createActionTool({
           const action_id = action.action_id;
           const identifier = `${req.user.id}:${action.action_id}`;
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
-
-            oauth_flow = metadata.auth.oauth_flow
-
-            logger.debug('Oauth Flow is', { oauth_flow });
-  
-
-            let clientCredential=true;
-
-            if(oauth_flow=="client_cred_flow") {
+            if(metadata.auth.oauth_flow=="client_cred_flow") {
               logger.debug('Oauth Client Credential Flow', { action_id, identifier });
 
               const accessToken =

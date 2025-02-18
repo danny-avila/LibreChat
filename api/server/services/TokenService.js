@@ -167,8 +167,9 @@ const getAccessToken = async ({
 
 
 /**
- * Handles the OAuth callback and exchanges the authorization code for tokens.
+ * Handles getting a Client Credential Token
  * @param {object} fields
+ * @param {string} fields.identifier - The action id the token is requested for
  * @param {string} fields.scope - The scope the token is requested for
  * @param {string} fields.client_url - The URL of the OAuth provider.
  * @param {string} fields.encrypted_oauth_client_id - The client ID for the OAuth provider.
@@ -213,7 +214,7 @@ const getClientCredentialAccessToken = async ({
    logger.debug(`Access tokens successfully recieved for ${identifier}`);
    return response.data;
  } catch (error) {
-   const message = 'Error getting access tokens';
+   const message = 'Error getting access token';
    logAxiosError({
      message,
      error,

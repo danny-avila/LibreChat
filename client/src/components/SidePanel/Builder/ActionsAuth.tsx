@@ -301,7 +301,7 @@ const OAuth = () => {
         {localize('com_ui_oauth_flow')}
       </label>
       <RadioGroup.Root
-        defaultValue={AuthorizationTypeEnum.Basic}
+        defaultValue={OAuthFlowTypeEnum.AuthorizationCodeFlow}
         onValueChange={(value) => setValue('oauth_flow', value)}
         value={oauth_flow}
         role="radiogroup"
@@ -363,7 +363,7 @@ const OAuth = () => {
       <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
       <input
         className={inputClasses}
-        {...register('authorization_url', { required: type === OAuthFlowTypeEnum.AuthorizationCodeFlow })}
+        {...register('authorization_url', { required: oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow })}
       />
       <label className="mb-1 block text-sm font-medium">{localize('com_ui_token_url')}</label>
       <input
