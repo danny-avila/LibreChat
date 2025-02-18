@@ -562,7 +562,6 @@
   "com_ui_hide_qr": "Ukryj kod QR",
   "com_ui_host": "Host",
   "com_ui_image_gen": "Generowanie obrazu",
-  "com_ui_import": "Importuj",
   "com_ui_import_conversation_error": "Wystąpił błąd podczas importowania konwersacji",
   "com_ui_import_conversation_file_type_error": "Nieobsługiwany typ importu",
   "com_ui_import_conversation_info": "Importuj konwersacje z pliku JSON",

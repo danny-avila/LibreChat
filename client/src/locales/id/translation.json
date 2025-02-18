@@ -247,7 +247,6 @@
   "com_ui_enter": "Masuk",
   "com_ui_examples": "Contoh",
   "com_ui_happy_birthday": "Ini ulang tahun pertamaku!",
-  "com_ui_import": "Impor",
   "com_ui_import_conversation_error": "Terjadi kesalahan saat mengimpor percakapan Anda",
   "com_ui_import_conversation_info": "Impor percakapan dari file JSON",
   "com_ui_import_conversation_success": "Percakapan berhasil diimpor",

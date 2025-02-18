@@ -584,7 +584,6 @@
   "com_ui_happy_birthday": "¡Es mi primer cumpleaños!",
   "com_ui_host": "Host",
   "com_ui_image_gen": "Gen Imágenes",
-  "com_ui_import": "Importar",
   "com_ui_import_conversation_error": "Hubo un error al importar tus chats",
   "com_ui_import_conversation_file_type_error": "com_ui_import_conversation_file_type_error: Tipo de archivo no compatible para importar",
   "com_ui_import_conversation_info": "Importar chats de un archivo JSON",
