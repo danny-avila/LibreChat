@@ -176,6 +176,17 @@ const isValidPath = (req, base, subfolder, filepath) => {
 };
 
 /**
+ * @param {string} filepath
+ */
+const unlinkFile = async (filepath) => {
+  try {
+    await fs.promises.unlink(filepath);
+  } catch (error) {
+    logger.error('Error deleting file:', error);
+  }
+};
+
+/**
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
@@ -217,7 +228,7 @@ const deleteLocalFile = async (req, file) => {
       throw new Error(`Invalid file path: ${file.filepath}`);
     }
 
-    await fs.promises.unlink(filepath);
+    await unlinkFile(filepath);
     return;
   }
 
@@ -233,7 +244,7 @@ const deleteLocalFile = async (req, file) => {
     throw new Error('Invalid file path');
   }
 
-  await fs.promises.unlink(filepath);
+  await unlinkFile(filepath);
 };
 
 /**
