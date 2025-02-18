@@ -14,7 +14,6 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { SelectChangeEvent } from '@mui/material';
 
-
 interface User {
   name: string;
   username: string;
@@ -32,7 +31,7 @@ interface EditUserModalProps {
 }
 
 interface UserRole {
-    role: 'ADMIN' | 'USER'
+  role: 'ADMIN' | 'USER';
 }
 
 const style = {
@@ -40,9 +39,9 @@ const style = {
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
-  width: 700,
+  width: 350,
   bgcolor: 'background.paper',
-  border: '2px solid #000',
+  border: '2px solid #2d6a4f',
   boxShadow: 24,
   pt: 2,
   px: 4,
@@ -58,7 +57,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
   const [fullNameError, setFullNameError] = useState<string>('');
   const [emailError, setEmailError] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
-//   const [confirmPasswordError, setConfirmPasswordError] = useState<string>('');
+  //   const [confirmPasswordError, setConfirmPasswordError] = useState<string>('');
 
   const [role, setRole] = useState<UserRole['role']>('USER');
 
@@ -68,9 +67,9 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     if (props.user) {
       setFullName(props.user.name);
       setEmail(props.user.email);
-      setRole(props.user.role as 'ADMIN' | 'USER')
+      setRole(props.user.role as 'ADMIN' | 'USER');
       setPassword('');
-    //   setConfirmPassword('');
+      //   setConfirmPassword('');
     }
   }, [props.user]);
 
@@ -101,55 +100,50 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     }
   };
 
-//   const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
-//     setConfirmPassword(e.target.value);
-//     if (e.target.value.trim() !== password) {
-//       setConfirmPasswordError('Password is wrong.');
-//     } else {
-//       setConfirmPasswordError('');
-//     }
-//   };
+  //   const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //     setConfirmPassword(e.target.value);
+  //     if (e.target.value.trim() !== password) {
+  //       setConfirmPasswordError('Password is wrong.');
+  //     } else {
+  //       setConfirmPasswordError('');
+  //     }
+  //   };
 
-  const roleChangeHandler = (e: SelectChangeEvent<'ADMIN' | 'USER'>)=>{
-    setRole(e.target.value  as UserRole['role'])
-  }
+  const roleChangeHandler = (e: SelectChangeEvent<'ADMIN' | 'USER'>) => {
+    setRole(e.target.value as UserRole['role']);
+  };
 
   const submitHandler = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (
-      fullName.length &&
-      email.length &&
-      fullNameError.length === 0 &&
-      emailError.length === 0) {
+    if (fullName.length && email.length && fullNameError.length === 0 && emailError.length === 0) {
       console.log('submit');
 
-    //   const editedUser = {
-    //     email: email,
-    //     name: fullName,
-    //     username: fullName,
-    //     confirm_password: confirmPassword,
-    //     password: password,
-    //     role: role
-    //   };
-
-
+      //   const editedUser = {
+      //     email: email,
+      //     name: fullName,
+      //     username: fullName,
+      //     confirm_password: confirmPassword,
+      //     password: password,
+      //     role: role
+      //   };
 
       const editedUser: Partial<User> = {
         ...(fullName && { name: fullName }),
-        ...(fullName && { username: fullName }),  // Only include if fullName is not empty
+        ...(fullName && { username: fullName }), // Only include if fullName is not empty
         ...(email && { email }), // Only include if email is not empty
         ...(password && { password }), // Only include if password is not empty
         ...(role && { role }), // Only include if role is selected
-      }
-    
-      console.log(editedUser)
+      };
 
+      console.log(editedUser);
 
       try {
-        const response = await axios.put(`http://localhost:3090/api/editUser/${props.user.id}`, {editedUser:editedUser});
+        const response = await axios.put(`http://localhost:3090/api/editUser/${props.user.id}`, {
+          editedUser: editedUser,
+        });
 
-        console.log('User Edited: ',response);
+        console.log('User Edited: ', response);
         props.onClose();
         setFullName('');
         setEmail('');
@@ -172,7 +166,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     <>
       <Modal open={props.open} onClose={props.onClose}>
         <Box sx={{ ...style }}>
-          <Typography id="modal-modal-title" variant="h6">
+          <Typography id="modal-modal-title" variant="h6" sx={{ color: '#2d6a4f', mb: 2 }}>
             Edit User
           </Typography>
 
@@ -180,7 +174,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <FormControl>
                 <InputLabel id="role-label">role</InputLabel>
-                <Select labelId="role-label" label="Role" value={role} onChange={roleChangeHandler}>
+                <Select labelId="role-label" label="Role" value={role} onChange={roleChangeHandler} sx={{maxWidth: '320px'}}>
                   <MenuItem value="ADMIN">admin</MenuItem>
                   <MenuItem value="USER">user</MenuItem>
                 </Select>
@@ -193,6 +187,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                   onChange={fullNameHandler}
                   value={fullName}
                   error={fullNameError.length !== 0}
+                  sx={{maxWidth: '320px'}}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{fullNameError}</FormHelperText>
               </FormControl>
@@ -203,6 +198,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                   onChange={emailHandler}
                   value={email}
                   error={emailError.length !== 0}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{emailError}</FormHelperText>
               </FormControl>
@@ -213,6 +209,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                   onChange={passwordHandler}
                   value={password}
                   error={passwordError.length !== 0}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{passwordError}</FormHelperText>
               </FormControl>
@@ -228,7 +225,17 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
               </FormControl> */}
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
 
-              <Button variant="outlined" type="submit">
+              <Button
+                variant="outlined"
+                type="submit"
+                sx={{
+                  fontWeight: 'bold',
+                  maxWidth: '320px',
+                  borderColor: '#74c69d',
+                  color: '#74c69d',
+                  '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
+                }}
+              >
                 Continue
               </Button>
             </Box>

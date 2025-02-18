@@ -11,7 +11,6 @@ import {
 import axios from 'axios';
 import { useState } from 'react';
 
-
 interface AddUserModalProps {
   open: boolean;
   onClose: () => void;
@@ -23,9 +22,9 @@ const style = {
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
-  width: 700,
+  width: 350,
   bgcolor: 'background.paper',
-  border: '2px solid #000',
+  border: '2px solid #2d6a4f',
   boxShadow: 24,
   pt: 2,
   px: 4,
@@ -131,8 +130,8 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
     <>
       <Modal open={props.open} onClose={props.onClose}>
         <Box sx={{ ...style }}>
-          <Typography id="modal-modal-title" variant="h6">
-            add user
+          <Typography id="modal-modal-title" variant="h6" sx={{color:'#2d6a4f' ,mb:2}}>
+            Add User
           </Typography>
 
           <form onSubmit={submitHandler}>
@@ -144,6 +143,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={fullNameHandler}
                   value={fullName}
                   error={fullNameError.length !== 0}
+                  sx={{maxWidth: '320px'}}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{fullNameError}</FormHelperText>
               </FormControl>
@@ -154,6 +154,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={emailHandler}
                   value={email}
                   error={emailError.length !== 0}
+                  sx={{maxWidth: '320px'}}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{emailError}</FormHelperText>
               </FormControl>
@@ -164,6 +165,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={passwordHandler}
                   value={password}
                   error={passwordError.length !== 0}
+                  sx={{maxWidth: '320px'}}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{passwordError}</FormHelperText>
               </FormControl>
@@ -174,12 +176,23 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
                   onChange={confirmPasswordHandler}
                   value={confirmPassword}
                   error={confirmPasswordError.length !== 0}
+                  sx={{maxWidth: '320px'}}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{confirmPasswordError}</FormHelperText>
               </FormControl>
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
 
-              <Button variant="outlined" type="submit">
+              <Button
+                variant="outlined"
+                type="submit"
+                sx={{
+                  fontWeight: 'bold',
+                  maxWidth: '320px',
+                  borderColor: '#74c69d',
+                  color: '#74c69d',
+                  '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
+                }}
+              >
                 Continue
               </Button>
             </Box>

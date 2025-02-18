@@ -1,4 +1,4 @@
-import { Box, Button, Modal, Typography } from '@mui/material';
+import { Box, Button, Modal, Stack, Typography } from '@mui/material';
 import axios from 'axios';
 
 interface User {
@@ -22,9 +22,9 @@ const style = {
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
-  width: 400,
+  width: 350,
   bgcolor: 'background.paper',
-  border: '2px solid #000',
+  border: '2px solid #2d6a4f',
   boxShadow: 24,
   pt: 2,
   px: 4,
@@ -46,8 +46,8 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
       aria-labelledby="parent-modal-title"
       aria-describedby="parent-modal-description"
     >
-      <Box sx={{ ...style, width: 400 }}>
-        <Typography id="modal-modal-title" variant="h6" component="h2">
+      <Box sx={{ ...style}}>
+        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{color:'#2d6a4f'}}>
           Delete User
         </Typography>
         <Typography id="modal-modal-description" sx={{ mt: 2 ,mb:1 }}>
@@ -56,10 +56,18 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
         <Typography variant="body2">Username: {props?.user?.username}</Typography>
         <Typography variant="body2">ID: {props?.user?.id}</Typography>
         <Typography variant="body2">Email: {props?.user?.email}</Typography>
-
-        <Button variant="outlined" onClick={deleteUserHandler} sx={{mt:2}}>
+        <Stack spacing={2} sx={{ mt: 2, maxWidth: '320px', width: '100%' }}>
+        <Button variant="outlined" onClick={deleteUserHandler} sx={{
+            mt:2,
+            fontWeight: 'bold',
+            maxWidth: '320px',
+            borderColor: '#74c69d',
+            color: '#74c69d',
+            '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
+          }}>
           Yes delete it
         </Button>
+        </Stack>
       </Box>
     </Modal>
   );

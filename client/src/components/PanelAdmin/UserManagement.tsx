@@ -80,7 +80,6 @@ const UserManagement: React.FC = () => {
   //   }
   // },[])
 
-
   // useEffect(() => {
   //   if (user && user.role !== 'ADMIN') {
   //     navigate('/c');
@@ -91,12 +90,10 @@ const UserManagement: React.FC = () => {
   //   }
   // }, [user, navigate]);
 
-
-
   useEffect(() => {
     const checkUser = async () => {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      setLoading(false); 
+      setLoading(false);
     };
 
     checkUser();
@@ -109,7 +106,7 @@ const UserManagement: React.FC = () => {
       } else if (user.role !== 'ADMIN') {
         navigate('/c');
       } else {
-        getUsers(); 
+        getUsers();
       }
     }
   }, [loading, user, navigate]);
@@ -132,19 +129,26 @@ const UserManagement: React.FC = () => {
     setSelectedUser(user);
   };
 
-
-
   if (loading) {
-    return <p className='flex justify-center items-center'>Loading...</p>; 
+    return <p className="flex items-center justify-center">Loading...</p>;
   }
-
 
   return (
     <>
       {/* header */}
       <Stack direction="row" sx={{ justifyContent: 'space-between', my: 2 }}>
-        <Typography variant="h4">User Management</Typography>
-        <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAddUserModal(true)}>
+        <Typography variant="h4" sx={{color:'#2d6a4f'}}>User Management</Typography>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={() => setAddUserModal(true)}
+          sx={{
+            fontWeight: 'bold',
+            borderColor: '#74c69d',
+            color: '#74c69d',
+            '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
+          }}
+        >
           Add User
         </Button>
       </Stack>
@@ -180,17 +184,23 @@ const UserManagement: React.FC = () => {
           <Table stickyHeader aria-label="sticky table">
             <TableHead>
               <TableRow>
-                <TableCell>User_id</TableCell>
-                <TableCell>Username</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Role</TableCell>
-                <TableCell>Balance</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>User_id</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Username</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Email</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Role</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Balance</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {users.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow
+                  key={item.id}
+                  sx={{
+                    '&:nth-of-type(odd)': { backgroundColor: '#74c69d' },
+                    '&:nth-of-type(even)': { backgroundColor: '#ffffff' },
+                  }}
+                >
                   <TableCell>{item.id}</TableCell>
                   <TableCell>{item.username}</TableCell>
                   <TableCell>{item.email}</TableCell>
