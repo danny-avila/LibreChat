@@ -112,7 +112,8 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
             relevanceScore,
           })),
         )
-        .sort((a, b) => b.relevanceScore - a.relevanceScore);
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, 5);
 
       const formattedString = formattedResults
         .map(

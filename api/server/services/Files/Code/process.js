@@ -12,6 +12,7 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { createFile, getFiles, updateFile } = require('~/models/File');
+const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
@@ -85,7 +86,10 @@ const processCodeOutput = async ({
     /** Note: `messageId` & `toolCallId` are not part of file DB schema; message object records associated file ID */
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    logAxiosError({
+      message: 'Error downloading code environment file',
+      error,
+    });
   }
 };
 
@@ -135,7 +139,10 @@ async function getSessionInfo(fileIdentifier, apiKey) {
 
     return response.data.find((file) => file.name.startsWith(path))?.lastModified;
   } catch (error) {
-    logger.error(`Error fetching session info: ${error.message}`, error);
+    logAxiosError({
+      message: `Error fetching session info: ${error.message}`,
+      error,
+    });
     return null;
   }
 }

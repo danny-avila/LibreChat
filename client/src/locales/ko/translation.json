@@ -584,7 +584,6 @@
   "com_ui_happy_birthday": "내 첫 생일이야!",
   "com_ui_host": "호스트",
   "com_ui_image_gen": "이미지 생성",
-  "com_ui_import": "가져오기",
   "com_ui_import_conversation_error": "대화를 가져오는 동안 오류가 발생했습니다",
   "com_ui_import_conversation_file_type_error": "가져올 수 없는 파일 형식입니다",
   "com_ui_import_conversation_info": "JSON 파일에서 대화 가져오기",

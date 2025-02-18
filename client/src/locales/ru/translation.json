@@ -584,7 +584,6 @@
   "com_ui_happy_birthday": "Это мой первый день рождения!",
   "com_ui_host": "Хост",
   "com_ui_image_gen": "Генератор изображений",
-  "com_ui_import": "Импортировать",
   "com_ui_import_conversation_error": "При импорте бесед произошла ошибка",
   "com_ui_import_conversation_file_type_error": "Неподдерживаемый тип импорта",
   "com_ui_import_conversation_info": "Импортировать беседы из файла JSON",
