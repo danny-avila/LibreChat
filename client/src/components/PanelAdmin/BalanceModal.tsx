@@ -16,8 +16,8 @@ const style = {
   left: '50%',
   transform: 'translate(-50%, -50%)',
   width: 350,
-  bgcolor: 'background.paper',
-  border: '2px solid #2d6a4f',
+  bgcolor: 'background.default',
+  border: '2px solid primary.main',
   boxShadow: 24,
   pt: 2,
   px: 4,
@@ -48,7 +48,7 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
       aria-describedby="parent-modal-description"
     >
       <Box sx={{ ...style }}>
-        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ color: '#2d6a4f' }}>
+        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ color: 'primary.main' }}>
           Add Balance
         </Typography>
         <Typography id="modal-modal-description" sx={{ my: 2 }}>
@@ -84,8 +84,8 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
               sx={{
                 fontWeight: 'bold',
                 flex: 1,
-                borderColor: '#74c69d',
-                color: '#74c69d',
+                borderColor: 'primary.main',
+                color: 'primary.main',
               }}
             >
               Cancel
@@ -97,9 +97,9 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
               sx={{
                 fontWeight: 'bold',
                 flex: 1,
-                backgroundColor: '#74c69d',
+                backgroundColor: 'primary.main',
                 color: '#fff',
-                borderColor: '#74c69d',
+                borderColor: 'primary.main',
               }}
             >
               Continue

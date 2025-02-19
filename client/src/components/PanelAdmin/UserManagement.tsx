@@ -137,16 +137,18 @@ const UserManagement: React.FC = () => {
     <>
       {/* header */}
       <Stack direction="row" sx={{ justifyContent: 'space-between', my: 2 }}>
-        <Typography variant="h4" sx={{color:'#2d6a4f'}}>User Management</Typography>
+        <Typography variant="h4" sx={{ color: 'primary.main' }}>
+          User Management
+        </Typography>
         <Button
           variant="outlined"
           startIcon={<AddIcon />}
           onClick={() => setAddUserModal(true)}
           sx={{
             fontWeight: 'bold',
-            borderColor: '#74c69d',
-            color: '#74c69d',
-            '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
+            borderColor: 'primary.main',
+            color: 'primary.main',
+            '&:hover': { backgroundColor: 'primary.main', color: '#fff' },
           }}
         >
           Add User
@@ -180,7 +182,15 @@ const UserManagement: React.FC = () => {
         refreshUsers={getUsers}
       />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">
-        <TableContainer sx={{ maxHeight: '85vh' }}>
+        <TableContainer
+          sx={{
+            maxHeight: '85vh',
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: 'primary.main',
+              borderRadius: '4px',
+            },
+          }}
+        >
           <Table stickyHeader aria-label="sticky table">
             <TableHead>
               <TableRow>
@@ -193,32 +203,81 @@ const UserManagement: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {users.map((item) => (
+              {users.map((item, index) => (
                 <TableRow
                   key={item.id}
                   sx={{
-                    '&:nth-of-type(odd)': { backgroundColor: '#74c69d' },
-                    '&:nth-of-type(even)': { backgroundColor: '#ffffff' },
+                    '&:nth-of-type(odd)': { backgroundColor: 'primary.main' },
+                    '&:nth-of-type(even)': { backgroundColor: 'secondary.main' },
                   }}
                 >
-                  <TableCell>{item.id}</TableCell>
-                  <TableCell>{item.username}</TableCell>
-                  <TableCell>{item.email}</TableCell>
-                  <TableCell>{item.role}</TableCell>
-                  <TableCell>{item.balance}</TableCell>
-                  <TableCell>
+                  <TableCell
+                    sx={{
+                      color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                    }}
+                  >
+                    {item.id}
+                  </TableCell>
+                  <TableCell
+                    sx={{
+                      color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                    }}
+                  >
+                    {item.username}
+                  </TableCell>
+                  <TableCell
+                    sx={{
+                      color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                    }}
+                  >
+                    {item.email}
+                  </TableCell>
+                  <TableCell
+                    sx={{
+                      color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                    }}
+                  >
+                    {item.role}
+                  </TableCell>
+                  <TableCell
+                    sx={{
+                      color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                    }}
+                  >
+                    {item.balance}
+                  </TableCell>
+                  <TableCell
+                    sx={{
+                      color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                    }}
+                  >
                     <Tooltip title="delete user">
-                      <IconButton onClick={() => deleteUserHandler(item)}>
+                      <IconButton
+                        onClick={() => deleteUserHandler(item)}
+                        sx={{
+                          color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                        }}
+                      >
                         <DeleteIcon />
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="edit user">
-                      <IconButton onClick={() => editUserHandler(item)}>
+                      <IconButton
+                        onClick={() => editUserHandler(item)}
+                        sx={{
+                          color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                        }}
+                      >
                         <EditIcon />
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="add balance">
-                      <IconButton onClick={() => addBalanceHandler(item)}>
+                      <IconButton
+                        onClick={() => addBalanceHandler(item)}
+                        sx={{
+                          color: +index % 2 === 0 ? 'secondary.main' : 'primary.main',
+                        }}
+                      >
                         <AddIcon />
                       </IconButton>
                     </Tooltip>
