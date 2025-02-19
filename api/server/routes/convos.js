@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
-  const search = req.query.search;
+  const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
   const order = req.query.order || 'desc';
 
   let tags;

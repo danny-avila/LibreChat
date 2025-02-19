@@ -102,13 +102,12 @@ export default function ArchivedChatsTable({
 
   const unarchiveMutation = useArchiveConvoMutation({
     onSuccess: async () => {
-      setIsDeleteOpen(false);
       await refetch();
     },
     onError: (error: unknown) => {
-      console.error('Delete error:', error);
+      console.error('Unarchive error:', error);
       showToast({
-        message: localize('com_ui_archive_delete_error') as string,
+        message: localize('com_ui_unarchive_error') as string,
         severity: NotificationSeverity.ERROR,
       });
     },
