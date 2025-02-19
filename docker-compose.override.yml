@@ -1,0 +1,174 @@
+# Please consult our docs for more info: https://www.librechat.ai/docs/configuration/docker_override
+
+# TO USE THIS FILE, FIRST UNCOMMENT THE LINE ('services:')
+
+# THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
+# SAVE THIS FILE AS 'docker-compose.override.yaml'
+# AND USE THE 'docker compose build' & 'docker compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
+
+# WARNING: YOU CAN ONLY SPECIFY EVERY SERVICE NAME ONCE (api, mongodb, meilisearch, ...)
+# IF YOU WANT TO OVERRIDE MULTIPLE SETTINGS IN ONE SERVICE YOU WILL HAVE TO EDIT ACCORDINGLY
+
+# EXAMPLE: if you want to use the config file and the latest numbered release docker image the result will be:
+
+# services:
+#   api:
+#     volumes:
+#     - type: bind
+#       source: ./librechat.yaml
+#       target: /app/librechat.yaml
+#     image: ghcr.io/danny-avila/librechat:latest
+
+# ---------------------------------------------------
+
+services:
+
+# # USE LIBRECHAT CONFIG FILE
+  api:
+    volumes:
+    - type: bind
+      source: ./librechat.yaml
+      target: /app/librechat.yaml
+
+# # LOCAL BUILD
+#   api:
+#     image: librechat
+#     build:
+#       context: .
+#       target: node
+
+# # BUILD FROM LATEST IMAGE
+#   api:
+#     image: ghcr.io/danny-avila/librechat-dev:latest
+ 
+# # BUILD FROM LATEST IMAGE (NUMBERED RELEASE)
+#   api:
+#     image: ghcr.io/danny-avila/librechat:latest
+
+# # BUILD FROM LATEST API IMAGE
+#   api:
+#     image: ghcr.io/danny-avila/librechat-dev-api:latest
+
+# # BUILD FROM LATEST API IMAGE (NUMBERED RELEASE)
+#   api:
+#     image: ghcr.io/danny-avila/librechat-api:latest
+
+# # ADD MONGO-EXPRESS
+#   mongo-express:
+#     image: mongo-express
+#     container_name: mongo-express
+#     environment:
+#       ME_CONFIG_MONGODB_SERVER: mongodb
+#       ME_CONFIG_BASICAUTH_USERNAME: admin
+#       ME_CONFIG_BASICAUTH_PASSWORD: password
+#     ports:
+#       - '8081:8081'
+#     depends_on:
+#       - mongodb
+#     restart: always
+
+# # USE MONGODB V4.4.18 - FOR OLDER CPU WITHOUT AVX SUPPORT
+#   mongodb:
+#     image: mongo:4.4.18
+
+# # DISABLE THE MONGODB CONTAINER - YOU NEED TO SET AN ALTERNATIVE MONGODB URI IN THE .ENV FILE
+#   api:
+#     environment:
+#       - MONGO_URI=${MONGO_URI}
+#   mongodb:
+#     image: tianon/true
+#     command: ""
+#     entrypoint: ""
+
+# # EXPOSE MONGODB PORTS - USE CAREFULLY, THIS MAKES YOUR DATABASE VULNERABLE TO ATTACKS
+#   mongodb:
+#     ports:
+#       - 27018:27017
+
+# # DISABLE MEILISEARCH
+#   meilisearch:
+#     profiles:
+#       - donotstart
+
+# # EXPOSE MEILISEARCH PORTS - DO NOT USE THE DEFAULT VALUE FOR THE MASTER KEY IF YOU DO THIS
+#   meilisearch:
+#     ports:
+#       - 7700:7700
+
+# # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
+#  rag_api:
+#    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+# # For Linux user: 
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+
+# # ADD OLLAMA
+#  ollama:
+#    image: ollama/ollama:latest
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              capabilities: [compute, utility]
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ./ollama:/root/.ollama
+
+# # ADD LITELLM BASIC - NEED TO CONFIGURE litellm-config.yaml, ONLY NEED ENV TO ENABLE REDIS FOR CACHING OR LANGFUSE FOR MONITORING
+#  litellm:
+#    image: ghcr.io/berriai/litellm:main-latest
+#    volumes:
+#      - ./litellm/litellm-config.yaml:/app/config.yaml
+#      - ./litellm/application_default_credentials.json:/app/application_default_credentials.json # only if using Google Vertex
+#    ports:
+#      - "4000:8000"
+#    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+#    environment:
+#      OPENAI_API_KEY: none ## needs to be set if ollama's openai api compatibility is used
+#      GOOGLE_APPLICATION_CREDENTIALS: /app/application_default_credentials.json ## only if using Google Vertex
+#      REDIS_HOST: redis
+#      REDIS_PORT: 6379
+#      REDIS_PASSWORD: RedisChangeMe
+#      LANGFUSE_PUBLIC_KEY: pk-lf-RandomStringFromLangfuseWebInterface
+#      LANGFUSE_SECRET_KEY: sk-lf-RandomStringFromLangfuseWebInterface
+#      LANGFUSE_HOST: http://langfuse-server:3000
+
+# # ADD LITELLM CACHING
+#  redis:
+#    image: redis:7-alpine
+#    command:
+#    - sh
+#    - -c # this is to evaluate the $REDIS_PASSWORD from the env
+#    - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
+#    environment:
+#      REDIS_PASSWORD: RedisChangeMe
+#    volumes:
+#    - ./redis:/data
+  
+# # ADD LITELLM MONITORING
+#  langfuse-server:
+#    image: ghcr.io/langfuse/langfuse:latest
+#    depends_on:
+#      - db
+#    ports:
+#      - "3000:3000"
+#    environment:
+#      - NODE_ENV=production
+#      - DATABASE_URL=postgresql://postgres:PostgresChangeMe@db:5432/postgres
+#      - NEXTAUTH_SECRET=ChangeMe
+#      - SALT=ChangeMe
+#      - NEXTAUTH_URL=http://localhost:3000
+#      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-true}
+#      - NEXT_PUBLIC_SIGN_UP_DISABLED=${NEXT_PUBLIC_SIGN_UP_DISABLED:-false}
+#      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+#  db:
+#    image: postgres
+#    restart: always
+#    environment:
+#      - POSTGRES_USER=postgres
+#      - POSTGRES_PASSWORD=PostgresChangeMe
+#      - POSTGRES_DB=postgres
+#    volumes:
+#      - ./postgres:/var/lib/postgresql/data
