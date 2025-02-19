@@ -11,6 +11,7 @@ const {
   actionDelimiter,
   isImageVisionTool,
   actionDomainSeparator,
+  OAuthFlowTypeEnum,
 } = require('librechat-data-provider');
 const { refreshAccessToken,getClientCredentialAccessToken } = require('~/server/services/TokenService');
 const { isActionDomainAllowed } = require('~/server/services/domains');
@@ -163,8 +164,8 @@ async function createActionTool({
         try {
           const action_id = action.action_id;
           const identifier = `${req.user.id}:${action.action_id}`;
-          if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
-            if(metadata.auth.oauth_flow=="client_cred_flow") {
+          if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.client_url) {
+            if(metadata.auth.oauth_flow===OAuthFlowTypeEnum.ClientCredentialFlow) {
               logger.debug('Oauth Client Credential Flow', { action_id, identifier });
 
               const accessToken =

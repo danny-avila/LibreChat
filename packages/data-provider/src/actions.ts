@@ -230,8 +230,8 @@ class RequestExecutor {
       oauth_client_secret != null &&
       oauth_client_secret &&
       type === AuthTypeEnum.OAuth &&
-      authorization_url != null &&
-      authorization_url &&
+      /*authorization_url != null &&
+      authorization_url &&*/
       client_url != null &&
       client_url &&
       scope != null &&
