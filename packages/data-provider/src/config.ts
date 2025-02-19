@@ -481,6 +481,7 @@ export type TStartupConfig = {
   githubLoginEnabled: boolean;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
+  openidMultiTenantEnabled: boolean;
   appleLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
@@ -556,6 +557,24 @@ export const configSchema = z.object({
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one `endpoints` field must be provided.',
+    })
+    .optional(),
+  // ===== Add your OpenID configuration =====
+  openid: z
+    .object({
+      tenants: z
+        .array(
+          z.object({
+            name: z.string(),
+            domains: z.string(),
+            openid: z.object({
+              clientId: z.string(),
+              clientSecret: z.string(),
+              issuer: z.string(),
+            }),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });
