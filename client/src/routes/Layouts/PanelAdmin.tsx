@@ -1,46 +1,51 @@
 import { Outlet } from 'react-router-dom';
-import {  Button, Container, CssBaseline,  useMediaQuery } from '@mui/material';
+import { Button, Container, CssBaseline, useMediaQuery } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
-
-const getInitialMode = () => {
-  // Check if a theme is saved in localStorage
-  const savedMode = localStorage.getItem('themeMode');
-  if (savedMode === 'light' || savedMode === 'dark') {
-    return savedMode;
-  }
-  // If no saved theme, use the system preference
-  const prefersDark =
-    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  return prefersDark ? 'dark' : 'light';
-};
+// const getInitialMode = () => {
+//   // Check if a theme is saved in localStorage
+//   const savedMode = localStorage.getItem('themeMode');
+//   if (savedMode === 'light' || savedMode === 'dark') {
+//     return savedMode;
+//   }
+//   // If no saved theme, use the system preference
+//   const prefersDark =
+//     window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+//   return prefersDark ? 'dark' : 'light';
+// };
 
 const PanelAdmin: React.FC = () => {
+  const [mode, setMode] = useState<'light' | 'dark'>(
+    localStorage.getItem('color-theme') as 'light' | 'dark',
+  );
 
-  const [mode, setMode] = useState<'light' | 'dark'>(getInitialMode);
-
-  // Update localStorage whenever mode changes
   useEffect(() => {
-    localStorage.setItem('themeMode', mode);
-  }, [mode]);
+    setMode(localStorage.getItem('color-theme') as 'light' | 'dark');
+  }, [localStorage.getItem('color-theme')]);
+  // const [mode, setMode] = useState<'light' | 'dark'>(getInitialMode);
 
-  // Listen for system theme changes (optional)
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e: MediaQueryListEvent) => {
-      // Only update if user hasn't manually selected a theme
-      const saveMode = localStorage.getItem('themeMode');
-      if (!saveMode) {
-        setMode(e.matches ? 'dark' : 'light');
-      }
-    };
+  // // Update localStorage whenever mode changes
+  // useEffect(() => {
+  //   localStorage.setItem('themeMode', mode);
+  // }, [mode]);
 
-    mediaQuery.addEventListener('change', handleChange);
+  // // Listen for system theme changes (optional)
+  // useEffect(() => {
+  //   const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  //   const handleChange = (e: MediaQueryListEvent) => {
+  //     // Only update if user hasn't manually selected a theme
+  //     const saveMode = localStorage.getItem('themeMode');
+  //     if (!saveMode) {
+  //       setMode(e.matches ? 'dark' : 'light');
+  //     }
+  //   };
 
-    return () => mediaQuery.removeEventListener('change', handleChange);
+  //   mediaQuery.addEventListener('change', handleChange);
 
-  }, []);
+  //   return () => mediaQuery.removeEventListener('change', handleChange);
+
+  // }, []);
 
   const theme = useMemo(
     () =>
@@ -67,15 +72,15 @@ const PanelAdmin: React.FC = () => {
   );
 
   // Toggles between light and dark modes
-  const toggleTheme = () => {
-    setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
-  };
+  // const toggleTheme = () => {
+  //   setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+  // };
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
 
-      <Button
+      {/* <Button
         variant="contained"
         onClick={toggleTheme}
         sx={{
@@ -91,7 +96,7 @@ const PanelAdmin: React.FC = () => {
         }}
       >
         Toggle Theme
-      </Button>
+      </Button> */}
 
       <Container sx={{ height: '100vh' }}>
         <Outlet />
