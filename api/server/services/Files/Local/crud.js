@@ -286,11 +286,31 @@ async function uploadLocalFile({ req, file, file_id }) {
 /**
  * Retrieves a readable stream for a file from local storage.
  *
+ * @param {ServerRequest} req - The request object from Express
  * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-function getLocalFileStream(filepath) {
+function getLocalFileStream(req, filepath) {
   try {
+    if (filepath.includes('/uploads/')) {
+      const basePath = filepath.split('/uploads/')[1];
+
+      if (!basePath) {
+        logger.warn(`Invalid base path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      const fullPath = path.join(req.app.locals.paths.uploads, basePath);
+      const uploadsDir = req.app.locals.paths.uploads;
+
+      const rel = path.relative(uploadsDir, fullPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+        logger.warn(`Invalid relative file path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      return fs.createReadStream(fullPath);
+    }
     return fs.createReadStream(filepath);
   } catch (error) {
     logger.error('Error getting local file stream:', error);
