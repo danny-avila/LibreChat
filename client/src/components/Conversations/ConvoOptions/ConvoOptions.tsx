@@ -1,15 +1,22 @@
 import { useState, useId, useRef, memo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import type * as t from '~/common';
-import { useDuplicateConversationMutation, useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
+import {
+  useDuplicateConversationMutation,
+  useGetStartupConfig,
+  useArchiveConvoMutation,
+} from '~/data-provider';
+import { useLocalize, useNavigateToConvo } from '~/hooks';
+import useNewConvo from '~/hooks/useNewConvo';
 import { useToastContext, useChatContext } from '~/Providers';
-import { DropdownPopup } from '~/components/ui';
+import { DropdownPopup, Spinner } from '~/components';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
+import { NotificationSeverity } from '~/common';
 
 function ConvoOptions({
   conversationId,
@@ -31,13 +38,48 @@ function ConvoOptions({
   const localize = useLocalize();
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
-  const archiveHandler = useArchiveHandler(conversationId, true, retainView);
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
+
+  const navigate = useNavigate();
+  const { conversationId: currentConvoId } = useParams();
+  const { newConversation } = useNewConvo();
+
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const archiveConvoMutation = useArchiveConvoMutation();
+
+  const archiveHandler = async () => {
+    const convoId = conversationId ?? '';
+
+    if (!convoId) {
+      return;
+    }
+
+    archiveConvoMutation.mutate(
+      { conversationId: convoId, isArchived: true },
+      {
+        onSuccess: () => {
+          if (currentConvoId === convoId || currentConvoId === 'new') {
+            newConversation();
+            navigate('/c/new', { replace: true });
+          }
+          retainView();
+          setIsPopoverActive(false);
+        },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_archive_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  };
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
@@ -46,6 +88,7 @@ function ConvoOptions({
         message: localize('com_ui_duplication_success'),
         status: 'success',
       });
+      setIsPopoverActive(false);
     },
     onMutate: () => {
       showToast({
@@ -70,11 +113,13 @@ function ConvoOptions({
   };
 
   const duplicateHandler = () => {
-    setIsPopoverActive(false);
     duplicateConversation.mutate({
       conversationId: conversationId ?? '',
     });
   };
+
+  const isDuplicateLoading = duplicateConversation.isLoading;
+  const isArchiveLoading = archiveConvoMutation.isLoading;
 
   const dropdownItems: t.MenuItemProps[] = [
     {
@@ -95,12 +140,22 @@ function ConvoOptions({
     {
       label: localize('com_ui_duplicate'),
       onClick: duplicateHandler,
-      icon: <Copy className="icon-sm mr-2 text-text-primary" />,
+      hideOnClick: false,
+      icon: isDuplicateLoading ? (
+        <Spinner className="size-4" />
+      ) : (
+        <Copy className="icon-sm mr-2 text-text-primary" />
+      ),
     },
     {
       label: localize('com_ui_archive'),
       onClick: archiveHandler,
-      icon: <Archive className="icon-sm mr-2 text-text-primary" />,
+      hideOnClick: false,
+      icon: isArchiveLoading ? (
+        <Spinner className="size-4" />
+      ) : (
+        <Archive className="icon-sm mr-2 text-text-primary" />
+      ),
     },
     {
       label: localize('com_ui_delete'),

@@ -19,6 +19,8 @@ import type {
   TPlugin,
   ConversationListResponse,
   ConversationListParams,
+  SearchConversationListResponse,
+  SearchConversationListParams,
   Assistant,
   AssistantListParams,
   AssistantListResponse,
@@ -92,19 +94,22 @@ export const useGetConvoIdQuery = (
 };
 
 export const useSearchInfiniteQuery = (
-  params?: ConversationListParams & { searchQuery?: string },
-  config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
+  params?: SearchConversationListParams,
+  config?: UseInfiniteQueryOptions<SearchConversationListResponse, unknown>,
 ) => {
-  return useInfiniteQuery<ConversationListResponse, unknown>(
-    [QueryKeys.searchConversations, params], // Include the searchQuery in the query key
-    ({ pageParam = '1' }) =>
-      dataService.listConversationsByQuery({ ...params, pageNumber: pageParam }),
+  return useInfiniteQuery<SearchConversationListResponse, unknown>(
+    [QueryKeys.searchConversations, params],
+    ({ pageParam = null }) =>
+      dataService
+        .listConversationsByQuery({
+          ...params,
+          nextCursor: pageParam,
+          pageSize: params?.pageSize ?? 20,
+          search: params?.search ?? '',
+        })
+        .then((res) => ({ ...res })) as Promise<SearchConversationListResponse>,
     {
-      getNextPageParam: (lastPage) => {
-        const currentPageNumber = Number(lastPage.pageNumber);
-        const totalPages = Number(lastPage.pages);
-        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
-      },
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
@@ -114,33 +119,31 @@ export const useSearchInfiniteQuery = (
 };
 
 export const useConversationsInfiniteQuery = (
-  params?: ConversationListParams,
+  params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useInfiniteQuery<ConversationListResponse, unknown>(
-    params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
-    ({ pageParam = '' }) =>
+  const { isArchived, sortBy, sortDirection, tags, search } = params;
+
+  return useInfiniteQuery<ConversationListResponse>({
+    queryKey: [
+      isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
+      { isArchived, sortBy, sortDirection, tags, search },
+    ],
+    queryFn: ({ pageParam }) =>
       dataService.listConversations({
-        ...params,
-        pageNumber: pageParam?.toString(),
-        isArchived: params?.isArchived ?? false,
-        tags: params?.tags || [],
+        cursor: pageParam?.toString(),
+        isArchived,
+        sortBy,
+        sortDirection,
+        tags,
+        search,
       }),
-    {
-      getNextPageParam: (lastPage) => {
-        const currentPageNumber = Number(lastPage.pageNumber);
-        const totalPages = Number(lastPage.pages); // Convert totalPages to a number
-        // If the current page number is less than total pages, return the next page number
-        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
-      },
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: (config?.enabled ?? true) === true && queriesEnabled,
-    },
-  );
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes
+    ...config,
+  });
 };
 
 export const useSharedLinksQuery = (

@@ -9,10 +9,11 @@ import {
   OGDialogContent,
   OGDialogHeader,
   OGDialogTitle,
-  Button,
   TooltipAnchor,
+  Button,
   Label,
-} from '~/components/ui';
+  Spinner,
+} from '~/components';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useMediaQuery } from '~/hooks';
@@ -20,7 +21,6 @@ import DataTable from '~/components/ui/DataTable';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { formatDate } from '~/utils';
-import { Spinner } from '~/components/svg';
 
 const PAGE_SIZE = 25;
 
@@ -37,6 +37,7 @@ export default function SharedLinks() {
   const { showToast } = useToastContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
+  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -143,8 +144,6 @@ export default function SharedLinks() {
     }
     await fetchNextPage();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
-
-  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
 
   const confirmDelete = useCallback(() => {
     if (deleteRow) {
@@ -291,6 +290,7 @@ export default function SharedLinks() {
             showCheckboxes={false}
             onFilterChange={debouncedFilterChange}
             filterValue={queryParams.search}
+            isLoading={isLoading}
           />
         </OGDialogContent>
       </OGDialog>
