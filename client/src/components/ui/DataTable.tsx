@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Row,
@@ -27,8 +28,9 @@ import {
 } from './';
 import { TrashIcon, Spinner } from '~/components/svg';
 import { useLocalize, useMediaQuery } from '~/hooks';
-import { cn } from '~/utils';
 import { LocalizeFunction } from '~/common';
+import { cn } from '~/utils';
+import store from '~/store';
 
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
@@ -168,7 +170,7 @@ const DeleteButton = memo(
     isDeleting: boolean;
     disabled: boolean;
     isSmallScreen: boolean;
-    localize:LocalizeFunction;
+    localize: LocalizeFunction;
   }) => {
     if (!onDelete) {
       return null;
@@ -212,8 +214,9 @@ export default function DataTable<TData, TValue>({
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
+  const [isDeleting, setIsDeleting] = useState(false);
+  const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -371,7 +374,7 @@ export default function DataTable<TData, TValue>({
             localize={localize}
           />
         )}
-        {filterColumn !== undefined && table.getColumn(filterColumn) && (
+        {filterColumn !== undefined && table.getColumn(filterColumn) && isSearchEnabled && (
           <div className="relative flex-1">
             <AnimatedSearchInput
               value={searchTerm}

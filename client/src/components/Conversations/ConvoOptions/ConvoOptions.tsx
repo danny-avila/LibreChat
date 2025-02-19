@@ -68,6 +68,7 @@ function ConvoOptions({
             navigate('/c/new', { replace: true });
           }
           retainView();
+          setIsPopoverActive(false);
         },
         onError: () => {
           showToast({
@@ -149,6 +150,7 @@ function ConvoOptions({
     {
       label: localize('com_ui_archive'),
       onClick: archiveHandler,
+      hideOnClick: false,
       icon: isArchiveLoading ? (
         <Spinner className="size-4" />
       ) : (

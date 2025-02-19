@@ -123,7 +123,7 @@ const Conversations: FC<ConversationsProps> = ({
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
             <div ref={registerChild} style={style}>
-              {renderContent()}
+              <div className={item.type === 'convo' ? 'mb-1' : undefined}>{renderContent()}</div>
             </div>
           )}
         </CellMeasurer>
