@@ -110,22 +110,23 @@ export const useTagConversationMutation = (
 };
 
 export const useArchiveConvoMutation = (
-  id: string,
+  options?: t.ArchiveConversationOptions,
 ): UseMutationResult<
-  t.TArchiveConversationResponse | undefined,
+  t.TArchiveConversationResponse,
   unknown,
   t.TArchiveConversationRequest,
   unknown
 > => {
   const queryClient = useQueryClient();
-
   const convoQueryKey = [QueryKeys.allConversations];
   const archivedConvoQueryKey = [QueryKeys.archivedConversations];
+  const { onMutate, onError, onSettled, onSuccess, ..._options } = options || {};
 
   return useMutation(
     (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
     {
-      onSuccess: (_data, vars) => {
+      onMutate,
+      onSuccess: (_data, vars, context) => {
         const isArchived = vars.isArchived === true;
 
         queryClient.setQueryData<t.ConversationData>(convoQueryKey, (oldData) => {
@@ -136,7 +137,9 @@ export const useArchiveConvoMutation = (
             ...oldData,
             pages: oldData.pages.map((page) => ({
               ...page,
-              conversations: page.conversations.filter((conv) => conv.conversationId !== id),
+              conversations: page.conversations.filter(
+                (conv) => conv.conversationId !== vars.conversationId,
+              ),
             })),
           };
         });
@@ -145,7 +148,6 @@ export const useArchiveConvoMutation = (
           if (!oldData) {
             return oldData;
           }
-
           if (isArchived) {
             return {
               ...oldData,
@@ -162,14 +164,22 @@ export const useArchiveConvoMutation = (
               ...oldData,
               pages: oldData.pages.map((page) => ({
                 ...page,
-                conversations: page.conversations.filter((conv) => conv.conversationId !== id),
+                conversations: page.conversations.filter(
+                  (conv) => conv.conversationId !== vars.conversationId,
+                ),
               })),
             };
           }
         });
 
-        queryClient.setQueryData([QueryKeys.conversation, id], isArchived ? null : _data);
+        queryClient.setQueryData(
+          [QueryKeys.conversation, vars.conversationId],
+          isArchived ? null : _data,
+        );
+
+        onSuccess?.(_data, vars, context);
       },
+      onError,
       onSettled: () => {
         queryClient.invalidateQueries({
           queryKey: convoQueryKey,
@@ -180,6 +190,7 @@ export const useArchiveConvoMutation = (
           refetchPage: (_, index) => index === 0,
         });
       },
+      ..._options,
     },
   );
 };
@@ -613,25 +624,46 @@ export const useForkConvoMutation = (
 ): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkConvoRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options || {};
+  const activeConvoQueryKey = [QueryKeys.allConversations];
+
   return useMutation((payload: t.TForkConvoRequest) => dataService.forkConversation(payload), {
     onSuccess: (data, vars, context) => {
       if (!vars.conversationId) {
         return;
       }
-      queryClient.setQueryData(
-        [QueryKeys.conversation, data.conversation.conversationId],
-        data.conversation,
-      );
-      queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
-        if (!convoData) {
-          return convoData;
+      const forkedConversation = data.conversation;
+      const forkedConversationId = forkedConversation.conversationId;
+      if (!forkedConversationId) {
+        return;
+      }
+
+      queryClient.setQueryData([QueryKeys.conversation, forkedConversationId], forkedConversation);
+
+      queryClient.setQueryData<t.ConversationData>(activeConvoQueryKey, (oldData) => {
+        if (!oldData) {
+          return oldData;
         }
-        return addConversation(convoData, data.conversation);
+
+        const updatedPages = [
+          {
+            ...oldData.pages[0],
+            conversations: [forkedConversation, ...oldData.pages[0].conversations],
+          },
+          ...oldData.pages.slice(1),
+        ];
+        return { ...oldData, pages: updatedPages };
       });
+
       queryClient.setQueryData<t.TMessage[]>(
-        [QueryKeys.messages, data.conversation.conversationId],
+        [QueryKeys.messages, forkedConversationId],
         data.messages,
       );
+
+      queryClient.invalidateQueries({
+        queryKey: activeConvoQueryKey,
+        refetchPage: (_, index) => index === 0,
+      });
+
       onSuccess?.(data, vars, context);
     },
     ..._options,

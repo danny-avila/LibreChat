@@ -2,7 +2,7 @@ import { useState, useId, useRef, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
-import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
+import type { MouseEvent } from 'react';
 import type * as t from '~/common';
 import {
   useDuplicateConversationMutation,
@@ -50,7 +50,7 @@ function ConvoOptions({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  const archiveConvoMutation = useArchiveConvoMutation(conversationId ?? '');
+  const archiveConvoMutation = useArchiveConvoMutation();
 
   const archiveHandler = async () => {
     const convoId = conversationId ?? '';

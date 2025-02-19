@@ -32,10 +32,8 @@ const DEFAULT_PARAMS: ConversationListParams = {
 };
 
 export default function ArchivedChatsTable({
-  isOpen,
   onOpenChange,
 }: {
-  isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
 }) {
   const localize = useLocalize();
@@ -53,8 +51,6 @@ export default function ArchivedChatsTable({
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
-
-  const unarchiveMutation = useArchiveConvoMutation('');
 
   const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
     setQueryParams((prev) => ({
@@ -95,7 +91,7 @@ export default function ArchivedChatsTable({
       setIsDeleteOpen(false);
       await refetch();
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       console.error('Delete error:', error);
       showToast({
         message: localize('com_ui_archive_delete_error') as string,
@@ -104,19 +100,19 @@ export default function ArchivedChatsTable({
     },
   });
 
-  const handleUnarchive = useCallback(
-    (conversationId: string) => {
-      unarchiveMutation.mutate(
-        { conversationId, isArchived: false },
-        {
-          onSuccess: () => {
-            refetch();
-          },
-        },
-      );
+  const unarchiveMutation = useArchiveConvoMutation({
+    onSuccess: async () => {
+      setIsDeleteOpen(false);
+      await refetch();
     },
-    [unarchiveMutation, refetch],
-  );
+    onError: (error: unknown) => {
+      console.error('Delete error:', error);
+      showToast({
+        message: localize('com_ui_archive_delete_error') as string,
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
 
   const handleFetchNextPage = useCallback(async () => {
     if (!hasNextPage || isFetchingNextPage) {
@@ -196,10 +192,20 @@ export default function ArchivedChatsTable({
                   <Button
                     variant="ghost"
                     className="h-8 w-8 p-0 hover:bg-surface-hover"
-                    onClick={() => handleUnarchive(conversation.conversationId)}
+                    onClick={() =>
+                      unarchiveMutation.mutate({
+                        conversationId: conversation.conversationId,
+                        isArchived: false,
+                      })
+                    }
                     title={localize('com_ui_unarchive')}
+                    disabled={unarchiveMutation.isLoading}
                   >
-                    <ArchiveRestore className="size-4" />
+                    {unarchiveMutation.isLoading ? (
+                      <Spinner />
+                    ) : (
+                      <ArchiveRestore className="size-4" />
+                    )}
                   </Button>
                 }
               />
@@ -228,7 +234,7 @@ export default function ArchivedChatsTable({
         },
       },
     ],
-    [handleSort, handleUnarchive, isSmallScreen, localize],
+    [handleSort, isSmallScreen, localize, unarchiveMutation],
   );
 
   return (

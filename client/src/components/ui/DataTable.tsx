@@ -364,7 +364,7 @@ export default function DataTable<TData, TValue>({
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
       {/* Table controls */}
-      <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-4 sm:py-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         {enableRowSelection && showCheckboxes && (
           <DeleteButton
             onDelete={handleDelete}
