@@ -5,6 +5,7 @@ import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
+  OAuthFlowTypeEnum,
 } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -285,6 +286,7 @@ const OAuth = () => {
   const localize = useLocalize();
   const { register, watch, setValue } = useFormContext();
   const token_exchange_method = watch('token_exchange_method');
+  const oauth_flow = watch('oauth_flow');
   const type = watch('type');
 
   const inputClasses = cn(
@@ -295,6 +297,53 @@ const OAuth = () => {
 
   return (
     <>
+      <label className="mb-1 block text-sm font-medium">
+        {localize('com_ui_oauth_flow')}
+      </label>
+      <RadioGroup.Root
+        defaultValue={OAuthFlowTypeEnum.AuthorizationCodeFlow}
+        onValueChange={(value) => setValue('oauth_flow', value)}
+        value={oauth_flow}
+        role="radiogroup"
+        aria-required="true"
+        dir="ltr"
+        style={{ outline: 'none' }}
+      >
+        <div className="flex items-center gap-2">
+          <label htmlFor=":rj4:" className="flex cursor-pointer items-center gap-1">
+            <RadioGroup.Item
+              type="button"
+              role="radio"
+              value={OAuthFlowTypeEnum.AuthorizationCodeFlow}
+              id=":rj4:"
+              className={cn(
+                'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
+                'border-border-heavy bg-surface-primary',
+              )}
+            >
+              <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
+            </RadioGroup.Item>
+            {localize('com_ui_auth_code_flow')}
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor=":rj5:" className="flex cursor-pointer items-center gap-1">
+            <RadioGroup.Item
+              type="button"
+              role="radio"
+              value={OAuthFlowTypeEnum.ClientCredentialFlow}
+              id=":rj5:"
+              className={cn(
+                'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
+                'border-border-heavy bg-surface-primary',
+              )}
+            >
+              <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
+            </RadioGroup.Item>
+            {localize('com_ui_client_credential_flow')}
+          </label>
+        </div>
+      </RadioGroup.Root>
       <label className="mb-1 block text-sm font-medium">{localize('com_ui_client_id')}</label>
       <input
         placeholder="<HIDDEN>"
@@ -311,11 +360,15 @@ const OAuth = () => {
         className={inputClasses}
         {...register('oauth_client_secret', { required: false })}
       />
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
-      <input
-        className={inputClasses}
-        {...register('authorization_url', { required: type === AuthTypeEnum.OAuth })}
-      />
+      {(oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow || oauth_flow == null)   && (
+        <>
+        <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
+        <input
+          className={inputClasses}
+          {...register('authorization_url', { required: oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow })}
+        />
+      </>
+      )}
       <label className="mb-1 block text-sm font-medium">{localize('com_ui_token_url')}</label>
       <input
         className={inputClasses}

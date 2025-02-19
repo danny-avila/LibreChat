@@ -4,6 +4,7 @@ import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
+  OAuthFlowTypeEnum,
 } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
@@ -63,6 +64,7 @@ export default function ActionsPanel({
       client_url: '',
       scope: '',
       token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+      oauth_flow: OAuthFlowTypeEnum.AuthorizationCodeFlow,
     },
   });
 
@@ -82,6 +84,8 @@ export default function ActionsPanel({
         scope: action.metadata.auth.scope ?? '',
         token_exchange_method:
           action.metadata.auth.token_exchange_method ?? TokenExchangeMethodEnum.DefaultPost,
+        oauth_flow:
+          action.metadata.auth.oauth_flow ?? OAuthFlowTypeEnum.AuthorizationCodeFlow,  
       });
     }
   }, [action, reset]);
