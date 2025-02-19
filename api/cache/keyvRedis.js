@@ -7,7 +7,7 @@ const ioredis = require('ioredis');
 const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_KEY_PREFIX, REDIS_MAX_LISTENERS } = process.env;
 
 let keyvRedis;
-const redis_prefix = REDIS_KEY_PREFIX || "";
+const redis_prefix = REDIS_KEY_PREFIX || '';
 const redis_max_listeners = REDIS_MAX_LISTENERS || 10;
 
 function mapURI(uri) {
