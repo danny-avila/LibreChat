@@ -209,7 +209,7 @@ const primeFiles = async (options, apiKey) => {
           const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
             FileSources.execute_code,
           );
-          const stream = await getDownloadStream(file.filepath);
+          const stream = await getDownloadStream(options.req, file.filepath);
           const fileIdentifier = await uploadCodeEnvFile({
             req: options.req,
             stream,
