@@ -10,6 +10,12 @@ services:
       - mongodb
       - rag_api
     image: ghcr.io/danny-avila/librechat-dev:latest
+    # build: .
+    # image: librechat-local  # Custom image name for your local build
+    # volumes:
+    #   - .:/app  # Bind-mount local files for live changes
+    #   - ./images:/app/client/public/images
+    #   - ./logs:/app/api/logs
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
