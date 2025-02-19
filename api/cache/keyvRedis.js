@@ -4,9 +4,11 @@ const logger = require('~/config/winston');
 const fs = require('fs');
 const ioredis = require('ioredis');
 
-const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA } = process.env;
+const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_KEY_PREFIX, REDIS_MAX_LISTENERS } = process.env;
 
 let keyvRedis;
+const redis_prefix = REDIS_KEY_PREFIX || "";
+const redis_max_listeners = REDIS_MAX_LISTENERS || 10;
 
 function mapURI(uri) {
   const regex =
@@ -24,7 +26,6 @@ function mapURI(uri) {
       port: port || null,
     };
   } else {
-    // Handle cases without a scheme
     const parts = uri.split(':');
     if (parts.length === 2) {
       return {
@@ -48,11 +49,16 @@ function mapURI(uri) {
 
 if (REDIS_URI && isEnabled(USE_REDIS)) {
   let redisOptions = null;
-  let keyvOpts = { useRedisSets: false };
+  let keyvOpts = {
+    useRedisSets: false,
+    keyPrefix: redis_prefix,
+  };
+
   if (REDIS_CA) {
     const ca = fs.readFileSync(REDIS_CA);
     redisOptions = { tls: { ca } };
   }
+
   if (isEnabled(USE_REDIS_CLUSTER)) {
     const hosts = REDIS_URI.split(',').map((item) => {
       var value = mapURI(item);
@@ -68,7 +74,7 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
     keyvRedis = new KeyvRedis(REDIS_URI, keyvOpts);
   }
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
-  keyvRedis.setMaxListeners(0);
+  keyvRedis.setMaxListeners(redis_max_listeners);
   logger.info(
     '[Optional] Redis initialized. Note: Redis support is experimental. If you have issues, disable it. Cache needs to be flushed for values to refresh.',
   );
