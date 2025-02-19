@@ -1,7 +1,5 @@
 import {
   Button,
-  Card,
-  Modal,
   Stack,
   Table,
   TableBody,
@@ -14,7 +12,6 @@ import {
 } from '@mui/material';
 import Paper from '@mui/material/Paper';
 import { IconButton } from '@mui/material';
-
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
@@ -24,8 +21,6 @@ import BalanceModal from './BalanceModal';
 import AddUserModal from './AddUserModal';
 import DeleteUserModal from './DeleteUserModal';
 import EditUserModal from './EditUserModal';
-// import Modal from './Modal';
-import useAuthRedirect from '~/routes/useAuthRedirect';
 import { useAuthContext } from '~/hooks';
 import { useNavigate } from 'react-router-dom';
 
@@ -56,8 +51,7 @@ const UserManagement: React.FC = () => {
 
   const getUsers = async () => {
     const res = await axios.get('http://localhost:3090/api/getUsers');
-
-    const filteredUsers = res.data.map((item: any) => ({
+    const filteredUsers = res.data.users.map((item: any) => ({
       name: item.name,
       username: item.username,
       role: item.role,
@@ -65,37 +59,14 @@ const UserManagement: React.FC = () => {
       email: item.email,
       balance: item.balance,
     }));
-    console.log(res);
     setUsers(filteredUsers);
   };
-
-  // useEffect(() => {
-  //   getUsers();
-  // }, []);
-
-  // useEffect(()=>{
-  //   console.log(user )
-  //   if(user !== undefined && user.role !== "ADMIN"){
-  //     navigate('/c')
-  //   }
-  // },[])
-
-  // useEffect(() => {
-  //   if (user && user.role !== 'ADMIN') {
-  //     navigate('/c');
-  //   } else if (!user) {
-  //     navigate('/login');
-  //   } else {
-  //     getUsers();
-  //   }
-  // }, [user, navigate]);
 
   useEffect(() => {
     const checkUser = async () => {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       setLoading(false);
     };
-
     checkUser();
   }, []);
 
@@ -114,11 +85,9 @@ const UserManagement: React.FC = () => {
   const addBalanceHandler = async (user: User) => {
     setBalanceModal(true);
     setSelectedUserId(user.id);
-    console.log(user);
   };
 
   const deleteUserHandler = async (user: User) => {
-    // console.log('delete' ,user)
     setDeleteUserModal(true);
     setSelectedUserId(user.id);
     setSelectedUser(user);
@@ -171,14 +140,14 @@ const UserManagement: React.FC = () => {
       <EditUserModal
         open={editUserModal}
         onClose={() => setEditUserModal(false)}
-        user={selectedUser}
+        user={selectedUser as User}
         refreshUsers={getUsers}
       />
       {/* delete-user modal */}
       <DeleteUserModal
         open={deleteUserModal}
         onClose={() => setDeleteUserModal(false)}
-        user={selectedUser}
+        user={selectedUser as User}
         refreshUsers={getUsers}
       />
       <Paper sx={{ width: '100%', overflow: 'hidden' }} variant="outlined">

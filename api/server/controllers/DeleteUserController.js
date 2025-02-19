@@ -2,7 +2,6 @@ const User = require('~/models/User');
 
 async function deleteUserController(req, res) {
   try {
-    console.log(req.params.id);
     const findedUser = await User.findOne({ _id: req.params.id }).lean();
 
     if (!findedUser) {
@@ -13,7 +12,7 @@ async function deleteUserController(req, res) {
 
     return res.status(200).json({ message: 'User deleted successfully', user: deleteUser });
   } catch (error) {
-    console.log('Error', error);
+    console.error('Error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 }

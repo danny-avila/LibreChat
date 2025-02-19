@@ -1,7 +1,6 @@
 import { Box, Button, Modal, Stack, TextField, Typography } from '@mui/material';
 import axios from 'axios';
 import { useState } from 'react';
-import { number } from 'zod';
 
 interface BalanceModalProps {
   open: boolean;
@@ -28,13 +27,10 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
   const [balance, setBalance] = useState<number | ''>('');
 
   const addBalanceHandler = async () => {
-    console.log(balance);
-
     const res = await axios.post('http://localhost:3080/api/addBalance/', {
       balance: balance,
       id: props.userId,
     });
-    console.log('add balance:', res);
     props.refreshUsers();
     props.onClose();
     setBalance('');
@@ -48,7 +44,12 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
       aria-describedby="parent-modal-description"
     >
       <Box sx={{ ...style }}>
-        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ color: 'primary.main' }}>
+        <Typography
+          id="modal-modal-title"
+          variant="h6"
+          component="h2"
+          sx={{ color: 'primary.main' }}
+        >
           Add Balance
         </Typography>
         <Typography id="modal-modal-description" sx={{ my: 2 }}>
@@ -62,17 +63,6 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
             onChange={(event) => setBalance(+event.target.value)}
             sx={{ mt: 2, maxWidth: '320px' }}
           />
-          {/* <Button variant="outlined" onClick={addBalanceHandler}  sx={{
-            mt:2,
-            fontWeight: 'bold',
-            maxWidth: '320px',
-            borderColor: '#74c69d',
-            color: '#74c69d',
-            '&:hover': { backgroundColor: '#74c69d', color: '#fff' },
-          }}>
-            ADD
-          </Button> */}
-
           <Stack
             direction="row"
             spacing={2}

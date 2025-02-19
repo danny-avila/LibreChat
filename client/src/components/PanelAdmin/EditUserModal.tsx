@@ -53,12 +53,10 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [confirmPassword, setConfirmPassword] = useState<string>('');
 
   const [fullNameError, setFullNameError] = useState<string>('');
   const [emailError, setEmailError] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
-  //   const [confirmPasswordError, setConfirmPasswordError] = useState<string>('');
 
   const [role, setRole] = useState<UserRole['role']>('USER');
 
@@ -70,7 +68,6 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
       setEmail(props.user.email);
       setRole(props.user.role as 'ADMIN' | 'USER');
       setPassword('');
-      //   setConfirmPassword('');
     }
   }, [props.user]);
 
@@ -101,34 +98,13 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
     }
   };
 
-  //   const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
-  //     setConfirmPassword(e.target.value);
-  //     if (e.target.value.trim() !== password) {
-  //       setConfirmPasswordError('Password is wrong.');
-  //     } else {
-  //       setConfirmPasswordError('');
-  //     }
-  //   };
-
   const roleChangeHandler = (e: SelectChangeEvent<'ADMIN' | 'USER'>) => {
     setRole(e.target.value as UserRole['role']);
   };
 
   const submitHandler = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
     if (fullName.length && email.length && fullNameError.length === 0 && emailError.length === 0) {
-      console.log('submit');
-
-      //   const editedUser = {
-      //     email: email,
-      //     name: fullName,
-      //     username: fullName,
-      //     confirm_password: confirmPassword,
-      //     password: password,
-      //     role: role
-      //   };
-
       const editedUser: Partial<User> = {
         ...(fullName && { name: fullName }),
         ...(fullName && { username: fullName }), // Only include if fullName is not empty
@@ -137,25 +113,19 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
         ...(role && { role }), // Only include if role is selected
       };
 
-      console.log(editedUser);
-
       try {
         const response = await axios.put(`http://localhost:3090/api/editUser/${props.user.id}`, {
           editedUser: editedUser,
         });
-
-        console.log('User Edited: ', response);
         props.onClose();
         setFullName('');
         setEmail('');
         setPassword('');
         setFullName('');
-        // setConfirmPassword('');
         setFormError('');
         props.refreshUsers();
       } catch (error) {
         // setFormError('sth went wrong!please try later')
-
         console.error('Error creating user', error);
       }
     } else {
@@ -170,12 +140,17 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
           <Typography id="modal-modal-title" variant="h6" sx={{ color: 'primary.main', mb: 2 }}>
             Edit User
           </Typography>
-
           <form onSubmit={submitHandler}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <FormControl>
                 <InputLabel id="role-label">role</InputLabel>
-                <Select labelId="role-label" label="Role" value={role} onChange={roleChangeHandler} sx={{maxWidth: '320px'}}>
+                <Select
+                  labelId="role-label"
+                  label="Role"
+                  value={role}
+                  onChange={roleChangeHandler}
+                  sx={{ maxWidth: '320px' }}
+                >
                   <MenuItem value="ADMIN">admin</MenuItem>
                   <MenuItem value="USER">user</MenuItem>
                 </Select>
@@ -187,7 +162,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                   onChange={fullNameHandler}
                   value={fullName}
                   error={fullNameError.length !== 0}
-                  sx={{maxWidth: '320px'}}
+                  sx={{ maxWidth: '320px' }}
                 />
                 <FormHelperText sx={{ color: 'red' }}>{fullNameError}</FormHelperText>
               </FormControl>
@@ -213,48 +188,38 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
                 />
                 <FormHelperText sx={{ color: 'red' }}>{passwordError}</FormHelperText>
               </FormControl>
-              {/* <FormControl>
-                <TextField
-                  label="confirm_password"
-                  type="text"
-                  onChange={confirmPasswordHandler}
-                  value={confirmPassword}
-                  error={confirmPasswordError.length !== 0}
-                />
-                <FormHelperText sx={{ color: 'red' }}>{confirmPasswordError}</FormHelperText>
-              </FormControl> */}
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
               <Stack
-            direction="row"
-            spacing={2}
-            sx={{ width: '100%', justifyContent: 'space-between' }}
-          >
-            <Button
-              variant="outlined"
-              onClick={props.onClose}
-              sx={{
-                fontWeight: 'bold',
-                flex: 1,
-                borderColor: 'primary.main',
-                color: 'primary.main',
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              type="submit"             
-              sx={{
-                fontWeight: 'bold',
-                flex: 1,
-                backgroundColor: 'primary.main',
-                color: '#fff',
-                borderColor: 'primary.main',
-              }}
-            >
-              Continue
-            </Button>
-          </Stack>       
+                direction="row"
+                spacing={2}
+                sx={{ width: '100%', justifyContent: 'space-between' }}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={props.onClose}
+                  sx={{
+                    fontWeight: 'bold',
+                    flex: 1,
+                    borderColor: 'primary.main',
+                    color: 'primary.main',
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  type="submit"
+                  sx={{
+                    fontWeight: 'bold',
+                    flex: 1,
+                    backgroundColor: 'primary.main',
+                    color: '#fff',
+                    borderColor: 'primary.main',
+                  }}
+                >
+                  Continue
+                </Button>
+              </Stack>
             </Box>
           </form>
         </Box>

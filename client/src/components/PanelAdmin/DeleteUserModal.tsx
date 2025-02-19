@@ -14,7 +14,7 @@ interface DeleteUserModalProps {
   open: boolean;
   onClose: () => void;
   refreshUsers: () => Promise<void>;
-  user: User ;
+  user: User;
 }
 
 const style = {
@@ -32,11 +32,10 @@ const style = {
 };
 
 const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
-  const deleteUserHandler = async() => {
-      const res= await axios.delete(`http://localhost:3090/api/deleteUser/${props.user.id}`)
-      props.refreshUsers()
-      props.onClose()
-    console.log(res) 
+  const deleteUserHandler = async () => {
+    const res = await axios.delete(`http://localhost:3090/api/deleteUser/${props.user.id}`);
+    props.refreshUsers();
+    props.onClose();
   };
 
   return (
@@ -46,18 +45,23 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
       aria-labelledby="parent-modal-title"
       aria-describedby="parent-modal-description"
     >
-      <Box sx={{ ...style}}>
-        <Typography id="modal-modal-title" variant="h6" component="h2" sx={{color:'primary.main'}}>
+      <Box sx={{ ...style }}>
+        <Typography
+          id="modal-modal-title"
+          variant="h6"
+          component="h2"
+          sx={{ color: 'primary.main' }}
+        >
           Delete User
         </Typography>
-        <Typography id="modal-modal-description" sx={{ mt: 2 ,mb:1 }}>
+        <Typography id="modal-modal-description" sx={{ mt: 2, mb: 1 }}>
           Are you sure you want delete this user with this specifications ?
         </Typography>
         <Typography variant="body2">Username: {props?.user?.username}</Typography>
         <Typography variant="body2">ID: {props?.user?.id}</Typography>
         <Typography variant="body2">Email: {props?.user?.email}</Typography>
         <Stack spacing={2} sx={{ mt: 2, maxWidth: '320px', width: '100%' }}>
-        <Stack
+          <Stack
             direction="row"
             spacing={2}
             sx={{ width: '100%', justifyContent: 'space-between' }}

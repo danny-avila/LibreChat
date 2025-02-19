@@ -95,7 +95,7 @@ function AccountSettings() {
         {user?.role === 'ADMIN' && (
           <Select.SelectItem value="" onClick={adminPanelHandler} className="select-item text-sm">
             <AdminPanelSettingsOutlinedIcon />
-            Amdin Panel
+            Admin Panel
           </Select.SelectItem>
         )}
         <Select.SelectItem

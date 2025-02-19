@@ -17,9 +17,7 @@ import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
 import PanelAdmin from './Layouts/PanelAdmin';
-import WelcomeUser from '~/components/PanelAdmin/WelcomeUser';
 import UserManagement from '~/components/PanelAdmin/UserManagement';
-import RegisterWithRole from '~/components/PanelAdmin/RegisterWithRole';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -53,7 +51,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  
   {
     path: 'verify',
     element: <VerifyEmail />,
@@ -73,28 +70,16 @@ export const router = createBrowserRouter([
           },
         ],
       },
-
-
-
       {
         path: 'panel-admin',
-        element: <PanelAdmin /> ,
+        element: <PanelAdmin />,
         children: [
-          {
-            path: 'welcome',
-            element: <WelcomeUser />,
-          },
           {
             path: 'user-management',
             element: <UserManagement />,
           },
-          {
-            path: 'register-with-role',
-            element: <RegisterWithRole />,
-          },
         ],
       },
-
       dashboardRoutes,
       {
         path: '/',

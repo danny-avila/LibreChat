@@ -84,10 +84,7 @@ const startServer = async () => {
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
 
-  app.use('/api/addBalance', routes.addBalance);
-  app.use('/api/getUsers', routes.getUsers);
-  app.use('/api/deleteUser', routes.deleteUser);
-  app.use('/api/editUser', routes.editUser);
+
 
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
@@ -116,6 +113,11 @@ const startServer = async () => {
   app.use('/api/bedrock', routes.bedrock);
 
   app.use('/api/tags', routes.tags);
+
+  app.use('/api/addBalance', routes.addBalance);
+  app.use('/api/getUsers', routes.getUsers);
+  app.use('/api/deleteUser', routes.deleteUser);
+  app.use('/api/editUser', routes.editUser);
 
   app.use((req, res) => {
     res.set({

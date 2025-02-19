@@ -5,5 +5,4 @@ const {requireJwtAuth} = require('../middleware/')
 
 router.post('/', requireJwtAuth ,controller)
 
-
 module.exports = router;

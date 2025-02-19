@@ -1,4 +1,3 @@
-import { Label } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -83,8 +82,6 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
 
   const submitHandler = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log('sub')
-
     if (
       fullName.length &&
       email.length &&
@@ -95,8 +92,6 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
       passwordError.length === 0 &&
       confirmPasswordError.length === 0
     ) {
-      console.log('submit');
-
       const user = {
         email: email,
         name: fullName,
@@ -104,12 +99,8 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
         confirm_password: confirmPassword,
         password: password,
       };
-
       try {
         const response = await axios.post('http://localhost:3090/api/auth/register', user);
-        // const response = await axios.post(`http://localhost:3090${registerPath}`, user );
-
-        console.log('User Created:');
         props.onClose();
         setFullName('');
         setEmail('');
@@ -120,7 +111,6 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
         props.refreshUsers();
       } catch (error) {
         // setFormError('sth went wrong!please try later')
-
         console.error('Error creating user', error);
       }
     } else {
@@ -135,7 +125,6 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
           <Typography id="modal-modal-title" variant="h6" sx={{ color: 'primary.main', mb: 2 }}>
             Add User
           </Typography>
-
           <form onSubmit={submitHandler}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <FormControl>
@@ -184,40 +173,36 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
               </FormControl>
               <FormHelperText sx={{ color: 'red' }}>{formError}</FormHelperText>
               <Stack
-            direction="row"
-            spacing={2}
-            sx={{ width: '100%', justifyContent: 'space-between' }}
-          >
-            <Button
-              variant="outlined"
-              onClick={props.onClose}
-              sx={{
-                fontWeight: 'bold',
-                flex: 1,
-                borderColor: 'primary.main',
-                color: 'primary.main',
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              type="submit"              
-              sx={{
-                fontWeight: 'bold',
-                flex: 1,
-                backgroundColor: 'primary.main',
-                color: '#fff',
-                borderColor: 'primary.main',
-              }}
-            >
-              Continue
-            </Button>
-          </Stack>
-
-
-
-              
+                direction="row"
+                spacing={2}
+                sx={{ width: '100%', justifyContent: 'space-between' }}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={props.onClose}
+                  sx={{
+                    fontWeight: 'bold',
+                    flex: 1,
+                    borderColor: 'primary.main',
+                    color: 'primary.main',
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  type="submit"
+                  sx={{
+                    fontWeight: 'bold',
+                    flex: 1,
+                    backgroundColor: 'primary.main',
+                    color: '#fff',
+                    borderColor: 'primary.main',
+                  }}
+                >
+                  Continue
+                </Button>
+              </Stack>
             </Box>
           </form>
         </Box>
