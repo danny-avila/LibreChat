@@ -237,7 +237,6 @@ const PromptForm = () => {
               payload: { name: groupName, category: value },
             })
           }
-          className="w-full"
         />
         <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
           {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
@@ -349,7 +348,7 @@ const PromptForm = () => {
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
-                  <div className="flex h-full flex-col gap-4">
+                  <div className="mb-2 flex h-full flex-col gap-4">
                     <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                     <PromptVariables promptText={promptText} />
                     <Description

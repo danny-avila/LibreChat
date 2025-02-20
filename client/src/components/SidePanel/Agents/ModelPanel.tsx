@@ -33,7 +33,7 @@ export default function Parameters({
     return value ?? '';
   }, [providerOption]);
   const models = useMemo(
-    () => (provider ? modelsData[provider] ?? [] : []),
+    () => (provider ? (modelsData[provider] ?? []) : []),
     [modelsData, provider],
   );
 
@@ -99,6 +99,7 @@ export default function Parameters({
         {/* Endpoint aka Provider for Agents */}
         <div className="mb-4">
           <label
+            id="provider-label"
             className="text-token-text-primary model-panel-label mb-2 block font-medium"
             htmlFor="provider"
           >
@@ -111,6 +112,10 @@ export default function Parameters({
             render={({ field, fieldState: { error } }) => (
               <>
                 <SelectDropDown
+                  id="provider"
+                  aria-labelledby="provider-label"
+                  aria-label={localize('com_ui_provider')}
+                  aria-required="true"
                   emptyTitle={true}
                   value={field.value ?? ''}
                   title={localize('com_ui_provider')}
@@ -140,6 +145,7 @@ export default function Parameters({
         {/* Model */}
         <div className="model-panel-section mb-4">
           <label
+            id="model-label"
             className={cn(
               'text-token-text-primary model-panel-label mb-2 block font-medium',
               !provider && 'text-gray-500 dark:text-gray-400',
@@ -155,6 +161,10 @@ export default function Parameters({
             render={({ field, fieldState: { error } }) => (
               <>
                 <SelectDropDown
+                  id="model"
+                  aria-labelledby="model-label"
+                  aria-label={localize('com_ui_model')}
+                  aria-required="true"
                   emptyTitle={true}
                   placeholder={
                     provider
@@ -188,7 +198,6 @@ export default function Parameters({
       {parameters && (
         <div className="h-auto max-w-full overflow-x-hidden p-2">
           <div className="grid grid-cols-4 gap-6">
-            {' '}
             {/* This is the parent element containing all settings */}
             {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
             {parameters.map((setting) => {

@@ -81,7 +81,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
       <div
         role="button"
         className={cn(
-          'w-full flex-1 overflow-auto rounded-b-xl border border-border-light p-2 transition-all duration-150 sm:p-4',
+          'w-full flex-1 overflow-auto rounded-b-xl border border-border-light p-2 shadow-md transition-all duration-150 sm:p-4',
           {
             'cursor-pointer bg-surface-primary hover:bg-surface-secondary active:bg-surface-tertiary':
               !isEditing,
@@ -105,6 +105,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             isEditing ? (
               <TextareaAutosize
                 {...field}
+                autoFocus
                 className="w-full resize-none overflow-y-auto rounded bg-transparent text-sm text-text-primary focus:outline-none sm:text-base"
                 minRows={3}
                 maxRows={14}
