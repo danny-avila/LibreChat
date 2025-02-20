@@ -61,6 +61,10 @@ class FluxAPI extends Tool {
         .enum(['generate', 'list_finetunes', 'generate_finetuned'])
         .default('generate')
         .describe('Action to perform: "generate" for standard generation, "list_finetunes" to list models, "generate_finetuned" for finetuned generation'),
+      api_key: z
+        .string()
+        .optional()
+        .describe('Optional API key to use for this request. If not provided, will use the default system API key.'),
       prompt: z
         .string()
         .optional()
@@ -90,6 +94,7 @@ class FluxAPI extends Tool {
       safety_tolerance: z
         .number()
         .optional()
+        .default(5)
         .describe(
           'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.'
         ),
@@ -181,11 +186,14 @@ class FluxAPI extends Tool {
   }
 
   async _call(data) {
-    const { action = 'generate', ...imageData } = data;
+    const { action = 'generate', api_key, ...imageData } = data;
+
+    // Use provided API key for this request if available, otherwise use default
+    const requestApiKey = api_key || this.getApiKey();
 
     // Handle finetunes listing
     if (action === 'list_finetunes') {
-      return this.getMyFinetunes();
+      return this.getMyFinetunes(requestApiKey);
     }
 
     // For both generate actions, ensure prompt is provided
@@ -239,7 +247,7 @@ class FluxAPI extends Tool {
     logger.debug('[FluxAPI] Dimensions:', payload.width, 'x', payload.height);
 
     const headers = {
-      'x-key': this.apiKey,
+      'x-key': requestApiKey,
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
@@ -389,13 +397,13 @@ class FluxAPI extends Tool {
     }
   }
 
-  async getMyFinetunes() {
+  async getMyFinetunes(apiKey = null) {
     const baseUrl = 'https://api.bfl.ml';
     const finetunesUrl = `${baseUrl}/v1/my_finetunes`;
 
     try {
       const headers = {
-        'x-key': this.apiKey,
+        'x-key': apiKey || this.getApiKey(),
         'Content-Type': 'application/json',
         Accept: 'application/json',
       };
