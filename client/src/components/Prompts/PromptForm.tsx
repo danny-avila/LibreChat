@@ -349,7 +349,7 @@ const PromptForm = () => {
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
-                  <div className="flex h-full flex-col gap-4">
+                  <div className="mb-2 flex h-full flex-col gap-4">
                     <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                     <PromptVariables promptText={promptText} />
                     <Description
