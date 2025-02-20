@@ -3,11 +3,18 @@ const imageTransactionSchema = require('./schema/imageTransaction');
 const { logger } = require('~/config');
 
 /**
- * Creates a new image transaction record
+ * Creates a new image transaction record if tracking is enabled
  * @param {Object} txData Transaction data including user, prompt, endpoint, cost, etc.
- * @returns {Promise<Object>} Created transaction record
+ * @returns {Promise<Object|null>} Created transaction record or null if tracking is disabled
  */
 imageTransactionSchema.statics.create = async function(txData) {
+  // Check if image transaction tracking is enabled (defaults to false if not set)
+  const trackTransactions = process.env.TRACK_IMAGE_TRANSACTIONS === 'true';
+  if (!trackTransactions) {
+    logger.debug('[ImageTransaction] Image transaction tracking is disabled');
+    return null;
+  }
+
   const ImageTransaction = this;
   
   // Allow cost of 0 for error transactions, but validate cost for success transactions
@@ -21,11 +28,18 @@ imageTransactionSchema.statics.create = async function(txData) {
 };
 
 /**
- * Retrieves image transactions based on filter criteria
+ * Retrieves image transactions based on filter criteria if tracking is enabled
  * @param {Object} filter MongoDB filter object
- * @returns {Promise<Array>} Array of matching transactions
+ * @returns {Promise<Array>} Array of matching transactions or empty array if tracking is disabled
  */
 async function getImageTransactions(filter) {
+  // Check if image transaction tracking is enabled (defaults to false if not set)
+  const trackTransactions = process.env.TRACK_IMAGE_TRANSACTIONS === 'true';
+  if (!trackTransactions) {
+    logger.debug('[ImageTransaction] Image transaction tracking is disabled');
+    return [];
+  }
+
   try {
     return await ImageTransaction.find(filter).lean();
   } catch (error) {

@@ -201,4 +201,103 @@ describe('ImageTransaction Tests', () => {
 
     await expect(ImageTransaction.create(txData)).rejects.toThrow();
   });
+});
+
+describe('ImageTransaction Model', () => {
+  const mockUserId = new mongoose.Types.ObjectId();
+  const validTransaction = {
+    user: mockUserId,
+    prompt: 'test prompt',
+    endpoint: '/v1/flux-pro',
+    cost: -0.05,
+    imagePath: '/path/to/image.png',
+    status: 'success',
+    metadata: {
+      width: 512,
+      height: 512,
+      steps: 30
+    }
+  };
+
+  beforeEach(() => {
+    // Reset env variable before each test
+    process.env.TRACK_IMAGE_TRANSACTIONS = 'true';
+  });
+
+  describe('with tracking enabled', () => {
+    test('creates a successful transaction', async () => {
+      const transaction = await ImageTransaction.create(validTransaction);
+      expect(transaction.prompt).toBe(validTransaction.prompt);
+      expect(transaction.cost).toBe(validTransaction.cost);
+      expect(transaction.status).toBe('success');
+    });
+
+    test('creates an error transaction with zero cost', async () => {
+      const errorTransaction = {
+        ...validTransaction,
+        status: 'error',
+        cost: 0,
+        error: 'Test error message'
+      };
+      const transaction = await ImageTransaction.create(errorTransaction);
+      expect(transaction.status).toBe('error');
+      expect(transaction.cost).toBe(0);
+      expect(transaction.error).toBe('Test error message');
+    });
+
+    test('retrieves transactions', async () => {
+      await ImageTransaction.create(validTransaction);
+      const transactions = await getImageTransactions({ user: mockUserId });
+      expect(transactions.length).toBeGreaterThan(0);
+      expect(transactions[0].prompt).toBe(validTransaction.prompt);
+    });
+  });
+
+  describe('with tracking disabled', () => {
+    beforeEach(() => {
+      process.env.TRACK_IMAGE_TRANSACTIONS = 'false';
+    });
+
+    test('returns null when creating transaction', async () => {
+      const transaction = await ImageTransaction.create(validTransaction);
+      expect(transaction).toBeNull();
+    });
+
+    test('returns empty array when retrieving transactions', async () => {
+      const transactions = await getImageTransactions({ user: mockUserId });
+      expect(transactions).toEqual([]);
+    });
+  });
+
+  describe('validation', () => {
+    test('rejects invalid cost for success transaction', async () => {
+      const invalidTransaction = {
+        ...validTransaction,
+        cost: 0
+      };
+      await expect(ImageTransaction.create(invalidTransaction))
+        .rejects
+        .toThrow('Invalid cost value for image transaction');
+    });
+
+    test('requires all mandatory fields', async () => {
+      const incompleteTransaction = {
+        user: mockUserId,
+        prompt: 'test'
+      };
+      await expect(ImageTransaction.create(incompleteTransaction))
+        .rejects
+        .toThrow();
+    });
+
+    test('validates endpoint enum values', async () => {
+      const invalidEndpoint = {
+        ...validTransaction,
+        endpoint: 'invalid-endpoint'
+      };
+      await expect(ImageTransaction.create(invalidEndpoint))
+        .rejects
+        .toThrow();
+    });
+  });
 }); 
