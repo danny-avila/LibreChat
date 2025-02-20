@@ -8,6 +8,10 @@ const { logger } = require('~/config');
 const { FileContext } = require('librechat-data-provider');
 const { processFileURL } = require('~/server/services/Files/process');
 
+/**
+ * FluxAPI - A tool for generating high-quality images from text prompts using the Flux API.
+ * Each call generates one image. If multiple images are needed, make multiple consecutive calls with the same or varied prompts.
+ */
 class FluxAPI extends Tool {
   constructor(fields = {}) {
     super();
@@ -31,18 +35,24 @@ class FluxAPI extends Tool {
 
     this.name = 'flux';
     this.description =
-      "Use Flux to generate images from text descriptions. This tool is exclusively for visual content.";
+      "Use Flux to generate images from text descriptions. This tool is exclusively for visual content. Each call generates one image. If multiple images are needed, make multiple consecutive calls with the same or varied prompts.";
 
     this.description_for_model = `// Use Flux to generate images from detailed text descriptions. Follow these guidelines:
 
 1. Core Requirements:
    - All prompts must be in English (translate if needed)
-   - Generate one image per request unless explicitly asked for more
+   - Each call generates ONE image. For multiple images, make multiple consecutive calls
    - Do not list descriptions before/after generating
    - Generate without asking for permission
    - Embed images directly without additional text/commentary
 
-2. Prompt Structure:
+2. Multiple Image Generation:
+   - When user requests multiple images, make multiple consecutive calls to the tool
+   - Each call should use the same prompt or variations of it
+   - Do not wait for user confirmation between calls
+   - All generated images will be displayed in sequence
+
+3. Prompt Structure:
    - Subject: Clearly define the main focus
    - Style: Specify artistic approach (e.g., photorealistic, painterly, abstract)
    - Composition: Detail foreground, middle ground, and background arrangement
@@ -52,33 +62,33 @@ class FluxAPI extends Tool {
    - Technical Details: Include camera settings/lens type for photorealistic images
    - Additional Elements: Add supporting details that enhance the scene
 
-3. Leverage Flux's Strengths:
+4. Leverage Flux's Strengths:
    - Layered Elements: Describe distinct layers and their relationships
    - Material Properties: Specify textures, transparency, reflections
    - Text Integration: Utilize Flux's text rendering capabilities
    - Style Fusion: Combine multiple artistic styles when appropriate
    - Temporal Elements: Incorporate motion or time-based aspects
 
-4. Best Practices:
+5. Best Practices:
    - Write in natural language, as if explaining to a human artist
    - Be precise and detailed while maintaining coherence
    - Balance specificity with creative interpretation
    - Focus on visual descriptions rather than conceptual ideas
    - Guide the overall composition, not just individual elements
 
-5. Avoid Common Mistakes:
+6. Avoid Common Mistakes:
    - Don't overload prompts with conflicting concepts
    - Avoid vague descriptions
    - Don't default to realism unless specified
    - Don't repeat prompts or provide captions
    - Don't mention download links or technical aspects to users
 
-6. Image Handling:
+7. Image Handling:
    - Embed images directly in responses
    - No additional text or descriptions around images
    - No captions or alt text
    - No commentary about the generation process
-   - Multiple images (if requested) should be embedded separately`;
+   - Multiple images will appear in sequence from multiple calls`;
 
     // Define the schema for structured input
     this.schema = z.object({
@@ -116,13 +126,6 @@ class FluxAPI extends Tool {
         .optional()
         .default('/v1/flux-dev')
         .describe('Endpoint to use for image generation. Default is /v1/flux-pro.'),
-      number_of_images: z
-        .number()
-        .int()
-        .min(1)
-        .max(24)
-        .optional()
-        .describe('Number of images to generate, up to a maximum of 24. Default is 1.'),
       raw: z
         .boolean()
         .optional()
@@ -170,7 +173,6 @@ class FluxAPI extends Tool {
       safety_tolerance = 6,
       output_format = 'png',
       endpoint = '/v1/flux-pro',
-      number_of_images = 1,
       raw = false,
     } = data;
 
