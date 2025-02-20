@@ -142,7 +142,9 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       conversationId,
       sender,
       messageId: responseMessageId,
-      parentMessageId: userMessageId ?? parentMessageId,
+      parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
+    }).catch((err) => {
+      logger.error('[api/server/controllers/agents/request] Error in `handleAbortError`', err);
     });
   }
 };

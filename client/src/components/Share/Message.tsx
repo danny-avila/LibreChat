@@ -42,7 +42,7 @@ export default function Message(props: TMessageProps) {
   if (isCreatedByUser) {
     messageLabel = 'anonymous';
   } else {
-    messageLabel = message.sender || '';
+    messageLabel = message.sender ?? '';
   }
 
   return (

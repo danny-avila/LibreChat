@@ -1,9 +1,13 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, Constants } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
+import { useMediaQuery, useLocalize } from '~/hooks';
 import { NewChatIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
-import { useMediaQuery, useLocalize } from '~/hooks';
 
 export default function HeaderNewChat() {
-  const { newConversation } = useChatContext();
+  const queryClient = useQueryClient();
+  const { conversation, newConversation } = useChatContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const localize = useLocalize();
   if (isSmallScreen) {
@@ -12,10 +16,16 @@ export default function HeaderNewChat() {
   return (
     <button
       data-testid="wide-header-new-chat-button"
-      aria-label={localize("com_ui_new_chat")}
+      aria-label={localize('com_ui_new_chat')}
       type="button"
-      className="btn btn-neutral btn-small border-token-border-medium relative ml-2 flex hidden h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg rounded-lg border focus:border-black-500 dark:focus:border-white-500 md:flex"
-      onClick={() => newConversation()}
+      className="btn btn-neutral btn-small border-token-border-medium focus:border-black-500 dark:focus:border-white-500 relative ml-2 flex h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg border md:flex"
+      onClick={() => {
+        queryClient.setQueryData<TMessage[]>(
+          [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+          [],
+        );
+        newConversation();
+      }}
     >
       <div className="flex w-full items-center justify-center gap-2">
         <NewChatIcon />

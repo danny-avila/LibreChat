@@ -64,7 +64,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     }
 
     // const expirationText = expiresAt
-    //   ? ` ${localize('com_download_expires', format(expiresAt, 'MM/dd/yy HH:mm'))}`
+    //   ? ` ${localize('com_download_expires', { 0: format(expiresAt, 'MM/dd/yy HH:mm') })}`
     //   : ` ${localize('com_click_to_download')}`;
 
     return (

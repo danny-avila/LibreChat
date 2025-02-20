@@ -1,18 +1,17 @@
-import { useState, useId, useRef } from 'react';
+import { useState, useId, useRef, memo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent } from 'react';
 import type * as t from '~/common';
+import { useDuplicateConversationMutation, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
-import { useDuplicateConversationMutation } from '~/data-provider';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
-export default function ConvoOptions({
+function ConvoOptions({
   conversationId,
   title,
   retainView,
@@ -42,13 +41,11 @@ export default function ConvoOptions({
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
-      if (data != null) {
-        navigateToConvo(data.conversation);
-        showToast({
-          message: localize('com_ui_duplication_success'),
-          status: 'success',
-        });
-      }
+      navigateToConvo(data.conversation);
+      showToast({
+        message: localize('com_ui_duplication_success'),
+        status: 'success',
+      });
     },
     onMutate: () => {
       showToast({
@@ -141,7 +138,6 @@ export default function ConvoOptions({
       />
       {showShareDialog && (
         <ShareButton
-          title={title ?? ''}
           conversationId={conversationId ?? ''}
           open={showShareDialog}
           onOpenChange={setShowShareDialog}
@@ -161,3 +157,5 @@ export default function ConvoOptions({
     </>
   );
 }
+
+export default memo(ConvoOptions);

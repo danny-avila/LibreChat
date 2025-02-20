@@ -75,8 +75,9 @@ const tokenValues = Object.assign(
     '4k': { prompt: 1.5, completion: 2 },
     '16k': { prompt: 3, completion: 4 },
     'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
+    'o3-mini': { prompt: 1.1, completion: 4.4 },
+    'o1-mini': { prompt: 1.1, completion: 4.4 },
     'o1-preview': { prompt: 15, completion: 60 },
-    'o1-mini': { prompt: 3, completion: 12 },
     o1: { prompt: 15, completion: 60 },
     'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
     'gpt-4o': { prompt: 2.5, completion: 10 },
@@ -96,12 +97,19 @@ const tokenValues = Object.assign(
     'claude-': { prompt: 0.8, completion: 2.4 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
+    'deepseek-reasoner': { prompt: 0.55, completion: 2.19 },
+    deepseek: { prompt: 0.14, completion: 0.28 },
     /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
     command: { prompt: 0.38, completion: 0.38 },
+    'gemini-2.0-flash-lite': { prompt: 0.075, completion: 0.3 },
+    'gemini-2.0-flash': { prompt: 0.1, completion: 0.7 },
     'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
-    'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
-    gemini: { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
+    'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
+    'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
+    'gemini-1.5': { prompt: 2.5, completion: 10 },
+    'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
+    gemini: { prompt: 0.5, completion: 1.5 },
   },
   bedrockValues,
 );

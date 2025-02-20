@@ -54,6 +54,8 @@ export const fullMimeTypesList = [
   'application/typescript',
   'application/xml',
   'application/zip',
+  'image/svg',
+  'image/svg+xml',
   ...excelFileTypes,
 ];
 
@@ -122,6 +124,8 @@ export const supportedMimeTypes = [
   excelMimeTypes,
   applicationMimeTypes,
   imageMimeTypes,
+  /** Supported by LC Code Interpreter PAI */
+  /^image\/(svg|svg\+xml)$/,
 ];
 
 export const codeInterpreterMimeTypes = [
@@ -145,6 +149,9 @@ export const codeTypeMapping: { [key: string]: string } = {
   ts: 'application/typescript',
   tar: 'application/x-tar',
   zip: 'application/zip',
+  yml: 'application/x-yaml',
+  yaml: 'application/x-yaml',
+  log: 'text/plain',
 };
 
 export const retrievalMimeTypes = [

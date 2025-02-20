@@ -21,6 +21,7 @@ import type { ParametersSchema } from '../src/actions';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+mockedAxios.create.mockReturnValue(mockedAxios);
 
 describe('FunctionSignature', () => {
   it('creates a function signature and converts to JSON tool', () => {
