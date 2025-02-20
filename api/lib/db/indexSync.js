@@ -1,9 +1,11 @@
 const { MeiliSearch } = require('meilisearch');
 const Conversation = require('~/models/schema/convoSchema');
 const Message = require('~/models/schema/messageSchema');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
-const searchEnabled = process.env?.SEARCH?.toLowerCase() === 'true';
+const searchEnabled = isEnabled(process.env.SEARCH);
+const indexingEnabled = isEnabled(process.env.MEILI_ENABLE_INDEXING ?? true);
 let currentTimeout = null;
 
 class MeiliSearchClient {
@@ -23,8 +25,7 @@ class MeiliSearchClient {
   }
 }
 
-// eslint-disable-next-line no-unused-vars
-async function indexSync(req, res, next) {
+async function indexSync() {
   if (!searchEnabled) {
     return;
   }
@@ -33,8 +34,13 @@ async function indexSync(req, res, next) {
     const client = MeiliSearchClient.getInstance();
 
     const { status } = await client.health();
-    if (status !== 'available' || !process.env.SEARCH) {
+    if (status !== 'available') {
       throw new Error('Meilisearch not available');
+    }
+
+    if (!indexingEnabled) {
+      logger.info('[indexSync] Indexing is disabled, skipping...');
+      return;
     }
 
     const messageCount = await Message.countDocuments();
