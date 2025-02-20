@@ -20,6 +20,7 @@ class FluxAPI extends Tool {
 
     /** @type {boolean} **/
     this.isAgent = fields.isAgent;
+    this.returnMetadata = fields.returnMetadata ?? false;
 
     if (fields.processFileURL) {
       /** @type {processFileURL} Necessary for output to contain all image metadata. */
@@ -113,7 +114,7 @@ class FluxAPI extends Tool {
       endpoint: z
         .enum(['/v1/flux-pro-1.1', '/v1/flux-pro', '/v1/flux-dev', '/v1/flux-pro-1.1-ultra'])
         .optional()
-        .default('/v1/flux-pro')
+        .default('/v1/flux-dev')
         .describe('Endpoint to use for image generation. Default is /v1/flux-pro.'),
       number_of_images: z
         .number()
@@ -150,10 +151,11 @@ class FluxAPI extends Tool {
       return [value, {}];
     } else if (this.isAgent === true && typeof value === 'object') {
       return [
-        'DALL-E displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.',
+        'Flux displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.',
         value,
       ];
     }
+    return value;
   }
 
   async _call(data) {
@@ -194,7 +196,6 @@ class FluxAPI extends Tool {
     logger.debug('[FluxAPI] Generating image with prompt:', prompt);
     logger.debug('[FluxAPI] Using endpoint:', endpoint);
     logger.debug('[FluxAPI] Steps:', steps);
-    logger.debug('[FluxAPI] Number of images:', number_of_images);
     logger.debug('[FluxAPI] Safety Tolerance:', safety_tolerance);
     logger.debug('[FluxAPI] Dimensions:', width, 'x', height);
 
@@ -204,91 +205,78 @@ class FluxAPI extends Tool {
       Accept: 'application/json',
     };
 
-    const totalImages = Math.min(Math.max(number_of_images, 1), 24);
+    let taskResponse;
+    try {
+      taskResponse = await axios.post(generateUrl, payload, { headers });
+    } catch (error) {
+      const details = error?.response?.data || error.message;
+      logger.error('[FluxAPI] Error while submitting task:', details);
+      return this.returnValue(
+        `Something went wrong when trying to generate the image. The Flux API may be unavailable:
+        Error Message: ${details}`
+      );
+    }
 
-    let imagesMarkdown = '';
+    const taskId = taskResponse.data.id;
 
-    for (let i = 0; i < totalImages; i++) {
-      let taskResponse;
+    // Polling for the result
+    let status = 'Pending';
+    let resultData = null;
+    while (status !== 'Ready' && status !== 'Error') {
       try {
-        taskResponse = await axios.post(generateUrl, payload, { headers });
+        // Wait 2 seconds between polls
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const resultResponse = await axios.get(resultUrl, {
+          headers,
+          params: { id: taskId },
+        });
+        status = resultResponse.data.status;
+
+        if (status === 'Ready') {
+          resultData = resultResponse.data.result;
+          break;
+        } else if (status === 'Error') {
+          logger.error('[FluxAPI] Error in task:', resultResponse.data);
+          return this.returnValue('An error occurred during image generation.');
+        }
       } catch (error) {
         const details = error?.response?.data || error.message;
-        logger.error('[FluxAPI] Error while submitting task:', details);
-        return this.returnValue(
-          `Something went wrong when trying to generate the image. The Flux API may be unavailable:
-          Error Message: ${details}`
-        );
+        logger.error('[FluxAPI] Error while getting result:', details);
+        return this.returnValue('An error occurred while retrieving the image.');
       }
+    }
 
-      const taskId = taskResponse.data.id;
+    // If no result data
+    if (!resultData || !resultData.sample) {
+      logger.error('[FluxAPI] No image data received from API. Response:', resultData);
+      return this.returnValue('No image data received from Flux API.');
+    }
 
-      // Polling for the result
-      let status = 'Pending';
-      let resultData = null;
-      while (status !== 'Ready' && status !== 'Error') {
-        try {
-          // Wait 2 seconds between polls
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const resultResponse = await axios.get(resultUrl, {
-            headers,
-            params: { id: taskId },
-          });
-          status = resultResponse.data.status;
+    // Try saving the image locally
+    const imageUrl = resultData.sample;
+    const imageName = `img-${uuidv4()}.png`;
 
-          if (status === 'Ready') {
-            resultData = resultResponse.data.result;
-            break;
-          } else if (status === 'Error') {
-            logger.error('[FluxAPI] Error in task:', resultResponse.data);
-            return this.returnValue('An error occurred during image generation.');
-          }
-        } catch (error) {
-          const details = error?.response?.data || error.message;
-          logger.error('[FluxAPI] Error while getting result:', details);
-          return this.returnValue('An error occurred while retrieving the image.');
-        }
-      }
+    try {
+      logger.debug('[FluxAPI] Saving image:', imageUrl);
+      const result = await this.processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: imageUrl,
+        fileName: imageName,
+        basePath: 'images',
+        context: FileContext.image_generation,
+      });
 
-      // If the status was 'Error', we skip the rest
-      if (status === 'Error') {
-        continue;
-      }
-
-      // If no result data
-      if (!resultData || !resultData.sample) {
-        logger.error('[FluxAPI] No image data received from API. Response:', resultData);
-        return this.returnValue('No image data received from Flux API.');
-      }
-
-      // Try saving the image locally
-      const imageUrl = resultData.sample;
-      const imageName = `img-${uuidv4()}.png`;
-
-      try {
-        logger.debug('[FluxAPI] Saving image:', imageUrl);
-        const result = await this.processFileURL({
-          fileStrategy: this.fileStrategy,
-          userId: this.userId,
-          URL: imageUrl,
-          fileName: imageName,
-          basePath: 'images',
-          context: FileContext.image_generation,
-        });
-
-        logger.debug('[FluxAPI] Image saved to path:', result.filepath);
-
-        // Always append the image markdown link
-        imagesMarkdown += `${this.wrapInMarkdown(result.filepath)}\n`;
-      } catch (error) {
-        const details = error?.message ?? 'No additional error details.';
-        logger.error('Error while saving the image:', details);
-        return this.returnValue(`Failed to save the image locally. ${details}`);
-      }
-    } // End of for-loop
-
-    this.result = imagesMarkdown.trim();
-    return this.returnValue(this.result);
+      logger.debug('[FluxAPI] Image saved to path:', result.filepath);
+      
+      // Return the result based on returnMetadata flag
+      this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
+      return this.returnValue(this.result);
+    } catch (error) {
+      const details = error?.message ?? 'No additional error details.';
+      logger.error('Error while saving the image:', details);
+      return this.returnValue(`Failed to save the image locally. ${details}`);
+    }
   }
 }
 
