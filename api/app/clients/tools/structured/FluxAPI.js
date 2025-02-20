@@ -48,74 +48,12 @@ class FluxAPI extends Tool {
     this.description =
       "Use Flux to generate images from text descriptions. This tool is exclusively for visual content. Each call generates one image. If multiple images are needed, make multiple consecutive calls with the same or varied prompts. Additional actions: 'list_finetunes' to see available finetuned models, 'generate_finetuned' to generate with a specific finetuned model.";
 
-    this.description_for_model = `// Use Flux to generate images from detailed text descriptions. Follow these guidelines:
-
-1. Core Requirements:
-   - All prompts must be in English (translate if needed)
-   - Each call generates ONE image. For multiple images, make multiple consecutive calls
-   - Do not list descriptions before/after generating
-   - Generate without asking for permission
-   - Embed images directly without additional text/commentary
-   - Available actions:
-     * 'generate': Standard image generation
-     * 'list_finetunes': List available finetuned models
-     * 'generate_finetuned': Generate using a finetuned model
-
-2. Multiple Image Generation:
-   - When user requests multiple images, make multiple consecutive calls to the tool
-   - Each call should use the same prompt or variations of it
-   - Do not wait for user confirmation between calls
-   - All generated images will be displayed in sequence
-
-3. Prompt Structure:
-   - Subject: Clearly define the main focus
-   - Style: Specify artistic approach (e.g., photorealistic, painterly, abstract)
-   - Composition: Detail foreground, middle ground, and background arrangement
-   - Lighting: Describe type, direction, and quality of light
-   - Color Palette: Define dominant colors or color scheme
-   - Mood/Atmosphere: Convey emotional tone and ambiance
-   - Technical Details: Include camera settings/lens type for photorealistic images
-   - Additional Elements: Add supporting details that enhance the scene
-
-4. Leverage Flux's Strengths:
-   - Layered Elements: Describe distinct layers and their relationships
-   - Material Properties: Specify textures, transparency, reflections
-   - Text Integration: Utilize Flux's text rendering capabilities
-   - Style Fusion: Combine multiple artistic styles when appropriate
-   - Temporal Elements: Incorporate motion or time-based aspects
-
-5. Best Practices:
-   - Write in natural language, as if explaining to a human artist
-   - Be precise and detailed while maintaining coherence
-   - Balance specificity with creative interpretation
-   - Focus on visual descriptions rather than conceptual ideas
-   - Guide the overall composition, not just individual elements
-
-6. Avoid Common Mistakes:
-   - Don't overload prompts with conflicting concepts
-   - Avoid vague descriptions
-   - Don't default to realism unless specified
-   - Don't repeat prompts or provide captions
-   - Don't mention download links or technical aspects to users
-
-7. Image Handling:
-   - Embed images directly in responses
-   - No additional text or descriptions around images
-   - No captions or alt text
-   - No commentary about the generation process
-   - Multiple images will appear in sequence from multiple calls
-
-8. Finetuned Generation (action: 'generate_finetuned'):
-   - First use 'list_finetunes' to get available model IDs
-   - Required parameters:
-     * finetune_id: ID of the model to use
-     * prompt: Text description of the image
-   - Optional parameters:
-     * finetune_strength (0-2): Control model influence
-     * For pro finetune:
-       - guidance (1.5-5): Controls prompt adherence
-     * For ultra finetune:
-       - Compatible with all standard parameters`;
+    this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Follow these core rules:
+    // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
+    // 2. Start with image type (photo, painting, digital art, etc.) unless specified otherwise
+    // 3. Add concrete visual details that enhance the core concept
+    // 4. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
+    // Generate without asking permission, embed images directly without commentary.`;
 
     // Define the schema for structured input
     this.schema = z.object({
@@ -126,7 +64,7 @@ class FluxAPI extends Tool {
       prompt: z
         .string()
         .optional()
-        .describe('Text prompt for image generation. Required for "generate" and "generate_finetuned" actions.'),
+        .describe('Text prompt for image generation (3-6 detailed sentences minimum, must include visual elements like style, lighting, composition, and mood). Required for "generate" and "generate_finetuned" actions.'),
       width: z
         .number()
         .optional()
