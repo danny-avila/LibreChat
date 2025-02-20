@@ -7,12 +7,23 @@ const { z } = require('zod');
 const { logger } = require('~/config');
 const { FileContext } = require('librechat-data-provider');
 const { processFileURL } = require('~/server/services/Files/process');
+const { ImageTransaction } = require('~/models/ImageTransaction');
 
 /**
  * FluxAPI - A tool for generating high-quality images from text prompts using the Flux API.
  * Each call generates one image. If multiple images are needed, make multiple consecutive calls with the same or varied prompts.
  */
 class FluxAPI extends Tool {
+  // Pricing constants in USD per image
+  static PRICING = {
+    'FLUX_PRO_1_1_ULTRA': -0.06,          // /v1/flux-pro-1.1-ultra
+    'FLUX_PRO_1_1': -0.04,                // /v1/flux-pro-1.1
+    'FLUX_PRO': -0.05,                    // /v1/flux-pro
+    'FLUX_DEV': -0.025,                   // /v1/flux-dev
+    'FLUX_PRO_1_1_ULTRA_FINETUNED': -0.07,// /v1/flux-pro-1.1-ultra-finetuned
+    'FLUX_PRO_FINETUNED': -0.06,          // /v1/flux-pro-1.0-finetuned
+  };
+
   constructor(fields = {}) {
     super();
 
@@ -301,6 +312,28 @@ class FluxAPI extends Tool {
     } catch (error) {
       const details = error?.response?.data || error.message;
       logger.error('[FluxAPI] Error while submitting task:', details);
+      
+      // Create error transaction
+      try {
+        await ImageTransaction.create({
+          user: this.userId,
+          prompt: imageData.prompt,
+          endpoint: imageData.endpoint || '/v1/flux-pro',
+          cost: 0, // No charge for failed requests
+          imagePath: '',
+          status: 'error',
+          error: details,
+          metadata: {
+            ...payload,
+            finetune_id: imageData.finetune_id,
+            finetune_strength: imageData.finetune_strength,
+            guidance: imageData.guidance
+          }
+        });
+      } catch (txError) {
+        logger.error('[FluxAPI] Error creating error transaction:', txError);
+      }
+
       return this.returnValue(
         `Something went wrong when trying to generate the image. The Flux API may be unavailable:
         Error Message: ${details}`
@@ -327,6 +360,28 @@ class FluxAPI extends Tool {
           break;
         } else if (status === 'Error') {
           logger.error('[FluxAPI] Error in task:', resultResponse.data);
+          
+          // Create error transaction
+          try {
+            await ImageTransaction.create({
+              user: this.userId,
+              prompt: imageData.prompt,
+              endpoint: imageData.endpoint || '/v1/flux-pro',
+              cost: 0, // No charge for failed requests
+              imagePath: '',
+              status: 'error',
+              error: 'Task failed during processing',
+              metadata: {
+                ...payload,
+                finetune_id: imageData.finetune_id,
+                finetune_strength: imageData.finetune_strength,
+                guidance: imageData.guidance
+              }
+            });
+          } catch (txError) {
+            logger.error('[FluxAPI] Error creating error transaction:', txError);
+          }
+
           return this.returnValue('An error occurred during image generation.');
         }
       } catch (error) {
@@ -358,6 +413,33 @@ class FluxAPI extends Tool {
       });
 
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
+
+      // Calculate cost based on endpoint
+      const endpoint = imageData.endpoint || '/v1/flux-pro';
+      const endpointKey = Object.entries(FluxAPI.PRICING).find(([key, _]) => 
+        endpoint.includes(key.toLowerCase().replace(/_/g, '-'))
+      )?.[0];
+      const cost = FluxAPI.PRICING[endpointKey] || 0;
+
+      // Create successful transaction
+      try {
+        await ImageTransaction.create({
+          user: this.userId,
+          prompt: imageData.prompt,
+          endpoint: endpoint,
+          cost: cost,
+          imagePath: result.filepath,
+          status: 'success',
+          metadata: {
+            ...payload,
+            finetune_id: imageData.finetune_id,
+            finetune_strength: imageData.finetune_strength,
+            guidance: imageData.guidance
+          }
+        });
+      } catch (txError) {
+        logger.error('[FluxAPI] Error creating success transaction:', txError);
+      }
       
       // Return the result based on returnMetadata flag
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
