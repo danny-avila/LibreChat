@@ -1,14 +1,14 @@
 import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
-import { getSettingsKeys } from 'librechat-data-provider';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
+import { getSettingsKeys, alternateName } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { agentSettings } from '~/components/SidePanel/Parameters/settings';
-import { getEndpointField, cn, cardStyle } from '~/utils';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { SelectDropDown } from '~/components/ui';
+import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -109,37 +109,41 @@ export default function Parameters({
             name="provider"
             control={control}
             rules={{ required: true, minLength: 1 }}
-            render={({ field, fieldState: { error } }) => (
-              <>
-                <SelectDropDown
-                  id="provider"
-                  aria-labelledby="provider-label"
-                  aria-label={localize('com_ui_provider')}
-                  aria-required="true"
-                  emptyTitle={true}
-                  value={field.value ?? ''}
-                  title={localize('com_ui_provider')}
-                  placeholder={localize('com_ui_select_provider')}
-                  searchPlaceholder={localize('com_ui_select_search_provider')}
-                  setValue={field.onChange}
-                  availableValues={providers}
-                  showAbove={false}
-                  showLabel={false}
-                  className={cn(
-                    cardStyle,
-                    'flex h-9 w-full flex-none items-center justify-center border-none px-4 hover:cursor-pointer',
-                    (field.value === undefined || field.value === '') &&
-                      'border-2 border-yellow-400',
+            render={({ field, fieldState: { error } }) => {
+              const value =
+                typeof field.value === 'string'
+                  ? field.value
+                  : ((field.value as StringOption)?.value ?? '');
+              const display =
+                typeof field.value === 'string'
+                  ? field.value
+                  : ((field.value as StringOption)?.label ?? '');
+
+              return (
+                <>
+                  <ControlCombobox
+                    selectedValue={value}
+                    displayValue={alternateName[display] ?? display}
+                    selectPlaceholder={localize('com_ui_select_provider')}
+                    searchPlaceholder={localize('com_ui_select_search_provider')}
+                    setValue={field.onChange}
+                    items={providers.map((provider) => ({
+                      label: typeof provider === 'string' ? provider : provider.label,
+                      value: typeof provider === 'string' ? provider : provider.value,
+                    }))}
+                    className={cn(error ? 'border-2 border-red-500' : '')}
+                    ariaLabel={localize('com_ui_provider')}
+                    isCollapsed={false}
+                    showCarat={true}
+                  />
+                  {error && (
+                    <span className="model-panel-error text-sm text-red-500 transition duration-300 ease-in-out">
+                      {localize('com_ui_field_required')}
+                    </span>
                   )}
-                  containerClassName={cn('rounded-md', error ? 'border-red-500 border-2' : '')}
-                />
-                {error && (
-                  <span className="model-panel-error text-sm text-red-500 transition duration-300 ease-in-out">
-                    {localize('com_ui_field_required')}
-                  </span>
-                )}
-              </>
-            )}
+                </>
+              );
+            }}
           />
         </div>
         {/* Model */}
@@ -158,39 +162,36 @@ export default function Parameters({
             name="model"
             control={control}
             rules={{ required: true, minLength: 1 }}
-            render={({ field, fieldState: { error } }) => (
-              <>
-                <SelectDropDown
-                  id="model"
-                  aria-labelledby="model-label"
-                  aria-label={localize('com_ui_model')}
-                  aria-required="true"
-                  emptyTitle={true}
-                  placeholder={
-                    provider
-                      ? localize('com_ui_select_model')
-                      : localize('com_ui_select_provider_first')
-                  }
-                  value={field.value}
-                  setValue={field.onChange}
-                  availableValues={models}
-                  showAbove={false}
-                  showLabel={false}
-                  disabled={!provider}
-                  className={cn(
-                    cardStyle,
-                    'flex h-[40px] w-full flex-none items-center justify-center border-none px-4',
-                    !provider ? 'cursor-not-allowed bg-gray-200' : 'hover:cursor-pointer',
+            render={({ field, fieldState: { error } }) => {
+              return (
+                <>
+                  <ControlCombobox
+                    selectedValue={field.value || ''}
+                    selectPlaceholder={
+                      provider
+                        ? localize('com_ui_select_model')
+                        : localize('com_ui_select_provider_first')
+                    }
+                    searchPlaceholder={localize('com_ui_select_model')}
+                    setValue={field.onChange}
+                    items={models.map((model) => ({
+                      label: model,
+                      value: model,
+                    }))}
+                    disabled={!provider}
+                    className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
+                    ariaLabel={localize('com_ui_model')}
+                    isCollapsed={false}
+                    showCarat={true}
+                  />
+                  {provider && error && (
+                    <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                      {localize('com_ui_field_required')}
+                    </span>
                   )}
-                  containerClassName={cn('rounded-md', error ? 'border-red-500 border-2' : '')}
-                />
-                {provider && error && (
-                  <span className="text-sm text-red-500 transition duration-300 ease-in-out">
-                    {localize('com_ui_field_required')}
-                  </span>
-                )}
-              </>
-            )}
+                </>
+              );
+            }}
           />
         </div>
       </div>
