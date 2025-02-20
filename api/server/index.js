@@ -22,10 +22,11 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
+const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
@@ -53,7 +54,7 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
-  app.set('trust proxy', 1); /* trust first proxy */
+  app.set('trust proxy', trusted_proxy);
   app.use(cors());
   app.use(cookieParser());
 
