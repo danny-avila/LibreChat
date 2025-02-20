@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, memo } from 'react';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -56,6 +56,7 @@ const ContentRender = memo(
       setCurrentEditId,
     });
 
+    const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     // const { isCreatedByUser, error, unfinished } = msg ?? {};
@@ -65,18 +66,16 @@ const ContentRender = memo(
       [msg?.children, msg?.depth, latestMessage?.depth],
     );
 
-    const iconData = useMemo(
-      () =>
-        ({
-          endpoint: msg?.endpoint ?? conversation?.endpoint,
-          model: msg?.model ?? conversation?.model,
-          iconURL: msg?.iconURL ?? conversation?.iconURL,
-          modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
-          isCreatedByUser: msg?.isCreatedByUser,
-        } as TMessage & { modelLabel?: string }),
+    const iconData: TMessageIcon = useMemo(
+      () => ({
+        endpoint: msg?.endpoint ?? conversation?.endpoint,
+        model: msg?.model ?? conversation?.model,
+        iconURL: msg?.iconURL ?? conversation?.iconURL,
+        modelLabel: messageLabel,
+        isCreatedByUser: msg?.isCreatedByUser,
+      }),
       [
-        conversation?.chatGptLabel,
-        conversation?.modelLabel,
+        messageLabel,
         conversation?.endpoint,
         conversation?.iconURL,
         conversation?.model,
@@ -103,17 +102,33 @@ const ContentRender = memo(
         }
         : undefined;
 
+    const baseClasses =
+      'final-completion group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu';
+
+    const cardClasses =
+      'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4';
+
+    const chatSpaceClasses = maximizeChatSpace
+      ? 'w-full max-w-full md:px-5 lg:px-1 xl:px-5'
+      : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5';
+
+    const conditionalClasses = {
+      latestCard: isLatestCard ? 'bg-surface-secondary' : '',
+      cardRender: showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
+      focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+    };
+
     return (
       <div
+        id={msg.messageId}
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
-          'final-completion group mx-auto flex flex-1 gap-3',
-          isCard === true
-            ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
-            : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
-          isLatestCard === true ? 'bg-surface-secondary' : '',
-          showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
-          'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+          baseClasses,
+          isCard === true ? cardClasses : chatSpaceClasses,
+          conditionalClasses.latestCard,
+          conditionalClasses.cardRender,
+          conditionalClasses.focus,
+          'message-render',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {

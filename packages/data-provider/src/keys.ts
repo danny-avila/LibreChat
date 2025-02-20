@@ -53,7 +53,9 @@ export enum MutationKeys {
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
+  loginUser = 'loginUser',
   logoutUser = 'logoutUser',
+  refreshToken = 'refreshToken',
   avatarUpload = 'avatarUpload',
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',
@@ -65,4 +67,6 @@ export enum MutationKeys {
   deleteAgentAction = 'deleteAgentAction',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
+  enableTwoFactor = 'enableTwoFactor',
+  verifyTwoFactor = 'verifyTwoFactor',
 }

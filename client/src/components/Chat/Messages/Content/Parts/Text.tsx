@@ -46,7 +46,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
         showCursorState && !!text.length ? 'result-streaming' : '',
         'markdown prose message-content dark:prose-invert light w-full break-words',
         isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-        isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-70',
+        isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
       )}
     >
       {content}

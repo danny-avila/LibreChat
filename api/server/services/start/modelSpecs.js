@@ -4,7 +4,7 @@ const { logger } = require('~/config');
 
 /**
  * Sets up Model Specs from the config (`librechat.yaml`) file.
- * @param {TCustomConfig['endpoints']} endpoints - The loaded custom configuration for endpoints.
+ * @param {TCustomConfig['endpoints']} [endpoints] - The loaded custom configuration for endpoints.
  * @param {TCustomConfig['modelSpecs'] | undefined} [modelSpecs] - The loaded custom configuration for model specs.
  * @returns {TCustomConfig['modelSpecs'] | undefined} The processed model specs, if any.
  */
@@ -18,7 +18,7 @@ function processModelSpecs(endpoints, _modelSpecs) {
   /** @type {TCustomConfig['modelSpecs']['list']} */
   const list = _modelSpecs.list;
 
-  const customEndpoints = endpoints[EModelEndpoint.custom] ?? [];
+  const customEndpoints = endpoints?.[EModelEndpoint.custom] ?? [];
 
   for (const spec of list) {
     if (EModelEndpoint[spec.preset.endpoint] && spec.preset.endpoint !== EModelEndpoint.custom) {

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { memo } from 'react';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { getModelSpecIconURL, getIconKey, getEndpointField } from '~/utils';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
+import { URLIcon } from '~/components/Endpoints/URLIcon';
 
 interface SpecIconProps {
   currentSpec: TModelSpec;
@@ -16,24 +17,12 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   let Icon: (props: IconMapProps) => React.JSX.Element;
 
-  if (!iconURL?.includes('http')) {
+  if (!iconURL.includes('http')) {
     Icon = icons[iconKey] ?? icons.unknown;
+  } else if (iconURL) {
+    return <URLIcon iconURL={iconURL} altName={currentSpec.name} />;
   } else {
-    Icon = iconURL
-      ? () => (
-        <div
-          className="icon-xl mr-1 shrink-0 overflow-hidden rounded-full "
-          style={{ width: '20', height: '20' }}
-        >
-          <img
-            src={iconURL}
-            alt={currentSpec.name}
-            style={{ width: '100%', height: '100%' }}
-            className="object-cover"
-          />
-        </div>
-      )
-      : icons[endpoint ?? ''] ?? icons.unknown;
+    Icon = icons[endpoint ?? ''] ?? icons.unknown;
   }
 
   return (
@@ -42,9 +31,9 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
       endpoint={endpoint}
       context="menu-item"
       iconURL={endpointIconURL}
-      className="icon-lg mr-1 shrink-0 dark:text-white"
+      className="icon-lg mr-1 shrink-0 text-text-primary"
     />
   );
 };
 
-export default SpecIcon;
+export default memo(SpecIcon);

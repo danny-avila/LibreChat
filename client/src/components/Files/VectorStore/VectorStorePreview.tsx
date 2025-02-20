@@ -178,7 +178,7 @@ export default function VectorStorePreview() {
             <Clock3 className="text-base text-gray-500 md:text-lg lg:text-xl" />
             &nbsp;Created At
           </span>
-          <span className="w-1/2 text-gray-500 md:w-3/5">{vectorStore.createdAt?.toString()}</span>
+          <span className="w-1/2 text-gray-500 md:w-3/5">{vectorStore.createdAt.toString()}</span>
         </div>
       </div>
 

@@ -1,9 +1,15 @@
 import { z } from 'zod';
-import axios from 'axios';
+import _axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
-import type { FunctionTool, Schema, Reference, ActionMetadata } from './types/assistants';
+import type {
+  FunctionTool,
+  Schema,
+  Reference,
+  ActionMetadata,
+  ActionMetadataRuntime,
+} from './types/assistants';
 import type { OpenAPIV3 } from 'openapi-types';
 import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
 
@@ -11,12 +17,13 @@ export type ParametersSchema = {
   type: string;
   properties: Record<string, Reference | Schema>;
   required: string[];
+  additionalProperties?: boolean;
 };
 
 export type OpenAPISchema = OpenAPIV3.SchemaObject &
   ParametersSchema & {
-    items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
-  };
+  items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
+};
 
 export type ApiKeyCredentials = {
   api_key: string;
@@ -36,8 +43,8 @@ export type Credentials = ApiKeyCredentials | OAuthCredentials;
 type MediaTypeObject =
   | undefined
   | {
-      [media: string]: OpenAPIV3.MediaTypeObject | undefined;
-    };
+  [media: string]: OpenAPIV3.MediaTypeObject | undefined;
+};
 
 type RequestBodyObject = Omit<OpenAPIV3.RequestBodyObject, 'content'> & {
   content: MediaTypeObject;
@@ -118,28 +125,40 @@ function openAPISchemaToZod(schema: OpenAPISchema): z.ZodTypeAny | undefined {
   return handler(schema);
 }
 
+/**
+ * Class representing a function signature.
+ */
 export class FunctionSignature {
   name: string;
   description: string;
   parameters: ParametersSchema;
+  strict: boolean;
 
-  constructor(name: string, description: string, parameters: ParametersSchema) {
+  constructor(name: string, description: string, parameters: ParametersSchema, strict?: boolean) {
     this.name = name;
     this.description = description;
     this.parameters = parameters;
+    this.strict = strict ?? false;
   }
 
   toObjectTool(): FunctionTool {
+    const parameters = {
+      ...this.parameters,
+      additionalProperties: this.strict ? false : undefined,
+    };
+
     return {
       type: Tools.function,
       function: {
         name: this.name,
         description: this.description,
-        parameters: this.parameters,
+        parameters,
+        ...(this.strict ? { strict: this.strict } : {}),
       },
     };
   }
 }
+
 class RequestConfig {
   constructor(
     readonly domain: string,
@@ -176,7 +195,7 @@ class RequestExecutor {
     return this;
   }
 
-  async setAuth(metadata: ActionMetadata) {
+  async setAuth(metadata: ActionMetadataRuntime) {
     if (!metadata.auth) {
       return this;
     }
@@ -199,6 +218,8 @@ class RequestExecutor {
       /* OAuth */
       oauth_client_id,
       oauth_client_secret,
+      oauth_token_expires_at,
+      oauth_access_token = '',
     } = metadata;
 
     const isApiKey = api_key != null && api_key.length > 0 && type === AuthTypeEnum.ServiceHttp;
@@ -230,22 +251,23 @@ class RequestExecutor {
     ) {
       this.authHeaders[custom_auth_header] = api_key;
     } else if (isOAuth) {
-      const authToken = this.authToken ?? '';
-      if (!authToken) {
-        const tokenResponse = await axios.post(
-          client_url,
-          {
-            client_id: oauth_client_id,
-            client_secret: oauth_client_secret,
-            scope: scope,
-            grant_type: 'client_credentials',
-          },
-          {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          },
-        );
-        this.authToken = tokenResponse.data.access_token;
+      // TODO: maybe doing it in a different way later on. but we want that the user needs to folllow the oauth flow.
+      // If we do not have a valid token, bail or ask user to sign in
+      const now = new Date();
+
+      // 1. Check if token is set
+      if (!oauth_access_token) {
+        throw new Error('No access token found. Please log in first.');
       }
+
+      // 2. Check if token is expired
+      if (oauth_token_expires_at && now >= new Date(oauth_token_expires_at)) {
+        // Optionally check refresh_token logic, or just prompt user to re-login
+        throw new Error('Access token is expired. Please re-login.');
+      }
+
+      // If valid, use it
+      this.authToken = oauth_access_token;
       this.authHeaders['Authorization'] = `Bearer ${this.authToken}`;
     }
     return this;
@@ -259,7 +281,7 @@ class RequestExecutor {
     };
 
     const method = this.config.method.toLowerCase();
-
+    const axios = _axios.create();
     if (method === 'get') {
       return axios.get(url, { headers, params: this.params });
     } else if (method === 'post') {
@@ -355,7 +377,9 @@ function sanitizeOperationId(input: string) {
   return input.replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
-/** Function to convert OpenAPI spec to function signatures and request builders */
+/**
+ * Converts an OpenAPI spec to function signatures and request builders.
+ */
 export function openapiToFunction(
   openapiSpec: OpenAPIV3.Document,
   generateZodSchemas = false,
@@ -374,12 +398,15 @@ export function openapiToFunction(
     for (const [method, operation] of Object.entries(methods as OpenAPIV3.PathsObject)) {
       const operationObj = operation as OpenAPIV3.OperationObject & {
         'x-openai-isConsequential'?: boolean;
+      } & {
+        'x-strict'?: boolean
       };
 
       // Operation ID is used as the function name
       const defaultOperationId = `${method}_${path}`;
       const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
+      const isStrict = operationObj['x-strict'] ?? false;
 
       const parametersSchema: OpenAPISchema = {
         type: 'object',
@@ -419,7 +446,7 @@ export function openapiToFunction(
         }
       }
 
-      const functionSignature = new FunctionSignature(operationId, description, parametersSchema);
+      const functionSignature = new FunctionSignature(operationId, description, parametersSchema, isStrict);
       functionSignatures.push(functionSignature);
 
       const actionRequest = new ActionRequest(
@@ -427,8 +454,8 @@ export function openapiToFunction(
         path,
         method,
         operationId,
-        !!(operationObj['x-openai-isConsequential'] ?? false), // Custom extension for consequential actions
-        operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
+        !!(operationObj['x-openai-isConsequential'] ?? false),
+        operationObj.requestBody ? 'application/json' : '',
       );
 
       requestBuilders[operationId] = actionRequest;
@@ -451,6 +478,9 @@ export type ValidationResult = {
   spec?: OpenAPIV3.Document;
 };
 
+/**
+ * Validates and parses an OpenAPI spec.
+ */
 export function validateAndParseOpenAPISpec(specString: string): ValidationResult {
   try {
     let parsedSpec;
@@ -511,6 +541,7 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
       spec: parsedSpec,
     };
   } catch (error) {
+    console.error(error);
     return { status: false, message: 'Error parsing OpenAPI spec.' };
   }
 }

@@ -9,7 +9,7 @@ const FileDashboardView = () => {
   return (
     <div className="bg-[#f9f9f9] p-0 lg:p-7">
       <div className="ml-3 mt-3 flex flex-row justify-between">
-        {params?.vectorStoreId && (
+        {params.vectorStoreId && (
           <Button
             className="block lg:hidden"
             variant={'outline'}

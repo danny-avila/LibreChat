@@ -1,30 +1,47 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { useChatContext } from '~/Providers';
+// hooks/useAutoScroll.ts
+import { useEffect, useState } from 'react';
 
-export default function useAutoScroll() {
-  const { isSubmitting } = useChatContext();
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const scrollableRef = useRef<HTMLDivElement | null>(null);
-  const contentEndRef = useRef<HTMLDivElement | null>(null);
+interface UseAutoScrollProps {
+  ref: React.RefObject<HTMLElement>;
+  content: string;
+  isSubmitting: boolean;
+}
 
-  const scrollToBottom = useCallback(() => {
-    if (scrollableRef.current) {
-      scrollableRef.current.scrollTop = scrollableRef.current.scrollHeight;
-    }
-  }, []);
-
-  const handleScroll = useCallback(() => {
-    if (scrollableRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
-      setShowScrollButton(scrollHeight - scrollTop - clientHeight > 100);
-    }
-  }, []);
+export const useAutoScroll = ({ ref, content, isSubmitting }: UseAutoScrollProps) => {
+  const [userScrolled, setUserScrolled] = useState(false);
 
   useEffect(() => {
-    if (isSubmitting) {
-      scrollToBottom();
+    const scrollContainer = ref.current;
+    if (!scrollContainer) {
+      return;
     }
-  }, [isSubmitting, scrollToBottom]);
 
-  return { scrollableRef, contentEndRef, handleScroll, scrollToBottom, showScrollButton };
-}
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
+
+      if (!isNearBottom) {
+        setUserScrolled(true);
+      } else {
+        setUserScrolled(false);
+      }
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+    };
+  }, [ref]);
+
+  useEffect(() => {
+    const scrollContainer = ref.current;
+    if (!scrollContainer || !isSubmitting || userScrolled) {
+      return;
+    }
+
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  }, [content, isSubmitting, userScrolled, ref]);
+
+  return { userScrolled };
+};

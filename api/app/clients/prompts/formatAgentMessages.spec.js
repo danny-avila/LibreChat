@@ -282,4 +282,47 @@ describe('formatAgentMessages', () => {
     // Additional check to ensure the consecutive assistant messages were combined
     expect(result[1].content).toHaveLength(2);
   });
+
+  it('should skip THINK type content parts', () => {
+    const payload = [
+      {
+        role: 'assistant',
+        content: [
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Initial response' },
+          { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Reasoning about the problem...' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Final answer' },
+        ],
+      },
+    ];
+
+    const result = formatAgentMessages(payload);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBeInstanceOf(AIMessage);
+    expect(result[0].content).toEqual('Initial response\nFinal answer');
+  });
+
+  it('should join TEXT content as string when THINK content type is present', () => {
+    const payload = [
+      {
+        role: 'assistant',
+        content: [
+          { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Analyzing the problem...' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'First part of response' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Second part of response' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Final part of response' },
+        ],
+      },
+    ];
+
+    const result = formatAgentMessages(payload);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBeInstanceOf(AIMessage);
+    expect(typeof result[0].content).toBe('string');
+    expect(result[0].content).toBe(
+      'First part of response\nSecond part of response\nFinal part of response',
+    );
+    expect(result[0].content).not.toContain('Analyzing the problem...');
+  });
 });

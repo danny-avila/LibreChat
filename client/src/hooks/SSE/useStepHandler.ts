@@ -33,8 +33,11 @@ type TStepEvent = {
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
+type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
+
 type AllContentTypes =
   | ContentTypes.TEXT
+  | ContentTypes.THINK
   | ContentTypes.TOOL_CALL
   | ContentTypes.IMAGE_FILE
   | ContentTypes.IMAGE_URL
@@ -85,6 +88,18 @@ export default function useStepHandler({
         update.tool_call_ids = contentPart.tool_call_ids;
       }
       updatedContent[index] = update;
+    } else if (
+      contentType.startsWith(ContentTypes.THINK) &&
+      ContentTypes.THINK in contentPart &&
+      typeof contentPart.think === 'string'
+    ) {
+      const currentContent = updatedContent[index] as ReasoningDeltaUpdate;
+      const update: ReasoningDeltaUpdate = {
+        type: ContentTypes.THINK,
+        think: (currentContent.think || '') + contentPart.think,
+      };
+
+      updatedContent[index] = update;
     } else if (contentType === ContentTypes.IMAGE_URL && 'image_url' in contentPart) {
       const currentContent = updatedContent[index] as {
         type: ContentTypes.IMAGE_URL;
@@ -110,6 +125,8 @@ export default function useStepHandler({
         name,
         args,
         type: ToolCallTypes.TOOL_CALL,
+        auth: contentPart.tool_call.auth,
+        expires_at: contentPart.tool_call.expires_at,
       };
 
       if (finalUpdate) {
@@ -219,6 +236,28 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
+      } else if (event === 'on_reasoning_delta') {
+        const reasoningDelta = data as Agents.ReasoningDeltaEvent;
+        const runStep = stepMap.current.get(reasoningDelta.id);
+        const responseMessageId = runStep?.runId ?? '';
+
+        if (!runStep || !responseMessageId) {
+          console.warn('No run step or runId found for reasoning delta event');
+          return;
+        }
+
+        const response = messageMap.current.get(responseMessageId);
+        if (response && reasoningDelta.delta.content != null) {
+          const contentPart = Array.isArray(reasoningDelta.delta.content)
+            ? reasoningDelta.delta.content[0]
+            : reasoningDelta.delta.content;
+
+          const updatedResponse = updateContent(response, runStep.index, contentPart);
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
       } else if (event === 'on_run_step_delta') {
         const runStepDelta = data as Agents.RunStepDeltaEvent;
         const runStep = stepMap.current.get(runStepDelta.id);
@@ -248,6 +287,11 @@ export default function useStepHandler({
                 id: toolCallId,
               },
             };
+
+            if (runStepDelta.delta.auth != null) {
+              contentPart.tool_call.auth = runStepDelta.delta.auth;
+              contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
+            }
 
             updatedResponse = updateContent(updatedResponse, runStep.index, contentPart);
           });

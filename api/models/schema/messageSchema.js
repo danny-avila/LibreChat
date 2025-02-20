@@ -62,10 +62,6 @@ const messageSchema = mongoose.Schema(
       required: true,
       default: false,
     },
-    isEdited: {
-      type: Boolean,
-      default: false,
-    },
     unfinished: {
       type: Boolean,
       default: false,
@@ -138,6 +134,9 @@ const messageSchema = mongoose.Schema(
       default: undefined,
     },
     */
+    expiredAt: {
+      type: Date,
+    },
   },
   { timestamps: true },
 );
@@ -150,7 +149,7 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
     primaryKey: 'messageId',
   });
 }
-
+messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
 
