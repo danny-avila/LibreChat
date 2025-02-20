@@ -77,7 +77,6 @@ async function indexSync() {
       logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
     } else {
       logger.error('[indexSync] error', err);
-      // res.status(500).json({ error: 'Server error' });
     }
   }
 }
