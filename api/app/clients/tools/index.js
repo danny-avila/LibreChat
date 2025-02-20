@@ -10,6 +10,7 @@ const StructuredSD = require('./structured/StableDiffusion');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const TavilySearchResults = require('./structured/TavilySearchResults');
+const FluxAPI = require('./structured/FluxAPI');
 
 /** @type {Record<string, TPlugin | undefined>} */
 const manifestToolMap = {};
@@ -30,6 +31,7 @@ module.exports = {
   manifestToolMap,
   // Structured Tools
   DALLE3,
+  FluxAPI,
   OpenWeather,
   StructuredSD,
   StructuredACS,
