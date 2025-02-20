@@ -1,6 +1,6 @@
-import { Search } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
+import { Search, ChevronDown } from 'lucide-react';
 import { useMemo, useState, useRef, memo, useEffect } from 'react';
 import { SelectRenderer } from '@ariakit/react-core/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
@@ -16,6 +16,9 @@ interface ControlComboboxProps {
   selectPlaceholder?: string;
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
+  showCarat?: boolean;
+  className?: string;
+  disabled?: boolean;
 }
 
 const ROW_HEIGHT = 36;
@@ -30,6 +33,9 @@ function ControlCombobox({
   selectPlaceholder,
   isCollapsed,
   SelectIcon,
+  showCarat,
+  className,
+  disabled,
 }: ControlComboboxProps) {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -78,11 +84,13 @@ function ControlCombobox({
       <Ariakit.Select
         ref={buttonRef}
         store={select}
+        disabled={disabled}
         className={cn(
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',
           'border border-border-light',
           isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
+          className,
         )}
       >
         {SelectIcon != null && (
@@ -91,7 +99,14 @@ function ControlCombobox({
           </div>
         )}
         {!isCollapsed && (
-          <span className="flex-grow truncate text-left">{displayValue ?? selectPlaceholder}</span>
+          <>
+            <span className="flex-grow truncate text-left">
+              {displayValue != null
+                ? displayValue || selectPlaceholder
+                : selectedValue || selectPlaceholder}
+            </span>
+            {showCarat && <ChevronDown className="h-4 w-4 text-text-secondary" />}
+          </>
         )}
       </Ariakit.Select>
       <Ariakit.SelectPopover
