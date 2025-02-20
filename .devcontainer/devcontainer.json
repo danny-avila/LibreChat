@@ -13,6 +13,10 @@
     }
   },
   "postCreateCommand": "",
-  "features": { "ghcr.io/devcontainers/features/git:1": {} },
-  "remoteUser": "vscode"
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/prulloac/devcontainer-features/bun:1": {}
+  },
+  "remoteUser": "vscode",
+  "forwardPorts": [3080, 3090]
 }

@@ -33,19 +33,27 @@ export default defineConfig({
     fs: {
       cachedChecks: false,
     },
-    host: 'localhost',
+    host: '0.0.0.0',
     port: 3090,
-    strictPort: false,
+    strictPort: true,
+    hmr: {
+      clientPort: 3090,  // Force client to use this port
+      host: 'localhost'
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3080',
         changeOrigin: true,
+        secure: false
       },
       '/oauth': {
         target: 'http://localhost:3080',
         changeOrigin: true,
       },
     },
+    watch: {
+      usePolling: true
+    }
   },
   // All other env variables are filtered out
   envDir: '../',

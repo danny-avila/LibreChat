@@ -3,12 +3,14 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
+    env_file: ../.env
     # restart: always
     links:
       - mongodb
       - meilisearch
-    # ports:
-    #   - 3080:3080               # Change it to 9000:3080 to use nginx
+    ports:
+      - "3080:3080"
+      - "3090:3090"
     extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
     - "host.docker.internal:host-gateway"
 
@@ -58,6 +60,7 @@ services:
     #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     environment:
       - MEILI_NO_ANALYTICS=true
-      - MEILI_MASTER_KEY=5c71cf56d672d009e36070b5bc5e47b743535ae55c818ae3b735bb6ebfb4ba63
+    env_file:
+      - ../.env
     volumes:
       - ./meili_data_v1.5:/meili_data
