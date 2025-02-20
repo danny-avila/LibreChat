@@ -5,7 +5,7 @@ const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const searchEnabled = isEnabled(process.env.SEARCH);
-const indexingEnabled = isEnabled(process.env.MEILI_ENABLE_INDEXING ?? true);
+const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
 let currentTimeout = null;
 
 class MeiliSearchClient {
@@ -38,7 +38,7 @@ async function indexSync() {
       throw new Error('Meilisearch not available');
     }
 
-    if (!indexingEnabled) {
+    if (indexingDisabled === true) {
       logger.info('[indexSync] Indexing is disabled, skipping...');
       return;
     }
