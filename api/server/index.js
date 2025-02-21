@@ -146,6 +146,18 @@ process.on('uncaughtException', (err) => {
     logger.error('There was an uncaught error:', err);
   }
 
+  if (err.message.includes('abort')) {
+    logger.warn('There was an uncatchable AbortController error.');
+    return;
+  }
+
+  if (err.message.includes('GoogleGenerativeAI')) {
+    logger.warn(
+      '\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303',
+    );
+    return;
+  }
+
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
       logger.warn('Meilisearch error, search will be disabled');
