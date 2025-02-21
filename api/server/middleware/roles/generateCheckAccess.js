@@ -2,6 +2,43 @@ const { getRoleByName } = require('~/models/Role');
 const { logger } = require('~/config');
 
 /**
+ * Core function to check if a user has one or more required permissions
+ *
+ * @param {object} user - The user object
+ * @param {PermissionTypes} permissionType - The type of permission to check
+ * @param {Permissions[]} permissions - The list of specific permissions to check
+ * @param {Record<Permissions, string[]>} [bodyProps] - An optional object where keys are permissions and values are arrays of properties to check
+ * @param {object} [checkObject] - The object to check properties against
+ * @returns {Promise<boolean>} Whether the user has the required permissions
+ */
+const checkAccess = async (user, permissionType, permissions, bodyProps = {}, checkObject = {}) => {
+  if (!user) {
+    return false;
+  }
+
+  const role = await getRoleByName(user.role);
+  if (role && role[permissionType]) {
+    const hasAnyPermission = permissions.some((permission) => {
+      if (role[permissionType][permission]) {
+        return true;
+      }
+
+      if (bodyProps[permission] && checkObject) {
+        return bodyProps[permission].some((prop) =>
+          Object.prototype.hasOwnProperty.call(checkObject, prop),
+        );
+      }
+
+      return false;
+    });
+
+    return hasAnyPermission;
+  }
+
+  return false;
+};
+
+/**
  * Middleware to check if a user has one or more required permissions, optionally based on `req.body` properties.
  *
  * @param {PermissionTypes} permissionType - The type of permission to check.
@@ -12,33 +49,20 @@ const { logger } = require('~/config');
 const generateCheckAccess = (permissionType, permissions, bodyProps = {}) => {
   return async (req, res, next) => {
     try {
-      const { user } = req;
-      if (!user) {
-        return res.status(401).json({ message: 'Authorization required' });
+      const hasAccess = await checkAccess(
+        req.user,
+        permissionType,
+        permissions,
+        bodyProps,
+        req.body,
+      );
+
+      if (hasAccess) {
+        return next();
       }
 
-      const role = await getRoleByName(user.role);
-      if (role && role[permissionType]) {
-        const hasAnyPermission = permissions.some((permission) => {
-          if (role[permissionType][permission]) {
-            return true;
-          }
-
-          if (bodyProps[permission] && req.body) {
-            return bodyProps[permission].some((prop) =>
-              Object.prototype.hasOwnProperty.call(req.body, prop),
-            );
-          }
-
-          return false;
-        });
-
-        if (hasAnyPermission) {
-          return next();
-        }
-      }
       logger.warn(
-        `[${permissionType}] Forbidden: Insufficient permissions for User ${user.id}: ${permissions.join(', ')}`,
+        `[${permissionType}] Forbidden: Insufficient permissions for User ${req.user.id}: ${permissions.join(', ')}`,
       );
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
     } catch (error) {
@@ -48,4 +72,7 @@ const generateCheckAccess = (permissionType, permissions, bodyProps = {}) => {
   };
 };
 
-module.exports = generateCheckAccess;
+module.exports = {
+  checkAccess,
+  generateCheckAccess,
+};
