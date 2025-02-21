@@ -11,7 +11,7 @@ import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
-const SELECT_ID = 'agent-select';
+const SELECT_ID = 'agent-builder-combobox';
 
 export default function AgentSelect({
   reset,
