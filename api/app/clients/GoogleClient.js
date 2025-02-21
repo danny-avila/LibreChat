@@ -641,7 +641,7 @@ class GoogleClient extends BaseClient {
     let error;
     try {
       if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
-        /** @type {GenAI} */
+        /** @type {GenerativeModel} */
         const client = this.client;
         /** @type {GenerateContentRequest} */
         const requestOptions = {
@@ -665,7 +665,17 @@ class GoogleClient extends BaseClient {
         /** @type {GenAIUsageMetadata} */
         let usageMetadata;
 
-        const result = await client.generateContentStream(requestOptions);
+        abortController.signal.addEventListener(
+          'abort',
+          () => {
+            logger.warn('[GoogleClient] Request was aborted', abortController.signal.reason);
+          },
+          { once: true },
+        );
+
+        const result = await client.generateContentStream(requestOptions, {
+          signal: abortController.signal,
+        });
         for await (const chunk of result.stream) {
           usageMetadata = !usageMetadata
             ? chunk?.usageMetadata
