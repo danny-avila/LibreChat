@@ -4,10 +4,16 @@ import { Skeleton } from '~/components/ui';
 export default function AgentPanelSkeleton() {
   return (
     <div className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden">
-      {/* Agent Select and Button */}
-      <div className="mt-1 flex w-full gap-2">
-        <Skeleton className="h-[40px] w-4/5 rounded-lg" />
-        <Skeleton className="h-[40px] w-1/5 rounded-lg" />
+      <div className="mt-2 flex w-full flex-wrap gap-2">
+        {/* Agent Select Dropdown */}
+        <div className="w-full">
+          <Skeleton className="h-[40px] w-full rounded-md" />
+        </div>
+        {/* Create and Select Buttons */}
+        <div className="flex w-full gap-2">
+          <Skeleton className="h-[40px] w-3/4 rounded-md" /> {/* Create Button */}
+          <Skeleton className="h-[40px] w-1/4 rounded-md" /> {/* Select Button */}
+        </div>
       </div>
 
       <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
