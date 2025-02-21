@@ -78,8 +78,8 @@ export default function Parameters({
 
   return (
     <div className="scrollbar-gutter-stable h-full min-h-[50vh] overflow-auto pb-12 text-sm">
-      <div className="model-panel relative flex flex-col items-center px-16 py-6 text-center">
-        <div className="absolute left-0 top-6">
+      <div className="model-panel relative flex flex-col items-center px-16 py-4 text-center">
+        <div className="absolute left-0 top-4">
           <button
             type="button"
             className="btn btn-neutral relative"
