@@ -550,6 +550,7 @@
   "com_ui_close": "Close",
   "com_ui_close_menu": "Close Menu",
   "com_ui_code": "Code",
+  "com_ui_expand_chat": "Expand Chat",
   "com_ui_collapse_chat": "Collapse Chat",
   "com_ui_command_placeholder": "Optional: Enter a command for the prompt or name will be used",
   "com_ui_command_usage_placeholder": "Select a Prompt by command or name",

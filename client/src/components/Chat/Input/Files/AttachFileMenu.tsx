@@ -93,8 +93,8 @@ const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
           id="attach-file-menu-button"
           aria-label="Attach File Options"
           className={cn(
-            'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
-            isRTL ? 'bottom-2 right-2' : 'bottom-2 left-1 md:left-2',
+            'absolute flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+            isRTL ? 'bottom-2 right-2' : 'bottom-2 left-2',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
@@ -115,17 +115,15 @@ const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
         handleFileChange(e, toolResource);
       }}
     >
-      <div className="relative select-none">
-        <DropdownPopup
-          menuId="attach-file-menu"
-          isOpen={isPopoverActive}
-          setIsOpen={setIsPopoverActive}
-          modal={true}
-          trigger={menuTrigger}
-          items={dropdownItems}
-          iconClassName="mr-0"
-        />
-      </div>
+      <DropdownPopup
+        menuId="attach-file-menu"
+        isOpen={isPopoverActive}
+        setIsOpen={setIsPopoverActive}
+        modal={true}
+        trigger={menuTrigger}
+        items={dropdownItems}
+        iconClassName="mr-0"
+      />
     </FileUpload>
   );
 };

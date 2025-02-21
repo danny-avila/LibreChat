@@ -15,13 +15,7 @@ import AttachFile from './AttachFile';
 import FileRow from './FileRow';
 import store from '~/store';
 
-function FileFormWrapper({
-  children,
-  disableInputs,
-}: {
-  disableInputs: boolean;
-  children?: React.ReactNode;
-}) {
+function FileForm({ disableInputs }: { disableInputs: boolean }) {
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const { files, setFiles, conversation, setFilesLoading } = useChatContext();
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
@@ -57,7 +51,6 @@ function FileFormWrapper({
         <AttachFile isRTL={isRTL} disabled={disableInputs} handleFileChange={handleFileChange} />
       );
     }
-
     return null;
   };
 
@@ -71,10 +64,9 @@ function FileFormWrapper({
         isRTL={isRTL}
         Wrapper={({ children }) => <div className="mx-2 mt-2 flex flex-wrap gap-2">{children}</div>}
       />
-      {children}
       {renderAttachFile()}
     </>
   );
 }
 
-export default memo(FileFormWrapper);
+export default memo(FileForm);

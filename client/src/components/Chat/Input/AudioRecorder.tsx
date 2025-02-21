@@ -90,8 +90,8 @@ export default function AudioRecorder({
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
           className={cn(
-            'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
-            isRTL ? 'bottom-2 left-2' : 'bottom-2 right-2',
+            'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
+            isRTL ? 'bottom-2 left-14' : 'bottom-2 right-14',
             disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
           )}
           title={localize('com_ui_use_micrphone')}
