@@ -17,6 +17,7 @@ interface ControlComboboxProps {
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
   containerClassName?: string;
+  iconClassName?: string;
   showCarat?: boolean;
   className?: string;
   disabled?: boolean;
@@ -39,6 +40,7 @@ function ControlCombobox({
   showCarat,
   className,
   disabled,
+  iconClassName,
   iconSide = 'left',
 }: ControlComboboxProps) {
   const [searchValue, setSearchValue] = useState('');
@@ -80,6 +82,15 @@ function ControlCombobox({
     }
   }, [isCollapsed]);
 
+  const selectIconClassName = cn(
+    'flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
+    iconClassName,
+  );
+  const optionIconClassName = cn(
+    'mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
+    iconClassName,
+  );
+
   return (
     <div className={cn('flex w-full items-center justify-center px-1', containerClassName)}>
       <Ariakit.SelectLabel store={select} className="sr-only">
@@ -98,9 +109,7 @@ function ControlCombobox({
         )}
       >
         {SelectIcon != null && iconSide === 'left' && (
-          <div className="assistant-item flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-            {SelectIcon}
-          </div>
+          <div className={selectIconClassName}>{SelectIcon}</div>
         )}
         {!isCollapsed && (
           <>
@@ -110,9 +119,7 @@ function ControlCombobox({
                 : selectedValue || selectPlaceholder}
             </span>
             {SelectIcon != null && iconSide === 'right' && (
-              <div className="assistant-item flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                {SelectIcon}
-              </div>
+              <div className={selectIconClassName}>{SelectIcon}</div>
             )}
             {showCarat && <ChevronDown className="h-4 w-4 text-text-secondary" />}
           </>
@@ -151,15 +158,11 @@ function ControlCombobox({
                   render={<Ariakit.SelectItem value={value} />}
                 >
                   {icon != null && iconSide === 'left' && (
-                    <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                      {icon}
-                    </div>
+                    <div className={optionIconClassName}>{icon}</div>
                   )}
                   <span className="flex-grow truncate text-left">{label}</span>
                   {icon != null && iconSide === 'right' && (
-                    <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                      {icon}
-                    </div>
+                    <div className={optionIconClassName}>{icon}</div>
                   )}
                 </Ariakit.ComboboxItem>
               )}
