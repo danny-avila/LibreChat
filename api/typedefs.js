@@ -21,6 +21,12 @@
  */
 
 /**
+ * @exports NextFunction
+ * @typedef {import('express').NextFunction} NextFunction
+ * @memberof typedefs
+ */
+
+/**
  * @exports AgentRun
  * @typedef {import('@librechat/agents').Run} AgentRun
  * @memberof typedefs
