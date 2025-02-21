@@ -40,8 +40,7 @@ async function setCurrentModel(req, label) {
 }
 
 async function getCurrentModel(req) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const availableAgents = await cache.get(CacheKeys.MODELS_CONFIG);
+  const availableAgents = await getModelsConfig(req);
   console.log('availableAgents:', availableAgents); // eslint-disable-line no-console
   const response = await User.findById(req.user.id).select('lastSelectedModel');
 
