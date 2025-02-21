@@ -76,7 +76,7 @@ export const agentPermissionsSchema = z.object({
 });
 
 export const multiConvoPermissionsSchema = z.object({
-  [Permissions.USE]: z.boolean().default(false),
+  [Permissions.USE]: z.boolean().default(true),
 });
 
 export const temporaryChatPermissionsSchema = z.object({
