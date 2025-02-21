@@ -46,7 +46,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     };
 
     fetchWelcomeMessage();
-  }, [documentsMap]);
+  }, [conversation]);
 
   const localize = useLocalize();
 
