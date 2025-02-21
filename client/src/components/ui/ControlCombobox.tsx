@@ -22,6 +22,7 @@ interface ControlComboboxProps {
   className?: string;
   disabled?: boolean;
   iconSide?: 'left' | 'right';
+  selectId?: string;
 }
 
 const ROW_HEIGHT = 36;
@@ -42,6 +43,7 @@ function ControlCombobox({
   disabled,
   iconClassName,
   iconSide = 'left',
+  selectId,
 }: ControlComboboxProps) {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -99,6 +101,7 @@ function ControlCombobox({
       <Ariakit.Select
         ref={buttonRef}
         store={select}
+        id={selectId}
         disabled={disabled}
         className={cn(
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
