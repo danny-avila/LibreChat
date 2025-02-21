@@ -23,29 +23,32 @@ const CollapseChat = ({
     : localize('com_ui_collapse_chat');
 
   return (
-    <TooltipAnchor
-      description={description}
-      render={
-        <button
-          aria-label={description}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setIsCollapsed((prev) => !prev);
-          }}
-          className={cn(
-            'absolute right-1.5 top-1.5 z-10 size-5 rounded-full transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
-          )}
-        >
-          {isCollapsed ? (
-            <ChevronDown className="h-full w-full" />
-          ) : (
-            <ChevronUp className="h-full w-full" />
-          )}
-        </button>
-      }
-    />
+    <div className="relative ml-auto items-end justify-end">
+      <TooltipAnchor
+        description={description}
+        render={
+          <button
+            aria-label={description}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsCollapsed((prev) => !prev);
+            }}
+            className={cn(
+              // 'absolute right-1.5 top-1.5',
+              'z-10 size-5 rounded-full transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+            )}
+          >
+            {isCollapsed ? (
+              <ChevronDown className="h-full w-full" />
+            ) : (
+              <ChevronUp className="h-full w-full" />
+            )}
+          </button>
+        }
+      />
+    </div>
   );
 };
 

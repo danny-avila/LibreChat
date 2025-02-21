@@ -48,6 +48,13 @@ export type AudioChunk = {
   };
 };
 
+export type BadgeItem = {
+  id: string;
+  icon: React.ComponentType<any>;
+  label: string;
+  isActive: boolean;
+};
+
 export type AssistantListItem = {
   id: string;
   name: string;

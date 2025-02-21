@@ -435,6 +435,7 @@
   "com_nav_welcome_agent": "Please Select an Agent",
   "com_nav_welcome_assistant": "Please Select an Assistant",
   "com_nav_welcome_message": "How can I help you today?",
+  "com_nav_edit_chat_badges": "Edit Chat Badges",
   "com_show_agent_settings": "Show Agent Settings",
   "com_show_completion_settings": "Show Completion Settings",
   "com_show_examples": "Show Examples",
@@ -847,6 +848,7 @@
   "com_ui_write": "Writing",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
+  "com_ui_save_badge_changes": "Save badge changes?",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }

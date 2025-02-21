@@ -23,17 +23,19 @@ import {
 } from '~/hooks';
 import { cn, removeFocusRings, checkIfScrollable } from '~/utils';
 import FileFormWrapper from './Files/FileFormWrapper';
+import { mainTextareaId, BadgeItem } from '~/common';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { TemporaryChat } from './TemporaryChat';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
-import { mainTextareaId } from '~/common';
 import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
+import EditBadges from './EditBadges';
+import { BadgeRow } from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -42,28 +44,23 @@ const ChatForm = memo(({ index = 0 }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isScrollable, setIsScrollable] = useState(false);
+  // TODO: Remove setIsScrollable
+  const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
-
-  const baseClasses = useMemo(
-    () =>
-      cn(
-        'px-5 md:py-3.5 m-0 w-full resize-none py-[13px] bg-surface-chat placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-        isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
-      ),
-    [isCollapsed],
-  );
+  const [editingBadges, setEditingBadges] = useState<BadgeItem[] | null>(null);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const [isTemporaryChat, setIsTemporaryChat] = useRecoilState(store.isTemporary);
   const chatDirection = useRecoilValue(store.chatDirection);
   const isSearching = useRecoilValue(store.isSearching);
+  const [badges, setBadges] = useRecoilState(store.chatBadges);
+  const [isTemporaryChat, setIsTemporaryChat] = useRecoilState(store.isTemporary);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
+  const [isEditingChatBadges, setIsEditingChatBadges] = useRecoilState(store.isEditingBadges);
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
     store.showMentionPopoverFamily(index),
   );
@@ -106,12 +103,6 @@ const ChatForm = memo(({ index = 0 }) => {
     () => requiresKey || invalidAssistant,
     [requiresKey, invalidAssistant],
   );
-
-  const handleHeightChange = useCallback(() => {
-    if (textAreaRef.current) {
-      setIsScrollable(checkIfScrollable(textAreaRef.current));
-    }
-  }, []);
 
   const handleContainerClick = useCallback(() => {
     textAreaRef.current?.focus();
@@ -163,6 +154,25 @@ const ChatForm = memo(({ index = 0 }) => {
   }, [isSearching, disableInputs]);
 
   useEffect(() => {
+    if (isEditingChatBadges) {
+      setEditingBadges([...badges]);
+    }
+  }, [isEditingChatBadges]);
+
+  const handleSaveBadges = () => {
+    setIsEditingChatBadges(false);
+    setEditingBadges(null);
+  };
+
+  const handleCancelBadges = () => {
+    if (editingBadges) {
+      setBadges(editingBadges);
+    }
+    setIsEditingChatBadges(false);
+    setEditingBadges(null);
+  };
+
+  useEffect(() => {
     if (textAreaRef.current) {
       const style = window.getComputedStyle(textAreaRef.current);
       const lineHeight = parseFloat(style.lineHeight);
@@ -171,6 +181,16 @@ const ChatForm = memo(({ index = 0 }) => {
   }, [textValue]);
 
   const isMoreThanThreeRows = visualRowCount > 3;
+
+  const baseClasses = useMemo(
+    () =>
+      cn(
+        'md:py-3.5 m-0 w-full resize-none py-[13px] bg-surface-chat placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
+        isMoreThanThreeRows ? 'pl-5' : 'px-5',
+      ),
+    [isCollapsed, isMoreThanThreeRows],
+  );
 
   return (
     <form
@@ -200,7 +220,6 @@ const ChatForm = memo(({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          {/* UPDATED CONTAINER: Added onClick and conditional shadow */}
           <div
             onClick={handleContainerClick}
             className={cn(
@@ -213,13 +232,13 @@ const ChatForm = memo(({ index = 0 }) => {
               setIsTemporaryChat={setIsTemporaryChat}
             />
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            <EditBadges
+              isEditingChatBadges={isEditingChatBadges}
+              handleCancelBadges={handleCancelBadges}
+              handleSaveBadges={handleSaveBadges}
+            />
             {endpoint && (
-              <>
-                <CollapseChat
-                  isCollapsed={isCollapsed}
-                  isScrollable={isMoreThanThreeRows}
-                  setIsCollapsed={setIsCollapsed}
-                />
+              <div className="flex flex-row">
                 <TextareaAutosize
                   {...registerProps}
                   ref={(e) => {
@@ -230,7 +249,6 @@ const ChatForm = memo(({ index = 0 }) => {
                   onPaste={handlePaste}
                   onKeyDown={handleKeyDown}
                   onKeyUp={handleKeyUp}
-                  onHeightChange={handleHeightChange}
                   onCompositionStart={handleCompositionStart}
                   onCompositionEnd={handleCompositionEnd}
                   id={mainTextareaId}
@@ -239,9 +257,9 @@ const ChatForm = memo(({ index = 0 }) => {
                   rows={1}
                   onFocus={(e) => {
                     handleFocusOrClick();
-                    setIsTextAreaFocused(true); // NEW: set focus state
+                    setIsTextAreaFocused(true);
                   }}
-                  onBlur={(e) => setIsTextAreaFocused(false)} // NEW: remove focus state
+                  onBlur={(e) => setIsTextAreaFocused(false)}
                   onClick={handleFocusOrClick}
                   style={{ height: 44, overflowY: 'auto' }}
                   className={cn(
@@ -250,10 +268,19 @@ const ChatForm = memo(({ index = 0 }) => {
                     'transition-[max-height] duration-200',
                   )}
                 />
-              </>
+
+                <div className="flex flex-col items-start justify-start pt-1.5">
+                  <CollapseChat
+                    isCollapsed={isCollapsed}
+                    isScrollable={isMoreThanThreeRows}
+                    setIsCollapsed={setIsCollapsed}
+                  />
+                </div>
+              </div>
             )}
             <div className="items-between flex flex-row justify-end">
               <FileFormWrapper disableInputs={disableInputs} />
+              <BadgeRow badges={badges} onChange={setBadges} />
               <div
                 className={cn(
                   'mb-2 mr-2 flex flex-col items-end justify-end',
@@ -271,12 +298,7 @@ const ChatForm = memo(({ index = 0 }) => {
                   />
                 )}
               </div>
-              <div
-                className={cn(
-                  'mb-2 mr-2 flex flex-col items-end justify-end',
-                  isRTL && 'order-first ml-2',
-                )}
-              >
+              <div className="mb-2 mr-2">
                 {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (

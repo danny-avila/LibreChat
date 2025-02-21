@@ -105,7 +105,7 @@ const ContentRender = memo(
     }
 
     const baseClasses = {
-      common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu',
+      common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
       card: 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4',
       chat: maximizeChatSpace
         ? 'w-full max-w-full md:px-5 lg:px-1 xl:px-5'
@@ -144,10 +144,8 @@ const ContentRender = memo(
         )}
 
         <div className="relative flex flex-shrink-0 flex-col items-center">
-          <div className="pt-0.5">
-            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-              <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
-            </div>
+          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full pt-0.5">
+            <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
           </div>
         </div>
 
