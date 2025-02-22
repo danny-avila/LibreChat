@@ -47,7 +47,9 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
   const fullNameHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFullName(e.target.value);
     if (e.target.value.trim() === '') {
-      setFullNameError('FullName is required.');
+      setFullNameError('Name is required.');
+    } else if (e.target.value.trim().length < 3) {
+      setFullNameError('Name must be at least 3 characters.');
     } else {
       setFullNameError('');
     }
@@ -55,8 +57,10 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
 
   const emailHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
-    if (e.target.value.trim() === '' || e.target.value.includes('@') === false) {
+    if (e.target.value.trim() === '') {
       setEmailError('Email is required.');
+    } else if (e.target.value.includes('@') === false) {
+      setEmailError('Please enter a valid email address.');
     } else {
       setEmailError('');
     }
@@ -64,8 +68,10 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
 
   const passwordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPassword(e.target.value);
-    if (e.target.value.trim() === '' || e.target.value.trim().length < 6) {
+    if (e.target.value.trim() === '') {
       setPasswordError('Password is required.');
+    }else if(e.target.value.trim().length < 8){
+      setPasswordError('Password must be at least 8 characters.');
     } else {
       setPasswordError('');
     }
@@ -73,9 +79,11 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
 
   const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setConfirmPassword(e.target.value);
-    if (e.target.value.trim() !== password) {
-      setConfirmPasswordError('Password is wrong.');
-    } else {
+    if (e.target.value.trim() ==='') {
+      setConfirmPasswordError('You must confirm password.');
+    } else if (e.target.value.trim() !== password) {
+      setConfirmPasswordError('Passwords do not match.');
+    }else {
       setConfirmPasswordError('');
     }
   };
@@ -110,7 +118,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
         setFormError('');
         props.refreshUsers();
       } catch (error) {
-        // setFormError('sth went wrong!please try later')
+        // setFormError(error?.message as string)
         console.error('Error creating user', error);
       }
     } else {
