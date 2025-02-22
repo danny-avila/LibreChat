@@ -11,40 +11,42 @@ const connect = require('./connect');
   console.purple('Create a New Group');
   console.purple('---------------------------------------');
 
-  // Read arguments from CLI or prompt the user
-  let groupName = process.argv[2] || (await askQuestion('Group name: '));
-  let groupDescription =
+  // Prompt for basic group info.
+  const groupName = process.argv[2] || (await askQuestion('Group name: '));
+  const groupDescription =
     process.argv[3] || (await askQuestion('Group description (optional): '));
-  let allowedEndpointsInput =
-    process.argv[4] ||
-    (await askQuestion(
-      'Allowed endpoints (comma separated, e.g., "assistants,agents", or enter "*" for all): ',
-    ));
-  let allowedModelsInput =
-    process.argv[5] ||
-    (await askQuestion(
-      'Allowed models (comma separated, e.g., "gpt-4,chatgpt-4o-latest", or enter "*" for all): ',
-    ));
 
-  // Process the comma-separated inputs into arrays
-  const allowedEndpoints = allowedEndpointsInput
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s);
-  const allowedModels = allowedModelsInput
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s);
+  // Ask for the group type (local or openid; defaults to local)
+  let groupType =
+    process.argv[4] ||
+    (await askQuestion('Group type (local/openid, default is local): '));
+  groupType = groupType.trim().toLowerCase() || 'local';
+
+  let groupData;
+  if (groupType === 'openid') {
+    // For OpenID groups, prompt for an external ID.
+    const externalId =
+      process.argv[5] ||
+      (await askQuestion('External ID for OpenID group: '));
+    groupData = {
+      name: groupName,
+      description: groupDescription,
+      provider: 'openid',
+      externalId: externalId.trim(),
+    };
+  } else {
+    // For local groups, we only need name and description.
+    groupData = {
+      name: groupName,
+      description: groupDescription,
+      provider: 'local',
+    };
+  }
 
   // Create the group document
   let group;
   try {
-    group = await Group.create({
-      name: groupName,
-      description: groupDescription,
-      allowedEndpoints,
-      allowedModels,
-    });
+    group = await Group.create(groupData);
   } catch (error) {
     console.red('Error creating group: ' + error.message);
     silentExit(1);

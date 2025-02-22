@@ -13,8 +13,8 @@ const connect = require('./connect');
   console.purple('---------------------------------------');
 
   // Read arguments from CLI or prompt the user
-  let userEmail = process.argv[2] || (await askQuestion('User email: '));
-  let groupName = process.argv[3] || (await askQuestion('Group name to assign: '));
+  const userEmail = process.argv[2] || (await askQuestion('User email: '));
+  const groupName = process.argv[3] || (await askQuestion('Group name to assign: '));
 
   // Validate email format
   if (!userEmail.includes('@')) {
@@ -39,19 +39,26 @@ const connect = require('./connect');
 
   // Assign the group to the user if not already assigned
   try {
-    if (!user.groups) {
+    if (!Array.isArray(user.groups)) {
       user.groups = [];
     }
-    if (!user.groups.includes(group._id)) {
+
+    // Convert both user group IDs and the target group ID to strings for comparison
+    const groupIdStr = group._id.toString();
+    const userGroupIds = user.groups.map(id => id.toString());
+
+    if (!userGroupIds.includes(groupIdStr)) {
       user.groups.push(group._id);
       await user.save();
+      console.green(`User ${user.email} successfully assigned to group ${group.name}!`);
+    } else {
+      console.yellow(`User ${user.email} is already assigned to group ${group.name}.`);
     }
   } catch (error) {
     console.red('Error assigning group to user: ' + error.message);
     silentExit(1);
   }
 
-  console.green(`User ${user.email} successfully assigned to group ${group.name}!`);
   silentExit(0);
 })();
 
