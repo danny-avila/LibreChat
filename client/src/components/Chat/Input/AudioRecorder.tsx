@@ -7,14 +7,12 @@ import { globalAudioId } from '~/common';
 import { cn } from '~/utils';
 
 export default function AudioRecorder({
-  isRTL,
   disabled,
   ask,
   methods,
   textAreaRef,
   isSubmitting,
 }: {
-  isRTL: boolean;
   disabled: boolean;
   ask: (data: { text: string }) => void;
   methods: ReturnType<typeof useChatFormContext>;
@@ -91,8 +89,6 @@ export default function AudioRecorder({
           disabled={disabled}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
-            isRTL ? 'bottom-2 left-14' : 'bottom-2 right-14',
-            disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
           )}
           title={localize('com_ui_use_micrphone')}
           aria-pressed={isListening}

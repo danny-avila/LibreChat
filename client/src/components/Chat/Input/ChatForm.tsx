@@ -21,12 +21,13 @@ import {
   useQueryParams,
   useSubmitMessage,
 } from '~/hooks';
-import { cn, removeFocusRings, checkIfScrollable } from '~/utils';
-import FileFormWrapper from './Files/FileFormWrapper';
 import { mainTextareaId, BadgeItem } from '~/common';
-import { TextareaAutosize } from '~/components/ui';
+import AttachFileChat from './Files/AttachFileChat';
 import { useGetFileConfig } from '~/data-provider';
 import { TemporaryChat } from './TemporaryChat';
+import FileFormChat from './Files/FileFormChat';
+import { TextareaAutosize } from '~/components';
+import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
@@ -237,6 +238,7 @@ const ChatForm = memo(({ index = 0 }) => {
               handleCancelBadges={handleCancelBadges}
               handleSaveBadges={handleSaveBadges}
             />
+            <FileFormChat disableInputs={disableInputs} />
             {endpoint && (
               <div className="flex flex-row">
                 <TextareaAutosize
@@ -278,27 +280,27 @@ const ChatForm = memo(({ index = 0 }) => {
                 </div>
               </div>
             )}
-            <div className="items-between flex flex-row justify-end">
-              <FileFormWrapper disableInputs={disableInputs} />
-              <BadgeRow badges={badges} onChange={setBadges} />
-              <div
-                className={cn(
-                  'mb-2 mr-2 flex flex-col items-end justify-end',
-                  isRTL && 'order-first ml-2',
-                )}
-              >
-                {SpeechToText && (
-                  <AudioRecorder
-                    isRTL={isRTL}
-                    methods={methods}
-                    ask={submitMessage}
-                    textAreaRef={textAreaRef}
-                    disabled={disableInputs}
-                    isSubmitting={isSubmitting}
-                  />
-                )}
+            <div
+              className={cn(
+                'items-between flex gap-2 pb-2',
+                isRTL ? 'flex-row-reverse' : 'flex-row',
+              )}
+            >
+              <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
+                <AttachFileChat disableInputs={disableInputs} />
               </div>
-              <div className="mb-2 mr-2">
+              <BadgeRow badges={badges} onChange={setBadges} />
+              <div className="mx-auto flex" />
+              {SpeechToText && (
+                <AudioRecorder
+                  methods={methods}
+                  ask={submitMessage}
+                  textAreaRef={textAreaRef}
+                  disabled={disableInputs}
+                  isSubmitting={isSubmitting}
+                />
+              )}
+              <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
                 {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (

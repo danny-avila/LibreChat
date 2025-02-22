@@ -2,25 +2,23 @@ import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
 import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
-import { FileUpload, TooltipAnchor, DropdownPopup } from '~/components/ui';
+import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '~/components';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { AttachmentIcon } from '~/components/svg';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useFileHandling } from '~/hooks';
 import { cn } from '~/utils';
 
 interface AttachFileProps {
-  isRTL: boolean;
   disabled?: boolean | null;
-  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>, toolResource?: string) => void;
 }
 
-const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
+const AttachFile = ({ disabled }: AttachFileProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { handleFileChange } = useFileHandling();
 
   const capabilities = useMemo(
     () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
@@ -93,8 +91,7 @@ const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
           id="attach-file-menu-button"
           aria-label="Attach File Options"
           className={cn(
-            'absolute flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
-            isRTL ? 'bottom-2 right-2' : 'bottom-2 left-2',
+            'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
