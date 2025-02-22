@@ -9,7 +9,7 @@ import {
   Typography,
 } from '@mui/material';
 import axios from 'axios';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface AddUserModalProps {
   open: boolean;
@@ -43,6 +43,21 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
   const [confirmPasswordError, setConfirmPasswordError] = useState<string>('');
 
   const [formError, setFormError] = useState<string>('');
+
+
+useEffect(()=>{
+  if(!props.open){
+    setFullName('');
+        setEmail('');
+        setPassword('');
+        setConfirmPassword('');
+        setFullNameError('')
+        setEmailError('')
+        setPasswordError('')
+        setConfirmPasswordError('')
+        setFormError('');
+  }
+} ,[props.open])
 
   const fullNameHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFullName(e.target.value);
@@ -113,7 +128,6 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
         setFullName('');
         setEmail('');
         setPassword('');
-        setFullName('');
         setConfirmPassword('');
         setFormError('');
         props.refreshUsers();
