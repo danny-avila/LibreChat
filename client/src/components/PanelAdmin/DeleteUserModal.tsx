@@ -55,11 +55,11 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
           Delete User
         </Typography>
         <Typography id="modal-modal-description" sx={{ mt: 2, mb: 1 }}>
-          Are you sure you want delete this user with this specifications ?
+          Are you sure you want delete this user?
         </Typography>
         <Typography variant="body2">Username: {props?.user?.username}</Typography>
-        <Typography variant="body2">ID: {props?.user?.id}</Typography>
         <Typography variant="body2">Email: {props?.user?.email}</Typography>
+        <Typography variant="body2">ID: {props?.user?.id}</Typography>
         <Stack spacing={2} sx={{ mt: 2, maxWidth: '320px', width: '100%' }}>
           <Stack
             direction="row"
