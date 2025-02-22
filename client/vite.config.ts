@@ -2,7 +2,6 @@ import path, { resolve } from 'path';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vite';
-// import { visualizer } from 'rollup-plugin-visualizer';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import compression from 'vite-plugin-compression';
 import type { Plugin } from 'vite';
@@ -78,11 +77,6 @@ export default defineConfig({
       },
     }),
     sourcemapExclude({ excludeNodeModules: true }),
-    // visualizer({
-    //   filename: 'stats.html',
-    //   template: 'treemap',
-    //   gzipSize: true,
-    // }),
     compression({
       verbose: true,
       disable: false,
