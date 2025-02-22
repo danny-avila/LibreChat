@@ -1,6 +1,6 @@
-import { Box, Button, Modal, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, FormHelperText, Modal, Stack, TextField, Typography } from '@mui/material';
 import axios from 'axios';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface BalanceModalProps {
   open: boolean;
@@ -24,16 +24,44 @@ const style = {
 };
 
 const BalanceModal: React.FC<BalanceModalProps> = (props) => {
-  const [balance, setBalance] = useState<number | ''>('');
+  const [balance, setBalance] = useState<string>('');
+  const [balanceError, setBalanceError] = useState<string>('');
+
+  useEffect(() => {
+    if (!props.open) {
+      setBalance('');
+      setBalanceError('');
+    }
+  }, [props.open]);
+
+  const balanceChangeHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setBalance(e.target.value);
+    if (e.target.value.trim() === '') {
+      setBalanceError('You must enter a balance.');
+    } else if (isNaN(+e.target.value)) {
+      setBalanceError('You must enter a number.');
+    } else {
+      setBalanceError('');
+    }
+  };
 
   const addBalanceHandler = async () => {
-    const res = await axios.post('http://localhost:3080/api/addBalance/', {
-      balance: balance,
-      id: props.userId,
-    });
-    props.refreshUsers();
-    props.onClose();
-    setBalance('');
+    if (balance.trim() === '') {
+      setBalanceError('You must enter a balance.');
+    } else {
+      setBalanceError('');
+    }
+
+    if (+balance > 0 && balanceError.trim() === '') {
+      const res = await axios.post('http://localhost:3080/api/addBalance/', {
+        balance: +balance,
+        id: props.userId,
+      });
+      props.refreshUsers();
+      props.onClose();
+      setBalance('');
+      setBalanceError('');
+    }
   };
 
   return (
@@ -53,16 +81,18 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
           Add Balance
         </Typography>
         <Typography id="modal-modal-description" sx={{ my: 2 }}>
-          Enter the balance you want add:
+          Enter the amount you'd like to add:
         </Typography>
         <Stack spacing={{ xs: 2 }}>
           <TextField
             label="Enter a number"
             type="number"
             value={balance}
-            onChange={(event) => setBalance(+event.target.value)}
+            onChange={balanceChangeHandler}
+            error={balanceError.length !== 0}
             sx={{ mt: 2, maxWidth: '320px' }}
           />
+          <FormHelperText sx={{ color: 'red' }}>{balanceError}</FormHelperText>
           <Stack
             direction="row"
             spacing={2}
