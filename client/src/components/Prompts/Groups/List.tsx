@@ -32,7 +32,7 @@ export default function List({
         <div className="flex w-full justify-end">
           <Button
             variant="outline"
-            className="w-full bg-transparent px-3"
+            className={`w-full bg-transparent ${isChatRoute ? '' : 'mx-2'}`}
             onClick={() => navigate('/d/prompts/new')}
           >
             <Plus className="size-4" aria-hidden />

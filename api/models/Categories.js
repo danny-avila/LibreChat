@@ -3,40 +3,40 @@ const { logger } = require('~/config');
 
 const options = [
   {
-    label: 'idea',
-    value: 'com_ui_idea',
+    label: 'com_ui_idea',
+    value: 'idea',
   },
   {
-    label: 'travel',
-    value: 'com_ui_travel',
+    label: 'com_ui_travel',
+    value: 'travel',
   },
   {
-    label: 'teach_or_explain',
-    value: 'com_ui_teach_or_explain',
+    label: 'com_ui_teach_or_explain',
+    value: 'teach_or_explain',
   },
   {
-    label: 'write',
-    value: 'com_ui_write',
+    label: 'com_ui_write',
+    value: 'write',
   },
   {
-    label: 'shop',
-    value: 'com_ui_shop',
+    label: 'com_ui_shop',
+    value: 'shop',
   },
   {
-    label: 'code',
-    value: 'com_ui_code',
+    label: 'com_ui_code',
+    value: 'code',
   },
   {
-    label: 'misc',
-    value: 'com_ui_misc',
+    label: 'com_ui_misc',
+    value: 'misc',
   },
   {
-    label: 'roleplay',
-    value: 'com_ui_roleplay',
+    label: 'com_ui_roleplay',
+    value: 'roleplay',
   },
   {
-    label: 'finance',
-    value: 'com_ui_finance',
+    label: 'com_ui_finance',
+    value: 'finance',
   },
 ];
 
