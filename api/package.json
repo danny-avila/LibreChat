@@ -61,6 +61,7 @@
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.18.1",
+    "express-static-gzip": "^2.2.0",
     "file-type": "^18.7.0",
     "firebase": "^11.0.2",
     "googleapis": "^126.0.1",

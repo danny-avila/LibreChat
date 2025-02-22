@@ -1,39 +1,15 @@
 import path, { resolve } from 'path';
 import react from '@vitejs/plugin-react';
-import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig, createLogger } from 'vite';
+import { defineConfig } from 'vite';
+// import { visualizer } from 'rollup-plugin-visualizer';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import compression from 'vite-plugin-compression';
 import type { Plugin } from 'vite';
-
-const logger = createLogger();
-const originalWarning = logger.warn;
-logger.warn = (msg, options) => {
-  /* Suppresses:
-   [vite:css] Complex selectors in '.group:focus-within .dark\:group-focus-within\:text-gray-300:is(.dark *)' can not be transformed to an equivalent selector without ':is()'.
-   */
-  if (msg.includes('vite:css') && msg.includes('^^^^^^^')) {
-    return;
-  }
-  /* Suppresses:
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-   */
-  if (msg.includes('Use build.rollupOptions.output.manualChunks')) {
-    return;
-  }
-  originalWarning(msg, options);
-};
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  customLogger: logger,
   server: {
-    fs: {
-      cachedChecks: false,
-    },
     host: 'localhost',
     port: 3090,
     strictPort: false,
@@ -54,10 +30,6 @@ export default defineConfig({
   plugins: [
     react(),
     nodePolyfills(),
-    legacy({
-      targets: ['defaults', 'not IE 11'],
-      modernPolyfills: true,
-    }),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
@@ -106,27 +78,66 @@ export default defineConfig({
       },
     }),
     sourcemapExclude({ excludeNodeModules: true }),
+    // visualizer({
+    //   filename: 'stats.html',
+    //   template: 'treemap',
+    //   gzipSize: true,
+    // }),
+    compression({
+      verbose: true,
+      disable: false,
+      threshold: 10240, // compress files larger than 10KB
+      algorithm: 'gzip',
+      ext: '.gz',
+    }),
   ],
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
+    minify: 'terser',
     rollupOptions: {
+      preserveEntrySignatures: 'strict',
       // external: ['uuid'],
       output: {
-        manualChunks: (id) => {
-          if (id.includes('node_modules/highlight.js')) {
-            return 'markdown_highlight';
-          }
-          if (id.includes('node_modules/hast-util-raw')) {
-            return 'markdown_large';
-          }
-          if (id.includes('node_modules/katex')) {
-            return 'markdown_large';
-          }
+        manualChunks(id: string) {
           if (id.includes('node_modules')) {
+            // Group Radix UI libraries together.
+            if (id.includes('@radix-ui')) {
+              return 'radix-ui';
+            }
+            // Group framer-motion separately.
+            if (id.includes('framer-motion')) {
+              return 'framer-motion';
+            }
+            // Group markdown-related libraries.
+            if (id.includes('node_modules/highlight.js')) {
+              return 'markdown_highlight';
+            }
+            if (
+              id.includes('node_modules/hast-util-raw') ||
+              id.includes('node_modules/katex')
+            ) {
+              return 'markdown_large';
+            }
+            // Group TanStack libraries together.
+            if (id.includes('@tanstack')) {
+              return 'tanstack-vendor';
+            }
+            // Additional grouping for other node_modules:
+            if (id.includes('@headlessui')) {
+              return 'headlessui';
+            }
+
+            // Everything else falls into a generic vendor chunk.
             return 'vendor';
           }
+          // Create a separate chunk for all locale files under src/locales.
+          if (id.includes(path.join('src', 'locales'))) {
+            return 'locales';
+          }
+          // Let Rollup decide automatically for any other files.
+          return null;
         },
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
@@ -135,7 +146,7 @@ export default defineConfig({
             assetInfo.names &&
             /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)
           ) {
-            return 'assets/[name][extname]';
+            return 'assets/fonts/[name][extname]';
           }
           return 'assets/[name].[hash][extname]';
         },
@@ -151,6 +162,7 @@ export default defineConfig({
         warn(warning);
       },
     },
+    chunkSizeWarningLimit: 1200,
   },
   resolve: {
     alias: {
@@ -177,17 +189,3 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
     },
   };
 }
-/*
-  NOTE:
-  To further reduce unused JavaScript, review your application code for modules
-  that are not required during the initial load. For non-critical components or features,
-  replace static imports with dynamic imports. For example:
-
-    // Before (static import)
-    // import HeavyComponent from './HeavyComponent';
-
-    // After (lazy load when needed)
-    const HeavyComponent = React.lazy(() => import('./HeavyComponent'));
-
-  Additionally, ensure that polyfills and legacy support are conditionally loaded based on browser support.
-*/

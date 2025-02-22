@@ -122,7 +122,6 @@
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
     "@vitejs/plugin-react": "^4.2.1",
-    "@vitejs/plugin-legacy": "^6.0.1",
     "autoprefixer": "^10.4.20",
     "babel-plugin-replace-ts-export-assignment": "^0.0.2",
     "babel-plugin-root-import": "^6.6.0",
@@ -138,11 +137,13 @@
     "postcss": "^8.4.31",
     "postcss-loader": "^7.1.0",
     "postcss-preset-env": "^8.2.0",
+    "rollup-plugin-visualizer": "^5.14.0",
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.2.5",
     "typescript": "^5.3.3",
     "vite": "^6.1.0",
     "vite-plugin-node-polyfills": "^0.17.0",
+    "vite-plugin-compression": "^0.5.1",
     "vite-plugin-pwa": "^0.21.1"
   }
 }

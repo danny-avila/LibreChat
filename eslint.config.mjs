@@ -7,6 +7,8 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
 import { FlatCompat } from '@eslint/eslintrc';
+// import html from '@html-eslint/eslint-plugin';
+// import htmlParser from '@html-eslint/parser';
 import jsxA11Y from 'eslint-plugin-jsx-a11y';
 import i18next from 'eslint-plugin-i18next';
 import react from 'eslint-plugin-react';
@@ -23,6 +25,21 @@ const compat = new FlatCompat({
 });
 
 export default [
+  // {
+  //   ...html.configs['flat/recommended'],
+  //   files: ['**/*.html'],
+  //   plugins: {
+  //     '@html-eslint': html,
+  //   },
+  //   languageOptions: {
+  //     parser: htmlParser,
+  //     parserOptions: {
+  //       templateEngineSyntax: {
+  //         '{{': '}}',
+  //       },
+  //     },
+  //   },
+  // },
   {
     ignores: [
       'client/dist/**/*',
@@ -59,6 +76,7 @@ export default [
       import: importPlugin,
       'jsx-a11y': fixupPluginRules(jsxA11Y),
       'import/parsers': tsParser,
+      // '@html-eslint': html,
       i18next,
       // perfectionist,
     },
@@ -307,6 +325,7 @@ export default [
       'no-constant-binary-expression': 'off',
       'import/no-cycle': 'off',
       'no-nested-ternary': 'off',
+      // '@html-eslint/require-explicit-size': 'error',
     },
   },
   {
