@@ -63,18 +63,24 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
   const [formError, setFormError] = useState<string>('');
 
   useEffect(() => {
-    if (props.user) {
+    if (props.open) {
       setFullName(props.user.name);
       setEmail(props.user.email);
       setRole(props.user.role as 'ADMIN' | 'USER');
       setPassword('');
+      setFullNameError('');
+      setEmailError('');
+      setPasswordError('');
+      setFormError('');
     }
-  }, [props.user]);
+  }, [props.open, props.user]);
 
   const fullNameHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFullName(e.target.value);
     if (e.target.value.trim() === '') {
-      setFullNameError('FullName is required.');
+      setFullNameError('Name is required.');
+    } else if (e.target.value.trim().length < 3) {
+      setFullNameError('Name must be at least 3 characters.');
     } else {
       setFullNameError('');
     }
@@ -82,8 +88,10 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
 
   const emailHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
-    if (e.target.value.trim() === '' || e.target.value.includes('@') === false) {
+    if (e.target.value.trim() === '') {
       setEmailError('Email is required.');
+    } else if (e.target.value.includes('@') === false) {
+      setEmailError('Please enter a valid email address.');
     } else {
       setEmailError('');
     }
@@ -91,8 +99,10 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
 
   const passwordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPassword(e.target.value);
-    if (e.target.value.trim() === '' || e.target.value.trim().length < 6) {
+    if (e.target.value.trim() === '') {
       setPasswordError('Password is required.');
+    } else if (e.target.value.trim().length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
     } else {
       setPasswordError('');
     }

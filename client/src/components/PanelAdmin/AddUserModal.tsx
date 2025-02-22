@@ -44,20 +44,19 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
 
   const [formError, setFormError] = useState<string>('');
 
-
-useEffect(()=>{
-  if(!props.open){
-    setFullName('');
-        setEmail('');
-        setPassword('');
-        setConfirmPassword('');
-        setFullNameError('')
-        setEmailError('')
-        setPasswordError('')
-        setConfirmPasswordError('')
-        setFormError('');
-  }
-} ,[props.open])
+  useEffect(() => {
+    if (!props.open) {
+      setFullName('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      setFullNameError('');
+      setEmailError('');
+      setPasswordError('');
+      setConfirmPasswordError('');
+      setFormError('');
+    }
+  }, [props.open]);
 
   const fullNameHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFullName(e.target.value);
@@ -85,7 +84,7 @@ useEffect(()=>{
     setPassword(e.target.value);
     if (e.target.value.trim() === '') {
       setPasswordError('Password is required.');
-    }else if(e.target.value.trim().length < 8){
+    } else if (e.target.value.trim().length < 8) {
       setPasswordError('Password must be at least 8 characters.');
     } else {
       setPasswordError('');
@@ -94,11 +93,11 @@ useEffect(()=>{
 
   const confirmPasswordHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     setConfirmPassword(e.target.value);
-    if (e.target.value.trim() ==='') {
+    if (e.target.value.trim() === '') {
       setConfirmPasswordError('You must confirm password.');
     } else if (e.target.value.trim() !== password) {
       setConfirmPasswordError('Passwords do not match.');
-    }else {
+    } else {
       setConfirmPasswordError('');
     }
   };
