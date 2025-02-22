@@ -74,6 +74,7 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
       ariaLabel={'agent'}
       setValue={onSelect}
       items={agentOptions}
+      iconClassName="assistant-item"
       SelectIcon={
         <Icon
           isCreatedByUser={false}
