@@ -5,10 +5,10 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
+const { findGroup } = require('~/models/groupMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
-const Group = require('~/models');
 
 let crypto;
 try {
@@ -193,30 +193,28 @@ async function setupOpenId() {
                 message: `You must have the "${requiredRole}" role to log in.`,
               });
             }
-            // Synchronize the user's groups for OpenID.
-            const userGroupIds = user.groups.map(id => id.toString());
 
+            if (!user.groups) {
+              user.groups = [];
+            }
             // Remove existing OpenID group references.
-            const currentOpenIdGroups = await Group.find({
-              _id: { $in: userGroupIds },
+            const currentOpenIdGroups = await findGroup({
+              _id: { $in: user.groups },
               provider: 'openid',
             });
             const currentOpenIdGroupIds = new Set(currentOpenIdGroups.map(g => g._id.toString()));
             user.groups = user.groups.filter(id => !currentOpenIdGroupIds.has(id.toString()));
 
-            // Look up groups matching the roles.
-            const matchingGroups = await Group.find({
+            // Look up groups in the Group collection matching the roles.
+            const matchingGroups = await findGroup({
               provider: 'openid',
               externalId: { $in: roles },
             });
-            const userGroupSet = new Set(user.groups.map(id => id.toString()));
-            for (const group of matchingGroups) {
-              const groupIdStr = group._id.toString();
-              if (!userGroupSet.has(groupIdStr)) {
+            matchingGroups.forEach(group => {
+              if (!user.groups.some(id => id.toString() === group._id.toString())) {
                 user.groups.push(group._id);
-                userGroupSet.add(groupIdStr);
               }
-            }
+            });
           }
 
           let username = '';

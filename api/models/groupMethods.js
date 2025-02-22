@@ -17,14 +17,14 @@ const getGroupById = (groupId, fieldsToSelect = null) => {
 };
 
 /**
- * Search for a single group based on partial data and return a matching group document as a plain object.
+ * Search for a single group or multiple groups based on partial data and return them as plain objects.
  *
- * @param {Partial<Object>} searchCriteria - The partial data to use for searching the group.
- * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<Object|null>} A plain object representing the group document, or `null` if no group is found.
+ * @param {Partial<Object>} searchCriteria - The partial data to use for searching groups.
+ * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned documents.
+ * @returns {Promise<Object[]>} An array of plain objects representing the group documents.
  */
 const findGroup = (searchCriteria, fieldsToSelect = null) => {
-  const query = Group.findOne(searchCriteria);
+  const query = Group.find(searchCriteria);
   if (fieldsToSelect) {
     query.select(fieldsToSelect);
   }
