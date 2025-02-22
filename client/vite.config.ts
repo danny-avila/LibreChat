@@ -68,6 +68,11 @@ export default defineConfig({
             type: 'image/png',
           },
           {
+            src: '/assets/icon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
             src: '/assets/maskable-icon.png',
             sizes: '512x512',
             type: 'image/png',
