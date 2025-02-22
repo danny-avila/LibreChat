@@ -1,5 +1,6 @@
 import path, { resolve } from 'path';
 import react from '@vitejs/plugin-react';
+import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig, createLogger } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
@@ -47,21 +48,28 @@ export default defineConfig({
       },
     },
   },
-  // All other env variables are filtered out
+  // Set the directory where environment variables are loaded from and restrict prefixes
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
     react(),
     nodePolyfills(),
+    legacy({
+      targets: ['defaults', 'not IE 11'],
+      modernPolyfills: true,
+    }),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
       devOptions: {
-        enabled: false, // enable/disable registering SW in development mode
+        enabled: false, // disable service worker registration in development mode
       },
       useCredentials: true,
       workbox: {
-        globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
+        globPatterns: [
+          'assets/**/*.{png,jpg,svg,ico}',
+          '**/*.{js,css,html,ico,woff2}',
+        ],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
@@ -123,7 +131,10 @@ export default defineConfig({
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: (assetInfo) => {
-          if (assetInfo.name && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.name)) {
+          if (
+            assetInfo.names &&
+            /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)
+          ) {
             return 'assets/[name][extname]';
           }
           return 'assets/[name].[hash][extname]';
@@ -134,10 +145,7 @@ export default defineConfig({
        * @see {@link https://github.com/TanStack/query/pull/5161#issuecomment-1477389761 Preserve 'use client' directives TanStack/query#5161}
        */
       onwarn(warning, warn) {
-        if (
-          // warning.code === 'MODULE_LEVEL_DIRECTIVE' &&
-          warning.message.includes('Error when using sourcemap')
-        ) {
+        if (warning.message.includes('Error when using sourcemap')) {
           return;
         }
         warn(warning);
@@ -169,3 +177,17 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
     },
   };
 }
+/*
+  NOTE:
+  To further reduce unused JavaScript, review your application code for modules
+  that are not required during the initial load. For non-critical components or features,
+  replace static imports with dynamic imports. For example:
+
+    // Before (static import)
+    // import HeavyComponent from './HeavyComponent';
+
+    // After (lazy load when needed)
+    const HeavyComponent = React.lazy(() => import('./HeavyComponent'));
+
+  Additionally, ensure that polyfills and legacy support are conditionally loaded based on browser support.
+*/
