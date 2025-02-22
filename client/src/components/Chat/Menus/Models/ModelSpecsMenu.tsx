@@ -19,8 +19,21 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
   const localize = useLocalize();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const modularChat = useRecoilValue(store.modularChat);
+  const user = useRecoilValue(store.user);
   const getDefaultConversation = useDefaultConvo();
   const assistantMap = useAssistantsMapContext();
+
+  const allowedModelSpecs = useMemo(() => {
+    if (!modelSpecs) {return [];}
+    return modelSpecs.filter(spec => {
+      // If no groups defined for spec, allow it.
+      if (!spec.groups || spec.groups.length === 0) {return true;}
+      // Otherwise, check if the user exists and has groups.
+      if (!user || !user.groups || user.groups.length === 0) {return false;}
+      // Check if at least one of the spec's groups is in the user's groups.
+      return spec.groups.some(groupId => user.groups.includes(groupId));
+    });
+  }, [modelSpecs, user]);
 
   const onSelectSpec = (spec: TModelSpec) => {
     const { preset } = spec;
@@ -82,21 +95,15 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
   };
 
   const selected = useMemo(() => {
-    const spec = modelSpecs?.find((spec) => spec.name === conversation?.spec);
-    if (!spec) {
-      return undefined;
-    }
-    return spec;
-  }, [modelSpecs, conversation?.spec]);
+    const spec = allowedModelSpecs.find((spec) => spec.name === conversation?.spec);
+    return spec || undefined;
+  }, [allowedModelSpecs, conversation?.spec]);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     const menuItems = menuRef.current?.querySelectorAll('[role="option"]');
-    if (!menuItems) {
-      return;
-    }
-    if (!menuItems.length) {
+    if (!menuItems || !menuItems.length) {
       return;
     }
 
@@ -132,7 +139,7 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
         endpointsConfig={endpointsConfig}
       />
       <Portal>
-        {modelSpecs && modelSpecs.length && (
+        {allowedModelSpecs && allowedModelSpecs.length > 0 && (
           <div
             style={{
               position: 'fixed',
@@ -154,7 +161,7 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
               className="models-scrollbar mt-2 max-h-[65vh] min-w-[340px] max-w-xs overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
             >
               <ModelSpecs
-                specs={modelSpecs}
+                specs={allowedModelSpecs}
                 selected={selected}
                 setSelected={onSelectSpec}
                 endpointsConfig={endpointsConfig}

@@ -19,6 +19,9 @@ export type TModelSpec = {
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
+  groups?: Array<string>; // List of group ObjectIds allowed to access this model
+  // badgeIcon?: string; // URL to badge icon for visual categorization
+  // badgeTooltip?: string; // Tooltip text for the badge
 };
 
 export const tModelSpecSchema = z.object({
@@ -32,6 +35,9 @@ export const tModelSpecSchema = z.object({
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
+  groups: z.array(z.string()).optional(),
+  // badgeIcon: z.string().url('Must be a valid URL').optional(),
+  // badgeTooltip: z.string().optional(),
 });
 
 export const specsConfigSchema = z.object({
