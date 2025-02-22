@@ -8,7 +8,7 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
-const Group = require('~/models/group');
+const Group = require('~/models');
 
 let crypto;
 try {
