@@ -9,6 +9,7 @@ cache: true
 
 # Custom interface configuration
 interface:
+  customWelcome: "Welcome to LibreChat! Enjoy your experience."
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
@@ -81,7 +82,7 @@ registration:
 #       model: ''
 #       voices: ['']
 
-#  
+#
 #   stt:
 #     openai:
 #       url: ''
@@ -234,10 +235,10 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
-      
+
     # Portkey AI Example
     - name: "Portkey"
-      apiKey: "dummy"  
+      apiKey: "dummy"
       baseURL: 'https://api.portkey.ai/v1'
       headers:
           x-portkey-api-key: '${PORTKEY_API_KEY}'
