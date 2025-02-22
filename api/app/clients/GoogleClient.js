@@ -51,7 +51,7 @@ class GoogleClient extends BaseClient {
 
     const serviceKey = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
     this.serviceKey =
-      serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : serviceKey ?? {};
+      serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : (serviceKey ?? {});
     /** @type {string | null | undefined} */
     this.project_id = this.serviceKey.project_id;
     this.client_email = this.serviceKey.client_email;
@@ -73,6 +73,8 @@ class GoogleClient extends BaseClient {
      * @type {string} */
     this.outputTokensKey = 'output_tokens';
     this.visionMode = VisionModes.generative;
+    /** @type {string} */
+    this.systemMessage;
     if (options.skipSetOptions) {
       return;
     }
@@ -184,7 +186,7 @@ class GoogleClient extends BaseClient {
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
-    this.options.promptPrefix = promptPrefix;
+    this.systemMessage = promptPrefix;
     this.initializeClient();
     return this;
   }
@@ -314,7 +316,7 @@ class GoogleClient extends BaseClient {
       }
 
       this.augmentedPrompt = await this.contextHandlers.createContext();
-      this.options.promptPrefix = this.augmentedPrompt + this.options.promptPrefix;
+      this.systemMessage = this.augmentedPrompt + this.systemMessage;
     }
   }
 
@@ -361,8 +363,8 @@ class GoogleClient extends BaseClient {
       throw new Error('[GoogleClient] PaLM 2 and Codey models are no longer supported.');
     }
 
-    if (this.options.promptPrefix) {
-      const instructionsTokenCount = this.getTokenCount(this.options.promptPrefix);
+    if (this.systemMessage) {
+      const instructionsTokenCount = this.getTokenCount(this.systemMessage);
 
       this.maxContextTokens = this.maxContextTokens - instructionsTokenCount;
       if (this.maxContextTokens < 0) {
@@ -417,8 +419,8 @@ class GoogleClient extends BaseClient {
       ],
     };
 
-    if (this.options.promptPrefix) {
-      payload.instances[0].context = this.options.promptPrefix;
+    if (this.systemMessage) {
+      payload.instances[0].context = this.systemMessage;
     }
 
     logger.debug('[GoogleClient] buildMessages', payload);
@@ -464,7 +466,7 @@ class GoogleClient extends BaseClient {
       identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
     }
 
-    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    let promptPrefix = (this.systemMessage ?? '').trim();
 
     if (identityPrefix) {
       promptPrefix = `${identityPrefix}${promptPrefix}`;
@@ -639,7 +641,7 @@ class GoogleClient extends BaseClient {
     let error;
     try {
       if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
-        /** @type {GenAI} */
+        /** @type {GenerativeModel} */
         const client = this.client;
         /** @type {GenerateContentRequest} */
         const requestOptions = {
@@ -648,7 +650,7 @@ class GoogleClient extends BaseClient {
           generationConfig: googleGenConfigSchema.parse(this.modelOptions),
         };
 
-        const promptPrefix = (this.options.promptPrefix ?? '').trim();
+        const promptPrefix = (this.systemMessage ?? '').trim();
         if (promptPrefix.length) {
           requestOptions.systemInstruction = {
             parts: [
@@ -663,7 +665,17 @@ class GoogleClient extends BaseClient {
         /** @type {GenAIUsageMetadata} */
         let usageMetadata;
 
-        const result = await client.generateContentStream(requestOptions);
+        abortController.signal.addEventListener(
+          'abort',
+          () => {
+            logger.warn('[GoogleClient] Request was aborted', abortController.signal.reason);
+          },
+          { once: true },
+        );
+
+        const result = await client.generateContentStream(requestOptions, {
+          signal: abortController.signal,
+        });
         for await (const chunk of result.stream) {
           usageMetadata = !usageMetadata
             ? chunk?.usageMetadata
