@@ -257,6 +257,7 @@ const UserManagement: React.FC = () => {
           </Table>
         </TableContainer>
       </Paper>
+      {/* <button onClick={()=>axios.delete(`http://localhost:3090/api/deleteUser/67b99052d72698796aeb73ca`)}>check</button> */}
     </>
   );
 };
