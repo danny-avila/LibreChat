@@ -27,6 +27,7 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
  * @property {Date} [expiresAt] - Optional expiration date of the file
+ * @property {Array.<ObjectId>} [groups] - List of group IDs the user belongs to (references to the Group model)
  * @property {Date} [createdAt] - Date when the user was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the user was last updated (added by timestamps)
  */
@@ -143,12 +144,11 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    groups: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Group',
-      },
-    ],
+    groups: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'Group',
+      default: [],
+    },
   },
 
   { timestamps: true },

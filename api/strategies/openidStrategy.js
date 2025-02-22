@@ -8,6 +8,7 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const Group = require('~/models/group');
 
 let crypto;
 try {
@@ -146,7 +147,7 @@ async function setupOpenId() {
       async (tokenset, userinfo, done) => {
         try {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
-          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+          logger.debug('[openidStrategy] verify login tokenset and userinfo', { tokenset, userinfo });
 
           let user = await findUser({ openidId: userinfo.sub });
           logger.info(
@@ -191,6 +192,30 @@ async function setupOpenId() {
               return done(null, false, {
                 message: `You must have the "${requiredRole}" role to log in.`,
               });
+            }
+            // Synchronize the user's groups for OpenID.
+            const userGroupIds = user.groups.map(id => id.toString());
+
+            // Remove existing OpenID group references.
+            const currentOpenIdGroups = await Group.find({
+              _id: { $in: userGroupIds },
+              provider: 'openid',
+            });
+            const currentOpenIdGroupIds = new Set(currentOpenIdGroups.map(g => g._id.toString()));
+            user.groups = user.groups.filter(id => !currentOpenIdGroupIds.has(id.toString()));
+
+            // Look up groups matching the roles.
+            const matchingGroups = await Group.find({
+              provider: 'openid',
+              externalId: { $in: roles },
+            });
+            const userGroupSet = new Set(user.groups.map(id => id.toString()));
+            for (const group of matchingGroups) {
+              const groupIdStr = group._id.toString();
+              if (!userGroupSet.has(groupIdStr)) {
+                user.groups.push(group._id);
+                userGroupSet.add(groupIdStr);
+              }
             }
           }
 
