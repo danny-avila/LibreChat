@@ -1,5 +1,5 @@
 const Group = require('./group');
-const User = require('./User'); // Adjust the path as needed
+const User = require('./User');
 
 /**
  * Retrieve a group by ID and convert the found group document to a plain object.
