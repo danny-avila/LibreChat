@@ -50,7 +50,7 @@ const passkeySchema = mongoose.Schema({
   publicKey: { type: Buffer, required: true },
   counter: { type: Number, default: 0 },
   transports: { type: [String], default: [] },
- });
+});
 
 /** @type {MongooseSchema<MongoUser>} */
 const userSchema = mongoose.Schema(
