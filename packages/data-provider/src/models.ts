@@ -8,6 +8,11 @@ import {
   authTypeSchema,
 } from './schemas';
 
+export type TBadge = {
+  text: string;
+  color: string;
+};
+
 export type TModelSpec = {
   name: string;
   label: string;
@@ -19,10 +24,14 @@ export type TModelSpec = {
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
-  groups?: Array<string>; // List of group ObjectIds allowed to access this model
-  // badgeIcon?: string; // URL to badge icon for visual categorization
-  // badgeTooltip?: string; // Tooltip text for the badge
+  groups?: string[];
+  badges?: TBadge[];
 };
+
+export const tBadgeSchema = z.object({
+  text: z.string(),
+  color: z.string(),
+});
 
 export const tModelSpecSchema = z.object({
   name: z.string(),
@@ -36,8 +45,7 @@ export const tModelSpecSchema = z.object({
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   groups: z.array(z.string()).optional(),
-  // badgeIcon: z.string().url('Must be a valid URL').optional(),
-  // badgeTooltip: z.string().optional(),
+  badges: z.array(tBadgeSchema).optional(),
 });
 
 export const specsConfigSchema = z.object({
