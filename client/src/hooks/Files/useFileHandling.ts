@@ -1,12 +1,10 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-  megabyte,
   QueryKeys,
   EModelEndpoint,
-  codeTypeMapping,
   mergeFileConfig,
   isAgentsEndpoint,
   isAssistantsEndpoint,
@@ -16,14 +14,12 @@ import {
 import type { TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
+import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
-import useLocalize from '~/hooks/useLocalize';
+import { logger, validateFiles } from '~/utils';
 import useUpdateFiles from './useUpdateFiles';
-import { logger } from '~/utils';
-
-const { checkType } = defaultFileConfig;
 
 type UseFileHandling = {
   overrideEndpoint?: EModelEndpoint;
@@ -58,20 +54,11 @@ const useFileHandling = (params?: UseFileHandling) => {
     [params?.overrideEndpoint, conversation?.endpointType, conversation?.endpoint],
   );
 
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } = useMemo(
-    () =>
-      fileConfig?.endpoints[endpoint] ??
-      fileConfig?.endpoints.default ??
-      defaultFileConfig.endpoints[endpoint] ??
-      defaultFileConfig.endpoints.default,
-    [fileConfig, endpoint],
-  );
-
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
       // TODO: this should not be a dynamic localize input!!
       const errorList = Array.from(new Set(errors))
-        .map((e, i) => `${i > 0 ? '• ' : ''}${localize(e) || e}\n`)
+        .map((e, i) => `${i > 0 ? '• ' : ''}${localize(e as TranslationKeys) || e}\n`)
         .join('');
       showToast({
         message: errorList,
@@ -80,7 +67,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       });
     } else if (errors.length === 1) {
       // TODO: this should not be a dynamic localize input!!
-      const message = localize(errors[0]) || errors[0];
+      const message = localize(errors[0] as TranslationKeys) || errors[0];
       showToast({
         message,
         status: 'error',
@@ -147,7 +134,7 @@ const useFileHandling = (params?: UseFileHandling) => {
         const errorMessage =
           error?.code === 'ERR_CANCELED'
             ? 'com_error_files_upload_canceled'
-            : error?.response?.data?.message ?? 'com_error_files_upload';
+            : (error?.response?.data?.message ?? 'com_error_files_upload');
         setError(errorMessage);
       },
     },
@@ -228,87 +215,6 @@ const useFileHandling = (params?: UseFileHandling) => {
     uploadFile.mutate(formData);
   };
 
-  const validateFiles = useCallback(
-    (fileList: File[]) => {
-      const existingFiles = Array.from(files.values());
-      const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
-      if (incomingTotalSize === 0) {
-        setError('com_error_files_empty');
-        return false;
-      }
-      const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
-
-      if (fileList.length + files.size > fileLimit) {
-        setError(`You can only upload up to ${fileLimit} files at a time.`);
-        return false;
-      }
-
-      for (let i = 0; i < fileList.length; i++) {
-        let originalFile = fileList[i];
-        let fileType = originalFile.type;
-        const extension = originalFile.name.split('.').pop() ?? '';
-        const knownCodeType = codeTypeMapping[extension];
-
-        // Infer MIME type for Known Code files when the type is empty or a mismatch
-        if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
-          fileType = knownCodeType;
-        }
-
-        // Check if the file type is still empty after the extension check
-        if (!fileType) {
-          setError('Unable to determine file type for: ' + originalFile.name);
-          return false;
-        }
-
-        // Replace empty type with inferred type
-        if (originalFile.type !== fileType) {
-          const newFile = new File([originalFile], originalFile.name, { type: fileType });
-          originalFile = newFile;
-          fileList[i] = newFile;
-        }
-
-        if (!checkType(originalFile.type, supportedMimeTypes)) {
-          console.log(originalFile);
-          setError('Currently, unsupported file type: ' + originalFile.type);
-          return false;
-        }
-
-        if (originalFile.size >= fileSizeLimit) {
-          setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
-          return false;
-        }
-      }
-
-      if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
-        setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
-        return false;
-      }
-
-      const combinedFilesInfo = [
-        ...existingFiles.map(
-          (file) =>
-            `${file.file?.name ?? file.filename}-${file.size}-${
-              file.type?.split('/')[0] ?? 'file'
-            }`,
-        ),
-        ...fileList.map(
-          (file: File | undefined) =>
-            `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
-        ),
-      ];
-
-      const uniqueFilesSet = new Set(combinedFilesInfo);
-
-      if (uniqueFilesSet.size !== combinedFilesInfo.length) {
-        setError('com_error_files_dupe');
-        return false;
-      }
-
-      return true;
-    },
-    [files, fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes],
-  );
-
   const loadImage = (extendedFile: ExtendedFile, preview: string) => {
     const img = new Image();
     img.onload = async () => {
@@ -332,7 +238,16 @@ const useFileHandling = (params?: UseFileHandling) => {
     /* Validate files */
     let filesAreValid: boolean;
     try {
-      filesAreValid = validateFiles(fileList);
+      filesAreValid = validateFiles({
+        files,
+        fileList,
+        setError,
+        endpointFileConfig:
+          fileConfig?.endpoints[endpoint] ??
+          fileConfig?.endpoints.default ??
+          defaultFileConfig.endpoints[endpoint] ??
+          defaultFileConfig.endpoints.default,
+      });
     } catch (error) {
       console.error('file validation error', error);
       setError('com_error_files_validation');

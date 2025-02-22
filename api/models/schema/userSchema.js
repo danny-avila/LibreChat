@@ -39,12 +39,18 @@ const Session = mongoose.Schema({
   },
 });
 
+const backupCodeSchema = mongoose.Schema({
+  codeHash: { type: String, required: true },
+  used: { type: Boolean, default: false },
+  usedAt: { type: Date, default: null },
+});
+
 const passkeySchema = mongoose.Schema({
   id: { type: String, required: true },
   publicKey: { type: Buffer, required: true },
   counter: { type: Number, default: 0 },
   transports: { type: [String], default: [] },
-});
+ });
 
 /** @type {MongooseSchema<MongoUser>} */
 const userSchema = mongoose.Schema(
@@ -130,7 +136,12 @@ const userSchema = mongoose.Schema(
     },
     plugins: {
       type: Array,
-      default: [],
+    },
+    totpSecret: {
+      type: String,
+    },
+    backupCodes: {
+      type: [backupCodeSchema],
     },
     refreshToken: {
       type: [Session],

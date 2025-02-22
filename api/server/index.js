@@ -24,10 +24,11 @@ const routes = require('./routes');
 const { mongoUserStore, mongoChallengeStore } = require('~/cache');
 const { WebAuthnStrategy } = require('passport-simple-webauthn2');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
+const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
@@ -55,7 +56,7 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
-  app.set('trust proxy', 1); /* trust first proxy */
+  app.set('trust proxy', trusted_proxy);
   app.use(cors());
   app.use(cookieParser());
 
@@ -163,6 +164,18 @@ let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
     logger.error('There was an uncaught error:', err);
+  }
+
+  if (err.message.includes('abort')) {
+    logger.warn('There was an uncatchable AbortController error.');
+    return;
+  }
+
+  if (err.message.includes('GoogleGenerativeAI')) {
+    logger.warn(
+      '\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303',
+    );
+    return;
   }
 
   if (err.message.includes('fetch failed')) {

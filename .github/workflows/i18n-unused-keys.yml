@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "client/src/**"
+      - "api/**"
 
 jobs:
   detect-unused-i18n-keys:
@@ -21,7 +22,7 @@ jobs:
 
           # Define paths
           I18N_FILE="client/src/locales/en/translation.json"
-          SOURCE_DIR="client/src"
+          SOURCE_DIRS=("client/src" "api")
 
           # Check if translation file exists
           if [[ ! -f "$I18N_FILE" ]]; then
@@ -37,7 +38,15 @@ jobs:
 
           # Check if each key is used in the source code
           for KEY in $KEYS; do
-            if ! grep -r --include=\*.{js,jsx,ts,tsx} -q "$KEY" "$SOURCE_DIR"; then
+            FOUND=false
+            for DIR in "${SOURCE_DIRS[@]}"; do
+              if grep -r --include=\*.{js,jsx,ts,tsx} -q "$KEY" "$DIR"; then
+                FOUND=true
+                break
+              fi
+            done
+          
+            if [[ "$FOUND" == false ]]; then
               UNUSED_KEYS+=("$KEY")
             fi
           done
