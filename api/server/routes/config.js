@@ -90,10 +90,6 @@ router.get('/', async function (req, res) {
       payload.customFooter = process.env.CUSTOM_FOOTER;
     }
 
-    if (typeof process.env.CUSTOM_WELCOME_MESSAGE === 'string') {
-      payload.customWelcomeMessage = process.env.CUSTOM_WELCOME_MESSAGE;
-    }
-
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     return res.status(200).send(payload);
   } catch (err) {
