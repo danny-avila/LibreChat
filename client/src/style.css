@@ -2527,3 +2527,31 @@ button.scroll-convo {
 .scale-98 {
   transform: scale(0.98);
 }
+
+/* Chat Badges Animation */
+
+@keyframes ios-wiggle {
+  0% {
+    transform: rotate(-1deg);
+  }
+  50% {
+    transform: rotate(1deg);
+  }
+  100% {
+    transform: rotate(-1deg);
+  }
+}
+
+.ios-wiggle {
+  animation: ios-wiggle 0.2s ease-in-out infinite;
+}
+
+.ghost-badge {
+  transition:
+    left 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    top 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.app-icon {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}

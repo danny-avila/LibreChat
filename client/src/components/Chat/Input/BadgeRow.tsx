@@ -26,8 +26,9 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
   const [offsetX, setOffsetX] = useState<number>(0);
   const badgeRefs = useRef<Record<string, HTMLDivElement>>({});
   const animationFrame = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const calculateInsertIndex = useCallback(() => {
+  const calculateInsertIndex = useCallback((): number => {
     if (!draggedBadge) {
       return 0;
     }
@@ -131,69 +132,73 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
   const tempBadges = draggedBadge ? badges.filter((b) => b.id !== draggedBadge.id) : badges;
 
   return (
-    <div className="flex flex-col items-start gap-4">
-      <div className="relative flex flex-wrap items-center gap-2">
-        {tempBadges.map((badge, index) => (
-          <React.Fragment key={badge.id}>
-            {draggedBadge && insertIndex === index && (
-              <div>
-                <Badge
-                  icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
-                  label={draggedBadge.label}
-                  isActive={draggedBadge.isActive}
-                  isEditing
-                />
-              </div>
-            )}
-            <div
-              ref={(el) => {
-                if (el) {
-                  badgeRefs.current[badge.id] = el;
-                }
-              }}
-              onMouseDown={(e) => handleMouseDown(e, badge)}
-              className={isEditing ? 'animate-shake' : ''}
-            >
+    <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
+      {tempBadges.map((badge, index) => (
+        <React.Fragment key={badge.id}>
+          {draggedBadge && insertIndex === index && (
+            <div className="app-icon">
               <Badge
-                icon={badgeIconMap[badge.label.toLowerCase()]}
-                label={badge.label}
-                isActive={badge.isActive}
-                isEditing={isEditing}
-                onClick={() => toggleBadge(badge.id)}
-                onDelete={() => deleteBadge(badge.id)}
+                icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
+                label={draggedBadge.label}
+                isActive={draggedBadge.isActive}
+                isEditing
               />
             </div>
-          </React.Fragment>
-        ))}
-        {draggedBadge && insertIndex === tempBadges.length && (
-          <div>
-            <Badge
-              icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
-              label={draggedBadge.label}
-              isActive={draggedBadge.isActive}
-              isEditing
-            />
-          </div>
-        )}
-        {draggedBadge && (
+          )}
           <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: mouseX - offsetX,
-              zIndex: 10,
+            ref={(el) => {
+              if (el) {
+                badgeRefs.current[badge.id] = el;
+              }
             }}
+            onMouseDown={(e) => handleMouseDown(e, badge)}
+            className={isEditing ? 'ios-wiggle app-icon' : 'app-icon'}
           >
             <Badge
-              icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
-              label={draggedBadge.label}
-              isActive={draggedBadge.isActive}
-              isEditing
-              isDragging
+              icon={badgeIconMap[badge.label.toLowerCase()]}
+              label={badge.label}
+              isActive={badge.isActive}
+              isEditing={isEditing}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleBadge(badge.id);
+              }}
+              onDelete={() => deleteBadge(badge.id)}
             />
           </div>
-        )}
-      </div>
+        </React.Fragment>
+      ))}
+      {draggedBadge && insertIndex === tempBadges.length && (
+        <div className="app-icon">
+          <Badge
+            icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
+            label={draggedBadge.label}
+            isActive={draggedBadge.isActive}
+            isEditing
+          />
+        </div>
+      )}
+      {draggedBadge && (
+        <div
+          className="ghost-badge"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: containerRef.current
+              ? mouseX - offsetX - containerRef.current.getBoundingClientRect().left
+              : mouseX - offsetX,
+            zIndex: 10,
+          }}
+        >
+          <Badge
+            icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
+            label={draggedBadge.label}
+            isActive={draggedBadge.isActive}
+            isEditing
+            isDragging
+          />
+        </div>
+      )}
     </div>
   );
 }
