@@ -1,5 +1,5 @@
-const Group = require('./group');
 const User = require('./User');
+const Group = require('~/models/Group');
 
 /**
  * Retrieve a group by ID and convert the found group document to a plain object.
