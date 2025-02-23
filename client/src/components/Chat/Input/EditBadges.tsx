@@ -1,14 +1,14 @@
 import React, { useCallback } from 'react';
 import { Edit3, Check, X } from 'lucide-react';
+import type { BadgeItem } from '~/common';
 import { useChatBadges, useLocalize } from '~/hooks';
 import { Button, Badge } from '~/components/ui';
-import type { BadgeItem } from '~/common';
 
 interface EditBadgesProps {
   isEditingChatBadges: boolean;
   handleCancelBadges: () => void;
   handleSaveBadges: () => void;
-  setBadges: (badges: Pick<BadgeItem, 'id'>[]) => void;
+  setBadges: React.Dispatch<React.SetStateAction<Pick<BadgeItem, 'id'>[]>>;
 }
 
 const EditBadgesComponent = ({
@@ -23,15 +23,9 @@ const EditBadgesComponent = ({
 
   const handleRestoreBadge = useCallback(
     (badgeId: string) => {
-      console.log('Restoring badge:', badgeId);
-
-      const availableBadges = allBadges
-        .filter((badge) => badge.isAvailable)
-        .map((badge) => ({ id: badge.id }));
-
-      setBadges([...availableBadges, { id: badgeId }]);
+      setBadges((prev: Pick<BadgeItem, 'id'>[]) => [...prev, { id: badgeId }]);
     },
-    [allBadges, setBadges],
+    [setBadges],
   );
 
   if (!isEditingChatBadges) {
@@ -75,7 +69,7 @@ const EditBadgesComponent = ({
           {unavailableBadges.map((badge) => (
             <div key={badge.id} className="app-icon">
               <Badge
-                icon={badge.icon}
+                icon={badge.icon as unknown as LucideIcon}
                 label={badge.label}
                 isAvailable={false}
                 isEditing={true}
