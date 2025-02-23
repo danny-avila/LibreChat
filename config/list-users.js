@@ -11,6 +11,7 @@ const listUsers = async () => {
     console.log('\nUser List:');
     console.log('----------------------------------------');
     users.forEach((user) => {
+      console.log(`ID: ${user.id}`);
       console.log(`Email: ${user.email}`);
       console.log(`Username: ${user.username || 'N/A'}`);
       console.log(`Name: ${user.name || 'N/A'}`);
