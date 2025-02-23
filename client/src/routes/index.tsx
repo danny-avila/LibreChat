@@ -16,8 +16,8 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
-import PanelAdmin from './Layouts/PanelAdmin';
-import UserManagement from '~/components/PanelAdmin/UserManagement';
+import AdminPanel from './Layouts/AdminPanel';
+import UserManagement from '~/components/AdminPanel/UserManagement';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -71,8 +71,8 @@ export const router = createBrowserRouter([
         ],
       },
       {
-        path: 'panel-admin',
-        element: <PanelAdmin />,
+        path: 'admin-panel',
+        element: <AdminPanel />,
         children: [
           {
             path: 'user-management',

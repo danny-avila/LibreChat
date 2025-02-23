@@ -3,7 +3,7 @@ import {Container, CssBaseline} from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
-const PanelAdmin: React.FC = () => {
+const AdminPanel: React.FC = () => {
   const [mode, setMode] = useState<'light' | 'dark'>(
     localStorage.getItem('color-theme') as 'light' | 'dark',
   );
@@ -42,4 +42,4 @@ const PanelAdmin: React.FC = () => {
   );
 };
 
-export default PanelAdmin;
+export default AdminPanel;

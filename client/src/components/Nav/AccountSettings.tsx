@@ -29,7 +29,7 @@ function AccountSettings() {
   const name = user?.avatar ?? user?.username ?? '';
 
   const adminPanelHandler = () => {
-    navigate('/panel-admin/user-management')
+    navigate('/admin-panel/user-management')
   };
 
   return (
