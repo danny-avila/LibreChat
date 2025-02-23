@@ -68,7 +68,7 @@ const EditBadgesComponent = ({
       {unavailableBadges && unavailableBadges.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 p-2">
           {unavailableBadges.map((badge) => (
-            <div key={badge.id} className="app-icon">
+            <div key={badge.id} className="badge-icon">
               <Badge
                 icon={badge.icon as unknown as LucideIcon}
                 label={badge.label}

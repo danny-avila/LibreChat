@@ -31,7 +31,9 @@ export default function Badge({
     <motion.button
       onClick={(e) => {
         if (!isEditing && onToggle) {
-          e.preventDefault();
+          if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+            e.preventDefault();
+          }
           e.stopPropagation();
           onToggle();
         }
@@ -40,7 +42,9 @@ export default function Badge({
         'group relative inline-flex transform-gpu items-center gap-1.5 rounded-full px-4 py-1.5 transition-all',
         'text-sm font-medium',
         'border border-border-medium',
-        isActive ? 'bg-surface-active shadow-md' : 'bg-surface-chat shadow-sm',
+        isActive
+          ? 'bg-surface-active shadow-md'
+          : 'bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md',
         isEditing && isAvailable !== false && 'cursor-move',
         className,
       )}
@@ -64,7 +68,7 @@ export default function Badge({
       />
       <motion.div className="relative flex items-center gap-1.5">
         {Icon && <Icon className="h-4 w-4" />}
-        <span>{label}</span>
+        <span className="hidden md:inline">{label}</span>
       </motion.div>
       {isEditing && !isDragging && (
         <motion.button

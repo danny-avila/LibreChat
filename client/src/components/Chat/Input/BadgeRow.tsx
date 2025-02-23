@@ -46,7 +46,7 @@ const BadgeWrapper = React.memo(
             }
           }}
           onMouseDown={(e) => onMouseDown(e, badge, isActive)}
-          className={isEditing ? 'ios-wiggle app-icon' : 'app-icon'}
+          className={isEditing ? 'ios-wiggle badge-icon' : 'badge-icon'}
         >
           <Badge
             icon={badge.icon as LucideIcon}
@@ -154,13 +154,12 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
   );
 
   useEffect(() => {
-    const currentIds = new Set(orderedBadges.map((b) => b.id));
-    const newBadges = badges.filter((b) => !currentIds.has(b.id));
-
-    if (newBadges.length > 0) {
-      setOrderedBadges((prev) => [...prev, ...newBadges]);
-    }
-  }, [badges, orderedBadges]);
+    setOrderedBadges((prev) => {
+      const currentIds = new Set(prev.map((b) => b.id));
+      const newBadges = badges.filter((b) => !currentIds.has(b.id));
+      return newBadges.length > 0 ? [...prev, ...newBadges] : prev;
+    });
+  }, [badges]);
 
   const tempBadges = dragState.draggedBadge
     ? orderedBadges.filter((b) => b.id !== dragState.draggedBadge?.id)
@@ -300,7 +299,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
       {tempBadges.map((badge, index) => (
         <React.Fragment key={badge.id}>
           {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
-            <div className="app-icon">
+            <div className="badge-icon">
               <Badge
                 icon={ghostBadge.icon as LucideIcon}
                 label={ghostBadge.label}
@@ -321,7 +320,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
         </React.Fragment>
       ))}
       {dragState.draggedBadge && dragState.insertIndex === tempBadges.length && ghostBadge && (
-        <div className="app-icon">
+        <div className="badge-icon">
           <Badge
             icon={ghostBadge.icon as LucideIcon}
             label={ghostBadge.label}
