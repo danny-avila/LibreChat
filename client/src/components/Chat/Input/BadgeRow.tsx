@@ -12,7 +12,12 @@ interface BadgeRowProps {
 }
 
 export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
-  const badges = useChatBadges() || [];
+  const allBadges = useChatBadges() || [];
+  const badges = useMemo(
+    () => allBadges.filter((badge) => badge.isAvailable !== false),
+    [allBadges],
+  );
+
   const isEditing = useRecoilValue(store.isEditingBadges);
   const [draggedBadge, setDraggedBadge] = useState<BadgeItem | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
@@ -23,12 +28,19 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const latestInsertIndexRef = useRef<number | null>(null);
 
-  const badgeStates = useMemo(() => {
-    return badges.map((badge) => ({
-      ...badge,
-      isActive: badge.atom ? useRecoilValue(badge.atom) : false,
-    }));
-  }, [badges]);
+  const isTemporaryActive = useRecoilValue(store.isTemporary);
+  const codeArtifactsActive = useRecoilValue(store.codeArtifacts);
+
+  // Create a lookup for the active state by id
+  const globalBadgeState: Record<string, boolean> = {
+    '1': isTemporaryActive,
+    '2': codeArtifactsActive,
+  };
+
+  const badgeStates = badges.map((badge) => ({
+    ...badge,
+    isActive: globalBadgeState[badge.id] ?? false,
+  }));
 
   const toggleBadge = useRecoilCallback(
     ({ snapshot, set }) =>
@@ -174,8 +186,9 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
                 label={badge.label}
                 isActive={badge.isActive}
                 isEditing={isEditing}
+                isAvailable={badge.isAvailable}
                 onToggle={() => handleBadgeToggle(badge)}
-                onDelete={() => handleDelete(badge.id)}
+                onBadgeAction={() => handleDelete(badge.id)}
               />
             </div>
           )}
@@ -193,8 +206,9 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
               label={badge.label}
               isActive={badge.isActive}
               isEditing={isEditing}
+              isAvailable={badge.isAvailable}
               onToggle={() => handleBadgeToggle(badge)}
-              onDelete={() => handleDelete(badge.id)}
+              onBadgeAction={() => handleDelete(badge.id)}
             />
           </div>
         </React.Fragment>
@@ -205,6 +219,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
             icon={ghostBadge.icon as LucideIcon}
             label={ghostBadge.label}
             isActive={ghostBadge.isActive}
+            isAvailable={ghostBadge.isAvailable}
             isEditing
           />
         </div>
@@ -225,6 +240,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
             icon={ghostBadge.icon as LucideIcon}
             label={ghostBadge.label}
             isActive={ghostBadge.isActive}
+            isAvailable={ghostBadge.isAvailable}
             isEditing
             isDragging
           />

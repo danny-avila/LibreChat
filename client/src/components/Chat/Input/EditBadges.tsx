@@ -1,27 +1,45 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Edit3, Check, X } from 'lucide-react';
-import { Button } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { useChatBadges, useLocalize } from '~/hooks';
+import { Button, Badge } from '~/components/ui';
+import type { BadgeItem } from '~/common';
 
 interface EditBadgesProps {
   isEditingChatBadges: boolean;
   handleCancelBadges: () => void;
   handleSaveBadges: () => void;
+  setBadges: (badges: Pick<BadgeItem, 'id'>[]) => void;
 }
 
 const EditBadgesComponent = ({
   isEditingChatBadges,
   handleCancelBadges,
   handleSaveBadges,
+  setBadges,
 }: EditBadgesProps) => {
   const localize = useLocalize();
+  const allBadges = useChatBadges() || [];
+  const unavailableBadges = allBadges.filter((badge) => !badge.isAvailable);
+
+  const handleRestoreBadge = useCallback(
+    (badgeId: string) => {
+      console.log('Restoring badge:', badgeId);
+
+      const availableBadges = allBadges
+        .filter((badge) => badge.isAvailable)
+        .map((badge) => ({ id: badge.id }));
+
+      setBadges([...availableBadges, { id: badgeId }]);
+    },
+    [allBadges, setBadges],
+  );
 
   if (!isEditingChatBadges) {
     return null;
   }
 
   return (
-    <div className="divide-token-border-light m-1.5 flex flex-col divide-y overflow-hidden rounded-b-lg rounded-t-2xl bg-surface-secondary-alt">
+    <div className="m-1.5 flex flex-col overflow-hidden rounded-b-lg rounded-t-2xl bg-surface-secondary-alt">
       <div className="flex items-center gap-4 py-2 pl-3 pr-1.5 text-sm">
         <span className="mt-0 flex size-6 flex-shrink-0 items-center justify-center">
           <div className="icon-md">
@@ -52,6 +70,21 @@ const EditBadgesComponent = ({
           </Button>
         </div>
       </div>
+      {unavailableBadges && unavailableBadges.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 p-2">
+          {unavailableBadges.map((badge) => (
+            <div key={badge.id} className="app-icon">
+              <Badge
+                icon={badge.icon}
+                label={badge.label}
+                isAvailable={false}
+                isEditing={true}
+                onBadgeAction={() => handleRestoreBadge(badge.id)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

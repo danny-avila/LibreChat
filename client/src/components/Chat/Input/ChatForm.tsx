@@ -1,12 +1,7 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import {
-  supportsFiles,
-  mergeFileConfig,
-  isAssistantsEndpoint,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'librechat-data-provider';
 import {
   useChatContext,
   useChatFormContext,
@@ -23,8 +18,6 @@ import {
 } from '~/hooks';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
-import { useGetFileConfig } from '~/data-provider';
-import { TemporaryChat } from './TemporaryChat';
 import FileFormChat from './Files/FileFormChat';
 import { TextareaAutosize } from '~/components';
 import { cn, removeFocusRings } from '~/utils';
@@ -35,8 +28,8 @@ import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
-import EditBadges from './EditBadges';
 import { BadgeRow } from './BadgeRow';
+import EditBadges from './EditBadges';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -59,7 +52,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const isSearching = useRecoilValue(store.isSearching);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
-  const [isTemporaryChat, setIsTemporaryChat] = useRecoilState(store.isTemporary);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
@@ -230,15 +222,12 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
             )}
           >
-            <TemporaryChat
-              isTemporaryChat={isTemporaryChat}
-              setIsTemporaryChat={setIsTemporaryChat}
-            />
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <EditBadges
               isEditingChatBadges={isEditingBadges}
               handleCancelBadges={handleCancelBadges}
               handleSaveBadges={handleSaveBadges}
+              setBadges={setBadges}
             />
             <FileFormChat disableInputs={disableInputs} />
             {endpoint && (

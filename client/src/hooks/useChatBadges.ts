@@ -1,16 +1,22 @@
 import { useRecoilValue } from 'recoil';
-import store from '~/store';
 import { MessageCircleDashed, StickyNote } from 'lucide-react';
-
 import type { BadgeItem } from '~/common';
+import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 const badgeConfig = [
-  { id: '1', icon: MessageCircleDashed, label: 'Temporary', atom: store.isTemporary },
-  { id: '2', icon: StickyNote, label: 'Artifact', atom: store.codeArtifacts },
+  {
+    id: '1',
+    icon: MessageCircleDashed,
+    label: 'com_ui_temporary',
+    atom: store.isTemporary,
+  },
+  { id: '2', icon: StickyNote, label: 'com_ui_artifacts', atom: store.codeArtifacts },
   // TODO: add more badges here (missing store atoms)
-];
+] as const;
 
 export default function useChatBadges(): BadgeItem[] {
+  const localize = useLocalize();
   const activeBadges = useRecoilValue(store.chatBadges) as Array<{ id: string }>;
   const activeBadgeIds = activeBadges.map((badge) => badge.id);
 
@@ -22,10 +28,10 @@ export default function useChatBadges(): BadgeItem[] {
       }
       return {
         id: config.id,
-        label: config.label,
+        label: localize(config.label),
         icon: config.icon,
         atom: config.atom,
-        isActive: true,
+        isAvailable: true,
       };
     })
     .filter(Boolean) as BadgeItem[];
@@ -34,10 +40,10 @@ export default function useChatBadges(): BadgeItem[] {
     .filter((cfg) => !activeBadgeIds.includes(cfg.id))
     .map((cfg) => ({
       id: cfg.id,
-      label: cfg.label,
+      label: localize(cfg.label),
       icon: cfg.icon,
       atom: cfg.atom,
-      isActive: false,
+      isAvailable: false,
     }));
 
   return [...activeBadgeItems, ...inactiveBadgeItems];

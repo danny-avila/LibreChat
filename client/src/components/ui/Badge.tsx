@@ -1,10 +1,8 @@
-'use client';
-
-import { X } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import type { ButtonHTMLAttributes } from 'react';
-import { cn } from '~/utils';
+import { X, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import type { ButtonHTMLAttributes } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { cn } from '~/utils';
 
 interface BadgeProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: LucideIcon;
@@ -12,7 +10,8 @@ interface BadgeProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   isActive?: boolean;
   isEditing?: boolean;
   isDragging?: boolean;
-  onDelete?: () => void;
+  isAvailable: boolean;
+  onBadgeAction?: () => void;
   onToggle?: () => void;
 }
 
@@ -22,7 +21,8 @@ export default function Badge({
   isActive = false,
   isEditing = false,
   isDragging = false,
-  onDelete,
+  isAvailable = true,
+  onBadgeAction,
   onToggle,
   className,
   ...props
@@ -41,7 +41,7 @@ export default function Badge({
         'text-sm font-medium',
         'border border-border-medium',
         isActive ? 'bg-surface-active shadow-md' : 'bg-surface-chat shadow-sm',
-        isEditing && 'cursor-move',
+        isEditing && isAvailable !== false && 'cursor-move',
         className,
       )}
       whileTap={{ scale: 0.95 }}
@@ -77,11 +77,11 @@ export default function Badge({
           }}
           onClick={(e) => {
             e.stopPropagation();
-            onDelete?.();
+            onBadgeAction?.();
           }}
           className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface-secondary-alt p-0.5 text-text-primary"
         >
-          <X className="h-3 w-3" />
+          {isAvailable === true ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
         </motion.button>
       )}
     </motion.button>

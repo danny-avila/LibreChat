@@ -53,7 +53,7 @@ export type BadgeItem = {
   icon: React.ComponentType<any>;
   label: string;
   atom: RecoilState<boolean>;
-  isActive: boolean;
+  isAvailable: boolean;
 };
 
 export type AssistantListItem = {

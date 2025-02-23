@@ -21,6 +21,8 @@ const isEditingBadges = atom<boolean>({
 });
 
 const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
+  // When adding new badges, make sure to add them to useChatBadges.ts as well and add them as last item
+  // DO NOT CHANGE THE ORDER OF THE BADGES ALREADY IN THE ARRAY
   { id: '1' },
   { id: '2' },
 ]);
