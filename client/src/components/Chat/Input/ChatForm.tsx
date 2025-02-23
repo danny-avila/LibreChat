@@ -40,7 +40,7 @@ import { BadgeRow } from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
 
-const ChatForm = memo(({ index = 0 }) => {
+const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -49,7 +49,7 @@ const ChatForm = memo(({ index = 0 }) => {
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
-  const [editingBadges, setEditingBadges] = useState<BadgeItem[] | null>(null);
+  const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -57,11 +57,12 @@ const ChatForm = memo(({ index = 0 }) => {
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const chatDirection = useRecoilValue(store.chatDirection);
   const isSearching = useRecoilValue(store.isSearching);
+
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isTemporaryChat, setIsTemporaryChat] = useRecoilState(store.isTemporary);
+  const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
-  const [isEditingChatBadges, setIsEditingChatBadges] = useRecoilState(store.isEditingBadges);
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
     store.showMentionPopoverFamily(index),
   );
@@ -89,10 +90,10 @@ const ChatForm = memo(({ index = 0 }) => {
 
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,
-    [conversation],
+    [conversation?.endpointType, conversation?.endpoint],
   );
-  const isRTL = useMemo(() => chatDirection.toLowerCase() === 'rtl', [chatDirection]);
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({ select: mergeFileConfig });
+
+  const isRTL = useMemo(() => chatDirection === 'rtl', [chatDirection.toLowerCase()]);
   const invalidAssistant = useMemo(
     () =>
       isAssistantsEndpoint(endpoint) &&
@@ -116,7 +117,7 @@ const ChatForm = memo(({ index = 0 }) => {
   }, [isCollapsed]);
 
   const { clearDraft } = useAutoSave({
-    conversationId: useMemo(() => conversation?.conversationId, [conversation]),
+    conversationId: conversation?.conversationId,
     textAreaRef,
     files,
     setFiles,
@@ -141,7 +142,8 @@ const ChatForm = memo(({ index = 0 }) => {
   const { ref, ...registerProps } = methods.register('text', {
     required: true,
     onChange: useCallback(
-      (e) => methods.setValue('text', e.target.value, { shouldValidate: true }),
+      (e: React.ChangeEvent<HTMLTextAreaElement>) =>
+        methods.setValue('text', e.target.value, { shouldValidate: true }),
       [methods],
     ),
   });
@@ -155,31 +157,31 @@ const ChatForm = memo(({ index = 0 }) => {
   }, [isSearching, disableInputs]);
 
   useEffect(() => {
-    if (isEditingChatBadges) {
-      setEditingBadges([...badges]);
-    }
-  }, [isEditingChatBadges]);
-
-  const handleSaveBadges = () => {
-    setIsEditingChatBadges(false);
-    setEditingBadges(null);
-  };
-
-  const handleCancelBadges = () => {
-    if (editingBadges) {
-      setBadges(editingBadges);
-    }
-    setIsEditingChatBadges(false);
-    setEditingBadges(null);
-  };
-
-  useEffect(() => {
     if (textAreaRef.current) {
       const style = window.getComputedStyle(textAreaRef.current);
       const lineHeight = parseFloat(style.lineHeight);
       setVisualRowCount(Math.floor(textAreaRef.current.scrollHeight / lineHeight));
     }
   }, [textValue]);
+
+  useEffect(() => {
+    if (isEditingBadges && backupBadges.length === 0) {
+      setBackupBadges([...badges]);
+    }
+  }, [isEditingBadges, badges, backupBadges.length]);
+
+  const handleSaveBadges = useCallback(() => {
+    setIsEditingBadges(false);
+    setBackupBadges([]);
+  }, []);
+
+  const handleCancelBadges = useCallback(() => {
+    if (backupBadges.length > 0) {
+      setBadges([...backupBadges]);
+    }
+    setIsEditingBadges(false);
+    setBackupBadges([]);
+  }, [backupBadges, setBadges]);
 
   const isMoreThanThreeRows = visualRowCount > 3;
 
@@ -234,7 +236,7 @@ const ChatForm = memo(({ index = 0 }) => {
             />
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <EditBadges
-              isEditingChatBadges={isEditingChatBadges}
+              isEditingChatBadges={isEditingBadges}
               handleCancelBadges={handleCancelBadges}
               handleSaveBadges={handleSaveBadges}
             />
@@ -257,11 +259,11 @@ const ChatForm = memo(({ index = 0 }) => {
                   tabIndex={0}
                   data-testid="text-input"
                   rows={1}
-                  onFocus={(e) => {
+                  onFocus={() => {
                     handleFocusOrClick();
                     setIsTextAreaFocused(true);
                   }}
-                  onBlur={(e) => setIsTextAreaFocused(false)}
+                  onBlur={setIsTextAreaFocused.bind(null, false)}
                   onClick={handleFocusOrClick}
                   style={{ height: 44, overflowY: 'auto' }}
                   className={cn(
@@ -270,7 +272,6 @@ const ChatForm = memo(({ index = 0 }) => {
                     'transition-[max-height] duration-200',
                   )}
                 />
-
                 <div className="flex flex-col items-start justify-start pt-1.5">
                   <CollapseChat
                     isCollapsed={isCollapsed}
@@ -289,7 +290,7 @@ const ChatForm = memo(({ index = 0 }) => {
               <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
                 <AttachFileChat disableInputs={disableInputs} />
               </div>
-              <BadgeRow badges={badges} onChange={setBadges} />
+              <BadgeRow onChange={(newBadges) => setBadges(newBadges)} />
               <div className="mx-auto flex" />
               {SpeechToText && (
                 <AudioRecorder

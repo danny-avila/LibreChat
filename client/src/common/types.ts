@@ -1,10 +1,10 @@
 import { RefObject } from 'react';
 import { FileSources } from 'librechat-data-provider';
-import type * as InputNumberPrimitive from 'rc-input-number';
-import type { ColumnDef } from '@tanstack/react-table';
-import type { SetterOrUpdater } from 'recoil';
-import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type * as InputNumberPrimitive from 'rc-input-number';
+import type { SetterOrUpdater, RecoilState } from 'recoil';
+import type { ColumnDef } from '@tanstack/react-table';
+import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
 
@@ -52,6 +52,7 @@ export type BadgeItem = {
   id: string;
   icon: React.ComponentType<any>;
   label: string;
+  atom: RecoilState<boolean>;
   isActive: boolean;
 };
 

@@ -1,24 +1,18 @@
-import { useRecoilValue } from 'recoil';
-import { Search, Lightbulb, Star, MessageCircleDashed } from 'lucide-react';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
+import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
 import { BadgeItem } from '~/common';
 import store from '~/store';
 
 interface BadgeRowProps {
-  badges: BadgeItem[];
-  onChange: (badges: BadgeItem[]) => void;
+  onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
+  onToggle?: (badgeId: string, currentActive: boolean) => void;
 }
 
-export const badgeIconMap: Record<string, LucideIcon> = {
-  deepsearch: Search,
-  think: Lightbulb,
-  favorites: Star,
-  temporary: MessageCircleDashed,
-};
-
-export function BadgeRow({ badges, onChange }: BadgeRowProps) {
+export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
+  const badges = useChatBadges() || [];
   const isEditing = useRecoilValue(store.isEditingBadges);
   const [draggedBadge, setDraggedBadge] = useState<BadgeItem | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
@@ -27,11 +21,30 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
   const badgeRefs = useRef<Record<string, HTMLDivElement>>({});
   const animationFrame = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const latestInsertIndexRef = useRef<number | null>(null);
+
+  const badgeStates = useMemo(() => {
+    return badges.map((badge) => ({
+      ...badge,
+      isActive: badge.atom ? useRecoilValue(badge.atom) : false,
+    }));
+  }, [badges]);
+
+  const toggleBadge = useRecoilCallback(
+    ({ snapshot, set }) =>
+      async (badgeAtom: any) => {
+        const current = await snapshot.getPromise(badgeAtom);
+        set(badgeAtom, !current);
+      },
+    [],
+  );
 
   const calculateInsertIndex = useCallback((): number => {
-    if (!draggedBadge) {
+    if (!draggedBadge || !containerRef.current) {
       return 0;
     }
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const relativeMouseX = mouseX - containerRect.left;
     const tempBadges = badges.filter((b) => b.id !== draggedBadge.id);
     const refs = tempBadges.map((b) => badgeRefs.current[b.id]).filter(Boolean);
     if (refs.length === 0) {
@@ -40,8 +53,9 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
     let idx = 0;
     for (let i = 0; i < refs.length; i++) {
       const rect = refs[i].getBoundingClientRect();
-      const center = rect.left + rect.width / 2;
-      if (mouseX < center) {
+      const relativeLeft = rect.left - containerRect.left;
+      const relativeCenter = relativeLeft + rect.width / 2;
+      if (relativeMouseX < relativeCenter) {
         break;
       }
       idx = i + 1;
@@ -62,35 +76,49 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
       setOffsetX(e.clientX - rect.left);
       setMouseX(e.clientX);
       setDraggedBadge(badge);
-      setInsertIndex(badges.findIndex((b) => b.id === badge.id));
+      const initialIndex = badges.findIndex((b) => b.id === badge.id);
+      setInsertIndex(initialIndex);
+      latestInsertIndexRef.current = initialIndex;
     },
     [isEditing, badges],
   );
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
+      if (!draggedBadge) {
+        return;
+      }
       if (animationFrame.current) {
         cancelAnimationFrame(animationFrame.current);
       }
       animationFrame.current = requestAnimationFrame(() => {
         setMouseX(e.clientX);
         const newInsertIndex = calculateInsertIndex();
+        latestInsertIndexRef.current = newInsertIndex;
         if (newInsertIndex !== insertIndex) {
           setInsertIndex(newInsertIndex);
         }
       });
     },
-    [calculateInsertIndex, insertIndex],
+    [calculateInsertIndex, insertIndex, draggedBadge],
   );
 
   const handleMouseUp = useCallback(() => {
-    if (draggedBadge && insertIndex !== null) {
-      const newBadges = [...badges.filter((b) => b.id !== draggedBadge.id)];
-      newBadges.splice(insertIndex, 0, draggedBadge);
-      onChange(newBadges);
+    const finalInsertIndex =
+      latestInsertIndexRef.current !== null ? latestInsertIndexRef.current : insertIndex;
+    if (draggedBadge && finalInsertIndex !== null) {
+      const otherBadges = badges.filter((b) => b.id !== draggedBadge.id);
+      const newBadges = [
+        ...otherBadges.slice(0, finalInsertIndex),
+        draggedBadge,
+        ...otherBadges.slice(finalInsertIndex),
+      ];
+      onChange(newBadges.map((badge) => ({ id: badge.id })));
     }
     setDraggedBadge(null);
     setInsertIndex(null);
+    setOffsetX(0);
+    latestInsertIndexRef.current = null;
   }, [badges, draggedBadge, insertIndex, onChange]);
 
   useEffect(() => {
@@ -108,28 +136,32 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
     };
   }, [draggedBadge, handleMouseMove, handleMouseUp]);
 
-  const toggleBadge = useCallback(
-    (id: string) => {
-      if (isEditing) {
-        return;
-      }
-      const newBadges = badges.map((badge) =>
-        badge.id === id ? { ...badge, isActive: !badge.isActive } : badge,
-      );
-      onChange(newBadges);
-    },
-    [isEditing, badges, onChange],
-  );
-
-  const deleteBadge = useCallback(
-    (id: string) => {
-      const newBadges = badges.filter((badge) => badge.id !== id);
-      onChange(newBadges);
+  const handleDelete = useCallback(
+    (badgeId: string) => {
+      const newBadges = badges.filter((b) => b.id !== badgeId);
+      onChange(newBadges.map((badge) => ({ id: badge.id })));
     },
     [badges, onChange],
   );
 
-  const tempBadges = draggedBadge ? badges.filter((b) => b.id !== draggedBadge.id) : badges;
+  const handleBadgeToggle = useCallback(
+    (badge: BadgeItem) => {
+      if (badge.atom) {
+        toggleBadge(badge.atom);
+      }
+      if (onToggle) {
+        onToggle(badge.id, !!badge.atom);
+      }
+    },
+    [toggleBadge, onToggle],
+  );
+
+  const tempBadges = draggedBadge
+    ? badgeStates.filter((b) => b.id !== draggedBadge.id)
+    : badgeStates;
+  const ghostBadge = draggedBadge
+    ? badgeStates.find((b) => b.id === draggedBadge.id) || null
+    : null;
 
   return (
     <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
@@ -138,10 +170,12 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
           {draggedBadge && insertIndex === index && (
             <div className="app-icon">
               <Badge
-                icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
-                label={draggedBadge.label}
-                isActive={draggedBadge.isActive}
-                isEditing
+                icon={badge.icon as LucideIcon}
+                label={badge.label}
+                isActive={badge.isActive}
+                isEditing={isEditing}
+                onToggle={() => handleBadgeToggle(badge)}
+                onDelete={() => handleDelete(badge.id)}
               />
             </div>
           )}
@@ -155,30 +189,27 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
             className={isEditing ? 'ios-wiggle app-icon' : 'app-icon'}
           >
             <Badge
-              icon={badgeIconMap[badge.label.toLowerCase()]}
+              icon={badge.icon as LucideIcon}
               label={badge.label}
               isActive={badge.isActive}
               isEditing={isEditing}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleBadge(badge.id);
-              }}
-              onDelete={() => deleteBadge(badge.id)}
+              onToggle={() => handleBadgeToggle(badge)}
+              onDelete={() => handleDelete(badge.id)}
             />
           </div>
         </React.Fragment>
       ))}
-      {draggedBadge && insertIndex === tempBadges.length && (
+      {draggedBadge && insertIndex === tempBadges.length && ghostBadge && (
         <div className="app-icon">
           <Badge
-            icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
-            label={draggedBadge.label}
-            isActive={draggedBadge.isActive}
+            icon={ghostBadge.icon as LucideIcon}
+            label={ghostBadge.label}
+            isActive={ghostBadge.isActive}
             isEditing
           />
         </div>
       )}
-      {draggedBadge && (
+      {ghostBadge && (
         <div
           className="ghost-badge"
           style={{
@@ -191,9 +222,9 @@ export function BadgeRow({ badges, onChange }: BadgeRowProps) {
           }}
         >
           <Badge
-            icon={badgeIconMap[draggedBadge.label.toLowerCase()]}
-            label={draggedBadge.label}
-            isActive={draggedBadge.isActive}
+            icon={ghostBadge.icon as LucideIcon}
+            label={ghostBadge.label}
+            isActive={ghostBadge.isActive}
             isEditing
             isDragging
           />

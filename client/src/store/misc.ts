@@ -1,6 +1,5 @@
 import { atom } from 'recoil';
 import { TAttachment } from 'librechat-data-provider';
-import { Search, Lightbulb, Star, MessageCircleDashed } from 'lucide-react';
 import { atomWithLocalStorage } from './utils';
 import { BadgeItem } from '~/common';
 
@@ -21,11 +20,9 @@ const isEditingBadges = atom<boolean>({
   default: false,
 });
 
-const chatBadges = atomWithLocalStorage<BadgeItem[]>('chatBadges', [
-  { id: '1', icon: Search, label: 'DeepSearch', isActive: false },
-  { id: '2', icon: Lightbulb, label: 'Think', isActive: false },
-  { id: '3', icon: Star, label: 'Favorites', isActive: false },
-  { id: '4', icon: MessageCircleDashed, label: 'Temporary', isActive: false },
+const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
+  { id: '1' },
+  { id: '2' },
 ]);
 
 export default {
