@@ -105,8 +105,8 @@ const UserManagement: React.FC = () => {
   return (
     <>
       {/* header */}
-      <Stack direction="row" sx={{ justifyContent: 'space-between', my: 2 }}>
-        <Typography variant="h4" sx={{ color: 'primary.main' }}>
+      <Stack direction='row' sx={{ justifyContent: 'space-between' ,alignItems:'center', my: 2 }}>
+        <Typography variant="h4" sx={{ color: 'primary.main' ,fontSize:{xs: '1.25rem' ,sm: '2rem'} }}>
           User Management
         </Typography>
         <Button
@@ -116,6 +116,9 @@ const UserManagement: React.FC = () => {
           sx={{
             fontWeight: 'bold',
             borderColor: 'primary.main',
+            // backgroundColor:{xs:'red', sm:'blue', md: 'yellow', lg:'orange'},
+            fontSize:{xs: '.75rem' ,sm: '1rem'},
+            padding:{xs:'.5rem' ,sm: '.6rem 1rem'},
             color: 'primary.main',
             '&:hover': { backgroundColor: 'primary.main', color: '#fff' },
           }}
@@ -154,13 +157,24 @@ const UserManagement: React.FC = () => {
         <TableContainer
           sx={{
             maxHeight: '85vh',
+            overflowX: 'auto',
+            '&::-webkit-scrollbar': {
+              width: '8px', // for vertical scrollbar
+              height: '8px', // applies if a horizontal scrollbar appears
+            },
             '&::-webkit-scrollbar-thumb': {
-              backgroundColor: 'primary.main',
+              backgroundColor: '#a6a6a6',
               borderRadius: '4px',
             },
           }}
         >
-          <Table stickyHeader aria-label="sticky table">
+          <Table
+            stickyHeader
+            aria-label="sticky table"
+            sx={{
+              minWidth: { xs: 900 }, // Set a minWidth that adjusts responsively
+            }}
+          >
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontWeight: 'bold' }}>User_id</TableCell>

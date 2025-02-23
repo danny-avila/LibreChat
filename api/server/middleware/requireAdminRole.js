@@ -22,7 +22,6 @@ const { logger } = require('~/config');
     }else{
         logger.error(`[User] [Admin Action] [User is not admin] [User: ${user?.id}]`);
     return res.status(403).send({ message: 'You do not have permission to perform this action' });
-    }
-    
+    }    
  }
 module.exports = requireAdminRole;
