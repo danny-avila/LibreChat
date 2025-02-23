@@ -154,7 +154,6 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
   );
 
   useEffect(() => {
-    // Sync orderedBadges with any new badges from the filtered list
     const currentIds = new Set(orderedBadges.map((b) => b.id));
     const newBadges = badges.filter((b) => !currentIds.has(b.id));
 
@@ -341,7 +340,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
             left: 0,
             transform: `translateX(${dragState.mouseX - dragState.offsetX - (containerRectRef.current?.left || 0)}px)`,
             zIndex: 10,
-            pointerEvents: 'none', // Prevent interaction
+            pointerEvents: 'none',
           }}
         >
           <Badge
