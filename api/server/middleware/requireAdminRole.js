@@ -17,7 +17,6 @@ const { logger } = require('~/config');
  const requireAdminRole  =async (req,res, next=()=>{}) => {
     const {user} = req
     if(user?.role === SystemRoles.ADMIN){
-        // if(user?.role === 'ZORO'){
         return next()
     }else{
         logger.error(`[User] [Admin Action] [User is not admin] [User: ${user?.id}]`);

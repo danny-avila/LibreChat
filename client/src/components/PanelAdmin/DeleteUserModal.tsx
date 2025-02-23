@@ -33,7 +33,7 @@ const style = {
 
 const DeleteUserModal: React.FC<DeleteUserModalProps> = (props) => {
   const deleteUserHandler = async () => {
-    const res = await axios.delete(`http://localhost:3090/api/deleteUser/${props.user.id}`);
+    const res = await axios.delete(`/api/deleteUser/${props.user.id}`);
     props.refreshUsers();
     props.onClose();
   };

@@ -124,7 +124,7 @@ const EditUserModal: React.FC<EditUserModalProps> = (props) => {
       };
 
       try {
-        const response = await axios.put(`http://localhost:3090/api/editUser/${props.user.id}`, {
+        const response = await axios.put(`/api/editUser/${props.user.id}`, {
           editedUser: editedUser,
         });
         props.onClose();

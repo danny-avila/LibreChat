@@ -122,7 +122,7 @@ const AddUserModal: React.FC<AddUserModalProps> = (props) => {
         password: password,
       };
       try {
-        const response = await axios.post('http://localhost:3090/api/auth/register', user);
+        const response = await axios.post('/api/auth/register', user);
         props.onClose();
         setFullName('');
         setEmail('');

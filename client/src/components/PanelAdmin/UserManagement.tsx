@@ -50,7 +50,7 @@ const UserManagement: React.FC = () => {
   const navigate = useNavigate();
 
   const getUsers = async () => {
-    const res = await axios.get('http://localhost:3090/api/getUsers');
+    const res = await axios.get('/api/getUsers');
     const filteredUsers = res.data.users.map((item: any) => ({
       name: item.name,
       username: item.username,
@@ -271,7 +271,6 @@ const UserManagement: React.FC = () => {
           </Table>
         </TableContainer>
       </Paper>
-      {/* <button onClick={()=>axios.delete(`http://localhost:3090/api/deleteUser/67b99052d72698796aeb73ca`)}>check</button> */}
     </>
   );
 };

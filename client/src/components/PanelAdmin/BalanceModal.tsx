@@ -53,7 +53,7 @@ const BalanceModal: React.FC<BalanceModalProps> = (props) => {
     }
 
     if (+balance > 0 && balanceError.trim() === '') {
-      const res = await axios.post('http://localhost:3080/api/addBalance/', {
+      const res = await axios.post('/api/addBalance/', {
         balance: +balance,
         id: props.userId,
       });
