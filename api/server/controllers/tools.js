@@ -1,15 +1,26 @@
 const { nanoid } = require('nanoid');
 const { EnvVar } = require('@librechat/agents');
-const { Tools, AuthType, ToolCallTypes } = require('librechat-data-provider');
+const {
+  Tools,
+  AuthType,
+  Permissions,
+  ToolCallTypes,
+  PermissionTypes,
+} = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
-const { loadAuthValues, loadTools } = require('~/app/clients/tools/util');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
+const { loadAuthValues, loadTools } = require('~/app/clients/tools/util');
+const { checkAccess } = require('~/server/middleware');
 const { getMessage } = require('~/models/Message');
 const { logger } = require('~/config');
 
 const fieldsMap = {
   [Tools.execute_code]: [EnvVar.CODE_API_KEY],
+};
+
+const toolAccessPermType = {
+  [Tools.execute_code]: PermissionTypes.RUN_CODE,
 };
 
 /**
@@ -58,6 +69,7 @@ const verifyToolAuth = async (req, res) => {
 /**
  * @param {ServerRequest} req - The request object, containing information about the HTTP request.
  * @param {ServerResponse} res - The response object, used to send back the desired HTTP response.
+ * @param {NextFunction} next - The next middleware function to call.
  * @returns {Promise<void>} A promise that resolves when the function has completed.
  */
 const callTool = async (req, res) => {
@@ -83,6 +95,16 @@ const callTool = async (req, res) => {
       return;
     }
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
+    let hasAccess = true;
+    if (toolAccessPermType[toolId]) {
+      hasAccess = await checkAccess(req.user, toolAccessPermType[toolId], [Permissions.USE]);
+    }
+    if (!hasAccess) {
+      logger.warn(
+        `[${toolAccessPermType[toolId]}] Forbidden: Insufficient permissions for User ${req.user.id}: ${Permissions.USE}`,
+      );
+      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    }
     const { loadedTools } = await loadTools({
       user: req.user.id,
       tools: [toolId],

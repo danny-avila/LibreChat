@@ -9,7 +9,7 @@ const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_KEY_PREFIX, RED
 
 let keyvRedis;
 const redis_prefix = REDIS_KEY_PREFIX || '';
-const redis_max_listeners = REDIS_MAX_LISTENERS || 10;
+const redis_max_listeners = Number(REDIS_MAX_LISTENERS) || 10;
 
 function mapURI(uri) {
   const regex =
