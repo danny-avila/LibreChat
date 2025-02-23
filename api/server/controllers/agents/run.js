@@ -25,7 +25,6 @@ const { providerEndpointMap, KnownEndpoints } = require('librechat-data-provider
  * @returns {Promise<Run<IState>>} A promise that resolves to a new Run instance.
  */
 async function createRun({
-  req,
   runId,
   agent,
   signal,
@@ -40,7 +39,6 @@ async function createRun({
       provider,
       streaming,
       streamUsage,
-      user: req.user?.id,
     },
     agent.model_parameters,
   );
