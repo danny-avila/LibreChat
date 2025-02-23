@@ -68,6 +68,14 @@ interface:
   multiConvo: true
   agents: true
 
+turnstile:
+  siteKey: "your-site-key-here"
+  injectScript: true
+  options:
+    theme: "auto"       # Options: "light", "dark", or "auto"
+    language: "auto"    # "auto" or an ISO 639-1 language code (e.g. en)
+    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
+
 # Example Registration Object Structure (optional)
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
