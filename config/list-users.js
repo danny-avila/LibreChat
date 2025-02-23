@@ -1,3 +1,4 @@
+require('./helpers');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
