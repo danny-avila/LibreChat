@@ -1,5 +1,5 @@
 const path = require('path');
-
+require('./helpers');
 require('module-alias/register');
 const moduleAlias = require('module-alias');
 
