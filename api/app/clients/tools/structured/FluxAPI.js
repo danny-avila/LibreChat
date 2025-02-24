@@ -59,9 +59,9 @@ class FluxAPI extends Tool {
     // Define the schema for structured input
     this.schema = z.object({
       action: z
-        .enum(['generate', 'list_finetunes'])
+        .enum(['generate', 'list_finetunes', 'generate_finetuned'])
         .default('generate')
-        .describe('Action to perform: "generate" for image generation, "list_finetunes" to get available custom models'),
+        .describe('Action to perform: "generate" for image generation, "generate_finetuned" for finetuned model generation, "list_finetunes" to get available custom models'),
       api_key: z
         .string()
         .optional()
@@ -183,6 +183,11 @@ class FluxAPI extends Tool {
       return this.getMyFinetunes(requestApiKey);
     }
 
+    // Handle finetuned generation
+    if (action === 'generate_finetuned') {
+      return this.generateFinetunedImage(imageData, requestApiKey);
+    }
+
     // For generate action, ensure prompt is provided
     if (!imageData.prompt) {
       throw new Error('Missing required field: prompt');
@@ -201,18 +206,6 @@ class FluxAPI extends Tool {
     if (imageData.steps) payload.steps = imageData.steps;
     if (imageData.seed !== undefined) payload.seed = imageData.seed;
     if (imageData.raw) payload.raw = imageData.raw;
-
-    // Handle finetuned generation
-    if (imageData.finetune_id) {
-      payload = {
-        ...payload,
-        finetune_id: imageData.finetune_id,
-        finetune_strength: imageData.finetune_strength || 1.0,
-        guidance: imageData.guidance || 2.5,
-      };
-      // Default to pro finetuned endpoint if not specified
-      imageData.endpoint = imageData.endpoint || '/v1/flux-pro-finetuned';
-    }
 
     const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
     const resultUrl = `${this.baseUrl}/v1/get_result`;
@@ -399,6 +392,11 @@ class FluxAPI extends Tool {
         })
       );
 
+      // Format the response based on isAgent
+      if (this.isAgent) {
+        const formattedDetails = JSON.stringify(finetuneDetails, null, 2);
+        return [`Here are the available finetunes:\n${formattedDetails}`, null];
+      }
       return JSON.stringify(finetuneDetails);
       
     } catch (error) {
@@ -406,6 +404,188 @@ class FluxAPI extends Tool {
       logger.error('[FluxAPI] Error while getting finetunes:', details);
       const errorMsg = `Failed to get finetunes: ${details}`;
       return this.isAgent ? this.returnValue([errorMsg, {}]) : new Error(errorMsg);
+    }
+  }
+
+  async generateFinetunedImage(imageData, requestApiKey) {
+    if (!imageData.prompt) {
+      throw new Error('Missing required field: prompt');
+    }
+
+    if (!imageData.finetune_id) {
+      throw new Error('Missing required field: finetune_id for finetuned generation. Please supply a finetune_id!');
+    }
+
+    // Validate endpoint is appropriate for finetuned generation
+    const validFinetunedEndpoints = ['/v1/flux-pro-finetuned', '/v1/flux-pro-1.1-ultra-finetuned'];
+    const endpoint = imageData.endpoint || '/v1/flux-pro-finetuned';
+    
+    if (!validFinetunedEndpoints.includes(endpoint)) {
+      throw new Error(`Invalid endpoint for finetuned generation. Must be one of: ${validFinetunedEndpoints.join(', ')}`);
+    }
+
+    let payload = {
+      prompt: imageData.prompt,
+      prompt_upsampling: imageData.prompt_upsampling || false,
+      safety_tolerance: imageData.safety_tolerance || 6,
+      output_format: imageData.output_format || 'png',
+      finetune_id: imageData.finetune_id,
+      finetune_strength: imageData.finetune_strength || 1.0,
+      guidance: imageData.guidance || 2.5,
+    };
+
+    // Add optional parameters if provided
+    if (imageData.width) payload.width = imageData.width;
+    if (imageData.height) payload.height = imageData.height;
+    if (imageData.steps) payload.steps = imageData.steps;
+    if (imageData.seed !== undefined) payload.seed = imageData.seed;
+    if (imageData.raw) payload.raw = imageData.raw;
+
+    const generateUrl = `${this.baseUrl}${endpoint}`;
+    const resultUrl = `${this.baseUrl}/v1/get_result`;
+
+    logger.debug('[FluxAPI] Generating finetuned image with payload:', payload);
+    logger.debug('[FluxAPI] Using endpoint:', generateUrl);
+
+    let taskResponse;
+    try {
+      taskResponse = await axios.post(generateUrl, payload, {
+        headers: {
+          'x-key': requestApiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      });
+    } catch (error) {
+      const details = error?.response?.data || error.message;
+      logger.error('[FluxAPI] Error while submitting finetuned task:', details);
+      
+      // Create error transaction
+      try {
+        await ImageTransaction.create({
+          user: this.userId,
+          prompt: imageData.prompt,
+          endpoint: endpoint,
+          cost: 0, // No charge for failed requests
+          imagePath: '',
+          status: 'error',
+          error: details,
+          metadata: {
+            ...payload,
+          }
+        });
+      } catch (txError) {
+        logger.error('[FluxAPI] Error creating error transaction:', txError);
+      }
+
+      return this.returnValue(
+        `Something went wrong when trying to generate the finetuned image. The Flux API may be unavailable:
+        Error Message: ${details}`
+      );
+    }
+
+    const taskId = taskResponse.data.id;
+
+    // Polling for the result
+    let status = 'Pending';
+    let resultData = null;
+    while (status !== 'Ready' && status !== 'Error') {
+      try {
+        // Wait 2 seconds between polls
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const resultResponse = await axios.get(resultUrl, {
+          headers: {
+            'x-key': requestApiKey,
+            Accept: 'application/json',
+          },
+          params: { id: taskId },
+        });
+        status = resultResponse.data.status;
+
+        if (status === 'Ready') {
+          resultData = resultResponse.data.result;
+          break;
+        } else if (status === 'Error') {
+          logger.error('[FluxAPI] Error in finetuned task:', resultResponse.data);
+          
+          // Create error transaction
+          try {
+            await ImageTransaction.create({
+              user: this.userId,
+              prompt: imageData.prompt,
+              endpoint: endpoint,
+              cost: 0, // No charge for failed requests
+              imagePath: '',
+              status: 'error',
+              error: 'Task failed during processing',
+              metadata: {
+                ...payload,
+              }
+            });
+          } catch (txError) {
+            logger.error('[FluxAPI] Error creating error transaction:', txError);
+          }
+
+          return this.returnValue('An error occurred during finetuned image generation.');
+        }
+      } catch (error) {
+        const details = error?.response?.data || error.message;
+        logger.error('[FluxAPI] Error while getting finetuned result:', details);
+        return this.returnValue('An error occurred while retrieving the finetuned image.');
+      }
+    }
+
+    // If no result data
+    if (!resultData || !resultData.sample) {
+      logger.error('[FluxAPI] No image data received from API. Response:', resultData);
+      return this.returnValue('No image data received from Flux API.');
+    }
+
+    // Try saving the image locally
+    const imageUrl = resultData.sample;
+    const imageName = `img-${uuidv4()}.png`;
+
+    try {
+      logger.debug('[FluxAPI] Saving finetuned image:', imageUrl);
+      const result = await this.processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: imageUrl,
+        fileName: imageName,
+        basePath: 'images',
+        context: FileContext.image_generation,
+      });
+
+      logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);
+
+      // Calculate cost based on endpoint
+      const endpointKey = endpoint.includes('ultra') ? 'FLUX_PRO_1_1_ULTRA_FINETUNED' : 'FLUX_PRO_FINETUNED';
+      const cost = FluxAPI.PRICING[endpointKey] || 0;
+
+      // Create successful transaction
+      try {
+        await ImageTransaction.create({
+          user: this.userId,
+          prompt: imageData.prompt,
+          endpoint: endpoint,
+          cost: cost,
+          imagePath: result.filepath,
+          status: 'success',
+          metadata: {
+            ...payload,
+          }
+        });
+      } catch (txError) {
+        logger.error('[FluxAPI] Error creating success transaction:', txError);
+      }
+      
+      // Return the result based on returnMetadata flag
+      this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
+      return this.returnValue(this.result);
+    } catch (error) {
+      const details = error?.message ?? 'No additional error details.';
+      logger.error('Error while saving the finetuned image:', details);
+      return this.returnValue(`Failed to save the finetuned image locally. ${details}`);
     }
   }
 }
