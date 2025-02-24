@@ -57,6 +57,7 @@
     "cors": "^2.8.5",
     "dedent": "^1.5.3",
     "dotenv": "^16.0.3",
+    "eventsource": "^3.0.2",
     "express": "^4.21.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.4.1",
