@@ -48,6 +48,18 @@ const roleSchema = new mongoose.Schema({
       default: true,
     },
   },
+  [PermissionTypes.TEMPORARY_CHAT]: {
+    [Permissions.USE]: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  [PermissionTypes.RUN_CODE]: {
+    [Permissions.USE]: {
+      type: Boolean,
+      default: true,
+    },
+  },
 });
 
 const Role = mongoose.model('Role', roleSchema);
