@@ -20,6 +20,8 @@ class FluxAPI extends Tool {
     'FLUX_PRO_1_1': -0.04,                // /v1/flux-pro-1.1
     'FLUX_PRO': -0.05,                    // /v1/flux-pro
     'FLUX_DEV': -0.025,                   // /v1/flux-dev
+    'FLUX_PRO_FINETUNED': -0.06,          // /v1/flux-pro-finetuned
+    'FLUX_PRO_1_1_ULTRA_FINETUNED': -0.07,// /v1/flux-pro-1.1-ultra-finetuned
   };
 
   constructor(fields = {}) {
@@ -46,13 +48,10 @@ class FluxAPI extends Tool {
     this.description =
       "Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.";
 
-    this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Follow these core rules:
+    this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Never submit a prompt under 3 sentences. Follow these core rules:
     // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
-    // 2. Start with image type (photo, painting, digital art, etc.) unless specified otherwise
-    // 3. Add concrete visual details that enhance the core concept
-    // 4. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
-    // For finetunes: Use action: 'list_finetunes' to see available custom models
-    // Generate without asking permission, embed images directly without commentary.`;
+    // 2. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
+    // Use action: 'list_finetunes' to see available custom models. When using finetunes, use endpoint: '/v1/flux-pro-finetuned' (default) or '/v1/flux-pro-1.1-ultra-finetuned' for higher quality and aspect ratio.`;
 
     // Add base URL from environment variable with fallback
     this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.us1.bfl.ai';
@@ -86,6 +85,7 @@ class FluxAPI extends Tool {
       prompt_upsampling: z
         .boolean()
         .optional()
+        .default(false)
         .describe('Whether to perform upsampling on the prompt.'),
       steps: z
         .number()
@@ -96,7 +96,7 @@ class FluxAPI extends Tool {
       safety_tolerance: z
         .number()
         .optional()
-        .default(5)
+        .default(6)
         .describe(
           'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.'
         ),
@@ -105,17 +105,39 @@ class FluxAPI extends Tool {
           '/v1/flux-pro-1.1',
           '/v1/flux-pro',
           '/v1/flux-dev',
-          '/v1/flux-pro-1.1-ultra'
+          '/v1/flux-pro-1.1-ultra',
+          '/v1/flux-pro-finetuned',
+          '/v1/flux-pro-1.1-ultra-finetuned'
         ])
         .optional()
-        .default('/v1/flux-dev')
-        .describe('Endpoint to use for image generation. Default is /v1/flux-pro.'),
+        .default('/v1/flux-pro-1.1')
+        .describe('Endpoint to use for image generation.'),
       raw: z
         .boolean()
         .optional()
+        .default(false)
         .describe(
           'Generate less processed, more natural-looking images. Only works for /v1/flux-pro-1.1-ultra.'
         ),
+      finetune_id: z
+        .string()
+        .optional()
+        .describe('ID of the finetuned model to use'),
+      finetune_strength: z
+        .number()
+        .optional()
+        .default(1.1)
+        .describe('Strength of the finetuning effect (typically between 0.1 and 1.2)'),
+      guidance: z
+        .number()
+        .optional()
+        .default(2.5)
+        .describe('Guidance scale for finetuned models'),
+      aspect_ratio: z
+        .string()
+        .optional()
+        .default('16:9')
+        .describe('Aspect ratio for ultra models (e.g., "16:9")'),
     });
   }
 
@@ -138,7 +160,7 @@ class FluxAPI extends Tool {
       return [value, {}];
     } else if (this.isAgent === true && typeof value === 'object') {
       // Special handling for finetunes list
-      if (Array.isArray(value) && value[0] === 'Here are your available finetuned models:') {
+      if (Array.isArray(value)) {
         return value;
       }
       // Default image handling
@@ -166,37 +188,47 @@ class FluxAPI extends Tool {
       throw new Error('Missing required field: prompt');
     }
 
+    let payload = {
+      prompt: imageData.prompt,
+      prompt_upsampling: imageData.prompt_upsampling || false,
+      safety_tolerance: imageData.safety_tolerance || 6,
+      output_format: imageData.output_format || 'png',
+    };
+
+    // Add optional parameters if provided
+    if (imageData.width) payload.width = imageData.width;
+    if (imageData.height) payload.height = imageData.height;
+    if (imageData.steps) payload.steps = imageData.steps;
+    if (imageData.seed !== undefined) payload.seed = imageData.seed;
+    if (imageData.raw) payload.raw = imageData.raw;
+
+    // Handle finetuned generation
+    if (imageData.finetune_id) {
+      payload = {
+        ...payload,
+        finetune_id: imageData.finetune_id,
+        finetune_strength: imageData.finetune_strength || 1.0,
+        guidance: imageData.guidance || 2.5,
+      };
+      // Default to pro finetuned endpoint if not specified
+      imageData.endpoint = imageData.endpoint || '/v1/flux-pro-finetuned';
+    }
+
     const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
     const resultUrl = `${this.baseUrl}/v1/get_result`;
 
-    const payload = {
-      prompt: imageData.prompt,
-      width: imageData.width || 1024,
-      height: imageData.height || 768,
-      steps: imageData.steps || 40,
-      prompt_upsampling: imageData.prompt_upsampling || false,
-      seed: imageData.seed || null,
-      safety_tolerance: imageData.safety_tolerance || 6,
-      output_format: imageData.output_format || 'png',
-      raw: imageData.raw || false,
-    };
-
-    logger.debug('[FluxAPI] Action:', action);
-    logger.debug('[FluxAPI] Generating image with prompt:', imageData.prompt);
-    logger.debug('[FluxAPI] Using endpoint:', imageData.endpoint || '/v1/flux-pro');
-    logger.debug('[FluxAPI] Steps:', payload.steps);
-    logger.debug('[FluxAPI] Safety Tolerance:', payload.safety_tolerance);
-    logger.debug('[FluxAPI] Dimensions:', payload.width, 'x', payload.height);
-
-    const headers = {
-      'x-key': requestApiKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
+    logger.debug('[FluxAPI] Generating image with payload:', payload);
+    logger.debug('[FluxAPI] Using endpoint:', generateUrl);
 
     let taskResponse;
     try {
-      taskResponse = await axios.post(generateUrl, payload, { headers });
+      taskResponse = await axios.post(generateUrl, payload, {
+        headers: {
+          'x-key': requestApiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      });
     } catch (error) {
       const details = error?.response?.data || error.message;
       logger.error('[FluxAPI] Error while submitting task:', details);
@@ -235,7 +267,10 @@ class FluxAPI extends Tool {
         // Wait 2 seconds between polls
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const resultResponse = await axios.get(resultUrl, {
-          headers,
+          headers: {
+            'x-key': requestApiKey,
+            Accept: 'application/json',
+          },
           params: { id: taskId },
         });
         status = resultResponse.data.status;
@@ -364,7 +399,7 @@ class FluxAPI extends Tool {
         })
       );
 
-      return finetuneDetails;
+      return JSON.stringify(finetuneDetails);
       
     } catch (error) {
       const details = error?.response?.data || error.message;
