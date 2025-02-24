@@ -8,9 +8,7 @@ const { logger } = require('~/config');
  *
  * turnstile:
  *   siteKey: "your-site-key-here"
- *   injectScript: true
  *   options:
- *     theme: "auto"       // Options: "light", "dark", or "auto"
  *     language: "auto"    // "auto" or an ISO 639-1 language code (e.g. en)
  *     size: "normal"      // Options: "normal", "compact", "flexible", or "invisible"
  *
@@ -22,20 +20,10 @@ function loadTurnstileConfig(config, configDefaults) {
   const { turnstile: customTurnstile = {} } = config ?? {};
   const { turnstile: defaults = {} } = configDefaults;
 
-  const options = {
-    theme: customTurnstile.options?.theme ?? defaults.options?.theme,
-    language: customTurnstile.options?.language ?? defaults.options?.language,
-    size: customTurnstile.options?.size ?? defaults.options?.size,
-  };
-
-  /** @type {TCustomConfig['turnstile']['options']} */
-  const loadedOptions = removeNullishValues(options);
-
   /** @type {TCustomConfig['turnstile']} */
   const loadedTurnstile = removeNullishValues({
     siteKey: customTurnstile.siteKey ?? defaults.siteKey,
-    injectScript: customTurnstile.injectScript ?? defaults.injectScript,
-    options: loadedOptions,
+    options: customTurnstile.options ?? defaults.options,
   });
 
   logger.info('Turnstile configuration loaded:\n' + JSON.stringify(loadedTurnstile, null, 2));

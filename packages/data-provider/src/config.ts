@@ -475,19 +475,16 @@ export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
 
 export const turnstileOptionsSchema = z
   .object({
-    theme: z.enum(['light', 'dark', 'auto']).default('auto'),
     language: z.string().default('auto'),
     size: z.enum(['normal', 'compact', 'flexible', 'invisible']).default('normal'),
   })
   .default({
-    theme: 'auto',
     language: 'auto',
     size: 'normal',
   });
 
 export const turnstileSchema = z.object({
   siteKey: z.string(),
-  injectScript: z.boolean().optional().default(true),
   options: turnstileOptionsSchema.optional(),
 });
 

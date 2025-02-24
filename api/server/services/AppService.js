@@ -66,6 +66,7 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    turnstileConfig,
   };
 
   if (!Object.keys(config).length) {
@@ -124,7 +125,6 @@ const AppService = async (app) => {
 
   app.locals = {
     ...defaultLocals,
-    turnstile: turnstileConfig,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs),
