@@ -27,15 +27,15 @@ const BookmarkMenu: FC = () => {
   const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
   const updateConvoTags = useBookmarkSuccess(conversationId);
+  const tags = conversation?.tags;
+  const isTemporary = conversation?.expiredAt != null;
 
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
 
   const mutation = useTagConversationMutation(conversationId, {
     onSuccess: (newTags: string[], vars) => {
-      setTags(newTags);
       updateConvoTags(newTags);
       const tagElement = document.getElementById(vars.tag);
       console.log('tagElement', tagElement);
@@ -82,12 +82,13 @@ const BookmarkMenu: FC = () => {
       const allTags =
         queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
       const existingTags = allTags.map((t) => t.tag);
-      const filteredTags = tags.filter((t) => existingTags.includes(t));
+      const filteredTags = tags?.filter((t) => existingTags.includes(t));
 
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after filtering', filteredTags);
-      const newTags = filteredTags.includes(tag)
-        ? filteredTags.filter((t) => t !== tag)
-        : [...filteredTags, tag];
+      const newTags =
+        filteredTags?.includes(tag) === true
+          ? filteredTags.filter((t) => t !== tag)
+          : [...(filteredTags ?? []), tag];
 
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
       mutation.mutate({
@@ -115,16 +116,17 @@ const BookmarkMenu: FC = () => {
 
     if (data) {
       for (const tag of data) {
-        const isSelected = tags.includes(tag.tag);
+        const isSelected = tags?.includes(tag.tag);
         items.push({
           id: tag.tag,
-          hideOnClick: false,
           label: tag.tag,
-          icon: isSelected ? (
-            <BookmarkFilledIcon className="size-4" />
-          ) : (
-            <BookmarkIcon className="size-4" />
-          ),
+          hideOnClick: false,
+          icon:
+            isSelected === true ? (
+              <BookmarkFilledIcon className="size-4" />
+            ) : (
+              <BookmarkIcon className="size-4" />
+            ),
           onClick: () => handleSubmit(tag.tag),
           disabled: mutation.isLoading,
         });
@@ -138,11 +140,15 @@ const BookmarkMenu: FC = () => {
     return null;
   }
 
+  if (isTemporary) {
+    return null;
+  }
+
   const renderButtonContent = () => {
     if (mutation.isLoading) {
       return <Spinner aria-label="Spinner" />;
     }
-    if (tags.length > 0) {
+    if ((tags?.length ?? 0) > 0) {
       return <BookmarkFilledIcon className="icon-sm" aria-label="Filled Bookmark" />;
     }
     return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
@@ -155,6 +161,7 @@ const BookmarkMenu: FC = () => {
         menuId={menuId}
         isOpen={isMenuOpen}
         setIsOpen={setIsMenuOpen}
+        keyPrefix={`${conversationId}-bookmark-`}
         trigger={
           <TooltipAnchor
             description={localize('com_ui_bookmarks_add')}
@@ -177,8 +184,8 @@ const BookmarkMenu: FC = () => {
       />
       <BookmarkEditDialog
         tags={tags}
-        setTags={setTags}
         open={isDialogOpen}
+        setTags={updateConvoTags}
         setOpen={setIsDialogOpen}
         triggerRef={newBookmarkRef}
         conversationId={conversationId}

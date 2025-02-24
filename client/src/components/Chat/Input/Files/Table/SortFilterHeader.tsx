@@ -9,14 +9,14 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/DropdownMenu';
 import { Button } from '~/components/ui/Button';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 
 interface SortFilterHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
   title: string;
   column: Column<TData, TValue>;
   filters?: Record<string, string[] | number[]>;
-  valueMap?: Record<string, string>;
+  valueMap?: Record<any, TranslationKeys>;
 }
 
 export function SortFilterHeader<TData, TValue>({
@@ -78,9 +78,12 @@ export function SortFilterHeader<TData, TValue>({
           <DropdownMenuSeparator className="dark:bg-gray-500" />
           {filters &&
             Object.entries(filters).map(([key, values]) =>
-              values.map((value: string | number) => {
-                const localizedValue = localize(valueMap?.[value] ?? '');
-                const filterValue = localizedValue.length ? localizedValue : valueMap?.[value];
+              values.map((value?: string | number) => {
+                const translationKey = valueMap?.[value ?? ''];
+                const filterValue =
+                  translationKey != null && translationKey.length
+                    ? localize(translationKey)
+                    : String(value);
                 if (!filterValue) {
                   return null;
                 }

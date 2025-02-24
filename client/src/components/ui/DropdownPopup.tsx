@@ -4,6 +4,7 @@ import type * as t from '~/common';
 import { cn } from '~/utils';
 
 interface DropdownProps {
+  keyPrefix?: string;
   trigger: React.ReactNode;
   items: t.MenuItemProps[];
   isOpen: boolean;
@@ -20,6 +21,7 @@ interface DropdownProps {
 }
 
 const DropdownPopup: React.FC<DropdownProps> = ({
+  keyPrefix,
   trigger,
   items,
   isOpen,
@@ -53,7 +55,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
             }
             return (
               <Ariakit.MenuItem
-                key={index}
+                key={`${keyPrefix ?? ''}${index}`}
                 id={item.id}
                 className={cn(
                   'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',

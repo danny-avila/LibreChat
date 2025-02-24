@@ -154,6 +154,24 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for partial match - Google models', () => {
+    expect(getModelMaxTokens('gemini-2.0-flash-lite-preview-02-05', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0-flash-lite'],
+    );
+    expect(getModelMaxTokens('gemini-2.0-flash-001', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0-flash'],
+    );
+    expect(getModelMaxTokens('gemini-2.0-flash-exp', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0-flash'],
+    );
+    expect(getModelMaxTokens('gemini-2.0-pro-exp-02-05', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0'],
+    );
+    expect(getModelMaxTokens('gemini-1.5-flash-8b', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5-flash-8b'],
+    );
+    expect(getModelMaxTokens('gemini-1.5-flash-thinking', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5-flash'],
+    );
     expect(getModelMaxTokens('gemini-1.5-pro-latest', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
     );
@@ -385,8 +403,15 @@ describe('Meta Models Tests', () => {
     });
 
     test('should match Deepseek model variations', () => {
-      expect(getModelMaxTokens('deepseek-chat')).toBe(127500);
-      expect(getModelMaxTokens('deepseek-coder')).toBe(127500);
+      expect(getModelMaxTokens('deepseek-chat')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+      );
+      expect(getModelMaxTokens('deepseek-coder')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+      );
+      expect(getModelMaxTokens('deepseek-reasoner')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek-reasoner'],
+      );
     });
   });
 

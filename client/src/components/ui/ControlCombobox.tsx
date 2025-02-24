@@ -1,9 +1,10 @@
+import { Search } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
-import { startTransition, useMemo, useState, useEffect, useRef, memo } from 'react';
-import { cn } from '~/utils';
+import { useMemo, useState, useRef, memo, useEffect } from 'react';
+import { SelectRenderer } from '@ariakit/react-core/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
-import { Search } from 'lucide-react';
+import { cn } from '~/utils';
 
 interface ControlComboboxProps {
   selectedValue: string;
@@ -16,6 +17,8 @@ interface ControlComboboxProps {
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
 }
+
+const ROW_HEIGHT = 36;
 
 function ControlCombobox({
   selectedValue,
@@ -32,11 +35,33 @@ function ControlCombobox({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
 
+  const getItem = (option: OptionWithIcon) => ({
+    id: `item-${option.value}`,
+    value: option.value as string | undefined,
+    label: option.label,
+    icon: option.icon,
+  });
+
+  const combobox = Ariakit.useComboboxStore({
+    defaultItems: items.map(getItem),
+    resetValueOnHide: true,
+    value: searchValue,
+    setValue: setSearchValue,
+  });
+
+  const select = Ariakit.useSelectStore({
+    combobox,
+    defaultItems: items.map(getItem),
+    value: selectedValue,
+    setValue,
+  });
+
   const matches = useMemo(() => {
-    return matchSorter(items, searchValue, {
+    const filteredItems = matchSorter(items, searchValue, {
       keys: ['value', 'label'],
       baseSort: (a, b) => (a.index < b.index ? -1 : 1),
     });
+    return filteredItems.map(getItem);
   }, [searchValue, items]);
 
   useEffect(() => {
@@ -47,77 +72,72 @@ function ControlCombobox({
 
   return (
     <div className="flex w-full items-center justify-center px-1">
-      <Ariakit.ComboboxProvider
-        resetValueOnHide
-        setValue={(value) => {
-          startTransition(() => {
-            setSearchValue(value);
-          });
-        }}
+      <Ariakit.SelectLabel store={select} className="sr-only">
+        {ariaLabel}
+      </Ariakit.SelectLabel>
+      <Ariakit.Select
+        ref={buttonRef}
+        store={select}
+        className={cn(
+          'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
+          'text-text-primary hover:bg-surface-tertiary',
+          'border border-border-light',
+          isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
+        )}
       >
-        <Ariakit.SelectProvider value={selectedValue} setValue={setValue}>
-          <Ariakit.SelectLabel className="sr-only">{ariaLabel}</Ariakit.SelectLabel>
-          <Ariakit.Select
-            ref={buttonRef}
-            className={cn(
-              'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
-              'text-text-primary hover:bg-surface-tertiary',
-              'border border-border-light',
-              isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
-            )}
-          >
-            {SelectIcon != null && (
-              <div className="assistant-item flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                {SelectIcon}
-              </div>
-            )}
-            {!isCollapsed && (
-              <span className="flex-grow truncate text-left">
-                {displayValue ?? selectPlaceholder}
-              </span>
-            )}
-          </Ariakit.Select>
-          <Ariakit.SelectPopover
-            gutter={4}
-            portal
-            className="z-50 overflow-hidden rounded-md border border-border-light bg-surface-secondary shadow-lg"
-            style={{ width: isCollapsed ? '300px' : buttonWidth ?? '300px' }}
-          >
-            <div className="p-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
-                <Ariakit.Combobox
-                  autoSelect
-                  placeholder={searchPlaceholder}
-                  className="w-full rounded-md border border-border-light bg-surface-tertiary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
-                />
-              </div>
-            </div>
-            <Ariakit.ComboboxList className="max-h-[50vh] overflow-auto">
-              {matches.map((item) => (
-                <Ariakit.SelectItem
-                  key={item.value}
-                  value={`${item.value ?? ''}`}
-                  aria-label={`${item.label ?? item.value ?? ''}`}
+        {SelectIcon != null && (
+          <div className="assistant-item flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            {SelectIcon}
+          </div>
+        )}
+        {!isCollapsed && (
+          <span className="flex-grow truncate text-left">{displayValue ?? selectPlaceholder}</span>
+        )}
+      </Ariakit.Select>
+      <Ariakit.SelectPopover
+        store={select}
+        gutter={4}
+        portal
+        className="z-50 overflow-hidden rounded-md border border-border-light bg-surface-secondary shadow-lg"
+        style={{ width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
+      >
+        <div className="p-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
+            <Ariakit.Combobox
+              store={combobox}
+              autoSelect
+              placeholder={searchPlaceholder}
+              className="w-full rounded-md border border-border-light bg-surface-tertiary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
+            />
+          </div>
+        </div>
+        <div className="max-h-[300px] overflow-auto">
+          <Ariakit.ComboboxList store={combobox}>
+            <SelectRenderer store={select} items={matches} itemSize={ROW_HEIGHT} overscan={5}>
+              {({ value, icon, label, ...item }) => (
+                <Ariakit.ComboboxItem
+                  key={item.id}
+                  {...item}
                   className={cn(
-                    'flex cursor-pointer items-center px-3 py-2 text-sm',
+                    'flex w-full cursor-pointer items-center px-3 text-sm',
                     'text-text-primary hover:bg-surface-tertiary',
                     'data-[active-item]:bg-surface-tertiary',
                   )}
-                  render={<Ariakit.ComboboxItem />}
+                  render={<Ariakit.SelectItem value={value} />}
                 >
-                  {item.icon != null && (
+                  {icon != null && (
                     <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                      {item.icon}
+                      {icon}
                     </div>
                   )}
-                  <span className="flex-grow truncate text-left">{item.label}</span>
-                </Ariakit.SelectItem>
-              ))}
-            </Ariakit.ComboboxList>
-          </Ariakit.SelectPopover>
-        </Ariakit.SelectProvider>
-      </Ariakit.ComboboxProvider>
+                  <span className="flex-grow truncate text-left">{label}</span>
+                </Ariakit.ComboboxItem>
+              )}
+            </SelectRenderer>
+          </Ariakit.ComboboxList>
+        </div>
+      </Ariakit.SelectPopover>
     </div>
   );
 }

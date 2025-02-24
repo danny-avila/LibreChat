@@ -35,7 +35,6 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.anthropic]: anthropic,
     [EModelEndpoint.gptPlugins]: gptPlugins,
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
-    [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,

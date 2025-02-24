@@ -23,6 +23,7 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {string} [ldapId] - Optional LDAP ID for the user
  * @property {string} [githubId] - Optional GitHub ID for the user
  * @property {string} [discordId] - Optional Discord ID for the user
+ * @property {string} [appleId] - Optional Apple ID for the user
  * @property {Array} [plugins=[]] - List of plugins used by the user
  * @property {Array.<MongoSession>} [refreshToken] - List of sessions with refresh tokens
  * @property {Date} [expiresAt] - Optional expiration date of the file
@@ -36,6 +37,12 @@ const Session = mongoose.Schema({
     type: String,
     default: '',
   },
+});
+
+const backupCodeSchema = mongoose.Schema({
+  codeHash: { type: String, required: true },
+  used: { type: Boolean, default: false },
+  usedAt: { type: Date, default: null },
 });
 
 /** @type {MongooseSchema<MongoUser>} */
@@ -111,9 +118,19 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    appleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     plugins: {
       type: Array,
-      default: [],
+    },
+    totpSecret: {
+      type: String,
+    },
+    backupCodes: {
+      type: [backupCodeSchema],
     },
     refreshToken: {
       type: [Session],

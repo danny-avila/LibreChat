@@ -28,6 +28,12 @@ const oauthHandler = async (req, res) => {
   }
 };
 
+router.get('/error', (req, res) => {
+  // A single error message is pushed by passport when authentication fails.
+  logger.error('Error in OAuth authentication:', { message: req.session.messages.pop() });
+  res.redirect(`${domains.client}/login`);
+});
+
 /**
  * Google Routes
  */
@@ -42,7 +48,7 @@ router.get(
 router.get(
   '/google/callback',
   passport.authenticate('google', {
-    failureRedirect: `${domains.client}/login`,
+    failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
     scope: ['openid', 'profile', 'email'],
@@ -50,6 +56,9 @@ router.get(
   oauthHandler,
 );
 
+/**
+ * Facebook Routes
+ */
 router.get(
   '/facebook',
   passport.authenticate('facebook', {
@@ -62,7 +71,7 @@ router.get(
 router.get(
   '/facebook/callback',
   passport.authenticate('facebook', {
-    failureRedirect: `${domains.client}/login`,
+    failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
     scope: ['public_profile'],
@@ -71,6 +80,9 @@ router.get(
   oauthHandler,
 );
 
+/**
+ * OpenID Routes
+ */
 router.get(
   '/openid',
   passport.authenticate('openid', {
@@ -81,13 +93,16 @@ router.get(
 router.get(
   '/openid/callback',
   passport.authenticate('openid', {
-    failureRedirect: `${domains.client}/login`,
+    failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
   }),
   oauthHandler,
 );
 
+/**
+ * GitHub Routes
+ */
 router.get(
   '/github',
   passport.authenticate('github', {
@@ -99,13 +114,17 @@ router.get(
 router.get(
   '/github/callback',
   passport.authenticate('github', {
-    failureRedirect: `${domains.client}/login`,
+    failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
     scope: ['user:email', 'read:user'],
   }),
   oauthHandler,
 );
+
+/**
+ * Discord Routes
+ */
 router.get(
   '/discord',
   passport.authenticate('discord', {
@@ -117,10 +136,30 @@ router.get(
 router.get(
   '/discord/callback',
   passport.authenticate('discord', {
-    failureRedirect: `${domains.client}/login`,
+    failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
     scope: ['identify', 'email'],
+  }),
+  oauthHandler,
+);
+
+/**
+ * Apple Routes
+ */
+router.get(
+  '/apple',
+  passport.authenticate('apple', {
+    session: false,
+  }),
+);
+
+router.post(
+  '/apple/callback',
+  passport.authenticate('apple', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
   }),
   oauthHandler,
 );

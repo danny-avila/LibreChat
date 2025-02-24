@@ -17,6 +17,7 @@ export default function MessagesView({
   Header?: ReactNode;
 }) {
   const localize = useLocalize();
+  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const fontSize = useRecoilValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
@@ -36,6 +37,7 @@ export default function MessagesView({
     <div className="flex-1 overflow-hidden overflow-y-auto">
       <div className="relative h-full">
         <div
+          className="scrollbar-gutter-stable"
           onScroll={debouncedHandleScroll}
           ref={scrollableRef}
           style={{
@@ -56,7 +58,7 @@ export default function MessagesView({
               </div>
             ) : (
               <>
-                {Header && Header}
+                {Header != null && Header}
                 <div ref={screenshotTargetRef}>
                   <MultiMessage
                     key={conversationId} // avoid internal state mixture
@@ -82,7 +84,10 @@ export default function MessagesView({
           unmountOnExit={false}
           // appear
         >
-          {() => showScrollButton && <ScrollToBottom scrollHandler={handleSmoothToRef} />}
+          {() =>
+            showScrollButton &&
+            scrollButtonPreference && <ScrollToBottom scrollHandler={handleSmoothToRef} />
+          }
         </CSSTransition>
       </div>
     </div>

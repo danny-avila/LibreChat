@@ -42,10 +42,8 @@ export default function EndpointIcon({
   if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
     return (
       <ConvoIconURL
-        preset={{
-          ...(conversation as TPreset),
-          iconURL,
-        }}
+        iconURL={iconURL}
+        modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
         context={context}
         endpointIconURL={endpointIconURL}
         assistantAvatar={assistantAvatar}

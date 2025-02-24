@@ -3,7 +3,7 @@ import type { Response, Page, BrowserContext } from '@playwright/test';
 
 const basePath = 'http://localhost:3080/c/';
 const initialUrl = `${basePath}new`;
-const endpoints = ['google', 'openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'gptPlugins'];
+const endpoints = ['google', 'openAI', 'azureOpenAI', 'chatGPTBrowser', 'gptPlugins'];
 const endpoint = endpoints[1];
 
 function isUUID(uuid: string) {
@@ -78,7 +78,7 @@ test.describe('Messaging suite', () => {
     expect(currentUrl).toBe(initialUrl);
 
     //cleanup the conversation
-    await page.getByTestId('new-chat-button').click();
+    await page.getByTestId('nav-new-chat-button').click();
     expect(page.url()).toBe(initialUrl);
 
     // Click on the first conversation
@@ -158,7 +158,7 @@ test.describe('Messaging suite', () => {
     const currentUrl = page.url();
     const conversationId = currentUrl.split(basePath).pop() ?? '';
     expect(isUUID(conversationId)).toBeTruthy();
-    await page.getByTestId('new-chat-button').click();
+    await page.getByTestId('nav-new-chat-button').click();
     expect(page.url()).toBe(initialUrl);
   });
 });

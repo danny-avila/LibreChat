@@ -10,14 +10,11 @@ import type {
   TConversationTag,
   TBanner,
 } from './schemas';
-import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
 
 export type TMessages = TMessage[];
-
-export type TMessagesAtom = TMessages | null;
 
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
@@ -47,6 +44,7 @@ export type TPayload = Partial<TMessage> &
     isContinued: boolean;
     conversationId: string | null;
     messages?: TMessages;
+    isTemporary: boolean;
   };
 
 export type TSubmission = {
@@ -56,6 +54,7 @@ export type TSubmission = {
   userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;
+  isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
   conversationId?: string;
@@ -83,6 +82,7 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
+// TODO `label` needs to be changed to the proper `TranslationKeys`
 export type TCategory = {
   id?: string;
   value: string;
@@ -100,6 +100,12 @@ export type TError = {
   };
 };
 
+export type TBackupCode = {
+  codeHash: string;
+  used: boolean;
+  usedAt: Date | null;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -108,7 +114,8 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
-  plugins: string[];
+  plugins?: string[];
+  backupCodes?: TBackupCode[];
   createdAt: string;
   updatedAt: string;
 };
@@ -173,15 +180,17 @@ export type TArchiveConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
 };
-export type TSharedLinkRequest = Partial<
-  Omit<TSharedLink, 'messages' | 'createdAt' | 'updatedAt'>
-> & {
-  conversationId: string;
-};
 
-export type TSharedLinkResponse = TSharedLink;
-export type TSharedLinksResponse = TSharedLink[];
-export type TDeleteSharedLinkResponse = TSharedLink;
+export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
+
+export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId'>;
+
+export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
+  Pick<TConversation, 'conversationId'>;
+
+export type TSharedLinkGetResponse = TSharedLinkResponse & {
+  success: boolean;
+};
 
 // type for getting conversation tags
 export type TConversationTagsResponse = TConversationTag[];
@@ -206,12 +215,10 @@ export type TDuplicateConvoRequest = {
   conversationId?: string;
 };
 
-export type TDuplicateConvoResponse =
-  | {
-      conversation: TConversation;
-      messages: TMessage[];
-    }
-  | undefined;
+export type TDuplicateConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
+};
 
 export type TForkConvoRequest = {
   messageId: string;
@@ -285,11 +292,61 @@ export type TRegisterUser = {
 export type TLoginUser = {
   email: string;
   password: string;
+  token?: string;
+  backupCode?: string;
 };
 
 export type TLoginResponse = {
-  token: string;
-  user: TUser;
+  token?: string;
+  user?: TUser;
+  twoFAPending?: boolean;
+  tempToken?: string;
+};
+
+export type TEnable2FAResponse = {
+  otpauthUrl: string;
+  backupCodes: string[];
+  message?: string;
+};
+
+export type TVerify2FARequest = {
+  token?: string;
+  backupCode?: string;
+};
+
+export type TVerify2FAResponse = {
+  message: string;
+};
+
+/**
+ * For verifying 2FA during login with a temporary token.
+ */
+export type TVerify2FATempRequest = {
+  tempToken: string;
+  token?: string;
+  backupCode?: string;
+};
+
+export type TVerify2FATempResponse = {
+  token?: string;
+  user?: TUser;
+  message?: string;
+};
+
+/**
+ * Response from disabling 2FA.
+ */
+export type TDisable2FAResponse = {
+  message: string;
+};
+
+/**
+ * Response from regenerating backup codes.
+ */
+export type TRegenerateBackupCodesResponse = {
+  message: string;
+  backupCodes: string[];
+  backupCodesHash: string[];
 };
 
 export type TRequestPasswordReset = {
@@ -311,63 +368,6 @@ export type TVerifyEmail = {
 };
 
 export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
-
-export type TInterfaceConfig = {
-  privacyPolicy?: {
-    externalUrl?: string;
-    openNewTab?: boolean;
-  };
-  termsOfService?: {
-    externalUrl?: string;
-    openNewTab?: boolean;
-    modalAcceptance?: boolean;
-    modalTitle?: string;
-    modalContent?: string;
-  };
-  endpointsMenu: boolean;
-  modelSelect: boolean;
-  parameters: boolean;
-  sidePanel: boolean;
-  presets: boolean;
-  multiConvo: boolean;
-  bookmarks: boolean;
-  prompts: boolean;
-};
-
-export type TStartupConfig = {
-  appTitle: string;
-  socialLogins?: string[];
-  interface?: TInterfaceConfig;
-  discordLoginEnabled: boolean;
-  facebookLoginEnabled: boolean;
-  githubLoginEnabled: boolean;
-  googleLoginEnabled: boolean;
-  openidLoginEnabled: boolean;
-  openidLabel: string;
-  openidImageUrl: string;
-  /** LDAP Auth Configuration */
-  ldap?: {
-    /** LDAP enabled */
-    enabled: boolean;
-    /** Whether LDAP uses username vs. email */
-    username?: boolean;
-  };
-  serverDomain: string;
-  emailLoginEnabled: boolean;
-  registrationEnabled: boolean;
-  socialLoginEnabled: boolean;
-  passwordResetEnabled: boolean;
-  emailEnabled: boolean;
-  checkBalance: boolean;
-  showBirthdayIcon: boolean;
-  helpAndFaqURL: string;
-  customFooter?: string;
-  modelSpecs?: TSpecsConfig;
-  sharedLinksEnabled: boolean;
-  publicSharedLinksEnabled: boolean;
-  analyticsGtmId?: string;
-  instanceProjectId: string;
-};
 
 export type TRefreshTokenResponse = {
   token: string;

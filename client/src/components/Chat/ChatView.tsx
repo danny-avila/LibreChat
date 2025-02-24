@@ -1,8 +1,9 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
+import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
@@ -24,10 +25,13 @@ function ChatView({ index = 0 }: { index?: number }) {
   const fileMap = useFileMapContext();
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
-    select: (data) => {
-      const dataTree = buildTree({ messages: data, fileMap });
-      return dataTree?.length === 0 ? null : dataTree ?? null;
-    },
+    select: useCallback(
+      (data: TMessage[]) => {
+        const dataTree = buildTree({ messages: data, fileMap });
+        return dataTree?.length === 0 ? null : (dataTree ?? null);
+      },
+      [fileMap],
+    ),
     enabled: !!fileMap,
   });
 
@@ -58,7 +62,7 @@ function ChatView({ index = 0 }: { index?: number }) {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
-          <Presentation useSidePanel={true}>
+          <Presentation>
             {content}
             <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
               <ChatForm index={index} />

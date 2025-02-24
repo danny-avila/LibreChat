@@ -4,9 +4,7 @@ import { useRecoilState, useSetRecoilState } from 'recoil';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TStartupConfig, TPlugin, TUser } from 'librechat-data-provider';
-import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
 import { mapPlugins, selectPlugins, processPlugins } from '~/utils';
-import useConfigOverride from './useConfigOverride';
 import store from '~/store';
 
 const pluginStore: TPlugin = {
@@ -26,7 +24,6 @@ export default function useAppStartup({
   startupConfig?: TStartupConfig;
   user?: TUser;
 }) {
-  useConfigOverride();
   const setAvailableTools = useSetRecoilState(store.availableTools);
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const { data: allPlugins } = useAvailablePluginsQuery({
@@ -36,17 +33,21 @@ export default function useAppStartup({
 
   /** Set the app title */
   useEffect(() => {
-    if (startupConfig?.appTitle) {
-      document.title = startupConfig.appTitle;
-      localStorage.setItem(LocalStorageKeys.APP_TITLE, startupConfig.appTitle);
+    const appTitle = startupConfig?.appTitle ?? '';
+    if (!appTitle) {
+      return;
     }
+    document.title = appTitle;
+    localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
   }, [startupConfig]);
 
   /** Set the default spec's preset as default */
   useEffect(() => {
-    if (defaultPreset && defaultPreset.spec) {
+    if (defaultPreset && defaultPreset.spec != null) {
       return;
     }
+
+    const modelSpecs = startupConfig?.modelSpecs?.list;
 
     if (!modelSpecs || !modelSpecs.length) {
       return;
@@ -63,7 +64,7 @@ export default function useAppStartup({
       iconURL: defaultSpec.iconURL,
       spec: defaultSpec.name,
     });
-  }, [defaultPreset, setDefaultPreset]);
+  }, [defaultPreset, setDefaultPreset, startupConfig?.modelSpecs?.list]);
 
   /** Set the available Plugins */
   useEffect(() => {
@@ -75,17 +76,19 @@ export default function useAppStartup({
       return;
     }
 
-    if (!user.plugins || user.plugins.length === 0) {
+    const userPlugins = user.plugins ?? [];
+
+    if (userPlugins.length === 0) {
       setAvailableTools({ pluginStore });
       return;
     }
 
-    const tools = [...user.plugins]
+    const tools = [...userPlugins]
       .map((el) => allPlugins.map[el])
-      .filter((el): el is TPlugin => el !== undefined);
+      .filter((el: TPlugin | undefined): el is TPlugin => el !== undefined);
 
     /* Filter Last Selected Tools */
-    const localStorageItem = localStorage.getItem(LocalStorageKeys.LAST_TOOLS);
+    const localStorageItem = localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '';
     if (!localStorageItem) {
       return setAvailableTools({ pluginStore, ...mapPlugins(tools) });
     }
@@ -94,7 +97,7 @@ export default function useAppStartup({
       .filter((tool: TPlugin) =>
         tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
       )
-      .filter((tool: TPlugin) => !!tool);
+      .filter((tool: TPlugin | undefined) => !!tool);
     localStorage.setItem(LocalStorageKeys.LAST_TOOLS, JSON.stringify(filteredTools));
 
     setAvailableTools({ pluginStore, ...mapPlugins(tools) });

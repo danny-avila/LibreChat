@@ -347,8 +347,8 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       req.app.locals.imageOutputType
     }`;
   }
-
-  const filepath = await saveBuffer({ userId: req.user.id, fileName: filename, buffer });
+  const fileName = `${file_id}-${filename}`;
+  const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
   return await createFile(
     {
       user: req.user.id,
@@ -801,8 +801,7 @@ async function saveBase64Image(
   { req, file_id: _file_id, filename: _filename, endpoint, context, resolution = 'high' },
 ) {
   const file_id = _file_id ?? v4();
-
-  let filename = _filename;
+  let filename = `${file_id}-${_filename}`;
   const { buffer: inputBuffer, type } = base64ToBuffer(url);
   if (!path.extname(_filename)) {
     const extension = mime.getExtension(type);

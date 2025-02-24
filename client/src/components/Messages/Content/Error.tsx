@@ -33,7 +33,7 @@ type TExpiredKey = {
   endpoint: string;
 };
 
-type TInputLength = {
+type TGenericError = {
   info: string;
 };
 
@@ -47,11 +47,15 @@ const errorMessages = {
   [ErrorTypes.NO_SYSTEM_MESSAGES]: `com_error_${ErrorTypes.NO_SYSTEM_MESSAGES}`,
   [ErrorTypes.EXPIRED_USER_KEY]: (json: TExpiredKey, localize: LocalizeFunction) => {
     const { expiredAt, endpoint } = json;
-    return localize('com_error_expired_user_key', endpoint, expiredAt);
+    return localize('com_error_expired_user_key', { 0: endpoint, 1: expiredAt });
   },
-  [ErrorTypes.INPUT_LENGTH]: (json: TInputLength, localize: LocalizeFunction) => {
+  [ErrorTypes.INPUT_LENGTH]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info } = json;
-    return localize('com_error_input_length', info);
+    return localize('com_error_input_length', { 0: info });
+  },
+  [ErrorTypes.GOOGLE_ERROR]: (json: TGenericError) => {
+    const { info } = json;
+    return info;
   },
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',

@@ -8,7 +8,10 @@ const Slider = React.forwardRef<
     >(({ className, onDoubleClick, ...props }, ref) => (
       <SliderPrimitive.Root
         ref={ref}
-        className={cn('relative flex w-full touch-none select-none items-center', className)}
+        className={cn(
+          'relative flex w-full cursor-pointer touch-none select-none items-center',
+          className,
+        )}
         onDoubleClick={onDoubleClick}
         {...props}
       >

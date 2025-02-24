@@ -33,6 +33,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     prompts: interfaceConfig?.prompts ?? defaults.prompts,
     multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
     agents: interfaceConfig?.agents ?? defaults.agents,
+    temporaryChat: interfaceConfig?.temporaryChat ?? defaults.temporaryChat,
   });
 
   await updateAccessPermissions(roleName, {
