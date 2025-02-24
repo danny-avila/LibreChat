@@ -20,8 +20,6 @@ class FluxAPI extends Tool {
     'FLUX_PRO_1_1': -0.04,                // /v1/flux-pro-1.1
     'FLUX_PRO': -0.05,                    // /v1/flux-pro
     'FLUX_DEV': -0.025,                   // /v1/flux-dev
-    'FLUX_PRO_1_1_ULTRA_FINETUNED': -0.07,// /v1/flux-pro-1.1-ultra-finetuned
-    'FLUX_PRO_FINETUNED': -0.06,          // /v1/flux-pro-1.0-finetuned
   };
 
   constructor(fields = {}) {
@@ -46,21 +44,25 @@ class FluxAPI extends Tool {
 
     this.name = 'flux';
     this.description =
-      "Use Flux to generate images from text descriptions. This tool is exclusively for visual content. Each call generates one image. If multiple images are needed, make multiple consecutive calls with the same or varied prompts. Additional actions: 'list_finetunes' to see available finetuned models, 'generate_finetuned' to generate with a specific finetuned model.";
+      "Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.";
 
     this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Follow these core rules:
     // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
     // 2. Start with image type (photo, painting, digital art, etc.) unless specified otherwise
     // 3. Add concrete visual details that enhance the core concept
     // 4. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
+    // For finetunes: Use action: 'list_finetunes' to see available custom models
     // Generate without asking permission, embed images directly without commentary.`;
+
+    // Add base URL from environment variable with fallback
+    this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.us1.bfl.ai';
 
     // Define the schema for structured input
     this.schema = z.object({
       action: z
-        .enum(['generate', 'list_finetunes', 'generate_finetuned'])
+        .enum(['generate', 'list_finetunes'])
         .default('generate')
-        .describe('Action to perform: "generate" for standard generation, "list_finetunes" to list models, "generate_finetuned" for finetuned generation'),
+        .describe('Action to perform: "generate" for image generation, "list_finetunes" to get available custom models'),
       api_key: z
         .string()
         .optional()
@@ -68,7 +70,7 @@ class FluxAPI extends Tool {
       prompt: z
         .string()
         .optional()
-        .describe('Text prompt for image generation (3-6 detailed sentences minimum, must include visual elements like style, lighting, composition, and mood). Required for "generate" and "generate_finetuned" actions.'),
+        .describe('Text prompt for image generation. Required when action is "generate". Not used for list_finetunes.'),
       width: z
         .number()
         .optional()
@@ -103,54 +105,17 @@ class FluxAPI extends Tool {
           '/v1/flux-pro-1.1',
           '/v1/flux-pro',
           '/v1/flux-dev',
-          '/v1/flux-pro-1.1-ultra',
-          '/v1/flux-pro-1.1-ultra-finetuned',
-          '/v1/flux-pro-finetuned'
+          '/v1/flux-pro-1.1-ultra'
         ])
         .optional()
         .default('/v1/flux-dev')
-        .describe('Endpoint to use for image generation. Default is /v1/flux-pro. The finetuned models are to be used with their respective parameters.'),
+        .describe('Endpoint to use for image generation. Default is /v1/flux-pro.'),
       raw: z
         .boolean()
         .optional()
         .describe(
           'Generate less processed, more natural-looking images. Only works for /v1/flux-pro-1.1-ultra.'
         ),
-      // Add finetuning parameters
-      finetune_id: z
-        .string()
-        .optional()
-        .describe('ID of the fine-tuned model to use.'),
-      finetune_strength: z
-        .number()
-        .min(0)
-        .max(2)
-        .optional()
-        .describe('Strength of the fine-tuned model. 0.0 means no influence, up to 2.0 for maximum influence.'),
-      guidance: z
-        .number()
-        .min(1.5)
-        .max(5)
-        .optional()
-        .default(2.5)
-        .describe('Guidance scale for image generation. High guidance scales improve prompt adherence at the cost of reduced realism.'),
-      aspect_ratio: z
-        .string()
-        .optional()
-        .default('16:9')
-        .describe('Aspect ratio of the image between 21:9 and 9:21'),
-      image_prompt: z
-        .string()
-        .optional()
-        .nullable()
-        .describe('Optional image to remix in base64 format'),
-      image_prompt_strength: z
-        .number()
-        .min(0)
-        .max(1)
-        .optional()
-        .default(0.1)
-        .describe('Blend between the prompt and the image prompt'),
     });
   }
 
@@ -191,28 +156,18 @@ class FluxAPI extends Tool {
     // Use provided API key for this request if available, otherwise use default
     const requestApiKey = api_key || this.getApiKey();
 
-    // Handle finetunes listing
+    // Handle list_finetunes action
     if (action === 'list_finetunes') {
       return this.getMyFinetunes(requestApiKey);
     }
 
-    // For both generate actions, ensure prompt is provided
+    // For generate action, ensure prompt is provided
     if (!imageData.prompt) {
       throw new Error('Missing required field: prompt');
     }
 
-    // Handle finetuned generation
-    if (action === 'generate_finetuned') {
-      if (!imageData.finetune_id) {
-        throw new Error('Missing required field: finetune_id for finetuned generation');
-      }
-      // Set the appropriate endpoint based on the finetune_id format or user preference
-      imageData.endpoint = imageData.endpoint || '/v1/flux-pro-1.1-ultra-finetuned';
-    }
-
-    const baseUrl = 'https://api.bfl.ml';
-    const generateUrl = `${baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
-    const resultUrl = `${baseUrl}/v1/get_result`;
+    const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
+    const resultUrl = `${this.baseUrl}/v1/get_result`;
 
     const payload = {
       prompt: imageData.prompt,
@@ -224,24 +179,11 @@ class FluxAPI extends Tool {
       safety_tolerance: imageData.safety_tolerance || 6,
       output_format: imageData.output_format || 'png',
       raw: imageData.raw || false,
-      // Include finetuning parameters if provided
-      ...(imageData.finetune_id && {
-        finetune_id: imageData.finetune_id,
-        finetune_strength: imageData.finetune_strength,
-        guidance: imageData.guidance,
-      }),
     };
 
     logger.debug('[FluxAPI] Action:', action);
     logger.debug('[FluxAPI] Generating image with prompt:', imageData.prompt);
     logger.debug('[FluxAPI] Using endpoint:', imageData.endpoint || '/v1/flux-pro');
-    if (action === 'generate_finetuned') {
-      logger.debug('[FluxAPI] Using finetune:', imageData.finetune_id);
-      logger.debug('[FluxAPI] Finetune strength:', imageData.finetune_strength);
-      if (imageData.guidance) {
-        logger.debug('[FluxAPI] Guidance:', imageData.guidance);
-      }
-    }
     logger.debug('[FluxAPI] Steps:', payload.steps);
     logger.debug('[FluxAPI] Safety Tolerance:', payload.safety_tolerance);
     logger.debug('[FluxAPI] Dimensions:', payload.width, 'x', payload.height);
@@ -271,9 +213,6 @@ class FluxAPI extends Tool {
           error: details,
           metadata: {
             ...payload,
-            finetune_id: imageData.finetune_id,
-            finetune_strength: imageData.finetune_strength,
-            guidance: imageData.guidance
           }
         });
       } catch (txError) {
@@ -319,9 +258,6 @@ class FluxAPI extends Tool {
               error: 'Task failed during processing',
               metadata: {
                 ...payload,
-                finetune_id: imageData.finetune_id,
-                finetune_strength: imageData.finetune_strength,
-                guidance: imageData.guidance
               }
             });
           } catch (txError) {
@@ -378,9 +314,6 @@ class FluxAPI extends Tool {
           status: 'success',
           metadata: {
             ...payload,
-            finetune_id: imageData.finetune_id,
-            finetune_strength: imageData.finetune_strength,
-            guidance: imageData.guidance
           }
         });
       } catch (txError) {
@@ -398,8 +331,8 @@ class FluxAPI extends Tool {
   }
 
   async getMyFinetunes(apiKey = null) {
-    const baseUrl = 'https://api.bfl.ml';
-    const finetunesUrl = `${baseUrl}/v1/my_finetunes`;
+    const finetunesUrl = `${this.baseUrl}/v1/my_finetunes`;
+    const detailsUrl = `${this.baseUrl}/v1/finetune_details`;
 
     try {
       const headers = {
@@ -408,30 +341,37 @@ class FluxAPI extends Tool {
         Accept: 'application/json',
       };
 
+      // Get list of finetunes
       const response = await axios.get(finetunesUrl, { headers });
-      if (this.isAgent) {
-        return this.returnValue(['Here are your available finetuned models:', response.data]);
-      }
-      return response.data;
+      const finetunes = response.data.finetunes;
+
+      // Fetch details for each finetune
+      const finetuneDetails = await Promise.all(
+        finetunes.map(async (finetuneId) => {
+          try {
+            const detailResponse = await axios.get(`${detailsUrl}?finetune_id=${finetuneId}`, { headers });
+            return {
+              id: finetuneId,
+              ...detailResponse.data
+            };
+          } catch (error) {
+            logger.error(`[FluxAPI] Error fetching details for finetune ${finetuneId}:`, error);
+            return {
+              id: finetuneId,
+              error: 'Failed to fetch details'
+            };
+          }
+        })
+      );
+
+      return finetuneDetails;
+      
     } catch (error) {
       const details = error?.response?.data || error.message;
       logger.error('[FluxAPI] Error while getting finetunes:', details);
       const errorMsg = `Failed to get finetunes: ${details}`;
       return this.isAgent ? this.returnValue([errorMsg, {}]) : new Error(errorMsg);
     }
-  }
-
-  async generateWithFinetune(data, useUltra = true) {
-    if (!data.finetune_id) {
-      throw new Error('Missing required field: finetune_id');
-    }
-
-    // Force the endpoint based on whether using ultra or pro
-    data.endpoint = useUltra 
-      ? '/v1/flux-pro-1.1-ultra-finetuned'
-      : '/v1/flux-pro-finetuned';
-    
-    return this._call(data);
   }
 }
 
