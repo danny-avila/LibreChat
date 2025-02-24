@@ -267,13 +267,22 @@ export const anthropicSettings = {
   promptCache: {
     default: true,
   },
+  thinking: {
+    default: true,
+  },
+  thinkingBudget: {
+    min: 1024,
+    step: 100,
+    max: 200000,
+    default: 2000,
+  },
   maxOutputTokens: {
     min: 1,
     max: ANTHROPIC_MAX_OUTPUT,
     step: 1,
     default: ANTHROPIC_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (modelName.includes('claude-3-5-sonnet')) {
+      if (modelName.includes('claude-3-5-sonnet') || modelName.includes('claude-3-7-sonnet')) {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -556,6 +565,8 @@ export const tConversationSchema = z.object({
   /* Anthropic */
   promptCache: z.boolean().optional(),
   system: z.string().optional(),
+  thinking: z.boolean().optional(),
+  thinkingBudget: coerceNumber.optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -672,6 +683,8 @@ export const tQueryParamsSchema = tConversationSchema
     maxOutputTokens: true,
     /** @endpoints anthropic */
     promptCache: true,
+    thinking: true,
+    thinkingBudget: true,
     /** @endpoints bedrock */
     region: true,
     /** @endpoints bedrock */
@@ -1067,6 +1080,8 @@ export const anthropicSchema = tConversationSchema
     topK: true,
     resendFiles: true,
     promptCache: true,
+    thinking: true,
+    thinkingBudget: true,
     artifacts: true,
     iconURL: true,
     greeting: true,

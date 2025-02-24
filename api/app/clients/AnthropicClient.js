@@ -125,7 +125,7 @@ class AnthropicClient extends BaseClient {
         this.options.endpointType ?? this.options.endpoint,
         this.options.endpointTokenConfig,
       ) ??
-      1500;
+      anthropicSettings.maxOutputTokens.reset(this.modelOptions.model);
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -742,10 +742,46 @@ class AnthropicClient extends BaseClient {
 
     if (this.useMessages) {
       requestOptions.messages = payload;
-      requestOptions.max_tokens = maxOutputTokens || legacy.maxOutputTokens.default;
+      requestOptions.max_tokens =
+        maxOutputTokens || anthropicSettings.maxOutputTokens.reset(requestOptions.model);
     } else {
       requestOptions.prompt = payload;
-      requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
+      requestOptions.max_tokens_to_sample = maxOutputTokens || legacy.maxOutputTokens.default;
+    }
+
+    if (
+      this.options.thinking &&
+      requestOptions?.model &&
+      requestOptions.model.includes('claude-3-7')
+    ) {
+      requestOptions.thinking = {
+        type: 'enabled',
+      };
+    }
+    if (requestOptions.thinking != null && this.options.thinkingBudget != null) {
+      requestOptions.thinking = {
+        ...requestOptions.thinking,
+        budget_tokens: this.options.thinkingBudget,
+      };
+    }
+    if (
+      requestOptions.thinking != null &&
+      (requestOptions.max_tokens == null ||
+        requestOptions.thinking.budget_tokens > requestOptions.max_tokens)
+    ) {
+      const maxTokens = anthropicSettings.maxOutputTokens.reset(requestOptions.model);
+      requestOptions.max_tokens = requestOptions.max_tokens ?? maxTokens;
+
+      logger.warn(
+        requestOptions.max_tokens === maxTokens
+          ? '[AnthropicClient] max_tokens is not defined while thinking is enabled. Setting max_tokens to model default.'
+          : `[AnthropicClient] thinking budget_tokens (${requestOptions.thinking.budget_tokens}) exceeds max_tokens (${requestOptions.max_tokens}). Adjusting budget_tokens.`,
+      );
+
+      requestOptions.thinking.budget_tokens = Math.min(
+        requestOptions.thinking.budget_tokens,
+        Math.floor(requestOptions.max_tokens * 0.9),
+      );
     }
 
     if (this.systemMessage && this.supportsCacheControl === true) {
@@ -798,7 +834,9 @@ class AnthropicClient extends BaseClient {
               logger.debug(`[AnthropicClient] ${type}`, completion);
               this[type] = completion;
             }
-            if (completion?.delta?.text) {
+            if (completion?.delta?.thinking) {
+              handleChunk(completion.delta.thinking);
+            } else if (completion?.delta?.text) {
               handleChunk(completion.delta.text);
             } else if (completion.completion) {
               handleChunk(completion.completion);
@@ -843,6 +881,8 @@ class AnthropicClient extends BaseClient {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       promptCache: this.options.promptCache,
+      thinking: this.options.thinking,
+      thinkingBudget: this.options.thinkingBudget,
       resendFiles: this.options.resendFiles,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
