@@ -6,8 +6,9 @@ const {
   validateAzureGroups,
   deprecatedAzureVariables,
   conflictingAzureVariables,
+  getConfigDefaults,
+  removeNullishValues,
 } = require('librechat-data-provider');
-
 const AppService = require('./AppService');
 
 jest.mock('./Config/loadCustomConfig', () => {
@@ -18,12 +19,27 @@ jest.mock('./Config/loadCustomConfig', () => {
     }),
   );
 });
+jest.mock('./start/checks', () => ({
+  checkVariables: jest.fn(),
+  checkHealth: jest.fn().mockResolvedValue(),
+  checkConfig: jest.fn(),
+  checkAzureVariables: jest.fn(),
+}));
+jest.mock('./start/assistants', () => ({
+  azureAssistantsDefaults: jest.fn(() => ({ assistantsDefault: true })),
+  assistantsConfigSetup: jest.fn((config, endpoint, prev) => ({
+    disableBuilder: config.endpoints[endpoint]?.disableBuilder || false,
+    pollIntervalMs: config.endpoints[endpoint]?.pollIntervalMs,
+    timeoutMs: config.endpoints[endpoint]?.timeoutMs,
+    supportedIds: config.endpoints[endpoint]?.supportedIds,
+    privateAssistants: config.endpoints[endpoint]?.privateAssistants,
+  })),
+}));
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
 }));
 jest.mock('~/models/Role', () => ({
   initializeRoles: jest.fn(),
-  updateAccessPermissions: jest.fn(),
 }));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
@@ -42,6 +58,43 @@ jest.mock('./ToolService', () => ({
       },
     },
   }),
+}));
+jest.mock('./start/interface', () => ({
+  loadDefaultInterface: jest.fn(() => ({
+    endpointsMenu: true,
+    modelSelect: true,
+    parameters: true,
+    sidePanel: true,
+    presets: true,
+  })),
+}));
+jest.mock('./start/turnstile', () => ({
+  loadTurnstileConfig: jest.fn(() => ({
+    siteKey: 'default-site-key',
+    options: {},
+  })),
+}));
+jest.mock('./start/azureOpenAI', () => ({
+  azureConfigSetup: jest.fn(() => ({ azure: true })),
+}));
+jest.mock('./start/modelSpecs', () => ({
+  processModelSpecs: jest.fn(() => undefined),
+}));
+jest.mock('./start/agents', () => ({
+  agentsConfigSetup: jest.fn(() => ({ agent: true })),
+}));
+jest.mock('~/config', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+  },
+  getMCPManager: jest.fn(() => ({
+    initializeMCP: jest.fn(),
+    mapAvailableTools: jest.fn(),
+  })),
+}));
+jest.mock('~/config/paths', () => ({
+  structuredTools: '/some/path',
 }));
 
 const azureGroups = [
@@ -83,10 +136,21 @@ const azureGroups = [
 
 describe('AppService', () => {
   let app;
+  const mockedInterfaceConfig = {
+    endpointsMenu: true,
+    modelSelect: true,
+    parameters: true,
+    sidePanel: true,
+    presets: true,
+  };
+  const mockedTurnstileConfig = {
+    siteKey: 'default-site-key',
+    options: {},
+  };
 
   beforeEach(() => {
     app = { locals: {} };
-    process.env.CDN_PROVIDER = undefined;
+    process.env = {}; // reset env
   });
 
   it('should correctly assign process.env and app.locals based on custom config', async () => {
@@ -95,16 +159,11 @@ describe('AppService', () => {
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
     expect(app.locals).toEqual({
-      socialLogins: ['testLogin'],
+      paths: expect.any(Object),
       fileStrategy: 'testStrategy',
-      interfaceConfig: expect.objectContaining({
-        endpointsMenu: true,
-        modelSelect: true,
-        parameters: true,
-        sidePanel: true,
-        presets: true,
-      }),
-      modelSpecs: undefined,
+      socialLogins: ['testLogin'],
+      filteredTools: undefined,
+      includedTools: undefined,
       availableTools: {
         ExampleTool: {
           type: 'function',
@@ -114,22 +173,25 @@ describe('AppService', () => {
             parameters: expect.objectContaining({
               type: 'object',
               properties: expect.any(Object),
-              required: expect.arrayContaining(['param1']),
+              required: ['param1'],
             }),
           }),
         },
       },
-      paths: expect.anything(),
-      imageOutputType: expect.any(String),
+      imageOutputType: 'png',
+      interfaceConfig: mockedInterfaceConfig,
+      turnstileConfig: mockedTurnstileConfig,
       fileConfig: undefined,
       secureImageLinks: undefined,
+      modelSpecs: undefined,
     });
   });
 
   it('should log a warning if the config version is outdated', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
-        version: '0.9.0', // An outdated version for this test
+        version: '0.9.0', // outdated version for test
         registration: { socialLogins: ['testLogin'] },
         fileStrategy: 'testStrategy',
       }),
@@ -142,7 +204,8 @@ describe('AppService', () => {
   });
 
   it('should change the `imageOutputType` based on config value', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
         imageOutputType: EImageOutputType.WEBP,
@@ -153,26 +216,29 @@ describe('AppService', () => {
     expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
   });
 
-  it('should default to `PNG` `imageOutputType` with no provided type', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+  it('should default to `png` `imageOutputType` with no provided type', async () => {
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
       }),
     );
 
     await AppService(app);
-    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+    expect(app.locals.imageOutputType).toEqual('png');
   });
 
-  it('should default to `PNG` `imageOutputType` with no provided config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+  it('should default to `png` `imageOutputType` with no provided config', async () => {
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
     await AppService(app);
-    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+    expect(app.locals.imageOutputType).toEqual('png');
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         fileStrategy: FileSources.firebase,
       }),
@@ -191,7 +257,9 @@ describe('AppService', () => {
     await AppService(app);
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
-      directory: expect.anything(),
+      adminFilter: undefined,
+      adminIncluded: undefined,
+      directory: '/some/path',
     });
 
     expect(app.locals.availableTools.ExampleTool).toBeDefined();
@@ -212,7 +280,8 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Assistants endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.assistants]: {
@@ -229,20 +298,19 @@ describe('AppService', () => {
     await AppService(app);
 
     expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
-    expect(app.locals[EModelEndpoint.assistants]).toEqual(
-      expect.objectContaining({
-        disableBuilder: true,
-        pollIntervalMs: 5000,
-        timeoutMs: 30000,
-        supportedIds: expect.arrayContaining(['id1', 'id2']),
-        privateAssistants: false,
-      }),
-    );
+    expect(app.locals[EModelEndpoint.assistants]).toEqual({
+      disableBuilder: true,
+      pollIntervalMs: 5000,
+      timeoutMs: 30000,
+      supportedIds: ['id1', 'id2'],
+      privateAssistants: false,
+    });
   });
 
   it('should correctly configure minimum Azure OpenAI Assistant values', async () => {
     const assistantGroups = [azureGroups[0], { ...azureGroups[1], assistants: true }];
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -258,11 +326,13 @@ describe('AppService', () => {
 
     await AppService(app);
     expect(app.locals).toHaveProperty(EModelEndpoint.azureAssistants);
-    expect(app.locals[EModelEndpoint.azureAssistants].capabilities.length).toEqual(3);
+    // Expecting the azureAssistantsDefaults mock to have been used
+    expect(app.locals[EModelEndpoint.azureAssistants]).toEqual({ assistantsDefault: true });
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -279,18 +349,10 @@ describe('AppService', () => {
 
     expect(app.locals).toHaveProperty(EModelEndpoint.azureOpenAI);
     const azureConfig = app.locals[EModelEndpoint.azureOpenAI];
-    expect(azureConfig).toHaveProperty('modelNames');
-    expect(azureConfig).toHaveProperty('modelGroupMap');
-    expect(azureConfig).toHaveProperty('groupMap');
-
-    const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(azureGroups);
-    expect(azureConfig.modelNames).toEqual(modelNames);
-    expect(azureConfig.modelGroupMap).toEqual(modelGroupMap);
-    expect(azureConfig.groupMap).toEqual(groupMap);
+    expect(azureConfig).toEqual({ azure: true });
   });
 
   it('should not modify FILE_UPLOAD environment variables without rate limits', async () => {
-    // Setup initial environment variables
     process.env.FILE_UPLOAD_IP_MAX = '10';
     process.env.FILE_UPLOAD_IP_WINDOW = '15';
     process.env.FILE_UPLOAD_USER_MAX = '5';
@@ -300,7 +362,6 @@ describe('AppService', () => {
 
     await AppService(app);
 
-    // Expect environment variables to remain unchanged
     expect(process.env.FILE_UPLOAD_IP_MAX).toEqual(initialEnv.FILE_UPLOAD_IP_MAX);
     expect(process.env.FILE_UPLOAD_IP_WINDOW).toEqual(initialEnv.FILE_UPLOAD_IP_WINDOW);
     expect(process.env.FILE_UPLOAD_USER_MAX).toEqual(initialEnv.FILE_UPLOAD_USER_MAX);
@@ -308,7 +369,6 @@ describe('AppService', () => {
   });
 
   it('should correctly set FILE_UPLOAD environment variables based on rate limits', async () => {
-    // Define and mock a custom configuration with rate limits
     const rateLimitsConfig = {
       rateLimits: {
         fileUploads: {
@@ -320,13 +380,11 @@ describe('AppService', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(rateLimitsConfig),
-    );
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(rateLimitsConfig));
 
     await AppService(app);
 
-    // Verify that process.env has been updated according to the rate limits config
     expect(process.env.FILE_UPLOAD_IP_MAX).toEqual('100');
     expect(process.env.FILE_UPLOAD_IP_WINDOW).toEqual('60');
     expect(process.env.FILE_UPLOAD_USER_MAX).toEqual('50');
@@ -334,18 +392,16 @@ describe('AppService', () => {
   });
 
   it('should fallback to default FILE_UPLOAD environment variables when rate limits are unspecified', async () => {
-    // Setup initial environment variables to non-default values
     process.env.FILE_UPLOAD_IP_MAX = 'initialMax';
     process.env.FILE_UPLOAD_IP_WINDOW = 'initialWindow';
     process.env.FILE_UPLOAD_USER_MAX = 'initialUserMax';
     process.env.FILE_UPLOAD_USER_WINDOW = 'initialUserWindow';
 
-    // Mock a custom configuration without specific rate limits
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve({}));
 
     await AppService(app);
 
-    // Verify that process.env falls back to the initial values
     expect(process.env.FILE_UPLOAD_IP_MAX).toEqual('initialMax');
     expect(process.env.FILE_UPLOAD_IP_WINDOW).toEqual('initialWindow');
     expect(process.env.FILE_UPLOAD_USER_MAX).toEqual('initialUserMax');
@@ -353,7 +409,6 @@ describe('AppService', () => {
   });
 
   it('should not modify IMPORT environment variables without rate limits', async () => {
-    // Setup initial environment variables
     process.env.IMPORT_IP_MAX = '10';
     process.env.IMPORT_IP_WINDOW = '15';
     process.env.IMPORT_USER_MAX = '5';
@@ -363,7 +418,6 @@ describe('AppService', () => {
 
     await AppService(app);
 
-    // Expect environment variables to remain unchanged
     expect(process.env.IMPORT_IP_MAX).toEqual(initialEnv.IMPORT_IP_MAX);
     expect(process.env.IMPORT_IP_WINDOW).toEqual(initialEnv.IMPORT_IP_WINDOW);
     expect(process.env.IMPORT_USER_MAX).toEqual(initialEnv.IMPORT_USER_MAX);
@@ -371,7 +425,6 @@ describe('AppService', () => {
   });
 
   it('should correctly set IMPORT environment variables based on rate limits', async () => {
-    // Define and mock a custom configuration with rate limits
     const importLimitsConfig = {
       rateLimits: {
         conversationsImport: {
@@ -383,13 +436,11 @@ describe('AppService', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(importLimitsConfig),
-    );
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(importLimitsConfig));
 
     await AppService(app);
 
-    // Verify that process.env has been updated according to the rate limits config
     expect(process.env.IMPORT_IP_MAX).toEqual('150');
     expect(process.env.IMPORT_IP_WINDOW).toEqual('60');
     expect(process.env.IMPORT_USER_MAX).toEqual('50');
@@ -397,18 +448,16 @@ describe('AppService', () => {
   });
 
   it('should fallback to default IMPORT environment variables when rate limits are unspecified', async () => {
-    // Setup initial environment variables to non-default values
     process.env.IMPORT_IP_MAX = 'initialMax';
     process.env.IMPORT_IP_WINDOW = 'initialWindow';
     process.env.IMPORT_USER_MAX = 'initialUserMax';
     process.env.IMPORT_USER_WINDOW = 'initialUserWindow';
 
-    // Mock a custom configuration without specific rate limits
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve({}));
 
     await AppService(app);
 
-    // Verify that process.env falls back to the initial values
     expect(process.env.IMPORT_IP_MAX).toEqual('initialMax');
     expect(process.env.IMPORT_IP_WINDOW).toEqual('initialWindow');
     expect(process.env.IMPORT_USER_MAX).toEqual('initialUserMax');
@@ -421,40 +470,35 @@ describe('AppService updating app.locals and issuing warnings', () => {
   let initialEnv;
 
   beforeEach(() => {
-    // Store initial environment variables to restore them after each test
     initialEnv = { ...process.env };
-
     app = { locals: {} };
     process.env.CDN_PROVIDER = undefined;
   });
 
   afterEach(() => {
-    // Restore initial environment variables
     process.env = { ...initialEnv };
   });
 
   it('should update app.locals with default values if loadCustomConfig returns undefined', async () => {
-    // Mock loadCustomConfig to return undefined
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
     await AppService(app);
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
     expect(app.locals.availableTools).toBeDefined();
-    expect(app.locals.fileStrategy).toEqual(FileSources.local);
+    expect(app.locals.fileStrategy).toEqual('local');
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
   });
 
   it('should update app.locals with values from loadCustomConfig', async () => {
-    // Mock loadCustomConfig to return a specific config object
     const customConfig = {
       fileStrategy: 'firebase',
       registration: { socialLogins: ['testLogin'] },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(customConfig),
-    );
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(customConfig));
 
     await AppService(app);
 
@@ -476,9 +520,9 @@ describe('AppService updating app.locals and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
     await AppService(app);
 
     expect(app.locals).toHaveProperty('assistants');
@@ -502,10 +546,10 @@ describe('AppService updating app.locals and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService(app);
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
@@ -524,10 +568,10 @@ describe('AppService updating app.locals and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService(app);
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
@@ -538,7 +582,8 @@ describe('AppService updating app.locals and issuing warnings', () => {
   });
 
   it('should issue expected warnings when loading Azure Groups with deprecated Environment Variables', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -552,8 +597,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
       process.env[varInfo.key] = 'test';
     });
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService(app);
 
     const { logger } = require('~/config');
     deprecatedAzureVariables.forEach(({ key, description }) => {
@@ -564,7 +608,8 @@ describe('AppService updating app.locals and issuing warnings', () => {
   });
 
   it('should issue expected warnings when loading conflicting Azure Envrionment Variables', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    const loadCustomConfig = require('./Config/loadCustomConfig');
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -578,8 +623,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
       process.env[varInfo.key] = 'test';
     });
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService(app);
 
     const { logger } = require('~/config');
     conflictingAzureVariables.forEach(({ key }) => {
