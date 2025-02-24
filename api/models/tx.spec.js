@@ -80,6 +80,20 @@ describe('getValueKey', () => {
     expect(getValueKey('chatgpt-4o-latest-0718')).toBe('gpt-4o');
   });
 
+  it('should return "claude-3-7-sonnet" for model type of "claude-3-7-sonnet-"', () => {
+    expect(getValueKey('claude-3-7-sonnet-20240620')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('anthropic/claude-3-7-sonnet')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('claude-3-7-sonnet-turbo')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('claude-3-7-sonnet-0125')).toBe('claude-3-7-sonnet');
+  });
+
+  it('should return "claude-3.7-sonnet" for model type of "claude-3.7-sonnet-"', () => {
+    expect(getValueKey('claude-3.7-sonnet-20240620')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('anthropic/claude-3.7-sonnet')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('claude-3.7-sonnet-turbo')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('claude-3.7-sonnet-0125')).toBe('claude-3.7-sonnet');
+  });
+
   it('should return "claude-3-5-sonnet" for model type of "claude-3-5-sonnet-"', () => {
     expect(getValueKey('claude-3-5-sonnet-20240620')).toBe('claude-3-5-sonnet');
     expect(getValueKey('anthropic/claude-3-5-sonnet')).toBe('claude-3-5-sonnet');

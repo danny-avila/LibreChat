@@ -116,6 +116,7 @@ describe('getModelMaxTokens', () => {
       'claude-3-sonnet',
       'claude-3-opus',
       'claude-3-5-sonnet',
+      'claude-3-7-sonnet',
     ];
 
     const maxTokens = {

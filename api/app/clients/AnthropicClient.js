@@ -179,6 +179,14 @@ class AnthropicClient extends BaseClient {
       options.defaultHeaders = {
         'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
       };
+    } else if (
+      this.supportsCacheControl &&
+      requestOptions?.model &&
+      requestOptions.model.includes('claude-3-7')
+    ) {
+      options.defaultHeaders = {
+        'anthropic-beta': 'output-128k-2025-02-19,prompt-caching-2024-07-31',
+      };
     } else if (this.supportsCacheControl) {
       options.defaultHeaders = {
         'anthropic-beta': 'prompt-caching-2024-07-31',
@@ -668,7 +676,7 @@ class AnthropicClient extends BaseClient {
    * @returns {Promise<Anthropic.default.Message | Anthropic.default.Completion>} The response from the Anthropic client.
    */
   async createResponse(client, options, useMessages) {
-    return useMessages ?? this.useMessages
+    return (useMessages ?? this.useMessages)
       ? await client.messages.create(options)
       : await client.completions.create(options);
   }
@@ -683,6 +691,7 @@ class AnthropicClient extends BaseClient {
       return false;
     }
     if (
+      modelMatch === 'claude-3-7-sonnet' ||
       modelMatch === 'claude-3-5-sonnet' ||
       modelMatch === 'claude-3-5-haiku' ||
       modelMatch === 'claude-3-haiku' ||
