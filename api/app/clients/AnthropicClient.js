@@ -7,6 +7,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
+const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const {
   truncateText,
@@ -19,9 +20,9 @@ const {
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const Tokenizer = require('~/server/services/Tokenizer');
+const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
-const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -68,6 +69,8 @@ class AnthropicClient extends BaseClient {
     /** The key for the usage object's output tokens
      * @type {string} */
     this.outputTokensKey = 'output_tokens';
+    /** @type {SplitStreamHandler | undefined} */
+    this.streamHandler;
   }
 
   setOptions(options) {
@@ -702,6 +705,35 @@ class AnthropicClient extends BaseClient {
     return false;
   }
 
+  getMessageMapMethod() {
+    /**
+     * @param {TMessage} msg
+     */
+    return (msg) => {
+      if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
+        msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
+      }
+
+      return msg;
+    };
+  }
+
+  /**
+   * @param {string[]} [intermediateReply]
+   * @returns {string}
+   */
+  getStreamText(intermediateReply) {
+    if (!this.streamHandler) {
+      return intermediateReply?.join('') ?? '';
+    }
+
+    const reasoningText = this.streamHandler.reasoningTokens.join('');
+
+    const reasoningBlock = reasoningText.length > 0 ? `:::thinking\n${reasoningText}\n:::\n` : '';
+
+    return `${reasoningBlock}${this.streamHandler.tokens.join('')}`;
+  }
+
   async sendCompletion(payload, { onProgress, abortController }) {
     if (!abortController) {
       abortController = new AbortController();
@@ -719,7 +751,6 @@ class AnthropicClient extends BaseClient {
       user_id: this.user,
     };
 
-    let text = '';
     const {
       stream,
       model,
@@ -801,13 +832,17 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
+    this.streamHandler = new SplitStreamHandler({
+      accumulate: true,
+      runId: this.responseMessageId,
+      handlers: {
+        [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
+        [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
+        [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
+      },
+    });
 
-    const handleChunk = (currentChunk) => {
-      if (currentChunk) {
-        text += currentChunk;
-        onProgress(currentChunk);
-      }
-    };
+    let intermediateReply = this.streamHandler.tokens;
 
     const maxRetries = 3;
     const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
@@ -827,6 +862,31 @@ class AnthropicClient extends BaseClient {
             }
           });
 
+          /** @param {string} chunk */
+          const handleChunk = (chunk) => {
+            this.streamHandler.handle({
+              choices: [
+                {
+                  delta: {
+                    content: chunk,
+                  },
+                },
+              ],
+            });
+          };
+          /** @param {string} chunk */
+          const handleReasoningChunk = (chunk) => {
+            this.streamHandler.handle({
+              choices: [
+                {
+                  delta: {
+                    reasoning_content: chunk,
+                  },
+                },
+              ],
+            });
+          };
+
           for await (const completion of response) {
             // Handle each completion as before
             const type = completion?.type ?? '';
@@ -835,7 +895,7 @@ class AnthropicClient extends BaseClient {
               this[type] = completion;
             }
             if (completion?.delta?.thinking) {
-              handleChunk(completion.delta.thinking);
+              handleReasoningChunk(completion.delta.thinking);
             } else if (completion?.delta?.text) {
               handleChunk(completion.delta.text);
             } else if (completion.completion) {
@@ -855,6 +915,10 @@ class AnthropicClient extends BaseClient {
 
           if (attempts < maxRetries) {
             await delayBeforeRetry(attempts, 350);
+          } else if (this.streamHandler && this.streamHandler.reasoningTokens.length) {
+            return this.getStreamText();
+          } else if (intermediateReply.length > 0) {
+            return this.getStreamText(intermediateReply);
           } else {
             throw new Error(`Operation failed after ${maxRetries} attempts: ${error.message}`);
           }
@@ -870,8 +934,7 @@ class AnthropicClient extends BaseClient {
     }
 
     await processResponse.bind(this)();
-
-    return text.trim();
+    return this.getStreamText(intermediateReply);
   }
 
   getSaveOptions() {
