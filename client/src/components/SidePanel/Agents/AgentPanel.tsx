@@ -214,7 +214,9 @@ export default function AgentPanel({
               createMutation={create}
               agentQuery={agentQuery}
               setCurrentAgentId={setCurrentAgentId}
-              selectedAgentId={current_agent_id ?? null}
+              // The following is required to force re-render the component when the form's agent ID changes
+              // Also maintains ComboBox Focus for Accessibility
+              selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
             />
           </div>
           {/* Create + Select Button */}
