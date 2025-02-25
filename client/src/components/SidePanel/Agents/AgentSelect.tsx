@@ -1,10 +1,10 @@
 import { EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
+import { useFormContext, Controller } from 'react-hook-form';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
-import type { UseFormReset } from 'react-hook-form';
-import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
+import type { TAgentCapabilities, AgentForm } from '~/common';
 import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import { cn, createProviderOption, processAgentOption } from '~/utils';
 import ControlCombobox from '~/components/ui/ControlCombobox';
@@ -13,15 +13,11 @@ import { useLocalize } from '~/hooks';
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
 export default function AgentSelect({
-  reset,
   agentQuery,
-  value: currentAgentValue,
   selectedAgentId = null,
   setCurrentAgentId,
   createMutation,
 }: {
-  reset: UseFormReset<AgentForm>;
-  value?: TAgentOption;
   selectedAgentId: string | null;
   agentQuery: QueryObserverResult<Agent>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -29,6 +25,7 @@ export default function AgentSelect({
 }) {
   const localize = useLocalize();
   const lastSelectedAgent = useRef<string | null>(null);
+  const { control, reset } = useFormContext();
 
   const { data: startupConfig } = useGetStartupConfig();
   const { data: agents = null } = useListAgentsQuery(undefined, {
@@ -154,33 +151,39 @@ export default function AgentSelect({
   const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
 
   return (
-    <ControlCombobox
-      containerClassName="px-0"
-      selectedValue={(currentAgentValue?.value ?? '') + ''}
-      displayValue={currentAgentValue?.label ?? ''}
-      selectPlaceholder={createAgent}
-      iconSide="right"
-      searchPlaceholder={localize('com_agents_search_name')}
-      SelectIcon={currentAgentValue?.icon}
-      setValue={onSelect}
-      items={
-        agents?.map((agent) => ({
-          label: agent.name ?? '',
-          value: agent.id ?? '',
-          icon: agent.icon,
-        })) ?? [
-          {
-            label: 'Loading...',
-            value: '',
-          },
-        ]
-      }
-      className={cn(
-        'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate rounded-md bg-transparent font-bold',
+    <Controller
+      name="agent"
+      control={control}
+      render={({ field }) => (
+        <ControlCombobox
+          containerClassName="px-0"
+          selectedValue={(field?.value?.value ?? '') + ''}
+          displayValue={field?.value?.label ?? ''}
+          selectPlaceholder={createAgent}
+          iconSide="right"
+          searchPlaceholder={localize('com_agents_search_name')}
+          SelectIcon={field?.value?.icon}
+          setValue={onSelect}
+          items={
+            agents?.map((agent) => ({
+              label: agent.name ?? '',
+              value: agent.id ?? '',
+              icon: agent.icon,
+            })) ?? [
+              {
+                label: 'Loading...',
+                value: '',
+              },
+            ]
+          }
+          className={cn(
+            'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate rounded-md bg-transparent font-bold',
+          )}
+          ariaLabel={localize('com_ui_agent')}
+          isCollapsed={false}
+          showCarat={true}
+        />
       )}
-      ariaLabel={localize('com_ui_agent')}
-      isCollapsed={false}
-      showCarat={true}
     />
   );
 }

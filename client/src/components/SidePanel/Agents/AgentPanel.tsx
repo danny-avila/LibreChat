@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback } from 'react';
+import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { Controller, useWatch, useForm, FormProvider } from 'react-hook-form';
 import {
   Tools,
   SystemRoles,
@@ -214,19 +214,11 @@ export default function AgentPanel({
       >
         <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
           <div className="w-full">
-            <Controller
-              name="agent"
-              control={control}
-              render={({ field }) => (
-                <AgentSelect
-                  reset={reset}
-                  value={field.value}
-                  agentQuery={agentQuery}
-                  setCurrentAgentId={setCurrentAgentId}
-                  selectedAgentId={current_agent_id ?? null}
-                  createMutation={create}
-                />
-              )}
+            <AgentSelect
+              createMutation={create}
+              agentQuery={agentQuery}
+              setCurrentAgentId={setCurrentAgentId}
+              selectedAgentId={current_agent_id ?? null}
             />
           </div>
           {/* Create + Select Button */}
