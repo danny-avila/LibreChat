@@ -186,7 +186,18 @@ const bedrockModels = {
   ...amazonModels,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
+const xAIModels = {
+  'grok-beta': 131072,
+  'grok-vision-beta': 8192,
+  'grok-2': 131072,
+  'grok-2-latest': 131072,
+  'grok-2-1212': 131072,
+  'grok-2-vision': 32768,
+  'grok-2-vision-latest': 32768,
+  'grok-2-vision-1212': 32768,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,

@@ -472,3 +472,30 @@ describe('Google Model Tests', () => {
     });
   });
 });
+
+describe('Grok Model Tests - Pricing', () => {
+  describe('getMultiplier', () => {
+    test('should return correct prompt and completion rates for Grok vision models', () => {
+      const models = ['grok-2-vision-1212', 'grok-2-vision', 'grok-2-vision-latest'];
+      models.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+      });
+    });
+
+    test('should return correct prompt and completion rates for Grok text models', () => {
+      const models = ['grok-2-1212', 'grok-2', 'grok-2-latest'];
+      models.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+      });
+    });
+
+    test('should return correct prompt and completion rates for Grok beta models', () => {
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'completion' })).toBe(15.0);
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'completion' })).toBe(15.0);
+    });
+  });
+});
