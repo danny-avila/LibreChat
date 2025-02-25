@@ -201,10 +201,6 @@ export default function AgentPanel({
     user?.role,
   ]);
 
-  if (agentQuery.isInitialLoading) {
-    return <AgentPanelSkeleton />;
-  }
-
   return (
     <FormProvider {...methods}>
       <form
@@ -232,6 +228,7 @@ export default function AgentPanel({
                   reset(defaultAgentFormValues);
                   setCurrentAgentId(undefined);
                 }}
+                disabled={agentQuery.isInitialLoading}
               >
                 <Plus className="mr-1 h-4 w-4" />
                 {localize('com_ui_create') +
@@ -242,7 +239,7 @@ export default function AgentPanel({
               </Button>
               <Button
                 variant="submit"
-                disabled={!agent_id}
+                disabled={!agent_id || agentQuery.isInitialLoading}
                 onClick={(e) => {
                   e.preventDefault();
                   handleSelectAgent();
@@ -254,7 +251,8 @@ export default function AgentPanel({
             </div>
           )}
         </div>
-        {!canEditAgent && (
+        {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
+        {!canEditAgent && !agentQuery.isInitialLoading && (
           <div className="flex h-[30vh] w-full items-center justify-center">
             <div className="text-center">
               <h2 className="text-token-text-primary m-2 text-xl font-semibold">
@@ -264,7 +262,7 @@ export default function AgentPanel({
             </div>
           </div>
         )}
-        {canEditAgent && activePanel === Panel.model && (
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
           <ModelPanel
             setActivePanel={setActivePanel}
             agent_id={agent_id}
@@ -272,7 +270,7 @@ export default function AgentPanel({
             models={models}
           />
         )}
-        {canEditAgent && activePanel === Panel.builder && (
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
           <AgentConfig
             actions={actions}
             setAction={setAction}
