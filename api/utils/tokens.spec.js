@@ -116,6 +116,7 @@ describe('getModelMaxTokens', () => {
       'claude-3-sonnet',
       'claude-3-opus',
       'claude-3-5-sonnet',
+      'claude-3-7-sonnet',
     ];
 
     const maxTokens = {
@@ -480,6 +481,71 @@ describe('Meta Models Tests', () => {
         completion: 40,
         context: 8000,
       });
+    });
+  });
+});
+
+describe('Grok Model Tests - Tokens', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for Grok vision models', () => {
+      expect(getModelMaxTokens('grok-2-vision-1212')).toBe(32768);
+      expect(getModelMaxTokens('grok-2-vision')).toBe(32768);
+      expect(getModelMaxTokens('grok-2-vision-latest')).toBe(32768);
+    });
+
+    test('should return correct tokens for Grok beta models', () => {
+      expect(getModelMaxTokens('grok-vision-beta')).toBe(8192);
+      expect(getModelMaxTokens('grok-beta')).toBe(131072);
+    });
+
+    test('should return correct tokens for Grok text models', () => {
+      expect(getModelMaxTokens('grok-2-1212')).toBe(131072);
+      expect(getModelMaxTokens('grok-2')).toBe(131072);
+      expect(getModelMaxTokens('grok-2-latest')).toBe(131072);
+    });
+
+    test('should handle partial matches for Grok models with prefixes', () => {
+      // Vision models should match before general models
+      expect(getModelMaxTokens('openai/grok-2-vision-1212')).toBe(32768);
+      expect(getModelMaxTokens('openai/grok-2-vision')).toBe(32768);
+      expect(getModelMaxTokens('openai/grok-2-vision-latest')).toBe(32768);
+      // Beta models
+      expect(getModelMaxTokens('openai/grok-vision-beta')).toBe(8192);
+      expect(getModelMaxTokens('openai/grok-beta')).toBe(131072);
+      // Text models
+      expect(getModelMaxTokens('openai/grok-2-1212')).toBe(131072);
+      expect(getModelMaxTokens('openai/grok-2')).toBe(131072);
+      expect(getModelMaxTokens('openai/grok-2-latest')).toBe(131072);
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact Grok model names', () => {
+      // Vision models
+      expect(matchModelName('grok-2-vision-1212')).toBe('grok-2-vision-1212');
+      expect(matchModelName('grok-2-vision')).toBe('grok-2-vision');
+      expect(matchModelName('grok-2-vision-latest')).toBe('grok-2-vision-latest');
+      // Beta models
+      expect(matchModelName('grok-vision-beta')).toBe('grok-vision-beta');
+      expect(matchModelName('grok-beta')).toBe('grok-beta');
+      // Text models
+      expect(matchModelName('grok-2-1212')).toBe('grok-2-1212');
+      expect(matchModelName('grok-2')).toBe('grok-2');
+      expect(matchModelName('grok-2-latest')).toBe('grok-2-latest');
+    });
+
+    test('should match Grok model variations with prefixes', () => {
+      // Vision models should match before general models
+      expect(matchModelName('openai/grok-2-vision-1212')).toBe('grok-2-vision-1212');
+      expect(matchModelName('openai/grok-2-vision')).toBe('grok-2-vision');
+      expect(matchModelName('openai/grok-2-vision-latest')).toBe('grok-2-vision-latest');
+      // Beta models
+      expect(matchModelName('openai/grok-vision-beta')).toBe('grok-vision-beta');
+      expect(matchModelName('openai/grok-beta')).toBe('grok-beta');
+      // Text models
+      expect(matchModelName('openai/grok-2-1212')).toBe('grok-2-1212');
+      expect(matchModelName('openai/grok-2')).toBe('grok-2');
+      expect(matchModelName('openai/grok-2-latest')).toBe('grok-2-latest');
     });
   });
 });
