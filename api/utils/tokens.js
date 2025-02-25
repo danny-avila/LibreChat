@@ -74,6 +74,7 @@ const anthropicModels = {
   'claude-instant': 100000,
   'claude-2': 100000,
   'claude-2.1': 200000,
+  'claude-3': 200000,
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
   'claude-3-opus': 200000,
@@ -81,6 +82,8 @@ const anthropicModels = {
   'claude-3-5-haiku': 200000,
   'claude-3-5-sonnet': 200000,
   'claude-3.5-sonnet': 200000,
+  'claude-3-7-sonnet': 200000,
+  'claude-3.7-sonnet': 200000,
   'claude-3-5-sonnet-latest': 200000,
   'claude-3.5-sonnet-latest': 200000,
 };
@@ -183,7 +186,18 @@ const bedrockModels = {
   ...amazonModels,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
+const xAIModels = {
+  'grok-beta': 131072,
+  'grok-vision-beta': 8192,
+  'grok-2': 131072,
+  'grok-2-latest': 131072,
+  'grok-2-1212': 131072,
+  'grok-2-vision': 32768,
+  'grok-2-vision-latest': 32768,
+  'grok-2-vision-1212': 32768,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
