@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useContext } from 'react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { TUser, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { AuthContext } from '~/hooks/AuthContext';
 
 const useHasAccess = ({
@@ -15,7 +15,15 @@ const useHasAccess = ({
   const isAuthenticated = authContext?.isAuthenticated || false;
 
   const checkAccess = useCallback(
-    ({ user, permissionType, permission }) => {
+    ({
+      user,
+      permissionType,
+      permission,
+    }: {
+      user?: TUser | null;
+      permissionType: PermissionTypes;
+      permission: Permissions;
+    }) => {
       if (!authContext) {
         return false;
       }
