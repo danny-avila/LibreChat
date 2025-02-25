@@ -128,8 +128,8 @@ config:
   env:
     # Full list of possible values
     # https://github.com/danny-avila/LibreChat/blob/main/.env.example
-    ALLOW_EMAIL_LOGIN: 'true'
-    ALLOW_REGISTRATION: 'true'
+    ALLOW_EMAIL_LOGIN: 'false'
+    ALLOW_REGISTRATION: 'false'
     ALLOW_SOCIAL_LOGIN: 'true'
     ALLOW_SOCIAL_REGISTRATION: 'true'
     APP_TITLE: 'b/ai'
