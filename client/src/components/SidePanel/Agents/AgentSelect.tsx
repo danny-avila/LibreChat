@@ -11,7 +11,6 @@ import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
-const SELECT_ID = 'agent-builder-combobox';
 
 export default function AgentSelect({
   reset,
@@ -121,9 +120,6 @@ export default function AgentSelect({
       }
 
       resetAgentForm(agent);
-      setTimeout(() => {
-        document.getElementById(SELECT_ID)?.focus();
-      }, 5);
     },
     [agents, createMutation, setCurrentAgentId, agentQuery.data, resetAgentForm, reset],
   );
@@ -159,7 +155,6 @@ export default function AgentSelect({
 
   return (
     <ControlCombobox
-      selectId={SELECT_ID}
       containerClassName="px-0"
       selectedValue={(currentAgentValue?.value ?? '') + ''}
       displayValue={currentAgentValue?.label ?? ''}
