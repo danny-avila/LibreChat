@@ -31,6 +31,25 @@ export const defaultRetrievalModels = [
   'gpt-4-1106',
 ];
 
+export const excludedKeys = new Set([
+  'conversationId',
+  'title',
+  'endpoint',
+  'endpointType',
+  'createdAt',
+  'updatedAt',
+  'expiredAt',
+  'messages',
+  'isArchived',
+  'tags',
+  'user',
+  '__v',
+  '_id',
+  'tools',
+  'model',
+  'files',
+]);
+
 export enum SettingsViews {
   default = 'default',
   advanced = 'advanced',
