@@ -735,9 +735,16 @@ class AnthropicClient extends BaseClient {
       stop_sequences,
       temperature,
       metadata,
-      top_p,
-      top_k,
     };
+
+    if (!/claude-3[-.]7/.test(model)) {
+      if (top_p !== undefined) {
+        requestOptions.top_p = top_p;
+      }
+      if (top_k !== undefined) {
+        requestOptions.top_k = top_k;
+      }
+    }
 
     if (this.useMessages) {
       requestOptions.messages = payload;

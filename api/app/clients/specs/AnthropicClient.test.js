@@ -1,3 +1,4 @@
+const { SplitStreamHandler } = require('@librechat/agents');
 const { anthropicSettings } = require('librechat-data-provider');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
 
@@ -510,6 +511,173 @@ describe('AnthropicClient', () => {
       expect(client.modelOptions.maxOutputTokens).toBe(
         anthropicSettings.legacy.maxOutputTokens.default,
       );
+    });
+  });
+
+  describe('topK/topP parameters for different models', () => {
+    beforeEach(() => {
+      // Mock the SplitStreamHandler
+      jest.spyOn(SplitStreamHandler.prototype, 'handle').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should include top_k and top_p parameters for non-claude-3.7 models', async () => {
+      const client = new AnthropicClient('test-api-key');
+
+      // Create a mock async generator function
+      async function* mockAsyncGenerator() {
+        yield { type: 'message_start', message: { usage: {} } };
+        yield { delta: { text: 'Test response' } };
+        yield { type: 'message_delta', usage: {} };
+      }
+
+      // Mock createResponse to return the async generator
+      jest.spyOn(client, 'createResponse').mockImplementation(() => {
+        return mockAsyncGenerator();
+      });
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-opus',
+          temperature: 0.7,
+          topK: 10,
+          topP: 0.9,
+        },
+      });
+
+      // Mock getClient to capture the request options
+      let capturedOptions = null;
+      jest.spyOn(client, 'getClient').mockImplementation((options) => {
+        capturedOptions = options;
+        return {};
+      });
+
+      const payload = [{ role: 'user', content: 'Test message' }];
+      await client.sendCompletion(payload, {});
+
+      // Check the options passed to getClient
+      expect(capturedOptions).toHaveProperty('top_k', 10);
+      expect(capturedOptions).toHaveProperty('top_p', 0.9);
+    });
+
+    it('should include top_k and top_p parameters for claude-3-5-sonnet models', async () => {
+      const client = new AnthropicClient('test-api-key');
+
+      // Create a mock async generator function
+      async function* mockAsyncGenerator() {
+        yield { type: 'message_start', message: { usage: {} } };
+        yield { delta: { text: 'Test response' } };
+        yield { type: 'message_delta', usage: {} };
+      }
+
+      // Mock createResponse to return the async generator
+      jest.spyOn(client, 'createResponse').mockImplementation(() => {
+        return mockAsyncGenerator();
+      });
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          temperature: 0.7,
+          topK: 10,
+          topP: 0.9,
+        },
+      });
+
+      // Mock getClient to capture the request options
+      let capturedOptions = null;
+      jest.spyOn(client, 'getClient').mockImplementation((options) => {
+        capturedOptions = options;
+        return {};
+      });
+
+      const payload = [{ role: 'user', content: 'Test message' }];
+      await client.sendCompletion(payload, {});
+
+      // Check the options passed to getClient
+      expect(capturedOptions).toHaveProperty('top_k', 10);
+      expect(capturedOptions).toHaveProperty('top_p', 0.9);
+    });
+
+    it('should not include top_k and top_p parameters for claude-3-7-sonnet models', async () => {
+      const client = new AnthropicClient('test-api-key');
+
+      // Create a mock async generator function
+      async function* mockAsyncGenerator() {
+        yield { type: 'message_start', message: { usage: {} } };
+        yield { delta: { text: 'Test response' } };
+        yield { type: 'message_delta', usage: {} };
+      }
+
+      // Mock createResponse to return the async generator
+      jest.spyOn(client, 'createResponse').mockImplementation(() => {
+        return mockAsyncGenerator();
+      });
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-7-sonnet',
+          temperature: 0.7,
+          topK: 10,
+          topP: 0.9,
+        },
+      });
+
+      // Mock getClient to capture the request options
+      let capturedOptions = null;
+      jest.spyOn(client, 'getClient').mockImplementation((options) => {
+        capturedOptions = options;
+        return {};
+      });
+
+      const payload = [{ role: 'user', content: 'Test message' }];
+      await client.sendCompletion(payload, {});
+
+      // Check the options passed to getClient
+      expect(capturedOptions).not.toHaveProperty('top_k');
+      expect(capturedOptions).not.toHaveProperty('top_p');
+    });
+
+    it('should not include top_k and top_p parameters for models with decimal notation (claude-3.7)', async () => {
+      const client = new AnthropicClient('test-api-key');
+
+      // Create a mock async generator function
+      async function* mockAsyncGenerator() {
+        yield { type: 'message_start', message: { usage: {} } };
+        yield { delta: { text: 'Test response' } };
+        yield { type: 'message_delta', usage: {} };
+      }
+
+      // Mock createResponse to return the async generator
+      jest.spyOn(client, 'createResponse').mockImplementation(() => {
+        return mockAsyncGenerator();
+      });
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.7-sonnet',
+          temperature: 0.7,
+          topK: 10,
+          topP: 0.9,
+        },
+      });
+
+      // Mock getClient to capture the request options
+      let capturedOptions = null;
+      jest.spyOn(client, 'getClient').mockImplementation((options) => {
+        capturedOptions = options;
+        return {};
+      });
+
+      const payload = [{ role: 'user', content: 'Test message' }];
+      await client.sendCompletion(payload, {});
+
+      // Check the options passed to getClient
+      expect(capturedOptions).not.toHaveProperty('top_k');
+      expect(capturedOptions).not.toHaveProperty('top_p');
     });
   });
 });
