@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
+import remarkEmoji from 'remark-emoji';
 import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -203,6 +204,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
   const remarkPlugins: Pluggable[] = useMemo(
     () => [
       supersub,
+      remarkEmoji,
       remarkGfm,
       remarkDirective,
       artifactPlugin,
