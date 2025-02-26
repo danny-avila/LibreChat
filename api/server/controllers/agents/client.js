@@ -52,7 +52,7 @@ const providerParsers = {
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
 const noSystemModelRegex = [/\bo1\b/gi];
-
+let parentThis;
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
 // const { getCurrentDateTime } = require('~/utils');
@@ -102,6 +102,7 @@ class AgentClient extends BaseClient {
     this.outputTokensKey = 'output_tokens';
     /** @type {UsageMetadata} */
     this.usage;
+    parentThis = this;
   }
 
   /**
@@ -109,6 +110,30 @@ class AgentClient extends BaseClient {
    * @returns {MessageContentComplex[]} */
   getContentParts() {
     return this.contentParts;
+  }
+
+  getClient() {
+    return parentThis;
+  }
+
+  /**
+   * Creates a message or completion response using the Anthropic client.
+   * @param {Anthropic} client - The Anthropic client instance.
+   * @param {Anthropic.default.MessageCreateParams | Anthropic.default.CompletionCreateParams} options - The options for the message or completion.
+   * @param {boolean} useMessages - Whether to use messages or completions. Defaults to `this.useMessages`.
+   * @returns {Promise<Anthropic.default.Message | Anthropic.default.Completion>} The response from the Anthropic client.
+   */
+  async createResponse(client, options, useMessages, convo) {
+    const response = await client.options.bedrockClient.sendMessage({
+      agentId: client.options.agent.model_parameters.agentId,
+      agentAliasId: client.options.agent.model_parameters.agentAliasId,
+      sessionId: client.conversationId,
+      inputText: typeof convo === 'string' ? convo : convo[0].text,
+    });
+    return response;
+    // return useMessages ?? this.useMessages
+    //   ? await client.messages.create(options)
+    //   : await client.completions.create(options);
   }
 
   setOptions(options) {
@@ -176,18 +201,59 @@ class AgentClient extends BaseClient {
     // delete this.modelOptions.stop;
   }
 
+  async generateTitle({ inputText, contentParts, clientOptions, chainOptions }) {
+    // Kóði til að búa til titil með Claude módelið
+    const system = 'Generate a title for the conversation.';
+
+    const convo = `<initial_message>
+  ${inputText}
+  </initial_message>
+  <response>
+  ${JSON.stringify(contentParts)}
+  </response>`;
+    const content = `<conversation_context>
+  ${convo}
+  </conversation_context>
+  
+  Please generate a title for this conversation.`;
+
+    const titleMessage = { role: 'user', content };
+    const requestOptions = {
+      model: 'claude-3-5', // Claude model
+      temperature: 0.3,
+      max_tokens: 512,
+      system,
+      stop_sequences: ['\n\nHuman:', '\n\nAssistant', '</function_calls>'],
+      messages: [titleMessage],
+    };
+
+    try {
+      const summaryInput =
+        'Please give this conversation a very descriptive and short title, four to five words at most. Answer in the language that the question was asked in. ' +
+        convo;
+      const client = this.getClient();
+      const response = await this.createResponse(client, requestOptions, true, summaryInput);
+
+      const text = response.text;
+      return { title: text };
+    } catch (e) {
+      logger.error('[Run] There was an issue generating the title', e);
+      throw e;
+    }
+  }
+
   getSaveOptions() {
     const parseOptions = providerParsers[this.options.endpoint];
     let runOptions =
       this.options.endpoint === EModelEndpoint.agents
         ? {
-          model: undefined,
-          // TODO:
-          // would need to be override settings; otherwise, model needs to be undefined
-          // model: this.override.model,
-          // instructions: this.override.instructions,
-          // additional_instructions: this.override.additional_instructions,
-        }
+            model: undefined,
+            // TODO:
+            // would need to be override settings; otherwise, model needs to be undefined
+            // model: this.override.model,
+            // instructions: this.override.instructions,
+            // additional_instructions: this.override.additional_instructions,
+          }
         : {};
 
     if (parseOptions) {
@@ -688,15 +754,18 @@ class AgentClient extends BaseClient {
           agentId: this.options.agent.model_parameters.agentId,
           agentAliasId: this.options.agent.model_parameters.agentAliasId,
           sessionId: this.conversationId,
-          inputText: typeof message === 'string' ? message : message[0].text
+          inputText: typeof message === 'string' ? message : message[0].text,
         });
 
         // Initialize a basic run object for Bedrock agents
         this.run = {
           Graph: {
             contentData: [],
-            getRunMessages: () => []
-          }
+            getRunMessages: () => [],
+          },
+          generateTitle: this.generateTitle,
+          getClient: this.getClient,
+          createResponse: this.createResponse,
         };
 
         if (this.options.eventHandlers?.onProgress) {
@@ -704,7 +773,7 @@ class AgentClient extends BaseClient {
         }
         this.contentParts.push({
           type: ContentTypes.TEXT,
-          text: response.text
+          text: response.text,
         });
       } else {
         await runAgent(this.options.agent, initialMessages);
