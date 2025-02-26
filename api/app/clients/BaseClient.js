@@ -878,7 +878,7 @@ class BaseClient {
     const existingConvo =
       this.fetchedConvo === true
         ? null
-        : await getConvo(this.options.req.user.id, message.conversationId);
+        : await getConvo(this.options.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
     if (existingConvo != null) {
