@@ -405,4 +405,111 @@ describe('AnthropicClient', () => {
       expect(Number.isNaN(result)).toBe(false);
     });
   });
+
+  describe('maxOutputTokens handling for different models', () => {
+    it('should not cap maxOutputTokens for Claude 3.5 Sonnet models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 10;
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+
+      // Test with decimal notation
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.5-sonnet',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should not cap maxOutputTokens for Claude 3.7 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 2;
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-7-sonnet',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+
+      // Test with decimal notation
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.7-sonnet',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should cap maxOutputTokens for Claude 3.5 Haiku models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 2;
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-5-haiku',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+
+      // Test with decimal notation
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.5-haiku',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+
+    it('should cap maxOutputTokens for Claude 3 Haiku and Opus models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 2;
+
+      // Test haiku
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-haiku',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+
+      // Test opus
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-opus',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+  });
 });
