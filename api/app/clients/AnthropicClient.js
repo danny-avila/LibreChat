@@ -7,8 +7,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { SplitStreamHandler: _Handler, GraphEvents } = require('@librechat/agents');
 const {
   truncateText,
   formatMessage,
@@ -24,6 +23,7 @@ const {
 } = require('~/server/services/Endpoints/anthropic/helpers');
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
@@ -31,6 +31,15 @@ const BaseClient = require('./BaseClient');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
+
+class SplitStreamHandler extends _Handler {
+  getDeltaContent(chunk) {
+    return (chunk?.delta?.text ?? chunk?.completion) || '';
+  }
+  getReasoningDelta(chunk) {
+    return chunk?.delta?.thinking || '';
+  }
+}
 
 /** Helper function to introduce a delay before retrying */
 function delayBeforeRetry(attempts, baseDelay = 1000) {
@@ -807,50 +816,16 @@ class AnthropicClient extends BaseClient {
             }
           });
 
-          /** @param {string} chunk */
-          const handleChunk = (chunk) => {
-            this.streamHandler.handle({
-              choices: [
-                {
-                  delta: {
-                    content: chunk,
-                  },
-                },
-              ],
-            });
-          };
-          /** @param {string} chunk */
-          const handleReasoningChunk = (chunk) => {
-            this.streamHandler.handle({
-              choices: [
-                {
-                  delta: {
-                    reasoning_content: chunk,
-                  },
-                },
-              ],
-            });
-          };
-
           for await (const completion of response) {
-            // Handle each completion as before
             const type = completion?.type ?? '';
             if (tokenEventTypes.has(type)) {
               logger.debug(`[AnthropicClient] ${type}`, completion);
               this[type] = completion;
             }
-            if (completion?.delta?.thinking) {
-              handleReasoningChunk(completion.delta.thinking);
-            } else if (completion?.delta?.text) {
-              handleChunk(completion.delta.text);
-            } else if (completion.completion) {
-              handleChunk(completion.completion);
-            }
-
+            this.streamHandler.handle(completion);
             await sleep(streamRate);
           }
 
-          // Successful processing, exit loop
           break;
         } catch (error) {
           attempts += 1;
