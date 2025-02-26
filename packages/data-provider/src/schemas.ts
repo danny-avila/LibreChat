@@ -252,7 +252,8 @@ export const googleSettings = {
   },
 };
 
-const ANTHROPIC_MAX_OUTPUT = 8192;
+const ANTHROPIC_MAX_OUTPUT = 128000;
+const DEFAULT_MAX_OUTPUT = 8192;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096;
 export const anthropicSettings = {
   model: {
@@ -280,16 +281,19 @@ export const anthropicSettings = {
     min: 1,
     max: ANTHROPIC_MAX_OUTPUT,
     step: 1,
-    default: ANTHROPIC_MAX_OUTPUT,
+    default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (modelName.includes('claude-3-5-sonnet') || modelName.includes('claude-3-7-sonnet')) {
-        return ANTHROPIC_MAX_OUTPUT;
+      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
+        return DEFAULT_MAX_OUTPUT;
       }
 
       return 4096;
     },
     set: (value: number, modelName: string) => {
-      if (!modelName.includes('claude-3-5-sonnet') && value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
+      if (
+        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
+        value > LEGACY_ANTHROPIC_MAX_OUTPUT
+      ) {
         return LEGACY_ANTHROPIC_MAX_OUTPUT;
       }
 

@@ -105,7 +105,9 @@ class AnthropicClient extends BaseClient {
 
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
     this.isClaude3 = modelMatch.includes('claude-3');
-    this.isLegacyOutput = !modelMatch.includes('claude-3-5-sonnet');
+    this.isLegacyOutput = !(
+      /claude-3[-.]5-sonnet/.test(modelMatch) || /claude-3[-.]7/.test(modelMatch)
+    );
     this.supportsCacheControl = this.options.promptCache && checkPromptCacheSupport(modelMatch);
 
     if (
