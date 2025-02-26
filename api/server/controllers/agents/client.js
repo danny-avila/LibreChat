@@ -22,6 +22,7 @@ const {
 } = require('librechat-data-provider');
 const {
   formatMessage,
+  addCacheControl,
   formatAgentMessages,
   formatContentStrings,
   createContextHandlers,
@@ -589,7 +590,7 @@ class AgentClient extends BaseClient {
        * @param {number} [i]
        * @param {TMessageContentParts[]} [contentData]
        */
-      const runAgent = async (agent, messages, i = 0, contentData = []) => {
+      const runAgent = async (agent, _messages, i = 0, contentData = []) => {
         config.configurable.model = agent.model_parameters.model;
         if (i > 0) {
           this.model = agent.model_parameters.model;
@@ -622,12 +623,21 @@ class AgentClient extends BaseClient {
         }
 
         if (noSystemMessages === true && systemContent?.length) {
-          let latestMessage = messages.pop().content;
+          let latestMessage = _messages.pop().content;
           if (typeof latestMessage !== 'string') {
             latestMessage = latestMessage[0].text;
           }
           latestMessage = [systemContent, latestMessage].join('\n');
-          messages.push(new HumanMessage(latestMessage));
+          _messages.push(new HumanMessage(latestMessage));
+        }
+
+        let messages = _messages;
+        if (
+          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
+            'prompt-caching',
+          )
+        ) {
+          messages = addCacheControl(messages);
         }
 
         run = await createRun({
