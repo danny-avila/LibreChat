@@ -43,13 +43,20 @@ function getLLMConfig(apiKey, options = {}) {
     model: mergedOptions.model,
     stream: mergedOptions.stream,
     temperature: mergedOptions.temperature,
-    topP: mergedOptions.topP,
-    topK: mergedOptions.topK,
     stopSequences: mergedOptions.stop,
     maxTokens:
       mergedOptions.maxOutputTokens || anthropicSettings.maxOutputTokens.reset(mergedOptions.model),
     clientOptions: {},
   };
+
+  if (!/claude-3[-.]7/.test(mergedOptions.model)) {
+    if (mergedOptions.topP !== undefined) {
+      requestOptions.topP = mergedOptions.topP;
+    }
+    if (mergedOptions.topK !== undefined) {
+      requestOptions.topK = mergedOptions.topK;
+    }
+  }
 
   const supportsCacheControl =
     systemOptions.promptCache === true && checkPromptCacheSupport(requestOptions.model);
