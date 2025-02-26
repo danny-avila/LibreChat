@@ -3,6 +3,7 @@ const { createAbortController, handleAbortError } = require('~/server/middleware
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
+const { isEnabled } = require('~/server/utils');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -87,7 +88,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     });
 
     const messageOptions = {
-      user,
+      user: isEnabled(process.env.SEND_USERNAME_TO_MODEL) ? req.user.username : user,
       parentMessageId,
       conversationId,
       overrideParentMessageId,
