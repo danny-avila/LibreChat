@@ -1,4 +1,5 @@
 import { useOutletContext } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
@@ -10,6 +11,29 @@ function Login() {
   const localize = useLocalize();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
+  const redirectAttemptedRef = useRef(false);
+
+  // Auto-redirect to OpenID provider if enabled
+  // This is controlled by the OPENID_AUTO_REDIRECT environment variable
+  // When enabled, users will be automatically redirected to the OpenID provider
+  // without seeing the login form at all
+  useEffect(() => {
+    // Simple check if redirect is needed and not yet attempted
+    if (
+      !redirectAttemptedRef.current &&
+      startupConfig?.openidLoginEnabled &&
+      startupConfig?.openidAutoRedirect &&
+      startupConfig?.serverDomain
+    ) {
+      // Mark that we've attempted to redirect
+      redirectAttemptedRef.current = true;
+
+      // Log and redirect
+      console.log('Auto-redirecting to OpenID provider...');
+      window.location.href = `${startupConfig.serverDomain}/oauth/openid`;
+    }
+  }, [startupConfig]);
+
 
   return (
     <>
