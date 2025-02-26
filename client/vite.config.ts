@@ -38,6 +38,7 @@ export default defineConfig({
       useCredentials: true,
       workbox: {
         globPatterns: ['**/*'],
+        globIgnores: ['images/**/*'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
