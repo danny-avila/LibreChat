@@ -16,12 +16,12 @@ const { ImageTransaction } = require('~/models/ImageTransaction');
 class FluxAPI extends Tool {
   // Pricing constants in USD per image
   static PRICING = {
-    'FLUX_PRO_1_1_ULTRA': -0.06,          // /v1/flux-pro-1.1-ultra
-    'FLUX_PRO_1_1': -0.04,                // /v1/flux-pro-1.1
-    'FLUX_PRO': -0.05,                    // /v1/flux-pro
-    'FLUX_DEV': -0.025,                   // /v1/flux-dev
-    'FLUX_PRO_FINETUNED': -0.06,          // /v1/flux-pro-finetuned
-    'FLUX_PRO_1_1_ULTRA_FINETUNED': -0.07,// /v1/flux-pro-1.1-ultra-finetuned
+    FLUX_PRO_1_1_ULTRA: -0.06, // /v1/flux-pro-1.1-ultra
+    FLUX_PRO_1_1: -0.04, // /v1/flux-pro-1.1
+    FLUX_PRO: -0.05, // /v1/flux-pro
+    FLUX_DEV: -0.025, // /v1/flux-dev
+    FLUX_PRO_FINETUNED: -0.06, // /v1/flux-pro-finetuned
+    FLUX_PRO_1_1_ULTRA_FINETUNED: -0.07, // /v1/flux-pro-1.1-ultra-finetuned
   };
 
   constructor(fields = {}) {
@@ -46,7 +46,7 @@ class FluxAPI extends Tool {
 
     this.name = 'flux';
     this.description =
-      "Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.";
+      'Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.';
 
     this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Never submit a prompt under 3 sentences. Follow these core rules:
     // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
@@ -61,26 +61,32 @@ class FluxAPI extends Tool {
       action: z
         .enum(['generate', 'list_finetunes', 'generate_finetuned'])
         .default('generate')
-        .describe('Action to perform: "generate" for image generation, "generate_finetuned" for finetuned model generation, "list_finetunes" to get available custom models'),
+        .describe(
+          'Action to perform: "generate" for image generation, "generate_finetuned" for finetuned model generation, "list_finetunes" to get available custom models',
+        ),
       api_key: z
         .string()
         .optional()
-        .describe('Optional API key to use for this request. If not provided, will use the default system API key.'),
+        .describe(
+          'Optional API key to use for this request. If not provided, will use the default system API key.',
+        ),
       prompt: z
         .string()
         .optional()
-        .describe('Text prompt for image generation. Required when action is "generate". Not used for list_finetunes.'),
+        .describe(
+          'Text prompt for image generation. Required when action is "generate". Not used for list_finetunes.',
+        ),
       width: z
         .number()
         .optional()
         .describe(
-          'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024.'
+          'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024.',
         ),
       height: z
         .number()
         .optional()
         .describe(
-          'Height of the generated image in pixels. Must be a multiple of 32. Default is 768.'
+          'Height of the generated image in pixels. Must be a multiple of 32. Default is 768.',
         ),
       prompt_upsampling: z
         .boolean()
@@ -98,7 +104,7 @@ class FluxAPI extends Tool {
         .optional()
         .default(6)
         .describe(
-          'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.'
+          'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.',
         ),
       endpoint: z
         .enum([
@@ -107,7 +113,7 @@ class FluxAPI extends Tool {
           '/v1/flux-dev',
           '/v1/flux-pro-1.1-ultra',
           '/v1/flux-pro-finetuned',
-          '/v1/flux-pro-1.1-ultra-finetuned'
+          '/v1/flux-pro-1.1-ultra-finetuned',
         ])
         .optional()
         .default('/v1/flux-pro-1.1')
@@ -117,22 +123,15 @@ class FluxAPI extends Tool {
         .optional()
         .default(false)
         .describe(
-          'Generate less processed, more natural-looking images. Only works for /v1/flux-pro-1.1-ultra.'
+          'Generate less processed, more natural-looking images. Only works for /v1/flux-pro-1.1-ultra.',
         ),
-      finetune_id: z
-        .string()
-        .optional()
-        .describe('ID of the finetuned model to use'),
+      finetune_id: z.string().optional().describe('ID of the finetuned model to use'),
       finetune_strength: z
         .number()
         .optional()
         .default(1.1)
         .describe('Strength of the finetuning effect (typically between 0.1 and 1.2)'),
-      guidance: z
-        .number()
-        .optional()
-        .default(2.5)
-        .describe('Guidance scale for finetuned models'),
+      guidance: z.number().optional().default(2.5).describe('Guidance scale for finetuned models'),
       aspect_ratio: z
         .string()
         .optional()
@@ -153,7 +152,6 @@ class FluxAPI extends Tool {
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     return `![generated image](${serverDomain}${imageUrl})`;
   }
-
 
   returnValue(value) {
     if (this.isAgent === true && typeof value === 'string') {
@@ -201,11 +199,21 @@ class FluxAPI extends Tool {
     };
 
     // Add optional parameters if provided
-    if (imageData.width) payload.width = imageData.width;
-    if (imageData.height) payload.height = imageData.height;
-    if (imageData.steps) payload.steps = imageData.steps;
-    if (imageData.seed !== undefined) payload.seed = imageData.seed;
-    if (imageData.raw) payload.raw = imageData.raw;
+    if (imageData.width) {
+      payload.width = imageData.width;
+    }
+    if (imageData.height) {
+      payload.height = imageData.height;
+    }
+    if (imageData.steps) {
+      payload.steps = imageData.steps;
+    }
+    if (imageData.seed !== undefined) {
+      payload.seed = imageData.seed;
+    }
+    if (imageData.raw) {
+      payload.raw = imageData.raw;
+    }
 
     const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
     const resultUrl = `${this.baseUrl}/v1/get_result`;
@@ -225,7 +233,7 @@ class FluxAPI extends Tool {
     } catch (error) {
       const details = error?.response?.data || error.message;
       logger.error('[FluxAPI] Error while submitting task:', details);
-      
+
       // Create error transaction
       try {
         await ImageTransaction.create({
@@ -238,7 +246,7 @@ class FluxAPI extends Tool {
           error: details,
           metadata: {
             ...payload,
-          }
+          },
         });
       } catch (txError) {
         logger.error('[FluxAPI] Error creating error transaction:', txError);
@@ -246,7 +254,7 @@ class FluxAPI extends Tool {
 
       return this.returnValue(
         `Something went wrong when trying to generate the image. The Flux API may be unavailable:
-        Error Message: ${details}`
+        Error Message: ${details}`,
       );
     }
 
@@ -273,7 +281,7 @@ class FluxAPI extends Tool {
           break;
         } else if (status === 'Error') {
           logger.error('[FluxAPI] Error in task:', resultResponse.data);
-          
+
           // Create error transaction
           try {
             await ImageTransaction.create({
@@ -286,7 +294,7 @@ class FluxAPI extends Tool {
               error: 'Task failed during processing',
               metadata: {
                 ...payload,
-              }
+              },
             });
           } catch (txError) {
             logger.error('[FluxAPI] Error creating error transaction:', txError);
@@ -326,8 +334,8 @@ class FluxAPI extends Tool {
 
       // Calculate cost based on endpoint
       const endpoint = imageData.endpoint || '/v1/flux-pro';
-      const endpointKey = Object.entries(FluxAPI.PRICING).find(([key, _]) => 
-        endpoint.includes(key.toLowerCase().replace(/_/g, '-'))
+      const endpointKey = Object.entries(FluxAPI.PRICING).find(([key, _]) =>
+        endpoint.includes(key.toLowerCase().replace(/_/g, '-')),
       )?.[0];
       const cost = FluxAPI.PRICING[endpointKey] || 0;
 
@@ -342,12 +350,12 @@ class FluxAPI extends Tool {
           status: 'success',
           metadata: {
             ...payload,
-          }
+          },
         });
       } catch (txError) {
         logger.error('[FluxAPI] Error creating success transaction:', txError);
       }
-      
+
       // Return the result based on returnMetadata flag
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
       return this.returnValue(this.result);
@@ -377,19 +385,21 @@ class FluxAPI extends Tool {
       const finetuneDetails = await Promise.all(
         finetunes.map(async (finetuneId) => {
           try {
-            const detailResponse = await axios.get(`${detailsUrl}?finetune_id=${finetuneId}`, { headers });
+            const detailResponse = await axios.get(`${detailsUrl}?finetune_id=${finetuneId}`, {
+              headers,
+            });
             return {
               id: finetuneId,
-              ...detailResponse.data
+              ...detailResponse.data,
             };
           } catch (error) {
             logger.error(`[FluxAPI] Error fetching details for finetune ${finetuneId}:`, error);
             return {
               id: finetuneId,
-              error: 'Failed to fetch details'
+              error: 'Failed to fetch details',
             };
           }
-        })
+        }),
       );
 
       // Format the response based on isAgent
@@ -398,7 +408,6 @@ class FluxAPI extends Tool {
         return [`Here are the available finetunes:\n${formattedDetails}`, null];
       }
       return JSON.stringify(finetuneDetails);
-      
     } catch (error) {
       const details = error?.response?.data || error.message;
       logger.error('[FluxAPI] Error while getting finetunes:', details);
@@ -413,15 +422,19 @@ class FluxAPI extends Tool {
     }
 
     if (!imageData.finetune_id) {
-      throw new Error('Missing required field: finetune_id for finetuned generation. Please supply a finetune_id!');
+      throw new Error(
+        'Missing required field: finetune_id for finetuned generation. Please supply a finetune_id!',
+      );
     }
 
     // Validate endpoint is appropriate for finetuned generation
     const validFinetunedEndpoints = ['/v1/flux-pro-finetuned', '/v1/flux-pro-1.1-ultra-finetuned'];
     const endpoint = imageData.endpoint || '/v1/flux-pro-finetuned';
-    
+
     if (!validFinetunedEndpoints.includes(endpoint)) {
-      throw new Error(`Invalid endpoint for finetuned generation. Must be one of: ${validFinetunedEndpoints.join(', ')}`);
+      throw new Error(
+        `Invalid endpoint for finetuned generation. Must be one of: ${validFinetunedEndpoints.join(', ')}`,
+      );
     }
 
     let payload = {
@@ -435,11 +448,21 @@ class FluxAPI extends Tool {
     };
 
     // Add optional parameters if provided
-    if (imageData.width) payload.width = imageData.width;
-    if (imageData.height) payload.height = imageData.height;
-    if (imageData.steps) payload.steps = imageData.steps;
-    if (imageData.seed !== undefined) payload.seed = imageData.seed;
-    if (imageData.raw) payload.raw = imageData.raw;
+    if (imageData.width) {
+      payload.width = imageData.width;
+    }
+    if (imageData.height) {
+      payload.height = imageData.height;
+    }
+    if (imageData.steps) {
+      payload.steps = imageData.steps;
+    }
+    if (imageData.seed !== undefined) {
+      payload.seed = imageData.seed;
+    }
+    if (imageData.raw) {
+      payload.raw = imageData.raw;
+    }
 
     const generateUrl = `${this.baseUrl}${endpoint}`;
     const resultUrl = `${this.baseUrl}/v1/get_result`;
@@ -459,7 +482,7 @@ class FluxAPI extends Tool {
     } catch (error) {
       const details = error?.response?.data || error.message;
       logger.error('[FluxAPI] Error while submitting finetuned task:', details);
-      
+
       // Create error transaction
       try {
         await ImageTransaction.create({
@@ -472,7 +495,7 @@ class FluxAPI extends Tool {
           error: details,
           metadata: {
             ...payload,
-          }
+          },
         });
       } catch (txError) {
         logger.error('[FluxAPI] Error creating error transaction:', txError);
@@ -480,7 +503,7 @@ class FluxAPI extends Tool {
 
       return this.returnValue(
         `Something went wrong when trying to generate the finetuned image. The Flux API may be unavailable:
-        Error Message: ${details}`
+        Error Message: ${details}`,
       );
     }
 
@@ -507,7 +530,7 @@ class FluxAPI extends Tool {
           break;
         } else if (status === 'Error') {
           logger.error('[FluxAPI] Error in finetuned task:', resultResponse.data);
-          
+
           // Create error transaction
           try {
             await ImageTransaction.create({
@@ -520,7 +543,7 @@ class FluxAPI extends Tool {
               error: 'Task failed during processing',
               metadata: {
                 ...payload,
-              }
+              },
             });
           } catch (txError) {
             logger.error('[FluxAPI] Error creating error transaction:', txError);
@@ -559,7 +582,9 @@ class FluxAPI extends Tool {
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);
 
       // Calculate cost based on endpoint
-      const endpointKey = endpoint.includes('ultra') ? 'FLUX_PRO_1_1_ULTRA_FINETUNED' : 'FLUX_PRO_FINETUNED';
+      const endpointKey = endpoint.includes('ultra')
+        ? 'FLUX_PRO_1_1_ULTRA_FINETUNED'
+        : 'FLUX_PRO_FINETUNED';
       const cost = FluxAPI.PRICING[endpointKey] || 0;
 
       // Create successful transaction
@@ -573,12 +598,12 @@ class FluxAPI extends Tool {
           status: 'success',
           metadata: {
             ...payload,
-          }
+          },
         });
       } catch (txError) {
         logger.error('[FluxAPI] Error creating success transaction:', txError);
       }
-      
+
       // Return the result based on returnMetadata flag
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
       return this.returnValue(this.result);
