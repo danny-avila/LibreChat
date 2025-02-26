@@ -18,6 +18,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  // Ensure tracking is enabled for all tests
+  process.env.TRACK_IMAGE_TRANSACTIONS = 'true';
 });
 
 describe('ImageTransaction Tests', () => {
@@ -37,8 +39,8 @@ describe('ImageTransaction Tests', () => {
         steps: 40,
         seed: 12345,
         raw: false,
-        safety_tolerance: 6
-      }
+        safety_tolerance: 6,
+      },
     };
 
     // Act
@@ -66,8 +68,8 @@ describe('ImageTransaction Tests', () => {
       metadata: {
         width: 1024,
         height: 768,
-        steps: 40
-      }
+        steps: 40,
+      },
     };
 
     // Act
@@ -87,7 +89,7 @@ describe('ImageTransaction Tests', () => {
       endpoint: '/v1/flux-pro',
       cost: 0,
       imagePath: '/path/to/image.png',
-      status: 'success'
+      status: 'success',
     };
 
     await expect(ImageTransaction.create(txData)).rejects.toThrow('Invalid cost value');
@@ -101,7 +103,7 @@ describe('ImageTransaction Tests', () => {
       endpoint: '/v1/flux-pro',
       cost: NaN,
       imagePath: '/path/to/image.png',
-      status: 'success'
+      status: 'success',
     };
 
     await expect(ImageTransaction.create(txData)).rejects.toThrow('Invalid cost value');
@@ -122,8 +124,8 @@ describe('ImageTransaction Tests', () => {
         steps: 40,
         finetune_id: 'ft-123',
         finetune_strength: 0.8,
-        guidance: 2.5
-      }
+        guidance: 2.5,
+      },
     };
 
     const transaction = await ImageTransaction.create(txData);
@@ -142,7 +144,7 @@ describe('ImageTransaction Tests', () => {
       endpoint: '/v1/flux-pro',
       cost: -0.05,
       imagePath: '/path/1.png',
-      status: 'success'
+      status: 'success',
     };
     const txData2 = {
       user: userId,
@@ -150,7 +152,7 @@ describe('ImageTransaction Tests', () => {
       endpoint: '/v1/flux-pro',
       cost: -0.05,
       imagePath: '/path/2.png',
-      status: 'success'
+      status: 'success',
     };
 
     await ImageTransaction.create(txData1);
@@ -172,7 +174,7 @@ describe('ImageTransaction Tests', () => {
       endpoint: '/v1/flux-pro',
       cost: -0.05,
       imagePath: '/path/to/image.png',
-      status: 'success'
+      status: 'success',
     };
 
     await expect(ImageTransaction.create(txData)).rejects.toThrow();
@@ -196,7 +198,7 @@ describe('ImageTransaction Tests', () => {
       endpoint: '/invalid/endpoint', // invalid endpoint
       cost: -0.05,
       imagePath: '/path/to/image.png',
-      status: 'success'
+      status: 'success',
     };
 
     await expect(ImageTransaction.create(txData)).rejects.toThrow();
@@ -215,8 +217,8 @@ describe('ImageTransaction Model', () => {
     metadata: {
       width: 512,
       height: 512,
-      steps: 30
-    }
+      steps: 30,
+    },
   };
 
   beforeEach(() => {
@@ -237,7 +239,7 @@ describe('ImageTransaction Model', () => {
         ...validTransaction,
         status: 'error',
         cost: 0,
-        error: 'Test error message'
+        error: 'Test error message',
       };
       const transaction = await ImageTransaction.create(errorTransaction);
       expect(transaction.status).toBe('error');
@@ -273,31 +275,27 @@ describe('ImageTransaction Model', () => {
     test('rejects invalid cost for success transaction', async () => {
       const invalidTransaction = {
         ...validTransaction,
-        cost: 0
+        cost: 0,
       };
-      await expect(ImageTransaction.create(invalidTransaction))
-        .rejects
-        .toThrow('Invalid cost value for image transaction');
+      await expect(ImageTransaction.create(invalidTransaction)).rejects.toThrow(
+        'Invalid cost value for image transaction',
+      );
     });
 
     test('requires all mandatory fields', async () => {
       const incompleteTransaction = {
         user: mockUserId,
-        prompt: 'test'
+        prompt: 'test',
       };
-      await expect(ImageTransaction.create(incompleteTransaction))
-        .rejects
-        .toThrow();
+      await expect(ImageTransaction.create(incompleteTransaction)).rejects.toThrow();
     });
 
     test('validates endpoint enum values', async () => {
       const invalidEndpoint = {
         ...validTransaction,
-        endpoint: 'invalid-endpoint'
+        endpoint: 'invalid-endpoint',
       };
-      await expect(ImageTransaction.create(invalidEndpoint))
-        .rejects
-        .toThrow();
+      await expect(ImageTransaction.create(invalidEndpoint)).rejects.toThrow();
     });
   });
-}); 
+});
