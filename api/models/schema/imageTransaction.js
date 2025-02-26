@@ -21,8 +21,8 @@ const imageTransactionSchema = mongoose.Schema(
         '/v1/flux-pro',
         '/v1/flux-dev',
         '/v1/flux-pro-1.1-ultra-finetuned',
-        '/v1/flux-pro-1.0-finetuned'
-      ]
+        '/v1/flux-pro-finetuned',
+      ],
     },
     cost: {
       type: Number,
@@ -30,10 +30,10 @@ const imageTransactionSchema = mongoose.Schema(
     },
     imagePath: {
       type: String,
-      required: function() {
+      required: function () {
         return this.status === 'success';
       },
-      default: ''
+      default: '',
     },
     metadata: {
       width: Number,
@@ -44,20 +44,20 @@ const imageTransactionSchema = mongoose.Schema(
       finetune_id: String,
       finetune_strength: Number,
       guidance: Number,
-      safety_tolerance: Number
+      safety_tolerance: Number,
     },
     status: {
       type: String,
       enum: ['success', 'error'],
-      required: true
+      required: true,
     },
     error: {
-      type: String
-    }
+      type: String,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-module.exports = imageTransactionSchema; 
+module.exports = imageTransactionSchema;
