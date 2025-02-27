@@ -109,6 +109,7 @@
     "ua-parser-js": "^1.0.36",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
+    "xml2js": "^0.6.2",
     "youtube-transcript": "^1.2.1",
     "zod": "^3.22.4"
   },
