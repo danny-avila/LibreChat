@@ -34,6 +34,7 @@
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^2.1.2",
+    "@marsidev/react-turnstile": "^1.1.0",
     "@radix-ui/react-accordion": "^1.1.2",
     "@radix-ui/react-alert-dialog": "^1.0.2",
     "@radix-ui/react-checkbox": "^1.0.3",
@@ -141,8 +142,8 @@
     "ts-jest": "^29.2.5",
     "typescript": "^5.3.3",
     "vite": "^6.1.0",
-    "vite-plugin-node-polyfills": "^0.17.0",
     "vite-plugin-compression": "^0.5.1",
+    "vite-plugin-node-polyfills": "^0.17.0",
     "vite-plugin-pwa": "^0.21.1"
   }
 }
