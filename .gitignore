@@ -107,3 +107,6 @@ uploads/
 # owner
 release/
 !/client/src/@types/i18next.d.ts
+
+# SAML metadata
+*metadata.xml
