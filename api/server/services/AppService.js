@@ -12,6 +12,7 @@ const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
 const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
+const { loadTokenRatesConfig } = require('./Config/loadTokenRatesConfig');
 
 /**
  *
@@ -21,9 +22,10 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   await initializeRoles();
-  /** @type {TCustomConfig}*/
+  /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
+  loadTokenRatesConfig(config, configDefaults);
 
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
