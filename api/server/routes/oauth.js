@@ -22,6 +22,13 @@ const oauthHandler = async (req, res) => {
       return;
     }
     await setAuthTokens(req.user._id, res);
+    
+    // On successful login, let's clear any openid redirect flags
+    res.cookie('successful_login', 'true', { 
+      maxAge: 1000, // very short-lived, just for client-side detection
+      httpOnly: false // client needs to read this
+    });
+    
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);
@@ -31,7 +38,9 @@ const oauthHandler = async (req, res) => {
 router.get('/error', (req, res) => {
   // A single error message is pushed by passport when authentication fails.
   logger.error('Error in OAuth authentication:', { message: req.session.messages.pop() });
-  res.redirect(`${domains.client}/login`);
+  
+  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
+  res.redirect(`${domains.client}/login?auth_failed=true`);
 });
 
 /**
