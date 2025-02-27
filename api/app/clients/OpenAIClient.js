@@ -1309,6 +1309,12 @@ ${convo}
         modelOptions.include_reasoning = true;
         reasoningKey = 'reasoning';
       }
+      if (this.useOpenRouter && modelOptions.reasoning_effort != null) {
+        modelOptions.reasoning = {
+          effort: modelOptions.reasoning_effort,
+        };
+        delete modelOptions.reasoning_effort;
+      }
 
       this.streamHandler = new SplitStreamHandler({
         reasoningKey,

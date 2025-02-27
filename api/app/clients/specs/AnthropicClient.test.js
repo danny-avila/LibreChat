@@ -680,4 +680,53 @@ describe('AnthropicClient', () => {
       expect(capturedOptions).not.toHaveProperty('top_p');
     });
   });
+
+  it('should include top_k and top_p parameters for Claude-3.7 models when thinking is explicitly disabled', async () => {
+    const client = new AnthropicClient('test-api-key', {
+      modelOptions: {
+        model: 'claude-3-7-sonnet',
+        temperature: 0.7,
+        topK: 10,
+        topP: 0.9,
+      },
+      thinking: false,
+    });
+
+    async function* mockAsyncGenerator() {
+      yield { type: 'message_start', message: { usage: {} } };
+      yield { delta: { text: 'Test response' } };
+      yield { type: 'message_delta', usage: {} };
+    }
+
+    jest.spyOn(client, 'createResponse').mockImplementation(() => {
+      return mockAsyncGenerator();
+    });
+
+    let capturedOptions = null;
+    jest.spyOn(client, 'getClient').mockImplementation((options) => {
+      capturedOptions = options;
+      return {};
+    });
+
+    const payload = [{ role: 'user', content: 'Test message' }];
+    await client.sendCompletion(payload, {});
+
+    expect(capturedOptions).toHaveProperty('topK', 10);
+    expect(capturedOptions).toHaveProperty('topP', 0.9);
+
+    client.setOptions({
+      modelOptions: {
+        model: 'claude-3.7-sonnet',
+        temperature: 0.7,
+        topK: 10,
+        topP: 0.9,
+      },
+      thinking: false,
+    });
+
+    await client.sendCompletion(payload, {});
+
+    expect(capturedOptions).toHaveProperty('topK', 10);
+    expect(capturedOptions).toHaveProperty('topP', 0.9);
+  });
 });
