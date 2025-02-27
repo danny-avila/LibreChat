@@ -252,7 +252,8 @@ export const googleSettings = {
   },
 };
 
-const ANTHROPIC_MAX_OUTPUT = 8192;
+const ANTHROPIC_MAX_OUTPUT = 128000;
+const DEFAULT_MAX_OUTPUT = 8192;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096;
 export const anthropicSettings = {
   model: {
@@ -280,16 +281,19 @@ export const anthropicSettings = {
     min: 1,
     max: ANTHROPIC_MAX_OUTPUT,
     step: 1,
-    default: ANTHROPIC_MAX_OUTPUT,
+    default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (modelName.includes('claude-3-5-sonnet') || modelName.includes('claude-3-7-sonnet')) {
-        return ANTHROPIC_MAX_OUTPUT;
+      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
+        return DEFAULT_MAX_OUTPUT;
       }
 
       return 4096;
     },
     set: (value: number, modelName: string) => {
-      if (!modelName.includes('claude-3-5-sonnet') && value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
+      if (
+        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
+        value > LEGACY_ANTHROPIC_MAX_OUTPUT
+      ) {
         return LEGACY_ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -760,37 +764,8 @@ export const googleSchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
   })
-  .transform((obj) => {
-    return {
-      ...obj,
-      model: obj.model ?? google.model.default,
-      modelLabel: obj.modelLabel ?? null,
-      promptPrefix: obj.promptPrefix ?? null,
-      examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-      temperature: obj.temperature ?? google.temperature.default,
-      maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
-      topP: obj.topP ?? google.topP.default,
-      topK: obj.topK ?? google.topK.default,
-      iconURL: obj.iconURL ?? undefined,
-      greeting: obj.greeting ?? undefined,
-      spec: obj.spec ?? undefined,
-      maxContextTokens: obj.maxContextTokens ?? undefined,
-    };
-  })
-  .catch(() => ({
-    model: google.model.default,
-    modelLabel: null,
-    promptPrefix: null,
-    examples: [{ input: { content: '' }, output: { content: '' } }],
-    temperature: google.temperature.default,
-    maxOutputTokens: google.maxOutputTokens.default,
-    topP: google.topP.default,
-    topK: google.topK.default,
-    iconURL: undefined,
-    greeting: undefined,
-    spec: undefined,
-    maxContextTokens: undefined,
-  }));
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .catch(() => ({}));
 
 /**
    * TODO: Map the following fields:

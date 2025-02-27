@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TModelsConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { fileConfigSchema } from './file-config';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
@@ -30,6 +30,27 @@ export const defaultRetrievalModels = [
   'gpt-4-0125',
   'gpt-4-1106',
 ];
+
+export const excludedKeys = new Set([
+  'conversationId',
+  'title',
+  'iconURL',
+  'greeting',
+  'endpoint',
+  'endpointType',
+  'createdAt',
+  'updatedAt',
+  'expiredAt',
+  'messages',
+  'isArchived',
+  'tags',
+  'user',
+  '__v',
+  '_id',
+  'tools',
+  'model',
+  'files',
+]);
 
 export enum SettingsViews {
   default = 'default',
