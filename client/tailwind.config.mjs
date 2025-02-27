@@ -1,3 +1,5 @@
+// const { fontFamily } = require('tailwindcss/defaultTheme');
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -10,6 +12,10 @@ export default {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
     },
+    // fontFamily: {
+    //   sans: ['Söhne', 'sans-serif'],
+    //   mono: ['Söhne Mono', 'monospace'],
+    // },
     extend: {
       width: {
         authPageWidth: '370px',
@@ -58,7 +64,7 @@ export default {
           900: '#031f29',
         },
         'brand-purple': '#ab68ff',
-        presentation: 'var(--presentation)',
+        'presentation': 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-secondary-alt': 'var(--text-secondary-alt)',
@@ -130,5 +136,6 @@ export default {
   plugins: [
     require('tailwindcss-animate'),
     require('tailwindcss-radix')(),
+    // require('@tailwindcss/typography'),
   ],
 };
