@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
-// import perfectionist from 'eslint-plugin-perfectionist';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
@@ -61,7 +60,6 @@ export default [
       'jsx-a11y': fixupPluginRules(jsxA11Y),
       'import/parsers': tsParser,
       i18next,
-      // perfectionist,
     },
 
     languageOptions: {
@@ -155,47 +153,6 @@ export default [
       'react/display-name': 'off',
       quotes: ['error', 'single'],
       'key-spacing': ['error', { beforeColon: false, afterColon: true }],
-
-      // 'perfectionist/sort-imports': [
-      //   'error',
-      //   {
-      //     type: 'line-length',
-      //     order: 'desc',
-      //     newlinesBetween: 'never',
-      //     customGroups: {
-      //       value: {
-      //         react: ['^react$'],
-      //         // react: ['^react$', '^fs', '^zod', '^path'],
-      //         local: ['^(\\.{1,2}|~)/', '^librechat-data-provider'],
-      //       },
-      //     },
-      //     groups: [
-      //       'react',
-      //       'builtin',
-      //       'external',
-      //       ['builtin-type', 'external-type'],
-      //       ['internal-type'],
-      //       'local',
-      //       ['parent', 'sibling', 'index'],
-      //       'object',
-      //       'unknown',
-      //     ],
-      //   },
-      // ],
-
-      // 'perfectionist/sort-named-imports': [
-      //   'error',
-      //   {
-      //     type: 'line-length',
-      //     order: 'asc',
-      //     ignoreAlias: false,
-      //     ignoreCase: true,
-      //     specialCharacters: 'keep',
-      //     groupKind: 'mixed',
-      //     partitionByNewLine: false,
-      //     partitionByComment: false,
-      //   },
-      // ],
     },
   },
   {
