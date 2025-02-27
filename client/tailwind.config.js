@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
@@ -133,7 +133,7 @@ module.exports = {
     },
   },
   plugins: [
-    // require('tailwindcss-animate'),
-    // require('tailwindcss-radix')(),
+    require('tailwindcss-animate'),
+    require('tailwindcss-radix')(),
   ],
 };
