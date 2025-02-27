@@ -53,7 +53,6 @@
     "@types/jest": "^29.5.2",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.18",
-    "@types/winston": "^2.4.4",
     "jest": "^29.5.0",
     "jest-junit": "^16.0.0",
     "librechat-data-provider": "*",
@@ -69,10 +68,11 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.4.1",
+    "@modelcontextprotocol/sdk": "^1.6.0",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "winston": "^3.17.0"
   },
   "peerDependencies": {
     "keyv": "^4.5.4"
