@@ -71,7 +71,7 @@ modelSpecs:
       description: 'Balance aware assistant'
       preset:
         endpoint: 'bedrock'
-        model: 'arn:aws:bedrock:us-east-1:576137783778:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0'
+        model: 'arn:aws:bedrock:us-east-1:223287545160:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0'
         maxContextTokens: 200000 # Maximum context tokens
         max_tokens: 8192 # Maximum output tokens
         temperature: 0.5
