@@ -47,10 +47,10 @@ router.get('/', async function (req, res) {
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
       appleLoginEnabled:
-          !!process.env.APPLE_CLIENT_ID &&
-          !!process.env.APPLE_TEAM_ID &&
-          !!process.env.APPLE_KEY_ID &&
-          !!process.env.APPLE_PRIVATE_KEY_PATH,
+        !!process.env.APPLE_CLIENT_ID &&
+        !!process.env.APPLE_TEAM_ID &&
+        !!process.env.APPLE_KEY_ID &&
+        !!process.env.APPLE_PRIVATE_KEY_PATH,
       openidLoginEnabled:
         !!process.env.OPENID_CLIENT_ID &&
         !!process.env.OPENID_CLIENT_SECRET &&
@@ -58,6 +58,9 @@ router.get('/', async function (req, res) {
         !!process.env.OPENID_SESSION_SECRET,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
+      samlLoginEnabled: !!process.env.SAML_METADATA && !!process.env.SAML_SESSION_SECRET,
+      samlLabel: process.env.SAML_BUTTON_LABEL || 'Continue with SAML',
+      samlImageUrl: process.env.SAML_IMAGE_URL,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),

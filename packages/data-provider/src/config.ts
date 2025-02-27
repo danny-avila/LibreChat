@@ -7,7 +7,7 @@ import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
-export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
+export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -507,8 +507,11 @@ export type TStartupConfig = {
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   appleLoginEnabled: boolean;
+  samlLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  samlLabel: string;
+  samlImageUrl: string;
   /** LDAP Auth Configuration */
   ldap?: {
     /** LDAP enabled */

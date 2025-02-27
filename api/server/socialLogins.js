@@ -10,6 +10,7 @@ const {
   discordLogin,
   facebookLogin,
   appleLogin,
+  setupSaml,
 } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -61,6 +62,28 @@ const configureSocialLogins = (app) => {
     app.use(session(sessionOptions));
     app.use(passport.session());
     setupOpenId();
+  }
+  if (process.env.SAML_METADATA) {
+    const sessionOptions = {
+      secret: process.env.SAML_SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false,
+    };
+    if (isEnabled(process.env.USE_REDIS)) {
+      const client = new Redis(process.env.REDIS_URI);
+      client
+        .on('error', (err) => logger.error('ioredis error:', err))
+        .on('ready', () => logger.info('ioredis successfully initialized.'))
+        .on('reconnecting', () => logger.info('ioredis reconnecting...'));
+      sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+    } else {
+      sessionOptions.store = new MemoryStore({
+        checkPeriod: 86400000, // prune expired entries every 24h
+      });
+    }
+    app.use(session(sessionOptions));
+    app.use(passport.session());
+    setupSaml();
   }
 };
 
