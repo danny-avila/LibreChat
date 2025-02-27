@@ -27,10 +27,10 @@ const {
   formatContentStrings,
   createContextHandlers,
 } = require('~/app/clients/prompts');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const Tokenizer = require('~/server/services/Tokenizer');
-const { spendTokens } = require('~/models/spendTokens');
 const BaseClient = require('~/app/clients/BaseClient');
 const { createRun } = require('./run');
 const { logger } = require('~/config');
@@ -380,15 +380,34 @@ class AgentClient extends BaseClient {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
-    const input_tokens = collectedUsage[0]?.input_tokens || 0;
+    const input_tokens =
+      (collectedUsage[0]?.input_tokens || 0) +
+      (Number(collectedUsage[0]?.input_token_details?.cache_creation) || 0) +
+      (Number(collectedUsage[0]?.input_token_details?.cache_read) || 0);
 
     let output_tokens = 0;
     let previousTokens = input_tokens; // Start with original input
     for (let i = 0; i < collectedUsage.length; i++) {
       const usage = collectedUsage[i];
+      if (!usage) {
+        continue;
+      }
+
+      const cache_creation = Number(usage.input_token_details?.cache_creation) || 0;
+      const cache_read = Number(usage.input_token_details?.cache_read) || 0;
+
+      const txMetadata = {
+        context,
+        conversationId: this.conversationId,
+        user: this.user ?? this.options.req.user?.id,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+        model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
+      };
+
       if (i > 0) {
         // Count new tokens generated (input_tokens minus previous accumulated tokens)
-        output_tokens += (Number(usage.input_tokens) || 0) - previousTokens;
+        output_tokens +=
+          (Number(usage.input_tokens) || 0) + cache_creation + cache_read - previousTokens;
       }
 
       // Add this message's output tokens
@@ -396,16 +415,26 @@ class AgentClient extends BaseClient {
 
       // Update previousTokens to include this message's output
       previousTokens += Number(usage.output_tokens) || 0;
-      spendTokens(
-        {
-          context,
-          conversationId: this.conversationId,
-          user: this.user ?? this.options.req.user?.id,
-          endpointTokenConfig: this.options.endpointTokenConfig,
-          model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
-        },
-        { promptTokens: usage.input_tokens, completionTokens: usage.output_tokens },
-      ).catch((err) => {
+
+      if (cache_creation > 0 || cache_read > 0) {
+        spendStructuredTokens(txMetadata, {
+          promptTokens: {
+            input: usage.input_tokens,
+            write: cache_creation,
+            read: cache_read,
+          },
+          completionTokens: usage.output_tokens,
+        }).catch((err) => {
+          logger.error(
+            '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending structured tokens',
+            err,
+          );
+        });
+      }
+      spendTokens(txMetadata, {
+        promptTokens: usage.input_tokens,
+        completionTokens: usage.output_tokens,
+      }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
           err,
