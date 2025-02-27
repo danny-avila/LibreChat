@@ -125,7 +125,7 @@ export default function RouteErrorBoundary() {
   return (
     <div
       role="alert"
-      className="flex min-h-screen flex-col items-center justify-center bg-surface-primary bg-gradient-to-br"
+      className="flex min-h-screen flex-col items-center justify-center bg-surface-primary bg-linear-to-br"
     >
       <div className="bg-surface-primary/60 mx-4 w-11/12 max-w-4xl rounded-2xl border border-border-light p-8 shadow-2xl backdrop-blur-xl">
         <h2 className="mb-6 text-center text-3xl font-medium tracking-tight text-text-primary">

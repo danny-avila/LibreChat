@@ -30,7 +30,7 @@ const CollapseChat = ({
       onClick={() => setIsCollapsed(true)}
       className={cn(
         'absolute right-2 top-2 z-10 size-[35px] rounded-full p-2 transition-colors',
-        'hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+        'hover:bg-surface-hover focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-opacity-50',
       )}
     >
       <Minimize2 className="h-full w-full" />

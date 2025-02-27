@@ -92,7 +92,7 @@ const InputWithDropdown = React.forwardRef<HTMLInputElement, InputWithDropdownPr
           />
           <button
             type="button"
-            className="text-tertiary hover:text-secondary absolute inset-y-0 right-0 flex items-center rounded-md px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
+            className="text-tertiary hover:text-secondary absolute inset-y-0 right-0 flex items-center rounded-md px-2 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring-primary"
             onClick={() => setIsOpen(!isOpen)}
             aria-label={isOpen ? 'Close dropdown' : 'Open dropdown'}
           >
@@ -125,7 +125,7 @@ const InputWithDropdown = React.forwardRef<HTMLInputElement, InputWithDropdownPr
                 aria-selected={index === highlightedIndex}
                 className={cn(
                   'cursor-pointer rounded-md px-3 py-2',
-                  'focus:bg-surface-tertiary focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring-primary',
+                  'focus:bg-surface-tertiary focus:outline-hidden focus:ring-1 focus:ring-inset focus:ring-ring-primary',
                   index === highlightedIndex
                     ? 'text-primary bg-surface-active'
                     : 'text-secondary hover:bg-surface-tertiary',

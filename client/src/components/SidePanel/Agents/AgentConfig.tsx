@@ -321,7 +321,7 @@ export default function AgentConfig({
           >
             <div className="flex w-full items-center gap-2">
               {Icon && (
-                <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
+                <div className="shadow-stroke relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
                   <Icon
                     className="h-2/3 w-2/3"
                     endpoint={providerValue as string}

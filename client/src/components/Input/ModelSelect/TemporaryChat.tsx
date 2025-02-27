@@ -48,7 +48,7 @@ export const TemporaryChat = () => {
             {localize('com_ui_temporary_chat')}
           </span>
         </div>
-        <div className="flex flex-shrink-0 items-center">
+        <div className="flex shrink-0 items-center">
           <Switch
             id="temporary-chat-switch"
             checked={isTemporary}

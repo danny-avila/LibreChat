@@ -61,7 +61,7 @@ export default function DashBreadcrumb() {
     <div className="mr-2 mt-2 flex h-10 items-center justify-between">
       <Breadcrumb className="mt-1 px-2 dark:text-gray-200">
         <BreadcrumbList>
-          <BreadcrumbItem className="hover:dark:text-white">
+          <BreadcrumbItem className="dark:hover:text-white">
             <BreadcrumbLink
               href="/"
               className="flex flex-row items-center gap-1"
@@ -74,11 +74,11 @@ export default function DashBreadcrumb() {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           {/*
-        <BreadcrumbItem className="hover:dark:text-white">
+        <BreadcrumbItem className="dark:hover:text-white">
           <DropdownMenu>
             <DropdownMenuTrigger className="flex cursor-default items-center gap-1">
               <BreadcrumbEllipsis className="h-4 w-4" />
-              <BreadcrumbItem className="hover:dark:text-white">
+              <BreadcrumbItem className="dark:hover:text-white">
                 <span className="text-gray-400">{localize('com_ui_dashboard')}</span>
               </BreadcrumbItem>
               <span className="sr-only">Toggle menu</span>
@@ -92,7 +92,7 @@ export default function DashBreadcrumb() {
         </BreadcrumbItem>
         <BreadcrumbSeparator />
         */}
-          <BreadcrumbItem className="hover:dark:text-white">
+          <BreadcrumbItem className="dark:hover:text-white">
             <BreadcrumbLink
               href="/d/prompts"
               className="flex flex-row items-center gap-1"

@@ -179,7 +179,7 @@ const ApiKey = () => {
         autoComplete="new-password"
         className={cn(
           'mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm',
-          'border-border-medium bg-surface-primary outline-none',
+          'border-border-medium bg-surface-primary outline-hidden',
           'focus:ring-2 focus:ring-ring',
         )}
         {...register('api_key', { required: type === AuthTypeEnum.ServiceHttp })}
@@ -255,7 +255,7 @@ const ApiKey = () => {
           <input
             className={cn(
               'mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm',
-              'border-border-medium bg-surface-primary outline-none',
+              'border-border-medium bg-surface-primary outline-hidden',
               'focus:ring-2 focus:ring-ring',
             )}
             placeholder="X-Api-Key"
@@ -289,7 +289,7 @@ const OAuth = () => {
 
   const inputClasses = cn(
     'mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm',
-    'border-border-medium bg-surface-primary outline-none',
+    'border-border-medium bg-surface-primary outline-hidden',
     'focus:ring-2 focus:ring-ring',
   );
 

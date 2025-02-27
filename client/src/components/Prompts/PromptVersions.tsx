@@ -106,7 +106,7 @@ const VersionCard = ({
         'group relative w-full rounded-lg border border-border-light p-4 transition-all duration-300',
         isSelected
           ? 'bg-surface-hover shadow-xl'
-          : 'bg-surface-primary shadow-sm hover:bg-surface-secondary',
+          : 'bg-surface-primary shadow-2xs hover:bg-surface-secondary',
       )}
       onClick={onClick}
       aria-selected={isSelected}

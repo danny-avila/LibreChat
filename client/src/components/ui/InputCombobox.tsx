@@ -56,7 +56,7 @@ export const InputCombobox: React.FC<ComboboxProps> = ({
           className={cn(
             'h-10 w-full rounded-md border border-border-light bg-surface-primary px-3 py-2 text-sm',
             'placeholder-text-secondary hover:bg-surface-hover',
-            'focus:outline-none',
+            'focus:outline-hidden',
             className,
           )}
           onChange={(event) => handleChange(event.target.value)}
@@ -87,14 +87,14 @@ export const InputCombobox: React.FC<ComboboxProps> = ({
           <Ariakit.ComboboxItem
             key={index}
             className={cn(
-              'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none',
+              'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden',
               'cursor-pointer hover:bg-surface-tertiary hover:text-text-primary',
-              'data-[active-item]:bg-surface-tertiary data-[active-item]:text-text-primary',
+              'data-active-item:bg-surface-tertiary data-active-item:text-text-primary',
             )}
             value={isOptionObject(option) ? `${option.value ?? ''}` : option}
           >
             {isOptionObject(option) && option.icon != null && (
-              <span className="mr-2 flex-shrink-0">{option.icon}</span>
+              <span className="mr-2 shrink-0">{option.icon}</span>
             )}
             {isOptionObject(option) ? option.label : option}
           </Ariakit.ComboboxItem>

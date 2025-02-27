@@ -29,7 +29,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
   return (
     <div
       ref={bannerRef}
-      className="sticky top-0 z-20 flex items-center bg-neutral-900 from-gray-700 to-gray-900 px-2 py-1 text-slate-50 dark:bg-gradient-to-r dark:text-white md:relative"
+      className="sticky top-0 z-20 flex items-center bg-neutral-900 from-gray-700 to-gray-900 px-2 py-1 text-slate-50 dark:bg-linear-to-r dark:text-white md:relative"
     >
       <div
         className="w-full truncate px-4 text-center text-sm"

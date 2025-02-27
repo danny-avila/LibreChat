@@ -51,7 +51,7 @@ function OptionHover({ endpoint, type, side }: TOptionHoverProps) {
   }
   return (
     <HoverCardPortal>
-      <HoverCardContent side={side} className="z-[999] w-80">
+      <HoverCardContent side={side} className="z-999 w-80">
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{localize(text)}</p>
         </div>

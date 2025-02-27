@@ -128,7 +128,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setCurrentPage(1);
         setSearchValue('');
       }}
-      className="relative z-[102]"
+      className="relative z-102"
     >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-600/65 transition-opacity dark:bg-black/80" />

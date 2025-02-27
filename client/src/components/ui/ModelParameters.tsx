@@ -155,7 +155,7 @@ const ModelParameters: React.FC<ModelParametersProps> = ({
           onKeyDown={handleKeyDown}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
-          className={`slider-thumb h-2 w-full appearance-none rounded-lg bg-gradient-to-r from-gray-500 to-gray-500 bg-no-repeat focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+          className={`slider-thumb h-2 w-full appearance-none rounded-lg bg-linear-to-r from-gray-500 to-gray-500 bg-no-repeat focus:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2 ${
             disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
           }`}
           tabIndex={0}

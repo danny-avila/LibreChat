@@ -134,7 +134,7 @@ const BookmarkForm = ({
             id="bookmark-description"
             disabled={false}
             className={cn(
-              'flex h-10 max-h-[250px] min-h-[100px] w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none',
+              'flex h-10 max-h-[250px] min-h-[100px] w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-hidden',
             )}
           />
         </div>

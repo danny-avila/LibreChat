@@ -4,17 +4,12 @@ export default {
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
   ],
-  // darkMode: 'class',
-  darkMode: ['class'],
+  darkMode: 'class',
   theme: {
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
     },
-    // fontFamily: {
-    //   sans: ['Söhne', 'sans-serif'],
-    //   mono: ['Söhne Mono', 'monospace'],
-    // },
     extend: {
       width: {
         authPageWidth: '370px',
@@ -63,7 +58,7 @@ export default {
           900: '#031f29',
         },
         'brand-purple': '#ab68ff',
-        'presentation': 'var(--presentation)',
+        presentation: 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-secondary-alt': 'var(--text-secondary-alt)',
@@ -132,5 +127,8 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    require('tailwindcss-animate'),
+    require('tailwindcss-radix')(),
+  ],
 };

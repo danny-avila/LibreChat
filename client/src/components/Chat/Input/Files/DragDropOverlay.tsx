@@ -1,11 +1,11 @@
 export default function DragDropOverlay() {
   return (
     <div
-      className="bg-surface-primary/85 fixed inset-0 z-[9999] flex flex-col items-center justify-center
+      className="bg-surface-primary/85 fixed inset-0 z-9999 flex flex-col items-center justify-center
         gap-2 text-text-primary
         backdrop-blur-[4px] transition-all duration-200
         ease-in-out animate-in fade-in
-        zoom-in-95 hover:backdrop-blur-sm"
+        zoom-in-95 hover:backdrop-blur-xs"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

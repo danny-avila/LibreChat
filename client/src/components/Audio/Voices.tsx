@@ -27,7 +27,7 @@ export function EdgeVoiceDropdown() {
         value={voice ?? ''}
         options={voices}
         onChange={handleVoiceChange}
-        sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
+        sizeClasses="min-w-[200px] max-w-[400px]! [--anchor-max-width:400px]"
         testId="EdgeVoiceDropdown"
       />
     </div>
@@ -55,7 +55,7 @@ export function BrowserVoiceDropdown() {
         value={voice ?? ''}
         options={voices}
         onChange={handleVoiceChange}
-        sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
+        sizeClasses="min-w-[200px] max-w-[400px]! [--anchor-max-width:400px]"
         testId="BrowserVoiceDropdown"
       />
     </div>
@@ -83,7 +83,7 @@ export function ExternalVoiceDropdown() {
         value={voice ?? ''}
         options={voices}
         onChange={handleVoiceChange}
-        sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
+        sizeClasses="min-w-[200px] max-w-[400px]! [--anchor-max-width:400px]"
         testId="ExternalVoiceDropdown"
       />
     </div>

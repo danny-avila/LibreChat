@@ -46,7 +46,7 @@ const BookmarkItem: FC<MenuItemProps> = ({ tag, selected, handleSubmit, icon, ..
   return (
     <MenuItem
       aria-label={tag as string}
-      className="group flex w-full gap-2 rounded-lg p-2.5 text-sm text-text-primary transition-colors duration-200 focus:outline-none data-[focus]:bg-surface-secondary data-[focus]:ring-2 data-[focus]:ring-primary"
+      className="group flex w-full gap-2 rounded-lg p-2.5 text-sm text-text-primary transition-colors duration-200 focus:outline-hidden data-focus:bg-surface-secondary data-focus:ring-2 data-focus:ring-primary"
       {...rest}
       as="button"
       onClick={clickHandler}

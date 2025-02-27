@@ -72,7 +72,7 @@ export default function MessagesView({
             )}
             <div
               id="messages-end"
-              className="group h-0 w-full flex-shrink-0"
+              className="group h-0 w-full shrink-0"
               ref={messagesEndRef}
             />
           </div>

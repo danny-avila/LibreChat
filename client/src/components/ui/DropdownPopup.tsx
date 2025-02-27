@@ -58,7 +58,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                 key={`${keyPrefix ?? ''}${index}`}
                 id={item.id}
                 className={cn(
-                  'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                  'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-hidden transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
                   itemClassName,
                 )}
                 disabled={item.disabled}

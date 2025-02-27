@@ -183,7 +183,7 @@ const ChatForm = ({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl bg-surface-tertiary text-text-primary duration-200">
+          <div className="transitional-all relative flex w-full grow flex-col overflow-hidden rounded-3xl bg-surface-tertiary text-text-primary duration-200">
             <TemporaryChat
               isTemporaryChat={isTemporaryChat}
               setIsTemporaryChat={setIsTemporaryChat}

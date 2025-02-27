@@ -4,7 +4,7 @@ export default function DialogImage({ src = '', width = 1920, height = 1080 }) {
   return (
     <Dialog.Portal>
       <Dialog.Overlay
-        className="radix-state-open:animate-show fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black/90 dark:bg-black/80"
+        className="radix-state-open:animate-show fixed inset-0 z-100 flex items-center justify-center overflow-hidden bg-black/90 dark:bg-black/80"
         style={{ pointerEvents: 'auto' }}
       >
         <Dialog.Close asChild>
@@ -30,7 +30,7 @@ export default function DialogImage({ src = '', width = 1920, height = 1080 }) {
           </button>
         </Dialog.Close>
         <Dialog.Content
-          className="radix-state-open:animate-contentShow relative max-h-[85vh] max-w-[90vw] shadow-xl focus:outline-none"
+          className="radix-state-open:animate-contentShow relative max-h-[85vh] max-w-[90vw] shadow-xl focus:outline-hidden"
           tabIndex={-1}
           style={{ pointerEvents: 'auto', aspectRatio: height > width ? 1 / 1.75 : 1.75 / 1 }}
         >

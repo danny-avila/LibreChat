@@ -42,7 +42,7 @@ const LogLink: React.FC<LogLinkProps> = ({ href, filename, children }) => {
       onClick={handleDownload}
       target="_blank"
       rel="noopener noreferrer"
-      className="!text-blue-400 visited:!text-purple-400 hover:underline"
+      className="text-blue-400! visited:text-purple-400! hover:underline"
     >
       {children}
     </a>

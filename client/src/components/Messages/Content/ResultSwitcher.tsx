@@ -38,7 +38,7 @@ const ResultSwitcher: React.FC<ResultSwitcherProps> = ({
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <span className="flex-shrink-0 tabular-nums">
+      <span className="shrink-0 tabular-nums">
         {currentIndex + 1} / {totalCount}
       </span>
       <button

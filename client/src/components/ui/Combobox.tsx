@@ -115,7 +115,7 @@ export default function ComboboxComponent({
                 <Combobox
                   autoSelect
                   placeholder={searchPlaceholder}
-                  className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
+                  className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-hidden focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
                   // Ariakit's Combobox manually triggers a blur event on virtually
                   // blurred items, making them work as if they had actual DOM
                   // focus. These blur events might happen after the corresponding
@@ -140,7 +140,7 @@ export default function ComboboxComponent({
                   <RadixSelect.Item key={value} value={`${value ?? ''}`} asChild>
                     <ComboboxItem
                       className={cn(
-                        'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+                        'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-hidden data-disabled:pointer-events-none data-disabled:opacity-50',
                         'rounded-lg hover:bg-gray-100/50 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-600',
                       )}
                       /** Hacky fix for radix-ui Android issue: https://github.com/radix-ui/primitives/issues/1658  */

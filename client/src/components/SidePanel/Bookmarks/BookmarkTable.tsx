@@ -75,7 +75,7 @@ const BookmarkTable = () => {
           />
         </div>
 
-        <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
+        <div className="rounded-lg border border-border-light bg-transparent shadow-2xs transition-colors">
           <Table className="w-full table-fixed">
             <TableHeader>
               <TableRow className="border-b border-border-light">

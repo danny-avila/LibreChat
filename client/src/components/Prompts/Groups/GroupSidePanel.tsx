@@ -35,7 +35,7 @@ export default function GroupSidePanel({
       )}
     >
       {children}
-      <div className="flex-grow overflow-y-auto">
+      <div className="grow overflow-y-auto">
         <List groups={promptGroups} isChatRoute={isChatRoute} isLoading={!!groupsQuery.isLoading} />
       </div>
       <PanelNavigation

@@ -26,7 +26,7 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
     );
   }
 
-  return <code className={`hljs language-${lang} !whitespace-pre`}>{children}</code>;
+  return <code className={`hljs language-${lang} whitespace-pre!`}>{children}</code>;
 });
 
 export const CodeMarkdown = memo(

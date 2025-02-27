@@ -132,7 +132,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         <code
           ref={codeRef}
           className={cn(
-            isNonCode ? '!whitespace-pre-wrap' : `hljs language-${language} !whitespace-pre`,
+            isNonCode ? 'whitespace-pre-wrap!' : `hljs language-${language} whitespace-pre!`,
           )}
         >
           {codeChildren}

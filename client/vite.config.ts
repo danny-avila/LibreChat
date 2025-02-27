@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import compression from 'vite-plugin-compression';
+import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
@@ -23,17 +24,17 @@ export default defineConfig({
       },
     },
   },
-  // Set the directory where environment variables are loaded from and restrict prefixes
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
-    react(),
     nodePolyfills(),
+    react(),
+    tailwindcss(),
     VitePWA({
-      injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
-      registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
+      injectRegister: 'auto',
+      registerType: 'autoUpdate',
       devOptions: {
-        enabled: false, // disable service worker registration in development mode
+        enabled: false,
       },
       useCredentials: true,
       workbox: {
@@ -84,7 +85,7 @@ export default defineConfig({
     compression({
       verbose: true,
       disable: false,
-      threshold: 10240, // compress files larger than 10KB
+      threshold: 10240,
       algorithm: 'gzip',
       ext: '.gz',
     }),
@@ -96,42 +97,32 @@ export default defineConfig({
     minify: 'terser',
     rollupOptions: {
       preserveEntrySignatures: 'strict',
-      // external: ['uuid'],
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
-            // Group Radix UI libraries together.
             if (id.includes('@radix-ui')) {
               return 'radix-ui';
             }
-            // Group framer-motion separately.
             if (id.includes('framer-motion')) {
               return 'framer-motion';
             }
-            // Group markdown-related libraries.
             if (id.includes('node_modules/highlight.js')) {
               return 'markdown_highlight';
             }
             if (id.includes('node_modules/hast-util-raw') || id.includes('node_modules/katex')) {
               return 'markdown_large';
             }
-            // Group TanStack libraries together.
             if (id.includes('@tanstack')) {
               return 'tanstack-vendor';
             }
-            // Additional grouping for other node_modules:
             if (id.includes('@headlessui')) {
               return 'headlessui';
             }
-
-            // Everything else falls into a generic vendor chunk.
             return 'vendor';
           }
-          // Create a separate chunk for all locale files under src/locales.
           if (id.includes(path.join('src', 'locales'))) {
             return 'locales';
           }
-          // Let Rollup decide automatically for any other files.
           return null;
         },
         entryFileNames: 'assets/[name].[hash].js',
@@ -143,10 +134,6 @@ export default defineConfig({
           return 'assets/[name].[hash][extname]';
         },
       },
-      /**
-       * Ignore "use client" waning since we are not using SSR
-       * @see {@link https://github.com/TanStack/query/pull/5161#issuecomment-1477389761 Preserve 'use client' directives TanStack/query#5161}
-       */
       onwarn(warning, warn) {
         if (warning.message.includes('Error when using sourcemap')) {
           return;
@@ -174,7 +161,6 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
       if (opts?.excludeNodeModules && id.includes('node_modules')) {
         return {
           code,
-          // https://github.com/rollup/rollup/blob/master/docs/plugin-development/index.md#source-code-transformations
           map: { mappings: '' },
         };
       }
