@@ -15,7 +15,6 @@ const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**
- *
  * @param {Express.Application} app
  */
 const configureSocialLogins = (app) => {
@@ -35,10 +34,7 @@ const configureSocialLogins = (app) => {
     passport.use(appleLogin());
   }
   if (
-    process.env.OPENID_CLIENT_ID &&
-    process.env.OPENID_CLIENT_SECRET &&
-    process.env.OPENID_ISSUER &&
-    process.env.OPENID_SCOPE &&
+    process.env.OPENID_ENABLED &&
     process.env.OPENID_SESSION_SECRET
   ) {
     const sessionOptions = {
