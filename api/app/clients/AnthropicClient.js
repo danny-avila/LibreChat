@@ -746,15 +746,6 @@ class AnthropicClient extends BaseClient {
       metadata,
     };
 
-    if (!/claude-3[-.]7/.test(model)) {
-      if (top_p !== undefined) {
-        requestOptions.top_p = top_p;
-      }
-      if (top_k !== undefined) {
-        requestOptions.top_k = top_k;
-      }
-    }
-
     if (this.useMessages) {
       requestOptions.messages = payload;
       requestOptions.max_tokens =
@@ -768,6 +759,14 @@ class AnthropicClient extends BaseClient {
       thinking: this.options.thinking,
       thinkingBudget: this.options.thinkingBudget,
     });
+
+    if (!/claude-3[-.]7/.test(model)) {
+      requestOptions.top_p = top_p;
+      requestOptions.top_k = top_k;
+    } else if (requestOptions.thinking == null) {
+      requestOptions.topP = top_p;
+      requestOptions.topK = top_k;
+    }
 
     if (this.systemMessage && this.supportsCacheControl === true) {
       requestOptions.system = [
