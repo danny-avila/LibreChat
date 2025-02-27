@@ -6,7 +6,7 @@ import {
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery } from '~/data-provider';
 import MenuSeparator from '../UI/MenuSeparator';
 import { getEndpointField } from '~/utils';
 import { useHasAccess } from '~/hooks';

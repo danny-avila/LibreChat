@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { GitFork, InfoIcon } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
@@ -12,18 +12,18 @@ import {
   HoverCardContent,
 } from '~/components/ui';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
-import { useToastContext, useChatContext } from '~/Providers';
-import { useLocalize, useNavigateToConvo } from '~/hooks';
+import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
 
 interface PopoverButtonProps {
   children: React.ReactNode;
-  setting: string;
-  onClick: (setting: string) => void;
-  setActiveSetting: React.Dispatch<React.SetStateAction<string>>;
+  setting: ForkOptions;
+  onClick: (setting: ForkOptions) => void;
+  setActiveSetting: React.Dispatch<React.SetStateAction<TranslationKeys>>;
   sideOffset?: number;
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
   hoverInfo?: React.ReactNode | string;
@@ -31,11 +31,11 @@ interface PopoverButtonProps {
   hoverDescription?: React.ReactNode | string;
 }
 
-const optionLabels = {
+const optionLabels: Record<ForkOptions, TranslationKeys> = {
   [ForkOptions.DIRECT_PATH]: 'com_ui_fork_visible',
   [ForkOptions.INCLUDE_BRANCHES]: 'com_ui_fork_branches',
   [ForkOptions.TARGET_LEVEL]: 'com_ui_fork_all_target',
-  default: 'com_ui_fork_from_message',
+  [ForkOptions.DEFAULT]: 'com_ui_fork_from_message',
 };
 
 const PopoverButton: React.FC<PopoverButtonProps> = ({
@@ -65,10 +65,10 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             clearTimeout(timeoutRef.current);
           }
           timeoutRef.current = setTimeout(() => {
-            setActiveSetting(optionLabels.default);
+            setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100 "
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
         type="button"
       >
         {children}
@@ -77,18 +77,12 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
         (hoverTitle != null && hoverTitle !== '') ||
         (hoverDescription != null && hoverDescription !== '')) && (
         <HoverCardPortal>
-          <HoverCardContent
-            side="right"
-            className="z-[999] w-80 dark:bg-gray-700"
-            sideOffset={sideOffset}
-          >
+          <HoverCardContent side="right" className="z-[999] w-80 dark:bg-gray-700" sideOffset={sideOffset}>
             <div className="space-y-2">
               <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
-                {hoverInfo != null && hoverInfo !== '' && hoverInfo}
-                {hoverTitle != null && hoverTitle !== '' && (
-                  <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>
-                )}
-                {hoverDescription != null && hoverDescription !== '' && hoverDescription}
+                {hoverInfo && hoverInfo}
+                {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
+                {hoverDescription && hoverDescription}
               </p>
             </div>
           </HoverCardContent>
@@ -112,10 +106,9 @@ export default function Fork({
   latestMessageId?: string;
 }) {
   const localize = useLocalize();
-  const { index } = useChatContext();
   const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
-  const { navigateToConvo } = useNavigateToConvo(index);
+  const { navigateToConvo } = useNavigateToConvo();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
@@ -202,7 +195,7 @@ export default function Fork({
             align="center"
           >
             <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
-              {localize(activeSetting)}
+              {localize(activeSetting )}
               <HoverCard openDelay={50}>
                 <HoverCardTrigger asChild>
                   <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50" />
@@ -217,7 +210,9 @@ export default function Fork({
                       <span>{localize('com_ui_fork_info_1')}</span>
                       <span>{localize('com_ui_fork_info_2')}</span>
                       <span>
-                        {localize('com_ui_fork_info_3', localize('com_ui_fork_split_target'))}
+                        {localize('com_ui_fork_info_3', {
+                          0: localize('com_ui_fork_split_target'),
+                        })}
                       </span>
                     </div>
                   </HoverCardContent>
@@ -270,9 +265,9 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <ListTree className="h-5 w-5" />
-                    {`${localize(optionLabels[ForkOptions.TARGET_LEVEL])} (${localize(
-                      'com_endpoint_default',
-                    )})`}
+                    {`${localize(
+                      optionLabels[ForkOptions.TARGET_LEVEL],
+                    )} (${localize('com_endpoint_default')})`}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_target')}

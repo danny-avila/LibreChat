@@ -2,7 +2,6 @@ const streamResponse = require('./streamResponse');
 const removePorts = require('./removePorts');
 const countTokens = require('./countTokens');
 const handleText = require('./handleText');
-const citations = require('./citations');
 const sendEmail = require('./sendEmail');
 const cryptoUtils = require('./crypto');
 const queue = require('./queue');
@@ -20,12 +19,11 @@ function checkEmailConfig() {
     !!process.env.EMAIL_FROM
   );
 }
-console.log("Exporting utils:", {
+console.log('Exporting utils:', {
   ...streamResponse,
   checkEmailConfig,
   ...cryptoUtils,
   ...handleText,
-  ...citations,
   countTokens,
   removePorts,
   sendEmail,
@@ -38,7 +36,6 @@ module.exports = {
   checkEmailConfig,
   ...cryptoUtils,
   ...handleText,
-  ...citations,
   countTokens,
   removePorts,
   sendEmail,

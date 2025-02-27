@@ -21,12 +21,8 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
-  extractBaseURL,
-  // constructAzureURL,
-  // genAzureChatCompletion,
-} = require('~/utils');
-const {
   formatMessage,
+  addCacheControl,
   formatAgentMessages,
   formatContentStrings,
   createContextHandlers,
@@ -52,7 +48,7 @@ const providerParsers = {
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
 const noSystemModelRegex = [/\bo1\b/gi];
-
+let parentThis;
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
 // const { getCurrentDateTime } = require('~/utils');
@@ -60,6 +56,9 @@ const noSystemModelRegex = [/\bo1\b/gi];
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
+    /** The current client class
+     * @type {string} */
+    this.clientName = EModelEndpoint.agents;
 
     /** @type {'discard' | 'summarize'} */
     this.contextStrategy = 'discard';
@@ -91,6 +90,15 @@ class AgentClient extends BaseClient {
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
     this.model = this.options.agent.model_parameters.model;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'input_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'output_tokens';
+    /** @type {UsageMetadata} */
+    this.usage;
+    parentThis = this;
   }
 
   /**
@@ -98,6 +106,34 @@ class AgentClient extends BaseClient {
    * @returns {MessageContentComplex[]} */
   getContentParts() {
     return this.contentParts;
+  }
+
+  getClient() {
+    return parentThis;
+  }
+
+  /**
+   * Creates a message or completion response using the Anthropic client.
+   * @param {Anthropic} client - The Anthropic client instance.
+   * @param {Anthropic.default.MessageCreateParams | Anthropic.default.CompletionCreateParams} options - The options for the message or completion.
+   * @param {boolean} useMessages - Whether to use messages or completions. Defaults to `this.useMessages`.
+   * @returns {Promise<Anthropic.default.Message | Anthropic.default.Completion>} The response from the Anthropic client.
+   */
+  async createResponse(client, options, useMessages, convo) {
+    const { APRO_BEDROCK_CHAT_TITLE_AGENT_ID, APRO_BEDROCK_CHAT_TITLE_AGENT_ALIAS_ID } =
+      process.env ?? {};
+    const response = await client.options.bedrockClient.sendMessage({
+      agentId: APRO_BEDROCK_CHAT_TITLE_AGENT_ID ?? client.options.agent.model_parameters.agentId,
+      agentAliasId:
+        APRO_BEDROCK_CHAT_TITLE_AGENT_ALIAS_ID ??
+        client.options.agent.model_parameters.agentAliasId,
+      sessionId: client.conversationId,
+      inputText: typeof convo === 'string' ? convo : convo[0].text,
+    });
+    return response;
+    // return useMessages ?? this.useMessages
+    //   ? await client.messages.create(options)
+    //   : await client.completions.create(options);
   }
 
   setOptions(options) {
@@ -165,18 +201,59 @@ class AgentClient extends BaseClient {
     // delete this.modelOptions.stop;
   }
 
+  async generateTitle({ inputText, contentParts, clientOptions, chainOptions }) {
+    // Kóði til að búa til titil með Claude módelið
+    const system = 'Generate a title for the conversation.';
+
+    const convo = `<initial_message>
+  ${inputText}
+  </initial_message>
+  <response>
+  ${JSON.stringify(contentParts)}
+  </response>`;
+    const content = `<conversation_context>
+  ${convo}
+  </conversation_context>
+  
+  Please generate a title for this conversation.`;
+
+    const titleMessage = { role: 'user', content };
+    const requestOptions = {
+      model: 'claude-3-5', // Claude model
+      temperature: 0.3,
+      max_tokens: 512,
+      system,
+      stop_sequences: ['\n\nHuman:', '\n\nAssistant', '</function_calls>'],
+      messages: [titleMessage],
+    };
+
+    try {
+      const summaryInput =
+        'Please give this conversation a very descriptive and short title, four to five words at most. Answer in the language that the question was asked in. ' +
+        convo;
+      const client = this.getClient();
+      const response = await this.createResponse(client, requestOptions, true, summaryInput);
+
+      const text = response.text;
+      return { title: text };
+    } catch (e) {
+      logger.error('[Run] There was an issue generating the title', e);
+      throw e;
+    }
+  }
+
   getSaveOptions() {
     const parseOptions = providerParsers[this.options.endpoint];
     let runOptions =
       this.options.endpoint === EModelEndpoint.agents
         ? {
-          model: undefined,
-          // TODO:
-          // would need to be override settings; otherwise, model needs to be undefined
-          // model: this.override.model,
-          // instructions: this.override.instructions,
-          // additional_instructions: this.override.additional_instructions,
-        }
+            model: undefined,
+            // TODO:
+            // would need to be override settings; otherwise, model needs to be undefined
+            // model: this.override.model,
+            // instructions: this.override.instructions,
+            // additional_instructions: this.override.additional_instructions,
+          }
         : {};
 
     if (parseOptions) {
@@ -329,16 +406,18 @@ class AgentClient extends BaseClient {
       this.options.agent.instructions = systemContent;
     }
 
+    /** @type {Record<string, number> | undefined} */
+    let tokenCountMap;
+
     if (this.contextStrategy) {
-      ({ payload, promptTokens, messages } = await this.handleContextStrategy({
+      ({ payload, promptTokens, tokenCountMap, messages } = await this.handleContextStrategy({
         orderedMessages,
         formattedMessages,
-        /* prefer usage_metadata from final message */
-        buildTokenMap: false,
       }));
     }
 
     const result = {
+      tokenCountMap,
       prompt: payload,
       promptTokens,
       messages,
@@ -368,8 +447,26 @@ class AgentClient extends BaseClient {
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
   async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
-    for (const usage of collectedUsage) {
-      await spendTokens(
+    if (!collectedUsage || !collectedUsage.length) {
+      return;
+    }
+    const input_tokens = collectedUsage[0]?.input_tokens || 0;
+
+    let output_tokens = 0;
+    let previousTokens = input_tokens; // Start with original input
+    for (let i = 0; i < collectedUsage.length; i++) {
+      const usage = collectedUsage[i];
+      if (i > 0) {
+        // Count new tokens generated (input_tokens minus previous accumulated tokens)
+        output_tokens += (Number(usage.input_tokens) || 0) - previousTokens;
+      }
+
+      // Add this message's output tokens
+      output_tokens += Number(usage.output_tokens) || 0;
+
+      // Update previousTokens to include this message's output
+      previousTokens += Number(usage.output_tokens) || 0;
+      spendTokens(
         {
           context,
           conversationId: this.conversationId,
@@ -378,8 +475,66 @@ class AgentClient extends BaseClient {
           model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
         },
         { promptTokens: usage.input_tokens, completionTokens: usage.output_tokens },
-      );
+      ).catch((err) => {
+        logger.error(
+          '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
+          err,
+        );
+      });
     }
+
+    this.usage = {
+      input_tokens,
+      output_tokens,
+    };
+  }
+
+  /**
+   * Get stream usage as returned by this client's API response.
+   * @returns {UsageMetadata} The stream usage object.
+   */
+  getStreamUsage() {
+    return this.usage;
+  }
+
+  /**
+   * @param {TMessage} responseMessage
+   * @returns {number}
+   */
+  getTokenCountForResponse({ content }) {
+    return this.getTokenCountForMessage({
+      role: 'assistant',
+      content,
+    });
+  }
+
+  /**
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
+   * Edge case: If the calculation results in a negative value, it returns the original estimate.
+   * If revisiting a conversation with a chat history entirely composed of token estimates,
+   * the cumulative token count going forward should become more accurate as the conversation progresses.
+   * @param {Object} params - The parameters for the calculation.
+   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
+   * @param {string} params.currentMessageId - The ID of the current message to calculate.
+   * @param {OpenAIUsageMetadata} params.usage - The usage object returned by the API.
+   * @returns {number} The correct token count for the current user message.
+   */
+  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
+    const originalEstimate = tokenCountMap[currentMessageId] || 0;
+
+    if (!usage || typeof usage[this.inputTokensKey] !== 'number') {
+      return originalEstimate;
+    }
+
+    tokenCountMap[currentMessageId] = 0;
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
+      const numCount = Number(count);
+      return sum + (isNaN(numCount) ? 0 : numCount);
+    }, 0);
+    const totalInputTokens = usage[this.inputTokensKey] ?? 0;
+
+    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
+    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
   }
 
   async chatCompletion({ payload, abortController = null }) {
@@ -387,19 +542,6 @@ class AgentClient extends BaseClient {
       if (!abortController) {
         abortController = new AbortController();
       }
-
-      const baseURL = extractBaseURL(this.completionsUrl);
-      logger.debug('[api/server/controllers/agents/client.js] chatCompletion', {
-        baseURL,
-        payload,
-      });
-
-      // if (this.useOpenRouter) {
-      //   opts.defaultHeaders = {
-      //     'HTTP-Referer': 'https://librechat.ai',
-      //     'X-Title': 'LibreChat',
-      //   };
-      // }
 
       // if (this.options.headers) {
       //   opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
@@ -518,7 +660,7 @@ class AgentClient extends BaseClient {
        * @param {number} [i]
        * @param {TMessageContentParts[]} [contentData]
        */
-      const runAgent = async (agent, messages, i = 0, contentData = []) => {
+      const runAgent = async (agent, _messages, i = 0, contentData = []) => {
         config.configurable.model = agent.model_parameters.model;
         if (i > 0) {
           this.model = agent.model_parameters.model;
@@ -537,7 +679,7 @@ class AgentClient extends BaseClient {
         let systemContent = [
           systemMessage,
           agent.instructions ?? '',
-          i !== 0 ? agent.additional_instructions ?? '' : '',
+          i !== 0 ? (agent.additional_instructions ?? '') : '',
         ]
           .join('\n')
           .trim();
@@ -551,12 +693,21 @@ class AgentClient extends BaseClient {
         }
 
         if (noSystemMessages === true && systemContent?.length) {
-          let latestMessage = messages.pop().content;
+          let latestMessage = _messages.pop().content;
           if (typeof latestMessage !== 'string') {
             latestMessage = latestMessage[0].text;
           }
           latestMessage = [systemContent, latestMessage].join('\n');
-          messages.push(new HumanMessage(latestMessage));
+          _messages.push(new HumanMessage(latestMessage));
+        }
+
+        let messages = _messages;
+        if (
+          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
+            'prompt-caching',
+          )
+        ) {
+          messages = addCacheControl(messages);
         }
 
         run = await createRun({
@@ -593,7 +744,36 @@ class AgentClient extends BaseClient {
         });
       };
 
-      await runAgent(this.options.agent, initialMessages);
+      if (this.options.endpoint === EModelEndpoint.bedrock && this.options.bedrockClient) {
+        const message = initialMessages[initialMessages.length - 1].content;
+        const response = await this.options.bedrockClient.sendMessage({
+          agentId: this.options.agent.model_parameters.agentId,
+          agentAliasId: this.options.agent.model_parameters.agentAliasId,
+          sessionId: this.conversationId,
+          inputText: typeof message === 'string' ? message : message[0].text,
+        });
+
+        // Initialize a basic run object for Bedrock agents
+        this.run = {
+          Graph: {
+            contentData: [],
+            getRunMessages: () => [],
+          },
+          generateTitle: this.generateTitle,
+          getClient: this.getClient,
+          createResponse: this.createResponse,
+        };
+
+        if (this.options.eventHandlers?.onProgress) {
+          this.options.eventHandlers.onProgress(response.text);
+        }
+        this.contentParts.push({
+          type: ContentTypes.TEXT,
+          text: response.text,
+        });
+      } else {
+        await runAgent(this.options.agent, initialMessages);
+      }
 
       let finalContentStart = 0;
       if (this.agentConfigs && this.agentConfigs.size > 0) {
@@ -676,12 +856,14 @@ class AgentClient extends BaseClient {
         );
       });
 
-      this.recordCollectedUsage({ context: 'message' }).catch((err) => {
+      try {
+        await this.recordCollectedUsage({ context: 'message' });
+      } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
           err,
         );
-      });
+      }
     } catch (err) {
       if (!abortController.signal.aborted) {
         logger.error(
@@ -767,8 +949,11 @@ class AgentClient extends BaseClient {
     }
   }
 
+  /** Silent method, as `recordCollectedUsage` is used instead */
+  async recordTokenUsage() {}
+
   getEncoding() {
-    return this.model?.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
+    return 'o200k_base';
   }
 
   /**

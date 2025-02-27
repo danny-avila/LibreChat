@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { tool: toolFn, Tool } = require('@langchain/core/tools');
+const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const {
   Tools,
@@ -16,6 +16,7 @@ const {
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { createYouTubeTools, manifestToolMap, toolkits } = require('~/app/clients/tools');
 const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
@@ -97,9 +98,20 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   }
 
   /** Basic Tools; schema: { input: string } */
-  const basicToolInstances = [new Calculator()];
+  const basicToolInstances = [new Calculator(), ...createYouTubeTools({ override: true })];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+    let toolName = formattedTool[Tools.function].name;
+    toolName = toolkits.some((toolkit) => toolName.startsWith(toolkit.pluginKey))
+      ? toolName.split('_')[0]
+      : toolName;
+    if (filter.has(toolName) && included.size === 0) {
+      continue;
+    }
+
+    if (included.size > 0 && !included.has(toolName)) {
+      continue;
+    }
     tools.push(formattedTool);
   }
 
@@ -173,7 +185,26 @@ async function processRequiredActions(client, requiredActions) {
     `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
-  const tools = requiredActions.map((action) => action.tool);
+  const toolDefinitions = client.req.app.locals.availableTools;
+  const seenToolkits = new Set();
+  const tools = requiredActions
+    .map((action) => {
+      const toolName = action.tool;
+      const toolDef = toolDefinitions[toolName];
+      if (toolDef && !manifestToolMap[toolName]) {
+        for (const toolkit of toolkits) {
+          if (seenToolkits.has(toolkit.pluginKey)) {
+            return;
+          } else if (toolName.startsWith(`${toolkit.pluginKey}_`)) {
+            seenToolkits.add(toolkit.pluginKey);
+            return toolkit.pluginKey;
+          }
+        }
+      }
+      return toolName;
+    })
+    .filter((toolName) => !!toolName);
+
   const { loadedTools } = await loadTools({
     user: client.req.user.id,
     model: client.req.body.model ?? 'gpt-4o-mini',
@@ -378,11 +409,12 @@ async function processRequiredActions(client, requiredActions) {
  * Processes the runtime tool calls and returns the tool classes.
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
+ * @param {ServerResponse} params.res - The request object.
  * @param {Agent} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
-async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
+async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   }
@@ -437,6 +469,11 @@ async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
     }
 
     if (tool.mcp === true) {
+      agentTools.push(tool);
+      continue;
+    }
+
+    if (tool instanceof DynamicStructuredTool) {
       agentTools.push(tool);
       continue;
     }
@@ -510,6 +547,8 @@ async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
 
       if (requestBuilder) {
         const tool = await createActionTool({
+          req,
+          res,
           action: actionSet,
           requestBuilder,
           zodSchema,

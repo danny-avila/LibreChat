@@ -9,6 +9,7 @@ cache: true
 
 # Custom interface configuration
 interface:
+  customWelcome: "Welcome to LibreChat! Enjoy your experience."
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
@@ -58,10 +59,10 @@ interface:
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
   endpointsMenu: true
-  modelSelect: false
+  modelSelect: true
   parameters: true
   sidePanel: true
-  presets: false
+  presets: true
   prompts: true
   bookmarks: true
   multiConvo: true
@@ -69,7 +70,7 @@ interface:
 
 # Example Registration Object Structure (optional)
 registration:
-  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook']
+  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
   # allowedDomains:
   # - "gmail.com"
 
@@ -81,7 +82,7 @@ registration:
 #       model: ''
 #       voices: ['']
 
-#  
+#
 #   stt:
 #     openai:
 #       url: ''
@@ -223,7 +224,6 @@ endpoints:
     - name: 'OpenRouter'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
       # recommended environment variables:
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       models:
@@ -234,10 +234,10 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
-      
+
     # Portkey AI Example
     - name: "Portkey"
-      apiKey: "dummy"  
+      apiKey: "dummy"
       baseURL: 'https://api.portkey.ai/v1'
       headers:
           x-portkey-api-key: '${PORTKEY_API_KEY}'

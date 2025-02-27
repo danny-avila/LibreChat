@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, EModelEndpoint, LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
@@ -12,23 +12,32 @@ const useNavigateToConvo = (index = 0) => {
   const clearAllConversations = store.useClearConvoState();
   const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
-  const { setConversation } = store.useCreateConversationAtom(index);
+  const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
 
-  const navigateToConvo = (conversation: TConversation, _resetLatestMessage = true) => {
+  const navigateToConvo = (
+    conversation?: TConversation | null,
+    _resetLatestMessage = true,
+    invalidateMessages = false,
+  ) => {
     if (!conversation) {
-      console.log('Conversation not provided');
+      logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
+    hasSetConversation.current = true;
     setSubmission(null);
     if (_resetLatestMessage) {
       clearAllLatestMessages();
     }
+    if (invalidateMessages && conversation.conversationId != null && conversation.conversationId) {
+      queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], []);
+      queryClient.invalidateQueries([QueryKeys.messages, conversation.conversationId]);
+    }
 
     let convo = { ...conversation };
-    if (!convo?.endpoint) {
-      /* undefined endpoint edge case */
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    if (!convo.endpoint || !endpointsConfig?.[convo.endpoint]) {
+      /* undefined/removed endpoint edge case */
       const modelsConfig = queryClient.getQueryData<TModelsConfig>([QueryKeys.models]);
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
       const defaultEndpoint = getDefaultEndpoint({
         convoSetup: conversation,
         endpointsConfig,
@@ -42,10 +51,10 @@ const useNavigateToConvo = (index = 0) => {
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
 
       convo = buildDefaultConvo({
+        models,
         conversation,
         endpoint: defaultEndpoint,
         lastConversationSetup: conversation,
-        models,
       });
     }
     clearAllConversations(true);
@@ -53,25 +62,35 @@ const useNavigateToConvo = (index = 0) => {
     navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
   };
 
-  const navigateWithLastTools = (conversation: TConversation, _resetLatestMessage?: boolean) => {
+  const navigateWithLastTools = (
+    conversation?: TConversation | null,
+    _resetLatestMessage?: boolean,
+    invalidateMessages?: boolean,
+  ) => {
+    if (!conversation) {
+      logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
+      return;
+    }
     // set conversation to the new conversation
-    if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
+    if (conversation.endpoint === EModelEndpoint.gptPlugins) {
       let lastSelectedTools = [];
       try {
         lastSelectedTools =
           JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
       } catch (e) {
-        // console.error(e);
+        logger.error('conversation', 'Error parsing last selected tools', e);
       }
+      const hasTools = (conversation.tools?.length ?? 0) > 0;
       navigateToConvo(
         {
           ...conversation,
-          tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
+          tools: hasTools ? conversation.tools : lastSelectedTools,
         },
         _resetLatestMessage,
+        invalidateMessages,
       );
     } else {
-      navigateToConvo(conversation, _resetLatestMessage);
+      navigateToConvo(conversation, _resetLatestMessage, invalidateMessages);
     }
   };
 

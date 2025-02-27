@@ -5,10 +5,21 @@ const {
   AuthType,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { getLogStores } = require('~/cache');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { sleep } = require('~/server/utils');
+const { CacheKeys } = require('librechat-data-provider');
 
 const getOptions = async ({ req, endpointOption }) => {
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const availableAgents = await cache.get(CacheKeys.MODELS_CONFIG);
+  const currentAgentName = req?.user?.lastSelectedModel;
+  const currentAgentId = availableAgents.find((a) => a.agentName === currentAgentName)?.agentId;
+  const currentAliasId = availableAgents.find(
+    (a) => a.agentName === currentAgentName,
+  )?.latestAliasId;
+  console.log('currentAgentId:', currentAgentId); // eslint-disable-line no-console
+
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -16,6 +27,8 @@ const getOptions = async ({ req, endpointOption }) => {
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
+    AWS_BEDROCK_AGENT_ID,
+    AWS_BEDROCK_AGENT_ALIAS_ID,
   } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
@@ -23,10 +36,10 @@ const getOptions = async ({ req, endpointOption }) => {
   let credentials = isUserProvided
     ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
     : {
-      accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
-      secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
-      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
-    };
+        accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
+        secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
+        ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
+      };
 
   if (!credentials) {
     throw new Error('Bedrock credentials not provided. Please provide them again.');
@@ -62,7 +75,9 @@ const getOptions = async ({ req, endpointOption }) => {
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: endpointOption.model,
+    model: undefined,
+    agentId: currentAgentId ?? AWS_BEDROCK_AGENT_ID,
+    agentAliasId: currentAliasId ?? AWS_BEDROCK_AGENT_ALIAS_ID,
     region: BEDROCK_AWS_DEFAULT_REGION,
     streaming: true,
     streamUsage: true,

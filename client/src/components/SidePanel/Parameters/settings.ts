@@ -2,6 +2,8 @@ import {
   ImageDetail,
   EModelEndpoint,
   openAISettings,
+  googleSettings,
+  ReasoningEffort,
   BedrockProviders,
   anthropicSettings,
 } from 'librechat-data-provider';
@@ -202,6 +204,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  reasoning_effort: {
+    key: 'reasoning_effort',
+    label: 'com_endpoint_reasoning_effort',
+    labelCode: true,
+    description: 'com_endpoint_openai_reasoning_effort',
+    descriptionCode: true,
+    type: 'enum',
+    default: ReasoningEffort.medium,
+    component: 'slider',
+    options: [ReasoningEffort.low, ReasoningEffort.medium, ReasoningEffort.high],
+    optionType: 'model',
+    columnSpan: 4,
+  },
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -263,10 +278,40 @@ const anthropic: Record<string, SettingDefinition> = {
     description: 'com_endpoint_anthropic_prompt_cache',
     descriptionCode: true,
     type: 'boolean',
-    default: true,
+    default: anthropicSettings.promptCache.default,
     component: 'switch',
     optionType: 'conversation',
     showDefault: false,
+    columnSpan: 2,
+  },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: anthropicSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking_budget',
+    descriptionCode: true,
+    type: 'number',
+    component: 'input',
+    default: anthropicSettings.thinkingBudget.default,
+    range: {
+      min: anthropicSettings.thinkingBudget.min,
+      max: anthropicSettings.thinkingBudget.max,
+      step: anthropicSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
     columnSpan: 2,
   },
 };
@@ -352,6 +397,87 @@ const meta: Record<string, SettingDefinition> = {
   }),
 };
 
+const google: Record<string, SettingDefinition> = {
+  temperature: createDefinition(baseDefinitions.temperature, {
+    default: googleSettings.temperature.default,
+    range: {
+      min: googleSettings.temperature.min,
+      max: googleSettings.temperature.max,
+      step: googleSettings.temperature.step,
+    },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
+    default: googleSettings.topP.default,
+    range: {
+      min: googleSettings.topP.min,
+      max: googleSettings.topP.max,
+      step: googleSettings.topP.step,
+    },
+  }),
+  topK: {
+    key: 'topK',
+    label: 'com_endpoint_top_k',
+    labelCode: true,
+    description: 'com_endpoint_google_topk',
+    descriptionCode: true,
+    type: 'number',
+    default: googleSettings.topK.default,
+    range: {
+      min: googleSettings.topK.min,
+      max: googleSettings.topK.max,
+      step: googleSettings.topK.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  maxOutputTokens: {
+    key: 'maxOutputTokens',
+    label: 'com_endpoint_max_output_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_google_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    default: googleSettings.maxOutputTokens.default,
+    range: {
+      min: googleSettings.maxOutputTokens.min,
+      max: googleSettings.maxOutputTokens.max,
+      step: googleSettings.maxOutputTokens.step,
+    },
+    optionType: 'model',
+    columnSpan: 2,
+  },
+};
+
+const googleConfig: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  google.maxOutputTokens,
+  google.temperature,
+  google.topP,
+  google.topK,
+  librechat.resendFiles,
+];
+
+const googleCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const googleCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  google.maxOutputTokens,
+  google.temperature,
+  google.topP,
+  google.topK,
+  librechat.resendFiles,
+];
+
 const openAI: SettingsConfiguration = [
   openAIParams.chatGptLabel,
   librechat.promptPrefix,
@@ -364,6 +490,7 @@ const openAI: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.reasoning_effort,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -380,6 +507,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
+  openAIParams.reasoning_effort,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
 ];
@@ -394,6 +522,8 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.topK,
   librechat.resendFiles,
   anthropic.promptCache,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -410,6 +540,8 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.topK,
   librechat.resendFiles,
   anthropic.promptCache,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
@@ -529,6 +661,7 @@ export const settings: Record<string, SettingsConfiguration | undefined> = {
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
+  [EModelEndpoint.google]: googleConfig,
 };
 
 const openAIColumns = {
@@ -571,6 +704,10 @@ export const presetSettings: Record<
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneralColumns,
+  [EModelEndpoint.google]: {
+    col1: googleCol1,
+    col2: googleCol2,
+  },
 };
 
 export const agentSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   Label,
   Listbox,
@@ -82,18 +82,14 @@ function SelectDropDown({
   }
 
   let title = _title;
-
   if (emptyTitle) {
     title = '';
   } else if (!(title ?? '')) {
     title = localize('com_ui_model');
   }
-
   const values = availableValues ?? [];
 
-  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
-  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
-  // reset once the component is unmounted (as per a normal search)
+  // Enable searchable select if enough items are provided.
   const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
     availableOptions: values,
     placeholder: searchPlaceholder,
@@ -103,26 +99,35 @@ function SelectDropDown({
   });
   const hasSearchRender = searchRender != null;
   const options = hasSearchRender ? filteredValues : values;
-
   const renderIcon = showOptionIcon && value != null && (value as OptionWithIcon).icon != null;
 
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
   return (
-    <div className={cn('flex items-center justify-center gap-2 ', containerClassName ?? '')}>
+    <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className={cn('relative w-full', subContainerClassName ?? '')}>
         <Listbox value={value} onChange={setValue} disabled={disabled}>
           {({ open }) => (
             <>
               <ListboxButton
+                ref={buttonRef}
                 data-testid="select-dropdown-button"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!open && buttonRef.current) {
+                      buttonRef.current.click();
+                    }
+                  }
+                }}
                 className={cn(
-                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left disabled:bg-white dark:border-gray-600 dark:bg-gray-700 sm:text-sm',
+                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:bg-white dark:border-gray-600 dark:bg-gray-700 sm:text-sm',
                   className ?? '',
                 )}
               >
-                {' '}
                 {showLabel && (
                   <Label
-                    className="block text-xs text-gray-700 dark:text-gray-500 "
+                    className="block text-xs text-gray-700 dark:text-gray-500"
                     id="headlessui-listbox-label-:r1:"
                     data-headlessui-state=""
                   >
@@ -154,11 +159,9 @@ function SelectDropDown({
                       if (!value) {
                         return <span className="text-text-secondary">{placeholder}</span>;
                       }
-
                       if (typeof value !== 'string') {
                         return value.label ?? '';
                       }
-
                       return value;
                     })()}
                   </span>
@@ -171,7 +174,7 @@ function SelectDropDown({
                     viewBox="0 0 24 24"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="h-4 w-4  text-gray-400"
+                    className="h-4 w-4 text-gray-400"
                     height="1em"
                     width="1em"
                     xmlns="http://www.w3.org/2000/svg"
@@ -212,17 +215,17 @@ function SelectDropDown({
                     if (!option) {
                       return null;
                     }
-
                     const currentLabel =
-                      typeof option === 'string' ? option : option.label ?? option.value ?? '';
-                    const currentValue = typeof option === 'string' ? option : option.value ?? '';
+                      typeof option === 'string' ? option : (option.label ?? option.value ?? '');
+                    const currentValue = typeof option === 'string' ? option : (option.value ?? '');
                     const currentIcon =
-                      typeof option === 'string' ? null : (option.icon as React.ReactNode) ?? null;
+                      typeof option === 'string'
+                        ? null
+                        : ((option.icon as React.ReactNode) ?? null);
                     let activeValue: string | number | null | Option = value;
                     if (typeof activeValue !== 'string') {
                       activeValue = activeValue?.value ?? '';
                     }
-
                     return (
                       <ListboxOption
                         key={i}

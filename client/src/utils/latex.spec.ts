@@ -1,4 +1,4 @@
-/* eslint-disable no-useless-escape */
+
 import { processLaTeX, preprocessLaTeX } from './latex';
 
 describe('processLaTeX', () => {

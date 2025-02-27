@@ -6,6 +6,7 @@ const {
 } = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 const getOptions = require('~/server/services/Endpoints/bedrock/options');
+const BedrockAgentClient = require('~/server/services/Endpoints/bedrock/agent');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
 
@@ -22,11 +23,16 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   /** @type {Agent} */
   const agent = {
     id: EModelEndpoint.bedrock,
-    name: endpointOption.name,
+    name: "Bedrock Agent",
     instructions: endpointOption.promptPrefix,
     provider: EModelEndpoint.bedrock,
-    model: endpointOption.model_parameters.model,
-    model_parameters: endpointOption.model_parameters,
+    model: undefined,
+    model_parameters: {
+      ...endpointOption.model_parameters,
+      model: undefined,
+      agentId: process.env.AWS_BEDROCK_AGENT_ID,
+      agentAliasId: process.env.AWS_BEDROCK_AGENT_ALIAS_ID,
+    },
   };
 
   if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
@@ -52,11 +58,16 @@ const initializeClient = async ({ req, res, endpointOption }) => {
       model: endpointOption.model_parameters.model,
     });
 
+  const bedrockClient = new BedrockAgentClient({
+    region: options.llmConfig.region,
+    credentials: options.llmConfig.credentials,
+  });
+
   const client = new AgentClient({
     req,
     agent,
     sender,
-    // tools,
+    bedrockClient,
     contentParts,
     eventHandlers,
     collectedUsage,

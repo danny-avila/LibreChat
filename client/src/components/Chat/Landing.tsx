@@ -1,16 +1,20 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
-import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
-import { useGetAssistantDocsQuery } from '~/data-provider';
+import {
+  useGetAssistantDocsQuery,
+  useGetEndpointsQuery,
+  useGetStartupConfig,
+} from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { getIconEndpoint, getEntity, cn } from '~/utils';
 import { useLocalize, useSubmitMessage } from '~/hooks';
 import { TooltipAnchor } from '~/components/ui';
 import { BirthdayIcon } from '~/components/svg';
 import ConvoStarter from './ConvoStarter';
+import axios from 'axios';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
@@ -18,9 +22,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-
-  const localize = useLocalize();
-
+  const [welcomeMessage, setWelcomeMessage] = useState<string>('');
   let { endpoint = '' } = conversation ?? {};
 
   if (
@@ -30,12 +32,23 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   ) {
     endpoint = EModelEndpoint.openAI;
   }
-
   const iconURL = conversation?.iconURL;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
+
   const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpoint, {
     select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
   });
+
+  useEffect(() => {
+    const fetchWelcomeMessage = async () => {
+      const message = await getWelcomeMessage();
+      setWelcomeMessage(message);
+    };
+
+    fetchWelcomeMessage();
+  }, [conversation]);
+
+  const localize = useLocalize();
 
   const { entity, isAgent, isAssistant } = getEntity({
     endpoint,
@@ -48,8 +61,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const name = entity?.name ?? '';
   const description = entity?.description ?? '';
   const avatar = isAgent
-    ? (entity as t.Agent | undefined)?.avatar?.filepath ?? ''
-    : ((entity as t.Assistant | undefined)?.metadata?.avatar as string | undefined) ?? '';
+    ? ((entity as t.Agent | undefined)?.avatar?.filepath ?? '')
+    : (((entity as t.Assistant | undefined)?.metadata?.avatar as string | undefined) ?? '');
   const conversation_starters = useMemo(() => {
     /* The user made updates, use client-side cache, or they exist in an Agent */
     if (entity && (entity.conversation_starters?.length ?? 0) > 0) {
@@ -70,7 +83,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = (text: string) => submitMessage({ text });
 
-  const getWelcomeMessage = () => {
+  const getWelcomeMessage = async () => {
     const greeting = conversation?.greeting ?? '';
     if (greeting) {
       return greeting;
@@ -84,7 +97,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
       return localize('com_nav_welcome_agent');
     }
 
-    return localize('com_nav_welcome_message');
+    const currentAgent = await axios.get('/api/models/current');
+    return currentAgent.data?.description ?? localize('com_nav_welcome_message');
   };
 
   return (
@@ -114,16 +128,19 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
         {name ? (
           <div className="flex flex-col items-center gap-0 p-2">
             <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
-            <div className="max-w-md text-center text-sm font-normal text-text-primary ">
-              {description ? description : localize('com_nav_welcome_message')}
+            <div className="max-w-md text-center text-sm font-normal text-text-primary">
+              {description ||
+                (typeof startupConfig?.interface?.customWelcome === 'string'
+                  ? startupConfig?.interface?.customWelcome
+                  : localize('com_nav_welcome_message'))}
             </div>
             {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
-            <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
+             <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
           </div> */}
           </div>
         ) : (
           <h2 className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-            {getWelcomeMessage()}
+            {welcomeMessage}
           </h2>
         )}
         <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">

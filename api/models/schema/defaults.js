@@ -1,5 +1,7 @@
+const mongoose = require('mongoose');
+
 const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, bingAI, anthropic, chatGPTBrowser]
+  // endpoint: [azureOpenAI, openAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
@@ -24,6 +26,7 @@ const conversationPreset = {
     required: false,
   },
   // for google only
+  examples: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
   modelLabel: {
     type: String,
     required: false,
@@ -61,19 +64,6 @@ const conversationPreset = {
     type: Number,
     required: false,
   },
-  // for bingai only
-  jailbreak: {
-    type: Boolean,
-  },
-  context: {
-    type: String,
-  },
-  systemMessage: {
-    type: String,
-  },
-  toneStyle: {
-    type: String,
-  },
   file_ids: { type: [{ type: String }], default: undefined },
   // deprecated
   resendImages: {
@@ -82,6 +72,12 @@ const conversationPreset = {
   /* Anthropic only */
   promptCache: {
     type: Boolean,
+  },
+  thinking: {
+    type: Boolean,
+  },
+  thinkingBudget: {
+    type: Number,
   },
   system: {
     type: String,
@@ -130,64 +126,12 @@ const conversationPreset = {
   max_tokens: {
     type: Number,
   },
-};
-
-const agentOptions = {
-  model: {
-    type: String,
-    required: false,
-  },
-  // for azureOpenAI, openAI only
-  chatGptLabel: {
-    type: String,
-    required: false,
-  },
-  modelLabel: {
-    type: String,
-    required: false,
-  },
-  promptPrefix: {
-    type: String,
-    required: false,
-  },
-  temperature: {
-    type: Number,
-    required: false,
-  },
-  top_p: {
-    type: Number,
-    required: false,
-  },
-  // for google only
-  topP: {
-    type: Number,
-    required: false,
-  },
-  topK: {
-    type: Number,
-    required: false,
-  },
-  maxOutputTokens: {
-    type: Number,
-    required: false,
-  },
-  presence_penalty: {
-    type: Number,
-    required: false,
-  },
-  frequency_penalty: {
-    type: Number,
-    required: false,
-  },
-  context: {
-    type: String,
-  },
-  systemMessage: {
+  /** omni models only */
+  reasoning_effort: {
     type: String,
   },
 };
 
 module.exports = {
   conversationPreset,
-  agentOptions,
 };

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TConversation, TEndpointOption, TPreset } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { EndpointIcon } from '~/components/Endpoints';
 import { getPresetTitle } from '~/utils';
 

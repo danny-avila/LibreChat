@@ -55,7 +55,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
   let statusText: string;
   if (!status) {
-    statusText = text ?? localize('com_endpoint_import');
+    statusText = text ?? localize('com_ui_import');
   } else if (status === 'success') {
     statusText = successText ?? localize('com_ui_upload_success');
   } else {
@@ -72,12 +72,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
       )}
     >
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
-      <span className="flex text-xs ">{statusText}</span>
+      <span className="flex text-xs">{statusText}</span>
       <input
         id={`file-upload-${id}`}
         value=""
         type="file"
-        className={cn('hidden ', className)}
+        className={cn('hidden', className)}
         accept=".json"
         onChange={handleFileChange}
       />

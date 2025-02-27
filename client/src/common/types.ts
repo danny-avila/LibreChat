@@ -6,6 +6,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
+import type { TranslationKeys } from '~/hooks';
 
 export type CodeBarProps = {
   lang: string;
@@ -66,7 +67,10 @@ export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<t.EModelEndpoint, string>;
 
-export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
+export type LocalizeFunction = (
+  phraseKey: TranslationKeys,
+  options?: Record<string, string | number>,
+) => string;
 
 export type ChatFormValues = { text: string };
 
@@ -85,16 +89,24 @@ export type IconMapProps = {
   iconURL?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   endpoint?: string | null;
+  endpointType?: string;
   assistantName?: string;
   agentName?: string;
   avatar?: string;
   size?: number;
 };
 
-export type AgentIconMapProps = IconMapProps & { agentName: string };
+export type IconComponent = React.ComponentType<IconMapProps>;
+export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
+export type IconComponentTypes = IconComponent | AgentIconComponent;
+export type IconsRecord = {
+  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
+};
+
+export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
-  title: string;
+  title: TranslationKeys;
   label?: string;
   icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
@@ -358,12 +370,12 @@ export type TDangerButtonProps = {
   showText?: boolean;
   mutation?: UseMutationResult<unknown>;
   onClick: () => void;
-  infoTextCode: string;
-  actionTextCode: string;
+  infoTextCode: TranslationKeys;
+  actionTextCode: TranslationKeys;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
-  infoDescriptionCode?: string;
-  confirmActionTextCode?: string;
+  infoDescriptionCode?: TranslationKeys;
+  confirmActionTextCode?: TranslationKeys;
 };
 
 export type TDialogProps = {
@@ -405,7 +417,7 @@ export type TAuthConfig = {
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
-  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
+  Pick<t.TConversation, 'chatGptLabel' | 'modelLabel'> & {
     size?: number;
     button?: boolean;
     iconURL?: string;

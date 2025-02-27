@@ -279,7 +279,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           onClick={() => setShowFiles(true)}
           aria-label={localize('com_sidepanel_manage_files')}
         >
-          <ArrowUpLeft className="h-4 w-4" />
+          <ArrowUpLeft className="h-4 w-4" aria-hidden="true" />
           <span className="ml-2">{localize('com_sidepanel_manage_files')}</span>
         </Button>
 
