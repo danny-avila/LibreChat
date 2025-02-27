@@ -65,42 +65,6 @@ modelSpecs:
           Response rules: """
           - If not asked specifically, give short enough answers
           """
-    - name: 'claude-3-sonnet-balance'
-      label: 'Clever Flower'
-      default: true
-      description: 'Balance aware assistant'
-      preset:
-        endpoint: 'bedrock'
-        model: 'arn:aws:bedrock:us-east-1:223287545160:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0'
-        maxContextTokens: 200000 # Maximum context tokens
-        max_tokens: 8192 # Maximum output tokens
-        temperature: 0.5
-        modelLabel: 'Balance Clever Assistant'
-        greeting: |
-          Clever Balance infrastructure aware assistant
-        system: |
-          You are a helpful assistant for "Balance" employees.
-
-          Additional context: """
-          Dev-infrastructure:
-          - General:
-            - AWS
-            - TypeScript & Node
-            - Postgres in Aurora cluster
-            - RabbitMQ
-          - Checkout (or "backend") service:
-            - TypeORM
-          - Terms (or "credit") service:
-            - Prisma
-
-          Terms service is responsible for:
-          - Underwriting: buyer evaluation that results into giving a credit line.
-          - Credit line: Money available for buy-now-pay-later for buyers.
-          - Risk: integration with Risk team solutions (implemented in Oscilar)
-          """
-          Response rules: """
-          - If not asked specifically, give short enough answers
-          """
 
 # speech:
 #   tts:
