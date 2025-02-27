@@ -27,6 +27,7 @@ export default function useSideNavLinks({
   endpoint,
   endpointType,
   interfaceConfig,
+  customLinks,
 }: {
   hidePanel: () => void;
   assistants?: TConfig | null;
@@ -35,6 +36,7 @@ export default function useSideNavLinks({
   endpoint?: EModelEndpoint | null;
   endpointType?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
+  customLinks?: NavLink[];
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -127,6 +129,10 @@ export default function useSideNavLinks({
         id: 'bookmarks',
         Component: BookmarkPanel,
       });
+    }
+
+    if(customLinks) {
+      links.push(...customLinks);
     }
 
     links.push({

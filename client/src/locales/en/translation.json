@@ -833,5 +833,16 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+
+
+  "com_ui_custom_settings": "Save Chat to AMS",
+  "com_ui_send_feedback_to_support": "Send Feedback to Support",
+  "com_ui_send_mail_to_ams": "Send Mail to AMS",
+
+  "com_ui_send_to_ams": "Send to AMS",
+  "com_ui_customer_clerk": "Customer-Clerk",
+  "com_ui_contract_clerk": "Contract-Clerk",
+  "com_ui_damage_clerk": "Damage-Clerk",
+  "com_ui_salesperson": "Salesperson"
 }

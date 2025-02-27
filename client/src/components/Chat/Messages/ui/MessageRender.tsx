@@ -13,6 +13,8 @@ import { MessageContext } from '~/Providers';
 import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
+import { ArrowRightIcon, ClipboardCopyIcon, MessageSquareWarningIcon, SendHorizonalIcon } from 'lucide-react';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -89,6 +91,8 @@ const MessageRender = memo(
     if (!msg) {
       return null;
     }
+
+    const { user } = useAuthContext();
 
     const isLatestMessage = msg.messageId === latestMessage?.messageId;
     const showCardRender = isLast && !(isSubmittingFamily === true) && isCard === true;
@@ -205,6 +209,60 @@ const MessageRender = memo(
                 handleContinue={handleContinue}
                 latestMessage={latestMessage}
                 isLast={isLast}
+                customButtons={[
+                  {
+                    title: 'send_mail_to_ams',
+                    icon: SendHorizonalIcon,
+                    onClick: async () => {
+                      alert('This Feature is comming soon!\n\nEmailvorschlag ans AMS senden:\n\n'+msg.text);
+                    },
+                  },
+                  {
+                    title: 'send_feedback_to_support',
+                    icon: MessageSquareWarningIcon,
+                    onClick: async () => {
+
+                      const response = await fetch('https://aizpun.webhook.office.com/webhookb2/ab3adddd-9ce9-431a-8972-374ba7b510c3@92c587dd-51e5-406e-888f-3223791e4afe/IncomingWebhook/78f012b8e0564b1581b34c24c22661e6/380d7776-6d22-4778-a4ab-b92e004adfc4/V2SeiJ5UPBDOX1x_w37M84QK_Kh3h3OmJiSr7ETADVeQs1', {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                          '@type': 'MessageCard',
+                          '@context': 'http://schema.org/extensions',
+                          'themeColor': 'FF5555',
+                          'summary': 'Notification Card',
+                          'sections': [
+                            {
+                              'activityTitle': 'Nutzer: **' + user?.email + '**',
+                              // 'activitySubtitle': 'Here is a brief description of the event or information.',
+                              'markdown': true,
+                              // 'text': 'A sample event occurred, and here are the details:',
+                              'facts': [
+                                {
+                                  'name': 'Beschreibung',
+                                  'value': 'Ein Fehler ist aufgetreten.',
+                                },
+                                {
+                                  'name': 'Chat-ID',
+                                  'value': conversation?.conversationId,
+                                },
+                              ],
+                            },
+                            {
+                              'text': msg.text,
+                              'markdown': true,
+                            },
+                          ],
+                        },
+                        ),
+                      });
+                      if(response.ok){
+                        alert('Feedback wurde an den Support gesendet.');
+                      }else {
+                        alert('Fehler beim Senden des Feedbacks.');
+                      }
+                    },
+                  },
+                ]}
               />
             </SubRow>
           )}

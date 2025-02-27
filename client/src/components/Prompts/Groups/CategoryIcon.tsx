@@ -9,6 +9,8 @@ import {
   PlaneTakeoffIcon,
   GraduationCapIcon,
   TerminalSquareIcon,
+  UserIcon,
+  ScrollTextIcon,
 } from 'lucide-react';
 import { cn } from '~/utils';
 
@@ -22,6 +24,11 @@ const categoryIconMap: Record<string, React.ElementType> = {
   code: TerminalSquareIcon,
   travel: PlaneTakeoffIcon,
   teach_or_explain: GraduationCapIcon,
+
+  customer_clerk: UserIcon,
+  contract_clerk: ScrollTextIcon,
+  damage_clerk: ScrollTextIcon,
+  salesperson: UserIcon,
 };
 
 const categoryColorMap: Record<string, string> = {
@@ -34,6 +41,11 @@ const categoryColorMap: Record<string, string> = {
   finance: 'text-orange-400',
   roleplay: 'text-orange-400',
   teach_or_explain: 'text-blue-300',
+
+  customer_clerk: 'text-blue-300',
+  contract_clerk: 'text-yellow-300',
+  damage_clerk: 'text-red-500',
+  salesperson: 'text-orange-400',
 };
 
 export default function CategoryIcon({

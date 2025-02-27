@@ -816,5 +816,16 @@
   "com_ui_yes": "Ja",
   "com_ui_zoom": "Zoom",
   "com_user_message": "Du",
-  "com_warning_resubmit_unsupported": "Das erneute Senden der KI-Nachricht wird für diesen Endpunkt nicht unterstützt."
+  "com_warning_resubmit_unsupported": "Das erneute Senden der KI-Nachricht wird für diesen Endpunkt nicht unterstützt.",
+
+  "com_ui_custom_settings": "Chat im AMS-Vorgang speichern",
+  "com_ui_send_feedback_to_support": "Feedback an Support senden",
+  "com_ui_send_mail_to_ams": "E-Mail an AMS senden",
+
+  "com_ui_send_to_ams": "Zu AMS senden",
+  "com_ui_customer_clerk": "Kunde-Sachbearbeiter",
+  "com_ui_contract_clerk": "Vertrag-Sachbearbeiter",
+  "com_ui_damage_clerk": "Schaden-Sachbearbeiter",
+  "com_ui_salesperson": "Vertriebler"
+
 }

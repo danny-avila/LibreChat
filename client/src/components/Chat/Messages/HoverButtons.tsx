@@ -7,6 +7,13 @@ import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import { cn } from '~/utils';
 import store from '~/store';
+import { LucideProps } from 'lucide-react';
+
+type TCustomButtom = {
+  title: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  icon: React.ForwardRefExoticComponent<Omit<LucideProps, 'ref'> & React.RefAttributes<SVGSVGElement>>;
+}
 
 type THoverButtons = {
   isEditing: boolean;
@@ -20,6 +27,7 @@ type THoverButtons = {
   latestMessage: TMessage | null;
   isLast: boolean;
   index: number;
+  customButtons?: TCustomButtom[];
 };
 
 export default function HoverButtons({
@@ -34,6 +42,7 @@ export default function HoverButtons({
   handleContinue,
   latestMessage,
   isLast,
+  customButtons,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
@@ -167,6 +176,21 @@ export default function HoverButtons({
           <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
+
+  {customButtons?.map((button, i) => (
+        <button
+          key={i}
+          className={cn(
+            'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+          )}
+          onClick={button.onClick}
+          type="button"
+          title={localize(`com_ui_${button.title}` as any) || button.title}
+        >
+          <button.icon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" size="19" />
+        </button>
+      ))}
     </div>
   );
 }

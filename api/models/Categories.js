@@ -1,7 +1,6 @@
 const { logger } = require('~/config');
 // const { Categories } = require('./schema/categories');
-
-const options = [
+/*
   {
     label: 'com_ui_idea',
     value: 'idea',
@@ -37,6 +36,24 @@ const options = [
   {
     label: 'com_ui_finance',
     value: 'finance',
+  },
+*/
+const options = [
+  {
+    label: 'customer_clerk',
+    value: 'customer_clerk',
+  },
+  {
+    label: 'contract_clerk',
+    value: 'contract_clerk',
+  },
+  {
+    label: 'damage_clerk',
+    value: 'damage_clerk',
+  },
+  {
+    label: 'salesperson',
+    value: 'salesperson',
   },
 ];
 
