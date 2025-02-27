@@ -17,12 +17,12 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
-type ConversationProps = {
+interface ConversationProps {
   conversation: TConversation;
   retainView: () => void;
   toggleNav: () => void;
   isLatestConvo: boolean;
-};
+}
 
 export default function Conversation({
   conversation,
@@ -30,108 +30,26 @@ export default function Conversation({
   toggleNav,
   isLatestConvo,
 }: ConversationProps) {
+  const { conversationId, title = '' } = conversation;
+
   const params = useParams();
-  const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
+  const currentConvoId = params.conversationId;
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { navigateWithLastTools } = useNavigateToConvo();
   const { showToast } = useToastContext();
-  const { conversationId, title } = conversation;
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [titleInput, setTitleInput] = useState(title);
+  const localize = useLocalize();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+
+  const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const localize = useLocalize();
 
-  const clickHandler = async (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
-      toggleNav();
-      return;
-    }
+  const inputRef = useRef<HTMLInputElement>(null);
+  const previousTitle = useRef(title);
 
-    event.preventDefault();
-
-    if (currentConvoId === conversationId || isPopoverActive) {
-      return;
-    }
-
-    toggleNav();
-
-    // set document title
-    if (typeof title === 'string' && title.length > 0) {
-      document.title = title;
-    }
-    /* Note: Latest Message should not be reset if existing convo */
-    navigateWithLastTools(
-      conversation,
-      !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,
-    );
-  };
-
-  const renameHandler = useCallback(() => {
-    setIsPopoverActive(false);
-    setTitleInput(title);
-    setRenaming(true);
-  }, [title]);
-
-  useEffect(() => {
-    if (renaming && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [renaming]);
-
-  const onRename = useCallback(
-    (e: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLInputElement> | KeyEvent) => {
-      e.preventDefault();
-      setRenaming(false);
-      if (titleInput === title) {
-        return;
-      }
-      if (typeof conversationId !== 'string' || conversationId === '') {
-        return;
-      }
-
-      updateConvoMutation.mutate(
-        { conversationId, title: titleInput ?? '' },
-        {
-          onError: () => {
-            setTitleInput(title);
-            showToast({
-              message: 'Failed to rename conversation',
-              severity: NotificationSeverity.ERROR,
-              showIcon: true,
-            });
-          },
-        },
-      );
-    },
-    [title, titleInput, conversationId, showToast, updateConvoMutation],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: KeyEvent) => {
-      if (e.key === 'Escape') {
-        setTitleInput(title);
-        setRenaming(false);
-      } else if (e.key === 'Enter') {
-        onRename(e);
-      }
-    },
-    [title, onRename],
-  );
-
-  const cancelRename = useCallback(
-    (e: MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      setTitleInput(title);
-      setRenaming(false);
-    },
-    [title],
-  );
-
-  const isActiveConvo: boolean = useMemo(
+  const isActiveConvo = useMemo(
     () =>
       currentConvoId === conversationId ||
       (isLatestConvo &&
@@ -141,56 +59,167 @@ export default function Conversation({
     [currentConvoId, conversationId, isLatestConvo, activeConvos],
   );
 
+  useEffect(() => {
+    if (title !== previousTitle.current) {
+      setTitleInput(title as string);
+      previousTitle.current = title;
+    }
+  }, [title]);
+
+  useEffect(() => {
+    if (renaming && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [renaming]);
+
+  const handleClick = useCallback(
+    async (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
+        toggleNav();
+        return;
+      }
+
+      event.preventDefault();
+
+      if (currentConvoId === conversationId || isPopoverActive) {
+        return;
+      }
+
+      toggleNav();
+
+      if (typeof title === 'string' && title.length > 0) {
+        document.title = title;
+      }
+
+      navigateWithLastTools(
+        conversation,
+        !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,
+      );
+    },
+    [
+      currentConvoId,
+      conversationId,
+      isPopoverActive,
+      toggleNav,
+      title,
+      conversation,
+      navigateWithLastTools,
+    ],
+  );
+
+  const handleRename = useCallback(() => {
+    setIsPopoverActive(false);
+    setTitleInput(title as string);
+    setRenaming(true);
+  }, [title]);
+
+  const handleRenameSubmit = useCallback(
+    async (e: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLInputElement> | KeyEvent) => {
+      e.preventDefault();
+
+      if (!conversationId || titleInput === title) {
+        setRenaming(false);
+        return;
+      }
+
+      try {
+        await updateConvoMutation.mutateAsync({
+          conversationId,
+          title: titleInput.trim() || localize('com_ui_untitled'),
+        });
+        setRenaming(false);
+      } catch (error) {
+        setTitleInput(title as string);
+        showToast({
+          message: localize('com_ui_rename_failed'),
+          severity: NotificationSeverity.ERROR,
+          showIcon: true,
+        });
+        setRenaming(false);
+      }
+    },
+    [conversationId, title, titleInput, updateConvoMutation, showToast, localize],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: KeyEvent) => {
+      switch (e.key) {
+        case 'Escape':
+          setTitleInput(title as string);
+          setRenaming(false);
+          break;
+        case 'Enter':
+          handleRenameSubmit(e);
+          break;
+      }
+    },
+    [title, handleRenameSubmit],
+  );
+
+  const handleCancelRename = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      setTitleInput(title as string);
+      setRenaming(false);
+    },
+    [title],
+  );
+
   return (
     <div
       className={cn(
-        'group relative mt-2 flex h-9 w-full items-center rounded-lg hover:bg-surface-active-alt',
-        isActiveConvo ? 'bg-surface-active-alt' : '',
-        isSmallScreen ? 'h-12' : '',
+        'group relative flex w-full items-center rounded-lg transition-colors duration-200',
+        isSmallScreen ? 'h-12' : 'h-9',
+        isActiveConvo ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
       )}
+      role="listitem"
     >
       {renaming ? (
-        <div className="absolute inset-0 z-20 flex w-full items-center rounded-lg bg-surface-active-alt p-1.5">
+        <div
+          className="absolute inset-0 z-20 flex w-full items-center rounded-lg bg-surface-active-alt p-1.5"
+          role="form"
+          aria-label={localize('com_ui_rename_conversation')}
+        >
           <input
             ref={inputRef}
             type="text"
             className="w-full rounded bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-none"
-            value={titleInput ?? ''}
+            value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            aria-label={`${localize('com_ui_rename')} ${localize('com_ui_chat')}`}
+            onBlur={handleRenameSubmit}
+            maxLength={100}
+            aria-label={localize('com_ui_new_conversation_title')}
           />
-          <div className="flex gap-1">
+          <div className="flex gap-1" role="toolbar">
             <button
-              onClick={cancelRename}
-              aria-label={`${localize('com_ui_cancel')} ${localize('com_ui_rename')}`}
+              onClick={handleCancelRename}
+              className="p-1 hover:opacity-70 focus:outline-none focus:ring-2"
+              aria-label={localize('com_ui_cancel')}
             >
-              <X
-                aria-hidden={true}
-                className="h-4 w-4 transition-colors duration-200 ease-in-out hover:opacity-70"
-              />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
-              onClick={onRename}
-              aria-label={`${localize('com_ui_submit')} ${localize('com_ui_rename')}`}
+              onClick={handleRenameSubmit}
+              className="p-1 hover:opacity-70 focus:outline-none focus:ring-2"
+              aria-label={localize('com_ui_save')}
             >
-              <Check
-                aria-hidden={true}
-                className="h-4 w-4 transition-colors duration-200 ease-in-out hover:opacity-70"
-              />
+              <Check className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
       ) : (
         <a
           href={`/c/${conversationId}`}
-          data-testid="convo-item"
-          onClick={clickHandler}
+          onClick={handleClick}
           className={cn(
-            'flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg px-2 py-2',
+            'flex grow cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2',
             isActiveConvo ? 'bg-surface-active-alt' : '',
           )}
-          title={title ?? ''}
+          title={title ?? undefined}
+          aria-current={isActiveConvo ? 'page' : undefined}
+          data-testid="convo-item"
         >
           <EndpointIcon
             conversation={conversation}
@@ -199,21 +228,26 @@ export default function Conversation({
             context="menu-item"
           />
           <div
-            className="relative line-clamp-1 flex-1 grow overflow-hidden"
+            className="relative flex-1 grow overflow-hidden whitespace-nowrap"
+            style={{ textOverflow: 'clip' }}
             onDoubleClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setTitleInput(title);
-              setRenaming(true);
+              handleRename();
             }}
           >
-            {title}
+            {title || localize('com_ui_untitled')}
           </div>
-          {isActiveConvo ? (
-            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l" />
-          ) : (
-            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%" />
-          )}
+
+          <div
+            className={cn(
+              'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
+              isActiveConvo
+                ? 'from-surface-active-alt'
+                : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%',
+            )}
+            aria-hidden="true"
+          />
         </a>
       )}
       <div
@@ -228,7 +262,7 @@ export default function Conversation({
           <ConvoOptions
             title={title}
             retainView={retainView}
-            renameHandler={renameHandler}
+            renameHandler={handleRename}
             isActiveConvo={isActiveConvo}
             conversationId={conversationId}
             isPopoverActive={isPopoverActive}
