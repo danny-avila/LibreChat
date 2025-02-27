@@ -1,3 +1,11 @@
+# Local .terraform directories
+**/.terraform/*
+**/.terragrunt-cache/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
 ### node etc ###
 
 # Logs

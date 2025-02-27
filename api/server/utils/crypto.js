@@ -1,8 +1,11 @@
 require('dotenv').config();
 
 const { webcrypto } = require('node:crypto');
-const key = Buffer.from(process.env.CREDS_KEY, 'hex');
-const iv = Buffer.from(process.env.CREDS_IV, 'hex');
+// These are required or the process fails to start
+const key = Buffer.from(process.env.CREDS_KEY || '', 'hex');
+const iv = Buffer.from(process.env.CREDS_IV || '', 'hex');
+
+if (!key.length || !iv.length) throw new Error('Missing or invalid CREDS_KEY/CREDS_IV for crypto module');
 const algorithm = 'AES-CBC';
 
 async function encrypt(value) {
