@@ -821,7 +821,10 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const clientOptions = {};
+    /** @type {import('@librechat/agents').ClientOptions} */
+    const clientOptions = {
+      maxTokens: 75,
+    };
     const providerConfig = this.options.req.app.locals[this.options.agent.provider];
     if (
       providerConfig &&
