@@ -68,6 +68,17 @@ interface:
   multiConvo: true
   agents: true
 
+# Example Custom Token Rates (optional)
+#tokenRates:
+#  gpt-4o-mini:
+#    prompt: 200.0
+#    completion: 400.0
+#  claude-3.7-sonnet:
+#    Cache:
+#      read: 200.0
+#      write: 400.0
+
+
 # Example Registration Object Structure (optional)
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
