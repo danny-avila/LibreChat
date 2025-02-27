@@ -1,8 +1,6 @@
-@config "../tailwind.config.js";
+@import 'tailwindcss';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../tailwind.config.js";
 
 /* Custom Variables */
 :root {
