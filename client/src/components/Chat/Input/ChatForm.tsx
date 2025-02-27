@@ -191,7 +191,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
-        'mx-auto flex flex-row gap-3 transition-all duration-200 last:mb-2 sm:px-2',
+        'mx-auto flex flex-row gap-3 transition-all duration-200 sm:mb-2 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
       )}
     >

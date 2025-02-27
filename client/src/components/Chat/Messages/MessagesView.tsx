@@ -11,10 +11,8 @@ import store from '~/store';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
-  Header,
 }: {
   messagesTree?: TMessage[] | null;
-  Header?: ReactNode;
 }) {
   const localize = useLocalize();
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
@@ -58,7 +56,6 @@ export default function MessagesView({
               </div>
             ) : (
               <>
-                {Header != null && Header}
                 <div ref={screenshotTargetRef}>
                   <MultiMessage
                     key={conversationId} // avoid internal state mixture

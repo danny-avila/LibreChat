@@ -39,7 +39,7 @@ export default function Badge({
         }
       }}
       className={cn(
-        'group relative inline-flex transform-gpu items-center gap-1.5 rounded-full px-4 py-1.5 transition-all',
+        'group relative inline-flex h-full transform-gpu items-center gap-1.5 rounded-full px-4 py-1.5 transition-all',
         'text-sm font-medium',
         'border border-border-medium',
         isActive

@@ -1,47 +1,55 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
+import { Label } from '@radix-ui/react-dropdown-menu';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import type { ReactNode } from 'react';
-import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import {
   useGetAssistantDocsQuery,
   useGetEndpointsQuery,
   useGetStartupConfig,
 } from '~/data-provider';
+import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { useLocalize, useSubmitMessage, useAuthContext } from '~/hooks';
+import { BirthdayIcon, TooltipAnchor } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { getIconEndpoint, getEntity, cn } from '~/utils';
-import { useLocalize, useSubmitMessage } from '~/hooks';
-import { TooltipAnchor } from '~/components/ui';
-import { BirthdayIcon } from '~/components/svg';
+import { getIconEndpoint, getEntity } from '~/utils';
 import ConvoStarter from './ConvoStarter';
 
-export default function Landing({ Header }: { Header?: ReactNode }) {
+const containerClassName =
+  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+
+export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-
+  const { user } = useAuthContext();
   const localize = useLocalize();
 
-  let { endpoint = '' } = conversation ?? {};
+  const endpointType = useMemo(() => {
+    let ep = conversation?.endpoint ?? '';
+    if (
+      [
+        EModelEndpoint.chatGPTBrowser,
+        EModelEndpoint.azureOpenAI,
+        EModelEndpoint.gptPlugins,
+      ].includes(ep as EModelEndpoint)
+    ) {
+      ep = EModelEndpoint.openAI;
+    }
+    return getIconEndpoint({
+      endpointsConfig,
+      iconURL: conversation?.iconURL,
+      endpoint: ep,
+    });
+  }, [conversation?.endpoint, conversation?.iconURL, endpointsConfig]);
 
-  if (
-    endpoint === EModelEndpoint.chatGPTBrowser ||
-    endpoint === EModelEndpoint.azureOpenAI ||
-    endpoint === EModelEndpoint.gptPlugins
-  ) {
-    endpoint = EModelEndpoint.openAI;
-  }
-
-  const iconURL = conversation?.iconURL;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
-  const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpoint, {
+  const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpointType, {
     select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
   });
 
   const { entity, isAgent, isAssistant } = getEntity({
-    endpoint,
+    endpoint: endpointType,
     agentsMap,
     assistantMap,
     agent_id: conversation?.agent_id,
@@ -51,101 +59,100 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const name = entity?.name ?? '';
   const description = entity?.description ?? '';
   const avatar = isAgent
-    ? (entity as t.Agent | undefined)?.avatar?.filepath ?? ''
-    : ((entity as t.Assistant | undefined)?.metadata?.avatar as string | undefined) ?? '';
+    ? ((entity as t.Agent)?.avatar?.filepath ?? '')
+    : (((entity as t.Assistant)?.metadata?.avatar as string) ?? '');
+
   const conversation_starters = useMemo(() => {
-    /* The user made updates, use client-side cache, or they exist in an Agent */
-    if (entity && (entity.conversation_starters?.length ?? 0) > 0) {
+    if (entity?.conversation_starters?.length) {
       return entity.conversation_starters;
     }
     if (isAgent) {
       return entity?.conversation_starters ?? [];
     }
-
-    /* If none in cache, we use the latest assistant docs */
-    const entityDocs = documentsMap.get(entity?.id ?? '');
-    return entityDocs?.conversation_starters ?? [];
+    return documentsMap.get(entity?.id ?? '')?.conversation_starters ?? [];
   }, [documentsMap, isAgent, entity]);
 
-  const containerClassName =
-    'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
-
   const { submitMessage } = useSubmitMessage();
-  const sendConversationStarter = (text: string) => submitMessage({ text });
+  const sendConversationStarter = useCallback(
+    (text: string) => submitMessage({ text }),
+    [submitMessage],
+  );
 
-  const getWelcomeMessage = () => {
-    const greeting = conversation?.greeting ?? '';
-    if (greeting) {
-      return greeting;
+  const getGreeting = useCallback(() => {
+    if (startupConfig?.interface?.customWelcome === 'string') {
+      return startupConfig.interface.customWelcome;
     }
 
-    if (isAssistant) {
-      return localize('com_nav_welcome_assistant');
-    }
+    const hours = new Date().getHours();
 
-    if (isAgent) {
-      return localize('com_nav_welcome_agent');
+    if (hours < 12) {
+      return localize('com_ui_good_morning');
     }
-
-    return typeof startupConfig?.interface?.customWelcome === 'string'
-      ? startupConfig?.interface?.customWelcome
-      : localize('com_nav_welcome_message');
-  };
+    if (hours < 18) {
+      return localize('com_ui_good_afternoon');
+    }
+    return localize('com_ui_good_evening');
+  }, [localize]);
 
   return (
-    <div className="relative h-full">
-      <div className="absolute left-0 right-0">{Header != null ? Header : null}</div>
-      <div className="flex h-full flex-col items-center justify-center">
-        <div className={cn('relative h-12 w-12', name && avatar ? 'mb-0' : 'mb-3')}>
-          <ConvoIcon
-            agentsMap={agentsMap}
-            assistantMap={assistantMap}
-            conversation={conversation}
-            endpointsConfig={endpointsConfig}
-            containerClassName={containerClassName}
-            context="landing"
-            className="h-2/3 w-2/3"
-            size={41}
-          />
-          {startupConfig?.showBirthdayIcon === true ? (
-            <TooltipAnchor
-              className="absolute bottom-8 right-2.5"
-              description={localize('com_ui_happy_birthday')}
-            >
-              <BirthdayIcon />
-            </TooltipAnchor>
-          ) : null}
-        </div>
-        {name ? (
-          <div className="flex flex-col items-center gap-0 p-2">
-            <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
-            <div className="max-w-md text-center text-sm font-normal text-text-primary ">
-              {description ||
-                (typeof startupConfig?.interface?.customWelcome === 'string'
-                  ? startupConfig?.interface?.customWelcome
-                  : localize('com_nav_welcome_message'))}
-            </div>
-            {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
-             <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
-          </div> */}
+    <div
+      className={`flex h-full transform-gpu flex-col items-center justify-center pb-10 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
+    >
+      <div className="flex flex-col items-center gap-0 p-2">
+        <div className="flex flex-col items-center justify-center gap-4 md:flex-row">
+          <div className="relative size-10 justify-center">
+            <ConvoIcon
+              agentsMap={agentsMap}
+              assistantMap={assistantMap}
+              conversation={conversation}
+              endpointsConfig={endpointsConfig}
+              containerClassName={containerClassName}
+              context="landing"
+              className="h-2/3 w-2/3"
+              size={41}
+            />
+            {startupConfig?.showBirthdayIcon && (
+              <TooltipAnchor
+                className="absolute bottom-[27px] right-2"
+                description={localize('com_ui_happy_birthday')}
+              >
+                <BirthdayIcon />
+              </TooltipAnchor>
+            )}
           </div>
-        ) : (
-          <h2 className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-            {getWelcomeMessage()}
-          </h2>
-        )}
-        <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-          {conversation_starters.length > 0 &&
-            conversation_starters
-              .slice(0, Constants.MAX_CONVO_STARTERS)
-              .map((text: string, index: number) => (
-                <ConvoStarter
-                  key={index}
-                  text={text}
-                  onClick={() => sendConversationStarter(text)}
-                />
-              ))}
+          {name ? (
+            <div className="flex flex-col items-center gap-0 p-2">
+              <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
+              <div className="max-w-md text-center text-sm font-normal text-text-primary">
+                {description ||
+                  (typeof startupConfig?.interface?.customWelcome === 'string'
+                    ? startupConfig?.interface?.customWelcome
+                    : '')}
+              </div>
+            </div>
+          ) : isAgent || isAssistant ? (
+            <div className="text-center text-3xl font-medium text-text-primary">{name}</div>
+          ) : (
+            <Label className="text-center text-4xl font-medium text-text-primary">
+              <span className="inline-block">{getGreeting()},</span>{' '}
+              <span className="inline-block">{user?.name ?? 'User'}</span>
+            </Label>
+          )}
         </div>
+        {(isAgent || isAssistant) && description && (
+          <div className="max-w-md text-center text-sm font-normal text-text-primary">
+            {description}
+          </div>
+        )}
+      </div>
+      <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
+        {conversation_starters.slice(0, Constants.MAX_CONVO_STARTERS).map((text, index) => (
+          <ConvoStarter
+            key={`starter-${index}`}
+            text={text}
+            onClick={() => sendConversationStarter(text)}
+          />
+        ))}
       </div>
     </div>
   );

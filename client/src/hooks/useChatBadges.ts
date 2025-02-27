@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { MessageCircleDashed, StickyNote } from 'lucide-react';
+import { MessageCircleDashed, Box } from 'lucide-react';
 import type { BadgeItem } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -13,7 +13,7 @@ const badgeConfig = [
   },
   {
     id: '2',
-    icon: StickyNote,
+    icon: Box,
     label: 'com_ui_artifacts',
     atom: store.codeArtifacts,
   },

@@ -46,7 +46,7 @@ const BadgeWrapper = React.memo(
             }
           }}
           onMouseDown={(e) => onMouseDown(e, badge, isActive)}
-          className={isEditing ? 'ios-wiggle badge-icon' : 'badge-icon'}
+          className={isEditing ? 'ios-wiggle badge-icon h-full' : 'badge-icon h-full'}
         >
           <Badge
             icon={badge.icon as LucideIcon}
@@ -299,7 +299,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
       {tempBadges.map((badge, index) => (
         <React.Fragment key={badge.id}>
           {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
-            <div className="badge-icon">
+            <div className="badge-icon h-full">
               <Badge
                 icon={ghostBadge.icon as LucideIcon}
                 label={ghostBadge.label}
@@ -320,7 +320,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
         </React.Fragment>
       ))}
       {dragState.draggedBadge && dragState.insertIndex === tempBadges.length && ghostBadge && (
-        <div className="badge-icon">
+        <div className="badge-icon h-full">
           <Badge
             icon={ghostBadge.icon as LucideIcon}
             label={ghostBadge.label}
@@ -332,7 +332,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
       )}
       {ghostBadge && (
         <div
-          className="ghost-badge"
+          className="ghost-badge h-full"
           style={{
             position: 'absolute',
             top: 0,
