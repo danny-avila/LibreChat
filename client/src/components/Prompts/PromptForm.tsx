@@ -70,7 +70,7 @@ const PromptForm = () => {
 
   const selectedPrompt = useMemo(
     () => (prompts.length > 0 ? prompts[selectionIndex] : undefined),
-    [prompts, /* eslint-disable-line react-hooks/exhaustive-deps */ selectionIndex],
+    [prompts, selectionIndex],
   );
 
   const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
@@ -102,7 +102,7 @@ const PromptForm = () => {
       );
     },
     onSuccess(data) {
-      if (alwaysMakeProd && data.prompt._id && data.prompt.groupId) {
+      if (alwaysMakeProd && data.prompt._id != null && data.prompt._id && data.prompt.groupId) {
         makeProductionMutation.mutate({
           id: data.prompt._id,
           groupId: data.prompt.groupId,
@@ -237,7 +237,6 @@ const PromptForm = () => {
               payload: { name: groupName, category: value },
             })
           }
-          className="w-full"
         />
         <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
           {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
@@ -336,7 +335,7 @@ const PromptForm = () => {
                         variant="ghost"
                         className="h-10 w-10 border border-border-light p-0 lg:hidden"
                         onClick={() => setShowSidePanel(true)}
-                        aria-label={localize('com_ui_open_menu')}
+                        aria-label={localize('com_endpoint_open_menu')}
                       >
                         <Menu className="size-5" />
                       </Button>
@@ -349,7 +348,7 @@ const PromptForm = () => {
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
-                  <div className="flex h-full flex-col gap-4">
+                  <div className="mb-2 flex h-full flex-col gap-4">
                     <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                     <PromptVariables promptText={promptText} />
                     <Description
@@ -382,8 +381,8 @@ const PromptForm = () => {
             onClick={() => setShowSidePanel(false)}
             aria-hidden={!showSidePanel}
             tabIndex={showSidePanel ? 0 : -1}
+            aria-label={localize('com_ui_close_menu')}
           />
-
           <div
             className="absolute inset-y-0 right-0 z-50 lg:hidden"
             style={{

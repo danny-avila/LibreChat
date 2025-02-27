@@ -17,10 +17,10 @@ import {
 } from '~/components/ui';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
-import { RightPanel } from '../../components/Prompts/RightPanel';
+// import { RightPanel } from '../../components/Prompts/RightPanel';
 import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
-import { PromptsEditorMode } from '~/common';
+// import { PromptsEditorMode } from '~/common';
 import store from '~/store';
 
 const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;
@@ -67,7 +67,7 @@ export default function DashBreadcrumb() {
               className="flex flex-row items-center gap-1"
               onClick={chatLinkHandler}
             >
-              <ArrowLeft className="icon-xs" />
+              <ArrowLeft className="icon-xs" aria-hidden="true" />
               <span className="hidden md:flex">{localize('com_ui_back_to_chat')}</span>
               <span className="flex md:hidden">{localize('com_ui_chat')}</span>
             </BreadcrumbLink>
@@ -98,7 +98,7 @@ export default function DashBreadcrumb() {
               className="flex flex-row items-center gap-1"
               onClick={promptsLinkHandler}
             >
-              <MessageSquareQuote className="h-4 w-4 dark:text-gray-300" />
+              <MessageSquareQuote className="h-4 w-4 dark:text-gray-300" aria-hidden="true" />
               {localize('com_ui_prompts')}
             </BreadcrumbLink>
           </BreadcrumbItem>

@@ -28,10 +28,12 @@
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
   "exclude": ["node_modules", "vite.config.ts"],
-  "include": ["src/**/*", "test/**/*", "../e2e/**/*", "setupTests.js", "env.d.ts"],
-  "references": [
-    {
-      "path": "./tsconfig.node.json"
-    }
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "../e2e/**/*",
+    "test/setupTests.js",
+    "env.d.ts",
+    "../config/translations/**/*.ts"
   ]
 }

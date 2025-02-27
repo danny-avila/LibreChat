@@ -155,6 +155,7 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  artifacts: '',
   isCollaborative: false,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
@@ -251,11 +252,12 @@ export const googleSettings = {
   },
 };
 
-const ANTHROPIC_MAX_OUTPUT = 8192;
+const ANTHROPIC_MAX_OUTPUT = 128000;
+const DEFAULT_MAX_OUTPUT = 8192;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096;
 export const anthropicSettings = {
   model: {
-    default: 'claude-3-5-sonnet-20241022',
+    default: 'claude-3-5-sonnet-latest',
   },
   temperature: {
     min: 0,
@@ -266,20 +268,32 @@ export const anthropicSettings = {
   promptCache: {
     default: true,
   },
+  thinking: {
+    default: true,
+  },
+  thinkingBudget: {
+    min: 1024,
+    step: 100,
+    max: 200000,
+    default: 2000,
+  },
   maxOutputTokens: {
     min: 1,
     max: ANTHROPIC_MAX_OUTPUT,
     step: 1,
-    default: ANTHROPIC_MAX_OUTPUT,
+    default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (modelName.includes('claude-3-5-sonnet')) {
-        return ANTHROPIC_MAX_OUTPUT;
+      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
+        return DEFAULT_MAX_OUTPUT;
       }
 
       return 4096;
     },
     set: (value: number, modelName: string) => {
-      if (!modelName.includes('claude-3-5-sonnet') && value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
+      if (
+        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
+        value > LEGACY_ANTHROPIC_MAX_OUTPUT
+      ) {
         return LEGACY_ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -555,6 +569,8 @@ export const tConversationSchema = z.object({
   /* Anthropic */
   promptCache: z.boolean().optional(),
   system: z.string().optional(),
+  thinking: z.boolean().optional(),
+  thinkingBudget: coerceNumber.optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -590,6 +606,8 @@ export const tConversationSchema = z.object({
   greeting: z.string().optional(),
   spec: z.string().nullable().optional(),
   iconURL: z.string().nullable().optional(),
+  /* temporary chat */
+  expiredAt: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -669,6 +687,8 @@ export const tQueryParamsSchema = tConversationSchema
     maxOutputTokens: true,
     /** @endpoints anthropic */
     promptCache: true,
+    thinking: true,
+    thinkingBudget: true,
     /** @endpoints bedrock */
     region: true,
     /** @endpoints bedrock */
@@ -744,37 +764,8 @@ export const googleSchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
   })
-  .transform((obj) => {
-    return {
-      ...obj,
-      model: obj.model ?? google.model.default,
-      modelLabel: obj.modelLabel ?? null,
-      promptPrefix: obj.promptPrefix ?? null,
-      examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-      temperature: obj.temperature ?? google.temperature.default,
-      maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
-      topP: obj.topP ?? google.topP.default,
-      topK: obj.topK ?? google.topK.default,
-      iconURL: obj.iconURL ?? undefined,
-      greeting: obj.greeting ?? undefined,
-      spec: obj.spec ?? undefined,
-      maxContextTokens: obj.maxContextTokens ?? undefined,
-    };
-  })
-  .catch(() => ({
-    model: google.model.default,
-    modelLabel: null,
-    promptPrefix: null,
-    examples: [{ input: { content: '' }, output: { content: '' } }],
-    temperature: google.temperature.default,
-    maxOutputTokens: google.maxOutputTokens.default,
-    topP: google.topP.default,
-    topK: google.topK.default,
-    iconURL: undefined,
-    greeting: undefined,
-    spec: undefined,
-    maxContextTokens: undefined,
-  }));
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .catch(() => ({}));
 
 /**
    * TODO: Map the following fields:
@@ -875,12 +866,18 @@ export const gptPluginsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export function removeNullishValues<T extends Record<string, unknown>>(obj: T): Partial<T> {
+export function removeNullishValues<T extends Record<string, unknown>>(
+  obj: T,
+  removeEmptyStrings?: boolean,
+): Partial<T> {
   const newObj: Partial<T> = { ...obj };
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
     const value = newObj[key];
     if (value === undefined || value === null) {
+      delete newObj[key];
+    }
+    if (removeEmptyStrings && typeof value === 'string' && value === '') {
       delete newObj[key];
     }
   });
@@ -933,8 +930,7 @@ export const compactAssistantSchema = tConversationSchema
     greeting: true,
     spec: true,
   })
-  // will change after adding temperature
-  .transform(removeNullishValues)
+  .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));
 
 export const agentsSchema = tConversationSchema
@@ -1059,6 +1055,8 @@ export const anthropicSchema = tConversationSchema
     topK: true,
     resendFiles: true,
     promptCache: true,
+    thinking: true,
+    thinkingBudget: true,
     artifacts: true,
     iconURL: true,
     greeting: true,
@@ -1136,7 +1134,7 @@ export const compactPluginsSchema = tConversationSchema
   })
   .catch(() => ({}));
 
-const tBannerSchema = z.object({
+export const tBannerSchema = z.object({
   bannerId: z.string(),
   message: z.string(),
   displayFrom: z.string(),
@@ -1158,5 +1156,5 @@ export const compactAgentsSchema = tConversationSchema
     instructions: true,
     additional_instructions: true,
   })
-  .transform(removeNullishValues)
+  .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));

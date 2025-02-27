@@ -71,6 +71,7 @@ export default function useChatFunctions({
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
   const getSender = useGetSender();
+  const isTemporary = useRecoilValue(store.isTemporary);
 
   const queryClient = useQueryClient();
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
@@ -169,7 +170,10 @@ export default function useChatFunctions({
         endpointType,
         overrideConvoId,
         overrideUserMessageId,
-        artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
+        artifacts:
+          endpoint !== EModelEndpoint.agents
+            ? getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode })
+            : undefined,
       },
       convo,
     ) as TEndpointOption;
@@ -227,7 +231,6 @@ export default function useChatFunctions({
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      isEdited: isEditOrContinue,
       iconURL: convo?.iconURL,
       model: convo?.model,
       error: false,
@@ -293,6 +296,7 @@ export default function useChatFunctions({
       isContinued,
       isRegenerate,
       initialResponse,
+      isTemporary,
     };
 
     if (isRegenerate) {

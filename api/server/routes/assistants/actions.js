@@ -1,6 +1,6 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
+const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
@@ -29,7 +29,7 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    let metadata = await encryptMetadata(_metadata);
+    let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
     const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
     if (!isDomainAllowed) {
       return res.status(400).json({ message: 'Domain not allowed' });

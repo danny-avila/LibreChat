@@ -80,6 +80,20 @@ describe('getValueKey', () => {
     expect(getValueKey('chatgpt-4o-latest-0718')).toBe('gpt-4o');
   });
 
+  it('should return "claude-3-7-sonnet" for model type of "claude-3-7-sonnet-"', () => {
+    expect(getValueKey('claude-3-7-sonnet-20240620')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('anthropic/claude-3-7-sonnet')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('claude-3-7-sonnet-turbo')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('claude-3-7-sonnet-0125')).toBe('claude-3-7-sonnet');
+  });
+
+  it('should return "claude-3.7-sonnet" for model type of "claude-3.7-sonnet-"', () => {
+    expect(getValueKey('claude-3.7-sonnet-20240620')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('anthropic/claude-3.7-sonnet')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('claude-3.7-sonnet-turbo')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('claude-3.7-sonnet-0125')).toBe('claude-3.7-sonnet');
+  });
+
   it('should return "claude-3-5-sonnet" for model type of "claude-3-5-sonnet-"', () => {
     expect(getValueKey('claude-3-5-sonnet-20240620')).toBe('claude-3-5-sonnet');
     expect(getValueKey('anthropic/claude-3-5-sonnet')).toBe('claude-3-5-sonnet');
@@ -378,5 +392,110 @@ describe('getCacheMultiplier', () => {
         cacheType: 'read',
       }),
     ).toBe(0.03);
+  });
+});
+
+describe('Google Model Tests', () => {
+  const googleModels = [
+    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-pro-exp-02-05',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash-thinking',
+    'gemini-1.5-pro-latest',
+    'gemini-1.5-pro-preview-0409',
+    'gemini-pro-vision',
+    'gemini-1.0',
+    'gemini-pro',
+  ];
+
+  it('should return the correct prompt and completion rates for all models', () => {
+    const results = googleModels.map((model) => {
+      const valueKey = getValueKey(model, EModelEndpoint.google);
+      const promptRate = getMultiplier({
+        model,
+        tokenType: 'prompt',
+        endpoint: EModelEndpoint.google,
+      });
+      const completionRate = getMultiplier({
+        model,
+        tokenType: 'completion',
+        endpoint: EModelEndpoint.google,
+      });
+      return { model, valueKey, promptRate, completionRate };
+    });
+
+    results.forEach(({ valueKey, promptRate, completionRate }) => {
+      expect(promptRate).toBe(tokenValues[valueKey].prompt);
+      expect(completionRate).toBe(tokenValues[valueKey].completion);
+    });
+  });
+
+  it('should map to the correct model keys', () => {
+    const expected = {
+      'gemini-2.0-flash-lite-preview-02-05': 'gemini-2.0-flash-lite',
+      'gemini-2.0-flash-001': 'gemini-2.0-flash',
+      'gemini-2.0-flash-exp': 'gemini-2.0-flash',
+      'gemini-2.0-pro-exp-02-05': 'gemini-2.0',
+      'gemini-1.5-flash-8b': 'gemini-1.5-flash-8b',
+      'gemini-1.5-flash-thinking': 'gemini-1.5-flash',
+      'gemini-1.5-pro-latest': 'gemini-1.5',
+      'gemini-1.5-pro-preview-0409': 'gemini-1.5',
+      'gemini-pro-vision': 'gemini-pro-vision',
+      'gemini-1.0': 'gemini',
+      'gemini-pro': 'gemini',
+    };
+
+    Object.entries(expected).forEach(([model, expectedKey]) => {
+      const valueKey = getValueKey(model, EModelEndpoint.google);
+      expect(valueKey).toBe(expectedKey);
+    });
+  });
+
+  it('should handle model names with different formats', () => {
+    const testCases = [
+      { input: 'google/gemini-pro', expected: 'gemini' },
+      { input: 'gemini-pro/google', expected: 'gemini' },
+      { input: 'google/gemini-2.0-flash-lite', expected: 'gemini-2.0-flash-lite' },
+    ];
+
+    testCases.forEach(({ input, expected }) => {
+      const valueKey = getValueKey(input, EModelEndpoint.google);
+      expect(valueKey).toBe(expected);
+      expect(
+        getMultiplier({ model: input, tokenType: 'prompt', endpoint: EModelEndpoint.google }),
+      ).toBe(tokenValues[expected].prompt);
+      expect(
+        getMultiplier({ model: input, tokenType: 'completion', endpoint: EModelEndpoint.google }),
+      ).toBe(tokenValues[expected].completion);
+    });
+  });
+});
+
+describe('Grok Model Tests - Pricing', () => {
+  describe('getMultiplier', () => {
+    test('should return correct prompt and completion rates for Grok vision models', () => {
+      const models = ['grok-2-vision-1212', 'grok-2-vision', 'grok-2-vision-latest'];
+      models.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+      });
+    });
+
+    test('should return correct prompt and completion rates for Grok text models', () => {
+      const models = ['grok-2-1212', 'grok-2', 'grok-2-latest'];
+      models.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+      });
+    });
+
+    test('should return correct prompt and completion rates for Grok beta models', () => {
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'completion' })).toBe(15.0);
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'completion' })).toBe(15.0);
+    });
   });
 });

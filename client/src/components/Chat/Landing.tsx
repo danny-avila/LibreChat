@@ -61,8 +61,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const name = entity?.name ?? '';
   const description = entity?.description ?? '';
   const avatar = isAgent
-    ? (entity as t.Agent | undefined)?.avatar?.filepath ?? ''
-    : ((entity as t.Assistant | undefined)?.metadata?.avatar as string | undefined) ?? '';
+    ? ((entity as t.Agent | undefined)?.avatar?.filepath ?? '')
+    : (((entity as t.Assistant | undefined)?.metadata?.avatar as string | undefined) ?? '');
   const conversation_starters = useMemo(() => {
     /* The user made updates, use client-side cache, or they exist in an Agent */
     if (entity && (entity.conversation_starters?.length ?? 0) > 0) {
@@ -128,11 +128,14 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
         {name ? (
           <div className="flex flex-col items-center gap-0 p-2">
             <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
-            <div className="max-w-md text-center text-sm font-normal text-text-primary ">
-              {description ? description : localize('com_nav_welcome_message')}
+            <div className="max-w-md text-center text-sm font-normal text-text-primary">
+              {description ||
+                (typeof startupConfig?.interface?.customWelcome === 'string'
+                  ? startupConfig?.interface?.customWelcome
+                  : localize('com_nav_welcome_message'))}
             </div>
             {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
-            <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
+             <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
           </div> */}
           </div>
         ) : (

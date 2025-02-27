@@ -1,27 +1,23 @@
-import { Plus, EarthIcon } from 'lucide-react';
+import { EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
+import { useFormContext, Controller } from 'react-hook-form';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
-import type { UseFormReset } from 'react-hook-form';
-import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
-import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
+import type { TAgentCapabilities, AgentForm } from '~/common';
 import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
-import SelectDropDown from '~/components/ui/SelectDropDown';
+import { cn, createProviderOption, processAgentOption } from '~/utils';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
 export default function AgentSelect({
-  reset,
   agentQuery,
-  value: currentAgentValue,
   selectedAgentId = null,
   setCurrentAgentId,
   createMutation,
 }: {
-  reset: UseFormReset<AgentForm>;
-  value?: TAgentOption;
   selectedAgentId: string | null;
   agentQuery: QueryObserverResult<Agent>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -29,6 +25,7 @@ export default function AgentSelect({
 }) {
   const localize = useLocalize();
   const lastSelectedAgent = useRef<string | null>(null);
+  const { control, reset } = useFormContext();
 
   const { data: startupConfig } = useGetStartupConfig();
   const { data: agents = null } = useListAgentsQuery(undefined, {
@@ -55,8 +52,8 @@ export default function AgentSelect({
       };
 
       const capabilities: TAgentCapabilities = {
-        [AgentCapabilities.execute_code]: false,
         [AgentCapabilities.file_search]: false,
+        [AgentCapabilities.execute_code]: false,
         [AgentCapabilities.end_after_tools]: false,
         [AgentCapabilities.hide_sequential_outputs]: false,
       };
@@ -152,50 +149,40 @@ export default function AgentSelect({
   }, [selectedAgentId, agents, onSelect]);
 
   const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
-  const hasAgentValue = !!(typeof currentAgentValue === 'object'
-    ? currentAgentValue.value != null && currentAgentValue.value !== ''
-    : typeof currentAgentValue !== 'undefined');
 
   return (
-    <SelectDropDown
-      value={!hasAgentValue ? createAgent : (currentAgentValue as TAgentOption)}
-      setValue={createDropdownSetter(onSelect)}
-      availableValues={
-        agents ?? [
-          {
-            label: 'Loading...',
-            value: '',
-          },
-        ]
-      }
-      iconSide="left"
-      optionIconSide="right"
-      showAbove={false}
-      showLabel={false}
-      emptyTitle={true}
-      showOptionIcon={true}
-      containerClassName="flex-grow"
-      searchClassName="dark:from-gray-850"
-      searchPlaceholder={localize('com_agents_search_name')}
-      optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
-      optionsListClass="rounded-lg shadow-lg dark:bg-gray-850 dark:border-gray-700 dark:last:border"
-      currentValueClass={cn(
-        'text-md font-semibold text-gray-900 dark:text-white',
-        hasAgentValue ? 'text-gray-500' : '',
-      )}
-      className={cn(
-        'rounded-md dark:border-gray-700 dark:bg-gray-850',
-        'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
-      )}
-      renderOption={() => (
-        <span className="flex items-center gap-1.5 truncate">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-800 dark:text-gray-100">
-            <Plus className="w-[16px]" />
-          </span>
-          <span className={cn('ml-4 flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100')}>
-            {createAgent}
-          </span>
-        </span>
+    <Controller
+      name="agent"
+      control={control}
+      render={({ field }) => (
+        <ControlCombobox
+          containerClassName="px-0"
+          selectedValue={(field?.value?.value ?? '') + ''}
+          displayValue={field?.value?.label ?? ''}
+          selectPlaceholder={createAgent}
+          iconSide="right"
+          searchPlaceholder={localize('com_agents_search_name')}
+          SelectIcon={field?.value?.icon}
+          setValue={onSelect}
+          items={
+            agents?.map((agent) => ({
+              label: agent.name ?? '',
+              value: agent.id ?? '',
+              icon: agent.icon,
+            })) ?? [
+              {
+                label: 'Loading...',
+                value: '',
+              },
+            ]
+          }
+          className={cn(
+            'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate rounded-md bg-transparent font-bold',
+          )}
+          ariaLabel={localize('com_ui_agent')}
+          isCollapsed={false}
+          showCarat={true}
+        />
       )}
     />
   );

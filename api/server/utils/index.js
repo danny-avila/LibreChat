@@ -19,12 +19,11 @@ function checkEmailConfig() {
     !!process.env.EMAIL_FROM
   );
 }
-console.log("Exporting utils:", {
+console.log('Exporting utils:', {
   ...streamResponse,
   checkEmailConfig,
   ...cryptoUtils,
   ...handleText,
-  ...citations,
   countTokens,
   removePorts,
   sendEmail,

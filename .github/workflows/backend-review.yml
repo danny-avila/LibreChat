@@ -38,7 +38,7 @@ jobs:
 
       - name: Install MCP Package
         run: npm run build:mcp
-      
+
       - name: Create empty auth.json file
         run: |
           mkdir -p api/data
@@ -64,8 +64,3 @@ jobs:
 
       - name: Run librechat-data-provider unit tests
         run: cd packages/data-provider && npm run test:ci
-
-      - name: Run linters
-        uses: wearerequired/lint-action@v2
-        with:
-          eslint: true
