@@ -68,6 +68,13 @@ interface:
   multiConvo: true
   agents: true
 
+# Example Cloudflare turnstile (optional)
+#turnstile:
+#  siteKey: "your-site-key-here"
+#  options:
+#    language: "auto"    # "auto" or an ISO 639-1 language code (e.g. en)
+#    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
+
 # Example Registration Object Structure (optional)
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
