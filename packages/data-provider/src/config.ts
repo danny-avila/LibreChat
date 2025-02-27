@@ -505,7 +505,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
-  tokenRates?: TTokenRates;
+  tokenRates?: TModelTokenRates;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
@@ -523,16 +523,7 @@ export type TTokenCost = {
 };
 
 // Endpoint token rates schema type
-export type TEndpointTokenRates = Record<string, TTokenCost>;
-
-// Token rates schema type
-export type TTokenRates = {
-  openAI?: TEndpointTokenRates;
-  google?: TEndpointTokenRates;
-  anthropic?: TEndpointTokenRates;
-  bedrock?: TEndpointTokenRates;
-  custom?: TEndpointTokenRates;
-};
+export type TModelTokenRates = Record<string, TTokenCost>;
 
 const tokenCostSchema = z.object({
   prompt: z.number().optional(),     // e.g. 1.5 => $1.50 / 1M tokens
@@ -543,16 +534,6 @@ const tokenCostSchema = z.object({
       read: z.number().optional(),
     })
     .optional(),
-});
-
-const endpointTokenRatesSchema = z.record(z.string(), tokenCostSchema);
-
-const tokenRatesSchema = z.object({
-  openAI: endpointTokenRatesSchema.optional(),
-  google: endpointTokenRatesSchema.optional(),
-  anthropic: endpointTokenRatesSchema.optional(),
-  bedrock: endpointTokenRatesSchema.optional(),
-  custom: endpointTokenRatesSchema.optional(),
 });
 
 export const configSchema = z.object({
@@ -586,7 +567,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
-  tokenRates: tokenRatesSchema.optional(),
+  tokenRates: tokenCostSchema.optional(),
   endpoints: z
     .object({
       all: baseEndpointSchema.optional(),

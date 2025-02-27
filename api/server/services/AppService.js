@@ -25,10 +25,7 @@ const AppService = async (app) => {
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
-  const tokenRatesConfig = loadTokenRatesConfig(config, configDefaults);
-  //
-  // // Set the global token rates configuration so that it can be used by the tx.js functions.
-  // setTokenRatesConfig(tokenRatesConfig);
+  loadTokenRatesConfig(config, configDefaults);
 
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
