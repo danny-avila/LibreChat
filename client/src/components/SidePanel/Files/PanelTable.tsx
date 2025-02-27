@@ -177,7 +177,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         />
       </div>
 
-      <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
+      <div className="rounded-lg border border-border-light bg-transparent shadow-2xs transition-colors">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -205,7 +205,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
-                    className="border-b border-border-light transition-colors hover:bg-surface-secondary [&:last-child]:border-0"
+                    className="border-b border-border-light transition-colors hover:bg-surface-secondary last:border-0"
                   >
                     {row.getVisibleCells().map((cell) => {
                       const isFilenameCell = cell.column.id === 'filename';

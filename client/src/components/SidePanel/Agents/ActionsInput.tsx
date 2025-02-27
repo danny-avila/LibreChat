@@ -235,7 +235,7 @@ export default function ActionsInput({
               onChange={handleInputChange}
               spellCheck="false"
               placeholder={localize('com_ui_enter_openapi_schema')}
-              className="text-token-text-primary block h-96 w-full bg-transparent p-2 font-mono text-xs outline-none focus:ring-1 focus:ring-border-light"
+              className="text-token-text-primary block h-96 w-full bg-transparent p-2 font-mono text-xs outline-hidden focus:ring-1 focus:ring-border-light"
             />
             {/* TODO: format input button */}
           </div>
@@ -269,7 +269,7 @@ export default function ActionsInput({
           <input
             type="text"
             placeholder="https://api.example-weather-app.com/privacy"
-            className="flex-1 rounded-lg bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
+            className="flex-1 rounded-lg bg-transparent px-3 py-1.5 text-sm outline-hidden placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
           />
         </div>
       </div>
@@ -277,7 +277,7 @@ export default function ActionsInput({
         <button
           disabled={!functions || !functions.length}
           onClick={saveAction}
-          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
+          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-hidden focus:ring-0 disabled:bg-green-400"
           type="button"
         >
           {getButtonContent()}

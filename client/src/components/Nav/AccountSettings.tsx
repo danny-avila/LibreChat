@@ -32,7 +32,7 @@ function AccountSettings() {
         data-testid="nav-user"
         className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-accent"
       >
-        <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
+        <div className="-ml-0.9 -mt-0.8 h-8 w-8 shrink-0">
           <div className="relative flex">
             {name.length === 0 ? (
               <div

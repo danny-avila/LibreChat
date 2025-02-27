@@ -126,7 +126,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 </h2>
                 <button
                   type="button"
-                  className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-border-xheavy focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-primary dark:focus:ring-offset-surface-primary"
+                  className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-border-xheavy focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-primary dark:focus:ring-offset-surface-primary"
                   onClick={() => onOpenChange(false)}
                 >
                   <svg
@@ -157,7 +157,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   <Tabs.List
                     aria-label="Settings"
                     className={cn(
-                      'min-w-auto max-w-auto relative -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
+                      'min-w-auto max-w-auto relative -ml-[8px] flex shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
                       isSmallScreen
                         ? 'flex-row rounded-xl bg-surface-secondary'
                         : 'sticky top-0 h-full',

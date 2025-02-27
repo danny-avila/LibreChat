@@ -1,8 +1,7 @@
-@config '../tailwind.config.js';
+@import 'tailwindcss';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../tailwind.config.mjs";
+
 
 /* Custom Variables */
 :root {
@@ -624,6 +623,11 @@ hr,
 p,
 pre {
   margin: 0;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
 }
 
 .scroll-down-enter {

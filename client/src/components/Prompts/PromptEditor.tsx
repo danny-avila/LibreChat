@@ -59,7 +59,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
         <span className="max-w-[200px] truncate sm:max-w-none">
           {localize('com_ui_prompt_text')}
         </span>
-        <div className="flex flex-shrink-0 flex-row gap-3 sm:gap-6">
+        <div className="flex shrink-0 flex-row gap-3 sm:gap-6">
           {editorMode === PromptsEditorMode.ADVANCED && (
             <AlwaysMakeProd className="hidden sm:flex" />
           )}
@@ -106,7 +106,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
               <TextareaAutosize
                 {...field}
                 autoFocus
-                className="w-full resize-none overflow-y-auto rounded bg-transparent text-sm text-text-primary focus:outline-none sm:text-base"
+                className="w-full resize-none overflow-y-auto rounded bg-transparent text-sm text-text-primary focus:outline-hidden sm:text-base"
                 minRows={3}
                 maxRows={14}
                 onBlur={() => setIsEditing(false)}

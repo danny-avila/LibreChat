@@ -59,7 +59,7 @@ export function SortFilterHeader<TData, TValue>({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
+          className="z-1001 dark:border-gray-700 dark:bg-gray-850"
         >
           <DropdownMenuItem
             onClick={() => column.toggleSorting(false)}

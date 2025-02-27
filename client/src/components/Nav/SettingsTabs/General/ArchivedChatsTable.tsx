@@ -89,7 +89,7 @@ export default function ArchivedChatsTable() {
         <div className="flex w-[410px] items-center">
           <Skeleton className="h-4" style={{ width: `${randomWidth}px` }} />
         </div>
-        <div className="flex flex-grow justify-center">
+        <div className="flex grow justify-center">
           <Skeleton className="h-4 w-28" />
         </div>
         <div className="mr-2 flex justify-end">

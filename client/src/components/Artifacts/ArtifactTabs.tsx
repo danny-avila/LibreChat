@@ -31,7 +31,7 @@ export default function ArtifactTabs({
         ref={contentRef}
         value="code"
         id="artifacts-code"
-        className={cn('flex-grow overflow-auto')}
+        className={cn('grow overflow-auto')}
       >
         <ArtifactCodeEditor
           files={files}
@@ -45,7 +45,7 @@ export default function ArtifactTabs({
       </Tabs.Content>
       <Tabs.Content
         value="preview"
-        className={cn('flex-grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
+        className={cn('grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
       >
         <ArtifactPreview
           files={files}

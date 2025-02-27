@@ -35,7 +35,7 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
   const Icon = icons[iconKey];
 
   return (
-    <div className="h-7 w-7 flex-shrink-0">
+    <div className="h-7 w-7 shrink-0">
       {iconURL && iconURL.includes('http') ? (
         <ConvoIconURL
           iconURL={iconURL}

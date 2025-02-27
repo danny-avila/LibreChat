@@ -127,7 +127,7 @@ export default function DataTableFile<TData, TValue>({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
+                className="z-1001 dark:border-gray-700 dark:bg-gray-850"
               >
                 {table
                   .getAllColumns()

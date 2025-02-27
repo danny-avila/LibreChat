@@ -143,7 +143,7 @@ const CreatePromptForm = ({
                   <div>
                     <TextareaAutosize
                       {...field}
-                      className="w-full rounded border border-border-medium px-2 py-1 focus:outline-none dark:bg-transparent dark:text-gray-200"
+                      className="w-full rounded border border-border-medium px-2 py-1 focus:outline-hidden dark:bg-transparent dark:text-gray-200"
                       minRows={6}
                       tabIndex={0}
                     />

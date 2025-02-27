@@ -98,7 +98,7 @@ const MenuItem: FC<MenuItemProps> = ({
         role="option"
         aria-selected={selected}
         className={cn(
-          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-surface-hover',
+          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 pr-3! text-sm opacity-100! hover:bg-surface-hover',
           'radix-disabled:pointer-events-none radix-disabled:opacity-50',
         )}
         tabIndex={0}

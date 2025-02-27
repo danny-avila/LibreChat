@@ -38,7 +38,7 @@ export default function MessagesView({
                 </div>
               </>
             )}
-            <div className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-800/50" />
+            <div className="dark:gpt-dark-gray group h-0 w-full shrink-0 dark:border-gray-800/50" />
           </div>
         </div>
       </div>

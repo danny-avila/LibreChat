@@ -70,7 +70,7 @@ export default function HeaderOptions({
       <Anchor>
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
-            <div className="z-[61] flex w-full items-center justify-center gap-2">
+            <div className="z-61 flex w-full items-center justify-center gap-2">
               {interfaceConfig?.modelSelect === true && !isAgentsEndpoint(endpoint) && (
                 <ModelSelect
                   conversation={conversation}

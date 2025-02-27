@@ -78,14 +78,14 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
       <div className="flex justify-center">
         <Button
           type="button"
-          className="mr-2 mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+          className="mr-2 mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-hidden dark:focus:ring-offset-0"
           onClick={removeExample}
         >
           <Minus className="w-[16px]" />
         </Button>
         <Button
           type="button"
-          className="mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+          className="mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-hidden dark:focus:ring-offset-0"
           onClick={addExample}
         >
           <Plus className="w-[16px]" />

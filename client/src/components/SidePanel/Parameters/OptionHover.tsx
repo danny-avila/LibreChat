@@ -27,7 +27,7 @@ function OptionHover({
   const text = langCode ? localize(description as TranslationKeys) : description;
   return (
     <HoverCardPortal>
-      <HoverCardContent side={side} className={`z-[999] w-80 ${className}`} sideOffset={sideOffset}>
+      <HoverCardContent side={side} className={`z-999 w-80 ${className}`} sideOffset={sideOffset}>
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{text}</p>
         </div>

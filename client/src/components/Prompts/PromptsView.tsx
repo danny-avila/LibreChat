@@ -36,7 +36,7 @@ export default function PromptsView() {
   return (
     <div className="flex h-screen w-full flex-col bg-surface-primary p-0 lg:p-2">
       <DashBreadcrumb />
-      <div className="flex w-full flex-grow flex-row divide-x overflow-hidden dark:divide-gray-600">
+      <div className="flex w-full grow flex-row divide-x overflow-hidden dark:divide-gray-600">
         <GroupSidePanel isDetailView={isDetailView} {...groupsNav}>
           <div className="mx-2 mt-1 flex flex-row items-center justify-between">
             <FilterPrompts setName={groupsNav.setName} />

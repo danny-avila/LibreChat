@@ -205,7 +205,7 @@ export default function AgentPanel({
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
+        className="scrollbar-gutter-stable h-auto w-full shrink-0 overflow-x-hidden"
         aria-label="Agent configuration form"
       >
         <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">

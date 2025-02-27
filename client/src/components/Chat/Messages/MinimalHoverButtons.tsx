@@ -15,7 +15,7 @@ export default function MinimalHoverButtons({ message }: THoverButtons) {
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
       <button
-        className="ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+        className="ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 dark:disabled:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"
         title={

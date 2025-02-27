@@ -148,7 +148,7 @@ function ToolSelectDialog({
         setCurrentPage(1);
         setSearchValue('');
       }}
-      className="relative z-[102]"
+      className="relative z-102"
     >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-surface-primary opacity-60 transition-opacity dark:opacity-80" />
@@ -213,7 +213,7 @@ function ToolSelectDialog({
                   value={searchValue}
                   onChange={handleSearch}
                   placeholder={localize('com_nav_tool_search')}
-                  className="w-64 rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary focus:outline-none"
+                  className="w-64 rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary focus:outline-hidden"
                 />
               </div>
               <div

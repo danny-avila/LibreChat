@@ -16,7 +16,7 @@ export default function Action({ action, onClick }: { action: Action; onClick: (
           onClick();
         }
       }}
-      className="group flex w-full rounded-lg border border-border-medium text-sm hover:cursor-pointer focus:outline-none focus:ring-2 focus:ring-text-primary"
+      className="group flex w-full rounded-lg border border-border-medium text-sm hover:cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-text-primary"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       aria-label={`Action for ${action.metadata.domain}`}
@@ -29,7 +29,7 @@ export default function Action({ action, onClick }: { action: Action; onClick: (
       </div>
       <div
         className={cn(
-          'h-9 w-9 min-w-9 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary group-focus:flex',
+          'h-9 w-9 min-w-9 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-tertiary focus:outline-hidden focus:ring-2 focus:ring-text-primary group-focus:flex',
           isHovering ? 'flex' : 'hidden',
         )}
         aria-label="Settings"

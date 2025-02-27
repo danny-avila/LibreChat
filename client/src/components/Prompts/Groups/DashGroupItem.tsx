@@ -74,7 +74,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   return (
     <div
       className={cn(
-        'mx-2 my-2 flex cursor-pointer rounded-lg border border-border-light bg-surface-primary p-3 shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-secondary',
+        'mx-2 my-2 flex cursor-pointer rounded-lg border border-border-light bg-surface-primary p-3 shadow-2xs transition-all duration-300 ease-in-out hover:bg-surface-secondary',
         params.promptId === group._id && 'bg-surface-hover',
       )}
       onClick={handleContainerClick}

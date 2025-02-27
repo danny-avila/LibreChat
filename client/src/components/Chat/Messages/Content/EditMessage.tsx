@@ -150,7 +150,7 @@ const EditMessage = ({
 
   return (
     <Container message={message}>
-      <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border border-border-medium text-text-primary [&:has(textarea:focus)]:border-border-heavy [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
+      <div className="bg-token-main-surface-primary relative flex w-full grow flex-col overflow-hidden rounded-2xl border border-border-medium text-text-primary [&:has(textarea:focus)]:border-border-heavy [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
         <TextareaAutosize
           {...registerProps}
           ref={(e) => {

@@ -28,7 +28,7 @@ export default function Toast() {
           }`}
         >
           {toast.showIcon && (
-            <div className="mt-1 flex-shrink-0 flex-grow-0">
+            <div className="mt-1 shrink-0 grow-0">
               <svg
                 stroke="currentColor"
                 fill="none"

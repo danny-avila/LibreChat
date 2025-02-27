@@ -10,7 +10,7 @@ import { useLocalize } from '~/hooks';
 const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
   return (
     <div
-      className="relative mt-6 rounded-lg border border-green-500/20 bg-green-50/50 px-6 py-4 text-green-700 shadow-sm transition-all dark:bg-green-950/30 dark:text-green-100"
+      className="relative mt-6 rounded-lg border border-green-500/20 bg-green-50/50 px-6 py-4 text-green-700 shadow-2xs transition-all dark:bg-green-950/30 dark:text-green-100"
       role="alert"
     >
       {children}
@@ -108,7 +108,7 @@ function RequestPasswordReset() {
             className="
               peer w-full rounded-lg border border-gray-300 bg-transparent px-4 py-3
               text-base text-gray-900 placeholder-transparent transition-all
-              focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20
+              focus:border-green-500 focus:outline-hidden focus:ring-2 focus:ring-green-500/20
               dark:border-gray-700 dark:text-white dark:focus:border-green-500
             "
             placeholder="email@example.com"
@@ -138,7 +138,7 @@ function RequestPasswordReset() {
           disabled={!!errors.email}
           className="
             w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
-            transition-colors hover:bg-green-700 focus:outline-none focus:ring-2
+            transition-colors hover:bg-green-700 focus:outline-hidden focus:ring-2
             focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50
             disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700
           "

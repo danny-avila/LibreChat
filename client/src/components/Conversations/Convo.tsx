@@ -154,7 +154,7 @@ export default function Conversation({
           <input
             ref={inputRef}
             type="text"
-            className="w-full rounded bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-none"
+            className="w-full rounded bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-hidden"
             value={titleInput ?? ''}
             onChange={(e) => setTitleInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -210,9 +210,9 @@ export default function Conversation({
             {title}
           </div>
           {isActiveConvo ? (
-            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l" />
+            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-linear-to-l" />
           ) : (
-            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%" />
+            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-linear-to-l from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%" />
           )}
         </a>
       )}

@@ -116,7 +116,7 @@ function ControlCombobox({
         )}
         {!isCollapsed && (
           <>
-            <span className="flex-grow truncate text-left">
+            <span className="grow truncate text-left">
               {displayValue != null
                 ? displayValue || selectPlaceholder
                 : selectedValue || selectPlaceholder}
@@ -142,7 +142,7 @@ function ControlCombobox({
               store={combobox}
               autoSelect
               placeholder={searchPlaceholder}
-              className="w-full rounded-md border border-border-light bg-surface-tertiary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
+              className="w-full rounded-md border border-border-light bg-surface-tertiary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-hidden"
             />
           </div>
         </div>
@@ -156,14 +156,14 @@ function ControlCombobox({
                   className={cn(
                     'flex w-full cursor-pointer items-center px-3 text-sm',
                     'text-text-primary hover:bg-surface-tertiary',
-                    'data-[active-item]:bg-surface-tertiary',
+                    'data-active-item:bg-surface-tertiary',
                   )}
                   render={<Ariakit.SelectItem value={value} />}
                 >
                   {icon != null && iconSide === 'left' && (
                     <div className={optionIconClassName}>{icon}</div>
                   )}
-                  <span className="flex-grow truncate text-left">{label}</span>
+                  <span className="grow truncate text-left">{label}</span>
                   {icon != null && iconSide === 'right' && (
                     <div className={optionIconClassName}>{icon}</div>
                   )}

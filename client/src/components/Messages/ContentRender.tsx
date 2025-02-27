@@ -115,7 +115,7 @@ const ContentRender = memo(
     const conditionalClasses = {
       latestCard: isLatestCard ? 'bg-surface-secondary' : '',
       cardRender: showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
-      focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+      focus: 'focus:outline-hidden focus:ring-2 focus:ring-border-xheavy',
     };
 
     return (
@@ -142,7 +142,7 @@ const ContentRender = memo(
         {isLatestCard === true && (
           <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary" />
         )}
-        <div className="relative flex flex-shrink-0 flex-col items-end">
+        <div className="relative flex shrink-0 flex-col items-end">
           <div>
             <div className="pt-0.5">
               <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
@@ -159,7 +159,7 @@ const ContentRender = memo(
         >
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
           <div className="flex-col gap-1 md:gap-3">
-            <div className="flex max-w-full flex-grow flex-col gap-0">
+            <div className="flex max-w-full grow flex-col gap-0">
               <ContentParts
                 edit={edit}
                 isLast={isLast}

@@ -37,8 +37,8 @@ export default function MentionItem({
           isActive === true ? 'bg-surface-active' : 'bg-transparent',
         )}
       >
-        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">{icon}</div>
-        <div className="flex min-w-0 flex-grow items-center justify-between">
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center">{icon}</div>
+        <div className="flex min-w-0 grow items-center justify-between">
           <div className="truncate">
             <span className="font-medium">{name}</span>
             {description != null && description ? (
@@ -47,7 +47,7 @@ export default function MentionItem({
               </span>
             ) : null}
           </div>
-          <Clock4 size={16} className="ml-2 flex-shrink-0" />
+          <Clock4 size={16} className="ml-2 shrink-0" />
         </div>
       </div>
     </button>

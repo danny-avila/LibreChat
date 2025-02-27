@@ -1,5 +1,5 @@
 {
-  "tailwindConfig": "./client/tailwind.config.cjs",
+  "tailwindConfig": "./client/tailwind.config.mjs",
   "printWidth": 100,
   "tabWidth": 2,
   "useTabs": false,

@@ -33,7 +33,7 @@ export default function MultiSearch({
   return (
     <div
       className={cn(
-        'focus:to-surface-primary/50 group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-surface-tertiary-alt from-65% to-transparent px-3 py-2 text-text-primary transition-colors duration-300 focus:bg-gradient-to-b focus:from-surface-primary',
+        'focus:to-surface-primary/50 group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-linear-to-b from-surface-tertiary-alt from-65% to-transparent px-3 py-2 text-text-primary transition-colors duration-300 focus:bg-linear-to-b focus:from-surface-primary',
         className,
       )}
     >
@@ -48,7 +48,7 @@ export default function MultiSearch({
         onChange={onChangeHandler}
         placeholder={placeholder ?? localize('com_ui_select_search_model')}
         aria-label="Search Model"
-        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-ring-primary"
+        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-text-secondary focus:outline-hidden focus:ring-1 focus:ring-ring-primary"
       />
       <button
         className={cn(
