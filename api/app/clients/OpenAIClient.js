@@ -298,7 +298,9 @@ class OpenAIClient extends BaseClient {
   }
 
   getEncoding() {
-    return this.model?.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
+    return this.modelOptions?.model && /gpt-4[^-\s]/.test(this.modelOptions.model)
+      ? 'o200k_base'
+      : 'cl100k_base';
   }
 
   /**
@@ -605,7 +607,7 @@ class OpenAIClient extends BaseClient {
   }
 
   initializeLLM({
-    model = 'gpt-4o-mini',
+    model = openAISettings.model.default,
     modelName,
     temperature = 0.2,
     max_tokens,
@@ -706,7 +708,7 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-4o-mini';
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? openAISettings.model.default;
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
     }
@@ -899,7 +901,7 @@ ${convo}
     let prompt;
 
     // TODO: remove the gpt fallback and make it specific to endpoint
-    const { OPENAI_SUMMARY_MODEL = 'gpt-4o-mini' } = process.env ?? {};
+    const { OPENAI_SUMMARY_MODEL = openAISettings.model.default } = process.env ?? {};
     let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
