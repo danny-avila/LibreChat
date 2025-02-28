@@ -18,6 +18,10 @@ const AuthSchema = new Schema(
       type: String,
       enum: ['default_post', 'basic_auth_header', null],
     },
+    oauth_flow: {
+      type: String,
+      enum: ['auth_code_flow', 'client_cred_flow', null],
+    },
   },
   { _id: false },
 );

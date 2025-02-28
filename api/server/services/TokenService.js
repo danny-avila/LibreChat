@@ -164,7 +164,67 @@ const getAccessToken = async ({
   }
 };
 
+
+
+/**
+ * Handles getting a Client Credential Token
+ * @param {object} fields
+ * @param {string} fields.identifier - The action id the token is requested for
+ * @param {string} fields.scope - The scope the token is requested for
+ * @param {string} fields.client_url - The URL of the OAuth provider.
+ * @param {string} fields.encrypted_oauth_client_id - The client ID for the OAuth provider.
+ * @param {string} fields.encrypted_oauth_client_secret - The client secret for the OAuth provider.
+ * @returns {Promise<{
+*  access_token: string,
+*  expires_in: number
+* }>}
+*/
+const getClientCredentialAccessToken = async ({
+ identifier, 
+ scope,
+ client_url,
+ encrypted_oauth_client_id,
+ encrypted_oauth_client_secret,
+}) => {
+
+
+ logger.debug(`getClientCredentialAccessToken for ${identifier}`);
+
+ const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
+ const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
+ const params = new URLSearchParams({
+   scope,
+   client_id: oauth_client_id,
+   client_secret: oauth_client_secret,
+   grant_type: 'client_credentials',
+ });
+
+ try {
+   const response = await axios({
+     method: 'POST',
+     url: client_url,
+     headers: {
+       'Content-Type': 'application/x-www-form-urlencoded',
+       Accept: 'application/json',
+     },
+     data: params.toString(),
+   });
+
+
+   logger.debug(`Access tokens successfully recieved for ${identifier}`);
+   return response.data;
+ } catch (error) {
+   const message = 'Error getting access token';
+   logAxiosError({
+     message,
+     error,
+   });
+   throw new Error(message);
+ }
+};
+
 module.exports = {
   getAccessToken,
   refreshAccessToken,
+  getClientCredentialAccessToken,
 };
