@@ -160,17 +160,12 @@ Error Message: ${error.message}`);
       );
     }
 
-    logger.debug('[DALL-E-3]', {
-      imageName,
-      imageBasename,
-      imageExt,
-      extension,
-      theImageUrl,
-      data: resp.data[0],
-    });
-
     if (this.isAgent) {
-      const imageResponse = await fetch(theImageUrl);
+      let fetchOptions = {};
+      if (process.env.PROXY) {
+        fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+      }
+      const imageResponse = await fetch(theImageUrl, fetchOptions);
       const arrayBuffer = await imageResponse.arrayBuffer();
       const base64 = Buffer.from(arrayBuffer).toString('base64');
       const content = [
@@ -196,6 +191,16 @@ Error Message: ${error.message}`);
 
     const extension = imageExt.startsWith('.') ? imageExt.slice(1) : imageExt;
     const imageName = `img-${uuidv4()}.${extension}`;
+
+    logger.debug('[DALL-E-3]', {
+      imageName,
+      imageBasename,
+      imageExt,
+      extension,
+      theImageUrl,
+      data: resp.data[0],
+    });
+
     try {
       const result = await this.processFileURL({
         URL: theImageUrl,
