@@ -27,12 +27,9 @@ function DynamicInput({
   const localize = useLocalize();
   const { preset } = useChatContext();
 
-  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | null>({
+  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
-    initialValue:
-      optionType !== OptionTypes.Custom
-        ? (conversation?.[settingKey] as string)
-        : (defaultValue as string),
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
     setOption,
   });
@@ -88,9 +85,13 @@ function DynamicInput({
           <Input
             id={`${settingKey}-dynamic-input`}
             disabled={readonly}
-            value={inputValue ?? ''}
+            value={inputValue ?? defaultValue ?? ''}
             onChange={handleInputChange}
-            placeholder={placeholderCode ? localize(placeholder as TranslationKeys) || placeholder : placeholder}
+            placeholder={
+              placeholderCode
+                ? localize(placeholder as TranslationKeys) || placeholder
+                : placeholder
+            }
             className={cn(
               'flex h-10 max-h-10 w-full resize-none border-none bg-surface-secondary px-3 py-2',
             )}
@@ -98,7 +99,11 @@ function DynamicInput({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) || description : description}
+            description={
+              descriptionCode
+                ? localize(description as TranslationKeys) || description
+                : description
+            }
             side={ESide.Left}
           />
         )}

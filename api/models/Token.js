@@ -13,6 +13,13 @@ const Token = mongoose.model('Token', tokenSchema);
  */
 async function fixIndexes() {
   try {
+    if (
+      process.env.NODE_ENV === 'CI' ||
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'test'
+    ) {
+      return;
+    }
     const indexes = await Token.collection.indexes();
     logger.debug('Existing Token Indexes:', JSON.stringify(indexes, null, 2));
     const unwantedTTLIndexes = indexes.filter(

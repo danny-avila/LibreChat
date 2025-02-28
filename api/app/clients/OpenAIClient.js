@@ -109,12 +109,7 @@ class OpenAIClient extends BaseClient {
     const omniPattern = /\b(o1|o3)\b/i;
     this.isOmni = omniPattern.test(this.modelOptions.model);
 
-    const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
-    if (OPENROUTER_API_KEY && !this.azure) {
-      this.apiKey = OPENROUTER_API_KEY;
-      this.useOpenRouter = true;
-    }
-
+    const { OPENAI_FORCE_PROMPT } = process.env ?? {};
     const { reverseProxyUrl: reverseProxy } = this.options;
 
     if (!this.useOpenRouter && reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) {
@@ -1313,6 +1308,12 @@ ${convo}
       if (this.useOpenRouter) {
         modelOptions.include_reasoning = true;
         reasoningKey = 'reasoning';
+      }
+      if (this.useOpenRouter && modelOptions.reasoning_effort != null) {
+        modelOptions.reasoning = {
+          effort: modelOptions.reasoning_effort,
+        };
+        delete modelOptions.reasoning_effort;
       }
 
       this.streamHandler = new SplitStreamHandler({

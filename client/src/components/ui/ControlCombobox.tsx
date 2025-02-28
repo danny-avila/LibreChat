@@ -1,6 +1,6 @@
-import { Search } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
+import { Search, ChevronDown } from 'lucide-react';
 import { useMemo, useState, useRef, memo, useEffect } from 'react';
 import { SelectRenderer } from '@ariakit/react-core/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
@@ -16,6 +16,13 @@ interface ControlComboboxProps {
   selectPlaceholder?: string;
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
+  containerClassName?: string;
+  iconClassName?: string;
+  showCarat?: boolean;
+  className?: string;
+  disabled?: boolean;
+  iconSide?: 'left' | 'right';
+  selectId?: string;
 }
 
 const ROW_HEIGHT = 36;
@@ -28,8 +35,15 @@ function ControlCombobox({
   ariaLabel,
   searchPlaceholder,
   selectPlaceholder,
+  containerClassName,
   isCollapsed,
   SelectIcon,
+  showCarat,
+  className,
+  disabled,
+  iconClassName,
+  iconSide = 'left',
+  selectId,
 }: ControlComboboxProps) {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -70,28 +84,48 @@ function ControlCombobox({
     }
   }, [isCollapsed]);
 
+  const selectIconClassName = cn(
+    'flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
+    iconClassName,
+  );
+  const optionIconClassName = cn(
+    'mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
+    iconClassName,
+  );
+
   return (
-    <div className="flex w-full items-center justify-center px-1">
+    <div className={cn('flex w-full items-center justify-center px-1', containerClassName)}>
       <Ariakit.SelectLabel store={select} className="sr-only">
         {ariaLabel}
       </Ariakit.SelectLabel>
       <Ariakit.Select
         ref={buttonRef}
         store={select}
+        id={selectId}
+        disabled={disabled}
         className={cn(
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',
           'border border-border-light',
           isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
+          className,
         )}
       >
-        {SelectIcon != null && (
-          <div className="assistant-item flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-            {SelectIcon}
-          </div>
+        {SelectIcon != null && iconSide === 'left' && (
+          <div className={selectIconClassName}>{SelectIcon}</div>
         )}
         {!isCollapsed && (
-          <span className="flex-grow truncate text-left">{displayValue ?? selectPlaceholder}</span>
+          <>
+            <span className="flex-grow truncate text-left">
+              {displayValue != null
+                ? displayValue || selectPlaceholder
+                : selectedValue || selectPlaceholder}
+            </span>
+            {SelectIcon != null && iconSide === 'right' && (
+              <div className={selectIconClassName}>{SelectIcon}</div>
+            )}
+            {showCarat && <ChevronDown className="h-4 w-4 text-text-secondary" />}
+          </>
         )}
       </Ariakit.Select>
       <Ariakit.SelectPopover
@@ -126,12 +160,13 @@ function ControlCombobox({
                   )}
                   render={<Ariakit.SelectItem value={value} />}
                 >
-                  {icon != null && (
-                    <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                      {icon}
-                    </div>
+                  {icon != null && iconSide === 'left' && (
+                    <div className={optionIconClassName}>{icon}</div>
                   )}
                   <span className="flex-grow truncate text-left">{label}</span>
+                  {icon != null && iconSide === 'right' && (
+                    <div className={optionIconClassName}>{icon}</div>
+                  )}
                 </Ariakit.ComboboxItem>
               )}
             </SelectRenderer>

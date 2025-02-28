@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TModelsConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { fileConfigSchema } from './file-config';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
@@ -31,6 +31,27 @@ export const defaultRetrievalModels = [
   'gpt-4-0125',
   'gpt-4-1106',
 ];
+
+export const excludedKeys = new Set([
+  'conversationId',
+  'title',
+  'iconURL',
+  'greeting',
+  'endpoint',
+  'endpointType',
+  'createdAt',
+  'updatedAt',
+  'expiredAt',
+  'messages',
+  'isArchived',
+  'tags',
+  'user',
+  '__v',
+  '_id',
+  'tools',
+  'model',
+  'files',
+]);
 
 export enum SettingsViews {
   default = 'default',
@@ -447,6 +468,7 @@ export const intefaceSchema = z
       })
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
+    customWelcome: z.string().optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
@@ -457,6 +479,7 @@ export const intefaceSchema = z
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
+    runCode: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -469,6 +492,7 @@ export const intefaceSchema = z
     prompts: true,
     agents: true,
     temporaryChat: true,
+    runCode: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
@@ -647,6 +671,8 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-3-7-sonnet-latest',
+  'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
   'claude-3-5-sonnet-20241022',
   'claude-3-5-sonnet-20240620',
@@ -706,7 +732,7 @@ export const defaultModels = {
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
-    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-flash-lite',
     'gemini-2.0-pro-exp-02-05',
     // Gemini 1.5 Models
     'gemini-1.5-flash-001',

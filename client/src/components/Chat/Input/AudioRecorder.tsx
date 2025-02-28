@@ -81,17 +81,25 @@ export default function AudioRecorder({
 
   return (
     <TooltipAnchor
-      id="audio-recorder"
-      aria-label={localize('com_ui_use_micrphone')}
-      onClick={isListening === true ? handleStopRecording : handleStartRecording}
-      disabled={disabled}
-      className={cn(
-        'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
-        isRTL ? 'bottom-2 left-2' : 'bottom-2 right-2',
-      )}
       description={localize('com_ui_use_micrphone')}
-    >
-      {renderIcon()}
-    </TooltipAnchor>
+      render={
+        <button
+          id="audio-recorder"
+          type="button"
+          aria-label={localize('com_ui_use_micrphone')}
+          onClick={isListening === true ? handleStopRecording : handleStartRecording}
+          disabled={disabled}
+          className={cn(
+            'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
+            isRTL ? 'bottom-2 left-2' : 'bottom-2 right-2',
+            disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+          )}
+          title={localize('com_ui_use_micrphone')}
+          aria-pressed={isListening}
+        >
+          {renderIcon()}
+        </button>
+      }
+    />
   );
 }
