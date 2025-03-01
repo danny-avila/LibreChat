@@ -887,7 +887,7 @@ class BaseClient {
         if (!key) {
           continue;
         }
-        if (excludedKeys.has(key)) {
+        if (excludedKeys?.has(key)) {
           continue;
         }
 
