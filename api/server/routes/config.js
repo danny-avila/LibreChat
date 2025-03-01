@@ -59,7 +59,7 @@ router.get('/', async function (req, res) {
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
       samlLoginEnabled: !!process.env.SAML_METADATA && !!process.env.SAML_SESSION_SECRET,
-      samlLabel: process.env.SAML_BUTTON_LABEL || 'Continue with SAML',
+      samlLabel: process.env.SAML_BUTTON_LABEL,
       samlImageUrl: process.env.SAML_IMAGE_URL,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
