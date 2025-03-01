@@ -73,27 +73,26 @@ endpoints:
   - name: 'Swisscom AI Platform' # Unique name for the endpoint
     # For `apiKey` and `baseURL`, you can use environment variables that you define.
     # recommended environment variables:
-    apiKey: '${SWISSCOM_AI_KEY}'
+    apiKey: 'sc_d82b379a-986f-466d-9139-15b916e0a2b4'
     baseURL: 'https://ep1.ai-platform.swisscom.com/v1'
     models:
       default:
-        [
-          "meta/llama-3.1-70b-instruct"
-        ]
+          - "meta/llama-3.1-70b-instruct"
+        
       # Fetch option: Set to true to fetch models from API.
-      fetch: true # Defaults to false.
-    directEndpoint: true
+      fetch: false # Defaults to false.
+    directEndpoint: false
 
     # Optional configurations
 
     # Title Conversation setting
-    titleConvo: true # Set to true to enable title conversation
+    #titleConvo: true # Set to true to enable title conversation
 
     # Title Method: Choose between "completion" or "functions".
     #titleMethod: "completion"  # Defaults to "completion" if omitted.
 
     # Title Model: Specify the model to use for titles.
-    titleModel: 'llama-3.1-70b-instruct' # Defaults to "gpt-3.5-turbo" if omitted.
+    #titleModel: 'llama-3.1-70b-instruct' # Defaults to "gpt-3.5-turbo" if omitted.
 
     # Summarize setting: Set to true to enable summarization.
     # summarize: false
@@ -102,7 +101,7 @@ endpoints:
     # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
 
     # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
-    # forcePrompt: false
+    forcePrompt: false
 
     # The label displayed for the AI model in messages.
     modelDisplayLabel: 'llama-3.1-70b' # Default is "AI" when not set.
