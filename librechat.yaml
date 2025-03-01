@@ -73,7 +73,7 @@ endpoints:
   - name: 'Swisscom AI Platform' # Unique name for the endpoint
     # For `apiKey` and `baseURL`, you can use environment variables that you define.
     # recommended environment variables:
-    apiKey: 'sc_d82b379a-986f-466d-9139-15b916e0a2b4'
+    apiKey: '${SWISSCOM_AI_KEY}'
     baseURL: 'https://ep1.ai-platform.swisscom.com/v1'
     models:
       default:
