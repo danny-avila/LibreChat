@@ -9,6 +9,7 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
+const paths = require('~/config/paths');
 
 let crypto;
 try {
@@ -46,8 +47,7 @@ function getMetadata() {
   }
 
   let metadataContent;
-  const projectRoot = path.resolve(__dirname, '../../');
-  const metadataPath = path.resolve(projectRoot, metadataEnv);
+  const metadataPath = path.resolve(paths.root, metadataEnv);
 
   if (fs.existsSync(metadataPath) && fs.statSync(metadataPath).isFile()) {
     logger.info(`[samlStrategy] Loading SAML metadata from file: ${metadataPath}`);
