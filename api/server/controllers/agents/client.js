@@ -795,7 +795,7 @@ class AgentClient extends BaseClient {
         );
       }
     } catch (err) {
-      logger.warn(
+      logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
       );
