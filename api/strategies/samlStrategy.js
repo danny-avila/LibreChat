@@ -276,4 +276,4 @@ async function setupSaml() {
   }
 }
 
-module.exports = setupSaml;
+module.exports = { setupSaml, getMetadata };
