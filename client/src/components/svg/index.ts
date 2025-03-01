@@ -23,6 +23,7 @@ export { default as OpenIDIcon } from './OpenIDIcon';
 export { default as GithubIcon } from './GithubIcon';
 export { default as DiscordIcon } from './DiscordIcon';
 export { default as AppleIcon } from './AppleIcon';
+export { default as SamlIcon } from './SamlIcon';
 export { default as AnthropicIcon } from './AnthropicIcon';
 export { default as SendIcon } from './SendIcon';
 export { default as LinkIcon } from './LinkIcon';
