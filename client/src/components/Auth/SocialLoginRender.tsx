@@ -5,6 +5,7 @@ import {
   GithubIcon,
   DiscordIcon,
   AppleIcon,
+  SamlIcon,
 } from '~/components';
 
 import SocialButton from './SocialButton';
@@ -107,7 +108,7 @@ function SocialLoginRender({
           startupConfig.samlImageUrl ? (
             <img src={startupConfig.samlImageUrl} alt="SAML Logo" className="h-5 w-5" />
           ) : (
-            <OpenIDIcon /> // TODO: Replace with SAML icon
+            <SamlIcon />
           )
         }
         label={startupConfig.samlLabel}
