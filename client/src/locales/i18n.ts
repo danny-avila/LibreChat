@@ -15,6 +15,7 @@ import translationPt_BR from './pt-BR/translation.json';
 import translationPt_PT from './pt-PT/translation.json';
 import translationRu from './ru/translation.json';
 import translationJa from './ja/translation.json';
+import translationKa from './ka/translation.json';
 import translationSv from './sv/translation.json';
 import translationKo from './ko/translation.json';
 import translationVi from './vi/translation.json';
@@ -43,6 +44,7 @@ export const resources = {
   'pt-PT': { translation: translationPt_PT },
   ru: { translation: translationRu },
   ja: { translation: translationJa },
+  ka: { translation: translationKa },
   sv: { translation: translationSv },
   ko: { translation: translationKo },
   vi: { translation: translationVi },
@@ -58,9 +60,9 @@ i18n
   .use(initReactI18next)
   .init({
     fallbackLng: {
-      'zh-TW': ['zh-Hant'],
-      'zh-HK': ['zh-Hant'],
-      'zh': ['zh-Hans'],
+      'zh-TW': ['zh-Hant', 'en'],
+      'zh-HK': ['zh-Hant', 'en'],
+      'zh': ['zh-Hans', 'en'],
       default: ['en'],
     },
     fallbackNS: 'translation',

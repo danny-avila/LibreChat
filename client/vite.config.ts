@@ -37,13 +37,12 @@ export default defineConfig({
       },
       useCredentials: true,
       workbox: {
-        globPatterns: [
-          'assets/**/*.{png,jpg,svg,ico}',
-          '**/*.{js,css,html,ico,woff2}',
-        ],
+        globPatterns: ['**/*'],
+        globIgnores: ['images/**/*'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
+      includeAssets: ['**/*'],
       manifest: {
         name: 'LibreChat',
         short_name: 'LibreChat',
@@ -70,7 +69,7 @@ export default defineConfig({
           {
             src: '/assets/icon-192x192.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
           },
           {
             src: '/assets/maskable-icon.png',
@@ -113,10 +112,7 @@ export default defineConfig({
             if (id.includes('node_modules/highlight.js')) {
               return 'markdown_highlight';
             }
-            if (
-              id.includes('node_modules/hast-util-raw') ||
-              id.includes('node_modules/katex')
-            ) {
+            if (id.includes('node_modules/hast-util-raw') || id.includes('node_modules/katex')) {
               return 'markdown_large';
             }
             // Group TanStack libraries together.
@@ -141,10 +137,7 @@ export default defineConfig({
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: (assetInfo) => {
-          if (
-            assetInfo.names &&
-            /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)
-          ) {
+          if (assetInfo.names && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)) {
             return 'assets/fonts/[name][extname]';
           }
           return 'assets/[name].[hash][extname]';

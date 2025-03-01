@@ -585,18 +585,96 @@ describe('resolveRef', () => {
       openapiSpec.paths['/ai.chatgpt.render-flowchart']?.post
         ?.requestBody as OpenAPIV3.RequestBodyObject
     ).content['application/json'].schema;
-    expect(flowchartRequestRef).toBeDefined();
-    const resolvedFlowchartRequest = resolveRef(
-      flowchartRequestRef as OpenAPIV3.RequestBodyObject,
-      openapiSpec.components,
-    );
 
-    expect(resolvedFlowchartRequest).toBeDefined();
-    expect(resolvedFlowchartRequest.type).toBe('object');
-    const properties = resolvedFlowchartRequest.properties as FlowchartSchema;
-    expect(properties).toBeDefined();
+    expect(flowchartRequestRef).toBeDefined();
+
+    const resolvedSchemaObject = resolveRef(
+      flowchartRequestRef as OpenAPIV3.ReferenceObject,
+      openapiSpec.components,
+    ) as OpenAPIV3.SchemaObject;
+
+    expect(resolvedSchemaObject).toBeDefined();
+    expect(resolvedSchemaObject.type).toBe('object');
+    expect(resolvedSchemaObject.properties).toBeDefined();
+
+    const properties = resolvedSchemaObject.properties as FlowchartSchema;
     expect(properties.mermaid).toBeDefined();
     expect(properties.mermaid.type).toBe('string');
+  });
+});
+
+describe('resolveRef general cases', () => {
+  const spec = {
+    openapi: '3.0.0',
+    info: { title: 'TestSpec', version: '1.0.0' },
+    paths: {},
+    components: {
+      schemas: {
+        TestSchema: { type: 'string' },
+      },
+      parameters: {
+        TestParam: {
+          name: 'myParam',
+          in: 'query',
+          required: false,
+          schema: { $ref: '#/components/schemas/TestSchema' },
+        },
+      },
+      requestBodies: {
+        TestRequestBody: {
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TestSchema' },
+            },
+          },
+        },
+      },
+    },
+  } satisfies OpenAPIV3.Document;
+
+  it('resolves schema refs correctly', () => {
+    const schemaRef: OpenAPIV3.ReferenceObject = { $ref: '#/components/schemas/TestSchema' };
+    const resolvedSchema = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject>(
+      schemaRef,
+      spec.components,
+    );
+    expect(resolvedSchema.type).toEqual('string');
+  });
+
+  it('resolves parameter refs correctly, then schema within parameter', () => {
+    const paramRef: OpenAPIV3.ReferenceObject = { $ref: '#/components/parameters/TestParam' };
+    const resolvedParam = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.ParameterObject>(
+      paramRef,
+      spec.components,
+    );
+    expect(resolvedParam.name).toEqual('myParam');
+    expect(resolvedParam.in).toEqual('query');
+    expect(resolvedParam.required).toBe(false);
+
+    const paramSchema = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject>(
+      resolvedParam.schema as OpenAPIV3.ReferenceObject,
+      spec.components,
+    );
+    expect(paramSchema.type).toEqual('string');
+  });
+
+  it('resolves requestBody refs correctly, then schema within requestBody', () => {
+    const requestBodyRef: OpenAPIV3.ReferenceObject = {
+      $ref: '#/components/requestBodies/TestRequestBody',
+    };
+    const resolvedRequestBody = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.RequestBodyObject>(
+      requestBodyRef,
+      spec.components,
+    );
+
+    expect(resolvedRequestBody.content['application/json']).toBeDefined();
+
+    const schemaInRequestBody = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject>(
+      resolvedRequestBody.content['application/json'].schema as OpenAPIV3.ReferenceObject,
+      spec.components,
+    );
+
+    expect(schemaInRequestBody.type).toEqual('string');
   });
 });
 
@@ -1093,6 +1171,45 @@ describe('createURL', () => {
         const invalidData = { id: 1 }; // should be string
         expect(() => GetPersonByIdSchema?.parse(invalidData)).toThrow();
       });
+    });
+  });
+
+  describe('openapiToFunction parameter refs resolution', () => {
+    const weatherSpec = {
+      openapi: '3.0.0',
+      info: { title: 'Weather', version: '1.0.0' },
+      servers: [{ url: 'https://api.weather.gov' }],
+      paths: {
+        '/points/{point}': {
+          get: {
+            operationId: 'getPoint',
+            parameters: [{ $ref: '#/components/parameters/PathPoint' }],
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+      },
+      components: {
+        parameters: {
+          PathPoint: {
+            name: 'point',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^(-?\\d+(?:\\.\\d+)?),(-?\\d+(?:\\.\\d+)?)$' },
+          },
+        },
+      },
+    } satisfies OpenAPIV3.Document;
+
+    it('correctly resolves $ref for parameters', () => {
+      const { functionSignatures } = openapiToFunction(weatherSpec, true);
+      const func = functionSignatures.find((sig) => sig.name === 'getPoint');
+      expect(func).toBeDefined();
+      expect(func?.parameters.properties).toHaveProperty('point');
+      expect(func?.parameters.required).toContain('point');
+
+      const paramSchema = func?.parameters.properties['point'] as OpenAPIV3.SchemaObject;
+      expect(paramSchema.type).toEqual('string');
+      expect(paramSchema.pattern).toEqual('^(-?\\d+(?:\\.\\d+)?),(-?\\d+(?:\\.\\d+)?)$');
     });
   });
 });

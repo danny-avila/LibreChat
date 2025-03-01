@@ -129,9 +129,6 @@ const fetchOpenAIModels = async (opts, _models = []) => {
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
-  } else if (process.env.OPENROUTER_API_KEY) {
-    reverseProxyUrl = 'https://openrouter.ai/api/v1';
-    apiKey = process.env.OPENROUTER_API_KEY;
   }
 
   if (reverseProxyUrl) {
@@ -218,7 +215,7 @@ const getOpenAIModels = async (opts) => {
     return models;
   }
 
-  if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
+  if (userProvidedOpenAI) {
     return models;
   }
 

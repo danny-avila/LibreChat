@@ -128,7 +128,6 @@ export const envVarRegex = /^\${(.+)}$/;
 export function extractEnvVariable(value: string) {
   const envVarMatch = value.match(envVarRegex);
   if (envVarMatch) {
-    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     return process.env[envVarMatch[1]] || value;
   }
   return value;
@@ -211,6 +210,29 @@ export const parseConvo = ({
   return convo;
 };
 
+/** Match GPT followed by digit, optional decimal, and optional suffix
+ *
+ * Examples: gpt-4, gpt-4o, gpt-4.5, gpt-5a, etc. */
+const extractGPTVersion = (modelStr: string): string => {
+  const gptMatch = modelStr.match(/gpt-(\d+(?:\.\d+)?)([a-z])?/i);
+  if (gptMatch) {
+    const version = gptMatch[1];
+    const suffix = gptMatch[2] || '';
+    return `GPT-${version}${suffix}`;
+  }
+  return '';
+};
+
+/** Match omni models (o1, o3, etc.), "o" followed by a digit, possibly with decimal */
+const extractOmniVersion = (modelStr: string): string => {
+  const omniMatch = modelStr.match(/\bo(\d+(?:\.\d+)?)\b/i);
+  if (omniMatch) {
+    const version = omniMatch[1];
+    return `o${version}`;
+  }
+  return '';
+};
+
 export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
   const {
     model: _m,
@@ -238,18 +260,13 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return chatGptLabel;
     } else if (modelLabel) {
       return modelLabel;
-    } else if (model && /\bo1\b/i.test(model)) {
-      return 'o1';
-    } else if (model && /\bo3\b/i.test(model)) {
-      return 'o3';
-    } else if (model && model.includes('gpt-3')) {
-      return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4o')) {
-      return 'GPT-4o';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
+    } else if (model && extractOmniVersion(model)) {
+      return extractOmniVersion(model);
     } else if (model && model.includes('mistral')) {
       return 'Mistral';
+    } else if (model && model.includes('gpt-')) {
+      const gptVersion = extractGPTVersion(model);
+      return gptVersion || 'GPT';
     }
     return (alternateName[endpoint] as string | undefined) ?? 'ChatGPT';
   }
@@ -279,14 +296,13 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return modelLabel;
     } else if (chatGptLabel) {
       return chatGptLabel;
+    } else if (model && extractOmniVersion(model)) {
+      return extractOmniVersion(model);
     } else if (model && model.includes('mistral')) {
       return 'Mistral';
-    } else if (model && model.includes('gpt-3')) {
-      return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4o')) {
-      return 'GPT-4o';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
+    } else if (model && model.includes('gpt-')) {
+      const gptVersion = extractGPTVersion(model);
+      return gptVersion || 'GPT';
     } else if (modelDisplayLabel) {
       return modelDisplayLabel;
     }
