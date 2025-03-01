@@ -19,6 +19,7 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
+import { extractEnvVariable } from './utils';
 import { alternateName } from './config';
 
 type EndpointSchema =
@@ -120,17 +121,6 @@ export function errorsToString(errors: ZodIssue[]) {
       return `${field}: ${message}`;
     })
     .join(' ');
-}
-
-export const envVarRegex = /^\${(.+)}$/;
-
-/** Extracts the value of an environment variable from a string. */
-export function extractEnvVariable(value: string) {
-  const envVarMatch = value.match(envVarRegex);
-  if (envVarMatch) {
-    return process.env[envVarMatch[1]] || value;
-  }
-  return value;
 }
 
 /** Resolves header values to env variables if detected */
