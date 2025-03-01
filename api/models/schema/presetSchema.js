@@ -23,8 +23,6 @@ const presetSchema = mongoose.Schema(
     order: {
       type: Number,
     },
-    // google only
-    examples: [{ type: mongoose.Schema.Types.Mixed }],
     ...conversationPreset,
     agentOptions: {
       type: mongoose.Schema.Types.Mixed,

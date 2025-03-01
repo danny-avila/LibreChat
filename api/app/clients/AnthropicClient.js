@@ -7,8 +7,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { SplitStreamHandler: _Handler, GraphEvents } = require('@librechat/agents');
 const {
   truncateText,
   formatMessage,
@@ -17,8 +16,14 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
+const {
+  getClaudeHeaders,
+  configureReasoning,
+  checkPromptCacheSupport,
+} = require('~/server/services/Endpoints/anthropic/helpers');
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
@@ -26,6 +31,15 @@ const BaseClient = require('./BaseClient');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
+
+class SplitStreamHandler extends _Handler {
+  getDeltaContent(chunk) {
+    return (chunk?.delta?.text ?? chunk?.completion) || '';
+  }
+  getReasoningDelta(chunk) {
+    return chunk?.delta?.thinking || '';
+  }
+}
 
 /** Helper function to introduce a delay before retrying */
 function delayBeforeRetry(attempts, baseDelay = 1000) {
@@ -100,9 +114,10 @@ class AnthropicClient extends BaseClient {
 
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
     this.isClaude3 = modelMatch.includes('claude-3');
-    this.isLegacyOutput = !modelMatch.includes('claude-3-5-sonnet');
-    this.supportsCacheControl =
-      this.options.promptCache && this.checkPromptCacheSupport(modelMatch);
+    this.isLegacyOutput = !(
+      /claude-3[-.]5-sonnet/.test(modelMatch) || /claude-3[-.]7/.test(modelMatch)
+    );
+    this.supportsCacheControl = this.options.promptCache && checkPromptCacheSupport(modelMatch);
 
     if (
       this.isLegacyOutput &&
@@ -174,26 +189,9 @@ class AnthropicClient extends BaseClient {
       options.baseURL = this.options.reverseProxyUrl;
     }
 
-    if (
-      this.supportsCacheControl &&
-      requestOptions?.model &&
-      requestOptions.model.includes('claude-3-5-sonnet')
-    ) {
-      options.defaultHeaders = {
-        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
-      };
-    } else if (
-      this.supportsCacheControl &&
-      requestOptions?.model &&
-      requestOptions.model.includes('claude-3-7')
-    ) {
-      options.defaultHeaders = {
-        'anthropic-beta': 'output-128k-2025-02-19,prompt-caching-2024-07-31',
-      };
-    } else if (this.supportsCacheControl) {
-      options.defaultHeaders = {
-        'anthropic-beta': 'prompt-caching-2024-07-31',
-      };
+    const headers = getClaudeHeaders(requestOptions?.model, this.supportsCacheControl);
+    if (headers) {
+      options.defaultHeaders = headers;
     }
 
     return new Anthropic(options);
@@ -684,27 +682,6 @@ class AnthropicClient extends BaseClient {
       : await client.completions.create(options);
   }
 
-  /**
-   * @param {string} modelName
-   * @returns {boolean}
-   */
-  checkPromptCacheSupport(modelName) {
-    const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
-    if (modelMatch.includes('claude-3-5-sonnet-latest')) {
-      return false;
-    }
-    if (
-      modelMatch === 'claude-3-7-sonnet' ||
-      modelMatch === 'claude-3-5-sonnet' ||
-      modelMatch === 'claude-3-5-haiku' ||
-      modelMatch === 'claude-3-haiku' ||
-      modelMatch === 'claude-3-opus'
-    ) {
-      return true;
-    }
-    return false;
-  }
-
   getMessageMapMethod() {
     /**
      * @param {TMessage} msg
@@ -761,14 +738,12 @@ class AnthropicClient extends BaseClient {
       topK: top_k,
     } = this.modelOptions;
 
-    const requestOptions = {
+    let requestOptions = {
       model,
       stream: stream || true,
       stop_sequences,
       temperature,
       metadata,
-      top_p,
-      top_k,
     };
 
     if (this.useMessages) {
@@ -780,39 +755,17 @@ class AnthropicClient extends BaseClient {
       requestOptions.max_tokens_to_sample = maxOutputTokens || legacy.maxOutputTokens.default;
     }
 
-    if (
-      this.options.thinking &&
-      requestOptions?.model &&
-      requestOptions.model.includes('claude-3-7')
-    ) {
-      requestOptions.thinking = {
-        type: 'enabled',
-      };
-    }
-    if (requestOptions.thinking != null && this.options.thinkingBudget != null) {
-      requestOptions.thinking = {
-        ...requestOptions.thinking,
-        budget_tokens: this.options.thinkingBudget,
-      };
-    }
-    if (
-      requestOptions.thinking != null &&
-      (requestOptions.max_tokens == null ||
-        requestOptions.thinking.budget_tokens > requestOptions.max_tokens)
-    ) {
-      const maxTokens = anthropicSettings.maxOutputTokens.reset(requestOptions.model);
-      requestOptions.max_tokens = requestOptions.max_tokens ?? maxTokens;
+    requestOptions = configureReasoning(requestOptions, {
+      thinking: this.options.thinking,
+      thinkingBudget: this.options.thinkingBudget,
+    });
 
-      logger.warn(
-        requestOptions.max_tokens === maxTokens
-          ? '[AnthropicClient] max_tokens is not defined while thinking is enabled. Setting max_tokens to model default.'
-          : `[AnthropicClient] thinking budget_tokens (${requestOptions.thinking.budget_tokens}) exceeds max_tokens (${requestOptions.max_tokens}). Adjusting budget_tokens.`,
-      );
-
-      requestOptions.thinking.budget_tokens = Math.min(
-        requestOptions.thinking.budget_tokens,
-        Math.floor(requestOptions.max_tokens * 0.9),
-      );
+    if (!/claude-3[-.]7/.test(model)) {
+      requestOptions.top_p = top_p;
+      requestOptions.top_k = top_k;
+    } else if (requestOptions.thinking == null) {
+      requestOptions.topP = top_p;
+      requestOptions.topK = top_k;
     }
 
     if (this.systemMessage && this.supportsCacheControl === true) {
@@ -862,50 +815,16 @@ class AnthropicClient extends BaseClient {
             }
           });
 
-          /** @param {string} chunk */
-          const handleChunk = (chunk) => {
-            this.streamHandler.handle({
-              choices: [
-                {
-                  delta: {
-                    content: chunk,
-                  },
-                },
-              ],
-            });
-          };
-          /** @param {string} chunk */
-          const handleReasoningChunk = (chunk) => {
-            this.streamHandler.handle({
-              choices: [
-                {
-                  delta: {
-                    reasoning_content: chunk,
-                  },
-                },
-              ],
-            });
-          };
-
           for await (const completion of response) {
-            // Handle each completion as before
             const type = completion?.type ?? '';
             if (tokenEventTypes.has(type)) {
               logger.debug(`[AnthropicClient] ${type}`, completion);
               this[type] = completion;
             }
-            if (completion?.delta?.thinking) {
-              handleReasoningChunk(completion.delta.thinking);
-            } else if (completion?.delta?.text) {
-              handleChunk(completion.delta.text);
-            } else if (completion.completion) {
-              handleChunk(completion.completion);
-            }
-
+            this.streamHandler.handle(completion);
             await sleep(streamRate);
           }
 
-          // Successful processing, exit loop
           break;
         } catch (error) {
           attempts += 1;
