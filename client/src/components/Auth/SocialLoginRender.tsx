@@ -111,7 +111,7 @@ function SocialLoginRender({
             <SamlIcon />
           )
         }
-        label={startupConfig.samlLabel}
+        label={startupConfig.samlLabel ? startupConfig.samlLabel : localize('com_auth_saml_login')}
         id="saml"
       />
     ),
