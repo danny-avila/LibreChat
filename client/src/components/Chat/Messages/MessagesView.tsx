@@ -59,7 +59,7 @@ export default function MessagesView({
                 <>
                   <div ref={screenshotTargetRef}>
                     <MultiMessage
-                      key={conversationId} // avoid internal state mixture
+                      key={conversationId}
                       messagesTree={_messagesTree}
                       messageId={conversationId ?? null}
                       setCurrentEditId={setCurrentEditId}
@@ -76,7 +76,6 @@ export default function MessagesView({
             </div>
           </div>
 
-          {/* Positioned scroll button */}
           <CSSTransition
             in={showScrollButton && scrollButtonPreference}
             timeout={{
@@ -89,11 +88,19 @@ export default function MessagesView({
           >
             <div
               className={cn(
-                'absolute bottom-4 right-1/2 z-10 flex justify-end transition-all duration-200',
-                maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
+                'fixed z-10',
+                'bottom-32 sm:bottom-36', // Higher position
+                'right-4', // Always right-aligned on all screen sizes
+                'transition-all duration-200 ease-out',
+                // Position calculation only for non-maximized mode on larger screens
+                !maximizeChatSpace &&
+                  'md:right-[calc(50%-24rem+1rem)] xl:right-[calc(50%-28rem+1rem)]',
               )}
             >
-              <ScrollToBottom scrollHandler={handleSmoothToRef} />
+              {/* Wrap button to restore pointer events */}
+              <div className="pointer-events-auto">
+                <ScrollToBottom scrollHandler={handleSmoothToRef} />
+              </div>
             </div>
           </CSSTransition>
         </div>
