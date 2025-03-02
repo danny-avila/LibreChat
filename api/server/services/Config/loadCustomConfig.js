@@ -100,8 +100,14 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
 
     return null;
   } else {
+    const apiKeyReplacer = (key, value) => {
+      if (key === 'apiKey' && value !== 'user_provided') {
+        return '***';
+      }
+      return value;
+    };
     logger.info('Custom config file loaded:');
-    logger.info(JSON.stringify(customConfig, null, 2));
+    logger.info(JSON.stringify(customConfig, apiKeyReplacer, 2));
     logger.debug('Custom config:', customConfig);
   }
 
