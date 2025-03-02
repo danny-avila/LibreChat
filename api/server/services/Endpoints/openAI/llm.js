@@ -29,7 +29,6 @@ function getLLMConfig(apiKey, options = {}) {
   const {
     modelOptions = {},
     reverseProxyUrl,
-    useOpenRouter,
     defaultQuery,
     headers,
     proxy,
@@ -56,9 +55,11 @@ function getLLMConfig(apiKey, options = {}) {
     });
   }
 
+  let useOpenRouter;
   /** @type {OpenAIClientOptions['configuration']} */
   const configOptions = {};
-  if (useOpenRouter || (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter))) {
+  if (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) {
+    useOpenRouter = true;
     llmConfig.include_reasoning = true;
     configOptions.baseURL = reverseProxyUrl;
     configOptions.defaultHeaders = Object.assign(
@@ -116,6 +117,13 @@ function getLLMConfig(apiKey, options = {}) {
 
   if (process.env.OPENAI_ORGANIZATION && this.azure) {
     llmConfig.organization = process.env.OPENAI_ORGANIZATION;
+  }
+
+  if (useOpenRouter && llmConfig.reasoning_effort != null) {
+    llmConfig.reasoning = {
+      effort: llmConfig.reasoning_effort,
+    };
+    delete llmConfig.reasoning_effort;
   }
 
   return {

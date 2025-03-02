@@ -161,22 +161,6 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(expect.arrayContaining(['openai-model', 'openai-model-2']));
   });
 
-  it('attempts to use OPENROUTER_API_KEY if set', async () => {
-    process.env.OPENROUTER_API_KEY = 'test-router-key';
-    const expectedModels = ['model-router-1', 'model-router-2'];
-
-    axios.get.mockResolvedValue({
-      data: {
-        data: expectedModels.map((id) => ({ id })),
-      },
-    });
-
-    const models = await getOpenAIModels({ user: 'user456' });
-
-    expect(models).toEqual(expect.arrayContaining(expectedModels));
-    expect(axios.get).toHaveBeenCalled();
-  });
-
   it('utilizes proxy configuration when PROXY is set', async () => {
     axios.get.mockResolvedValue({
       data: {
