@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
-import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
@@ -16,6 +15,7 @@ export default function MessagesView({
 }) {
   const localize = useLocalize();
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
+  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const fontSize = useRecoilValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
@@ -32,61 +32,72 @@ export default function MessagesView({
   const { conversationId } = conversation ?? {};
 
   return (
-    <div className="flex-1 overflow-hidden overflow-y-auto">
-      <div className="relative h-full">
-        <div
-          className="scrollbar-gutter-stable"
-          onScroll={debouncedHandleScroll}
-          ref={scrollableRef}
-          style={{
-            height: '100%',
-            overflowY: 'auto',
-            width: '100%',
-          }}
-        >
-          <div className="flex flex-col pb-9 dark:bg-transparent">
-            {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
-              <div
-                className={cn(
-                  'flex w-full items-center justify-center p-3 text-text-secondary',
-                  fontSize,
-                )}
-              >
-                {localize('com_ui_nothing_found')}
-              </div>
-            ) : (
-              <>
-                <div ref={screenshotTargetRef}>
-                  <MultiMessage
-                    key={conversationId} // avoid internal state mixture
-                    messagesTree={_messagesTree}
-                    messageId={conversationId ?? null}
-                    setCurrentEditId={setCurrentEditId}
-                    currentEditId={currentEditId ?? null}
-                  />
+    <>
+      <div className="relative flex-1 overflow-hidden overflow-y-auto">
+        <div className="relative h-full">
+          <div
+            className="scrollbar-gutter-stable"
+            onScroll={debouncedHandleScroll}
+            ref={scrollableRef}
+            style={{
+              height: '100%',
+              overflowY: 'auto',
+              width: '100%',
+            }}
+          >
+            <div className="flex flex-col pb-9 dark:bg-transparent">
+              {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
+                <div
+                  className={cn(
+                    'flex w-full items-center justify-center p-3 text-text-secondary',
+                    fontSize,
+                  )}
+                >
+                  {localize('com_ui_nothing_found')}
                 </div>
-              </>
-            )}
-            <div
-              id="messages-end"
-              className="group h-0 w-full flex-shrink-0"
-              ref={messagesEndRef}
-            />
+              ) : (
+                <>
+                  <div ref={screenshotTargetRef}>
+                    <MultiMessage
+                      key={conversationId} // avoid internal state mixture
+                      messagesTree={_messagesTree}
+                      messageId={conversationId ?? null}
+                      setCurrentEditId={setCurrentEditId}
+                      currentEditId={currentEditId ?? null}
+                    />
+                  </div>
+                </>
+              )}
+              <div
+                id="messages-end"
+                className="group h-0 w-full flex-shrink-0"
+                ref={messagesEndRef}
+              />
+            </div>
           </div>
+
+          {/* Positioned scroll button */}
+          <CSSTransition
+            in={showScrollButton && scrollButtonPreference}
+            timeout={{
+              enter: 450,
+              exit: 700,
+            }}
+            classNames="scroll-animation"
+            unmountOnExit={true}
+            appear={true}
+          >
+            <div
+              className={cn(
+                'absolute bottom-4 right-1/2 z-10 flex justify-end transition-all duration-200',
+                maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
+              )}
+            >
+              <ScrollToBottom scrollHandler={handleSmoothToRef} />
+            </div>
+          </CSSTransition>
         </div>
-        <CSSTransition
-          in={showScrollButton}
-          timeout={400}
-          classNames="scroll-down"
-          unmountOnExit={false}
-          // appear
-        >
-          {() =>
-            showScrollButton &&
-            scrollButtonPreference && <ScrollToBottom scrollHandler={handleSmoothToRef} />
-          }
-        </CSSTransition>
       </div>
-    </div>
+    </>
   );
 }

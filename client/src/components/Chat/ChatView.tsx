@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect } from 'react';
+import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router-dom';
@@ -22,7 +22,6 @@ function ChatView({ index = 0 }: { index?: number }) {
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
-  const showFooter = useRecoilValue(store.showFooter);
 
   const fileMap = useFileMapContext();
 
@@ -68,22 +67,18 @@ function ChatView({ index = 0 }: { index?: number }) {
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="flex h-full w-full flex-col">
-              {!isLoading && (
-                <div className="sticky top-0 z-10">
-                  <Header />
-                </div>
-              )}
+              {!isLoading && <Header />}
 
               {isLandingPage ? (
                 <div className="flex flex-1 flex-col items-center justify-end sm:justify-center">
                   {content}
-                  <div className="w-full max-w-3xl xl:max-w-4xl">
+                  <div className="w-full max-w-3xl transition-all duration-200 xl:max-w-4xl">
                     <ChatForm index={index} />
-                    {showFooter && <Footer />}
+                    <Footer />
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-1 flex-col">
+                <div className="flex h-full flex-col overflow-y-auto">
                   {content}
                   <div className="w-full">
                     <ChatForm index={index} />

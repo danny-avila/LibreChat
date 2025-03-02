@@ -626,25 +626,127 @@ pre {
   margin: 0;
 }
 
-.scroll-down-enter {
+.scroll-animation-enter {
   opacity: 0;
+  transform: translateY(20px) scale(0.7) rotate(-5deg);
+  pointer-events: none;
 }
-/* .scroll-down-appear {
-  opacity: 0;
-} */
 
-.scroll-down-enter-active {
+.scroll-animation-enter-done {
   opacity: 1;
-  transition: opacity 400ms;
+  transform: translateY(0) scale(1);
 }
 
-.scroll-down-exit {
-  opacity: 1;
+.scroll-animation-exit-done {
+  display: none;
 }
 
-.scroll-down-exit-active {
-  opacity: 0;
-  transition: opacity 400ms;
+@keyframes twist-entrance {
+  0% {
+    transform: translateY(20px) scale(0.7) rotate(-5deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(2px) scale(0.95) rotate(2deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.scroll-animation-enter-active {
+  animation: twist-entrance 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes twist-exit {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(5px) scale(0.95) rotate(2deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(20px) scale(0.7) rotate(-5deg);
+    opacity: 0;
+  }
+}
+
+.scroll-animation-exit-active {
+  animation: twist-exit 0.4s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
+  pointer-events: none;
+}
+
+.premium-scroll-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.9);
+  z-index: 10;
+  transition:
+    transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 500ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  overflow: hidden;
+  position: relative;
+}
+
+.dark .premium-scroll-button {
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  background-color: rgba(35, 35, 40, 0.9);
+}
+
+.scroll-animation-enter-active .premium-scroll-button {
+  pointer-events: none !important;
+}
+
+.premium-scroll-button:hover:not(:active) {
+  transform: translateY(-1.5px) scale(1.02);
+  box-shadow: 
+    0 5px 10px rgba(0, 0, 0, 0.07), 
+    0 7px 14px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.premium-scroll-button:active {
+  transform: translateY(1px) scale(0.98);
+  transition: all 150ms cubic-bezier(0.2, 0, 0.2, 1);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+.scroll-animation-enter-done .premium-scroll-button {
+  animation: float 2s ease-in-out infinite;
+}
+
+.premium-scroll-button:hover,
+.premium-scroll-button:active {
+  animation: none;
 }
 
 .blink {
@@ -1705,9 +1807,7 @@ html {
 .tooltip-label:before {
   content: attr(data-content);
 }
-button.scroll-convo {
-  display: none;
-}
+
 @-webkit-keyframes blink {
   to {
     visibility: hidden;
