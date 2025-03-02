@@ -1,3 +1,9 @@
+const { DEBUG_CONSOLE = false } = process.env;
+
+const useDebugConsole =
+  (typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE?.toLowerCase() === 'true') ||
+  DEBUG_CONSOLE === true;
+
 const levels = {
   NONE: 0,
   LOW: 1,
@@ -5,7 +11,7 @@ const levels = {
   HIGH: 3,
 };
 
-let level = levels.HIGH;
+let level = useDebugConsole ? levels.HIGH : levels.NONE;
 
 module.exports = {
   levels,
