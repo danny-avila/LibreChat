@@ -1,5 +1,5 @@
-import { useSetRecoilState } from 'recoil';
 import { useCallback, useMemo } from 'react';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -20,20 +20,16 @@ const shouldTriggerCommand = (
   commandChar: string,
 ) => {
   const text = textAreaRef.current?.value;
-  if (!(text && text[text.length - 1] === commandChar)) {
+  if (typeof text !== 'string' || text.length === 0 || text[0] !== commandChar) {
     return false;
   }
 
   const startPos = textAreaRef.current?.selectionStart;
-  if (!startPos) {
+  if (typeof startPos !== 'number') {
     return false;
   }
 
-  const isAtStart = startPos === 1;
-  const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
-
-  const shouldTrigger = isAtStart || isPrecededBySpace;
-  return shouldTrigger;
+  return startPos === 1;
 };
 
 /**
@@ -50,31 +46,45 @@ const useHandleKeyUp = ({
   setShowPlusPopover: SetterOrUpdater<boolean>;
   setShowMentionPopover: SetterOrUpdater<boolean>;
 }) => {
-  const hasAccess = useHasAccess({
+  const hasPromptsAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
   });
+  const hasMultiConvoAccess = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
+  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
+
+  // Get the current state of command toggles
+  const atCommandEnabled = useRecoilValue(store.atCommand);
+  const plusCommandEnabled = useRecoilValue(store.plusCommand);
+  const slashCommandEnabled = useRecoilValue(store.slashCommand);
+
   const handleAtCommand = useCallback(() => {
-    if (shouldTriggerCommand(textAreaRef, '@')) {
+    if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {
       setShowMentionPopover(true);
     }
-  }, [textAreaRef, setShowMentionPopover]);
+  }, [textAreaRef, setShowMentionPopover, atCommandEnabled]);
 
   const handlePlusCommand = useCallback(() => {
+    if (!hasMultiConvoAccess || !plusCommandEnabled) {
+      return;
+    }
     if (shouldTriggerCommand(textAreaRef, '+')) {
       setShowPlusPopover(true);
     }
-  }, [textAreaRef, setShowPlusPopover]);
+  }, [textAreaRef, setShowPlusPopover, plusCommandEnabled, hasMultiConvoAccess]);
 
   const handlePromptsCommand = useCallback(() => {
-    if (!hasAccess) {
+    if (!hasPromptsAccess || !slashCommandEnabled) {
       return;
     }
     if (shouldTriggerCommand(textAreaRef, '/')) {
       setShowPromptsPopover(true);
     }
-  }, [textAreaRef, hasAccess, setShowPromptsPopover]);
+  }, [textAreaRef, hasPromptsAccess, setShowPromptsPopover, slashCommandEnabled]);
 
   const commandHandlers = useMemo(
     () => ({
@@ -85,28 +95,48 @@ const useHandleKeyUp = ({
     [handleAtCommand, handlePlusCommand, handlePromptsCommand],
   );
 
+  const handleUpArrow = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!latestMessage) {
+        return;
+      }
+
+      const element = document.getElementById(`edit-${latestMessage.parentMessageId}`);
+      if (!element) {
+        return;
+      }
+      event.preventDefault();
+      element.click();
+    },
+    [latestMessage],
+  );
+
   /**
    * Main key up handler.
    */
   const handleKeyUp = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const text = textAreaRef.current?.value;
-      if (!text) {
+      if (event.key === 'ArrowUp' && text?.length === 0) {
+        handleUpArrow(event);
+        return;
+      }
+      if (typeof text !== 'string' || text.length === 0) {
         return;
       }
 
-      if (invalidKeys[event.key]) {
+      if (invalidKeys[event.key as keyof typeof invalidKeys]) {
         return;
       }
 
-      const lastChar = text[text.length - 1];
-      const handler = commandHandlers[lastChar];
+      const firstChar = text[0];
+      const handler = commandHandlers[firstChar as keyof typeof commandHandlers];
 
-      if (handler) {
+      if (typeof handler === 'function') {
         handler();
       }
     },
-    [textAreaRef, commandHandlers],
+    [textAreaRef, commandHandlers, handleUpArrow],
   );
 
   return handleKeyUp;

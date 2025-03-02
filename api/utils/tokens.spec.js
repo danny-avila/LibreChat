@@ -1,5 +1,5 @@
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getModelMaxTokens, matchModelName, maxTokensMap } = require('./tokens');
+const { getModelMaxTokens, processModelData, matchModelName, maxTokensMap } = require('./tokens');
 
 describe('getModelMaxTokens', () => {
   test('should return correct tokens for exact match', () => {
@@ -18,18 +18,6 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('openai/gpt-4-32k')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-4-32k'],
     );
-  });
-
-  test('should return correct tokens for LLama 3 models', () => {
-    expect(getModelMaxTokens('meta-llama/llama-3-8b')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['llama-3'],
-    );
-    expect(getModelMaxTokens('meta-llama/llama-3-8b')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['llama3'],
-    );
-    expect(getModelMaxTokens('llama-3-500b')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama-3']);
-    expect(getModelMaxTokens('llama3-70b')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama3']);
-    expect(getModelMaxTokens('llama3:latest')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama3']);
   });
 
   test('should return undefined for no match', () => {
@@ -115,6 +103,16 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-4.5 matches', () => {
+    expect(getModelMaxTokens('gpt-4.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4.5']);
+    expect(getModelMaxTokens('gpt-4.5-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.5'],
+    );
+    expect(getModelMaxTokens('openai/gpt-4.5-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.5'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -128,6 +126,7 @@ describe('getModelMaxTokens', () => {
       'claude-3-sonnet',
       'claude-3-opus',
       'claude-3-5-sonnet',
+      'claude-3-7-sonnet',
     ];
 
     const maxTokens = {
@@ -166,6 +165,24 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for partial match - Google models', () => {
+    expect(getModelMaxTokens('gemini-2.0-flash-lite-preview-02-05', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0-flash-lite'],
+    );
+    expect(getModelMaxTokens('gemini-2.0-flash-001', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0-flash'],
+    );
+    expect(getModelMaxTokens('gemini-2.0-flash-exp', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0-flash'],
+    );
+    expect(getModelMaxTokens('gemini-2.0-pro-exp-02-05', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-2.0'],
+    );
+    expect(getModelMaxTokens('gemini-1.5-flash-8b', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5-flash-8b'],
+    );
+    expect(getModelMaxTokens('gemini-1.5-flash-thinking', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5-flash'],
+    );
     expect(getModelMaxTokens('gemini-1.5-pro-latest', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
     );
@@ -260,6 +277,32 @@ describe('getModelMaxTokens', () => {
   test('should return undefined for a model when using an unsupported endpoint', () => {
     expect(getModelMaxTokens('azure-gpt-3', 'unsupportedEndpoint')).toBeUndefined();
   });
+
+  test('should return correct max context tokens for o1-series models', () => {
+    // Standard o1 variations
+    const o1Tokens = maxTokensMap[EModelEndpoint.openAI]['o1'];
+    expect(getModelMaxTokens('o1')).toBe(o1Tokens);
+    expect(getModelMaxTokens('o1-latest')).toBe(o1Tokens);
+    expect(getModelMaxTokens('o1-2024-12-17')).toBe(o1Tokens);
+    expect(getModelMaxTokens('o1-something-else')).toBe(o1Tokens);
+    expect(getModelMaxTokens('openai/o1-something-else')).toBe(o1Tokens);
+
+    // Mini variations
+    const o1MiniTokens = maxTokensMap[EModelEndpoint.openAI]['o1-mini'];
+    expect(getModelMaxTokens('o1-mini')).toBe(o1MiniTokens);
+    expect(getModelMaxTokens('o1-mini-latest')).toBe(o1MiniTokens);
+    expect(getModelMaxTokens('o1-mini-2024-09-12')).toBe(o1MiniTokens);
+    expect(getModelMaxTokens('o1-mini-something')).toBe(o1MiniTokens);
+    expect(getModelMaxTokens('openai/o1-mini-something')).toBe(o1MiniTokens);
+
+    // Preview variations
+    const o1PreviewTokens = maxTokensMap[EModelEndpoint.openAI]['o1-preview'];
+    expect(getModelMaxTokens('o1-preview')).toBe(o1PreviewTokens);
+    expect(getModelMaxTokens('o1-preview-latest')).toBe(o1PreviewTokens);
+    expect(getModelMaxTokens('o1-preview-2024-09-12')).toBe(o1PreviewTokens);
+    expect(getModelMaxTokens('o1-preview-something')).toBe(o1PreviewTokens);
+    expect(getModelMaxTokens('openai/o1-preview-something')).toBe(o1PreviewTokens);
+  });
 });
 
 describe('matchModelName', () => {
@@ -327,5 +370,192 @@ describe('matchModelName', () => {
   it('should return the closest matching key for partial matches - Google models', () => {
     expect(matchModelName('code-', EModelEndpoint.google)).toBe('code-');
     expect(matchModelName('chat-', EModelEndpoint.google)).toBe('chat-');
+  });
+});
+
+describe('Meta Models Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for LLaMa 2 models', () => {
+      expect(getModelMaxTokens('llama2')).toBe(4000);
+      expect(getModelMaxTokens('llama2.70b')).toBe(4000);
+      expect(getModelMaxTokens('llama2-13b')).toBe(4000);
+      expect(getModelMaxTokens('llama2-70b')).toBe(4000);
+    });
+
+    test('should return correct tokens for LLaMa 3 models', () => {
+      expect(getModelMaxTokens('llama3')).toBe(8000);
+      expect(getModelMaxTokens('llama3.8b')).toBe(8000);
+      expect(getModelMaxTokens('llama3.70b')).toBe(8000);
+      expect(getModelMaxTokens('llama3-8b')).toBe(8000);
+      expect(getModelMaxTokens('llama3-70b')).toBe(8000);
+    });
+
+    test('should return correct tokens for LLaMa 3.1 models', () => {
+      expect(getModelMaxTokens('llama3.1:8b')).toBe(127500);
+      expect(getModelMaxTokens('llama3.1:70b')).toBe(127500);
+      expect(getModelMaxTokens('llama3.1:405b')).toBe(127500);
+      expect(getModelMaxTokens('llama3-1-8b')).toBe(127500);
+      expect(getModelMaxTokens('llama3-1-70b')).toBe(127500);
+      expect(getModelMaxTokens('llama3-1-405b')).toBe(127500);
+    });
+
+    test('should handle partial matches for Meta models', () => {
+      // Test with full model names
+      expect(getModelMaxTokens('meta/llama3.1:405b')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3.1:70b')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3.1:8b')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3-1-8b')).toBe(127500);
+
+      // Test base versions
+      expect(getModelMaxTokens('meta/llama3.1')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3-1')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3')).toBe(8000);
+      expect(getModelMaxTokens('meta/llama2')).toBe(4000);
+    });
+
+    test('should match Deepseek model variations', () => {
+      expect(getModelMaxTokens('deepseek-chat')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+      );
+      expect(getModelMaxTokens('deepseek-coder')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+      );
+      expect(getModelMaxTokens('deepseek-reasoner')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek-reasoner'],
+      );
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact LLaMa model names', () => {
+      expect(matchModelName('llama2')).toBe('llama2');
+      expect(matchModelName('llama3')).toBe('llama3');
+      expect(matchModelName('llama3.1:8b')).toBe('llama3.1:8b');
+    });
+
+    test('should match LLaMa model variations', () => {
+      // Test full model names
+      expect(matchModelName('meta/llama3.1:405b')).toBe('llama3.1:405b');
+      expect(matchModelName('meta/llama3.1:70b')).toBe('llama3.1:70b');
+      expect(matchModelName('meta/llama3.1:8b')).toBe('llama3.1:8b');
+      expect(matchModelName('meta/llama3-1-8b')).toBe('llama3-1-8b');
+
+      // Test base versions
+      expect(matchModelName('meta/llama3.1')).toBe('llama3.1');
+      expect(matchModelName('meta/llama3-1')).toBe('llama3-1');
+    });
+
+    test('should handle custom endpoint for Meta models', () => {
+      expect(matchModelName('llama2', EModelEndpoint.bedrock)).toBe('llama2');
+      expect(matchModelName('llama3', EModelEndpoint.bedrock)).toBe('llama3');
+      expect(matchModelName('llama3.1:8b', EModelEndpoint.bedrock)).toBe('llama3.1:8b');
+    });
+
+    test('should match Deepseek model variations', () => {
+      expect(matchModelName('deepseek-chat')).toBe('deepseek');
+      expect(matchModelName('deepseek-coder')).toBe('deepseek');
+    });
+  });
+
+  describe('processModelData with Meta models', () => {
+    test('should process Meta model data correctly', () => {
+      const input = {
+        data: [
+          {
+            id: 'llama2',
+            pricing: {
+              prompt: '0.00001',
+              completion: '0.00003',
+            },
+            context_length: 4000,
+          },
+          {
+            id: 'llama3',
+            pricing: {
+              prompt: '0.00002',
+              completion: '0.00004',
+            },
+            context_length: 8000,
+          },
+        ],
+      };
+
+      const result = processModelData(input);
+      expect(result.llama2).toEqual({
+        prompt: 10,
+        completion: 30,
+        context: 4000,
+      });
+      expect(result.llama3).toEqual({
+        prompt: 20,
+        completion: 40,
+        context: 8000,
+      });
+    });
+  });
+});
+
+describe('Grok Model Tests - Tokens', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for Grok vision models', () => {
+      expect(getModelMaxTokens('grok-2-vision-1212')).toBe(32768);
+      expect(getModelMaxTokens('grok-2-vision')).toBe(32768);
+      expect(getModelMaxTokens('grok-2-vision-latest')).toBe(32768);
+    });
+
+    test('should return correct tokens for Grok beta models', () => {
+      expect(getModelMaxTokens('grok-vision-beta')).toBe(8192);
+      expect(getModelMaxTokens('grok-beta')).toBe(131072);
+    });
+
+    test('should return correct tokens for Grok text models', () => {
+      expect(getModelMaxTokens('grok-2-1212')).toBe(131072);
+      expect(getModelMaxTokens('grok-2')).toBe(131072);
+      expect(getModelMaxTokens('grok-2-latest')).toBe(131072);
+    });
+
+    test('should handle partial matches for Grok models with prefixes', () => {
+      // Vision models should match before general models
+      expect(getModelMaxTokens('openai/grok-2-vision-1212')).toBe(32768);
+      expect(getModelMaxTokens('openai/grok-2-vision')).toBe(32768);
+      expect(getModelMaxTokens('openai/grok-2-vision-latest')).toBe(32768);
+      // Beta models
+      expect(getModelMaxTokens('openai/grok-vision-beta')).toBe(8192);
+      expect(getModelMaxTokens('openai/grok-beta')).toBe(131072);
+      // Text models
+      expect(getModelMaxTokens('openai/grok-2-1212')).toBe(131072);
+      expect(getModelMaxTokens('openai/grok-2')).toBe(131072);
+      expect(getModelMaxTokens('openai/grok-2-latest')).toBe(131072);
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact Grok model names', () => {
+      // Vision models
+      expect(matchModelName('grok-2-vision-1212')).toBe('grok-2-vision-1212');
+      expect(matchModelName('grok-2-vision')).toBe('grok-2-vision');
+      expect(matchModelName('grok-2-vision-latest')).toBe('grok-2-vision-latest');
+      // Beta models
+      expect(matchModelName('grok-vision-beta')).toBe('grok-vision-beta');
+      expect(matchModelName('grok-beta')).toBe('grok-beta');
+      // Text models
+      expect(matchModelName('grok-2-1212')).toBe('grok-2-1212');
+      expect(matchModelName('grok-2')).toBe('grok-2');
+      expect(matchModelName('grok-2-latest')).toBe('grok-2-latest');
+    });
+
+    test('should match Grok model variations with prefixes', () => {
+      // Vision models should match before general models
+      expect(matchModelName('openai/grok-2-vision-1212')).toBe('grok-2-vision-1212');
+      expect(matchModelName('openai/grok-2-vision')).toBe('grok-2-vision');
+      expect(matchModelName('openai/grok-2-vision-latest')).toBe('grok-2-vision-latest');
+      // Beta models
+      expect(matchModelName('openai/grok-vision-beta')).toBe('grok-vision-beta');
+      expect(matchModelName('openai/grok-beta')).toBe('grok-beta');
+      // Text models
+      expect(matchModelName('openai/grok-2-1212')).toBe('grok-2-1212');
+      expect(matchModelName('openai/grok-2')).toBe('grok-2');
+      expect(matchModelName('openai/grok-2-latest')).toBe('grok-2-latest');
+    });
   });
 });

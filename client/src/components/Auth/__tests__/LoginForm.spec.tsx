@@ -1,7 +1,10 @@
-import { render } from 'test/layout-test-utils';
+import { render, getByTestId } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
-import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import * as endpointQueries from '~/data-provider/Endpoints/queries';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
+import * as authMutations from '~/data-provider/Auth/mutations';
+import * as authQueries from '~/data-provider/Auth/queries';
 import Login from '../LoginForm';
 
 jest.mock('librechat-data-provider/react-query');
@@ -23,7 +26,9 @@ const mockStartupConfig: TStartupConfig = {
   passwordResetEnabled: true,
   serverDomain: 'mock-server',
   appTitle: '',
-  ldapLoginEnabled: false,
+  ldap: {
+    enabled: false,
+  },
   emailEnabled: false,
   checkBalance: false,
   showBirthdayIcon: false,
@@ -57,28 +62,38 @@ const setup = ({
     isError: false,
     data: mockStartupConfig,
   },
+  useGetBannerQueryReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {},
+  },
 } = {}) => {
   const mockUseLoginUser = jest
-    .spyOn(mockDataProvider, 'useLoginUserMutation')
+    .spyOn(authMutations, 'useLoginUserMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useLoginUserReturnValue);
   const mockUseGetUserQuery = jest
-    .spyOn(mockDataProvider, 'useGetUserQuery')
+    .spyOn(authQueries, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
   const mockUseGetStartupConfig = jest
-    .spyOn(mockDataProvider, 'useGetStartupConfig')
+    .spyOn(endpointQueries, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupConfigReturnValue);
   const mockUseRefreshTokenMutation = jest
-    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    .spyOn(authMutations, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
+  const mockUseGetBannerQuery = jest
+    .spyOn(miscDataProvider, 'useGetBannerQuery')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useGetBannerQueryReturnValue);
   return {
     mockUseLoginUser,
     mockUseGetUserQuery,
     mockUseGetStartupConfig,
     mockUseRefreshTokenMutation,
+    mockUseGetBannerQuery,
   };
 };
 
@@ -100,7 +115,7 @@ test('submits login form', async () => {
   );
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test@example.com');
   await userEvent.type(passwordInput, 'password');
@@ -115,7 +130,7 @@ test('displays validation error messages', async () => {
   );
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test');
   await userEvent.type(passwordInput, 'pass');

@@ -2,13 +2,14 @@ const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 const { FileSources } = require('librechat-data-provider');
+const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {Express.Request} req - The request object from Express. It should have an `app.locals.paths` object with
+ * @param {ServerRequest} req - The request object from Express. It should have an `app.locals.paths` object with
  *                       a `publicPath` property.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.
@@ -32,8 +33,18 @@ const deleteVectors = async (req, file) => {
       data: [file.file_id],
     });
   } catch (error) {
-    logger.error('Error deleting vectors', error);
-    throw new Error(error.message || 'An error occurred during file deletion.');
+    logAxiosError({
+      error,
+      message: 'Error deleting vectors',
+    });
+    if (
+      error.response &&
+      error.response.status !== 404 &&
+      (error.response.status < 200 || error.response.status >= 300)
+    ) {
+      logger.warn('Error deleting vectors, file will not be deleted');
+      throw new Error(error.message || 'An error occurred during file deletion.');
+    }
   }
 };
 
@@ -46,13 +57,14 @@ const deleteVectors = async (req, file) => {
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
+ * @param {string} [params.entity_id] - The entity ID for shared resources.
  *
  * @returns {Promise<{ filepath: string, bytes: number }>}
  *          A promise that resolves to an object containing:
  *            - filepath: The path where the file is saved.
  *            - bytes: The size of the file in bytes.
  */
-async function uploadVectors({ req, file, file_id }) {
+async function uploadVectors({ req, file, file_id, entity_id }) {
   if (!process.env.RAG_API_URL) {
     throw new Error('RAG_API_URL not defined');
   }
@@ -62,8 +74,11 @@ async function uploadVectors({ req, file, file_id }) {
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', fs.createReadStream(file.path));
+    if (entity_id != null && entity_id) {
+      formData.append('entity_id', entity_id);
+    }
 
-    const formHeaders = formData.getHeaders(); // Automatically sets the correct Content-Type
+    const formHeaders = formData.getHeaders();
 
     const response = await axios.post(`${process.env.RAG_API_URL}/embed`, formData, {
       headers: {
@@ -91,7 +106,10 @@ async function uploadVectors({ req, file, file_id }) {
       embedded: Boolean(responseData.known_type),
     };
   } catch (error) {
-    logger.error('Error embedding file', error);
+    logAxiosError({
+      error,
+      message: 'Error uploading vectors',
+    });
     throw new Error(error.message || 'An error occurred during file upload.');
   }
 }

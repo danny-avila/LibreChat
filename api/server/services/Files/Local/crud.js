@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
@@ -175,6 +176,17 @@ const isValidPath = (req, base, subfolder, filepath) => {
 };
 
 /**
+ * @param {string} filepath
+ */
+const unlinkFile = async (filepath) => {
+  try {
+    await fs.promises.unlink(filepath);
+  } catch (error) {
+    logger.error('Error deleting file:', error);
+  }
+};
+
+/**
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
@@ -202,28 +214,44 @@ const deleteLocalFile = async (req, file) => {
   }
 
   if (file.filepath.startsWith(`/uploads/${req.user.id}`)) {
-    const basePath = file.filepath.split('/uploads/')[1];
-    const filepath = path.join(uploads, basePath);
-    await fs.promises.unlink(filepath);
+    const userUploadDir = path.join(uploads, req.user.id);
+    const basePath = file.filepath.split(`/uploads/${req.user.id}/`)[1];
+
+    if (!basePath) {
+      throw new Error(`Invalid file path: ${file.filepath}`);
+    }
+
+    const filepath = path.join(userUploadDir, basePath);
+
+    const rel = path.relative(userUploadDir, filepath);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+      throw new Error(`Invalid file path: ${file.filepath}`);
+    }
+
+    await unlinkFile(filepath);
     return;
   }
 
   const parts = file.filepath.split(path.sep);
   const subfolder = parts[1];
+  if (!subfolder && parts[0] === EModelEndpoint.agents) {
+    logger.warn(`Agent File ${file.file_id} is missing filepath, may have been deleted already`);
+    return;
+  }
   const filepath = path.join(publicPath, file.filepath);
 
   if (!isValidPath(req, publicPath, subfolder, filepath)) {
     throw new Error('Invalid file path');
   }
 
-  await fs.promises.unlink(filepath);
+  await unlinkFile(filepath);
 };
 
 /**
  * Uploads a file to the specified upload directory.
  *
  * @param {Object} params - The params object.
- * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
@@ -258,11 +286,31 @@ async function uploadLocalFile({ req, file, file_id }) {
 /**
  * Retrieves a readable stream for a file from local storage.
  *
+ * @param {ServerRequest} req - The request object from Express
  * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-function getLocalFileStream(filepath) {
+function getLocalFileStream(req, filepath) {
   try {
+    if (filepath.includes('/uploads/')) {
+      const basePath = filepath.split('/uploads/')[1];
+
+      if (!basePath) {
+        logger.warn(`Invalid base path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      const fullPath = path.join(req.app.locals.paths.uploads, basePath);
+      const uploadsDir = req.app.locals.paths.uploads;
+
+      const rel = path.relative(uploadsDir, fullPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+        logger.warn(`Invalid relative file path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      return fs.createReadStream(fullPath);
+    }
     return fs.createReadStream(filepath);
   } catch (error) {
     logger.error('Error getting local file stream:', error);

@@ -1,5 +1,4 @@
 const {
-  Session,
   Balance,
   getFiles,
   deleteFiles,
@@ -7,17 +6,48 @@ const {
   deletePresets,
   deleteMessages,
   deleteUserById,
+  deleteAllUserSessions,
 } = require('~/models');
+const User = require('~/models/User');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { deleteAllSharedLinks } = require('~/models/Share');
+const { deleteToolCalls } = require('~/models/ToolCall');
 const { Transaction } = require('~/models/Transaction');
 const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
-  res.status(200).send(req.user);
+  const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  delete userData.totpSecret;
+  res.status(200).send(userData);
+};
+
+const getTermsStatusController = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ termsAccepted: !!user.termsAccepted });
+  } catch (error) {
+    logger.error('Error fetching terms acceptance status:', error);
+    res.status(500).json({ message: 'Error fetching terms acceptance status' });
+  }
+};
+
+const acceptTermsController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Terms accepted successfully' });
+  } catch (error) {
+    logger.error('Error accepting terms:', error);
+    res.status(500).json({ message: 'Error accepting terms' });
+  }
 };
 
 const deleteUserFiles = async (req) => {
@@ -34,10 +64,10 @@ const deleteUserFiles = async (req) => {
 
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
-  const { pluginKey, action, auth, isAssistantTool } = req.body;
+  const { pluginKey, action, auth, isEntityTool } = req.body;
   let authService;
   try {
-    if (!isAssistantTool) {
+    if (!isEntityTool) {
       const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
 
       if (userPluginsService instanceof Error) {
@@ -84,7 +114,7 @@ const deleteUserController = async (req, res) => {
 
   try {
     await deleteMessages({ user: user.id }); // delete user messages
-    await Session.deleteMany({ user: user.id }); // delete user sessions
+    await deleteAllUserSessions({ userId: user.id }); // delete user sessions
     await Transaction.deleteMany({ user: user.id }); // delete user transactions
     await deleteUserKey({ userId: user.id, all: true }); // delete user keys
     await Balance.deleteMany({ user: user._id }); // delete user balances
@@ -96,6 +126,7 @@ const deleteUserController = async (req, res) => {
     await deleteAllSharedLinks(user.id); // delete user shared links
     await deleteUserFiles(req); // delete user files
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
+    await deleteToolCalls(user.id); // delete user tool calls
     /* TODO: queue job for cleaning actions and assistants of non-existant users */
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
@@ -135,6 +166,8 @@ const resendVerificationController = async (req, res) => {
 
 module.exports = {
   getUserController,
+  getTermsStatusController,
+  acceptTermsController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,

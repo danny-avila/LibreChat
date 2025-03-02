@@ -1,16 +1,26 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
-import { useSearchInfiniteQuery } from '~/data-provider';
-import useConversation from './useConversation';
+import type { UseInfiniteQueryResult } from '@tanstack/react-query';
+import type { ConversationListResponse } from 'librechat-data-provider';
+import { useSearchInfiniteQuery, useGetSearchEnabledQuery } from '~/data-provider';
+import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
 export default function useSearchMessages({ isAuthenticated }: { isAuthenticated: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [pageNumber, setPageNumber] = useState(1);
-  const { searchPlaceholderConversation } = useConversation();
+  const { switchToConversation } = useNewConvo();
+  const searchPlaceholderConversation = useCallback(() => {
+    switchToConversation({
+      conversationId: 'search',
+      title: 'Search',
+      endpoint: null,
+      createdAt: '',
+      updatedAt: '',
+    });
+  }, [switchToConversation]);
 
   const searchQuery = useRecoilValue(store.searchQuery);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
@@ -19,7 +29,7 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
   const searchQueryRes = useSearchInfiniteQuery(
     { pageNumber: pageNumber.toString(), searchQuery: searchQuery, isArchived: false },
     { enabled: isAuthenticated && !!searchQuery.length },
-  );
+  ) as UseInfiniteQueryResult<ConversationListResponse, unknown> | undefined;
 
   useEffect(() => {
     if (searchQuery && searchQuery.length > 0) {
@@ -36,7 +46,7 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
   }, [navigate, searchQuery]);
 
   useEffect(() => {
-    if (searchEnabledQuery.data) {
+    if (searchEnabledQuery.data === true) {
       setIsSearchEnabled(searchEnabledQuery.data);
     } else if (searchEnabledQuery.isError) {
       console.error('Failed to get search enabled', searchEnabledQuery.error);
@@ -55,10 +65,10 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
-    if (searchQueryRes.data) {
+    if (searchQueryRes?.data) {
       onSearchSuccess();
     }
-  }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
+  }, [searchQueryRes?.data, searchQueryRes?.isInitialLoading, onSearchSuccess]);
 
   return {
     pageNumber,

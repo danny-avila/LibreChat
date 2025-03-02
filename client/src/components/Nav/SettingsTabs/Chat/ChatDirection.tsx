@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
 import { useLocalize } from '~/hooks';
+import { Button } from '~/components';
 import store from '~/store';
 
 const ChatDirection = () => {
@@ -14,16 +15,21 @@ const ChatDirection = () => {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <span>{localize('com_nav_chat_direction')}</span>
+        <span id="chat-direction-label">{localize('com_nav_chat_direction')}</span>
       </div>
-      <label
+      <Button
+        variant="outline"
+        aria-label="Toggle chat direction"
         onClick={toggleChatDirection}
         data-testid="chatDirection"
-        className="btn btn-neutral relative"
-        style={{ userSelect: 'none' }}
       >
-        {direction.toLowerCase()}
-      </label>
+        <span aria-hidden="true">{direction.toLowerCase()}</span>
+        <span id="chat-direction-status" className="sr-only">
+          {direction === 'LTR'
+            ? localize('chat_direction_left_to_right')
+            : localize('chat_direction_right_to_left')}
+        </span>
+      </Button>
     </div>
   );
 };

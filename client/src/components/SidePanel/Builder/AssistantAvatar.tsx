@@ -51,7 +51,7 @@ function Avatar({
   const { showToast } = useToastContext();
 
   const activeModel = useMemo(() => {
-    return assistantsMap[endpoint][assistant_id ?? '']?.model ?? '';
+    return assistantsMap?.[endpoint][assistant_id ?? '']?.model ?? '';
   }, [assistantsMap, endpoint, assistant_id]);
 
   const { mutate: uploadAvatar } = useUploadAssistantAvatarMutation({
@@ -59,7 +59,7 @@ function Avatar({
       setProgress(0.4);
     },
     onSuccess: (data, vars) => {
-      if (!vars.postCreation) {
+      if (vars.postCreation !== true) {
         showToast({ message: localize('com_ui_upload_success') });
       } else if (lastSeenCreatedId.current !== createMutation.data?.id) {
         lastSeenCreatedId.current = createMutation.data?.id ?? '';
@@ -68,7 +68,7 @@ function Avatar({
       setInput(null);
       setPreviewUrl(data.metadata?.avatar as string | null);
 
-      const res = queryClient.getQueryData<AssistantListResponse>([
+      const res = queryClient.getQueryData<AssistantListResponse | undefined>([
         QueryKeys.assistants,
         endpoint,
         defaultOrderQuery,
@@ -78,16 +78,15 @@ function Avatar({
         return;
       }
 
-      const assistants =
-        res.data.map((assistant) => {
-          if (assistant.id === assistant_id) {
-            return {
-              ...assistant,
-              ...data,
-            };
-          }
-          return assistant;
-        }) ?? [];
+      const assistants = res.data.map((assistant) => {
+        if (assistant.id === assistant_id) {
+          return {
+            ...assistant,
+            ...data,
+          };
+        }
+        return assistant;
+      });
 
       queryClient.setQueryData<AssistantListResponse>(
         [QueryKeys.assistants, endpoint, defaultOrderQuery],
@@ -136,9 +135,9 @@ function Avatar({
       createMutation.isSuccess &&
       input &&
       previewUrl &&
-      previewUrl?.includes('base64')
+      previewUrl.includes('base64')
     );
-    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data?.id) {
+    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data.id) {
       return;
     }
 
@@ -148,10 +147,6 @@ function Avatar({
       const formData = new FormData();
       formData.append('file', input, input.name);
       formData.append('assistant_id', createMutation.data.id);
-
-      if (typeof createMutation.data?.metadata === 'object') {
-        formData.append('metadata', JSON.stringify(createMutation.data?.metadata));
-      }
 
       uploadAvatar({
         assistant_id: createMutation.data.id,
@@ -195,10 +190,6 @@ function Avatar({
       formData.append('file', file, file.name);
       formData.append('assistant_id', assistant_id);
 
-      if (typeof metadata === 'object') {
-        formData.append('metadata', JSON.stringify(metadata));
-      }
-
       uploadAvatar({
         assistant_id,
         model: activeModel,
@@ -209,7 +200,7 @@ function Avatar({
     } else {
       const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
       showToast({
-        message: localize('com_ui_upload_invalid_var', megabytes + ''),
+        message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
         status: 'error',
       });
     }

@@ -12,7 +12,7 @@ describe('tokenSplit', () => {
       returnSize: 5,
     });
 
-    expect(result).toEqual(['. Null', ' Nullam', 'am id', ' id.', '.']);
+    expect(result).toEqual(['it.', '. Null', ' Nullam', 'am id', ' id.']);
   });
 
   it('returns correct text chunks with default parameters', async () => {

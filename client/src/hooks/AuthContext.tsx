@@ -7,17 +7,18 @@ import {
   useCallback,
   createContext,
 } from 'react';
-import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState } from 'recoil';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import {
+  useGetRole,
   useGetUserQuery,
   useLoginUserMutation,
+  useLogoutUserMutation,
   useRefreshTokenMutation,
-} from 'librechat-data-provider/react-query';
-import type { TLoginResponse, TLoginUser } from 'librechat-data-provider';
+} from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { useLogoutUserMutation, useGetRole } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -35,7 +36,10 @@ const AuthContextProvider = ({
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
-    enabled: !!(isAuthenticated && user?.role),
+    enabled: !!(isAuthenticated && (user?.role ?? '')),
+  });
+  const { data: adminRole = null } = useGetRole(SystemRoles.ADMIN, {
+    enabled: !!(isAuthenticated && user?.role === SystemRoles.ADMIN),
   });
 
   const navigate = useNavigate();
@@ -43,14 +47,20 @@ const AuthContextProvider = ({
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
-      if (user) {
-        setUser(user);
-      }
+      setUser(user);
       setToken(token);
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
-      if (redirect) {
+      if (redirect == null) {
+        return;
+      }
+      if (redirect.startsWith('http://') || redirect.startsWith('https://')) {
+        // For external links, use window.location
+        window.location.href = redirect;
+        // Or if you want to open in a new tab:
+        // window.open(redirect, '_blank');
+      } else {
         navigate(redirect, { replace: true });
       }
     },
@@ -58,14 +68,30 @@ const AuthContextProvider = ({
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
-  const loginUser = useLoginUserMutation();
+  const loginUser = useLoginUserMutation({
+    onSuccess: (data: t.TLoginResponse) => {
+      const { user, token, twoFAPending, tempToken } = data;
+      if (twoFAPending) {
+        // Redirect to the two-factor authentication route.
+        navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
+        return;
+      }
+      setError(undefined);
+      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+    },
+    onError: (error: TResError | unknown) => {
+      const resError = error as TResError;
+      doSetError(resError.message);
+      navigate('/login', { replace: true });
+    },
+  });
   const logoutUser = useLogoutUserMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       setUserContext({
         token: undefined,
         isAuthenticated: false,
         user: undefined,
-        redirect: '/login',
+        redirect: data.redirect ?? '/login',
       });
     },
     onError: (error) => {
@@ -78,39 +104,28 @@ const AuthContextProvider = ({
       });
     },
   });
-
-  const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
-  const userQuery = useGetUserQuery({ enabled: !!token });
   const refreshToken = useRefreshTokenMutation();
 
-  const login = (data: TLoginUser) => {
-    loginUser.mutate(data, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setError(undefined);
-        setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
-      },
-      onError: (error: TResError | unknown) => {
-        const resError = error as TResError;
-        doSetError(resError.message);
-        navigate('/login', { replace: true });
-      },
-    });
+  const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
+  const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
+
+  const login = (data: t.TLoginUser) => {
+    loginUser.mutate(data);
   };
 
   const silentRefresh = useCallback(() => {
-    if (authConfig?.test) {
+    if (authConfig?.test === true) {
       console.log('Test mode. Skipping silent refresh.');
       return;
     }
     refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
+      onSuccess: (data: t.TRefreshTokenResponse | undefined) => {
+        const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
         } else {
           console.log('Token is not present. User is not authenticated.');
-          if (authConfig?.test) {
+          if (authConfig?.test === true) {
             return;
           }
           navigate('/login');
@@ -118,7 +133,7 @@ const AuthContextProvider = ({
       },
       onError: (error) => {
         console.log('refreshToken mutation error:', error);
-        if (authConfig?.test) {
+        if (authConfig?.test === true) {
           return;
         }
         navigate('/login');
@@ -130,13 +145,13 @@ const AuthContextProvider = ({
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
-      doSetError((userQuery?.error as Error).message);
+      doSetError((userQuery.error as Error).message);
       navigate('/login', { replace: true });
     }
-    if (error && isAuthenticated) {
+    if (error != null && error && isAuthenticated) {
       doSetError(undefined);
     }
-    if (!token || !isAuthenticated) {
+    if (token == null || !token || !isAuthenticated) {
       silentRefresh();
     }
   }, [
@@ -146,7 +161,9 @@ const AuthContextProvider = ({
     userQuery.isError,
     userQuery.error,
     error,
+    setUser,
     navigate,
+    silentRefresh,
     setUserContext,
   ]);
 
@@ -179,11 +196,12 @@ const AuthContextProvider = ({
       setError,
       roles: {
         [SystemRoles.USER]: userRole,
+        [SystemRoles.ADMIN]: adminRole,
       },
       isAuthenticated,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, error, isAuthenticated, token, userRole],
+
+    [user, error, isAuthenticated, token, userRole, adminRole],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;
@@ -199,4 +217,4 @@ const useAuthContext = () => {
   return context;
 };
 
-export { AuthContextProvider, useAuthContext };
+export { AuthContextProvider, useAuthContext, AuthContext };

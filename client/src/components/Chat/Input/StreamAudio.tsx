@@ -5,9 +5,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
+import { getLatestText, logger } from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
-import { getLatestText } from '~/utils';
 import store from '~/store';
 
 function timeoutPromise(ms: number, message?: string) {
@@ -51,16 +51,16 @@ export default function StreamAudio({ index = 0 }) {
     const latestText = getLatestText(latestMessage);
 
     const shouldFetch = !!(
-      token &&
+      token != null &&
       automaticPlayback &&
-      isSubmitting &&
+      !isSubmitting &&
       latestMessage &&
       !latestMessage.isCreatedByUser &&
       latestText &&
       latestMessage.messageId &&
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
-      activeRunId &&
+      activeRunId != null &&
       activeRunId !== audioRunId
     );
 
@@ -84,7 +84,7 @@ export default function StreamAudio({ index = 0 }) {
 
         setAudioRunId(activeRunId);
         if (cachedResponse) {
-          console.log('Audio found in cache');
+          logger.log('Audio found in cache');
           const audioBlob = await cachedResponse.blob();
           const blobUrl = URL.createObjectURL(audioBlob);
           setGlobalAudioURL(blobUrl);
@@ -92,7 +92,7 @@ export default function StreamAudio({ index = 0 }) {
           return;
         }
 
-        console.log('Fetching audio...', navigator.userAgent);
+        logger.log('Fetching audio...', navigator.userAgent);
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -109,7 +109,8 @@ export default function StreamAudio({ index = 0 }) {
         const reader = response.body.getReader();
 
         const type = 'audio/mpeg';
-        const browserSupportsType = MediaSource.isTypeSupported(type);
+        const browserSupportsType =
+          typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(type);
         let mediaSource: MediaSourceAppender | undefined;
         if (browserSupportsType) {
           mediaSource = new MediaSourceAppender(type);
@@ -117,14 +118,14 @@ export default function StreamAudio({ index = 0 }) {
         }
 
         let done = false;
-        const chunks: Uint8Array[] = [];
+        const chunks: ArrayBuffer[] = [];
 
         while (!done) {
           const readPromise = reader.read();
           const { value, done: readerDone } = (await Promise.race([
             readPromise,
             timeoutPromise(maxPromiseTime, promiseTimeoutMessage),
-          ])) as ReadableStreamReadResult<Uint8Array>;
+          ])) as ReadableStreamReadResult<ArrayBuffer>;
 
           if (cacheTTS && value) {
             chunks.push(value);
@@ -136,7 +137,7 @@ export default function StreamAudio({ index = 0 }) {
         }
 
         if (chunks.length) {
-          console.log('Adding audio to cache');
+          logger.log('Adding audio to cache');
           const latestMessages = getMessages() ?? [];
           const targetMessage = latestMessages.find(
             (msg) => msg.messageId === latestMessage?.messageId,
@@ -160,13 +161,13 @@ export default function StreamAudio({ index = 0 }) {
           setIsFetching(false);
         }
 
-        console.log('Audio stream reading ended');
+        logger.log('Audio stream reading ended');
       } catch (error) {
         if (error?.['message'] !== promiseTimeoutMessage) {
-          console.log(promiseTimeoutMessage);
+          logger.log(promiseTimeoutMessage);
           return;
         }
-        console.error('Error fetching audio:', error);
+        logger.error('Error fetching audio:', error);
         setIsFetching(false);
         setGlobalAudioURL(null);
       } finally {
@@ -194,8 +195,8 @@ export default function StreamAudio({ index = 0 }) {
 
   useEffect(() => {
     if (
-      playbackRate &&
-      globalAudioURL &&
+      playbackRate != null &&
+      globalAudioURL != null &&
       playbackRate > 0 &&
       audioRef.current &&
       audioRef.current.playbackRate !== playbackRate
@@ -210,7 +211,9 @@ export default function StreamAudio({ index = 0 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramId]);
 
+  logger.log('StreamAudio.tsx - globalAudioURL:', globalAudioURL);
   return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio
       ref={audioRef}
       controls
@@ -222,9 +225,8 @@ export default function StreamAudio({ index = 0 }) {
         height: '0px',
         width: '0px',
       }}
-      src={globalAudioURL || undefined}
+      src={globalAudioURL ?? undefined}
       id={globalAudioId}
-      muted
       autoPlay
     />
   );

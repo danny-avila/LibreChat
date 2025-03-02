@@ -20,7 +20,7 @@ export default function ImageVision() {
             checked={field.value}
             onCheckedChange={field.onChange}
             className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
-            value={field?.value?.toString()}
+            value={field.value.toString()}
           />
         )}
       />
@@ -33,10 +33,7 @@ export default function ImageVision() {
           })
         }
       >
-        <div className="flex items-center">
-          {localize('com_assistants_image_vision')}
-          <QuestionMark />
-        </div>
+        <div className="flex items-center">{localize('com_assistants_image_vision')}</div>
       </label>
     </div>
   );

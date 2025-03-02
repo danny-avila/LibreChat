@@ -1,3 +1,4 @@
+jest.mock('~/cache/getLogStores');
 const request = require('supertest');
 const express = require('express');
 const routes = require('../');
@@ -76,7 +77,9 @@ describe.skip('GET /', () => {
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
-      ldapLoginEnabled: true,
+      ldap: {
+        enabled: true,
+      },
       serverDomain: 'http://test-server.com',
       emailLoginEnabled: 'true',
       registrationEnabled: 'true',

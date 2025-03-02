@@ -1,8 +1,11 @@
 import reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { render, waitFor } from 'test/layout-test-utils';
-import * as mockDataProvider from 'librechat-data-provider/react-query';
+import { getByTestId, render, waitFor } from 'test/layout-test-utils';
 import type { TStartupConfig } from 'librechat-data-provider';
+import * as endpointQueries from '~/data-provider/Endpoints/queries';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
+import * as authMutations from '~/data-provider/Auth/mutations';
+import * as authQueries from '~/data-provider/Auth/queries';
 import AuthLayout from '~/components/Auth/AuthLayout';
 import Login from '~/components/Auth/Login';
 
@@ -21,7 +24,9 @@ const mockStartupConfig = {
     openidLoginEnabled: true,
     openidLabel: 'Test OpenID',
     openidImageUrl: 'http://test-server.com',
-    ldapLoginEnabled: false,
+    ldap: {
+      enabled: false,
+    },
     registrationEnabled: true,
     emailLoginEnabled: true,
     socialLoginEnabled: true,
@@ -52,23 +57,32 @@ const setup = ({
     },
   },
   useGetStartupConfigReturnValue = mockStartupConfig,
+  useGetBannerQueryReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {},
+  },
 } = {}) => {
   const mockUseLoginUser = jest
-    .spyOn(mockDataProvider, 'useLoginUserMutation')
+    .spyOn(authMutations, 'useLoginUserMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useLoginUserReturnValue);
   const mockUseGetUserQuery = jest
-    .spyOn(mockDataProvider, 'useGetUserQuery')
+    .spyOn(authQueries, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
   const mockUseGetStartupConfig = jest
-    .spyOn(mockDataProvider, 'useGetStartupConfig')
+    .spyOn(endpointQueries, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupConfigReturnValue);
   const mockUseRefreshTokenMutation = jest
-    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    .spyOn(authMutations, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
+  const mockUseGetBannerQuery = jest
+    .spyOn(miscDataProvider, 'useGetBannerQuery')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useGetBannerQueryReturnValue);
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
@@ -91,6 +105,7 @@ const setup = ({
     mockUseOutletContext,
     mockUseGetStartupConfig,
     mockUseRefreshTokenMutation,
+    mockUseGetBannerQuery,
   };
 };
 
@@ -105,7 +120,7 @@ test('renders login form', () => {
   const { getByLabelText, getByRole } = setup();
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
-  expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+  expect(getByTestId(document.body, 'login-button')).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
   expect(getByRole('link', { name: /Continue with Google/i })).toBeInTheDocument();
@@ -132,7 +147,7 @@ test('renders login form', () => {
 
 test('calls loginUser.mutate on login', async () => {
   const mutate = jest.fn();
-  const { getByLabelText, getByRole } = setup({
+  const { getByLabelText } = setup({
     // @ts-ignore - we don't need all parameters of the QueryObserverResult
     useLoginUserReturnValue: {
       isLoading: false,
@@ -143,7 +158,7 @@ test('calls loginUser.mutate on login', async () => {
 
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test@test.com');
   await userEvent.type(passwordInput, 'password');
@@ -153,7 +168,7 @@ test('calls loginUser.mutate on login', async () => {
 });
 
 test('Navigates to / on successful login', async () => {
-  const { getByLabelText, getByRole, history } = setup({
+  const { getByLabelText, history } = setup({
     // @ts-ignore - we don't need all parameters of the QueryObserverResult
     useLoginUserReturnValue: {
       isLoading: false,
@@ -173,7 +188,7 @@ test('Navigates to / on successful login', async () => {
 
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test@test.com');
   await userEvent.type(passwordInput, 'password');

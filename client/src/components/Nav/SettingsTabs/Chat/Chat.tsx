@@ -1,31 +1,51 @@
 import { memo } from 'react';
-import * as Tabs from '@radix-ui/react-tabs';
-import { SettingsTabValues } from 'librechat-data-provider';
+import MaximizeChatSpace from './MaximizeChatSpace';
+import FontSizeSelector from './FontSizeSelector';
 import SendMessageKeyEnter from './EnterToSend';
 import ShowCodeSwitch from './ShowCodeSwitch';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
+import ShowThinking from './ShowThinking';
+import LaTeXParsing from './LaTeXParsing';
+import ScrollButton from './ScrollButton';
+import ModularChat from './ModularChat';
 import SaveDraft from './SaveDraft';
 
 function Chat() {
   return (
-    <Tabs.Content value={SettingsTabValues.CHAT} role="tabpanel" className="md: w-full">
-      <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <SendMessageKeyEnter />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <ChatDirection />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <ShowCodeSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <SaveDraft />
-        </div>
-        <ForkSettings />
+    <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
+      <div className="pb-3">
+        <FontSizeSelector />
       </div>
-    </Tabs.Content>
+      <div className="pb-3">
+        <ChatDirection />
+      </div>
+      <div className="pb-3">
+        <SendMessageKeyEnter />
+      </div>
+      <div className="pb-3">
+        <MaximizeChatSpace />
+      </div>
+      <div className="pb-3">
+        <ShowCodeSwitch />
+      </div>
+      <div className="pb-3">
+        <SaveDraft />
+      </div>
+      <div className="pb-3">
+        <ScrollButton />
+      </div>
+      <ForkSettings />
+      <div className="pb-3">
+        <ModularChat />
+      </div>
+      <div className="pb-3">
+        <LaTeXParsing />
+      </div>
+      <div className="pb-3">
+        <ShowThinking />
+      </div>
+    </div>
   );
 }
 

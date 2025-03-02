@@ -1,13 +1,14 @@
 import type { AxiosResponse } from 'axios';
-import * as f from './types/files';
-import * as q from './types/queries';
-import * as m from './types/mutations';
-import * as a from './types/assistants';
-import * as r from './roles';
-import * as t from './types';
-import * as s from './schemas';
-import request from './request';
+import type * as t from './types';
 import * as endpoints from './api-endpoints';
+import * as a from './types/assistants';
+import * as m from './types/mutations';
+import * as q from './types/queries';
+import * as f from './types/files';
+import * as config from './config';
+import request from './request';
+import * as s from './schemas';
+import * as r from './roles';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -40,27 +41,29 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
   return request.get(endpoints.shareMessages(shareId));
 }
 
-export const listSharedLinks = (
-  params?: q.SharedLinkListParams,
+export const listSharedLinks = async (
+  params: q.SharedLinksListParams,
 ): Promise<q.SharedLinksResponse> => {
-  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  const isPublic = params?.isPublic || true; // Default to true if not provided
-  return request.get(endpoints.getSharedLinks(pageNumber, isPublic));
+  const { pageSize, isPublic, sortBy, sortDirection, search, cursor } = params;
+
+  return request.get(
+    endpoints.getSharedLinks(pageSize, isPublic, sortBy, sortDirection, search, cursor),
+  );
 };
 
-export function getSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
-  return request.get(endpoints.shareMessages(shareId));
+export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetResponse> {
+  return request.get(endpoints.getSharedLink(conversationId));
 }
 
-export function createSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink, payload);
+export function createSharedLink(conversationId: string): Promise<t.TSharedLinkResponse> {
+  return request.post(endpoints.createSharedLink(conversationId));
 }
 
-export function updateSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink, payload);
+export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink(shareId));
 }
 
-export function deleteSharedLink(shareId: string): Promise<t.TDeleteSharedLinkResponse> {
+export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
   return request.delete(endpoints.shareMessages(shareId));
 }
 
@@ -71,6 +74,22 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
   }
 
   return request.put(endpoints.messages(conversationId, messageId), { text });
+}
+
+export const editArtifact = async ({
+  messageId,
+  ...params
+}: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
+  return request.post(`/api/messages/artifact/${messageId}`, params);
+};
+
+export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
+  const { conversationId, messageId, index, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages(conversationId, messageId), { text, index });
 }
 
 export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
@@ -114,11 +133,11 @@ export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
 
-export const login = (payload: t.TLoginUser) => {
+export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
 
-export const logout = () => {
+export const logout = (): Promise<m.TLogoutResponse> => {
   return request.post(endpoints.logout());
 };
 
@@ -163,7 +182,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<t.TStartupConfig> => {
+export const getStartupConfig = (): Promise<config.TStartupConfig> => {
   return request.get(endpoints.config());
 };
 
@@ -255,14 +274,18 @@ export function getAssistantDocs({
   endpoint,
   version,
 }: {
-  endpoint: s.AssistantsEndpoint;
+  endpoint: s.AssistantsEndpoint | string;
   version: number | string;
 }): Promise<a.AssistantDocument[]> {
+  if (!s.isAssistantsEndpoint(endpoint)) {
+    return Promise.resolve([]);
+  }
   return request.get(
     endpoints.assistants({
       path: 'documents',
       version,
-      endpoint,
+      options: { endpoint },
+      endpoint: endpoint as s.AssistantsEndpoint,
     }),
   );
 }
@@ -270,14 +293,56 @@ export function getAssistantDocs({
 /* Tools */
 
 export const getAvailableTools = (
-  version: number | string,
-  endpoint: s.AssistantsEndpoint,
+  _endpoint: s.AssistantsEndpoint | s.EModelEndpoint.agents,
+  version?: number | string,
 ): Promise<s.TPlugin[]> => {
-  return request.get(
-    endpoints.assistants({
+  let path = '';
+  if (s.isAssistantsEndpoint(_endpoint)) {
+    const endpoint = _endpoint as s.AssistantsEndpoint;
+    path = endpoints.assistants({
       path: 'tools',
-      endpoint,
-      version,
+      endpoint: endpoint,
+      version: version ?? config.defaultAssistantsVersion[endpoint],
+    });
+  } else {
+    path = endpoints.agents({
+      path: 'tools',
+    });
+  }
+
+  return request.get(path);
+};
+
+export const getVerifyAgentToolAuth = (
+  params: q.VerifyToolAuthParams,
+): Promise<q.VerifyToolAuthResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: `tools/${params.toolId}/auth`,
+    }),
+  );
+};
+
+export const callTool = <T extends m.ToolId>({
+  toolId,
+  toolParams,
+}: {
+  toolId: T;
+  toolParams: m.ToolParams<T>;
+}): Promise<m.ToolCallResponse> => {
+  return request.post(
+    endpoints.agents({
+      path: `tools/${toolId}/call`,
+    }),
+    toolParams,
+  );
+};
+
+export const getToolCalls = (params: q.GetToolCallParams): Promise<q.ToolCallResults> => {
+  return request.get(
+    endpoints.agents({
+      path: 'tools/calls',
+      options: params,
     }),
   );
 };
@@ -292,71 +357,17 @@ export const getFileConfig = (): Promise<f.FileConfig> => {
   return request.get(`${endpoints.files()}/config`);
 };
 
-export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
-  return request.postMultiPart(endpoints.images(), data);
+export const uploadImage = (
+  data: FormData,
+  signal?: AbortSignal | null,
+): Promise<f.TFileUpload> => {
+  const requestConfig = signal ? { signal } : undefined;
+  return request.postMultiPart(endpoints.images(), data, requestConfig);
 };
 
-export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
-  return request.postMultiPart(endpoints.files(), data);
-};
-
-/**
- * Imports a conversations file.
- *
- * @param data - The FormData containing the file to import.
- * @returns A Promise that resolves to the import start response.
- */
-export const importConversationsFile = (data: FormData): Promise<t.TImportResponse> => {
-  return request.postMultiPart(endpoints.importConversation(), data);
-};
-
-export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
-  return request.postMultiPart(endpoints.avatar(), data);
-};
-
-export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
-  return request.postMultiPart(
-    endpoints.assistants({
-      path: `avatar/${data.assistant_id}`,
-      options: { model: data.model, endpoint: data.endpoint },
-      version: data.version,
-    }),
-    data.formData,
-  );
-};
-
-export const getFileDownload = async (userId: string, file_id: string): Promise<AxiosResponse> => {
-  return request.getResponse(`${endpoints.files()}/download/${userId}/${file_id}`, {
-    responseType: 'blob',
-    headers: {
-      Accept: 'application/octet-stream',
-    },
-  });
-};
-
-export const deleteFiles = async (
-  files: f.BatchFile[],
-  assistant_id?: string,
-  tool_resource?: a.EToolResources,
-): Promise<f.DeleteFilesResponse> =>
-  request.deleteWithOptions(endpoints.files(), {
-    data: { files, assistant_id, tool_resource },
-  });
-
-export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
-  return request.postMultiPart(endpoints.speechToText(), data);
-};
-
-export const textToSpeech = (data: FormData): Promise<ArrayBuffer> => {
-  return request.postTTS(endpoints.textToSpeechManual(), data);
-};
-
-export const getVoices = (): Promise<f.VoiceResponse> => {
-  return request.get(endpoints.textToSpeechVoices());
-};
-
-export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
-  return request.get(endpoints.getCustomConfigSpeech());
+export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise<f.TFileUpload> => {
+  const requestConfig = signal ? { signal } : undefined;
+  return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 
 /* actions */
@@ -372,18 +383,10 @@ export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateAct
   );
 };
 
-export function getActions({
-  endpoint,
-  version,
-}: {
-  endpoint: s.AssistantsEndpoint;
-  version: number | string;
-}): Promise<a.Action[]> {
+export function getActions(): Promise<a.Action[]> {
   return request.get(
-    endpoints.assistants({
+    endpoints.agents({
       path: 'actions',
-      version,
-      endpoint,
     }),
   );
 }
@@ -403,7 +406,183 @@ export const deleteAction = async ({
     }),
   );
 
+/**
+ * Agents
+ */
+
+export const createAgent = ({ ...data }: a.AgentCreateParams): Promise<a.Agent> => {
+  return request.post(endpoints.agents({}), data);
+};
+
+export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+  return request.get(
+    endpoints.agents({
+      path: agent_id,
+    }),
+  );
+};
+
+export const updateAgent = ({
+  agent_id,
+  data,
+}: {
+  agent_id: string;
+  data: a.AgentUpdateParams;
+}): Promise<a.Agent> => {
+  return request.patch(
+    endpoints.agents({
+      path: agent_id,
+    }),
+    data,
+  );
+};
+
+export const duplicateAgent = ({
+  agent_id,
+}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: a.Action[] }> => {
+  return request.post(
+    endpoints.agents({
+      path: `${agent_id}/duplicate`,
+    }),
+  );
+};
+
+export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
+  return request.delete(
+    endpoints.agents({
+      path: agent_id,
+    }),
+  );
+};
+
+export const listAgents = (params: a.AgentListParams): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      options: params,
+    }),
+  );
+};
+
+/* Tools */
+
+export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
+  return request.get(
+    endpoints.agents({
+      path: 'tools',
+    }),
+  );
+};
+
+/* Actions */
+
+export const updateAgentAction = (
+  data: m.UpdateAgentActionVariables,
+): Promise<m.UpdateAgentActionResponse> => {
+  const { agent_id, ...body } = data;
+  return request.post(
+    endpoints.agents({
+      path: `actions/${agent_id}`,
+    }),
+    body,
+  );
+};
+
+export const deleteAgentAction = async ({
+  agent_id,
+  action_id,
+}: m.DeleteAgentActionVariables): Promise<void> =>
+  request.delete(
+    endpoints.agents({
+      path: `actions/${agent_id}/${action_id}`,
+    }),
+  );
+
+/**
+ * Imports a conversations file.
+ *
+ * @param data - The FormData containing the file to import.
+ * @returns A Promise that resolves to the import start response.
+ */
+export const importConversationsFile = (data: FormData): Promise<t.TImportResponse> => {
+  return request.postMultiPart(endpoints.importConversation(), data);
+};
+
+export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
+  return request.postMultiPart(endpoints.avatar(), data);
+};
+
+export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
+  return request.postMultiPart(
+    endpoints.assistants({
+      isAvatar: true,
+      path: `${data.assistant_id}/avatar`,
+      options: { model: data.model, endpoint: data.endpoint },
+      version: data.version,
+    }),
+    data.formData,
+  );
+};
+
+export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<a.Agent> => {
+  return request.postMultiPart(
+    `${endpoints.images()}/agents/${data.agent_id}/avatar`,
+    data.formData,
+  );
+};
+
+export const getFileDownload = async (userId: string, file_id: string): Promise<AxiosResponse> => {
+  return request.getResponse(`${endpoints.files()}/download/${userId}/${file_id}`, {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
+  });
+};
+
+export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
+  return request.getResponse(url, {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
+  });
+};
+
+export const deleteFiles = async (payload: {
+  files: f.BatchFile[];
+  agent_id?: string;
+  assistant_id?: string;
+  tool_resource?: a.EToolResources;
+}): Promise<f.DeleteFilesResponse> =>
+  request.deleteWithOptions(endpoints.files(), {
+    data: payload,
+  });
+
+/* Speech */
+
+export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
+  return request.postMultiPart(endpoints.speechToText(), data);
+};
+
+export const textToSpeech = (data: FormData): Promise<ArrayBuffer> => {
+  return request.postTTS(endpoints.textToSpeechManual(), data);
+};
+
+export const getVoices = (): Promise<f.VoiceResponse> => {
+  return request.get(endpoints.textToSpeechVoices());
+};
+
+export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
+  return request.get(endpoints.getCustomConfigSpeech());
+};
+
 /* conversations */
+
+export function duplicateConversation(
+  payload: t.TDuplicateConvoRequest,
+): Promise<t.TDuplicateConvoResponse> {
+  return request.post(endpoints.duplicateConversation(), payload);
+}
 
 export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkConvoResponse> {
   return request.post(endpoints.forkConversation(), payload);
@@ -422,16 +601,17 @@ export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
   // Assuming params has a pageNumber property
-  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  const isArchived = params?.isArchived || false; // Default to false if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived));
+  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
+  const isArchived = params?.isArchived ?? false; // Default to false if not provided
+  const tags = params?.tags || []; // Default to an empty array if not provided
+  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
 };
 
 export const listConversationsByQuery = (
   params?: q.ConversationListParams & { searchQuery?: string },
 ): Promise<q.ConversationListResponse> => {
-  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery ?? ''; // If no search query is provided, default to an empty string
   // Update the endpoint to handle a search query
   if (searchQuery !== '') {
     return request.get(endpoints.search(searchQuery, pageNumber));
@@ -538,6 +718,89 @@ export function getRole(roleName: string): Promise<r.TRole> {
 
 export function updatePromptPermissions(
   variables: m.UpdatePromptPermVars,
-): Promise<m.UpdatePromptPermResponse> {
+): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
+}
+
+export function updateAgentPermissions(
+  variables: m.UpdateAgentPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
+}
+
+/* Tags */
+export function getConversationTags(): Promise<t.TConversationTagsResponse> {
+  return request.get(endpoints.conversationTags());
+}
+
+export function createConversationTag(
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.post(endpoints.conversationTags(), payload);
+}
+
+export function updateConversationTag(
+  tag: string,
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.put(endpoints.conversationTags(tag), payload);
+}
+export function deleteConversationTag(tag: string): Promise<t.TConversationTagResponse> {
+  return request.delete(endpoints.conversationTags(tag));
+}
+
+export function addTagToConversation(
+  conversationId: string,
+  payload: t.TTagConversationRequest,
+): Promise<t.TTagConversationResponse> {
+  return request.put(endpoints.addTagToConversation(conversationId), payload);
+}
+export function rebuildConversationTags(): Promise<t.TConversationTagsResponse> {
+  return request.post(endpoints.conversationTags('rebuild'));
+}
+
+export function healthCheck(): Promise<string> {
+  return request.get(endpoints.health());
+}
+
+export function getUserTerms(): Promise<t.TUserTermsResponse> {
+  return request.get(endpoints.userTerms());
+}
+
+export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
+  return request.post(endpoints.acceptUserTerms());
+}
+
+export function getBanner(): Promise<t.TBannerResponse> {
+  return request.get(endpoints.banner());
+}
+
+export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
+  return request.get(endpoints.enableTwoFactor());
+}
+
+export function verifyTwoFactor(
+  payload: t.TVerify2FARequest,
+): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.verifyTwoFactor(), payload);
+}
+
+export function confirmTwoFactor(
+  payload: t.TVerify2FARequest,
+): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.confirmTwoFactor(), payload);
+}
+
+export function disableTwoFactor(): Promise<t.TDisable2FAResponse> {
+  return request.post(endpoints.disableTwoFactor());
+}
+
+export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes());
+}
+
+export function verifyTwoFactorTemp(
+  payload: t.TVerify2FATempRequest,
+): Promise<t.TVerify2FATempResponse> {
+  return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }

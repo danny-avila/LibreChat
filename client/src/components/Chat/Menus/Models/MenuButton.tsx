@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Trigger } from '@radix-ui/react-popover';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
@@ -20,16 +21,24 @@ export default function MenuButton({
   endpointsConfig: TEndpointsConfig;
 }) {
   const localize = useLocalize();
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
     <Trigger asChild>
-      <div
+      <button
         className={cn(
           'group flex cursor-pointer items-center gap-1 rounded-xl px-3 py-2 text-lg font-medium hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
           className,
         )}
-        // type="button"
+        type="button"
+        aria-label={localize('com_ui_llm_menu')}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={isExpanded}
+        aria-controls="llm-menu"
+        onClick={() => setIsExpanded(!isExpanded)}
       >
-        {selected && selected.showIconInHeader && (
+        {selected && selected.showIconInHeader === true && (
           <SpecIcon currentSpec={selected} endpointsConfig={endpointsConfig} />
         )}
         <div className={textClassName}>
@@ -51,7 +60,7 @@ export default function MenuButton({
             strokeLinejoin="round"
           />
         </svg>
-      </div>
+      </button>
     </Trigger>
   );
 }

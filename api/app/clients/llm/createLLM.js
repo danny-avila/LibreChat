@@ -1,4 +1,4 @@
-const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { ChatOpenAI } = require('@langchain/openai');
 const { sanitizeModelName, constructAzureURL } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
 
@@ -8,7 +8,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {Object} options - The options for creating the LLM.
  * @param {ModelOptions} options.modelOptions - The options specific to the model, including modelName, temperature, presence_penalty, frequency_penalty, and other model-related settings.
  * @param {ConfigOptions} options.configOptions - Configuration options for the API requests, including proxy settings and custom headers.
- * @param {Callbacks} options.callbacks - Callback functions for managing the lifecycle of the LLM, including token buffers, context, and initial message count.
+ * @param {Callbacks} [options.callbacks] - Callback functions for managing the lifecycle of the LLM, including token buffers, context, and initial message count.
  * @param {boolean} [options.streaming=false] - Determines if the LLM should operate in streaming mode.
  * @param {string} options.openAIApiKey - The API key for OpenAI, used for authentication.
  * @param {AzureOptions} [options.azure={}] - Optional Azure-specific configurations. If provided, Azure configurations take precedence over OpenAI configurations.
@@ -17,7 +17,7 @@ const { isEnabled } = require('~/server/utils');
  *
  * @example
  * const llm = createLLM({
- *   modelOptions: { modelName: 'gpt-3.5-turbo', temperature: 0.2 },
+ *   modelOptions: { modelName: 'gpt-4o-mini', temperature: 0.2 },
  *   configOptions: { basePath: 'https://example.api/path' },
  *   callbacks: { onMessage: handleMessage },
  *   openAIApiKey: 'your-api-key'

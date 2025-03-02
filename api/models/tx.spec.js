@@ -1,4 +1,12 @@
-const { getValueKey, getMultiplier, defaultRate, tokenValues } = require('./tx');
+const { EModelEndpoint } = require('librechat-data-provider');
+const {
+  defaultRate,
+  tokenValues,
+  getValueKey,
+  getMultiplier,
+  cacheTokenValues,
+  getCacheMultiplier,
+} = require('./tx');
 
 describe('getValueKey', () => {
   it('should return "16k" for model name containing "gpt-3.5-turbo-16k"', () => {
@@ -42,11 +50,58 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4-0125')).toBe('gpt-4-1106');
   });
 
+  it('should return "gpt-4.5" for model type of "gpt-4.5"', () => {
+    expect(getValueKey('gpt-4.5-preview')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-2024-08-06')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-2024-08-06-0718')).toBe('gpt-4.5');
+    expect(getValueKey('openai/gpt-4.5')).toBe('gpt-4.5');
+    expect(getValueKey('openai/gpt-4.5-2024-08-06')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-turbo')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-0125')).toBe('gpt-4.5');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
-    expect(getValueKey('gpt-4o-2024-05-13')).toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
     expect(getValueKey('openai/gpt-4o')).toBe('gpt-4o');
+    expect(getValueKey('openai/gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-turbo')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-0125')).toBe('gpt-4o');
+  });
+
+  it('should return "gpt-4o-mini" for model type of "gpt-4o-mini"', () => {
+    expect(getValueKey('gpt-4o-mini-2024-07-18')).toBe('gpt-4o-mini');
+    expect(getValueKey('openai/gpt-4o-mini')).toBe('gpt-4o-mini');
+    expect(getValueKey('gpt-4o-mini-0718')).toBe('gpt-4o-mini');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).not.toBe('gpt-4o-mini');
+  });
+
+  it('should return "gpt-4o-2024-05-13" for model type of "gpt-4o-2024-05-13"', () => {
+    expect(getValueKey('gpt-4o-2024-05-13')).toBe('gpt-4o-2024-05-13');
+    expect(getValueKey('openai/gpt-4o-2024-05-13')).toBe('gpt-4o-2024-05-13');
+    expect(getValueKey('gpt-4o-2024-05-13-0718')).toBe('gpt-4o-2024-05-13');
+    expect(getValueKey('gpt-4o-2024-05-13-0718')).not.toBe('gpt-4o');
+  });
+
+  it('should return "gpt-4o" for model type of "chatgpt-4o"', () => {
+    expect(getValueKey('chatgpt-4o-latest')).toBe('gpt-4o');
+    expect(getValueKey('openai/chatgpt-4o-latest')).toBe('gpt-4o');
+    expect(getValueKey('chatgpt-4o-latest-0916')).toBe('gpt-4o');
+    expect(getValueKey('chatgpt-4o-latest-0718')).toBe('gpt-4o');
+  });
+
+  it('should return "claude-3-7-sonnet" for model type of "claude-3-7-sonnet-"', () => {
+    expect(getValueKey('claude-3-7-sonnet-20240620')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('anthropic/claude-3-7-sonnet')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('claude-3-7-sonnet-turbo')).toBe('claude-3-7-sonnet');
+    expect(getValueKey('claude-3-7-sonnet-0125')).toBe('claude-3-7-sonnet');
+  });
+
+  it('should return "claude-3.7-sonnet" for model type of "claude-3.7-sonnet-"', () => {
+    expect(getValueKey('claude-3.7-sonnet-20240620')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('anthropic/claude-3.7-sonnet')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('claude-3.7-sonnet-turbo')).toBe('claude-3.7-sonnet');
+    expect(getValueKey('claude-3.7-sonnet-0125')).toBe('claude-3.7-sonnet');
   });
 
   it('should return "claude-3-5-sonnet" for model type of "claude-3-5-sonnet-"', () => {
@@ -54,6 +109,27 @@ describe('getValueKey', () => {
     expect(getValueKey('anthropic/claude-3-5-sonnet')).toBe('claude-3-5-sonnet');
     expect(getValueKey('claude-3-5-sonnet-turbo')).toBe('claude-3-5-sonnet');
     expect(getValueKey('claude-3-5-sonnet-0125')).toBe('claude-3-5-sonnet');
+  });
+
+  it('should return "claude-3.5-sonnet" for model type of "claude-3.5-sonnet-"', () => {
+    expect(getValueKey('claude-3.5-sonnet-20240620')).toBe('claude-3.5-sonnet');
+    expect(getValueKey('anthropic/claude-3.5-sonnet')).toBe('claude-3.5-sonnet');
+    expect(getValueKey('claude-3.5-sonnet-turbo')).toBe('claude-3.5-sonnet');
+    expect(getValueKey('claude-3.5-sonnet-0125')).toBe('claude-3.5-sonnet');
+  });
+
+  it('should return "claude-3-5-haiku" for model type of "claude-3-5-haiku-"', () => {
+    expect(getValueKey('claude-3-5-haiku-20240620')).toBe('claude-3-5-haiku');
+    expect(getValueKey('anthropic/claude-3-5-haiku')).toBe('claude-3-5-haiku');
+    expect(getValueKey('claude-3-5-haiku-turbo')).toBe('claude-3-5-haiku');
+    expect(getValueKey('claude-3-5-haiku-0125')).toBe('claude-3-5-haiku');
+  });
+
+  it('should return "claude-3.5-haiku" for model type of "claude-3.5-haiku-"', () => {
+    expect(getValueKey('claude-3.5-haiku-20240620')).toBe('claude-3.5-haiku');
+    expect(getValueKey('anthropic/claude-3.5-haiku')).toBe('claude-3.5-haiku');
+    expect(getValueKey('claude-3.5-haiku-turbo')).toBe('claude-3.5-haiku');
+    expect(getValueKey('claude-3.5-haiku-0125')).toBe('claude-3.5-haiku');
   });
 });
 
@@ -99,13 +175,37 @@ describe('getMultiplier', () => {
   });
 
   it('should return the correct multiplier for gpt-4o', () => {
-    const valueKey = getValueKey('gpt-4o-2024-05-13');
+    const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
     expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
       tokenValues['gpt-4o'].completion,
     );
     expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
       tokenValues['gpt-4-1106'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4o-mini', () => {
+    const valueKey = getValueKey('gpt-4o-mini-2024-07-18');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4o-mini'].prompt,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4o-mini'].completion,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
+      tokenValues['gpt-4-1106'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for chatgpt-4o-latest', () => {
+    const valueKey = getValueKey('chatgpt-4o-latest');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4o'].completion,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
+      tokenValues['gpt-4o-mini'].completion,
     );
   });
 
@@ -131,5 +231,281 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-5-some-other-info' })).toBe(
       defaultRate,
     );
+  });
+});
+
+describe('AWS Bedrock Model Tests', () => {
+  const awsModels = [
+    'anthropic.claude-3-5-haiku-20241022-v1:0',
+    'anthropic.claude-3-haiku-20240307-v1:0',
+    'anthropic.claude-3-sonnet-20240229-v1:0',
+    'anthropic.claude-3-opus-20240229-v1:0',
+    'anthropic.claude-3-5-sonnet-20240620-v1:0',
+    'anthropic.claude-v2:1',
+    'anthropic.claude-instant-v1',
+    'meta.llama2-13b-chat-v1',
+    'meta.llama2-70b-chat-v1',
+    'meta.llama3-8b-instruct-v1:0',
+    'meta.llama3-70b-instruct-v1:0',
+    'meta.llama3-1-8b-instruct-v1:0',
+    'meta.llama3-1-70b-instruct-v1:0',
+    'meta.llama3-1-405b-instruct-v1:0',
+    'mistral.mistral-7b-instruct-v0:2',
+    'mistral.mistral-small-2402-v1:0',
+    'mistral.mixtral-8x7b-instruct-v0:1',
+    'mistral.mistral-large-2402-v1:0',
+    'mistral.mistral-large-2407-v1:0',
+    'cohere.command-text-v14',
+    'cohere.command-light-text-v14',
+    'cohere.command-r-v1:0',
+    'cohere.command-r-plus-v1:0',
+    'ai21.j2-mid-v1',
+    'ai21.j2-ultra-v1',
+    'amazon.titan-text-lite-v1',
+    'amazon.titan-text-express-v1',
+    'amazon.nova-micro-v1:0',
+    'amazon.nova-lite-v1:0',
+    'amazon.nova-pro-v1:0',
+  ];
+
+  it('should return the correct prompt multipliers for all models', () => {
+    const results = awsModels.map((model) => {
+      const valueKey = getValueKey(model, EModelEndpoint.bedrock);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct completion multipliers for all models', () => {
+    const results = awsModels.map((model) => {
+      const valueKey = getValueKey(model, EModelEndpoint.bedrock);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
+      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+});
+
+describe('Deepseek Model Tests', () => {
+  const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'];
+
+  it('should return the correct prompt multipliers for all models', () => {
+    const results = deepseekModels.map((model) => {
+      const valueKey = getValueKey(model);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct completion multipliers for all models', () => {
+    const results = deepseekModels.map((model) => {
+      const valueKey = getValueKey(model);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
+      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct prompt multipliers for reasoning model', () => {
+    const model = 'deepseek-reasoner';
+    const valueKey = getValueKey(model);
+    expect(valueKey).toBe(model);
+    const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+    const result = tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    expect(result).toBe(true);
+  });
+});
+
+describe('getCacheMultiplier', () => {
+  it('should return the correct cache multiplier for a given valueKey and cacheType', () => {
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-5-sonnet'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-5-sonnet'].read,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-5-haiku'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-5-haiku'].read,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-haiku'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-haiku'].read,
+    );
+  });
+
+  it('should return null if cacheType is provided but not found in cacheTokenValues', () => {
+    expect(
+      getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'unknownType' }),
+    ).toBeNull();
+  });
+
+  it('should derive the valueKey from the model if not provided', () => {
+    expect(getCacheMultiplier({ cacheType: 'write', model: 'claude-3-5-sonnet-20240620' })).toBe(
+      3.75,
+    );
+    expect(getCacheMultiplier({ cacheType: 'read', model: 'claude-3-haiku-20240307' })).toBe(0.03);
+  });
+
+  it('should return null if only model or cacheType is missing', () => {
+    expect(getCacheMultiplier({ cacheType: 'write' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'claude-3-5-sonnet' })).toBeNull();
+  });
+
+  it('should return null if derived valueKey does not match any known patterns', () => {
+    expect(getCacheMultiplier({ cacheType: 'write', model: 'gpt-4-some-other-info' })).toBeNull();
+  });
+
+  it('should handle endpointTokenConfig if provided', () => {
+    const endpointTokenConfig = {
+      'custom-model': {
+        write: 5,
+        read: 1,
+      },
+    };
+    expect(
+      getCacheMultiplier({ model: 'custom-model', cacheType: 'write', endpointTokenConfig }),
+    ).toBe(5);
+    expect(
+      getCacheMultiplier({ model: 'custom-model', cacheType: 'read', endpointTokenConfig }),
+    ).toBe(1);
+  });
+
+  it('should return null if model is not found in endpointTokenConfig', () => {
+    const endpointTokenConfig = {
+      'custom-model': {
+        write: 5,
+        read: 1,
+      },
+    };
+    expect(
+      getCacheMultiplier({ model: 'unknown-model', cacheType: 'write', endpointTokenConfig }),
+    ).toBeNull();
+  });
+
+  it('should handle models with "bedrock/" prefix', () => {
+    expect(
+      getCacheMultiplier({
+        model: 'bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0',
+        cacheType: 'write',
+      }),
+    ).toBe(3.75);
+    expect(
+      getCacheMultiplier({
+        model: 'bedrock/anthropic.claude-3-haiku-20240307-v1:0',
+        cacheType: 'read',
+      }),
+    ).toBe(0.03);
+  });
+});
+
+describe('Google Model Tests', () => {
+  const googleModels = [
+    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-pro-exp-02-05',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash-thinking',
+    'gemini-1.5-pro-latest',
+    'gemini-1.5-pro-preview-0409',
+    'gemini-pro-vision',
+    'gemini-1.0',
+    'gemini-pro',
+  ];
+
+  it('should return the correct prompt and completion rates for all models', () => {
+    const results = googleModels.map((model) => {
+      const valueKey = getValueKey(model, EModelEndpoint.google);
+      const promptRate = getMultiplier({
+        model,
+        tokenType: 'prompt',
+        endpoint: EModelEndpoint.google,
+      });
+      const completionRate = getMultiplier({
+        model,
+        tokenType: 'completion',
+        endpoint: EModelEndpoint.google,
+      });
+      return { model, valueKey, promptRate, completionRate };
+    });
+
+    results.forEach(({ valueKey, promptRate, completionRate }) => {
+      expect(promptRate).toBe(tokenValues[valueKey].prompt);
+      expect(completionRate).toBe(tokenValues[valueKey].completion);
+    });
+  });
+
+  it('should map to the correct model keys', () => {
+    const expected = {
+      'gemini-2.0-flash-lite-preview-02-05': 'gemini-2.0-flash-lite',
+      'gemini-2.0-flash-001': 'gemini-2.0-flash',
+      'gemini-2.0-flash-exp': 'gemini-2.0-flash',
+      'gemini-2.0-pro-exp-02-05': 'gemini-2.0',
+      'gemini-1.5-flash-8b': 'gemini-1.5-flash-8b',
+      'gemini-1.5-flash-thinking': 'gemini-1.5-flash',
+      'gemini-1.5-pro-latest': 'gemini-1.5',
+      'gemini-1.5-pro-preview-0409': 'gemini-1.5',
+      'gemini-pro-vision': 'gemini-pro-vision',
+      'gemini-1.0': 'gemini',
+      'gemini-pro': 'gemini',
+    };
+
+    Object.entries(expected).forEach(([model, expectedKey]) => {
+      const valueKey = getValueKey(model, EModelEndpoint.google);
+      expect(valueKey).toBe(expectedKey);
+    });
+  });
+
+  it('should handle model names with different formats', () => {
+    const testCases = [
+      { input: 'google/gemini-pro', expected: 'gemini' },
+      { input: 'gemini-pro/google', expected: 'gemini' },
+      { input: 'google/gemini-2.0-flash-lite', expected: 'gemini-2.0-flash-lite' },
+    ];
+
+    testCases.forEach(({ input, expected }) => {
+      const valueKey = getValueKey(input, EModelEndpoint.google);
+      expect(valueKey).toBe(expected);
+      expect(
+        getMultiplier({ model: input, tokenType: 'prompt', endpoint: EModelEndpoint.google }),
+      ).toBe(tokenValues[expected].prompt);
+      expect(
+        getMultiplier({ model: input, tokenType: 'completion', endpoint: EModelEndpoint.google }),
+      ).toBe(tokenValues[expected].completion);
+    });
+  });
+});
+
+describe('Grok Model Tests - Pricing', () => {
+  describe('getMultiplier', () => {
+    test('should return correct prompt and completion rates for Grok vision models', () => {
+      const models = ['grok-2-vision-1212', 'grok-2-vision', 'grok-2-vision-latest'];
+      models.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+      });
+    });
+
+    test('should return correct prompt and completion rates for Grok text models', () => {
+      const models = ['grok-2-1212', 'grok-2', 'grok-2-latest'];
+      models.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+      });
+    });
+
+    test('should return correct prompt and completion rates for Grok beta models', () => {
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'completion' })).toBe(15.0);
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'completion' })).toBe(15.0);
+    });
   });
 });

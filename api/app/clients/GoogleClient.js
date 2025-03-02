@@ -1,22 +1,25 @@
 const { google } = require('googleapis');
-const { Agent, ProxyAgent } = require('undici');
+const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
-const { GoogleVertexAI } = require('@langchain/community/llms/googlevertexai');
-const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
-const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
 const {
+  googleGenConfigSchema,
   validateVisionModel,
   getResponseSender,
   endpointSettings,
   EModelEndpoint,
+  ContentTypes,
   VisionModes,
+  ErrorTypes,
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
+const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
+const Tokenizer = require('~/server/services/Tokenizer');
+const { spendTokens } = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -28,13 +31,12 @@ const {
 } = require('./prompts');
 const BaseClient = require('./BaseClient');
 
-const loc = 'us-central1';
+const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
-const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
-// const apiEndpoint = loc + '-aiplatform.googleapis.com';
-const tokenizersCache = {};
+const endpointPrefix = `${loc}-aiplatform.googleapis.com`;
 
 const settings = endpointSettings[EModelEndpoint.google];
+const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
 
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
@@ -49,14 +51,30 @@ class GoogleClient extends BaseClient {
 
     const serviceKey = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
     this.serviceKey =
-      serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : serviceKey ?? {};
+      serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : (serviceKey ?? {});
+    /** @type {string | null | undefined} */
+    this.project_id = this.serviceKey.project_id;
     this.client_email = this.serviceKey.client_email;
     this.private_key = this.serviceKey.private_key;
-    this.project_id = this.serviceKey.project_id;
     this.access_token = null;
 
     this.apiKey = creds[AuthKeys.GOOGLE_API_KEY];
 
+    this.reverseProxyUrl = options.reverseProxyUrl;
+
+    this.authHeader = options.authHeader;
+
+    /** @type {UsageMetadata | undefined} */
+    this.usage;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'input_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'output_tokens';
+    this.visionMode = VisionModes.generative;
+    /** @type {string} */
+    this.systemMessage;
     if (options.skipSetOptions) {
       return;
     }
@@ -65,7 +83,7 @@ class GoogleClient extends BaseClient {
 
   /* Google specific methods */
   constructUrl() {
-    return `${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
+    return `https://${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
   }
 
   async getClient() {
@@ -116,34 +134,13 @@ class GoogleClient extends BaseClient {
       this.options = options;
     }
 
-    this.options.examples = (this.options.examples ?? [])
-      .filter((ex) => ex)
-      .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
-
-    const modelOptions = this.options.modelOptions || {};
-    this.modelOptions = {
-      ...modelOptions,
-      // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || settings.model.default,
-      temperature:
-        typeof modelOptions.temperature === 'undefined'
-          ? settings.temperature.default
-          : modelOptions.temperature,
-      topP: typeof modelOptions.topP === 'undefined' ? settings.topP.default : modelOptions.topP,
-      topK: typeof modelOptions.topK === 'undefined' ? settings.topK.default : modelOptions.topK,
-      // stop: modelOptions.stop // no stop method for now
-    };
+    this.modelOptions = this.options.modelOptions || {};
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     /** @type {boolean} Whether using a "GenerativeAI" Model */
-    this.isGenerativeModel = this.modelOptions.model.includes('gemini');
-    const { isGenerativeModel } = this;
-    this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
-    const { isChatModel } = this;
-    this.isTextModel =
-      !isGenerativeModel && !isChatModel && /code|text/.test(this.modelOptions.model);
-    const { isTextModel } = this;
+    this.isGenerativeModel =
+      this.modelOptions.model.includes('gemini') || this.modelOptions.model.includes('learnlm');
 
     this.maxContextTokens =
       this.options.maxContextTokens ??
@@ -179,50 +176,18 @@ class GoogleClient extends BaseClient {
     this.userLabel = this.options.userLabel || 'User';
     this.modelLabel = this.options.modelLabel || 'Assistant';
 
-    if (isChatModel || isGenerativeModel) {
-      // Use these faux tokens to help the AI understand the context since we are building the chat log ourselves.
-      // Trying to use "<|im_start|>" causes the AI to still generate "<" or "<|" at the end sometimes for some reason,
-      // without tripping the stop sequences, so I'm using "||>" instead.
-      this.startToken = '||>';
-      this.endToken = '';
-      this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
-    } else if (isTextModel) {
-      this.startToken = '||>';
-      this.endToken = '';
-      this.gptEncoder = this.constructor.getTokenizer('text-davinci-003', true, {
-        '<|im_start|>': 100264,
-        '<|im_end|>': 100265,
-      });
-    } else {
-      // Previously I was trying to use "<|endoftext|>" but there seems to be some bug with OpenAI's token counting
-      // system that causes only the first "<|endoftext|>" to be counted as 1 token, and the rest are not treated
-      // as a single token. So we're using this instead.
-      this.startToken = '||>';
-      this.endToken = '';
-      try {
-        this.gptEncoder = this.constructor.getTokenizer(this.modelOptions.model, true);
-      } catch {
-        this.gptEncoder = this.constructor.getTokenizer('text-davinci-003', true);
-      }
-    }
-
-    if (!this.modelOptions.stop) {
-      const stopTokens = [this.startToken];
-      if (this.endToken && this.endToken !== this.startToken) {
-        stopTokens.push(this.endToken);
-      }
-      stopTokens.push(`\n${this.userLabel}:`);
-      stopTokens.push('<|diff_marker|>');
-      // I chose not to do one for `modelLabel` because I've never seen it happen
-      this.modelOptions.stop = stopTokens;
-    }
-
     if (this.options.reverseProxyUrl) {
       this.completionsUrl = this.options.reverseProxyUrl;
     } else {
       this.completionsUrl = this.constructUrl();
     }
 
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
+    this.systemMessage = promptPrefix;
+    this.initializeClient();
     return this;
   }
 
@@ -254,10 +219,29 @@ class GoogleClient extends BaseClient {
   }
 
   formatMessages() {
-    return ((message) => ({
-      author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
-      content: message?.content ?? message.text,
-    })).bind(this);
+    return ((message) => {
+      const msg = {
+        author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
+        content: message?.content ?? message.text,
+      };
+
+      if (!message.image_urls?.length) {
+        return msg;
+      }
+
+      msg.content = (
+        !Array.isArray(msg.content)
+          ? [
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: msg.content,
+            },
+          ]
+          : msg.content
+      ).concat(message.image_urls);
+
+      return msg;
+    }).bind(this);
   }
 
   /**
@@ -332,7 +316,7 @@ class GoogleClient extends BaseClient {
       }
 
       this.augmentedPrompt = await this.contextHandlers.createContext();
-      this.options.promptPrefix = this.augmentedPrompt + this.options.promptPrefix;
+      this.systemMessage = this.augmentedPrompt + this.systemMessage;
     }
   }
 
@@ -355,7 +339,6 @@ class GoogleClient extends BaseClient {
           messages: [new HumanMessage(formatMessage({ message: latestMessage }))],
         },
       ],
-      parameters: this.modelOptions,
     };
     return { prompt: payload };
   }
@@ -371,23 +354,58 @@ class GoogleClient extends BaseClient {
     return { prompt: formattedMessages };
   }
 
-  async buildMessages(messages = [], parentMessageId) {
+  /**
+   * @param {TMessage[]} [messages=[]]
+   * @param {string} [parentMessageId]
+   */
+  async buildMessages(_messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
-      throw new Error(
-        '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
-      );
+      throw new Error('[GoogleClient] PaLM 2 and Codey models are no longer supported.');
     }
 
-    if (!this.project_id && this.modelOptions.model.includes('1.5')) {
-      return await this.buildGenerativeMessages(messages);
+    if (this.systemMessage) {
+      const instructionsTokenCount = this.getTokenCount(this.systemMessage);
+
+      this.maxContextTokens = this.maxContextTokens - instructionsTokenCount;
+      if (this.maxContextTokens < 0) {
+        const info = `${instructionsTokenCount} / ${this.maxContextTokens}`;
+        const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+        logger.warn(`Instructions token count exceeds max context (${info}).`);
+        throw new Error(errorMessage);
+      }
+    }
+
+    for (let i = 0; i < _messages.length; i++) {
+      const message = _messages[i];
+      if (!message.tokenCount) {
+        _messages[i].tokenCount = this.getTokenCountForMessage({
+          role: message.isCreatedByUser ? 'user' : 'assistant',
+          content: message.content ?? message.text,
+        });
+      }
+    }
+
+    const {
+      payload: messages,
+      tokenCountMap,
+      promptTokens,
+    } = await this.handleContextStrategy({
+      orderedMessages: _messages,
+      formattedMessages: _messages,
+    });
+
+    if (!this.project_id && !EXCLUDED_GENAI_MODELS.test(this.modelOptions.model)) {
+      const result = await this.buildGenerativeMessages(messages);
+      result.tokenCountMap = tokenCountMap;
+      result.promptTokens = promptTokens;
+      return result;
     }
 
     if (this.options.attachments && this.isGenerativeModel) {
-      return this.buildVisionMessages(messages, parentMessageId);
-    }
-
-    if (this.isTextModel) {
-      return this.buildMessagesPrompt(messages, parentMessageId);
+      const result = this.buildVisionMessages(messages, parentMessageId);
+      result.tokenCountMap = tokenCountMap;
+      result.promptTokens = promptTokens;
+      return result;
     }
 
     let payload = {
@@ -399,20 +417,14 @@ class GoogleClient extends BaseClient {
             .map((message) => formatMessage({ message, langChain: true })),
         },
       ],
-      parameters: this.modelOptions,
     };
 
-    if (this.options.promptPrefix) {
-      payload.instances[0].context = this.options.promptPrefix;
-    }
-
-    if (this.options.examples.length > 0) {
-      payload.instances[0].examples = this.options.examples;
+    if (this.systemMessage) {
+      payload.instances[0].context = this.systemMessage;
     }
 
     logger.debug('[GoogleClient] buildMessages', payload);
-
-    return { prompt: payload };
+    return { prompt: payload, tokenCountMap, promptTokens };
   }
 
   async buildMessagesPrompt(messages, parentMessageId) {
@@ -426,10 +438,7 @@ class GoogleClient extends BaseClient {
       parentMessageId,
     });
 
-    const formattedMessages = orderedMessages.map((message) => ({
-      author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
-      content: message?.content ?? message.text,
-    }));
+    const formattedMessages = orderedMessages.map(this.formatMessages());
 
     let lastAuthor = '';
     let groupedMessages = [];
@@ -457,14 +466,7 @@ class GoogleClient extends BaseClient {
       identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
     }
 
-    let promptPrefix = (this.options.promptPrefix || '').trim();
-    if (promptPrefix) {
-      // If the prompt prefix doesn't end with the end token, add it.
-      if (!promptPrefix.endsWith(`${this.endToken}`)) {
-        promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
-      }
-      promptPrefix = `\nContext:\n${promptPrefix}`;
-    }
+    let promptPrefix = (this.systemMessage ?? '').trim();
 
     if (identityPrefix) {
       promptPrefix = `${identityPrefix}${promptPrefix}`;
@@ -501,7 +503,7 @@ class GoogleClient extends BaseClient {
           isCreatedByUser || !isEdited
             ? `\n\n${message.author}:`
             : `${promptPrefix}\n\n${message.author}:`;
-        const messageString = `${messagePrefix}\n${message.content}${this.endToken}\n`;
+        const messageString = `${messagePrefix}\n${message.content}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         context.unshift(message);
@@ -567,69 +569,48 @@ class GoogleClient extends BaseClient {
     return { prompt, context };
   }
 
-  async _getCompletion(payload, abortController = null) {
-    if (!abortController) {
-      abortController = new AbortController();
-    }
-    const { debug } = this.options;
-    const url = this.completionsUrl;
-    if (debug) {
-      logger.debug('GoogleClient _getCompletion', { url, payload });
-    }
-    const opts = {
-      method: 'POST',
-      agent: new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
-      }),
-      signal: abortController.signal,
-    };
-
-    if (this.options.proxy) {
-      opts.agent = new ProxyAgent(this.options.proxy);
-    }
-
-    const client = await this.getClient();
-    const res = await client.request({ url, method: 'POST', data: payload });
-    logger.debug('GoogleClient _getCompletion', { res });
-    return res.data;
-  }
-
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
-    if (this.project_id && this.isTextModel) {
-      logger.debug('Creating Google VertexAI client');
-      return new GoogleVertexAI(clientOptions);
-    } else if (this.project_id && this.isChatModel) {
-      logger.debug('Creating Chat Google VertexAI client');
-      return new ChatGoogleVertexAI(clientOptions);
-    } else if (this.project_id) {
+    clientOptions.location = loc;
+    clientOptions.endpoint = endpointPrefix;
+
+    let requestOptions = null;
+    if (this.reverseProxyUrl) {
+      requestOptions = {
+        baseUrl: this.reverseProxyUrl,
+      };
+
+      if (this.authHeader) {
+        requestOptions.customHeaders = {
+          Authorization: `Bearer ${this.apiKey}`,
+        };
+      }
+    }
+
+    if (this.project_id != null) {
       logger.debug('Creating VertexAI client');
-      return new ChatVertexAI(clientOptions);
-    } else if (model.includes('1.5')) {
+      this.visionMode = undefined;
+      clientOptions.streaming = true;
+      const client = new ChatVertexAI(clientOptions);
+      client.temperature = clientOptions.temperature;
+      client.topP = clientOptions.topP;
+      client.topK = clientOptions.topK;
+      client.topLogprobs = clientOptions.topLogprobs;
+      client.frequencyPenalty = clientOptions.frequencyPenalty;
+      client.presencePenalty = clientOptions.presencePenalty;
+      client.maxOutputTokens = clientOptions.maxOutputTokens;
+      return client;
+    } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
-      return new GenAI(this.apiKey).getGenerativeModel(
-        {
-          ...clientOptions,
-          model,
-        },
-        { apiVersion: 'v1beta' },
-      );
+      return new GenAI(this.apiKey).getGenerativeModel({ model }, requestOptions);
     }
 
     logger.debug('Creating Chat Google Generative AI client');
     return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
-  async getCompletion(_payload, options = {}) {
-    const { parameters, instances } = _payload;
-    const { onProgress, abortController } = options;
-    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
-    const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
-
-    let examples;
-
-    let clientOptions = { ...parameters, maxRetries: 2 };
+  initializeClient() {
+    let clientOptions = { ...this.modelOptions };
 
     if (this.project_id) {
       clientOptions['authOptions'] = {
@@ -640,178 +621,248 @@ class GoogleClient extends BaseClient {
       };
     }
 
-    if (!parameters) {
-      clientOptions = { ...clientOptions, ...this.modelOptions };
-    }
-
     if (this.isGenerativeModel && !this.project_id) {
       clientOptions.modelName = clientOptions.model;
       delete clientOptions.model;
     }
 
-    if (_examples && _examples.length) {
-      examples = _examples
-        .map((ex) => {
-          const { input, output } = ex;
-          if (!input || !output) {
-            return undefined;
-          }
-          return {
-            input: new HumanMessage(input.content),
-            output: new AIMessage(output.content),
-          };
-        })
-        .filter((ex) => ex);
+    this.client = this.createLLM(clientOptions);
+    return this.client;
+  }
 
-      clientOptions.examples = examples;
-    }
-
-    const model = this.createLLM(clientOptions);
+  async getCompletion(_payload, options = {}) {
+    const { onProgress, abortController } = options;
+    const safetySettings = getSafetySettings(this.modelOptions.model);
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
+    const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
 
     let reply = '';
-    const messages = this.isTextModel ? _payload.trim() : _messages;
-
-    if (!this.isVisionModel && context && messages?.length > 0) {
-      messages.unshift(new SystemMessage(context));
-    }
-
-    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
-    if (modelName?.includes('1.5') && !this.project_id) {
-      /** @type {GenerativeModel} */
-      const client = model;
-      const requestOptions = {
-        contents: _payload,
-      };
-
-      if (this.options?.promptPrefix?.length) {
-        requestOptions.systemInstruction = {
-          parts: [
-            {
-              text: this.options.promptPrefix,
-            },
-          ],
+    /** @type {Error} */
+    let error;
+    try {
+      if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
+        /** @type {GenerativeModel} */
+        const client = this.client;
+        /** @type {GenerateContentRequest} */
+        const requestOptions = {
+          safetySettings,
+          contents: _payload,
+          generationConfig: googleGenConfigSchema.parse(this.modelOptions),
         };
+
+        const promptPrefix = (this.systemMessage ?? '').trim();
+        if (promptPrefix.length) {
+          requestOptions.systemInstruction = {
+            parts: [
+              {
+                text: promptPrefix,
+              },
+            ],
+          };
+        }
+
+        const delay = modelName.includes('flash') ? 8 : 15;
+        /** @type {GenAIUsageMetadata} */
+        let usageMetadata;
+
+        abortController.signal.addEventListener(
+          'abort',
+          () => {
+            logger.warn('[GoogleClient] Request was aborted', abortController.signal.reason);
+          },
+          { once: true },
+        );
+
+        const result = await client.generateContentStream(requestOptions, {
+          signal: abortController.signal,
+        });
+        for await (const chunk of result.stream) {
+          usageMetadata = !usageMetadata
+            ? chunk?.usageMetadata
+            : Object.assign(usageMetadata, chunk?.usageMetadata);
+          const chunkText = chunk.text();
+          await this.generateTextStream(chunkText, onProgress, {
+            delay,
+          });
+          reply += chunkText;
+          await sleep(streamRate);
+        }
+
+        if (usageMetadata) {
+          this.usage = {
+            input_tokens: usageMetadata.promptTokenCount,
+            output_tokens: usageMetadata.candidatesTokenCount,
+          };
+        }
+
+        return reply;
       }
 
-      const safetySettings = _payload.safetySettings;
-      requestOptions.safetySettings = safetySettings;
+      const { instances } = _payload;
+      const { messages: messages, context } = instances?.[0] ?? {};
 
-      const delay = modelName.includes('flash') ? 8 : 14;
-      const result = await client.generateContentStream(requestOptions);
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
+      if (!this.isVisionModel && context && messages?.length > 0) {
+        messages.unshift(new SystemMessage(context));
+      }
+
+      /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
+      let usageMetadata;
+      /** @type {ChatVertexAI} */
+      const client = this.client;
+      const stream = await client.stream(messages, {
+        signal: abortController.signal,
+        streamUsage: true,
+        safetySettings,
+      });
+
+      let delay = this.options.streamRate || 8;
+
+      if (!this.options.streamRate) {
+        if (this.isGenerativeModel) {
+          delay = 15;
+        }
+        if (modelName.includes('flash')) {
+          delay = 5;
+        }
+      }
+
+      for await (const chunk of stream) {
+        if (chunk?.usage_metadata) {
+          const metadata = chunk.usage_metadata;
+          for (const key in metadata) {
+            if (Number.isNaN(metadata[key])) {
+              delete metadata[key];
+            }
+          }
+
+          usageMetadata = !usageMetadata ? metadata : concat(usageMetadata, metadata);
+        }
+
+        const chunkText = chunk?.content ?? '';
         await this.generateTextStream(chunkText, onProgress, {
           delay,
         });
         reply += chunkText;
-        await sleep(streamRate);
       }
-      return reply;
+
+      if (usageMetadata) {
+        this.usage = usageMetadata;
+      }
+    } catch (e) {
+      error = e;
+      logger.error('[GoogleClient] There was an issue generating the completion', e);
     }
 
-    const safetySettings = _payload.safetySettings;
-    const stream = await model.stream(messages, {
-      signal: abortController.signal,
-      timeout: 7000,
-      safetySettings: safetySettings,
-    });
-
-    let delay = this.options.streamRate || 8;
-
-    if (!this.options.streamRate) {
-      if (this.isGenerativeModel) {
-        delay = 12;
-      }
-      if (modelName.includes('flash')) {
-        delay = 5;
-      }
+    if (error != null && reply === '') {
+      const errorMessage = `{ "type": "${ErrorTypes.GoogleError}", "info": "${
+        error.message ?? 'The Google provider failed to generate content, please contact the Admin.'
+      }" }`;
+      throw new Error(errorMessage);
     }
-
-    for await (const chunk of stream) {
-      const chunkText = chunk?.content ?? chunk;
-      await this.generateTextStream(chunkText, onProgress, {
-        delay,
-      });
-      reply += chunkText;
-    }
-
     return reply;
+  }
+
+  /**
+   * Get stream usage as returned by this client's API response.
+   * @returns {UsageMetadata} The stream usage object.
+   */
+  getStreamUsage() {
+    return this.usage;
+  }
+
+  /**
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
+   * Edge case: If the calculation results in a negative value, it returns the original estimate.
+   * If revisiting a conversation with a chat history entirely composed of token estimates,
+   * the cumulative token count going forward should become more accurate as the conversation progresses.
+   * @param {Object} params - The parameters for the calculation.
+   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
+   * @param {string} params.currentMessageId - The ID of the current message to calculate.
+   * @param {UsageMetadata} params.usage - The usage object returned by the API.
+   * @returns {number} The correct token count for the current user message.
+   */
+  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
+    const originalEstimate = tokenCountMap[currentMessageId] || 0;
+
+    if (!usage || typeof usage.input_tokens !== 'number') {
+      return originalEstimate;
+    }
+
+    tokenCountMap[currentMessageId] = 0;
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
+      const numCount = Number(count);
+      return sum + (isNaN(numCount) ? 0 : numCount);
+    }, 0);
+    const totalInputTokens = usage.input_tokens ?? 0;
+    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
+    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
+  }
+
+  /**
+   * @param {object} params
+   * @param {number} params.promptTokens
+   * @param {number} params.completionTokens
+   * @param {UsageMetadata} [params.usage]
+   * @param {string} [params.model]
+   * @param {string} [params.context='message']
+   * @returns {Promise<void>}
+   */
+  async recordTokenUsage({ promptTokens, completionTokens, model, context = 'message' }) {
+    await spendTokens(
+      {
+        context,
+        user: this.user ?? this.options.req?.user?.id,
+        conversationId: this.conversationId,
+        model: model ?? this.modelOptions.model,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+      },
+      { promptTokens, completionTokens },
+    );
   }
 
   /**
    * Stripped-down logic for generating a title. This uses the non-streaming APIs, since the user does not see titles streaming
    */
   async titleChatCompletion(_payload, options = {}) {
-    const { abortController } = options;
-    const { parameters, instances } = _payload;
-    const { messages: _messages, examples: _examples } = instances?.[0] ?? {};
-
-    let clientOptions = { ...parameters, maxRetries: 2 };
-
-    logger.debug('Initialized title client options');
-
-    if (this.project_id) {
-      clientOptions['authOptions'] = {
-        credentials: {
-          ...this.serviceKey,
-        },
-        projectId: this.project_id,
-      };
-    }
-
-    if (!parameters) {
-      clientOptions = { ...clientOptions, ...this.modelOptions };
-    }
-
-    if (this.isGenerativeModel && !this.project_id) {
-      clientOptions.modelName = clientOptions.model;
-      delete clientOptions.model;
-    }
-
-    const model = this.createLLM(clientOptions);
-
     let reply = '';
-    const messages = this.isTextModel ? _payload.trim() : _messages;
+    const { abortController } = options;
 
-    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
-    if (modelName?.includes('1.5') && !this.project_id) {
-      logger.debug('Identified titling model as 1.5 version');
+    const model = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    const safetySettings = getSafetySettings(model);
+    if (!EXCLUDED_GENAI_MODELS.test(model) && !this.project_id) {
+      logger.debug('Identified titling model as GenAI version');
       /** @type {GenerativeModel} */
-      const client = model;
+      const client = this.client;
       const requestOptions = {
         contents: _payload,
+        safetySettings,
+        generationConfig: {
+          temperature: 0.5,
+        },
       };
 
-      if (this.options?.promptPrefix?.length) {
-        requestOptions.systemInstruction = {
-          parts: [
-            {
-              text: this.options.promptPrefix,
-            },
-          ],
-        };
-      }
-
-      const safetySettings = _payload.safetySettings;
-      requestOptions.safetySettings = safetySettings;
-
       const result = await client.generateContent(requestOptions);
-
       reply = result.response?.text();
-
       return reply;
     } else {
-      logger.debug('Beginning titling');
-      const safetySettings = _payload.safetySettings;
-
-      const titleResponse = await model.invoke(messages, {
+      const { instances } = _payload;
+      const { messages } = instances?.[0] ?? {};
+      const titleResponse = await this.client.invoke(messages, {
         signal: abortController.signal,
         timeout: 7000,
-        safetySettings: safetySettings,
+        safetySettings,
       });
 
-      reply = titleResponse.content;
+      if (titleResponse.usage_metadata) {
+        await this.recordTokenUsage({
+          model,
+          promptTokens: titleResponse.usage_metadata.input_tokens,
+          completionTokens: titleResponse.usage_metadata.output_tokens,
+          context: 'title',
+        });
+      }
 
+      reply = titleResponse.content;
       return reply;
     }
   }
@@ -835,15 +886,8 @@ class GoogleClient extends BaseClient {
       },
     ]);
 
-    if (this.isVisionModel) {
-      logger.warn(
-        `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
-      );
-
-      payload.parameters = { ...payload.parameters, model: settings.model.default };
-    }
-
     try {
+      this.initializeClient();
       title = await this.titleChatCompletion(payload, {
         abortController: new AbortController(),
         onProgress: () => {},
@@ -857,7 +901,10 @@ class GoogleClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      endpointType: null,
+      artifacts: this.options.artifacts,
       promptPrefix: this.options.promptPrefix,
+      maxContextTokens: this.options.maxContextTokens,
       modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
@@ -871,55 +918,39 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
-    const modelName = payload.parameters?.model;
-
-    if (modelName && modelName.toLowerCase().includes('gemini')) {
-      const safetySettings = [
-        {
-          category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-          threshold:
-            process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_HATE_SPEECH',
-          threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_HARASSMENT',
-          threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-          threshold:
-            process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-      ];
-
-      payload.safetySettings = safetySettings;
-    }
-
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
   }
 
-  /* TO-DO: Handle tokens with Google tokenization NOTE: these are required */
-  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
-    if (tokenizersCache[encoding]) {
-      return tokenizersCache[encoding];
-    }
-    let tokenizer;
-    if (isModelName) {
-      tokenizer = encodingForModel(encoding, extendSpecialTokens);
-    } else {
-      tokenizer = getEncoding(encoding, extendSpecialTokens);
-    }
-    tokenizersCache[encoding] = tokenizer;
-    return tokenizer;
+  getEncoding() {
+    return 'cl100k_base';
   }
 
+  async getVertexTokenCount(text) {
+    /** @type {ChatVertexAI} */
+    const client = this.client ?? this.initializeClient();
+    const connection = client.connection;
+    const gAuthClient = connection.client;
+    const tokenEndpoint = `https://${connection._endpoint}/${connection.apiVersion}/projects/${this.project_id}/locations/${connection._location}/publishers/google/models/${connection.model}/:countTokens`;
+    const result = await gAuthClient.request({
+      url: tokenEndpoint,
+      method: 'POST',
+      data: {
+        contents: [{ role: 'user', parts: [{ text }] }],
+      },
+    });
+    return result;
+  }
+
+  /**
+   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+   * @param {string} text - The text to get the token count for.
+   * @returns {number} The token count of the given text.
+   */
   getTokenCount(text) {
-    return this.gptEncoder.encode(text, 'all').length;
+    const encoding = this.getEncoding();
+    return Tokenizer.getTokenCount(text, encoding);
   }
 }
 

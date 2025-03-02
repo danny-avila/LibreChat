@@ -20,3 +20,24 @@ import 'jest-canvas-mock';
 beforeEach(() => {
   jest.clearAllMocks();
 });
+
+jest.mock('react-i18next', () => {
+  const actual = jest.requireActual('react-i18next');
+  return {
+    ...actual,
+    useTranslation: () => {
+      const i18n = require('~/locales/i18n').default;
+      return {
+        t: (key, options) => i18n.t(key, options),
+        i18n: {
+          ...i18n,
+          changeLanguage: jest.fn(),
+        },
+      };
+    },
+    initReactI18next: {
+      type: '3rdParty',
+      init: jest.fn(),
+    },
+  };
+});

@@ -1,6 +1,6 @@
-import { Button, Dialog, DialogTrigger, Label } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { TrashIcon } from '~/components/svg';
+import { Trash2 } from 'lucide-react';
+import { Button, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize } from '~/hooks';
 
 const DeleteVersion = ({
@@ -15,20 +15,22 @@ const DeleteVersion = ({
   const localize = useLocalize();
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
+    <OGDialog>
+      <OGDialogTrigger asChild>
         <Button
-          size={'sm'}
-          className="h-10 w-10 border border-transparent bg-red-600 text-red-500 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800"
+          variant="destructive"
+          size="sm"
+          aria-label="Delete version"
+          className="h-10 w-10 p-0.5"
           disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();
           }}
         >
-          <TrashIcon className="icon-lg cursor-pointer text-white dark:text-white" />
+          <Trash2 className="size-5 cursor-pointer text-white" />
         </Button>
-      </DialogTrigger>
-      <DialogTemplate
+      </OGDialogTrigger>
+      <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_prompt')}
         className="max-w-[450px]"
@@ -40,7 +42,7 @@ const DeleteVersion = ({
                   htmlFor="dialog-delete-confirm-prompt"
                   className="text-left text-sm font-medium"
                 >
-                  {localize('com_ui_delete_confirm_prompt_version_var', name)}
+                  {localize('com_ui_delete_confirm_prompt_version_var', { 0: name })}
                 </Label>
               </div>
             </div>
@@ -49,11 +51,11 @@ const DeleteVersion = ({
         selection={{
           selectHandler,
           selectClasses:
-            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+            'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-white',
           selectText: localize('com_ui_delete'),
         }}
       />
-    </Dialog>
+    </OGDialog>
   );
 };
 

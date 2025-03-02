@@ -1,5 +1,3 @@
-version: '3.4'
-
 # Please consult our docs for more info: https://www.librechat.ai/docs/configuration/docker_override
 
 # TO USE THIS FILE, FIRST UNCOMMENT THE LINE ('services:')
@@ -100,6 +98,9 @@ version: '3.4'
 # # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
 #  rag_api:
 #    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+# # For Linux user: 
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
 
 # # ADD OLLAMA
 #  ollama:

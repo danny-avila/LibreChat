@@ -4,6 +4,7 @@ const traverse = require('traverse');
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
+const CONSOLE_JSON_STRING_LENGTH = parseInt(process.env.CONSOLE_JSON_STRING_LENGTH) || 255;
 
 const sensitiveKeys = [
   /^(sk-)[^\s]+/, // OpenAI API key pattern
@@ -109,6 +110,14 @@ const condenseArray = (item) => {
  * @returns {string} - The formatted log message.
  */
 const debugTraverse = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
+  if (!message) {
+    return `${timestamp} ${level}`;
+  }
+
+  if (!message?.trim || typeof message !== 'string') {
+    return `${timestamp} ${level}: ${JSON.stringify(message)}`;
+  }
+
   let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), 150)}`;
   try {
     if (level !== 'debug') {
@@ -178,8 +187,45 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
   }
 });
 
+const jsonTruncateFormat = winston.format((info) => {
+  const truncateLongStrings = (str, maxLength) => {
+    return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
+  };
+
+  const seen = new WeakSet();
+
+  const truncateObject = (obj) => {
+    if (typeof obj !== 'object' || obj === null) {
+      return obj;
+    }
+
+    // Handle circular references
+    if (seen.has(obj)) {
+      return '[Circular]';
+    }
+    seen.add(obj);
+
+    if (Array.isArray(obj)) {
+      return obj.map((item) => truncateObject(item));
+    }
+
+    const newObj = {};
+    Object.entries(obj).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        newObj[key] = truncateLongStrings(value, CONSOLE_JSON_STRING_LENGTH);
+      } else {
+        newObj[key] = truncateObject(value);
+      }
+    });
+    return newObj;
+  };
+
+  return truncateObject(info);
+});
+
 module.exports = {
   redactFormat,
   redactMessage,
   debugTraverse,
+  jsonTruncateFormat,
 };

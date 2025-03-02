@@ -33,9 +33,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Data Provider
+      - name: Install Data Provider Package
         run: npm run build:data-provider
-      
+
+      - name: Install MCP Package
+        run: npm run build:mcp
+
       - name: Create empty auth.json file
         run: |
           mkdir -p api/data
@@ -60,7 +63,5 @@ jobs:
       - name: Run librechat-data-provider unit tests
         run: cd packages/data-provider && npm run test:ci
 
-      - name: Run linters
-        uses: wearerequired/lint-action@v2
-        with:
-          eslint: true
+      - name: Run librechat-mcp unit tests
+        run: cd packages/mcp && npm run test:ci

@@ -1,5 +1,4 @@
 const {
-  CacheKeys,
   SystemRoles,
   EModelEndpoint,
   defaultOrderQuery,
@@ -9,7 +8,7 @@ const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
-const { getLogStores } = require('~/cache');
+const { getEndpointsConfig } = require('~/server/services/Config');
 
 /**
  * @param {Express.Request} req
@@ -23,11 +22,8 @@ const getCurrentVersion = async (req, endpoint) => {
     version = `v${req.body.version}`;
   }
   if (!version && endpoint) {
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    const cachedEndpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
-    version = `v${
-      cachedEndpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint]
-    }`;
+    const endpointsConfig = await getEndpointsConfig(req);
+    version = `v${endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint]}`;
   }
   if (!version?.startsWith('v') && version.length !== 2) {
     throw new Error(`[${req.baseUrl}] Invalid version: ${version}`);
@@ -64,7 +60,7 @@ const _listAssistants = async ({ req, res, version, query }) => {
  * @param {object} params.res - The response object, used for initializing the client.
  * @param {string} params.version - The API version to use.
  * @param {Omit<AssistantListParams, 'endpoint'>} params.query - The query parameters to list assistants (e.g., limit, order).
- * @returns {Promise<object>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
+ * @returns {Promise<Array<Assistant>>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
  */
 const listAllAssistants = async ({ req, res, version, query }) => {
   /** @type {{ openai: OpenAIClient }} */

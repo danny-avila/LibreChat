@@ -5,11 +5,13 @@ const {
   saveURLToFirebase,
   deleteFirebaseFile,
   saveBufferToFirebase,
+  uploadFileToFirebase,
   uploadImageToFirebase,
   processFirebaseAvatar,
   getFirebaseFileStream,
 } = require('./Firebase');
 const {
+  uploadLocalFile,
   getLocalFileURL,
   saveFileFromURL,
   saveLocalBuffer,
@@ -30,6 +32,7 @@ const {
   processS3Avatar,
 } = require('./S3');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
+const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
 
 /**
@@ -37,9 +40,7 @@ const { uploadVectors, deleteVectors } = require('./VectorDB');
  *
  * */
 const firebaseStrategy = () => ({
-  // saveFile:
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadFileToFirebase,
   saveURL: saveURLToFirebase,
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
@@ -55,8 +56,7 @@ const firebaseStrategy = () => ({
  *
  * */
 const localStrategy = () => ({
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,
@@ -130,6 +130,30 @@ const openAIStrategy = () => ({
   getDownloadStream: getOpenAIFileStream,
 });
 
+/**
+ * Code Output Strategy Functions
+ *
+ * Note: null values mean that the strategy is not supported.
+ * */
+const codeOutputStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  handleFileUpload: uploadCodeEnvFile,
+  getDownloadStream: getCodeOutputDownloadStream,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -144,6 +168,8 @@ const getStrategyFunctions = (fileSource) => {
     return vectorStrategy();
   } else if (fileSource === FileSources.s3) {
     return s3Strategy();
+  } else if (fileSource === FileSources.execute_code) {
+    return codeOutputStrategy();
   } else {
     throw new Error('Invalid file source');
   }

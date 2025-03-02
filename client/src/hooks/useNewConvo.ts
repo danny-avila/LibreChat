@@ -1,11 +1,14 @@
 import { useCallback, useRef } from 'react';
-import {
-  useGetModelsQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-} from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
-import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  Constants,
+  FileSources,
+  EModelEndpoint,
+  isParamEndpoint,
+  LocalStorageKeys,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
   TPreset,
@@ -23,8 +26,8 @@ import {
   getModelSpecIconURL,
   updateLastSelectedModel,
 } from '~/utils';
+import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
-import { useDeleteFilesMutation } from '~/data-provider';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
@@ -34,9 +37,10 @@ const useNewConvo = (index = 0) => {
   const { data: startupConfig } = useGetStartupConfig();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
-  const clearAllLatestMessages = store.useClearLatestMessages();
   const { setConversation } = store.useCreateConversationAtom(index);
+  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
@@ -64,10 +68,11 @@ const useNewConvo = (index = 0) => {
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
         keepAddedConvos?: boolean,
+        disableFocus?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
-        const buildDefaultConversation = endpoint === null || buildDefault;
+        const buildDefaultConversation = (endpoint === null || buildDefault) ?? false;
         const activePreset =
           // use default preset only when it's defined,
           // preset is not provided,
@@ -81,10 +86,14 @@ const useNewConvo = (index = 0) => {
             : preset;
 
         if (buildDefaultConversation) {
-          const defaultEndpoint = getDefaultEndpoint({
+          let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
+
+          if (!defaultEndpoint) {
+            defaultEndpoint = Object.keys(endpointsConfig ?? {})[0] as EModelEndpoint;
+          }
 
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
           if (!conversation.endpointType && endpointType) {
@@ -95,15 +104,16 @@ const useNewConvo = (index = 0) => {
 
           const isAssistantEndpoint = isAssistantsEndpoint(defaultEndpoint);
           const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
+          const currentAssistantId = conversation.assistant_id ?? '';
+          const currentAssistant = assistantsListMap[defaultEndpoint]?.[currentAssistantId] as
+            | AssistantListItem
+            | undefined;
 
-          if (
-            conversation.assistant_id &&
-            !assistantsListMap[defaultEndpoint]?.[conversation.assistant_id]
-          ) {
+          if (currentAssistantId && !currentAssistant) {
             conversation.assistant_id = undefined;
           }
 
-          if (!conversation.assistant_id && isAssistantEndpoint) {
+          if (!currentAssistantId && isAssistantEndpoint) {
             conversation.assistant_id =
               localStorage.getItem(
                 `${LocalStorageKeys.ASST_ID_PREFIX}${index}${defaultEndpoint}`,
@@ -111,11 +121,11 @@ const useNewConvo = (index = 0) => {
           }
 
           if (
-            conversation.assistant_id &&
+            currentAssistantId &&
             isAssistantEndpoint &&
-            conversation.conversationId === 'new'
+            conversation.conversationId === Constants.NEW_CONVO
           ) {
-            const assistant = assistants.find((asst) => asst.id === conversation.assistant_id);
+            const assistant = assistants.find((asst) => asst.id === currentAssistantId);
             conversation.model = assistant?.model;
             updateLastSelectedModel({
               endpoint: defaultEndpoint,
@@ -123,7 +133,7 @@ const useNewConvo = (index = 0) => {
             });
           }
 
-          if (conversation.assistant_id && !isAssistantEndpoint) {
+          if (currentAssistantId && !isAssistantEndpoint) {
             conversation.assistant_id = undefined;
           }
 
@@ -136,24 +146,27 @@ const useNewConvo = (index = 0) => {
           });
         }
 
-        if (!keepAddedConvos) {
+        if (!(keepAddedConvos ?? false)) {
           clearAllConversations(true);
         }
         setConversation(conversation);
         setSubmission({} as TSubmission);
-        if (!keepLatestMessage) {
+        if (!(keepLatestMessage ?? false)) {
           clearAllLatestMessages();
         }
 
-        if (conversation.conversationId === 'new' && !modelsData) {
-          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE);
+        if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
+          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
             document.title = appTitle;
           }
-          navigate('/c/new');
+          navigate(`/c/${Constants.NEW_CONVO}`);
         }
 
         clearTimeout(timeoutIdRef.current);
+        if (disableFocus === true) {
+          return;
+        }
         timeoutIdRef.current = setTimeout(() => {
           const textarea = document.getElementById(mainTextareaId);
           if (textarea) {
@@ -165,10 +178,11 @@ const useNewConvo = (index = 0) => {
   );
 
   const newConversation = useCallback(
-    ({
-      template = {},
+    function createNewConvo({
+      template: _template = {},
       preset: _preset,
       modelsData,
+      disableFocus,
       buildDefault = true,
       keepLatestMessage = false,
       keepAddedConvos = false,
@@ -177,13 +191,26 @@ const useNewConvo = (index = 0) => {
       preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      disableFocus?: boolean;
       keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
-    } = {}) => {
+    } = {}) {
       pauseGlobalAudio();
+      if (isTemporary) {
+        setIsTemporary(false);
+      }
+
+      const templateConvoId = _template.conversationId ?? '';
+      const paramEndpoint =
+        isParamEndpoint(_template.endpoint ?? '', _template.endpointType ?? '') === true ||
+        isParamEndpoint(_preset?.endpoint ?? '', _preset?.endpointType ?? '');
+      const template =
+        paramEndpoint === true && templateConvoId && templateConvoId === Constants.NEW_CONVO
+          ? { endpoint: _template.endpoint }
+          : _template;
 
       const conversation = {
-        conversationId: 'new',
+        conversationId: Constants.NEW_CONVO as string,
         title: 'New Chat',
         endpoint: null,
         ...template,
@@ -193,7 +220,12 @@ const useNewConvo = (index = 0) => {
 
       let preset = _preset;
       const defaultModelSpec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
-      if (!preset && startupConfig && startupConfig.modelSpecs?.prioritize && defaultModelSpec) {
+      if (
+        !preset &&
+        startupConfig &&
+        startupConfig.modelSpecs?.prioritize === true &&
+        defaultModelSpec
+      ) {
         preset = {
           ...defaultModelSpec.preset,
           iconURL: getModelSpecIconURL(defaultModelSpec),
@@ -203,10 +235,17 @@ const useNewConvo = (index = 0) => {
 
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
+          .filter(
+            (file) =>
+              file.filepath != null &&
+              file.filepath !== '' &&
+              file.source &&
+              !(file.embedded ?? false) &&
+              file.temp_file_id,
+          )
           .map((file) => ({
             file_id: file.file_id,
-            embedded: !!file.embedded,
+            embedded: !!(file.embedded ?? false),
             filepath: file.filepath as string,
             source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));
@@ -226,6 +265,7 @@ const useNewConvo = (index = 0) => {
         buildDefault,
         keepLatestMessage,
         keepAddedConvos,
+        disableFocus,
       );
     },
     [

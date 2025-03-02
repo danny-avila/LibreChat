@@ -1,136 +1,140 @@
 import {
-  ToolCallTypes,
+  Tools,
   ContentTypes,
+  ToolCallTypes,
   imageGenTools,
   isImageVisionTool,
 } from 'librechat-data-provider';
-import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
-import type { TDisplayProps } from '~/common';
+import { memo } from 'react';
+import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import { ErrorMessage } from './MessageContent';
+import ExecuteCode from './Parts/ExecuteCode';
 import RetrievalCall from './RetrievalCall';
+import Reasoning from './Parts/Reasoning';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import ToolCall from './ToolCall';
-import Markdown from './Markdown';
 import ImageGen from './ImageGen';
+import Text from './Parts/Text';
 import Image from './Image';
-import { cn } from '~/utils';
 
-// import EditMessage from './EditMessage';
-
-// Display Message Component
-const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: TDisplayProps) => {
-  return (
-    <div
-      className={cn(
-        showCursor && !!text?.length ? 'result-streaming' : '',
-        'markdown prose dark:prose-invert light w-full break-words',
-        isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
-      )}
-    >
-      {!isCreatedByUser ? (
-        <Markdown content={text} message={message} showCursor={showCursor} />
-      ) : (
-        <>{text}</>
-      )}
-    </div>
-  );
-};
-
-export default function Part({
-  part,
-  showCursor,
-  isSubmitting,
-  message,
-}: {
-  part: TMessageContentParts;
+type PartProps = {
+  part?: TMessageContentParts;
   isSubmitting: boolean;
   showCursor: boolean;
-  message: TMessage;
-}) {
+  isCreatedByUser: boolean;
+  attachments?: TAttachment[];
+};
+
+const Part = memo(({ part, isSubmitting, attachments, showCursor, isCreatedByUser }: PartProps) => {
   if (!part) {
     return null;
   }
 
   if (part.type === ContentTypes.ERROR) {
-    return <ErrorMessage message={message} text={part[ContentTypes.TEXT].value} className="my-2" />;
+    return <ErrorMessage text={part[ContentTypes.TEXT].value} className="my-2" />;
   } else if (part.type === ContentTypes.TEXT) {
-    // Access the value property
+    const text = typeof part.text === 'string' ? part.text : part.text.value;
+
+    if (typeof text !== 'string') {
+      return null;
+    }
+    if (part.tool_call_ids != null && !text) {
+      return null;
+    }
     return (
-      <Container message={message}>
-        <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
-          <DisplayMessage
-            text={part[ContentTypes.TEXT].value}
-            isCreatedByUser={message.isCreatedByUser}
-            message={message}
-            showCursor={showCursor}
-          />
-        </div>
+      <Container>
+        <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
       </Container>
     );
-  } else if (
-    part.type === ContentTypes.TOOL_CALL &&
-    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.CODE_INTERPRETER
-  ) {
+  } else if (part.type === ContentTypes.THINK) {
+    const reasoning = typeof part.think === 'string' ? part.think : part.think.value;
+    if (typeof reasoning !== 'string') {
+      return null;
+    }
+    return <Reasoning reasoning={reasoning} />;
+  } else if (part.type === ContentTypes.TOOL_CALL) {
     const toolCall = part[ContentTypes.TOOL_CALL];
-    const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
-    return (
-      <CodeAnalyze
-        initialProgress={toolCall.progress ?? 0.1}
-        code={code_interpreter.input}
-        outputs={code_interpreter.outputs ?? []}
-        isSubmitting={isSubmitting}
-      />
-    );
-  } else if (
-    part.type === ContentTypes.TOOL_CALL &&
-    (part[ContentTypes.TOOL_CALL].type === ToolCallTypes.RETRIEVAL ||
-      part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FILE_SEARCH)
-  ) {
-    const toolCall = part[ContentTypes.TOOL_CALL];
-    return <RetrievalCall initialProgress={toolCall.progress ?? 0.1} isSubmitting={isSubmitting} />;
-  } else if (
-    part.type === ContentTypes.TOOL_CALL &&
-    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION &&
-    imageGenTools.has(part[ContentTypes.TOOL_CALL].function.name)
-  ) {
-    const toolCall = part[ContentTypes.TOOL_CALL];
-    return (
-      <ImageGen initialProgress={toolCall.progress ?? 0.1} args={toolCall.function.arguments} />
-    );
-  } else if (
-    part.type === ContentTypes.TOOL_CALL &&
-    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION
-  ) {
-    const toolCall = part[ContentTypes.TOOL_CALL];
-    if (isImageVisionTool(toolCall)) {
-      if (isSubmitting && showCursor) {
-        return (
-          <Container message={message}>
-            <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
-              <DisplayMessage
-                text={''}
-                isCreatedByUser={message.isCreatedByUser}
-                message={message}
-                showCursor={showCursor}
-              />
-            </div>
-          </Container>
-        );
-      }
 
+    if (!toolCall) {
       return null;
     }
 
-    return (
-      <ToolCall
-        initialProgress={toolCall.progress ?? 0.1}
-        isSubmitting={isSubmitting}
-        args={toolCall.function.arguments}
-        name={toolCall.function.name}
-        output={toolCall.function.output}
-      />
-    );
+    const isToolCall =
+      'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
+    if (isToolCall && toolCall.name === Tools.execute_code) {
+      return (
+        <ExecuteCode
+          args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+        />
+      );
+    } else if (isToolCall) {
+      return (
+        <ToolCall
+          args={toolCall.args ?? ''}
+          name={toolCall.name || ''}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+          auth={toolCall.auth}
+          expires_at={toolCall.expires_at}
+        />
+      );
+    } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
+      const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
+      return (
+        <CodeAnalyze
+          initialProgress={toolCall.progress ?? 0.1}
+          code={code_interpreter.input}
+          outputs={code_interpreter.outputs ?? []}
+          isSubmitting={isSubmitting}
+        />
+      );
+    } else if (
+      toolCall.type === ToolCallTypes.RETRIEVAL ||
+      toolCall.type === ToolCallTypes.FILE_SEARCH
+    ) {
+      return (
+        <RetrievalCall initialProgress={toolCall.progress ?? 0.1} isSubmitting={isSubmitting} />
+      );
+    } else if (
+      toolCall.type === ToolCallTypes.FUNCTION &&
+      ToolCallTypes.FUNCTION in toolCall &&
+      imageGenTools.has(toolCall.function.name)
+    ) {
+      return (
+        <ImageGen
+          initialProgress={toolCall.progress ?? 0.1}
+          args={toolCall.function.arguments as string}
+        />
+      );
+    } else if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
+      if (isImageVisionTool(toolCall)) {
+        if (isSubmitting && showCursor) {
+          return (
+            <Container>
+              <Text text={''} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
+            </Container>
+          );
+        }
+        return null;
+      }
+
+      return (
+        <ToolCall
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          args={toolCall.function.arguments as string}
+          name={toolCall.function.name}
+          output={toolCall.function.output}
+        />
+      );
+    }
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
     const height = imageFile.height ?? 1920;
@@ -145,11 +149,11 @@ export default function Part({
           height: height + 'px',
           width: width + 'px',
         }}
-        // n={imageFiles.length}
-        // i={i}
       />
     );
   }
 
   return null;
-}
+});
+
+export default Part;

@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Variable } from 'lucide-react';
-import { extractUniqueVariables, cn } from '~/utils';
+import ReactMarkdown from 'react-markdown';
+import { cn, extractUniqueVariables } from '~/utils';
+import { CodeVariableGfm } from './Markdown';
 import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
@@ -12,7 +14,13 @@ const specialVariables = {
 const specialVariableClasses =
   'bg-yellow-500/25 text-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
 
-const PromptVariables = ({ promptText }: { promptText: string }) => {
+const PromptVariables = ({
+  promptText,
+  showInfo = true,
+}: {
+  promptText: string;
+  showInfo?: boolean;
+}) => {
   const localize = useLocalize();
 
   const variables = useMemo(() => {
@@ -20,37 +28,60 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
   }, [promptText]);
 
   return (
-    <div>
-      <h3 className="flex items-center gap-2 rounded-t-lg border border-border-medium py-2 pl-4 text-base font-semibold text-text-secondary">
-        <Variable className="icon-sm" />
+    <div className="rounded-xl border border-border-light bg-transparent p-4 shadow-md">
+      <h3 className="flex items-center gap-2 py-2 text-lg font-semibold text-text-primary">
+        <Variable className="icon-sm" aria-hidden="true" />
         {localize('com_ui_variables')}
       </h3>
-      <div className="flex w-full flex-row flex-wrap rounded-b-lg border border-border-medium p-4 md:min-h-16">
+      <div className="flex flex-col space-y-4">
         {variables.length ? (
-          <div className="flex h-7 items-center">
+          <div className="flex flex-wrap gap-2">
             {variables.map((variable, index) => (
-              <label
+              <span
                 className={cn(
-                  'mr-1 rounded-full border border-border-medium px-2 text-text-secondary',
-                  specialVariables[variable.toLowerCase()] ? specialVariableClasses : '',
+                  'rounded-full border border-border-light px-3 py-1 text-text-primary',
+                  specialVariables[variable.toLowerCase()] != null ? specialVariableClasses : '',
                 )}
                 key={index}
               >
-                {specialVariables[variable.toLowerCase()] ? variable.toLowerCase() : variable}
-              </label>
+                {specialVariables[variable.toLowerCase()] != null
+                  ? variable.toLowerCase()
+                  : variable}
+              </span>
             ))}
           </div>
         ) : (
-          <div className="flex h-7 items-center">
-            <span className="text-xs text-text-tertiary md:text-sm">
+          <div className="text-sm text-text-secondary">
+            <ReactMarkdown components={{ code: CodeVariableGfm }}>
               {localize('com_ui_variables_info')}
-            </span>
+            </ReactMarkdown>
           </div>
         )}
-        <Separator className="my-3 bg-border-medium" />
-        <span className="text-xs text-text-tertiary md:text-sm">
-          {localize('com_ui_special_variables')}
-        </span>
+        <Separator className="my-3 text-text-primary" />
+        {showInfo && (
+          <div className="space-y-4">
+            <div>
+              <span className="text-sm font-medium text-text-primary">
+                {localize('com_ui_special_variables')}
+              </span>
+              <span className="text-sm text-text-secondary">
+                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                  {localize('com_ui_special_variables_info')}
+                </ReactMarkdown>
+              </span>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-text-primary">
+                {localize('com_ui_dropdown_variables')}
+              </span>
+              <span className="text-sm text-text-secondary">
+                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                  {localize('com_ui_dropdown_variables_info')}
+                </ReactMarkdown>
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

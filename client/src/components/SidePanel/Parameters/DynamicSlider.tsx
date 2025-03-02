@@ -2,34 +2,37 @@ import { useMemo, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
-import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
+import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
 import { cn, defaultTextProps, optionText } from '~/utils';
 import { ESide, defaultDebouncedDelay } from '~/common';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 
 function DynamicSlider({
-  label,
+  label = '',
   settingKey,
   defaultValue,
   range,
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
   options,
   readonly = false,
-  showDefault = true,
+  showDefault = false,
   includeInput = true,
-  labelCode,
-  descriptionCode,
+  labelCode = false,
+  descriptionCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { preset } = useChatContext();
-  const isEnum = useMemo(() => !range && options && options.length > 0, [options, range]);
+  const isEnum = useMemo(
+    () => (!range && options && options.length > 0) ?? false,
+    [options, range],
+  );
 
-  const [setInputValue, inputValue] = useDebouncedInput<string | number>({
+  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
     initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
@@ -43,8 +46,7 @@ function DynamicSlider({
     defaultValue,
     conversation,
     inputValue,
-    setInputValue,
-    preventDelayedUpdate: isEnum,
+    setInputValue: setLocalValue,
   });
 
   const selectedValue = useMemo(() => {
@@ -87,6 +89,16 @@ function DynamicSlider({
     [isEnum, setInputValue, valueToEnumOption],
   );
 
+  const max = useMemo(() => {
+    if (isEnum && options) {
+      return options.length - 1;
+    } else if (range) {
+      return range.max;
+    } else {
+      return 0;
+    }
+  }, [isEnum, options, range]);
+
   if (!range && !isEnum) {
     return null;
   }
@@ -94,18 +106,18 @@ function DynamicSlider({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-start gap-6',
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
+        'flex flex-col items-center justify-start gap-2',
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
       )}
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
-          <div className="flex justify-between">
+          <div className="flex w-full items-center justify-between">
             <Label
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -155,8 +167,8 @@ function DynamicSlider({
                 : (inputValue as number) ?? (defaultValue as number),
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
-            doubleClickHandler={() => setInputValue(defaultValue as string | number)}
-            max={isEnum && options ? options.length - 1 : range ? range.max : 0}
+            onDoubleClick={() => setInputValue(defaultValue as string | number)}
+            max={max}
             min={range ? range.min : 0}
             step={range ? range.step ?? 1 : 1}
             className="flex h-4 w-full"
@@ -164,7 +176,7 @@ function DynamicSlider({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
             side={ESide.Left}
           />
         )}

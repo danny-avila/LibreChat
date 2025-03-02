@@ -21,7 +21,11 @@ const FilePreview = ({
 }) => {
   const radius = 55; // Radius of the SVG circle
   const circumference = 2 * Math.PI * radius;
-  const progress = useProgress(file?.['progress'] ?? 1, 0.001, (file as ExtendedFile)?.size ?? 1);
+  const progress = useProgress(
+    file?.['progress'] ?? 1,
+    0.001,
+    (file as ExtendedFile | undefined)?.size ?? 1,
+  );
 
   // Calculate the offset based on the loading progress
   const offset = circumference - progress * circumference;
@@ -30,7 +34,7 @@ const FilePreview = ({
   };
 
   return (
-    <div className={cn('h-10 w-10 shrink-0 overflow-hidden rounded-md', className)}>
+    <div className={cn('size-10 shrink-0 overflow-hidden rounded-xl', className)}>
       <FileIcon file={file} fileType={fileType} />
       <SourceIcon source={file?.source} />
       {progress < 1 && (

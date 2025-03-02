@@ -6,14 +6,12 @@ import {
   parseISO,
   startOfDay,
   startOfYear,
-  startOfToday,
   isWithinInterval,
 } from 'date-fns';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type {
   TConversation,
   ConversationData,
-  ConversationUpdater,
   GroupedConversations,
   ConversationListResponse,
 } from 'librechat-data-provider';
@@ -41,7 +39,7 @@ export const dateKeys = {
 };
 
 const getGroupName = (date: Date) => {
-  const now = new Date();
+  const now = new Date(Date.now());
   if (isToday(date)) {
     return dateKeys.today;
   }
@@ -61,53 +59,100 @@ const getGroupName = (date: Date) => {
   return ' ' + getYear(date).toString();
 };
 
-export const groupConversationsByDate = (conversations: TConversation[]): GroupedConversations => {
+const monthOrderMap = new Map([
+  ['december', 11],
+  ['november', 10],
+  ['october', 9],
+  ['september', 8],
+  ['august', 7],
+  ['july', 6],
+  ['june', 5],
+  ['may', 4],
+  ['april', 3],
+  ['march', 2],
+  ['february', 1],
+  ['january', 0],
+]);
+
+const dateKeysReverse = Object.fromEntries(
+  Object.entries(dateKeys).map(([key, value]) => [value, key]),
+);
+
+const dateGroupsSet = new Set([
+  dateKeys.today,
+  dateKeys.yesterday,
+  dateKeys.previous7Days,
+  dateKeys.previous30Days,
+]);
+
+export const groupConversationsByDate = (
+  conversations: Array<TConversation | null>,
+): GroupedConversations => {
   if (!Array.isArray(conversations)) {
     return [];
   }
 
   const seenConversationIds = new Set();
-  const groups = conversations.reduce((acc, conversation) => {
-    if (!conversation) {
-      return acc;
-    }
+  const groups = new Map();
+  const now = new Date(Date.now());
 
-    if (seenConversationIds.has(conversation.conversationId)) {
-      return acc;
+  conversations.forEach((conversation) => {
+    if (!conversation || seenConversationIds.has(conversation.conversationId)) {
+      return;
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : startOfToday();
-    const groupName = getGroupName(date);
-    if (!acc[groupName]) {
-      acc[groupName] = [];
+    let date: Date;
+    if (conversation.updatedAt) {
+      date = parseISO(conversation.updatedAt);
+    } else {
+      date = now;
     }
-    acc[groupName].push(conversation);
-    return acc;
-  }, {});
 
-  const sortedGroups = {};
-  const dateGroups = [
-    dateKeys.today,
-    dateKeys.yesterday,
-    dateKeys.previous7Days,
-    dateKeys.previous30Days,
-  ];
-  dateGroups.forEach((group) => {
-    if (groups[group]) {
-      sortedGroups[group] = groups[group];
+    const groupName = getGroupName(date);
+    if (!groups.has(groupName)) {
+      groups.set(groupName, []);
+    }
+    groups.get(groupName).push(conversation);
+  });
+
+  const sortedGroups = new Map();
+
+  // Add date groups first
+  dateGroupsSet.forEach((group) => {
+    if (groups.has(group)) {
+      sortedGroups.set(group, groups.get(group));
     }
   });
 
-  Object.keys(groups)
-    .filter((group) => !dateGroups.includes(group))
-    .sort()
-    .reverse()
-    .forEach((year) => {
-      sortedGroups[year] = groups[year];
+  // Sort and add year/month groups
+  const yearMonthGroups = Array.from(groups.keys())
+    .filter((group) => !dateGroupsSet.has(group))
+    .sort((a, b) => {
+      const [yearA, yearB] = [parseInt(a.trim()), parseInt(b.trim())];
+      if (yearA !== yearB) {
+        return yearB - yearA;
+      }
+
+      const [monthA, monthB] = [dateKeysReverse[a], dateKeysReverse[b]];
+      const bOrder = monthOrderMap.get(monthB) ?? -1;
+      const aOrder = monthOrderMap.get(monthA) ?? -1;
+      return bOrder - aOrder;
     });
 
-  return Object.entries(sortedGroups);
+  yearMonthGroups.forEach((group) => {
+    sortedGroups.set(group, groups.get(group));
+  });
+
+  // Sort conversations within each group
+  sortedGroups.forEach((conversations) => {
+    conversations.sort(
+      (a: TConversation, b: TConversation) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+  });
+
+  return Array.from(sortedGroups, ([key, value]) => [key, value]);
 };
 
 export const addConversation = (
@@ -145,25 +190,37 @@ export const updateConversation = (
   );
 };
 
-export const updateConvoFields: ConversationUpdater = (
+export const updateConvoFields = (
   data: ConversationData,
   updatedConversation: Partial<TConversation> & Pick<TConversation, 'conversationId'>,
+  keepPosition = false,
 ): ConversationData => {
   const newData = JSON.parse(JSON.stringify(data));
   const { pageIndex, index } = findPageForConversation(
     newData,
     updatedConversation as { conversationId: string },
   );
-
   if (pageIndex !== -1 && index !== -1) {
-    const deleted = newData.pages[pageIndex].conversations.splice(index, 1);
-    const oldConversation = deleted[0] as TConversation;
+    const oldConversation = newData.pages[pageIndex].conversations[index] as TConversation;
 
-    newData.pages[0].conversations.unshift({
-      ...oldConversation,
-      ...updatedConversation,
-      updatedAt: new Date().toISOString(),
-    });
+    /**
+     * Do not change the position of the conversation if the tags are updated.
+     */
+    if (keepPosition) {
+      const updatedConvo = {
+        ...oldConversation,
+        ...updatedConversation,
+      };
+      newData.pages[pageIndex].conversations[index] = updatedConvo;
+    } else {
+      const updatedConvo = {
+        ...oldConversation,
+        ...updatedConversation,
+        updatedAt: new Date().toISOString(),
+      };
+      newData.pages[pageIndex].conversations.splice(index, 1);
+      newData.pages[0].conversations.unshift(updatedConvo);
+    }
   }
 
   return newData;
@@ -182,7 +239,7 @@ export const getConversationById = (
   data: ConversationData | undefined,
   conversationId: string | null,
 ): TConversation | undefined => {
-  if (!data || !conversationId) {
+  if (!data || !(conversationId ?? '')) {
     return undefined;
   }
 
@@ -199,23 +256,17 @@ export function storeEndpointSettings(conversation: TConversation | null) {
   if (!conversation) {
     return;
   }
-  const { endpoint, model, agentOptions, jailbreak, toneStyle } = conversation;
+  const { endpoint, model, agentOptions } = conversation;
 
   if (!endpoint) {
     return;
   }
 
-  if (endpoint === EModelEndpoint.bingAI) {
-    const settings = { jailbreak, toneStyle };
-    localStorage.setItem(LocalStorageKeys.LAST_BING, JSON.stringify(settings));
-    return;
-  }
-
-  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
+  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}');
   lastModel[endpoint] = model;
 
   if (endpoint === EModelEndpoint.gptPlugins) {
-    lastModel.secondaryModel = agentOptions?.model || model || '';
+    lastModel.secondaryModel = agentOptions?.model ?? model ?? '';
   }
 
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastModel));

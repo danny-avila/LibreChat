@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TConversation, TEndpointOption, TPreset } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { EndpointIcon } from '~/components/Endpoints';
 import { getPresetTitle } from '~/utils';
 
@@ -43,6 +43,7 @@ export default function AddedConvo({
       <button
         className="text-token-text-secondary flex-shrink-0"
         type="button"
+        aria-label="Close added conversation"
         onClick={() => setAddedConvo(null)}
       >
         <svg
@@ -52,6 +53,7 @@ export default function AddedConvo({
           fill="none"
           viewBox="0 0 24 24"
           className="icon-lg"
+          aria-hidden="true"
         >
           <path
             fill="currentColor"

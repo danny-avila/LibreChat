@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { NewTrashIcon, Spinner } from '~/components/svg';
+import { TrashIcon, Spinner } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
 import ActionButton from '../ActionButton';
 import UploadFileButton from './UploadFileButton';
@@ -45,7 +45,7 @@ interface DataTableProps<TData, TValue> {
 const contextMap = {
   [FileContext.filename]: 'com_ui_name',
   [FileContext.updatedAt]: 'com_ui_date',
-  [FileContext.source]: 'com_ui_storage',
+  [FileContext.filterSource]: 'com_ui_storage',
   [FileContext.context]: 'com_ui_context',
   [FileContext.bytes]: 'com_ui_size',
 };
@@ -112,7 +112,7 @@ export default function DataTableFile<TData, TValue>({
               {isDeleting ? (
                 <Spinner className="h-4 w-4" />
               ) : (
-                <NewTrashIcon className="h-4 w-4 text-red-400" />
+                <TrashIcon className="h-4 w-4 text-red-400" />
               )}
               {localize('com_ui_delete')}
             </Button>
@@ -121,7 +121,7 @@ export default function DataTableFile<TData, TValue>({
             {' '}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="ml-auto">
+                <Button variant="outline" className="ml-auto border border-border-medium">
                   <ListFilter className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -138,7 +138,7 @@ export default function DataTableFile<TData, TValue>({
                         key={column.id}
                         className="cursor-pointer capitalize dark:text-white dark:hover:bg-gray-800"
                         checked={column.getIsVisible()}
-                        onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                        onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
                       >
                         {localize(contextMap[column.id])}
                       </DropdownMenuCheckboxItem>
@@ -148,15 +148,11 @@ export default function DataTableFile<TData, TValue>({
             </DropdownMenu>
             <Input
               placeholder={localize('com_files_filter')}
-              value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
+              value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
               onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-              className="max-w-sm dark:border-gray-500"
+              className="max-w-sm border-border-medium placeholder:text-text-secondary"
             />
-            <UploadFileButton
-              onClick={() => {
-                console.log('click');
-              }}
-            />
+            <UploadFileButton onClick={() => console.log('click')} />
           </div>
         </div>
       </div>
@@ -204,7 +200,7 @@ export default function DataTableFile<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -213,7 +209,7 @@ export default function DataTableFile<TData, TValue>({
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
-                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>)?.meta?.size ??
+                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta?.size ??
                       'auto';
 
                     const style: Style = {};
@@ -248,9 +244,10 @@ export default function DataTableFile<TData, TValue>({
       <div className="ml-4 mr-4 mt-4 flex h-auto items-center justify-end space-x-2 py-4 sm:ml-0 sm:mr-0 sm:h-0">
         <div className="text-muted-foreground ml-2 flex-1 text-sm">
           {localize(
-            'com_files_number_selected',
-            `${table.getFilteredSelectedRowModel().rows.length}`,
-            `${table.getFilteredRowModel().rows.length}`,
+            'com_files_number_selected', {
+              0: `${table.getFilteredSelectedRowModel().rows.length}`,
+              1: `${table.getFilteredRowModel().rows.length}`,
+            },
           )}
         </div>
         <Button

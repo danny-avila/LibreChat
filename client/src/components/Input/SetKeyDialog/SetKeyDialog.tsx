@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
-import DialogTemplate from '~/components/ui/DialogTemplate';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useGetEndpointsQuery } from '~/data-provider';
+import { OGDialog, Dropdown } from '~/components/ui';
 import { RevokeKeysButton } from '~/components/Nav';
-import { Dialog, Dropdown } from '~/components/ui';
 import { useUserKey, useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import CustomConfig from './CustomEndpoint';
@@ -35,13 +35,13 @@ const formSet: Set<string> = new Set([
 ]);
 
 const EXPIRY = {
-  THIRTY_MINUTES: { display: 'in 30 minutes', value: 30 * 60 * 1000 },
-  TWO_HOURS: { display: 'in 2 hours', value: 2 * 60 * 60 * 1000 },
-  TWELVE_HOURS: { display: 'in 12 hours', value: 12 * 60 * 60 * 1000 },
-  ONE_DAY: { display: 'in 1 day', value: 24 * 60 * 60 * 1000 },
-  ONE_WEEK: { display: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
-  ONE_MONTH: { display: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
-  NEVER: { display: 'never', value: 0 },
+  THIRTY_MINUTES: { label: 'in 30 minutes', value: 30 * 60 * 1000 },
+  TWO_HOURS: { label: 'in 2 hours', value: 2 * 60 * 60 * 1000 },
+  TWELVE_HOURS: { label: 'in 12 hours', value: 12 * 60 * 60 * 1000 },
+  ONE_DAY: { label: 'in 1 day', value: 24 * 60 * 60 * 1000 },
+  ONE_WEEK: { label: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
+  ONE_MONTH: { label: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
+  NEVER: { label: 'never', value: 0 },
 };
 
 const SetKeyDialog = ({
@@ -72,7 +72,7 @@ const SetKeyDialog = ({
 
   const [userKey, setUserKey] = useState('');
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.display);
+  const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.label);
   const { getExpiry, saveUserKey } = useUserKey(endpoint);
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -84,7 +84,7 @@ const SetKeyDialog = ({
   };
 
   const submit = () => {
-    const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
+    const selectedOption = expirationOptions.find((option) => option.label === expiresAtLabel);
     let expiresAt;
 
     if (selectedOption?.value === 0) {
@@ -118,7 +118,7 @@ const SetKeyDialog = ({
           if (isOpenAIBase && key === 'baseURL') {
             return false;
           }
-          if (key === 'baseURL' && !userProvideURL) {
+          if (key === 'baseURL' && !(userProvideURL ?? false)) {
             return false;
           }
           return data[key] === '';
@@ -160,32 +160,35 @@ const SetKeyDialog = ({
   const config = endpointsConfig?.[endpoint];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTemplate
+    <OGDialog open={open} onOpenChange={onOpenChange}>
+      <OGDialogTemplate
         title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
-        className="w-11/12 max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        className="w-11/12 max-w-2xl"
+        showCancelButton={false}
         main={
           <div className="grid w-full items-center gap-2">
             <small className="text-red-600">
               {expiryTime === 'never'
                 ? localize('com_endpoint_config_key_never_expires')
                 : `${localize('com_endpoint_config_key_encryption')} ${new Date(
-                  expiryTime,
+                  expiryTime ?? 0,
                 ).toLocaleString()}`}
-            </small>{' '}
+            </small>
             <Dropdown
               label="Expires "
               value={expiresAtLabel}
               onChange={handleExpirationChange}
-              options={expirationOptions.map((option) => option.display)}
+              options={expirationOptions.map((option) => option.label)}
               sizeClasses="w-[185px]"
+              portal={false}
             />
+            <div className="mt-2" />
             <FormProvider {...methods}>
               <EndpointComponent
                 userKey={userKey}
                 setUserKey={setUserKey}
                 endpoint={
-                  endpoint === EModelEndpoint.gptPlugins && config?.azure
+                  endpoint === EModelEndpoint.gptPlugins && (config?.azure ?? false)
                     ? EModelEndpoint.azureOpenAI
                     : endpoint
                 }
@@ -197,14 +200,18 @@ const SetKeyDialog = ({
         }
         selection={{
           selectHandler: submit,
-          selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
+          selectClasses: 'btn btn-primary',
           selectText: localize('com_ui_submit'),
         }}
         leftButtons={
-          <RevokeKeysButton endpoint={endpoint} showText={false} disabled={!expiryTime} />
+          <RevokeKeysButton
+            endpoint={endpoint}
+            disabled={!(expiryTime ?? '')}
+            setDialogOpen={onOpenChange}
+          />
         }
       />
-    </Dialog>
+    </OGDialog>
   );
 };
 

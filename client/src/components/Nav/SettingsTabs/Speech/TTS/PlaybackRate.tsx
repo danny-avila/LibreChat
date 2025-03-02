@@ -15,13 +15,13 @@ export default function DecibelSelector() {
       <div className="flex items-center justify-between">
         <div>{localize('com_nav_playback_rate')}</div>
         <div className="w-2" />
-        <small className="opacity-40">({localize('com_endpoint_default_with_num', '1')})</small>
+        <small className="opacity-40">({localize('com_endpoint_default_with_num', { 0: '1' })})</small>
       </div>
       <div className="flex items-center justify-between">
         <Slider
           value={[playbackRate ?? 1]}
           onValueChange={(value) => setPlaybackRate(value[0])}
-          doubleClickHandler={() => setPlaybackRate(null)}
+          onDoubleClick={() => setPlaybackRate(null)}
           min={0.1}
           max={2}
           step={0.1}

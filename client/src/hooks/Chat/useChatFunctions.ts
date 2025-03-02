@@ -4,10 +4,11 @@ import {
   Constants,
   QueryKeys,
   ContentTypes,
+  EModelEndpoint,
   parseCompactConvo,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
   TMessage,
   TSubmission,
@@ -19,9 +20,25 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import store from '~/store';
+
+const logChatRequest = (request: Record<string, unknown>) => {
+  logger.log('=====================================\nAsk function called with:');
+  logger.dir(request);
+  logger.log('=====================================');
+};
+
+const usesContentStream = (endpoint: EModelEndpoint | undefined, endpointType?: string) => {
+  if (endpointType === EModelEndpoint.custom) {
+    return true;
+  }
+  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
+    return true;
+  }
+};
 
 export default function useChatFunctions({
   index = 0,
@@ -47,10 +64,14 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
+  const includeShadcnui = useRecoilValue(store.includeShadcnui);
+  const customPromptMode = useRecoilValue(store.customPromptMode);
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
   const getSender = useGetSender();
+  const isTemporary = useRecoilValue(store.isTemporary);
 
   const queryClient = useQueryClient();
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
@@ -105,7 +126,17 @@ export default function useChatFunctions({
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
+    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
+
+    logChatRequest({
+      index,
+      conversation,
+      latestMessage,
+      conversationId,
+      intermediateId,
+      parentMessageId,
+      currentMessages,
+    });
 
     if (conversationId == Constants.NEW_CONVO) {
       parentMessageId = Constants.NO_PARENT;
@@ -113,12 +144,12 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    const parentMessage = currentMessages?.find(
+    const parentMessage = currentMessages.find(
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
     let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
-    if (!thread_id) {
+    if (thread_id == null) {
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
 
@@ -133,31 +164,43 @@ export default function useChatFunctions({
     });
 
     const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
-    const endpointOption = {
-      ...convo,
-      endpoint,
-      thread_id,
-      endpointType,
-      overrideConvoId,
-      key: getExpiry(),
-      modelDisplayLabel,
-      overrideUserMessageId,
-    } as TEndpointOption;
+    const endpointOption = Object.assign(
+      {
+        endpoint,
+        endpointType,
+        overrideConvoId,
+        overrideUserMessageId,
+        artifacts:
+          endpoint !== EModelEndpoint.agents
+            ? getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode })
+            : undefined,
+      },
+      convo,
+    ) as TEndpointOption;
+    if (endpoint !== EModelEndpoint.agents) {
+      endpointOption.key = getExpiry();
+      endpointOption.thread_id = thread_id;
+      endpointOption.modelDisplayLabel = modelDisplayLabel;
+    } else {
+      endpointOption.key = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {
       text,
       sender: 'User',
+      clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isContinued && messageId ? messageId : intermediateId,
+      messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
     };
 
-    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
-    if (setFiles && reuseFiles && parentMessage.files?.length) {
+    const reuseFiles =
+      (isRegenerate || resubmitFiles) && parentMessage?.files && parentMessage.files.length > 0;
+    if (setFiles && reuseFiles === true) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
       setFilesToDelete({});
@@ -165,7 +208,7 @@ export default function useChatFunctions({
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
-        type: file.type || '', // Ensure type is not undefined
+        type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
       }));
@@ -188,8 +231,8 @@ export default function useChatFunctions({
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      isEdited: isEditOrContinue,
-      iconURL: convo.iconURL,
+      iconURL: convo?.iconURL,
+      model: convo?.model,
       error: false,
     };
 
@@ -204,6 +247,29 @@ export default function useChatFunctions({
           },
         },
       ];
+    } else if (endpoint === EModelEndpoint.agents) {
+      initialResponse.model = conversation?.agent_id ?? '';
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+      setShowStopButton(true);
+    } else if (usesContentStream(endpoint, endpointType)) {
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+      setShowStopButton(true);
     } else {
       setShowStopButton(true);
     }
@@ -212,6 +278,7 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,
@@ -229,6 +296,7 @@ export default function useChatFunctions({
       isContinued,
       isRegenerate,
       initialResponse,
+      isTemporary,
     };
 
     if (isRegenerate) {
@@ -239,9 +307,9 @@ export default function useChatFunctions({
     if (index === 0 && setLatestMessage) {
       setLatestMessage(initialResponse);
     }
+
     setSubmission(submission);
-    logger.log('Submission:');
-    logger.dir(submission, { depth: null });
+    logger.dir('message_stream', submission, { depth: null });
   };
 
   const regenerate = ({ parentMessageId }) => {

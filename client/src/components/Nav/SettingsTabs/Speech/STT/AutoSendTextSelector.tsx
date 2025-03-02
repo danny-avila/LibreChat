@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { Slider, InputNumber } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -8,7 +8,7 @@ import store from '~/store';
 export default function AutoSendTextSelector() {
   const localize = useLocalize();
 
-  const speechToText = useRecoilState<boolean>(store.speechToText);
+  const speechToText = useRecoilValue(store.speechToText);
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
 
   return (
@@ -22,7 +22,7 @@ export default function AutoSendTextSelector() {
         <Slider
           value={[autoSendText ?? -1]}
           onValueChange={(value) => setAutoSendText(value[0])}
-          doubleClickHandler={() => setAutoSendText(-1)}
+          onDoubleClick={() => setAutoSendText(-1)}
           min={-1}
           max={60}
           step={1}

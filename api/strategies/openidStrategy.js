@@ -5,6 +5,8 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
+const { hashToken } = require('~/server/utils/crypto');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 let crypto;
@@ -13,6 +15,7 @@ try {
 } catch (err) {
   logger.error('[openidStrategy] crypto support is disabled!', err);
 }
+
 /**
  * Downloads an image from a URL using an access token.
  * @param {string} url
@@ -53,6 +56,36 @@ const downloadImage = async (url, accessToken) => {
 };
 
 /**
+ * Determines the full name of a user based on OpenID userinfo and environment configuration.
+ *
+ * @param {Object} userinfo - The user information object from OpenID Connect
+ * @param {string} [userinfo.given_name] - The user's first name
+ * @param {string} [userinfo.family_name] - The user's last name
+ * @param {string} [userinfo.username] - The user's username
+ * @param {string} [userinfo.email] - The user's email address
+ * @returns {string} The determined full name of the user
+ */
+function getFullName(userinfo) {
+  if (process.env.OPENID_NAME_CLAIM) {
+    return userinfo[process.env.OPENID_NAME_CLAIM];
+  }
+
+  if (userinfo.given_name && userinfo.family_name) {
+    return `${userinfo.given_name} ${userinfo.family_name}`;
+  }
+
+  if (userinfo.given_name) {
+    return userinfo.given_name;
+  }
+
+  if (userinfo.family_name) {
+    return userinfo.family_name;
+  }
+
+  return userinfo.username || userinfo.email;
+}
+
+/**
  * Converts an input into a string suitable for a username.
  * If the input is a string, it will be returned as is.
  * If the input is an array, elements will be joined with underscores.
@@ -82,11 +115,24 @@ async function setupOpenId() {
       logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
     }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
-    const client = new issuer.Client({
+    /* Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
+      - id_token_signed_response_alg      // defaults to 'RS256'
+      - request_object_signing_alg        // defaults to 'RS256'
+      - userinfo_signed_response_alg      // not in v5
+      - introspection_signed_response_alg // not in v5
+      - authorization_signed_response_alg // not in v5
+    */
+    /** @type {import('openid-client').ClientMetadata} */
+    const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
-    });
+    };
+    if (isEnabled(process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM)) {
+      clientMetadata.id_token_signed_response_alg =
+        issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
+    }
+    const client = new issuer.Client(clientMetadata);
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
@@ -116,16 +162,7 @@ async function setupOpenId() {
             );
           }
 
-          let fullName = '';
-          if (userinfo.given_name && userinfo.family_name) {
-            fullName = userinfo.given_name + ' ' + userinfo.family_name;
-          } else if (userinfo.given_name) {
-            fullName = userinfo.given_name;
-          } else if (userinfo.family_name) {
-            fullName = userinfo.family_name;
-          } else {
-            fullName = userinfo.username || userinfo.email;
-          }
+          const fullName = getFullName(userinfo);
 
           if (requiredRole) {
             let decodedToken = '';
@@ -157,9 +194,14 @@ async function setupOpenId() {
             }
           }
 
-          const username = convertToUsername(
-            userinfo.username || userinfo.given_name || userinfo.email,
-          );
+          let username = '';
+          if (process.env.OPENID_USERNAME_CLAIM) {
+            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
+          } else {
+            username = convertToUsername(
+              userinfo.username || userinfo.given_name || userinfo.email,
+            );
+          }
 
           if (!user) {
             user = {
@@ -184,9 +226,7 @@ async function setupOpenId() {
 
             let fileName;
             if (crypto) {
-              const hash = crypto.createHash('sha256');
-              hash.update(userinfo.sub);
-              fileName = hash.digest('hex') + '.png';
+              fileName = (await hashToken(userinfo.sub)) + '.png';
             } else {
               fileName = userinfo.sub + '.png';
             }

@@ -226,7 +226,7 @@ export default function Settings({
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '0.8')})
+                  ({localize('com_endpoint_default_with_num', { 0: '0.8' })})
                 </small>
               </Label>
               <InputNumber
@@ -251,14 +251,14 @@ export default function Settings({
               disabled={readonly}
               value={[temperatureValue ?? 0.8]}
               onValueChange={(value) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(0.8)}
+              onDoubleClick={() => setTemperature(0.8)}
               max={2}
               min={0}
               step={0.01}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
         </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -266,7 +266,7 @@ export default function Settings({
               <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '1')})
+                  ({localize('com_endpoint_default_with_num', { 0: '1' })})
                 </small>
               </Label>
               <InputNumber
@@ -291,14 +291,14 @@ export default function Settings({
               disabled={readonly}
               value={[topPValue ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
-              doubleClickHandler={() => setTopP(1)}
+              onDoubleClick={() => setTopP(1)}
               max={1}
               min={0}
               step={0.01}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="topp" side={ESide.Left} />
         </HoverCard>
 
         <HoverCard openDelay={300}>
@@ -307,7 +307,7 @@ export default function Settings({
               <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_frequency_penalty')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '0')})
+                  ({localize('com_endpoint_default_with_num', { 0: '0' })})
                 </small>
               </Label>
               <InputNumber
@@ -332,14 +332,14 @@ export default function Settings({
               disabled={readonly}
               value={[freqPValue ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
-              doubleClickHandler={() => setFreqP(0)}
+              onDoubleClick={() => setFreqP(0)}
               max={2}
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="freq" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="freq" side={ESide.Left} />
         </HoverCard>
 
         <HoverCard openDelay={300}>
@@ -348,7 +348,7 @@ export default function Settings({
               <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_presence_penalty')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '0')})
+                  ({localize('com_endpoint_default_with_num', { 0: '0' })})
                 </small>
               </Label>
               <InputNumber
@@ -373,14 +373,14 @@ export default function Settings({
               disabled={readonly}
               value={[presPValue ?? 0]}
               onValueChange={(value) => setPresP(value[0])}
-              doubleClickHandler={() => setPresP(0)}
+              onDoubleClick={() => setPresP(0)}
               max={2}
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="pres" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="pres" side={ESide.Left} />
         </HoverCard>
       </div>
     </div>

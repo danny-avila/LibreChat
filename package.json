@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.7.4-rc1",
+  "version": "v0.7.7-rc1",
   "description": "",
   "workspaces": [
     "api",
@@ -10,6 +10,7 @@
   "scripts": {
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
+    "set-balance": "node config/set-balance.js",
     "list-balances": "node config/list-balances.js",
     "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
@@ -26,29 +27,36 @@
     "stop:deployed": "docker-compose -f ./deploy-compose.yml down",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
+    "invite-user": "node config/invite-user.js",
+    "list-users": "node config/list-users.js",
+    "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
+    "update-banner": "node config/update-banner.js",
+    "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
-    "frontend": "npm run build:data-provider && cd client && npm run build",
+    "build:mcp": "cd packages/mcp && npm run build",
+    "frontend": "npm run build:data-provider && npm run build:mcp && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
+    "e2e:a11y": "playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
-    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/chat/new",
+    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/c/new",
     "e2e:login": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/login",
     "e2e:github": "act -W .github/workflows/playwright.yml --secret-file my.secrets",
     "test:client": "cd client && npm run test",
     "test:api": "cd api && npm run test",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "prepare": "node config/prepare.js",
     "lint:fix": "eslint --fix \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "lint": "eslint \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
-    "format": "prettier-eslint --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
+    "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",
     "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
@@ -58,7 +66,8 @@
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
-    "b:list-balances": "bun config/list-balances.js"
+    "b:list-balances": "bun config/list-balances.js",
+    "reset-terms": "node config/reset-terms.js"
   },
   "repository": {
     "type": "git",
@@ -71,26 +80,54 @@
   },
   "homepage": "https://librechat.ai/",
   "devDependencies": {
-    "@playwright/test": "^1.38.1",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
+    "@axe-core/playwright": "^4.10.1",
+    "@eslint/compat": "^1.2.6",
+    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/js": "^9.20.0",
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
+    "@playwright/test": "^1.50.1",
+    "@types/react-virtualized": "^9.22.0",
     "cross-env": "^7.0.3",
-    "eslint": "^8.41.0",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-config-prettier": "^8.9.0",
-    "eslint-import-resolver-typescript": "^3.5.5",
-    "eslint-plugin-import": "^2.28.0",
-    "eslint-plugin-jest": "^27.2.1",
-    "eslint-plugin-prettier": "^4.2.1",
-    "eslint-plugin-react": "^7.32.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "husky": "^8.0.0",
-    "jest": "^29.5.0",
-    "lint-staged": "^13.2.2",
-    "prettier": "^2.8.8",
-    "prettier-eslint": "^15.0.1",
-    "prettier-eslint-cli": "^7.1.0",
-    "prettier-plugin-tailwindcss": "^0.2.2"
+    "eslint": "^9.20.1",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-import-resolver-typescript": "^3.7.0",
+    "eslint-plugin-i18next": "^6.1.1",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-jest": "^28.11.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-perfectionist": "^4.8.0",
+    "eslint-plugin-prettier": "^5.2.3",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.5.0",
+    "prettier-eslint": "^16.3.0",
+    "prettier-plugin-tailwindcss": "^0.6.11",
+    "typescript-eslint": "^8.24.0",
+    "elliptic": "^6.6.1"
+  },
+  "overrides": {
+    "elliptic": "^6.6.1",
+    "mdast-util-gfm-autolink-literal": "2.0.0",
+    "remark-gfm": {
+      "mdast-util-gfm-autolink-literal": "2.0.0"
+    },
+    "mdast-util-gfm": {
+      "mdast-util-gfm-autolink-literal": "2.0.0"
+    },
+    "katex": "^0.16.21",
+    "rehype-katex": {
+      "katex": "^0.16.21"
+    },
+    "remark-math": {
+      "micromark-extension-math": {
+        "katex": "^0.16.21"
+      }
+    }
   },
   "nodemonConfig": {
     "ignore": [

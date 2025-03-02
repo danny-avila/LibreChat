@@ -1,19 +1,20 @@
 const Keyv = require('keyv');
 const crypto = require('crypto');
+const { CohereClient } = require('cohere-ai');
+const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
+  ImageDetail,
   EModelEndpoint,
   resolveHeaders,
   CohereConstants,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const { CohereClient } = require('cohere-ai');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
+const { createContextHandlers } = require('./prompts');
 const { createCoherePayload } = require('./llm');
-const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
-const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
 
 const CHATGPT_MODEL = 'gpt-3.5-turbo';
 const tokenizersCache = {};
@@ -184,10 +185,6 @@ class ChatGPTClient extends BaseClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      dispatcher: new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
-      }),
     };
 
     if (this.isVisionModel) {
@@ -225,6 +222,16 @@ class ChatGPTClient extends BaseClient {
       this.azure = !serverless && azureOptions;
       this.azureEndpoint =
         !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+      if (serverless === true) {
+        this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined;
+        this.options.headers['api-key'] = this.apiKey;
+      }
+    }
+
+    if (this.options.defaultQuery) {
+      opts.defaultQuery = this.options.defaultQuery;
     }
 
     if (this.options.headers) {
@@ -261,10 +268,6 @@ class ChatGPTClient extends BaseClient {
     if (this.useOpenRouter) {
       opts.headers['HTTP-Referer'] = 'https://librechat.ai';
       opts.headers['X-Title'] = 'LibreChat';
-    }
-
-    if (this.options.proxy) {
-      opts.dispatcher = new ProxyAgent(this.options.proxy);
     }
 
     /* hacky fixes for Mistral AI API:
@@ -612,26 +615,70 @@ ${botMessage.message}
 
   async buildPrompt(messages, { isChatGptModel = false, promptPrefix = null }) {
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
+
+    // Handle attachments and create augmentedPrompt
+    if (this.options.attachments) {
+      const attachments = await this.options.attachments;
+      const lastMessage = messages[messages.length - 1];
+
+      if (this.message_file_map) {
+        this.message_file_map[lastMessage.messageId] = attachments;
+      } else {
+        this.message_file_map = {
+          [lastMessage.messageId]: attachments,
+        };
+      }
+
+      const files = await this.addImageURLs(lastMessage, attachments);
+      this.options.attachments = files;
+
+      this.contextHandlers = createContextHandlers(this.options.req, lastMessage.text);
+    }
+
+    if (this.message_file_map) {
+      this.contextHandlers = createContextHandlers(
+        this.options.req,
+        messages[messages.length - 1].text,
+      );
+    }
+
+    // Calculate image token cost and process embedded files
+    messages.forEach((message, i) => {
+      if (this.message_file_map && this.message_file_map[message.messageId]) {
+        const attachments = this.message_file_map[message.messageId];
+        for (const file of attachments) {
+          if (file.embedded) {
+            this.contextHandlers?.processFile(file);
+            continue;
+          }
+
+          messages[i].tokenCount =
+            (messages[i].tokenCount || 0) +
+            this.calculateImageTokenCost({
+              width: file.width,
+              height: file.height,
+              detail: this.options.imageDetail ?? ImageDetail.auto,
+            });
+        }
+      }
+    });
+
+    if (this.contextHandlers) {
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      promptPrefix = this.augmentedPrompt + promptPrefix;
+    }
+
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
         promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
       }
       promptPrefix = `${this.startToken}Instructions:\n${promptPrefix}`;
-    } else {
-      const currentDateString = new Date().toLocaleDateString('en-us', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-      promptPrefix = `${this.startToken}Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${currentDateString}${this.endToken}\n\n`;
     }
-
     const promptSuffix = `${this.startToken}${this.chatGptLabel}:\n`; // Prompt ChatGPT to respond.
 
     const instructionsPayload = {
       role: 'system',
-      name: 'instructions',
       content: promptPrefix,
     };
 
@@ -713,10 +760,6 @@ ${botMessage.message}
       this.maxContextTokens - currentTokenCount,
       this.maxResponseTokens,
     );
-
-    if (this.options.debug) {
-      console.debug(`Prompt : ${prompt}`);
-    }
 
     if (isChatGptModel) {
       return { prompt: [instructionsPayload, messagePayload], context };

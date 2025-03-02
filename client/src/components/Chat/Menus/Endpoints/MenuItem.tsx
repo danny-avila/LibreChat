@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
 import { cn, getConvoSwitchLogic, getEndpointField, getIconKey } from '~/utils';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
@@ -38,9 +38,9 @@ const MenuItem: FC<MenuItemProps> = ({
 
   const { getExpiry } = useUserKey(endpoint);
   const localize = useLocalize();
-  const expiryTime = getExpiry();
+  const expiryTime = getExpiry() ?? '';
 
-  const onSelectEndpoint = (newEndpoint: EModelEndpoint) => {
+  const onSelectEndpoint = (newEndpoint?: EModelEndpoint) => {
     if (!newEndpoint) {
       return;
     }
@@ -95,12 +95,13 @@ const MenuItem: FC<MenuItemProps> = ({
   return (
     <>
       <div
-        role="menuitem"
+        role="option"
+        aria-selected={selected}
         className={cn(
-          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600',
-          'focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
+          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-surface-hover',
+          'radix-disabled:pointer-events-none radix-disabled:opacity-50',
         )}
-        tabIndex={1}
+        tabIndex={0}
         {...rest}
         onClick={() => onSelectEndpoint(endpoint)}
         onKeyDown={(e) => {
@@ -113,7 +114,7 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {Icon && (
+              {Icon != null && (
                 <Icon
                   size={18}
                   endpoint={endpoint}
@@ -132,21 +133,32 @@ const MenuItem: FC<MenuItemProps> = ({
             {userProvidesKey ? (
               <div className="text-token-text-primary" key={`set-key-${endpoint}`}>
                 <button
+                  tabIndex={0}
+                  aria-label={`${localize('com_endpoint_config_key')} for ${title}`}
                   className={cn(
-                    'invisible flex gap-x-1 group-hover:visible',
+                    'invisible flex gap-x-1 group-focus-within:visible group-hover:visible',
                     selected ? 'visible' : '',
-                    expiryTime
-                      ? 'w-full rounded-lg p-2 hover:text-gray-400 dark:hover:text-gray-400'
-                      : '',
-                    'focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
+                    expiryTime ? 'text-token-text-primary w-full rounded-lg p-2' : '',
                   )}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setDialogOpen(true);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDialogOpen(true);
+                    }
+                  }}
                 >
-                  <div className={cn('invisible group-hover:visible', expiryTime ? 'text-xs' : '')}>
+                  <div
+                    className={cn(
+                      'invisible group-focus-within:visible group-hover:visible',
+                      expiryTime ? 'text-xs' : '',
+                    )}
+                  >
                     {localize('com_endpoint_config_key')}
                   </div>
                   <Settings className={cn(expiryTime ? 'icon-sm' : 'icon-md stroke-1')} />

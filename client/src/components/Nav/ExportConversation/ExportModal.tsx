@@ -1,19 +1,22 @@
 import filenamify from 'filenamify';
 import { useEffect, useState } from 'react';
 import type { TConversation } from 'librechat-data-provider';
-import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui';
+import { OGDialog, Button, Input, Label, Checkbox, Dropdown } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useExportConversation } from '~/hooks';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextProps } from '~/utils';
 
 export default function ExportModal({
   open,
   onOpenChange,
   conversation,
+  triggerRef,
+  children,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
   conversation: TConversation | null;
+  onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
+  children?: React.ReactNode;
 }) {
   const localize = useLocalize();
 
@@ -25,15 +28,21 @@ export default function ExportModal({
   const [recursive, setRecursive] = useState<boolean | 'indeterminate'>(true);
 
   const typeOptions = [
-    { value: 'screenshot', display: 'screenshot (.png)' },
-    { value: 'text', display: 'text (.txt)' },
-    { value: 'markdown', display: 'markdown (.md)' },
-    { value: 'json', display: 'json (.json)' },
-    { value: 'csv', display: 'csv (.csv)' },
+    { value: 'screenshot', label: 'screenshot (.png)' },
+    { value: 'text', label: 'text (.txt)' },
+    { value: 'markdown', label: 'markdown (.md)' },
+    { value: 'json', label: 'json (.json)' },
+    { value: 'csv', label: 'csv (.csv)' },
   ];
 
   useEffect(() => {
-    setFileName(filenamify(String(conversation?.title || 'file')));
+    if (!open && triggerRef && triggerRef.current) {
+      triggerRef.current.focus();
+    }
+  }, [open, triggerRef]);
+
+  useEffect(() => {
+    setFileName(filenamify(String(conversation?.title ?? 'file')));
     setType('screenshot');
     setIncludeOptions(true);
     setExportBranches(false);
@@ -62,8 +71,9 @@ export default function ExportModal({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTemplate
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
+      {children}
+      <OGDialogTemplate
         title={localize('com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"
         main={
@@ -78,17 +88,13 @@ export default function ExportModal({
                   value={filename}
                   onChange={(e) => setFileName(filenamify(e.target.value || ''))}
                   placeholder={localize('com_nav_export_filename_placeholder')}
-                  className={cn(
-                    defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
-                  )}
                 />
               </div>
               <div className="col-span-1 flex w-full flex-col items-start justify-start gap-2">
                 <Label htmlFor="type" className="text-left text-sm font-medium">
                   {localize('com_nav_export_type')}
                 </Label>
-                <Dropdown value={type} onChange={_setType} options={typeOptions} />
+                <Dropdown value={type} onChange={_setType} options={typeOptions} portal={false} />
               </div>
             </div>
             <div className="grid w-full gap-6 sm:grid-cols-2">
@@ -164,16 +170,13 @@ export default function ExportModal({
         }
         buttons={
           <>
-            <DialogButton
-              onClick={exportConversation}
-              className="dark:hover:gray-400 border-gray-700 bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
-            >
+            <Button onClick={exportConversation} variant="submit">
               {localize('com_endpoint_export')}
-            </DialogButton>
+            </Button>
           </>
         }
         selection={undefined}
       />
-    </Dialog>
+    </OGDialog>
   );
 }

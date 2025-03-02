@@ -1,26 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useSpeechToTextMutation } from '~/data-provider';
+import useGetAudioSettings from './useGetAudioSettings';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
-import useGetAudioSettings from './useGetAudioSettings';
 
-const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
+const useSpeechToTextExternal = (
+  setText: (text: string) => void,
+  onTranscriptionComplete: (text: string) => void,
+) => {
   const { showToast } = useToastContext();
-  const { externalSpeechToText } = useGetAudioSettings();
-  const [speechToText] = useRecoilState<boolean>(store.speechToText);
-  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
-  const [autoSendText] = useRecoilState(store.autoSendText);
-  const [text, setText] = useState<string>('');
-  const [isListening, setIsListening] = useState(false);
+  const { speechToTextEndpoint } = useGetAudioSettings();
+  const isExternalSTTEnabled = speechToTextEndpoint === 'external';
+  const audioStream = useRef<MediaStream | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
   const [permission, setPermission] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
+
   const [minDecibels] = useRecoilState(store.decibelValue);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioStream = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animationFrameIdRef = useRef<number | null>(null);
+  const [autoSendText] = useRecoilState(store.autoSendText);
+  const [speechToText] = useRecoilState<boolean>(store.speechToText);
+  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
@@ -45,14 +50,12 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
 
   const cleanup = () => {
     if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.removeEventListener('dataavailable', handleDataAvailable);
+      mediaRecorderRef.current.removeEventListener('dataavailable', (event: BlobEvent) => {
+        audioChunks.push(event.data);
+      });
       mediaRecorderRef.current.removeEventListener('stop', handleStop);
       mediaRecorderRef.current = null;
     }
-  };
-
-  const clearText = () => {
-    setText('');
   };
 
   const getMicrophonePermission = async () => {
@@ -65,14 +68,6 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       audioStream.current = streamData ?? null;
     } catch (err) {
       setPermission(false);
-    }
-  };
-
-  const handleDataAvailable = (event: BlobEvent) => {
-    if (event.data.size > 0) {
-      audioChunks.push(event.data);
-    } else {
-      showToast({ message: 'No audio data available', status: 'warning' });
     }
   };
 
@@ -139,7 +134,9 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       try {
         setAudioChunks([]);
         mediaRecorderRef.current = new MediaRecorder(audioStream.current);
-        mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
+        mediaRecorderRef.current.addEventListener('dataavailable', (event: BlobEvent) => {
+          audioChunks.push(event.data);
+        });
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
         if (!audioContextRef.current && autoTranscribeAudio && speechToText) {
@@ -198,7 +195,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && !externalSpeechToText) {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;
@@ -229,11 +226,9 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
 
   return {
     isListening,
-    isLoading: isProcessing,
-    text,
-    externalStartRecording,
     externalStopRecording,
-    clearText,
+    externalStartRecording,
+    isLoading: isProcessing,
   };
 };
 

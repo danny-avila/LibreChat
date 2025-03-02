@@ -1,5 +1,5 @@
-const WebSocket = require('ws');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, findLastSeparatorIndex, SEPARATORS, Time } = require('librechat-data-provider');
+const { getMessage } = require('~/models/Message');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -44,60 +44,15 @@ function getRandomVoiceId(voiceIds) {
  * @property {string[]} normalizedAlignment.chars
  */
 
-/**
- *
- * @param {Record<string, unknown | undefined>} parameters
- * @returns
- */
-function assembleQuery(parameters) {
-  let query = '';
-  let hasQuestionMark = false;
-
-  for (const [key, value] of Object.entries(parameters)) {
-    if (value == null) {
-      continue;
-    }
-
-    if (!hasQuestionMark) {
-      query += '?';
-      hasQuestionMark = true;
-    } else {
-      query += '&';
-    }
-
-    query += `${key}=${value}`;
-  }
-
-  return query;
-}
-
-const SEPARATORS = ['.', '?', '!', '۔', '。', '‥', ';', '¡', '¿', '\n'];
-
-/**
- *
- * @param {string} text
- * @param {string[] | undefined} [separators]
- * @returns
- */
-function findLastSeparatorIndex(text, separators = SEPARATORS) {
-  let lastIndex = -1;
-  for (const separator of separators) {
-    const index = text.lastIndexOf(separator);
-    if (index > lastIndex) {
-      lastIndex = index;
-    }
-  }
-  return lastIndex;
-}
-
 const MAX_NOT_FOUND_COUNT = 6;
 const MAX_NO_CHANGE_COUNT = 10;
 
 /**
+ * @param {string} user
  * @param {string} messageId
  * @returns {() => Promise<{ text: string, isFinished: boolean }[]>}
  */
-function createChunkProcessor(messageId) {
+function createChunkProcessor(user, messageId) {
   let notFoundCount = 0;
   let noChangeCount = 0;
   let processedText = '';
@@ -120,15 +75,27 @@ function createChunkProcessor(messageId) {
     }
 
     /** @type { string | { text: string; complete: boolean } } */
-    const message = await messageCache.get(messageId);
+    let message = await messageCache.get(messageId);
+    if (!message) {
+      message = await getMessage({ user, messageId });
+    }
 
     if (!message) {
       notFoundCount++;
       return [];
+    } else {
+      messageCache.set(
+        messageId,
+        {
+          text: message.text,
+          complete: true,
+        },
+        Time.FIVE_MINUTES,
+      );
     }
 
     const text = typeof message === 'string' ? message : message.text;
-    const complete = typeof message === 'string' ? false : message.complete;
+    const complete = typeof message === 'string' ? false : message.complete ?? true;
 
     if (text === processedText) {
       noChangeCount++;
@@ -217,144 +184,6 @@ function splitTextIntoChunks(text, chunkSize = 4000) {
 }
 
 /**
- * Input stream text to speech
- * @param {Express.Response} res
- * @param {AsyncIterable<string>} textStream
- * @param {(token: string) => Promise<boolean>} callback - Whether to continue the stream or not
- * @returns {AsyncGenerator<AudioChunk>}
- */
-function inputStreamTextToSpeech(res, textStream, callback) {
-  const model = 'eleven_monolingual_v1';
-  const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${getRandomVoiceId()}/stream-input${assembleQuery(
-    {
-      model_id: model,
-      // flush: true,
-      // optimize_streaming_latency: this.settings.optimizeStreamingLatency,
-      optimize_streaming_latency: 1,
-      // output_format: this.settings.outputFormat,
-    },
-  )}`;
-  const socket = new WebSocket(wsUrl);
-
-  socket.onopen = function () {
-    const streamStart = {
-      text: ' ',
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.8,
-      },
-      xi_api_key: process.env.ELEVENLABS_API_KEY,
-      // generation_config: { chunk_length_schedule: [50, 90, 120, 150, 200] },
-    };
-
-    socket.send(JSON.stringify(streamStart));
-
-    // send stream until done
-    const streamComplete = new Promise((resolve, reject) => {
-      (async () => {
-        let textBuffer = '';
-        let shouldContinue = true;
-        for await (const textDelta of textStream) {
-          textBuffer += textDelta;
-
-          // using ". " as separator: sending in full sentences improves the quality
-          // of the audio output significantly.
-          const separatorIndex = findLastSeparatorIndex(textBuffer);
-
-          // Callback for textStream (will return false if signal is aborted)
-          shouldContinue = await callback(textDelta);
-
-          if (separatorIndex === -1) {
-            continue;
-          }
-
-          if (!shouldContinue) {
-            break;
-          }
-
-          const textToProcess = textBuffer.slice(0, separatorIndex);
-          textBuffer = textBuffer.slice(separatorIndex + 1);
-
-          const request = {
-            text: textToProcess,
-            try_trigger_generation: true,
-          };
-
-          socket.send(JSON.stringify(request));
-        }
-
-        // send remaining text:
-        if (shouldContinue && textBuffer.length > 0) {
-          socket.send(
-            JSON.stringify({
-              text: `${textBuffer} `, // append space
-              try_trigger_generation: true,
-            }),
-          );
-        }
-      })()
-        .then(resolve)
-        .catch(reject);
-    });
-
-    streamComplete
-      .then(() => {
-        const endStream = {
-          text: '',
-        };
-
-        socket.send(JSON.stringify(endStream));
-      })
-      .catch((e) => {
-        console.error('Error streaming text to speech:', e);
-        throw e;
-      });
-  };
-
-  return (async function* audioStream() {
-    let isDone = false;
-    let chunks = [];
-    let resolve;
-    let waitForMessage = new Promise((r) => (resolve = r));
-
-    socket.onmessage = function (event) {
-      // console.log(event);
-      const audioChunk = JSON.parse(event.data);
-      if (audioChunk.audio && audioChunk.alignment) {
-        res.write(`event: audio\ndata: ${event.data}\n\n`);
-        chunks.push(audioChunk);
-        resolve(null);
-        waitForMessage = new Promise((r) => (resolve = r));
-      } else if (audioChunk.isFinal) {
-        isDone = true;
-        resolve(null);
-      } else if (audioChunk.message) {
-        console.warn('Received Elevenlabs message:', audioChunk.message);
-        resolve(null);
-      }
-    };
-
-    socket.onerror = function (error) {
-      console.error('WebSocket error:', error);
-      // throw error;
-    };
-
-    socket.onclose = function () {
-      isDone = true;
-      resolve(null);
-    };
-
-    while (!isDone) {
-      await waitForMessage;
-      yield* chunks;
-      chunks = [];
-    }
-
-    res.write('event: end\ndata: \n\n');
-  })();
-}
-
-/**
  *
  * @param {AsyncIterable<string>} llmStream
  */
@@ -368,7 +197,6 @@ async function* llmMessageSource(llmStream) {
 }
 
 module.exports = {
-  inputStreamTextToSpeech,
   findLastSeparatorIndex,
   createChunkProcessor,
   splitTextIntoChunks,

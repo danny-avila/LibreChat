@@ -4,8 +4,11 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const fs = require('fs');
+const cookieParser = require('cookie-parser');
 const { jwtLogin, passportLogin } = require('~/strategies');
 const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
@@ -15,13 +18,15 @@ const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
+const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
+const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
@@ -35,19 +40,27 @@ const startServer = async () => {
   app.disable('x-powered-by');
   await AppService(app);
 
+  const indexPath = path.join(app.locals.paths.dist, 'index.html');
+  const indexHTML = fs.readFileSync(indexPath, 'utf8');
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  // Middleware
+  /* Middleware */
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(express.static(app.locals.paths.dist));
-  app.use(express.static(app.locals.paths.fonts));
-  app.use(express.static(app.locals.paths.assets));
-  app.set('trust proxy', 1); // trust first proxy
+  app.use(staticCache(app.locals.paths.dist));
+  app.use(staticCache(app.locals.paths.fonts));
+  app.use(staticCache(app.locals.paths.assets));
+  app.set('trust proxy', trusted_proxy);
   app.use(cors());
+  app.use(cookieParser());
+
+  if (!isEnabled(DISABLE_COMPRESSION)) {
+    app.use(compression());
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
@@ -55,12 +68,12 @@ const startServer = async () => {
     );
   }
 
-  // OAUTH
+  /* OAUTH */
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
-  // LDAP Auth
+  /* LDAP Auth */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
@@ -70,8 +83,9 @@ const startServer = async () => {
   }
 
   app.use('/oauth', routes.oauth);
-  // API Endpoints
+  /* API Endpoints */
   app.use('/api/auth', routes.auth);
+  app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
@@ -93,9 +107,24 @@ const startServer = async () => {
   app.use('/images/', validateImageRequest, routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/agents', routes.agents);
+  app.use('/api/banner', routes.banner);
+  app.use('/api/bedrock', routes.bedrock);
+
+  app.use('/api/tags', routes.tags);
 
   app.use((req, res) => {
-    res.sendFile(path.join(app.locals.paths.dist, 'index.html'));
+    res.set({
+      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+      Expires: process.env.INDEX_EXPIRES || '0',
+    });
+
+    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const saneLang = lang.replace(/"/g, '&quot;');
+    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    res.type('html');
+    res.send(updatedIndexHtml);
   });
 
   app.listen(port, host, () => {
@@ -115,6 +144,18 @@ let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
     logger.error('There was an uncaught error:', err);
+  }
+
+  if (err.message.includes('abort')) {
+    logger.warn('There was an uncatchable AbortController error.');
+    return;
+  }
+
+  if (err.message.includes('GoogleGenerativeAI')) {
+    logger.warn(
+      '\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303',
+    );
+    return;
   }
 
   if (err.message.includes('fetch failed')) {

@@ -1,11 +1,11 @@
-const getVoices = require('./getVoices');
 const getCustomConfigSpeech = require('./getCustomConfigSpeech');
-const textToSpeech = require('./textToSpeech');
-const speechToText = require('./speechToText');
+const TTSService = require('./TTSService');
+const STTService = require('./STTService');
+const getVoices = require('./getVoices');
 
 module.exports = {
   getVoices,
   getCustomConfigSpeech,
-  speechToText,
-  ...textToSpeech,
+  ...STTService,
+  ...TTSService,
 };
