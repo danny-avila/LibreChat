@@ -40,7 +40,7 @@
 # # BUILD FROM LATEST IMAGE
 #   api:
 #     image: ghcr.io/danny-avila/librechat-dev:latest
- 
+
 # # BUILD FROM LATEST IMAGE (NUMBERED RELEASE)
 #   api:
 #     image: ghcr.io/danny-avila/librechat:latest
@@ -52,6 +52,12 @@
 # # BUILD FROM LATEST API IMAGE (NUMBERED RELEASE)
 #   api:
 #     image: ghcr.io/danny-avila/librechat-api:latest
+
+# # ADD SAML METADATA FILE
+#   api:
+#     - type: bind
+#       source: ./your-metadata.xml
+#       target: /app/your-metadata.xml
 
 # # ADD MONGO-EXPRESS
 #   mongo-express:
@@ -98,7 +104,7 @@
 # # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
 #  rag_api:
 #    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
-# # For Linux user: 
+# # For Linux user:
 #    extra_hosts:
 #      - "host.docker.internal:host-gateway"
 
@@ -146,7 +152,7 @@
 #      REDIS_PASSWORD: RedisChangeMe
 #    volumes:
 #    - ./redis:/data
-  
+
 # # ADD LITELLM MONITORING
 #  langfuse-server:
 #    image: ghcr.io/langfuse/langfuse:latest
