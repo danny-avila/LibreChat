@@ -89,15 +89,13 @@ export default function MessagesView({
             <div
               className={cn(
                 'fixed z-10',
-                'bottom-32 sm:bottom-36', // Higher position
-                'right-4', // Always right-aligned on all screen sizes
+                'bottom-28 sm:bottom-40',
+                'right-4',
                 'transition-all duration-200 ease-out',
-                // Position calculation only for non-maximized mode on larger screens
                 !maximizeChatSpace &&
                   'md:right-[calc(50%-24rem+1rem)] xl:right-[calc(50%-28rem+1rem)]',
               )}
             >
-              {/* Wrap button to restore pointer events */}
               <div className="pointer-events-auto">
                 <ScrollToBottom scrollHandler={handleSmoothToRef} />
               </div>
