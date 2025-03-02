@@ -8,21 +8,16 @@ const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
 
 /**
- * Converts an image file to the target format. The function first resizes the image based on the specified resolution.
- * @param {Object} params - The params object.
- * @param {Express.Request} params.req - The request object from Express. It should have a `user` property with an `id`
- *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
- * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
- *                                     have a `path` property that points to the location of the uploaded file.
- * @param {EModelEndpoint} params.endpoint - The params object.
- * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
+ * Resizes, converts, and uploads an image file to S3.
  *
- * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
- *          A promise that resolves to an object containing:
- *            - filepath: The path where the converted image is saved.
- *            - bytes: The size of the converted image in bytes.
- *            - width: The width of the converted image.
- *            - height: The height of the converted image.
+ * @param {Object} params - The parameters object.
+ * @param {import('express').Request} params.req - The Express request object. Expects `user` and `app.locals.imageOutputType`.
+ * @param {Express.Multer.File} params.file - The file object from Multer with a `path` property.
+ * @param {string} params.file_id - The unique file identifier.
+ * @param {any} params.endpoint - An endpoint identifier used in image processing.
+ * @param {string} [params.resolution='high'] - The desired image resolution.
+ * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number }>} A promise that resolves to the image details.
+ * @throws {Error} Throws error if processing or upload fails.
  */
 async function uploadImageToS3({ req, file, file_id, endpoint, resolution = 'high' }) {
   const inputFilePath = file.path;
@@ -38,20 +33,18 @@ async function uploadImageToS3({ req, file, file_id, endpoint, resolution = 'hig
   let webPBuffer;
   let fileName = `${file_id}__${path.basename(inputFilePath)}`;
   const targetExtension = `.${req.app.locals.imageOutputType}`;
+
   if (extension.toLowerCase() === targetExtension) {
     webPBuffer = resizedBuffer;
   } else {
     webPBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
-    // Replace or append the correct extension
-    const extRegExp = new RegExp(path.extname(fileName) + '$');
-    fileName = fileName.replace(extRegExp, targetExtension);
+    fileName = fileName.replace(new RegExp(path.extname(fileName) + '$'), targetExtension);
     if (!path.extname(fileName)) {
       fileName += targetExtension;
     }
   }
 
   const downloadURL = await saveBufferToS3({ userId, buffer: webPBuffer, fileName });
-
   await fs.promises.unlink(inputFilePath);
 
   const bytes = Buffer.byteLength(webPBuffer);
@@ -59,28 +52,27 @@ async function uploadImageToS3({ req, file, file_id, endpoint, resolution = 'hig
 }
 
 /**
- * Updates the file and returns the URL in expected order/format for image payload handling.
- * @param {Object} req - The request object.
- * @param {MongoFile} file - The file object.
- * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
+ * Updates a file record and returns its signed URL.
+ *
+ * @param {import('express').Request} req - The Express request object.
+ * @param {Object} file - The file object containing file metadata.
+ * @returns {Promise<[Promise<any>, string]>} A promise that resolves to an array with the update result and the file URL.
  */
 async function prepareImageURLS3(req, file) {
   const { filepath } = file;
-  const promises = [];
-  promises.push(updateFile({ file_id: file.file_id }));
-  promises.push(filepath);
-  return await Promise.all(promises);
+  const updatePromise = updateFile({ file_id: file.file_id });
+  return Promise.all([updatePromise, filepath]);
 }
 
 /**
- * Uploads a user's avatar to S3 bucket and returns the URL.
- * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
- * @param {object} params - The parameters object.
- * @param {Buffer} params.buffer - The Buffer containing the avatar image.
+ * Uploads a user's avatar image to S3 and updates the user's avatar URL if manual flag is true.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {Buffer} params.buffer - The avatar image buffer.
  * @param {string} params.userId - The user ID.
- * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
- * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
- * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
+ * @param {string} params.manual - A string flag ('true' or 'false') indicating if the update is manual.
+ * @returns {Promise<string>} A promise that resolves to the signed URL of the uploaded avatar.
+ * @throws {Error} Throws error if upload or update fails.
  */
 async function processS3Avatar({ buffer, userId, manual }) {
   try {
@@ -90,16 +82,10 @@ async function processS3Avatar({ buffer, userId, manual }) {
       fileName: 'avatar.png',
     });
 
-    const isManual = manual === 'true';
-
-    const url = downloadURL;
-    // const url = `${downloadURL}?manual=${isManual}`; Does not work beacause not signed (need signed url)
-
-    if (isManual) {
-      await updateUser(userId, { avatar: url });
+    if (manual === 'true') {
+      await updateUser(userId, { avatar: downloadURL });
     }
-
-    return url;
+    return downloadURL;
   } catch (error) {
     logger.error('Error uploading profile picture:', error);
     throw error;
