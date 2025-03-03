@@ -795,6 +795,10 @@ class AgentClient extends BaseClient {
         );
       }
     } catch (err) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
+        err,
+      );
       if (!abortController.signal.aborted) {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
@@ -802,11 +806,6 @@ class AgentClient extends BaseClient {
         );
         throw err;
       }
-
-      logger.warn(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
-        err,
-      );
     }
   }
 
