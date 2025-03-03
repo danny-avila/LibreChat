@@ -21,6 +21,8 @@ export const bedrockInputSchema = s.tConversationSchema
     temperature: true,
     topP: true,
     stop: true,
+    thinking: true,
+    thinkingBudget: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -49,6 +51,8 @@ export const bedrockInputParser = s.tConversationSchema
     temperature: true,
     topP: true,
     stop: true,
+    thinking: true,
+    thinkingBudget: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -87,6 +91,23 @@ export const bedrockInputParser = s.tConversationSchema
       }
     });
 
+    /** Default thinking and thinkingBudget for 'anthropic.claude-3-7-sonnet' models, if not defined */
+    if (
+      typeof typedData.model === 'string' &&
+      typedData.model.includes('anthropic.claude-3-7-sonnet')
+    ) {
+      if (additionalFields.thinking === undefined) {
+        additionalFields.thinking = true;
+      }
+
+      if (additionalFields.thinkingBudget === undefined) {
+        additionalFields.thinkingBudget = 2000;
+      }
+    } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
+      delete additionalFields.thinking;
+      delete additionalFields.thinkingBudget;
+    }
+
     if (Object.keys(additionalFields).length > 0) {
       typedData.additionalModelRequestFields = {
         ...((typedData.additionalModelRequestFields as Record<string, unknown> | undefined) || {}),
@@ -104,9 +125,48 @@ export const bedrockInputParser = s.tConversationSchema
   })
   .catch(() => ({}));
 
+type ThinkingConfig = {
+  thinking?:
+    | {
+        type: 'enabled';
+        budget_tokens: number;
+      }
+    | boolean;
+  thinkingBudget?: number;
+};
+
+type AnthropicInput = BedrockConverseInput & {
+  additionalModelRequestFields: BedrockConverseInput['additionalModelRequestFields'] &
+    ThinkingConfig;
+};
+
+/**
+ * Configures the "thinking" parameter based on given input and thinking options.
+ *
+ * @param data - The parsed Bedrock request options object
+ * @returns The object with thinking configured appropriately
+ */
+function configureThinking(data: AnthropicInput): AnthropicInput {
+  const updatedData = { ...data };
+  updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? 8192;
+
+  if (updatedData.additionalModelRequestFields?.thinking === true) {
+    const thinkingConfig: ThinkingConfig['thinking'] = {
+      type: 'enabled',
+      budget_tokens: updatedData.thinkingBudget ?? 2000,
+    };
+
+    if (thinkingConfig.budget_tokens > updatedData.maxTokens) {
+      thinkingConfig.budget_tokens = Math.floor(updatedData.maxTokens * 0.9);
+    }
+    updatedData.additionalModelRequestFields.thinking = thinkingConfig;
+  }
+  return updatedData;
+}
+
 export const bedrockOutputParser = (data: Record<string, unknown>) => {
   const knownKeys = [...Object.keys(s.tConversationSchema.shape), 'topK', 'top_k'];
-  const result: Record<string, unknown> = {};
+  let result: Record<string, unknown> = {};
 
   // Extract known fields from the root level
   Object.entries(data).forEach(([key, value]) => {
@@ -125,6 +185,8 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
         if (knownKeys.includes(key)) {
           if (key === 'top_k') {
             result['topK'] = value;
+          } else if (key === 'thinking' || key === 'thinkingBudget') {
+            return;
           } else {
             result[key] = value;
           }
@@ -133,6 +195,8 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
     );
   }
 
+  result = configureThinking(result as AnthropicInput);
+
   // Handle maxTokens and maxOutputTokens
   if (result.maxTokens !== undefined && result.maxOutputTokens === undefined) {
     result.maxOutputTokens = result.maxTokens;
@@ -140,8 +204,10 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
     result.maxTokens = result.maxOutputTokens;
   }
 
-  // Remove additionalModelRequestFields from the result
-  delete result.additionalModelRequestFields;
+  // Remove additionalModelRequestFields from the result if it doesn't thinking config
+  if ((result as AnthropicInput).additionalModelRequestFields?.thinking == null) {
+    delete result.additionalModelRequestFields;
+  }
 
   return result;
 };

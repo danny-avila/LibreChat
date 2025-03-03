@@ -553,8 +553,10 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.topP,
   bedrock.topK,
   baseDefinitions.stop,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -602,8 +604,10 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
