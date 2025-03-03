@@ -566,8 +566,8 @@ const bedrockMistral: SettingsConfiguration = [
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -577,8 +577,8 @@ const bedrockCohere: SettingsConfiguration = [
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -587,8 +587,8 @@ const bedrockGeneral: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -621,8 +621,8 @@ const bedrockMistralCol2: SettingsConfiguration = [
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -636,8 +636,8 @@ const bedrockCohereCol2: SettingsConfiguration = [
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -650,8 +650,8 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 export const settings: Record<string, SettingsConfiguration | undefined> = {
