@@ -17,7 +17,7 @@ const {
   KnownEndpoints,
   anthropicSchema,
   isAgentsEndpoint,
-  bedrockOutputParser,
+  bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -39,10 +39,10 @@ const { logger } = require('~/config');
 /** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
 
 const providerParsers = {
-  [EModelEndpoint.openAI]: openAISchema,
-  [EModelEndpoint.azureOpenAI]: openAISchema,
-  [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.bedrock]: bedrockOutputParser,
+  [EModelEndpoint.openAI]: openAISchema.parse,
+  [EModelEndpoint.azureOpenAI]: openAISchema.parse,
+  [EModelEndpoint.anthropic]: anthropicSchema.parse,
+  [EModelEndpoint.bedrock]: bedrockInputSchema.parse,
 };
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
@@ -187,7 +187,14 @@ class AgentClient extends BaseClient {
         : {};
 
     if (parseOptions) {
-      runOptions = parseOptions(this.options.agent.model_parameters);
+      try {
+        runOptions = parseOptions(this.options.agent.model_parameters);
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
+          error,
+        );
+      }
     }
 
     return removeNullishValues(
