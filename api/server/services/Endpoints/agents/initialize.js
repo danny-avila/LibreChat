@@ -101,6 +101,7 @@ const initializeAgentOptions = async ({
   });
 
   const provider = agent.provider;
+  agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
     agent.provider = provider.toLowerCase();
@@ -112,9 +113,7 @@ const initializeAgentOptions = async ({
     }
     getOptions = initCustom;
     agent.provider = Providers.OPENAI;
-    agent.endpoint = provider;
   }
-
   const model_parameters = Object.assign(
     {},
     agent.model_parameters ?? { model: agent.model },
