@@ -35,6 +35,7 @@
   "homepage": "https://librechat.ai",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
+    "@azure/identity": "^4.7.0",
     "@azure/search-documents": "^12.0.0",
     "@azure/storage-blob": "^12.26.0",
     "@google/generative-ai": "^0.21.0",

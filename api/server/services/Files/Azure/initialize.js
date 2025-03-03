@@ -6,33 +6,43 @@ let azureWarningLogged = false;
 
 /**
  * Initializes the Azure Blob Service client.
- * This function sets up the connection using the provided connection string.
+ * This function establishes a connection by checking if a connection string is provided.
+ * If available, the connection string is used; otherwise, Managed Identity (via DefaultAzureCredential) is utilized.
  * Note: Container creation (and its public access settings) is handled later in the CRUD functions.
- * @returns {BlobServiceClient|null} The initialized client or null if connection string is missing.
+ * @returns {BlobServiceClient|null} The initialized client, or null if the required configuration is missing.
  */
 const initializeAzureBlobService = () => {
   if (blobServiceClient) {
     return blobServiceClient;
   }
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-  if (!connectionString) {
-    if (!azureWarningLogged) {
-      logger.error(
-        '[initializeAzureBlobService] Azure Blob Service not initialized. Connection string missing.',
-      );
-      azureWarningLogged = true;
+  if (connectionString) {
+    blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    logger.info('Azure Blob Service initialized using connection string');
+  } else {
+    const { DefaultAzureCredential } = require('@azure/identity');
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    if (!accountName) {
+      if (!azureWarningLogged) {
+        logger.error(
+          '[initializeAzureBlobService] Azure Blob Service not initialized. Connection string missing and AZURE_STORAGE_ACCOUNT_NAME not provided.',
+        );
+        azureWarningLogged = true;
+      }
+      return null;
     }
-    return null;
+    const url = `https://${accountName}.blob.core.windows.net`;
+    const credential = new DefaultAzureCredential();
+    blobServiceClient = new BlobServiceClient(url, credential);
+    logger.info('Azure Blob Service initialized using Managed Identity');
   }
-  blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-  logger.info('Azure Blob Service initialized');
   return blobServiceClient;
 };
 
 /**
  * Retrieves the Azure ContainerClient for the given container name.
  * @param {string} [containerName=process.env.AZURE_CONTAINER_NAME || 'files'] - The container name.
- * @returns {ContainerClient} The Azure ContainerClient.
+ * @returns {ContainerClient|null} The Azure ContainerClient.
  */
 const getAzureContainerClient = (containerName = process.env.AZURE_CONTAINER_NAME || 'files') => {
   const serviceClient = initializeAzureBlobService();
