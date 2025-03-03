@@ -56,6 +56,10 @@ const conversationPreset = {
     type: Number,
     required: false,
   },
+  maxTokens: {
+    type: Number,
+    required: false,
+  },
   presence_penalty: {
     type: Number,
     required: false,
