@@ -36,7 +36,7 @@ const {
   uploadImageToAzure,
   prepareAzureImageURL,
   processAzureAvatar,
-} = require('./azure');
+} = require('./Azure');
 
 /**
  * Firebase Storage Strategy Functions
