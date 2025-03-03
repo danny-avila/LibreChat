@@ -36,6 +36,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
     "@azure/search-documents": "^12.0.0",
+    "@azure/storage-blob": "^12.26.0",
     "@google/generative-ai": "^0.21.0",
     "@googleapis/youtube": "^20.0.0",
     "@keyv/mongo": "^2.1.8",

@@ -1,6 +1,7 @@
 const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
+const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
@@ -37,6 +38,8 @@ const AppService = async (app) => {
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();
+  } else if (fileStrategy === FileSources.azure) {
+    initializeAzureBlobService();
   }
 
   /** @type {Record<string, FunctionTool} */
