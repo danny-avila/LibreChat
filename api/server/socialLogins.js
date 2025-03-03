@@ -67,7 +67,7 @@ const configureSocialLogins = (app) => {
 
     logger.info('OpenID Connect configured.');
   }
-  if (process.env.SAML_METADATA) {
+  if (process.env.SAML_METADATA && process.env.SAML_SESSION_SECRET) {
     const sessionOptions = {
       secret: process.env.SAML_SESSION_SECRET,
       resave: false,
