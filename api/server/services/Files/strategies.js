@@ -22,14 +22,15 @@ const {
   getLocalFileStream,
 } = require('./Local');
 const {
-  deleteS3FileByPath,
   getS3URL,
   saveURLToS3,
   saveBufferToS3,
   getS3FileStream,
   uploadImageToS3,
   prepareImageURLS3,
+  deleteFileFromS3,
   processS3Avatar,
+  uploadFileToS3,
 } = require('./S3');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
@@ -72,11 +73,10 @@ const localStrategy = () => ({
  *
  * */
 const s3Strategy = () => ({
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadFileToS3,
   saveURL: saveURLToS3,
   getFileURL: getS3URL,
-  deleteFile: deleteS3FileByPath,
+  deleteFile: deleteFileFromS3,
   saveBuffer: saveBufferToS3,
   prepareImagePayload: prepareImageURLS3,
   processAvatar: processS3Avatar,
