@@ -112,7 +112,7 @@ const initializeAgentOptions = async ({
     }
     getOptions = initCustom;
     agent.provider = Providers.OPENAI;
-    agent.endpoint = provider.toLowerCase();
+    agent.endpoint = provider;
   }
 
   const model_parameters = Object.assign(
