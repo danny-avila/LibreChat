@@ -21,7 +21,7 @@ RUN \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
     npm install --no-audit; \
-    # React client build
+    # Build React client
     NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
     npm prune --production; \
     npm cache clean --force
@@ -31,6 +31,12 @@ RUN mkdir -p /app/client/public/images /app/api/logs
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
+
+# Define a health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=5 \
+  CMD curl -f http://localhost:3080/health || exit 1
+
+# Start the backend service
 CMD ["npm", "run", "backend"]
 
 # Optional: for client with nginx routing
