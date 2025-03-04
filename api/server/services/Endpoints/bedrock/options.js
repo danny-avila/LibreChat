@@ -30,8 +30,8 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
-    AWS_BEDROCK_AGENT_ID,
-    AWS_BEDROCK_AGENT_ALIAS_ID,
+    BEDROCK_AGENT_ID,
+    BEDROCK_AGENT_ALIAS_ID,
   } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
@@ -79,8 +79,8 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   /** @type {BedrockClientOptions} */
   const requestOptions = {
     model: overrideModel ?? endpointOption.model,
-    agentId: currentAgentId ?? AWS_BEDROCK_AGENT_ID,
-    agentAliasId: currentAliasId ?? AWS_BEDROCK_AGENT_ALIAS_ID,
+    agentId: currentAgentId ?? BEDROCK_AGENT_ID,
+    agentAliasId: currentAliasId ?? BEDROCK_AGENT_ALIAS_ID,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 

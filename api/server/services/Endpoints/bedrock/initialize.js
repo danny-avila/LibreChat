@@ -23,15 +23,15 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   /** @type {Agent} */
   const agent = {
     id: EModelEndpoint.bedrock,
-    name: "Bedrock Agent",
+    name: 'Bedrock Agent',
     instructions: endpointOption.promptPrefix,
     provider: EModelEndpoint.bedrock,
     model: undefined,
     model_parameters: {
       ...endpointOption.model_parameters,
       model: undefined,
-      agentId: process.env.AWS_BEDROCK_AGENT_ID,
-      agentAliasId: process.env.AWS_BEDROCK_AGENT_ALIAS_ID,
+      agentId: process.env.BEDROCK_AGENT_ID,
+      agentAliasId: process.env.BEDROCK_AGENT_ALIAS_ID,
     },
   };
 

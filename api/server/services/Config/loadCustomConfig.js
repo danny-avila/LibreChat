@@ -81,6 +81,7 @@ ${JSON.stringify(result.error, null, 2)}`;
 
     if (i === 0) {
       logger.error(errorMessage);
+      logger.error(result.error.errors);
       const speechError = result.error.errors.find(
         (err) =>
           err.code === 'unrecognized_keys' &&

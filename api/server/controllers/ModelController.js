@@ -67,11 +67,7 @@ async function getCurrentModel(req) {
 async function loadModels(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const client = new BedrockAgentClient({
-    region: process.env.AWS_REGION ?? 'eu-central-1',
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
-    },
+    region: process.env.BEDROCK_AWS_DEFAULT_REGION,
   });
 
   // First request to get agent summaries
