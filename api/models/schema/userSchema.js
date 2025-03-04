@@ -20,6 +20,7 @@ const { SystemRoles } = require('librechat-data-provider');
  * @property {string} [googleId] - Optional Google ID for the user
  * @property {string} [facebookId] - Optional Facebook ID for the user
  * @property {string} [openidId] - Optional OpenID ID for the user
+ * @property {string} [samlId] - Optional SAML ID for the user
  * @property {string} [ldapId] - Optional LDAP ID for the user
  * @property {string} [githubId] - Optional GitHub ID for the user
  * @property {string} [discordId] - Optional Discord ID for the user
@@ -99,6 +100,11 @@ const userSchema = mongoose.Schema(
       sparse: true,
     },
     openidId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    samlId: {
       type: String,
       unique: true,
       sparse: true,
