@@ -50,6 +50,7 @@
     "@langchain/textsplitters": "^0.1.0",
     "@librechat/agents": "^2.4.317",
     "@librechat/data-schemas": "*",
+    "@node-saml/passport-saml": "^5.0.0",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",
@@ -109,7 +110,6 @@
     "ua-parser-js": "^1.0.36",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "xml2js": "^0.6.2",
     "youtube-transcript": "^1.2.1",
     "zod": "^3.22.4"
   },
