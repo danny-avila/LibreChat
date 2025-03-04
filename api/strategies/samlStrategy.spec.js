@@ -1,13 +1,15 @@
 const fs = require('fs');
+const path = require('path');
 const fetch = require('node-fetch');
-const { Strategy: SamlStrategy } = require('passport-saml');
+const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { setupSaml, getMetadata } = require('./samlStrategy');
+const { setupSaml, getCertificateContent } = require('./samlStrategy');
 
 // --- Mocks ---
 jest.mock('fs');
+jest.mock('path');
 jest.mock('node-fetch');
-jest.mock('passport-saml');
+jest.mock('@node-saml/passport-saml');
 jest.mock('~/models/userMethods', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
@@ -39,79 +41,130 @@ SamlStrategy.mockImplementation((options, verify) => {
   return { name: 'saml', options, verify };
 });
 
-describe('getMetadata', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-    delete process.env.SAML_METADATA;
+describe('getCertificateContent', () => {
+  const certWithHeader = `-----BEGIN CERTIFICATE-----
+MIIDazCCAlOgAwIBAgIUKhXaFJGJJPx466rlwYORIsqCq7MwDQYJKoZIhvcNAQEL
+BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNTAzMDQwODUxNTJaFw0yNjAz
+MDQwODUxNTJaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
+HwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB
+AQUAA4IBDwAwggEKAoIBAQCWP09NZg0xaRiLpNygCVgV3M+4RFW2S0c5X/fg/uFT
+O5MfaVYzG5GxzhXzWRB8RtNPsxX/nlbPsoUroeHbz+SABkOsNEv6JuKRH4VXRH34
+VzjazVkPAwj+N4WqsC/Wo4EGGpKIGeGi8Zed4yvMqoTyE3mrS19fY0nMHT62wUwS
+GMm2pAQdAQePZ9WY7A5XOA1IoxW2Zh2Oxaf1p59epBkZDhoxSMu8GoSkvK27Km4A
+4UXftzdg/wHNPrNirmcYouioHdmrOtYxPjrhUBQ74AmE1/QK45B6wEgirKH1A1AW
+6C+ApLwpBMvy9+8Gbyvc8G18W3CjdEVKmAeWb9JUedSXAgMBAAGjUzBRMB0GA1Ud
+DgQWBBRxpaqBx8VDLLc8IkHATujj8IOs6jAfBgNVHSMEGDAWgBRxpaqBx8VDLLc8
+IkHATujj8IOs6jAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBc
+Puk6i+yowwGccB3LhfxZ+Fz6s6/Lfx6bP/Hy4NYOxmx2/awGBgyfp1tmotjaS9Cf
+FWd67LuEru4TYtz12RNMDBF5ypcEfibvb3I8O6igOSQX/Jl5D2pMChesZxhmCift
+Qp09T41MA8PmHf1G9oMG0A3ZnjKDG5ebaJNRFImJhMHsgh/TP7V3uZy7YHTgopKX
+Hv63V3Uo3Oihav29Q7urwmf7Ly7X7J2WE86/w3vRHi5dhaWWqEqxmnAXl+H+sG4V
+meeVRI332bg1Nuy8KnnX8v3ZeJzMBkAhzvSr6Ri96R0/Un/oEFwVC5jDTq8sXVn6
+u7wlOSk+oFzDIO/UILIA
+-----END CERTIFICATE-----`;
+
+  const certWithoutHeader = certWithHeader
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\s+/g, '');
+
+  it('should throw an error if SAML_CERT is not set', () => {
+    process.env.SAML_CERT;
+    expect(() => getCertificateContent(process.env.SAML_CERT)).toThrow(
+      'Invalid input: SAML_CERT must be a string.',
+    );
   });
 
-  it('should throw an error if SAML_METADATA is not set', () => {
-    expect(() => getMetadata()).toThrow('SAML_METADATA environment variable is not set.');
+  it('should throw an error if SAML_CERT is empty', () => {
+    process.env.SAML_CERT = '';
+    expect(() => getCertificateContent(process.env.SAML_CERT)).toThrow(
+      'Invalid cert: SAML_CERT must be a valid file path or certificate string.',
+    );
   });
 
-  it('should throw an error if SAML_METADATA is empty', () => {
-    process.env.SAML_METADATA = '';
-    expect(() => getMetadata()).toThrow('SAML_METADATA environment variable is not set.');
+  it('should load cert from an environment variable if it is a single-line string(with header)', () => {
+    process.env.SAML_CERT = certWithHeader;
+
+    const actual = getCertificateContent(process.env.SAML_CERT);
+    expect(actual).toBe(certWithHeader);
   });
 
-  it('should load metadata from a file if SAML_METADATA is a valid file path', () => {
-    process.env.SAML_METADATA = 'metadata.xml';
+  it('should load cert from an environment variable if it is a single-line string(with no header)', () => {
+    process.env.SAML_CERT = certWithoutHeader;
+
+    const actual = getCertificateContent(process.env.SAML_CERT);
+    expect(actual).toBe(certWithoutHeader);
+  });
+
+  it('should throw an error if SAML_CERT is a single-line string (with header, no newline characters)', () => {
+    process.env.SAML_CERT = certWithHeader.replace(/\n/g, '');
+    expect(() => getCertificateContent(process.env.SAML_CERT)).toThrow(
+      'Invalid cert: SAML_CERT must be a valid file path or certificate string.',
+    );
+  });
+
+  it('should load cert from a relative file path if SAML_CERT is valid', () => {
+    process.env.SAML_CERT = 'test.pem';
+    const resolvedPath = '/absolute/path/to/test.pem';
+
+    path.isAbsolute.mockReturnValue(false);
+    path.join.mockReturnValue(resolvedPath);
+    path.normalize.mockReturnValue(resolvedPath);
+
     fs.existsSync.mockReturnValue(true);
     fs.statSync.mockReturnValue({ isFile: () => true });
-    fs.readFileSync.mockReturnValue('<EntityDescriptor entityID="test"></EntityDescriptor>');
+    fs.readFileSync.mockReturnValue(certWithHeader);
 
-    const metadata = getMetadata();
-    expect(metadata).toBe('<EntityDescriptor entityID="test"></EntityDescriptor>');
+    const actual = getCertificateContent(process.env.SAML_CERT);
+    expect(actual).toBe(certWithHeader);
   });
 
-  it('should load metadata from an environment variable if it is a valid XML string', () => {
-    process.env.SAML_METADATA = '<EntityDescriptor entityID="test"></EntityDescriptor>';
+  it('should load cert from an absolute file path if SAML_CERT is valid', () => {
+    process.env.SAML_CERT = '/absolute/path/to/test.pem';
 
-    const metadata = getMetadata();
-    expect(metadata).toBe('<EntityDescriptor entityID="test"></EntityDescriptor>');
+    path.isAbsolute.mockReturnValue(true);
+    path.normalize.mockReturnValue(process.env.SAML_CERT);
+
+    fs.existsSync.mockReturnValue(true);
+    fs.statSync.mockReturnValue({ isFile: () => true });
+    fs.readFileSync.mockReturnValue(certWithHeader);
+
+    const actual = getCertificateContent(process.env.SAML_CERT);
+    expect(actual).toBe(certWithHeader);
   });
 
   it('should throw an error if the file does not exist', () => {
-    process.env.SAML_METADATA = 'nonexistent.xml';
+    process.env.SAML_CERT = 'missing.pem';
+    const resolvedPath = '/absolute/path/to/missing.pem';
+
+    path.isAbsolute.mockReturnValue(false);
+    path.join.mockReturnValue(resolvedPath);
+    path.normalize.mockReturnValue(resolvedPath);
+
     fs.existsSync.mockReturnValue(false);
 
-    expect(() => getMetadata()).toThrow(
-      'Error: Invalid SAML metadata.\n' +
-        'The content provided is not valid XML.\n' +
-        'Ensure that SAML_METADATA contains either a valid XML file path or a correct XML string.',
+    expect(() => getCertificateContent(process.env.SAML_CERT)).toThrow(
+      'Invalid cert: SAML_CERT must be a valid file path or certificate string.',
     );
   });
 
-  it('should throw an error if SAML_METADATA contains invalid XML', () => {
-    process.env.SAML_METADATA = 'invalid metadata';
-    expect(() => getMetadata()).toThrow(
-      'Error: Invalid SAML metadata.\n' +
-        'The content provided is not valid XML.\n' +
-        'Ensure that SAML_METADATA contains either a valid XML file path or a correct XML string.',
-    );
-  });
+  it('should throw an error if the file is not readable', () => {
+    process.env.SAML_CERT = 'unreadable.pem';
+    const resolvedPath = '/absolute/path/to/unreadable.pem';
 
-  it('should log messages when loading metadata from file', () => {
-    process.env.SAML_METADATA = 'metadata.xml';
+    path.isAbsolute.mockReturnValue(false);
+    path.join.mockReturnValue(resolvedPath);
+    path.normalize.mockReturnValue(resolvedPath);
+
     fs.existsSync.mockReturnValue(true);
     fs.statSync.mockReturnValue({ isFile: () => true });
-    fs.readFileSync.mockReturnValue('<EntityDescriptor entityID="test"></EntityDescriptor>');
+    fs.readFileSync.mockImplementation(() => {
+      throw new Error('Permission denied');
+    });
 
-    getMetadata();
-    expect(require('~/config').logger.info).toHaveBeenCalledWith(
-      expect.stringMatching(
-        /^(\[samlStrategy\] Loading SAML metadata from file: .*metadata\.xml)$/,
-      ),
-    );
-  });
-
-  it('should log messages when using inline metadata', () => {
-    process.env.SAML_METADATA = '<EntityDescriptor entityID="test"></EntityDescriptor>';
-    fs.existsSync.mockReturnValue(false);
-    fs.statSync.mockReturnValue({ isFile: () => false });
-    getMetadata();
-    expect(require('~/config').logger.info).toHaveBeenCalledWith(
-      '[samlStrategy] SAML metadata provided as an inline XML string.',
+    expect(() => getCertificateContent(process.env.SAML_CERT)).toThrow(
+      'Error reading certificate file: Permission denied',
     );
   });
 });
@@ -143,34 +196,34 @@ describe('setupSaml', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    const metadata = `
-<EntityDescriptor entityID="urn:test-xxxxxxxxxxxx.example.com" xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
-    <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
-        <KeyDescriptor use="signing">
-        <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
-            <X509Data>
-            <X509Certificate>xxxxxCERTxxxxxxx</X509Certificate>
-            </X509Data>
-        </KeyInfo>
-        </KeyDescriptor>
-        <SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://test-xxxxxxxxxxxx.example.com/samlp/aaaaaaaaaaaaaaaaa/logout"/>
-        <SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://test-xxxxxxxxxxxx.example.com/samlp/aaaaaaaaaaaaaaaaa/logout"/>
-        <NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</NameIDFormat>
-        <NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</NameIDFormat>
-        <NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDFormat>
-        <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://test-xxxxxxxxxxxx.example.com/samlp/aaaaaaaaaaaaaaaaa"/>
-        <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://test-xxxxxxxxxxxx.example.com/samlp/aaaaaaaaaaaaaaaaa"/>
-        <Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="E-Mail Address" xmlns="urn:oasis:names:tc:SAML:2.0:assertion"/>
-        <Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="Given Name" xmlns="urn:oasis:names:tc:SAML:2.0:assertion"/>
-        <Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="Name" xmlns="urn:oasis:names:tc:SAML:2.0:assertion"/>
-        <Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="Surname" xmlns="urn:oasis:names:tc:SAML:2.0:assertion"/>
-        <Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="Name ID" xmlns="urn:oasis:names:tc:SAML:2.0:assertion"/>
-    </IDPSSODescriptor>
-</EntityDescriptor>
+    const cert = `
+-----BEGIN CERTIFICATE-----
+MIIDazCCAlOgAwIBAgIUKhXaFJGJJPx466rlwYORIsqCq7MwDQYJKoZIhvcNAQEL
+BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNTAzMDQwODUxNTJaFw0yNjAz
+MDQwODUxNTJaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
+HwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB
+AQUAA4IBDwAwggEKAoIBAQCWP09NZg0xaRiLpNygCVgV3M+4RFW2S0c5X/fg/uFT
+O5MfaVYzG5GxzhXzWRB8RtNPsxX/nlbPsoUroeHbz+SABkOsNEv6JuKRH4VXRH34
+VzjazVkPAwj+N4WqsC/Wo4EGGpKIGeGi8Zed4yvMqoTyE3mrS19fY0nMHT62wUwS
+GMm2pAQdAQePZ9WY7A5XOA1IoxW2Zh2Oxaf1p59epBkZDhoxSMu8GoSkvK27Km4A
+4UXftzdg/wHNPrNirmcYouioHdmrOtYxPjrhUBQ74AmE1/QK45B6wEgirKH1A1AW
+6C+ApLwpBMvy9+8Gbyvc8G18W3CjdEVKmAeWb9JUedSXAgMBAAGjUzBRMB0GA1Ud
+DgQWBBRxpaqBx8VDLLc8IkHATujj8IOs6jAfBgNVHSMEGDAWgBRxpaqBx8VDLLc8
+IkHATujj8IOs6jAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBc
+Puk6i+yowwGccB3LhfxZ+Fz6s6/Lfx6bP/Hy4NYOxmx2/awGBgyfp1tmotjaS9Cf
+FWd67LuEru4TYtz12RNMDBF5ypcEfibvb3I8O6igOSQX/Jl5D2pMChesZxhmCift
+Qp09T41MA8PmHf1G9oMG0A3ZnjKDG5ebaJNRFImJhMHsgh/TP7V3uZy7YHTgopKX
+Hv63V3Uo3Oihav29Q7urwmf7Ly7X7J2WE86/w3vRHi5dhaWWqEqxmnAXl+H+sG4V
+meeVRI332bg1Nuy8KnnX8v3ZeJzMBkAhzvSr6Ri96R0/Un/oEFwVC5jDTq8sXVn6
+u7wlOSk+oFzDIO/UILIA
+-----END CERTIFICATE-----
     `;
 
     // Reset environment variables
-    process.env.SAML_METADATA = metadata;
+    process.env.SAML_ENTRY_POINT = 'https://example.com/saml';
+    process.env.SAML_ISSUER = 'saml-issuer';
+    process.env.SAML_CERT = cert;
     process.env.SAML_CALLBACK_URL = '/oauth/saml/callback';
     delete process.env.SAML_EMAIL_CLAIM;
     delete process.env.SAML_USERNAME_CLAIM;
