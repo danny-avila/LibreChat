@@ -1,0 +1,1 @@
+export const MESSAGE_UPDATE_INTERVAL = 7000;
