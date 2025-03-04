@@ -36,7 +36,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
     "@azure/search-documents": "^12.0.0",
-    "@google/generative-ai": "^0.21.0",
+    "@google/generative-ai": "^0.23.0",
     "@googleapis/youtube": "^20.0.0",
     "@keyv/mongo": "^2.1.8",
     "@keyv/redis": "^2.8.1",
@@ -45,7 +45,7 @@
     "@langchain/google-genai": "^0.1.9",
     "@langchain/google-vertexai": "^0.2.0",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.1.7",
+    "@librechat/agents": "^2.1.8",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "1.7.8",
     "bcryptjs": "^2.4.3",

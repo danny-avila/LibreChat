@@ -827,7 +827,8 @@ class GoogleClient extends BaseClient {
     let reply = '';
     const { abortController } = options;
 
-    const model = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    const model =
+      this.options.titleModel ?? this.modelOptions.modelName ?? this.modelOptions.model ?? '';
     const safetySettings = getSafetySettings(model);
     if (!EXCLUDED_GENAI_MODELS.test(model) && !this.project_id) {
       logger.debug('Identified titling model as GenAI version');

@@ -17,7 +17,7 @@ const {
   KnownEndpoints,
   anthropicSchema,
   isAgentsEndpoint,
-  bedrockOutputParser,
+  bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -30,6 +30,7 @@ const {
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { getCustomEndpointConfig } = require('~/server/services/Config');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 const { createRun } = require('./run');
@@ -39,10 +40,10 @@ const { logger } = require('~/config');
 /** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
 
 const providerParsers = {
-  [EModelEndpoint.openAI]: openAISchema,
-  [EModelEndpoint.azureOpenAI]: openAISchema,
-  [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.bedrock]: bedrockOutputParser,
+  [EModelEndpoint.openAI]: openAISchema.parse,
+  [EModelEndpoint.azureOpenAI]: openAISchema.parse,
+  [EModelEndpoint.anthropic]: anthropicSchema.parse,
+  [EModelEndpoint.bedrock]: bedrockInputSchema.parse,
 };
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
@@ -187,7 +188,14 @@ class AgentClient extends BaseClient {
         : {};
 
     if (parseOptions) {
-      runOptions = parseOptions(this.options.agent.model_parameters);
+      try {
+        runOptions = parseOptions(this.options.agent.model_parameters);
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
+          error,
+        );
+      }
     }
 
     return removeNullishValues(
@@ -824,13 +832,16 @@ class AgentClient extends BaseClient {
     const clientOptions = {
       maxTokens: 75,
     };
-    const providerConfig = this.options.req.app.locals[this.options.agent.provider];
+    let endpointConfig = this.options.req.app.locals[this.options.agent.endpoint];
+    if (!endpointConfig) {
+      endpointConfig = await getCustomEndpointConfig(this.options.agent.endpoint);
+    }
     if (
-      providerConfig &&
-      providerConfig.titleModel &&
-      providerConfig.titleModel !== Constants.CURRENT_MODEL
+      endpointConfig &&
+      endpointConfig.titleModel &&
+      endpointConfig.titleModel !== Constants.CURRENT_MODEL
     ) {
-      clientOptions.model = providerConfig.titleModel;
+      clientOptions.model = endpointConfig.titleModel;
     }
     try {
       const titleResult = await this.run.generateTitle({
