@@ -22,6 +22,7 @@ const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const providerConfigMap = {
+  [Providers.XAI]: initCustom,
   [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
   [Providers.OPENROUTER]: initCustom,
