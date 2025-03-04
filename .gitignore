@@ -108,5 +108,5 @@ uploads/
 release/
 !/client/src/@types/i18next.d.ts
 
-# SAML metadata
-*metadata.xml
+# SAML Idp cert
+*.cert

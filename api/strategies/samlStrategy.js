@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
-const { parseString } = require('xml2js');
 const passport = require('passport');
-const { Strategy: SamlStrategy } = require('passport-saml');
-const { MetadataReader } = require('passport-saml-metadata');
+const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { hashToken } = require('~/server/utils/crypto');
@@ -18,54 +16,53 @@ try {
   logger.error('[samlStrategy] crypto support is disabled!', err);
 }
 
-function isValidXml(content) {
-  let isValid = false;
-  parseString(content, (err, result) => {
-    if (!err && result) {
-      isValid = true;
-    }
-  });
-  return isValid;
-}
-
 /**
- * Retrieves SAML metadata from an environment variable.
+ * Retrieves the certificate content from the given value.
  *
- * This function checks the `SAML_METADATA` environment variable to determine
- * if it contains a file path or a one-liner metadata XML. If it is a file path,
- * the function reads and returns the file content. Otherwise, it returns the
- * value of the environment variable directly.
+ * This function determines whether the provided value is a certificate string (RFC7468 format or
+ * base64-encoded without a header) or a valid file path. If the value matches one of these formats,
+ * the certificate content is returned. Otherwise, an error is thrown.
  *
- * @throws {Error} If the `SAML_METADATA` environment variable is not set.
- * @returns {string} The SAML metadata as a string.
+ * @see https://github.com/node-saml/node-saml/tree/master?tab=readme-ov-file#configuration-option-idpcert
+ * @param {string} value - The certificate string or file path.
+ * @returns {string} The certificate content if valid.
+ * @throws {Error} If the value is not a valid certificate string or file path.
  */
-function getMetadata() {
-  const metadataEnv = process.env.SAML_METADATA;
-
-  if (!metadataEnv) {
-    throw new Error('SAML_METADATA environment variable is not set.');
+function getCertificateContent(value) {
+  if (typeof value !== 'string') {
+    throw new Error('Invalid input: SAML_CERT must be a string.');
   }
 
-  let metadataContent;
-  const metadataPath = path.resolve(paths.root, metadataEnv);
-
-  if (fs.existsSync(metadataPath) && fs.statSync(metadataPath).isFile()) {
-    logger.info(`[samlStrategy] Loading SAML metadata from file: ${metadataPath}`);
-    metadataContent = fs.readFileSync(metadataPath, 'utf8');
-  } else {
-    logger.info('[samlStrategy] SAML metadata provided as an inline XML string.');
-    metadataContent = metadataEnv;
+  // Check if it's an RFC7468 formatted PEM certificate
+  const pemRegex = new RegExp(
+    '-----BEGIN (CERTIFICATE|PUBLIC KEY)-----\n' + // header
+      '([A-Za-z0-9+/=]{64}\n)+' + // base64 content (64 characters per line)
+      '[A-Za-z0-9+/=]{1,64}\n' + //  base64 content (last line)
+      '-----END (CERTIFICATE|PUBLIC KEY)-----', // footer
+  );
+  if (pemRegex.test(value)) {
+    logger.info('[samlStrategy] Detected RFC7468-formatted certificate string.');
+    return value;
   }
 
-  if (!isValidXml(metadataContent)) {
-    throw new Error(
-      'Error: Invalid SAML metadata.\n' +
-        'The content provided is not valid XML.\n' +
-        'Ensure that SAML_METADATA contains either a valid XML file path or a correct XML string.',
-    );
+  // Check if it's a Base64-encoded certificate (no header)
+  if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length % 4 === 0) {
+    logger.info('[samlStrategy] Detected base64-encoded certificate string (no header).');
+    return value;
   }
 
-  return metadataContent;
+  // Check if file exists and is readable
+  const certPath = path.normalize(path.isAbsolute(value) ? value : path.join(paths.root, value));
+  if (fs.existsSync(certPath) && fs.statSync(certPath).isFile()) {
+    try {
+      logger.info(`[samlStrategy] Loading certificate from file: ${certPath}`);
+      return fs.readFileSync(certPath, 'utf8').trim();
+    } catch (error) {
+      throw new Error(`Error reading certificate file: ${error.message}`);
+    }
+  }
+
+  throw new Error('Invalid cert: SAML_CERT must be a valid file path or certificate string.');
 }
 
 /**
@@ -177,13 +174,13 @@ function convertToUsername(input, defaultValue = '') {
 
 async function setupSaml() {
   try {
-    const metadata = new MetadataReader(getMetadata());
-
     const samlConfig = {
-      entryPoint: metadata.identityProviderUrl,
-      issuer: metadata.entityId,
-      path: process.env.SAML_CALLBACK_URL,
-      cert: metadata.signingCert,
+      entryPoint: process.env.SAML_ENTRY_POINT,
+      issuer: process.env.SAML_ISSUER,
+      callbackUrl: process.env.SAML_CALLBACK_URL,
+      idpCert: getCertificateContent(process.env.SAML_CERT),
+      wantAssertionsSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? false : true,
+      wantAuthnResponseSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? true : false,
     };
 
     passport.use(
@@ -276,4 +273,4 @@ async function setupSaml() {
   }
 }
 
-module.exports = { setupSaml, getMetadata };
+module.exports = { setupSaml, getCertificateContent };

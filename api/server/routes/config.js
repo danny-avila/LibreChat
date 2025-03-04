@@ -43,7 +43,11 @@ router.get('/', async function (req, res) {
       !!process.env.OPENID_ISSUER &&
       !!process.env.OPENID_SESSION_SECRET;
 
-    const isSamlEnabled = !!process.env.SAML_METADATA && !!process.env.SAML_SESSION_SECRET;
+    const isSamlEnabled =
+      !!process.env.SAML_ENTRY_POINT &&
+      !!process.env.SAML_ISSUER &&
+      !!process.env.SAML_CERT &&
+      !!process.env.SAML_SESSION_SECRET;
 
     /** @type {TStartupConfig} */
     const payload = {
