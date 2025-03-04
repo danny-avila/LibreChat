@@ -279,7 +279,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
                 <AttachFileChat disableInputs={disableInputs} />
               </div>
-              <BadgeRow onChange={(newBadges) => setBadges(newBadges)} />
+              {/* <BadgeRow onChange={(newBadges) => setBadges(newBadges)} /> */}
               <div className="mx-auto flex" />
               {SpeechToText && (
                 <AudioRecorder
