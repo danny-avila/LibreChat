@@ -79,27 +79,14 @@ export default function MessagesView({
           <CSSTransition
             in={showScrollButton && scrollButtonPreference}
             timeout={{
-              enter: 450,
+              enter: 550,
               exit: 700,
             }}
             classNames="scroll-animation"
             unmountOnExit={true}
             appear={true}
           >
-            <div
-              className={cn(
-                'fixed z-10',
-                'bottom-28 sm:bottom-40',
-                'right-4',
-                'transition-all duration-200 ease-out',
-                !maximizeChatSpace &&
-                  'md:right-[calc(50%-24rem+1rem)] xl:right-[calc(50%-28rem+1rem)]',
-              )}
-            >
-              <div className="pointer-events-auto">
-                <ScrollToBottom scrollHandler={handleSmoothToRef} />
-              </div>
-            </div>
+            <ScrollToBottom scrollHandler={handleSmoothToRef} />
           </CSSTransition>
         </div>
       </div>
