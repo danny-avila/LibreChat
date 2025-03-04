@@ -48,7 +48,8 @@ function getClaudeHeaders(model, supportsCacheControl) {
     };
   } else if (/claude-3[-.]7/.test(model)) {
     return {
-      'anthropic-beta': 'output-128k-2025-02-19,prompt-caching-2024-07-31',
+      'anthropic-beta':
+        'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
     };
   } else {
     return {

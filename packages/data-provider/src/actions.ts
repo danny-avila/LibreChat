@@ -22,8 +22,8 @@ export type ParametersSchema = {
 
 export type OpenAPISchema = OpenAPIV3.SchemaObject &
   ParametersSchema & {
-  items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
-};
+    items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
+  };
 
 export type ApiKeyCredentials = {
   api_key: string;
@@ -43,8 +43,8 @@ export type Credentials = ApiKeyCredentials | OAuthCredentials;
 type MediaTypeObject =
   | undefined
   | {
-  [media: string]: OpenAPIV3.MediaTypeObject | undefined;
-};
+      [media: string]: OpenAPIV3.MediaTypeObject | undefined;
+    };
 
 type RequestBodyObject = Omit<OpenAPIV3.RequestBodyObject, 'content'> & {
   content: MediaTypeObject;
@@ -358,19 +358,29 @@ export class ActionRequest {
   }
 }
 
-export function resolveRef(
-  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | RequestBodyObject,
-  components?: OpenAPIV3.ComponentsObject,
-): OpenAPIV3.SchemaObject {
-  if ('$ref' in schema && components) {
-    const refPath = schema.$ref.replace(/^#\/components\/schemas\//, '');
-    const resolvedSchema = components.schemas?.[refPath];
-    if (!resolvedSchema) {
-      throw new Error(`Reference ${schema.$ref} not found`);
+export function resolveRef<
+  T extends
+    | OpenAPIV3.ReferenceObject
+    | OpenAPIV3.SchemaObject
+    | OpenAPIV3.ParameterObject
+    | OpenAPIV3.RequestBodyObject,
+>(obj: T, components?: OpenAPIV3.ComponentsObject): Exclude<T, OpenAPIV3.ReferenceObject> {
+  if ('$ref' in obj && components) {
+    const refPath = obj.$ref.replace(/^#\/components\//, '').split('/');
+
+    let resolved: unknown = components as Record<string, unknown>;
+    for (const segment of refPath) {
+      if (typeof resolved === 'object' && resolved !== null && segment in resolved) {
+        resolved = (resolved as Record<string, unknown>)[segment];
+      } else {
+        throw new Error(`Could not resolve reference: ${obj.$ref}`);
+      }
     }
-    return resolveRef(resolvedSchema, components);
+
+    return resolveRef(resolved as typeof obj, components) as Exclude<T, OpenAPIV3.ReferenceObject>;
   }
-  return schema as OpenAPIV3.SchemaObject;
+
+  return obj as Exclude<T, OpenAPIV3.ReferenceObject>;
 }
 
 function sanitizeOperationId(input: string) {
@@ -399,7 +409,7 @@ export function openapiToFunction(
       const operationObj = operation as OpenAPIV3.OperationObject & {
         'x-openai-isConsequential'?: boolean;
       } & {
-        'x-strict'?: boolean
+        'x-strict'?: boolean;
       };
 
       // Operation ID is used as the function name
@@ -415,15 +425,25 @@ export function openapiToFunction(
       };
 
       if (operationObj.parameters) {
-        for (const param of operationObj.parameters) {
-          const paramObj = param as OpenAPIV3.ParameterObject;
-          const resolvedSchema = resolveRef(
-            { ...paramObj.schema } as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
+        for (const param of operationObj.parameters ?? []) {
+          const resolvedParam = resolveRef(
+            param,
             openapiSpec.components,
-          );
-          parametersSchema.properties[paramObj.name] = resolvedSchema;
-          if (paramObj.required === true) {
-            parametersSchema.required.push(paramObj.name);
+          ) as OpenAPIV3.ParameterObject;
+
+          const paramName = resolvedParam.name;
+          if (!paramName || !resolvedParam.schema) {
+            continue;
+          }
+
+          const paramSchema = resolveRef(
+            resolvedParam.schema,
+            openapiSpec.components,
+          ) as OpenAPIV3.SchemaObject;
+
+          parametersSchema.properties[paramName] = paramSchema;
+          if (resolvedParam.required) {
+            parametersSchema.required.push(paramName);
           }
         }
       }
@@ -446,7 +466,12 @@ export function openapiToFunction(
         }
       }
 
-      const functionSignature = new FunctionSignature(operationId, description, parametersSchema, isStrict);
+      const functionSignature = new FunctionSignature(
+        operationId,
+        description,
+        parametersSchema,
+        isStrict,
+      );
       functionSignatures.push(functionSignature);
 
       const actionRequest = new ActionRequest(
