@@ -27,6 +27,12 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://api:${PORT}/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   mongodb:
     container_name: chat-mongodb

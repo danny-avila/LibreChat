@@ -33,8 +33,8 @@ EXPOSE 3080
 ENV HOST=0.0.0.0
 
 # Define a health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=5 \
-  CMD curl -f http://localhost:3080/health || exit 1
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:3080/health
 
 # Start the backend service
 CMD ["npm", "run", "backend"]
