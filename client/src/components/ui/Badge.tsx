@@ -61,7 +61,7 @@ export default function Badge({
       {...props}
     >
       <motion.div
-        className="absolute inset-0 rounded-full bg-surface-hover"
+        className="absolute inset-0 rounded-full"
         initial={false}
         animate={{ opacity: isActive ? 1 : 0 }}
         transition={{ duration: 0.2 }}
