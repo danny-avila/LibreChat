@@ -242,23 +242,6 @@ export const useDeletePresetMutation = (): UseMutationResult<
   });
 };
 
-export const useSearchQuery = (
-  searchQuery: string,
-  pageNumber: string,
-  config?: UseQueryOptions<t.TSearchResults>,
-): QueryObserverResult<t.TSearchResults> => {
-  return useQuery<t.TSearchResults>(
-    [QueryKeys.searchResults, pageNumber, searchQuery],
-    () => dataService.searchConversations(searchQuery, pageNumber),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
-
 export const useUpdateTokenCountMutation = (): UseMutationResult<
   t.TUpdateTokenCountResponse,
   unknown,
