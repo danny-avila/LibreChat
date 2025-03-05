@@ -38,7 +38,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
-  // TODO: Remove setIsScrollable
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
@@ -196,7 +195,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       )}
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
-        <div className="flex w-full items-center">
+        <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
               setShowMentionPopover={setShowPlusPopover}
@@ -231,7 +230,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             />
             <FileFormChat disableInputs={disableInputs} />
             {endpoint && (
-              <div className="flex flex-row">
+              <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
                 <TextareaAutosize
                   {...registerProps}
                   ref={(e) => {
