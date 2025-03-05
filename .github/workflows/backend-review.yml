@@ -62,3 +62,6 @@ jobs:
 
       - name: Run librechat-data-provider unit tests
         run: cd packages/data-provider && npm run test:ci
+
+      - name: Run librechat-mcp unit tests
+        run: cd packages/mcp && npm run test:ci

@@ -4,10 +4,11 @@ const {
   isAgentsEndpoint,
   isParamEndpoint,
   EModelEndpoint,
+  excludedKeys,
   ErrorTypes,
   Constants,
 } = require('librechat-data-provider');
-const { getMessages, saveMessage, updateMessage, saveConvo, getUserById } = require('~/models');
+const { getMessages, saveMessage, updateMessage, saveConvo, getConvo, getUserById } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const { truncateToolCallOutputs } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
@@ -96,6 +97,10 @@ class BaseClient {
      * Flag to determine if the client re-submitted the latest assistant message.
      * @type {boolean | undefined} */
     this.continued;
+    /**
+     * Flag to determine if the client has already fetched the conversation while saving new messages.
+     * @type {boolean | undefined} */
+    this.fetchedConvo;
     /** @type {TMessage[]} */
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
@@ -950,16 +955,39 @@ class BaseClient {
       return { message: savedMessage };
     }
 
-    const conversation = await saveConvo(
-      this.options.req,
-      {
-        conversationId: message.conversationId,
-        endpoint: this.options.endpoint,
-        endpointType: this.options.endpointType,
-        ...endpointOptions,
-      },
-      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo' },
-    );
+    const fieldsToKeep = {
+      conversationId: message.conversationId,
+      endpoint: this.options.endpoint,
+      endpointType: this.options.endpointType,
+      ...endpointOptions,
+    };
+
+    const existingConvo =
+      this.fetchedConvo === true
+        ? null
+        : await getConvo(this.options.req?.user?.id, message.conversationId);
+
+    const unsetFields = {};
+    if (existingConvo != null) {
+      this.fetchedConvo = true;
+      for (const key in existingConvo) {
+        if (!key) {
+          continue;
+        }
+        if (excludedKeys.has(key)) {
+          continue;
+        }
+
+        if (endpointOptions?.[key] === undefined) {
+          unsetFields[key] = 1;
+        }
+      }
+    }
+
+    const conversation = await saveConvo(this.options.req, fieldsToKeep, {
+      context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
+      unsetFields,
+    });
 
     return { message: savedMessage, conversation };
   }

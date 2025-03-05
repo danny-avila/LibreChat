@@ -112,4 +112,25 @@ async function getRandomValues(length) {
   return Buffer.from(randomValues).toString('hex');
 }
 
-module.exports = { encrypt, decrypt, encryptV2, decryptV2, hashToken, getRandomValues };
+/**
+ * Computes SHA-256 hash for the given input using WebCrypto
+ * @param {string} input
+ * @returns {Promise<string>} - Hex hash string
+ */
+const hashBackupCode = async (input) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await webcrypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+module.exports = {
+  encrypt,
+  decrypt,
+  encryptV2,
+  decryptV2,
+  hashToken,
+  hashBackupCode,
+  getRandomValues,
+};

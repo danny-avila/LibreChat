@@ -25,6 +25,7 @@ const compat = new FlatCompat({
 export default [
   {
     ignores: [
+      'client/vite.config.ts',
       'client/dist/**/*',
       'client/public/**/*',
       'client/coverage/**/*',

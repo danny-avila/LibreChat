@@ -141,7 +141,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
         },
         clientOptions,
       );
-      const options = getLLMConfig(apiKey, clientOptions);
+      const options = getLLMConfig(apiKey, clientOptions, endpoint);
       if (!customOptions.streamRate) {
         return options;
       }

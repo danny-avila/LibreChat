@@ -68,4 +68,6 @@ export enum MutationKeys {
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
   updateUserEncryption = 'updateUserEncryption',
+  enableTwoFactor = 'enableTwoFactor',
+  verifyTwoFactor = 'verifyTwoFactor',
 }
