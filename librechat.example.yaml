@@ -7,6 +7,9 @@ version: 1.2.1
 # Cache settings: Set to true to enable caching
 cache: true
 
+# File strategy s3/firebase
+# fileStrategy: "s3"
+
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
