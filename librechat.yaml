@@ -66,9 +66,11 @@ registration:
 speech:
   tts:
     openai:
-      url: 'https://api.groq.com/openai/v1'
-      apiKey: '${GROQ_API_KEY}'
-      model: 'distil-whisper-large-v3-en'
+      # url: 'https://api.groq.com/openai/v1'
+      # apiKey: '${GROQ_API_KEY}'
+      # model: 'distil-whisper-large-v3-en'
+      apiKey: '${STT_API_KEY}'
+      model: 'whisper-1'
 #       voices: ['']
 
 #  
