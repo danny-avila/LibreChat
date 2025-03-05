@@ -172,6 +172,49 @@ export const useArchiveConvoMutation = (
           }
         });
 
+        const archivedQueries = queryClient
+          .getQueryCache()
+          .findAll({
+            queryKey: [QueryKeys.archivedConversations],
+            exact: false,
+          })
+          .filter(
+            (query) =>
+              Array.isArray(query.queryKey) &&
+              query.queryKey.length > 1 &&
+              typeof query.queryKey[1] === 'object',
+          );
+
+        archivedQueries.forEach((query) => {
+          queryClient.setQueryData<t.ConversationData>(query.queryKey, (oldData) => {
+            if (!oldData) {
+              return oldData;
+            }
+            if (isArchived) {
+              return {
+                ...oldData,
+                pages: [
+                  {
+                    ...oldData.pages[0],
+                    conversations: [_data, ...oldData.pages[0].conversations],
+                  },
+                  ...oldData.pages.slice(1),
+                ],
+              };
+            } else {
+              return {
+                ...oldData,
+                pages: oldData.pages.map((page) => ({
+                  ...page,
+                  conversations: page.conversations.filter(
+                    (conv) => conv.conversationId !== vars.conversationId,
+                  ),
+                })),
+              };
+            }
+          });
+        });
+
         queryClient.setQueryData(
           [QueryKeys.conversation, vars.conversationId],
           isArchived ? null : _data,
@@ -194,7 +237,6 @@ export const useArchiveConvoMutation = (
     },
   );
 };
-
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<t.TCreateShareLinkRequest, { conversationId: string }>,
 ): UseMutationResult<t.TSharedLinkResponse, unknown, { conversationId: string }, unknown> => {
