@@ -1312,6 +1312,7 @@ ${convo}
         modelOptions.reasoning_effort != null
       ) {
         delete modelOptions.reasoning_effort;
+        delete modelOptions.temperature;
       }
 
       let reasoningKey = 'reasoning_content';
