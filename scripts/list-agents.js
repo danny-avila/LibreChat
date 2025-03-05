@@ -1,63 +1,47 @@
-const { BedrockAgentClient, ListAgentsCommand } = require('@aws-sdk/client-bedrock-agent');
+const {
+  BedrockAgentClient,
+  ListAgentsCommand,
+  ListAgentAliasesCommand,
+} = require('@aws-sdk/client-bedrock-agent');
 
-async function listAgents() {
+async function getAgentsWithAliases() {
+  const client = new BedrockAgentClient();
+
   try {
-    console.log('\nListing AWS Bedrock Agents:');
-    console.log('================================');
-    
-    const client = new BedrockAgentClient({
-      region: process.env.AWS_REGION || 'eu-central-1',
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      },
-    });
+    // List all agents
+    const listAgentsCommand = new ListAgentsCommand({});
+    const agentsResponse = await client.send(listAgentsCommand);
 
-    const command = new ListAgentsCommand({});
-    const response = await client.send(command);
-    
-    if (!response.agentSummaries) {
-      console.log('No agents found');
-      return;
-    }
+    // For each agent, get its aliases
+    const agentsWithAliases = await Promise.all(
+      agentsResponse.agentSummaries.map(async (agent) => {
+        const listAliasesCommand = new ListAgentAliasesCommand({
+          agentId: agent.agentId,
+        });
+        const aliasesResponse = await client.send(listAliasesCommand);
 
-    response.agentSummaries.forEach((agent, index) => {
-      console.log(`\nAgent ${index + 1}:`);
-      console.log('--------------------------------');
-      console.log('ID:', agent.agentId);
-      console.log('Name:', agent.agentName);
-      console.log('Status:', agent.agentStatus);
-      console.log('Description:', agent.description);
-      console.log('Created:', agent.creationDateTime);
-      console.log('Updated:', agent.lastUpdatedDateTime);
-    });
+        return {
+          ...agent,
+          aliases: aliasesResponse.agentAliasSummaries,
+        };
+      }),
+    );
 
-    return response.agentSummaries;
+    return agentsWithAliases;
   } catch (error) {
-    console.error('\nError listing agents:', {
-      name: error.name,
-      message: error.message,
-      code: error.$metadata?.httpStatusCode,
-      requestId: error.$metadata?.requestId
-    });
+    console.error('Error fetching agents and aliases:', error);
     throw error;
   }
 }
 
-// Execute if run directly
-if (require.main === module) {
-  listAgents()
-    .then(agents => {
-      console.log('\nSummary:');
-      console.log('Total Agents:', agents?.length || 0);
-      console.log('Agents in PREPARED state:', 
-        agents?.filter(a => a.agentStatus === 'PREPARED').length || 0);
-      process.exit(0);
-    })
-    .catch(error => {
-      console.error('Fatal error:', error);
-      process.exit(1);
+// Usage
+getAgentsWithAliases()
+  .then((agentsWithAliases) => {
+    agentsWithAliases.forEach((agent) => {
+      console.log(`Agent: ${agent.agentName} (${agent.agentId})`);
+      agent.aliases.forEach((alias) => {
+        console.log(`  Alias: ${alias.agentAliasName} (${alias.agentAliasId})`);
+      });
     });
-}
-
-module.exports = { listAgents };
+  })
+  .catch((error) => console.error(error));

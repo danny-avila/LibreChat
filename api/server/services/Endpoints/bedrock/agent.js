@@ -6,10 +6,7 @@ const { TextDecoder } = require('util');
 
 class BedrockAgentClient {
   constructor(config) {
-    this.client = new BedrockAgentRuntimeClient({
-      region: config.region,
-      credentials: config.credentials,
-    });
+    this.client = new BedrockAgentRuntimeClient();
   }
 
   async sendMessage({ agentId, agentAliasId, sessionId, inputText }) {
@@ -47,12 +44,6 @@ class BedrockAgentClient {
           } else if (chunk.body instanceof Uint8Array) {
             chunkText = new TextDecoder().decode(chunk.body);
           } else {
-            console.debug('Unknown chunk format:', {
-              type: typeof chunk,
-              hasBody: !!chunk.body,
-              bodyType: chunk.body ? typeof chunk.body : 'none',
-              properties: Object.keys(chunk),
-            });
             continue;
           }
 

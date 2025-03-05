@@ -21,7 +21,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const currentAgent = availableAgents.find((a) => a.agentName === currentAgentName);
   const currentAgentId = currentAgent?.agentId;
   const currentAliasId = currentAgent?.latestAliasId;
-  logger.info('currentAgentId:', currentAgentId);
+  console.log(`currentAgent: ${JSON.stringify(currentAgent)}`);
 
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
@@ -30,8 +30,6 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
-    BEDROCK_AGENT_ID,
-    BEDROCK_AGENT_ALIAS_ID,
   } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
@@ -79,10 +77,11 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   /** @type {BedrockClientOptions} */
   const requestOptions = {
     model: overrideModel ?? endpointOption.model,
-    agentId: currentAgentId ?? BEDROCK_AGENT_ID,
-    agentAliasId: currentAliasId ?? BEDROCK_AGENT_ALIAS_ID,
+    agentId: currentAgentId,
+    agentAliasId: currentAliasId,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
+  console.log(`requestOptions: ${JSON.stringify(requestOptions, null, 2)}`);
 
   const configOptions = {};
   if (PROXY) {
@@ -103,6 +102,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   if (BEDROCK_REVERSE_PROXY) {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
   }
+  Object.assign(llmConfig, requestOptions);
 
   llmConfig.callbacks = [
     {

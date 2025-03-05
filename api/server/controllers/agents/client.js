@@ -121,13 +121,9 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Anthropic.default.Message | Anthropic.default.Completion>} The response from the Anthropic client.
    */
   async createResponse(client, options, useMessages, convo) {
-    const { APRO_BEDROCK_CHAT_TITLE_AGENT_ID, APRO_BEDROCK_CHAT_TITLE_AGENT_ALIAS_ID } =
-      process.env ?? {};
     const response = await client.options.bedrockClient.sendMessage({
-      agentId: APRO_BEDROCK_CHAT_TITLE_AGENT_ID ?? client.options.agent.model_parameters.agentId,
-      agentAliasId:
-        APRO_BEDROCK_CHAT_TITLE_AGENT_ALIAS_ID ??
-        client.options.agent.model_parameters.agentAliasId,
+      agentId: client.options.agent.model_parameters.agentId,
+      agentAliasId: client.options.agent.model_parameters.agentAliasId,
       sessionId: client.conversationId,
       inputText: typeof convo === 'string' ? convo : convo[0].text,
     });
