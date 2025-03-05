@@ -9,6 +9,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {Object} options - Additional options for configuring the LLM.
  * @param {Object} [options.modelOptions] - Model-specific options.
  * @param {string} [options.modelOptions.model] - The name of the model to use.
+ * @param {string} [options.modelOptions.user] - The user ID
  * @param {number} [options.modelOptions.temperature] - Controls randomness in output generation (0-2).
  * @param {number} [options.modelOptions.top_p] - Controls diversity via nucleus sampling (0-1).
  * @param {number} [options.modelOptions.frequency_penalty] - Reduces repetition of token sequences (-2 to 2).
