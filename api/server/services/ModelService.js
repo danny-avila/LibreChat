@@ -44,7 +44,7 @@ const fetchModels = async ({
   user,
   apiKey,
   baseURL,
-  name = 'OpenAI',
+  name = EModelEndpoint.openAI,
   azure = false,
   userIdQuery = false,
   createTokenConfig = true,
@@ -157,7 +157,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
       baseURL,
       azure: opts.azure,
       user: opts.user,
-      name: baseURL,
+      name: EModelEndpoint.openAI,
     });
   }
 
