@@ -1307,8 +1307,12 @@ ${convo}
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
-      } else if (!this.isOmni && modelOptions.reasoning_effort != null) {
+      } else if (
+        (!this.isOmni || /^o1-(mini|preview)/i.test(modelOptions.model)) &&
+        modelOptions.reasoning_effort != null
+      ) {
         delete modelOptions.reasoning_effort;
+        delete modelOptions.temperature;
       }
 
       let reasoningKey = 'reasoning_content';

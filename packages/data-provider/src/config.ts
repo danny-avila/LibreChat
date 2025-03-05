@@ -811,6 +811,9 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'grok-3',
+  'grok-2-vision',
+  'grok-vision',
   'gpt-4.5',
   'gpt-4o',
   'gpt-4o-mini',

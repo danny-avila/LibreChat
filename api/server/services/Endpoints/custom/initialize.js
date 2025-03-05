@@ -141,6 +141,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
         },
         clientOptions,
       );
+      clientOptions.modelOptions.user = req.user.id;
       const options = getLLMConfig(apiKey, clientOptions, endpoint);
       if (!customOptions.streamRate) {
         return options;
