@@ -17,7 +17,7 @@ const {
 async function loadDefaultModels(req) {
   const google = getGoogleModels();
   const openAI = await getOpenAIModels({ user: req.user.id });
-  const anthropic = getAnthropicModels();
+  const anthropic = await getAnthropicModels({ user: req.user.id });
   const chatGPTBrowser = getChatGPTBrowserModels();
   const azureOpenAI = await getOpenAIModels({ user: req.user.id, azure: true });
   const gptPlugins = await getOpenAIModels({
