@@ -1,0 +1,20 @@
+version: 1.2.1
+
+endpoints:
+  assistants:
+    titleModel: "OpenAI Assistants"
+    apiKey: "${{shared.OPENAI_API_KEY}}"
+    assistants: true
+
+interface:
+  modelSpecs:
+    enforce: false
+    prioritize: false
+    list:
+      - name: "Marginal AI"
+        label: "Marketing Assistent"
+        description: "Description of your assistant"
+        preset:
+          assistant_id: "asst_5ZgevHRGpHADU644d4MsnKfI"
+          instructions: ""
+          endpoint: "assistants"
