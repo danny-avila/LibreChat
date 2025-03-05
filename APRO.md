@@ -10,23 +10,22 @@ The main purpose of this fork is to support AWS Bedrock Agents.
 
 1. Clone the repository
 2. Ensure you have Bedrock set up in your AWS account in the `eu-central-1` region.
-3. Log in to your AWS account with your sso credentials, i.e. `aws sso login --profile $AWS_PROFILE`
-4. install `direnv` (optional)
-5. Copy `.env.apro.example` -> `.env`
-6. Replace the value <placeholders> in the `.env` file
+3. install `direnv` (optional)
+4. Copy `.env.apro.example` -> `.env`
+5. Update the `AWS_PROFILE` env with your AWS sso profile name in `.env`
+6. Log in to your AWS account with your sso credentials, i.e. `aws sso login --profile $AWS_PROFILE`
+7. Run `npm install`
+8. Start the services, backend and frontend in three different terminals:
 
-- run ``
-
-6. Ensure you have logged in to your AWS account in your terminal
-7. Run `direnv allow` to export the AWS credentials env as `BEDROCK_<credentials>` envs.
-8. Put credentials in .env.config
-9. Run `npm install`
-10. Start the application:
-
-```
-docker-compose -f docker-compose.services.yaml up
-npm run backend:dev
-npm run frontend:dev
+```bash
+docker compose up
+# NOTE: the backend and frontend process do not handle SIGINT/SIGTERM properly so we handle the cleanup with the run.sh script
+./scripts/run.sh backend
+./scripts/run.sh frontend
 ```
 
 10. Visit `http://localhost:3090` and make stuff!
+
+## Scripts
+
+In the [./scripts/](./scripts/) folder, you will find a few scripts to validate that your Bedrock Agents work.
