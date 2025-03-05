@@ -531,6 +531,7 @@ export type TStartupConfig = {
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
   instanceProjectId: string;
+  bundlerURL?: string;
 };
 
 export const configSchema = z.object({
