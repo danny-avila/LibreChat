@@ -63,12 +63,12 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
-# speech:
-#   tts:
-#     openai:
-#       url: ''
-#       apiKey: '${TTS_API_KEY}'
-#       model: ''
+speech:
+  tts:
+    openai:
+      url: 'https://api.groq.com/openai/v1'
+      apiKey: '${GROQ_API_KEY}'
+      model: 'distil-whisper-large-v3-en'
 #       voices: ['']
 
 #  
