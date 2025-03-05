@@ -101,6 +101,31 @@ registration:
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
+
+# Example Model Specifications
+#modelSpecs:
+#  enforce: true
+#  prioritize: true
+#  list:
+#    - name: "4o-mini"
+#      label: "4o-mini"
+#      groups:
+#        - "67b9a5c64165f31925e9b25a"
+#        - "67b9a5c64165f31925e9b25f"
+#      description: "The most advanced frontier model from Azure OpenAI, suitable to solve complex multi-step problems."
+#      iconURL: "https://www.librechat.ai/librechat.png"
+#      badges:
+#        - text: "Test"
+#          color: "#FF0000"
+#        - text: "Beta"
+#          color: "#00FF00"
+#      preset:
+#        default: true
+#        endpoint: "azureOpenAI"
+#        model: "gpt-4o-mini"
+#        modelLabel: "4o-mini"
+
+
 # Example Actions Object Structure
 actions:
   allowedDomains:
