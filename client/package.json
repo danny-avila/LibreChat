@@ -137,12 +137,13 @@
     "postcss": "^8.4.31",
     "postcss-loader": "^7.1.0",
     "postcss-preset-env": "^8.2.0",
+    "rollup": "^4.34.9",
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.2.5",
     "typescript": "^5.3.3",
     "vite": "^6.1.0",
-    "vite-plugin-node-polyfills": "^0.17.0",
     "vite-plugin-compression": "^0.5.1",
+    "vite-plugin-node-polyfills": "^0.17.0",
     "vite-plugin-pwa": "^0.21.1"
   }
 }
