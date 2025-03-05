@@ -2483,3 +2483,12 @@ main .contentinfo {
 display:none !important;
   
 }
+
+#chat-history-nav, .bg-surface-primary-alt {
+background: #b5c4b5 !important;
+  
+}
+#chat-history-nav .to-transparent {
+background:none !important;
+  
+}
