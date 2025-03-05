@@ -2474,3 +2474,12 @@ button.scroll-convo {
 .scale-98 {
   transform: scale(0.98);
 }
+
+#:r7: {
+display:none !important;
+  
+}
+main .contentinfo {
+display:none !important;
+  
+}
