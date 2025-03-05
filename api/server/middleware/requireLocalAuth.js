@@ -4,7 +4,7 @@ const { logger } = require('~/config');
 const requireLocalAuth = (req, res, next) => {
   passport.authenticate('local', (err, user, info) => {
     if (err) {
-      logger.debug('[requireLocalAuth] Error at passport.authenticate:', err);
+      logger.error('[requireLocalAuth] Error at passport.authenticate:', err);
       return next(err);
     }
     if (!user) {
