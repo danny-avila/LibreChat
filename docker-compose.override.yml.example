@@ -53,11 +53,11 @@
 #   api:
 #     image: ghcr.io/danny-avila/librechat-api:latest
 
-# # ADD SAML METADATA FILE
+# # ADD SAML CERT FILE
 #   api:
 #     - type: bind
-#       source: ./your-metadata.xml
-#       target: /app/your-metadata.xml
+#       source: ./your_cert.pem
+#       target: /app/your_cert.pem
 
 # # ADD MONGO-EXPRESS
 #   mongo-express:
