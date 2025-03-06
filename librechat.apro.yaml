@@ -1,0 +1,20 @@
+# For more information, see the Configuration Guide:
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.2.3
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# Custom interface configuration
+interface:
+  endpointsMenu: false
+  modelSelect: true
+  parameters: false
+  sidePanel: false
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: false
+  agents: true
