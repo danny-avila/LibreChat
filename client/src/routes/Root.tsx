@@ -61,10 +61,10 @@ export default function Root() {
           <AssistantsMapContext.Provider value={assistantsMap}>
             <AgentsMapContext.Provider value={agentsMap}>
               <Banner onHeightChange={setBannerHeight} />
-              <header className="w-full bg-blue-500 text-white p-4">
-                <h1 className="text-center text-xl">MCHAT</h1>
-              </header>
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
+                <header className="w-full bg-blue-500 text-white p-4">
+                  <h1 className="text-center text-xl">MCHAT</h1>
+                </header>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
                   <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
                   <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
