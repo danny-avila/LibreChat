@@ -2513,3 +2513,7 @@ background: #b5c4b5 !important;
   display:none !important;
   opacity: 0 !important;
 }
+header{
+  position:fixed;
+   display:none !important;
+}
