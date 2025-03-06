@@ -7,7 +7,7 @@ on:
       - feat/application-terraform
 
 permissions:
-  id-token: write   # This is required for requesting the JWT
+  id-token: write # This is required for requesting the JWT
   contents: read
 
 jobs:
@@ -16,10 +16,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: api-build
+          - target: node
             file: Dockerfile.multi
             image_name: frontend
-          - target: node
+          - target: api-build
             file: Dockerfile
             image_name: api
     steps:
