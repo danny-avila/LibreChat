@@ -5,8 +5,9 @@ endpoints:
     titleModel: "OpenAI Assistants"
     apiKey: "${{shared.OPENAI_API_KEY}}"
     assistants: true
-
+  
 interface:
+  defaultTheme: "light"
   modelSpecs:
     enforce: false
     prioritize: false
