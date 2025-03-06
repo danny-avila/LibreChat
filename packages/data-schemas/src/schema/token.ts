@@ -1,7 +1,17 @@
-const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
+import { Schema, Document, Types } from 'mongoose';
 
-const tokenSchema = new Schema({
+export interface IToken extends Document {
+  userId: Types.ObjectId;
+  email?: string;
+  type?: string;
+  identifier?: string;
+  token: string;
+  createdAt: Date;
+  expiresAt: Date;
+  metadata?: Map<string, unknown>;
+}
+
+const tokenSchema: Schema<IToken> = new Schema({
   userId: {
     type: Schema.Types.ObjectId,
     required: true,
@@ -10,7 +20,9 @@ const tokenSchema = new Schema({
   email: {
     type: String,
   },
-  type: String,
+  type: {
+    type: String,
+  },
   identifier: {
     type: String,
   },
@@ -35,4 +47,4 @@ const tokenSchema = new Schema({
 
 tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-module.exports = tokenSchema;
+export default tokenSchema;

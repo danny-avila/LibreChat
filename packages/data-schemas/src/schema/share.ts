@@ -1,6 +1,17 @@
-const mongoose = require('mongoose');
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
-const shareSchema = mongoose.Schema(
+export interface ISharedLink extends Document {
+  conversationId: string;
+  title?: string;
+  user?: string;
+  messages?: Types.ObjectId[];
+  shareId?: string;
+  isPublic: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+const shareSchema: Schema<ISharedLink> = new Schema(
   {
     conversationId: {
       type: String,
@@ -27,4 +38,4 @@ const shareSchema = mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model('SharedLink', shareSchema);
+export default shareSchema;

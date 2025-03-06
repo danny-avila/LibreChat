@@ -1,6 +1,24 @@
-const mongoose = require('mongoose');
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
-const transactionSchema = mongoose.Schema(
+// @ts-ignore
+export interface ITransaction extends Document {
+  user: Types.ObjectId;
+  conversationId?: string;
+  tokenType: 'prompt' | 'completion' | 'credits';
+  model?: string;
+  context?: string;
+  valueKey?: string;
+  rate?: number;
+  rawAmount?: number;
+  tokenValue?: number;
+  inputTokens?: number;
+  writeTokens?: number;
+  readTokens?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+const transactionSchema: Schema<ITransaction> = new Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -39,4 +57,4 @@ const transactionSchema = mongoose.Schema(
   },
 );
 
-module.exports = transactionSchema;
+export default transactionSchema;

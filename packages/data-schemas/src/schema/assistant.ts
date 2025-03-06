@@ -1,9 +1,23 @@
-const mongoose = require('mongoose');
+import { Schema, Document, Types } from 'mongoose';
 
-const assistantSchema = mongoose.Schema(
+export interface IAssistant extends Document {
+  user: Types.ObjectId;
+  assistant_id: string;
+  avatar?: {
+    filepath: string;
+    source: string;
+  };
+  conversation_starters?: string[];
+  access_level?: number;
+  file_ids?: string[];
+  actions?: string[];
+  append_current_datetime?: boolean;
+}
+
+const assistantSchema = new Schema<IAssistant>(
   {
     user: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
@@ -38,4 +52,4 @@ const assistantSchema = mongoose.Schema(
   },
 );
 
-module.exports = assistantSchema;
+export default assistantSchema;
