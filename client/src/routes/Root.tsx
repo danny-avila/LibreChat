@@ -65,7 +65,7 @@ export default function Root() {
                 <header className="w-full bg-blue-500 text-white p-4" style={{ height: '96px' }}>
                   <h1 className="text-center text-xl">MCHAT</h1>
                 </header>
-                <div className="relative z-0 flex h-full w-full overflow-hidden mt-24">
+                <div className="relative z-0 flex h-full w-full overflow-hidden">
                   <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
                   <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
                     <MobileNav setNavVisible={setNavVisible} />
