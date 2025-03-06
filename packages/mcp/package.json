@@ -9,15 +9,14 @@
   "exports": {
     ".": {
       "import": "./dist/index.es.js",
-      "require": "./dist/index.js",
       "types": "./dist/types/index.d.ts"
     }
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "rollup -c -w",
-    "rollup:api": "npx rollup -c server-rollup.config.js --bundleConfigAsCjs",
+    "build": "npm run clean && rollup -c --configPlugin=@rollup/plugin-typescript",
+    "build:watch": "rollup -c -w --configPlugin=@rollup/plugin-typescript",
+    "rollup:api": "npx rollup -c server-rollup.config.js --configPlugin=@rollup/plugin-typescript",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
     "verify": "npm run test:ci",
@@ -48,6 +47,7 @@
     "@rollup/plugin-node-resolve": "^15.1.0",
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.2",
     "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
@@ -69,7 +69,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.4.1",
+    "@modelcontextprotocol/sdk": "^1.6.1",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2"
