@@ -18,10 +18,10 @@ jobs:
         include:
           - target: api-build
             file: Dockerfile.multi
-            image_name: api
+            image_name: frontend
           - target: node
             file: Dockerfile
-            image_name: frontend
+            image_name: api
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
