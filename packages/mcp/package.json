@@ -16,7 +16,6 @@
     "clean": "rimraf dist",
     "build": "npm run clean && rollup -c --configPlugin=@rollup/plugin-typescript",
     "build:watch": "rollup -c -w --configPlugin=@rollup/plugin-typescript",
-    "rollup:api": "npx rollup -c server-rollup.config.js --configPlugin=@rollup/plugin-typescript",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
     "verify": "npm run test:ci",
