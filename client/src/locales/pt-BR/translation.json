@@ -1,9 +1,16 @@
 {
+  "chat_direction_left_to_right": "algo precisa ir aqui. esta vazio",
+  "chat_direction_right_to_left": "algo precisa ir aqui. esta vazio",
   "com_a11y_ai_composing": "A IA ainda está compondo.",
   "com_a11y_end": "A IA terminou de responder.",
   "com_a11y_start": "A IA começou a responder.",
+  "com_agents_allow_editing": "Permitir que outros usuários editem seu agente",
+  "com_agents_by_librechat": "por LibreChat",
+  "com_agents_code_interpreter": "Quando ativado, permite que seu agente aproveite a API do interpretador de código LibreChat para executar o código gerado, incluindo o processamento de arquivos, com segurança. Requer uma chave de API válida.",
+  "com_agents_code_interpreter_title": "API do Interpretador de Código",
   "com_agents_create_error": "Houve um erro ao criar seu agente.",
   "com_agents_description_placeholder": "Opcional: Descreva seu Agente aqui",
+  "com_agents_enable_file_search": "Habilitar pesquisa de arquivos",
   "com_agents_instructions_placeholder": "As instruções do sistema que o agente usa",
   "com_agents_name_placeholder": "Opcional: O nome do agente",
   "com_agents_search_name": "Pesquisar agentes por nome",
@@ -626,6 +633,8 @@
   "com_ui_variables_info": "Use chaves duplas no seu texto para criar variáveis, por exemplo, `{{exemplo de variável}}`, para preencher posteriormente ao usar o prompt.",
   "com_ui_version_var": "Versão {{0}}",
   "com_ui_versions": "Versões",
+  "com_ui_write": "Escrevendo",
   "com_ui_yes": "Sim",
+  "com_ui_zoom": "Zoom",
   "com_user_message": "Você"
 }

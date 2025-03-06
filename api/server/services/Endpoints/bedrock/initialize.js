@@ -15,6 +15,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('Endpoint option not provided');
   }
 
+  // TODO: pass-in override settings that are specific to current run
+  const options = await getOptions({
+    req,
+    res,
+    endpointOption,
+  });
+
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
   const { contentParts, aggregateContent } = createContentAggregator();
@@ -23,28 +30,21 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   /** @type {Agent} */
   const agent = {
     id: EModelEndpoint.bedrock,
-    name: "Bedrock Agent",
+    name: 'Bedrock Agent',
     instructions: endpointOption.promptPrefix,
     provider: EModelEndpoint.bedrock,
     model: undefined,
     model_parameters: {
       ...endpointOption.model_parameters,
       model: undefined,
-      agentId: process.env.AWS_BEDROCK_AGENT_ID,
-      agentAliasId: process.env.AWS_BEDROCK_AGENT_ALIAS_ID,
+      agentId: options.llmConfig.agentId,
+      agentAliasId: options.llmConfig.agentAliasId,
     },
   };
 
   if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
     agent.instructions = `${agent.instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
   }
-
-  // TODO: pass-in override settings that are specific to current run
-  const options = await getOptions({
-    req,
-    res,
-    endpointOption,
-  });
 
   agent.model_parameters = Object.assign(agent.model_parameters, options.llmConfig);
   if (options.configOptions) {

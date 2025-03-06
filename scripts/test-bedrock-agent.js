@@ -1,13 +1,10 @@
-const { BedrockAgentRuntimeClient, InvokeAgentCommand } = require('@aws-sdk/client-bedrock-agent-runtime');
+const {
+  BedrockAgentRuntimeClient,
+  InvokeAgentCommand,
+} = require('@aws-sdk/client-bedrock-agent-runtime');
 
 // Initialize the client with AWS credentials
-const client = new BedrockAgentRuntimeClient({
-  region: process.env.AWS_REGION || 'eu-central-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+const client = new BedrockAgentRuntimeClient();
 
 async function testAgentResponse({ agentId, sessionId, inputText }) {
   try {
@@ -20,15 +17,15 @@ async function testAgentResponse({ agentId, sessionId, inputText }) {
 
     const command = new InvokeAgentCommand({
       agentId,
-      agentAliasId: '1', // Use latest agent version as alias
+      agentAliasId: process.env.BEDROCK_AGENT_ALIAS_ID,
       sessionId,
       inputText,
-      enableTrace: true
+      enableTrace: true,
     });
 
     console.log('Sending request to AWS Bedrock...');
     const response = await client.send(command);
-    
+
     if (!response.completion) {
       throw new Error('No completion in agent response');
     }
@@ -40,18 +37,20 @@ async function testAgentResponse({ agentId, sessionId, inputText }) {
       const stream = response.completion.options.messageStream;
       let fullText = '';
       console.log('Starting to read stream chunks...');
-      
+
       try {
         for await (const chunk of stream) {
           if (chunk.headers?.[':exception-type']?.value) {
             const errorMessage = new TextDecoder().decode(chunk.body);
             console.error('AWS Error:', {
               type: chunk.headers[':exception-type'].value,
-              message: errorMessage
+              message: errorMessage,
             });
-            throw new Error(`AWS Error: ${chunk.headers[':exception-type'].value} - ${errorMessage}`);
+            throw new Error(
+              `AWS Error: ${chunk.headers[':exception-type'].value} - ${errorMessage}`,
+            );
           }
-          
+
           if (typeof chunk === 'string') {
             fullText += chunk;
           } else if (chunk.chunk?.bytes) {
@@ -65,15 +64,15 @@ async function testAgentResponse({ agentId, sessionId, inputText }) {
               type: typeof chunk,
               hasBody: !!chunk.body,
               bodyType: chunk.body ? typeof chunk.body : 'none',
-              properties: Object.keys(chunk)
+              properties: Object.keys(chunk),
             });
           }
         }
-        
+
         if (!fullText) {
           throw new Error('No text content received from stream');
         }
-        
+
         text = fullText;
       } catch (error) {
         console.error('Error processing stream:', error);
@@ -89,7 +88,7 @@ async function testAgentResponse({ agentId, sessionId, inputText }) {
       console.error('Unexpected completion type:', {
         type: typeof response.completion,
         value: response.completion,
-        hasMessageStream: !!response.completion?.options?.messageStream
+        hasMessageStream: !!response.completion?.options?.messageStream,
       });
       throw new Error('Unexpected completion type from Bedrock agent');
     }
@@ -98,30 +97,29 @@ async function testAgentResponse({ agentId, sessionId, inputText }) {
     console.log('--------------------------------');
     console.log(text);
     console.log('--------------------------------');
-    
+
     return {
       text,
       metadata: response.$metadata,
-      requestId: response.$metadata?.requestId
+      requestId: response.$metadata?.requestId,
     };
   } catch (error) {
     console.error('\nError testing agent:', {
       name: error.name,
       message: error.message,
       code: error.$metadata?.httpStatusCode,
-      requestId: error.$metadata?.requestId
+      requestId: error.$metadata?.requestId,
     });
     throw error;
   }
 }
 
-// Example usage
 async function main() {
   try {
     const testInput = {
-      agentId: process.env.AWS_BEDROCK_AGENT_ID || 'mock-agent-001',
+      agentId: process.env.BEDROCK_AGENT_ID,
       sessionId: 'test-session-' + Date.now(),
-      inputText: 'Hello, can you tell me what capabilities you have as an agent?'
+      inputText: 'Hey! What is the purpose of life?',
     };
 
     const result = await testAgentResponse(testInput);
@@ -134,9 +132,4 @@ async function main() {
   }
 }
 
-// Only run if called directly
-if (require.main === module) {
-  main().catch(console.error);
-}
-
-module.exports = { testAgentResponse };
+main().catch(console.error);

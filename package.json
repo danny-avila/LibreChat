@@ -143,9 +143,5 @@
       "admin/",
       "packages/"
     ]
-  },
-  "dependencies": {
-    "dotenv": "^16.4.7",
-    "librechat-mcp": "^1.0.0"
   }
 }

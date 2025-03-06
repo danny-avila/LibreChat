@@ -15,6 +15,7 @@ export const defaultRetrievalModels = [
   'o1-preview',
   'o1-mini-2024-09-12',
   'o1-mini',
+  'o3-mini',
   'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
   'gpt-4o-2024-08-06',
@@ -651,6 +652,8 @@ export const alternateName = {
 const sharedOpenAIModels = [
   'gpt-4o-mini',
   'gpt-4o',
+  'gpt-4.5-preview',
+  'gpt-4.5-preview-2025-02-27',
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0125',
   'gpt-4-turbo',
@@ -723,7 +726,7 @@ export const bedrockModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
     // Shared Google Models between Vertex AI & Gen AI
@@ -742,8 +745,8 @@ export const defaultModels = {
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
-    'chatgpt-4o-latest',
     ...sharedOpenAIModels,
+    'chatgpt-4o-latest',
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
     'gpt-3.5-turbo-instruct',
@@ -808,6 +811,7 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'gpt-4.5',
   'gpt-4o',
   'gpt-4o-mini',
   'o1',
@@ -856,7 +860,7 @@ export function validateVisionModel({
   return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
 }
 
-export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
+export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion', 'flux']);
 
 /**
  * Enum for collections using infinite queries

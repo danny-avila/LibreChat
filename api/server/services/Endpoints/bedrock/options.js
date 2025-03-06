@@ -1,24 +1,27 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
-  EModelEndpoint,
-  Constants,
   AuthType,
+  Constants,
+  EModelEndpoint,
+  bedrockInputParser,
+  bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getLogStores } = require('~/cache');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { sleep } = require('~/server/utils');
+const { logger } = require('~/config');
+
 const { CacheKeys } = require('librechat-data-provider');
 
-const getOptions = async ({ req, endpointOption }) => {
+const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const availableAgents = await cache.get(CacheKeys.MODELS_CONFIG);
   const currentAgentName = req?.user?.lastSelectedModel;
-  const currentAgentId = availableAgents.find((a) => a.agentName === currentAgentName)?.agentId;
-  const currentAliasId = availableAgents.find(
-    (a) => a.agentName === currentAgentName,
-  )?.latestAliasId;
-  console.log('currentAgentId:', currentAgentId); // eslint-disable-line no-console
+  const currentAgent = availableAgents.find((a) => a.agentName === currentAgentName);
+  const currentAgentId = currentAgent?.agentId;
+  const currentAliasId = currentAgent?.latestAliasId;
+  console.log(`currentAgent: ${JSON.stringify(currentAgent)}`);
 
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
@@ -27,8 +30,6 @@ const getOptions = async ({ req, endpointOption }) => {
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
-    AWS_BEDROCK_AGENT_ID,
-    AWS_BEDROCK_AGENT_ALIAS_ID,
   } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
@@ -75,31 +76,12 @@ const getOptions = async ({ req, endpointOption }) => {
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: undefined,
-    agentId: currentAgentId ?? AWS_BEDROCK_AGENT_ID,
-    agentAliasId: currentAliasId ?? AWS_BEDROCK_AGENT_ALIAS_ID,
+    model: overrideModel ?? endpointOption.model,
+    agentId: currentAgentId,
+    agentAliasId: currentAliasId,
     region: BEDROCK_AWS_DEFAULT_REGION,
-    streaming: true,
-    streamUsage: true,
-    callbacks: [
-      {
-        handleLLMNewToken: async () => {
-          if (!streamRate) {
-            return;
-          }
-          await sleep(streamRate);
-        },
-      },
-    ],
   };
-
-  if (credentials) {
-    requestOptions.credentials = credentials;
-  }
-
-  if (BEDROCK_REVERSE_PROXY) {
-    requestOptions.endpointHost = BEDROCK_REVERSE_PROXY;
-  }
+  console.log(`requestOptions: ${JSON.stringify(requestOptions, null, 2)}`);
 
   const configOptions = {};
   if (PROXY) {
@@ -107,9 +89,35 @@ const getOptions = async ({ req, endpointOption }) => {
     configOptions.httpAgent = new HttpsProxyAgent(PROXY);
   }
 
+  const llmConfig = bedrockOutputParser(
+    bedrockInputParser.parse(
+      removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+    ),
+  );
+
+  if (credentials) {
+    llmConfig.credentials = credentials;
+  }
+
+  if (BEDROCK_REVERSE_PROXY) {
+    llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
+  }
+  Object.assign(llmConfig, requestOptions);
+
+  llmConfig.callbacks = [
+    {
+      handleLLMNewToken: async () => {
+        if (!streamRate) {
+          return;
+        }
+        await sleep(streamRate);
+      },
+    },
+  ];
+
   return {
     /** @type {BedrockClientOptions} */
-    llmConfig: removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+    llmConfig,
     configOptions,
   };
 };

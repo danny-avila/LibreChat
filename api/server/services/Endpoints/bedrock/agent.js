@@ -1,12 +1,12 @@
-const { BedrockAgentRuntimeClient, InvokeAgentCommand } = require('@aws-sdk/client-bedrock-agent-runtime');
+const {
+  BedrockAgentRuntimeClient,
+  InvokeAgentCommand,
+} = require('@aws-sdk/client-bedrock-agent-runtime');
 const { TextDecoder } = require('util');
 
 class BedrockAgentClient {
   constructor(config) {
-    this.client = new BedrockAgentRuntimeClient({
-      region: config.region,
-      credentials: config.credentials,
-    });
+    this.client = new BedrockAgentRuntimeClient();
   }
 
   async sendMessage({ agentId, agentAliasId, sessionId, inputText }) {
@@ -16,11 +16,11 @@ class BedrockAgentClient {
         agentAliasId,
         sessionId,
         inputText,
-        enableTrace: true
+        enableTrace: true,
       });
 
       const response = await this.client.send(command);
-      
+
       if (!response.completion) {
         throw new Error('No completion in agent response');
       }
@@ -31,9 +31,11 @@ class BedrockAgentClient {
         for await (const chunk of stream) {
           if (chunk.headers?.[':exception-type']?.value) {
             const errorMessage = new TextDecoder().decode(chunk.body);
-            throw new Error(`AWS Error: ${chunk.headers[':exception-type'].value} - ${errorMessage}`);
+            throw new Error(
+              `AWS Error: ${chunk.headers[':exception-type'].value} - ${errorMessage}`,
+            );
           }
-          
+
           let chunkText = '';
           if (chunk.chunk?.bytes) {
             chunkText = new TextDecoder().decode(chunk.chunk.bytes);
@@ -42,19 +44,13 @@ class BedrockAgentClient {
           } else if (chunk.body instanceof Uint8Array) {
             chunkText = new TextDecoder().decode(chunk.body);
           } else {
-            console.debug('Unknown chunk format:', {
-              type: typeof chunk,
-              hasBody: !!chunk.body,
-              bodyType: chunk.body ? typeof chunk.body : 'none',
-              properties: Object.keys(chunk),
-            });
             continue;
           }
 
           try {
             const jsonData = JSON.parse(chunkText);
             let extractedText = '';
-            
+
             // Try to extract text from various possible locations in the response
             if (jsonData.content?.[0]?.text) {
               const match = jsonData.content[0].text.match(/<answer>(.*?)<\/answer>/s);
@@ -62,8 +58,13 @@ class BedrockAgentClient {
             } else if (jsonData.trace?.orchestrationTrace?.observation?.finalResponse?.text) {
               extractedText = jsonData.trace.orchestrationTrace.observation.finalResponse.text;
             } else if (jsonData.trace?.orchestrationTrace?.modelInvocationOutput?.text) {
-              const match = jsonData.trace.orchestrationTrace.modelInvocationOutput.text.match(/<answer>(.*?)<\/answer>/s);
-              extractedText = match ? match[1].trim() : jsonData.trace.orchestrationTrace.modelInvocationOutput.text;
+              const match =
+                jsonData.trace.orchestrationTrace.modelInvocationOutput.text.match(
+                  /<answer>(.*?)<\/answer>/s,
+                );
+              extractedText = match
+                ? match[1].trim()
+                : jsonData.trace.orchestrationTrace.modelInvocationOutput.text;
             }
 
             // Only append non-empty, non-JSON-like text
@@ -116,7 +117,7 @@ class BedrockAgentClient {
         console.error('Unexpected completion type:', {
           type: typeof response.completion,
           value: response.completion,
-          hasMessageStream: !!response.completion?.options?.messageStream
+          hasMessageStream: !!response.completion?.options?.messageStream,
         });
         throw new Error('Unexpected completion type from Bedrock agent');
       }
@@ -124,7 +125,7 @@ class BedrockAgentClient {
       return {
         text,
         metadata: response.$metadata,
-        requestId: response.$metadata?.requestId
+        requestId: response.$metadata?.requestId,
       };
     } catch (error) {
       console.error('Error in agent response:', error);

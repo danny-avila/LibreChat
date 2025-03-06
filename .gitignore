@@ -71,6 +71,7 @@ librechat.yml
 .env*
 my.secrets
 !**/.env.example
+!**/.env.apro.example
 !**/.env.test.example
 !**/.envrc
 cache.json
