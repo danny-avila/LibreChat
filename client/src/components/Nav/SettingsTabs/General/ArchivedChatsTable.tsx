@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import debounce from 'lodash/debounce';
-import { TrashIcon, ArchiveRestore } from 'lucide-react';
+import { TrashIcon, ArchiveRestore, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
   Button,
@@ -124,16 +124,29 @@ export default function ArchivedChatsTable({
     () => [
       {
         accessorKey: 'title',
-        header: ({ column }: { column: any }) => (
-          <Button
-            variant="ghost"
-            className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-            onClick={() => handleSort('title', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
-          >
-            {localize('com_nav_archive_name')}
-          </Button>
-        ),
-        cell: ({ row }: { row: any }) => {
+        header: () => {
+          const isSorted = queryParams.sortBy === 'title';
+          const sortDirection = queryParams.sortDirection;
+          return (
+            <Button
+              variant="ghost"
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              onClick={() =>
+                handleSort('title', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
+              }
+            >
+              {localize('com_nav_archive_name')}
+              {isSorted && sortDirection === 'asc' && (
+                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {isSorted && sortDirection === 'desc' && (
+                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
+            </Button>
+          );
+        },
+        cell: ({ row }) => {
           const { conversationId, title } = row.original;
           return (
             <button
@@ -158,17 +171,29 @@ export default function ArchivedChatsTable({
       },
       {
         accessorKey: 'createdAt',
-        header: ({ column }: { column: any }) => (
-          <Button
-            variant="ghost"
-            className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-            onClick={() => handleSort('createdAt', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
-          >
-            {localize('com_nav_archive_created_at')}
-          </Button>
-        ),
-        cell: ({ row }: { row: any }) =>
-          formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        header: () => {
+          const isSorted = queryParams.sortBy === 'createdAt';
+          const sortDirection = queryParams.sortDirection;
+          return (
+            <Button
+              variant="ghost"
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              onClick={() =>
+                handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
+              }
+            >
+              {localize('com_nav_archive_created_at')}
+              {isSorted && sortDirection === 'asc' && (
+                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {isSorted && sortDirection === 'desc' && (
+                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
+            </Button>
+          );
+        },
+        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
           size: isSmallScreen ? '30%' : '35%',
           mobileSize: '30%',
@@ -181,7 +206,7 @@ export default function ArchivedChatsTable({
             {localize('com_assistants_actions')}
           </Label>
         ),
-        cell: ({ row }: { row: any }) => {
+        cell: ({ row }) => {
           const conversation = row.original;
           return (
             <div className="flex items-center gap-2">
@@ -233,7 +258,7 @@ export default function ArchivedChatsTable({
         },
       },
     ],
-    [handleSort, isSmallScreen, localize, unarchiveMutation],
+    [handleSort, isSmallScreen, localize, queryParams, unarchiveMutation],
   );
 
   return (
@@ -249,6 +274,7 @@ export default function ArchivedChatsTable({
         isFetchingNextPage={isFetchingNextPage}
         isLoading={isLoading}
         showCheckboxes={false}
+        manualSorting={true} // Ensures server-side sorting
       />
 
       <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>

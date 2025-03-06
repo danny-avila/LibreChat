@@ -102,11 +102,10 @@ export const useSearchInfiniteQuery = (
     [QueryKeys.searchConversations, params],
     ({ pageParam = null }) =>
       dataService
-        .listConversationsByQuery({
+        .listConversations({
           ...params,
-          nextCursor: pageParam,
-          pageSize: params?.pageSize ?? 20,
           search: params?.search ?? '',
+          cursor: pageParam?.toString(),
         })
         .then((res) => ({ ...res })) as Promise<SearchConversationListResponse>,
     {
@@ -132,12 +131,12 @@ export const useConversationsInfiniteQuery = (
     ],
     queryFn: ({ pageParam }) =>
       dataService.listConversations({
-        cursor: pageParam?.toString(),
         isArchived,
         sortBy,
         sortDirection,
         tags,
         search,
+        cursor: pageParam?.toString(),
       }),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     keepPreviousData: true,

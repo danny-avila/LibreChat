@@ -63,20 +63,20 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 export const conversationsRoot = '/api/convos';
 
 export const conversations = (
-  cursor?: string,
   isArchived?: boolean,
   sortBy?: 'title' | 'createdAt' | 'updatedAt',
   sortDirection?: 'asc' | 'desc',
   tags?: string[],
   search?: string,
+  cursor?: string,
 ) => {
   const params = {
-    cursor,
     isArchived,
     sortBy,
     sortDirection,
     tags,
     search,
+    cursor,
   };
   return `${conversationsRoot}${buildQuery(params)}`;
 };
@@ -97,10 +97,8 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
-export const search = (q: string, pageSize?: number, nextCursor?: string | null) =>
-  `/api/search?q=${q}${pageSize ? `&pageSize=${pageSize}` : ''}${
-    nextCursor ? `&cursor=${nextCursor}` : ''
-  }`;
+export const search = (q: string, cursor?: string | null) =>
+  `/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
 
 export const searchEnabled = () => '/api/search/enable';
 

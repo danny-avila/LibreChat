@@ -1,7 +1,7 @@
 import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import debounce from 'lodash/debounce';
-import { TrashIcon, MessageSquare, ArrowUpDown } from 'lucide-react';
+import { TrashIcon, MessageSquare, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -156,21 +156,30 @@ export default function SharedLinks() {
     () => [
       {
         accessorKey: 'title',
-        header: ({ column }) => {
+        header: () => {
+          const isSorted = queryParams.sortBy === 'title';
+          const sortDirection = queryParams.sortDirection;
           return (
             <Button
               variant="ghost"
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() => handleSort('title', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
+              onClick={() =>
+                handleSort('title', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
+              }
             >
               {localize('com_ui_name')}
-              <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              {isSorted && sortDirection === 'asc' && (
+                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {isSorted && sortDirection === 'desc' && (
+                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
             </Button>
           );
         },
         cell: ({ row }) => {
           const { title, shareId } = row.original;
-
           return (
             <div className="flex items-center gap-2">
               <Link
@@ -192,17 +201,25 @@ export default function SharedLinks() {
       },
       {
         accessorKey: 'createdAt',
-        header: ({ column }) => {
+        header: () => {
+          const isSorted = queryParams.sortBy === 'createdAt';
+          const sortDirection = queryParams.sortDirection;
           return (
             <Button
               variant="ghost"
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
               onClick={() =>
-                handleSort('createdAt', column.getIsSorted() === 'asc' ? 'desc' : 'asc')
+                handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
               }
             >
               {localize('com_ui_date')}
-              <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              {isSorted && sortDirection === 'asc' && (
+                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {isSorted && sortDirection === 'desc' && (
+                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+              )}
+              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
             </Button>
           );
         },
@@ -239,7 +256,7 @@ export default function SharedLinks() {
                   <MessageSquare className="size-4" />
                 </Button>
               }
-            ></TooltipAnchor>
+            />
             <TooltipAnchor
               description={localize('com_ui_delete')}
               render={
@@ -255,12 +272,12 @@ export default function SharedLinks() {
                   <TrashIcon className="size-4" />
                 </Button>
               }
-            ></TooltipAnchor>
+            />
           </div>
         ),
       },
     ],
-    [isSmallScreen, localize],
+    [isSmallScreen, localize, queryParams, handleSort],
   );
 
   return (

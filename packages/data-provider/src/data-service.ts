@@ -599,32 +599,24 @@ export function clearAllConversations(): Promise<unknown> {
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  const cursor = params?.cursor;
   const isArchived = params?.isArchived ?? false;
   const sortBy = params?.sortBy;
   const sortDirection = params?.sortDirection;
   const tags = params?.tags || [];
   const search = params?.search || '';
-  return request.get(
-    endpoints.conversations(cursor, isArchived, sortBy, sortDirection, tags, search),
-  );
-};
+  const cursor = params?.cursor;
 
-export const listConversationsByQuery = (
-  params?: q.SearchConversationListParams,
-): Promise<q.SearchConversationListResponse> => {
-  const nextCursor = params?.nextCursor ?? null;
-  const pageSize = params?.pageSize ?? 10;
-  const searchQuery = params?.search ?? '';
-  if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, pageSize, nextCursor));
+  if (search !== '' && isArchived === false) {
+    return request.get(endpoints.search(search, cursor));
   } else {
-    return request.get(endpoints.conversations(nextCursor ?? ''));
+    return request.get(
+      endpoints.conversations(isArchived, sortBy, sortDirection, tags, search, cursor),
+    );
   }
 };
 
 export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(cursor));
+  return request.get(endpoints.conversations(undefined, undefined, undefined, [], '', cursor));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {
@@ -775,15 +767,11 @@ export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
   return request.get(endpoints.enableTwoFactor());
 }
 
-export function verifyTwoFactor(
-  payload: t.TVerify2FARequest,
-): Promise<t.TVerify2FAResponse> {
+export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
   return request.post(endpoints.verifyTwoFactor(), payload);
 }
 
-export function confirmTwoFactor(
-  payload: t.TVerify2FARequest,
-): Promise<t.TVerify2FAResponse> {
+export function confirmTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
   return request.post(endpoints.confirmTwoFactor(), payload);
 }
 
