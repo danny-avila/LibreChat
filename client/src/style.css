@@ -2492,3 +2492,20 @@ background: #b5c4b5 !important;
 background:none !important;
   
 }
+.sidenav {
+background: #b5c4b5 !important;
+  
+}
+.sidenav .bg-background {
+background: #b5c4b5 !important;
+  
+}
+
+.sidenav .bg-token-sidebar-surface-primary button {
+  border:none !important;
+  background: #f8f8f857 !important;
+  padding-top: 22px;
+  padding-bottom: 22px;
+
+  
+}
