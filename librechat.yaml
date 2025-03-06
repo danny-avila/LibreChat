@@ -1,0 +1,122 @@
+# For more information, see the Configuration Guide:
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.2.1
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# Custom interface configuration
+interface:
+  # Privacy policy settings
+  privacyPolicy:
+    externalUrl: 'https://librechat.ai/privacy-policy'
+    openNewTab: true
+
+  # Terms of service
+  termsOfService:
+    externalUrl: 'https://librechat.ai/tos'
+    openNewTab: false
+    modalAcceptance: true
+    modalTitle: "Terms of Service for LibreChat"
+    modalContent: |
+      # Terms and Conditions for LibreChat
+
+      *Effective Date: February 18, 2024*
+
+      Welcome to LibreChat, the informational website for the open-source AI chat platform, available at https://librechat.ai. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://librechat.ai//privacy.
+
+      ## 1. Ownership
+
+      Upon purchasing a package from LibreChat, you are granted the right to download and use the code for accessing an admin panel for LibreChat. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from LibreChat.
+
+      ## 2. User Data
+
+      We collect personal data, such as your name, email address, and payment information, as described in our Privacy Policy. This information is collected to provide and improve our services, process transactions, and communicate with you.
+
+      ## 3. Non-Personal Data Collection
+
+      The Website uses cookies to enhance user experience, analyze site usage, and facilitate certain functionalities. By using the Website, you consent to the use of cookies in accordance with our Privacy Policy.
+
+      ## 4. Use of the Website
+
+      You agree to use the Website only for lawful purposes and in a manner that does not infringe the rights of, restrict, or inhibit anyone else's use and enjoyment of the Website. Prohibited behavior includes harassing or causing distress or inconvenience to any person, transmitting obscene or offensive content, or disrupting the normal flow of dialogue within the Website.
+
+      ## 5. Governing Law
+
+      These Terms shall be governed by and construed in accordance with the laws of the United States, without giving effect to any principles of conflicts of law.
+
+      ## 6. Changes to the Terms
+
+      We reserve the right to modify these Terms at any time. We will notify users of any changes by email. Your continued use of the Website after such changes have been notified will constitute your consent to such changes.
+
+      ## 7. Contact Information
+
+      If you have any questions about these Terms, please contact us at contact@librechat.ai.
+
+      By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
+
+  endpointsMenu: false
+  modelSelect: false
+  parameters: true
+  sidePanel: false
+  presets: false
+  prompts: true
+  bookmarks: true
+  multiConvo: true
+  agents: true
+
+endpoints:
+  custom:
+  # Mistral AI Example
+  - name: 'Swisscom AI Platform' # Unique name for the endpoint
+    # For `apiKey` and `baseURL`, you can use environment variables that you define.
+    # recommended environment variables:
+    apiKey: '${SWISSCOM_AI_KEY}'
+    baseURL: 'https://ep1.ai-platform.swisscom.com/v1'
+    models:
+      default:
+          - "meta/llama-3.1-70b-instruct"
+        
+      # Fetch option: Set to true to fetch models from API.
+      fetch: false # Defaults to false.
+    directEndpoint: false
+
+    # Optional configurations
+
+    # Title Conversation setting
+    #titleConvo: true # Set to true to enable title conversation
+
+    # Title Method: Choose between "completion" or "functions".
+    #titleMethod: "completion"  # Defaults to "completion" if omitted.
+
+    # Title Model: Specify the model to use for titles.
+    #titleModel: 'llama-3.1-70b-instruct' # Defaults to "gpt-3.5-turbo" if omitted.
+
+    # Summarize setting: Set to true to enable summarization.
+    # summarize: false
+
+    # Summary Model: Specify the model to use if summarization is enabled.
+    # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
+
+    # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
+    forcePrompt: false
+
+    # The label displayed for the AI model in messages.
+    modelDisplayLabel: 'llama-3.1-70b' # Default is "AI" when not set.
+
+
+  # - name: 'Swisscom AI Platform'
+  #   apiKey: '${SWISSCOM_AI_KEY}'
+  #   baseURL: 'https://ep1.ai-platform.swisscom.com/v1'
+  #   models:
+  #     default:
+  #       [
+  #         "meta/llama-3.1-70b-instruct"
+  #       ]
+  #     fetch: false
+  #   titleConvo: true
+  #   titleModel: 'llama-3.1-70b-instruct'
+  #   modelDisplayLabel: 'llama-3.1-70b'
+
