@@ -2509,3 +2509,9 @@ background: #b5c4b5 !important;
 
   
 }
+.hide {
+  display:none !important;
+  opacity: 0 !important;
+  height:0px;
+  width:0px;
+}
