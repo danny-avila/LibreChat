@@ -43,12 +43,14 @@ export class MCPConnection extends EventEmitter {
   private isInitializing = false;
   private reconnectAttempts = 0;
   iconPath?: string;
+  timeout?: number;
 
   constructor(serverName: string, private readonly options: t.MCPOptions, private logger?: Logger) {
     super();
     this.serverName = serverName;
     this.logger = logger;
     this.iconPath = options.iconPath;
+    this.timeout = options.timeout;
     this.client = new Client(
       {
         name: 'librechat-mcp-client',
