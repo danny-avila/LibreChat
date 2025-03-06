@@ -37,9 +37,7 @@ export default function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
+      : '[Marginal ](https://marginal.dk/) - ' +
         localize('com_ui_latest_footer')
   ).split('|');
 
@@ -87,7 +85,7 @@ export default function Footer({ className }: { className?: string }) {
     <div
       className={
         className ??
-        'relative flex items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary md:px-[60px]'
+        'hide relative flex items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary md:px-[60px]'
       }
       role="contentinfo"
     >
