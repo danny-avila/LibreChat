@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feat/application-terraform
+  workflow_dispatch:
 
 permissions:
   id-token: write # This is required for requesting the JWT
@@ -39,10 +39,17 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
+      - name: Genrate Short SHA
+        id: set_shortSHA
+        run: |
+          calculatedSHA=$(git rev-parse --short ${{ github.sha }})
+          echo "SHORT_SHA=$calculatedSHA" >> $GITHUB_ENV
+
       - name: Prepare environment
         run: |
           cp .env.example .env
           cat .env
+
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
@@ -50,7 +57,7 @@ jobs:
           file: ${{ matrix.file }}
           push: true
           tags: |
-            533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:${{ github.sha }}
+            533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
             533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}

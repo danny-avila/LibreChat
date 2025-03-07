@@ -1,6 +1,5 @@
 # Dockerfile.multi
 # v0.7.7-rc1
-
 # Base for all builds
 FROM node:20-alpine AS base-min
 WORKDIR /app
@@ -13,7 +12,7 @@ COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/mcp/package*.json ./packages/mcp/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
-COPY ./librechat.apro.yaml librechat.yaml
+COPY librechat.apro.yaml ./librechat.yaml
 
 # Install all dependencies for every build
 FROM base-min AS base
