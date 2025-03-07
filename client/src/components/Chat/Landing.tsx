@@ -1,5 +1,4 @@
 import { useMemo, useCallback } from 'react';
-import { Label } from '@radix-ui/react-dropdown-menu';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import {
@@ -9,7 +8,7 @@ import {
 } from '~/data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useLocalize, useSubmitMessage, useAuthContext } from '~/hooks';
-import { BirthdayIcon, TooltipAnchor } from '~/components';
+import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { getIconEndpoint, getEntity } from '~/utils';
 import ConvoStarter from './ConvoStarter';
@@ -30,7 +29,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     let ep = conversation?.endpoint ?? '';
     if (
       [
-        // Using deprecated endpoints, but keeping them for now
         EModelEndpoint.chatGPTBrowser,
         EModelEndpoint.azureOpenAI,
         EModelEndpoint.gptPlugins,
@@ -129,10 +127,17 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           ) : isAgent || isAssistant ? (
             <div className="text-center text-3xl font-medium text-text-primary">{name}</div>
           ) : (
-            <Label className="text-center text-4xl font-medium text-text-primary">
-              <span className="inline-block">{getGreeting()},</span>{' '}
-              <span className="inline-block">{user?.name ?? 'User'}</span>
-            </Label>
+            <SplitText
+              text={getGreeting() + (user?.name ? ', ' + user.name : '')}
+              className="text-4xl font-medium text-text-primary"
+              delay={50}
+              textAlign="center"
+              animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
+              animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+              easing="easeOutCubic"
+              threshold={0.2}
+              rootMargin="-50px"
+            />
           )}
         </div>
         {(isAgent || isAssistant) && description ? (
