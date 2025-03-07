@@ -2,11 +2,11 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run restart.sh",
+      "name": "Debug run.sh",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "/bin/bash",
-      "args": ["${workspaceFolder}/scripts/restart.sh", "backend"],
+      "args": ["${workspaceFolder}/scripts/run.sh", "backend"],
       "console": "integratedTerminal"
     }
   ]
