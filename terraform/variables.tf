@@ -1,9 +1,3 @@
-variable "region" {
-  description = "The AWS region"
-  type        = string
-  default     = "eu-west-1"
-}
-
 variable "principals_readonly_access_all" {
   description = "The list of principals that have readonly access to the ECR repositories"
   type        = list(string)

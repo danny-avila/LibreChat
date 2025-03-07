@@ -1,48 +1,33 @@
 locals {
-  ecr_repository_url = "533267242259.dkr.ecr.eu-west-1.amazonaws.com"
+  account_id = data.aws_caller_identity.current.account_id
+  region     = data.aws_region.current.name
   ecr_repositories = [
     "arn:aws:ecr:eu-west-1:533267242259:repository/genai/api",
     "arn:aws:ecr:eu-west-1:533267242259:repository/genai/frontend",
   ]
-  s3_buckets = [
-    "arn:aws:s3:::genai-shared-config/*",
-    "arn:aws:s3:::genai-shared-config"
-  ]
-  github_oidc_url = data.aws_iam_openid_connect_provider.github.url
-  github_oidc_arn = data.aws_iam_openid_connect_provider.github.arn
+  idp_host = "token.actions.githubusercontent.com"
+  idp_url  = format("https://%s", local.idp_host)
 }
 
-data "tls_certificate" "github" {
-  url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
-}
 
 data "aws_iam_openid_connect_provider" "github" {
-  url = "https://token.actions.githubusercontent.com"
+  url = local.idp_url
 }
+
 
 # Configuration for shared genai role
 resource "aws_iam_role" "genai" {
+  tags                 = merge(module.label.tags, var.tags)
   name                 = "github-oidc-genai"
   description          = "genai github oidc role"
   max_session_duration = var.max_session_duration
-  assume_role_policy   = join("", data.aws_iam_policy_document.genai_assume.*.json)
-  tags                 = var.tags
-
-  inline_policy {
-    name   = "genai-ecr"
-    policy = data.aws_iam_policy_document.genai_push_and_pull.json
-  }
-
-  inline_policy {
-    name   = "genai-s3"
-    policy = data.aws_iam_policy_document.genai_s3.json
-  }
+  assume_role_policy   = data.aws_iam_policy_document.genai_assume.json
 }
 
 data "aws_iam_policy_document" "genai_assume" {
 
   dynamic "statement" {
-    for_each = [{ url : local.github_oidc_url, arn : local.github_oidc_arn }]
+    for_each = [{ url : data.aws_iam_openid_connect_provider.github.url, arn : data.aws_iam_openid_connect_provider.github.arn }]
 
     content {
       actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -65,17 +50,10 @@ data "aws_iam_policy_document" "genai_assume" {
 data "aws_iam_policy_document" "genai_s3" {
 
   statement {
-    sid    = "S3Write"
-    effect = "Allow"
-
-    actions = [
-      "s3:PutObject",
-      "s3:GetObject",
-      "s3:DeleteObject",
-      "s3:ListBucket"
-    ]
-
-    resources = local.s3_buckets
+    sid       = "S3Write"
+    effect    = "Allow"
+    actions   = local.s3.config.actions
+    resources = local.s3.config.resources
   }
 }
 
@@ -121,4 +99,27 @@ data "aws_iam_policy_document" "genai_push_and_pull" {
 
     resources = local.ecr_repositories
   }
+}
+resource "aws_iam_policy" "genai_ecr" {
+  name        = "genai-ecr-policy"
+  description = "Policy for GenAI ECR access"
+  policy      = data.aws_iam_policy_document.genai_push_and_pull.json
+  tags        = module.label.tags
+}
+
+resource "aws_iam_policy" "genai_s3" {
+  name        = "genai-s3-policy"
+  description = "Policy for GenAI S3 access"
+  policy      = data.aws_iam_policy_document.genai_s3.json
+  tags        = module.label.tags
+}
+
+resource "aws_iam_role_policy_attachment" "genai_ecr" {
+  role       = aws_iam_role.genai.name
+  policy_arn = aws_iam_policy.genai_ecr.arn
+}
+
+resource "aws_iam_role_policy_attachment" "genai_s3" {
+  role       = aws_iam_role.genai.name
+  policy_arn = aws_iam_policy.genai_s3.arn
 }

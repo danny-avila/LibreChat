@@ -1,18 +1,6 @@
-provider "aws" {
-  region = var.region
-}
-
-data "aws_availability_zones" "available" {}
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
-terraform {
-  backend "s3" {
-    region  = "eu-west-1"
-    bucket  = "shared-apro-accelerator-terraform-state"
-    key     = "genai/ecr_repositories/terraform.tfstate"
-    encrypt = true
-  }
-}
 
 module "label" {
   source  = "cloudposse/label/null"
@@ -40,6 +28,18 @@ module "ecr" {
   context                    = module.label.context
 }
 
+data "aws_iam_policy_document" "cache_bucket" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.genai.arn]
+    }
+    actions   = local.s3.cache.actions
+    resources = local.s3.cache.resources
+  }
+}
+
 data "aws_iam_policy_document" "librechat_config" {
   statement {
     sid    = "Statement1"
@@ -50,26 +50,32 @@ data "aws_iam_policy_document" "librechat_config" {
       identifiers = local.principals
     }
 
-    actions = [
-      "s3:Get*",
-      "s3:List*"
-    ]
-
-    resources = [
-      "arn:aws:s3:::genai-shared-config/*",
-      "arn:aws:s3:::genai-shared-config"
-    ]
+    actions   = local.s3.config.actions
+    resources = local.s3.config.resources
   }
 }
 
 module "config_bucket" {
   source  = "cloudposse/s3-bucket/aws"
-  version = "4.2.0"
+  version = "4.10.0"
   name    = "config"
 
   s3_object_ownership     = "BucketOwnerEnforced"
   source_policy_documents = [data.aws_iam_policy_document.librechat_config.json]
 
   versioning_enabled = true
+  context            = module.label.context
+}
+
+
+module "cache_bucket" {
+  source  = "cloudposse/s3-bucket/aws"
+  version = "4.10.0"
+  name    = "github-cache"
+
+  s3_object_ownership     = "BucketOwnerEnforced"
+  source_policy_documents = [data.aws_iam_policy_document.cache_bucket.json]
+
+  versioning_enabled = false
   context            = module.label.context
 }
