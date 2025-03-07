@@ -11,7 +11,7 @@ WORKDIR /app
 USER node
 
 COPY --chown=node:node . .
-COPY librechat.apro.yaml /app/librechat.yaml
+COPY librechat.yaml /app/librechat.yaml
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
