@@ -815,6 +815,7 @@
   "com_ui_upload_files": "Upload files",
   "com_ui_upload_image": "Upload an image",
   "com_ui_upload_image_input": "Upload Image",
+  "com_ui_upload_ocr_text": "Upload as Text",
   "com_ui_upload_invalid": "Invalid file for upload. Must be an image not exceeding the limit",
   "com_ui_upload_invalid_var": "Invalid file for upload. Must be an image not exceeding {{0}} MB",
   "com_ui_upload_success": "Successfully uploaded file",

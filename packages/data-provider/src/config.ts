@@ -168,6 +168,7 @@ export enum AgentCapabilities {
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
+  ocr = 'ocr',
 }
 
 export const defaultAssistantsVersion = {

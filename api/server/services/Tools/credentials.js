@@ -1,6 +1,15 @@
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 
-const loadAuthValues = async ({ userId, authFields, throwError = true }) => {
+/**
+ *
+ * @param {Object} params
+ * @param {string} params.userId
+ * @param {string[]} params.authFields
+ * @param {Set<string>} [params.optional]
+ * @param {boolean} [params.throwError]
+ * @returns
+ */
+const loadAuthValues = async ({ userId, authFields, optional, throwError = true }) => {
   let authValues = {};
 
   /**
@@ -17,6 +26,9 @@ const loadAuthValues = async ({ userId, authFields, throwError = true }) => {
       try {
         value = await getUserPluginAuthValue(userId, field, throwError);
       } catch (err) {
+        if (optional && optional.has(field)) {
+          return { authField: field, authValue: undefined };
+        }
         if (field === fields[fields.length - 1] && !value) {
           throw err;
         }

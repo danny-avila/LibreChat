@@ -27,6 +27,7 @@ export enum EToolResources {
   code_interpreter = 'code_interpreter',
   execute_code = 'execute_code',
   file_search = 'file_search',
+  ocr = 'ocr',
 }
 
 export type Tool = {

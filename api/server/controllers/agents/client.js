@@ -224,13 +224,16 @@ class AgentClient extends BaseClient {
   }
 
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
+    const { files, text, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.agent.provider,
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
+    if (text && message.text) {
+      message.text = [text, message.text].join('\n');
+    }
     return files;
   }
 

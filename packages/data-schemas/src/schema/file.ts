@@ -8,6 +8,7 @@ export interface IMongoFile extends Document {
   file_id: string;
   temp_file_id?: string;
   bytes: number;
+  text?: string;
   filename: string;
   filepath: string;
   object: 'file';
@@ -71,6 +72,9 @@ const file: Schema<IMongoFile> = new Schema(
     type: {
       type: String,
       required: true,
+    },
+    text: {
+      type: String,
     },
     context: {
       type: String,

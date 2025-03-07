@@ -1,7 +1,7 @@
 import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
-import { FileSearch, ImageUpIcon, TerminalSquareIcon } from 'lucide-react';
 import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
+import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { FileUpload, TooltipAnchor, DropdownPopup } from '~/components/ui';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { AttachmentIcon } from '~/components/svg';
@@ -48,6 +48,15 @@ const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
         icon: <ImageUpIcon className="icon-md" />,
       },
     ];
+
+    items.push({
+      label: localize('com_ui_upload_ocr_text'),
+      onClick: () => {
+        setToolResource(EToolResources.ocr);
+        handleUploadClick();
+      },
+      icon: <FileType2Icon className="icon-md" />,
+    });
 
     if (capabilities.includes(EToolResources.file_search)) {
       items.push({

@@ -49,6 +49,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
   const encodingMethods = {};
   const result = {
+    text: '',
     files: [],
     image_urls: [],
   };
@@ -59,6 +60,9 @@ async function encodeAndFormat(req, files, endpoint, mode) {
 
   for (let file of files) {
     const source = file.source ?? FileSources.local;
+    if (source === FileSources.text && file.text) {
+      result.text += `# DOCUMENT: "${file.filename}"\n${file.text}\n`;
+    }
 
     if (!file.height) {
       promises.push([file, null]);
