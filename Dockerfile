@@ -8,7 +8,7 @@ RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
 USER node
-COPY librechat.apro.yaml ./api/librechat.apro.yaml
+COPY librechat.apro.yaml ./api/librechat.yaml
 COPY --chown=node:node . .
 RUN \
     # Allow mounting of these files, which have no default
