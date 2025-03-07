@@ -114,6 +114,7 @@
     "elliptic": "^6.6.1"
   },
   "overrides": {
+    "axios": "1.8.2",
     "elliptic": "^6.6.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "remark-gfm": {
