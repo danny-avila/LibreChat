@@ -30,6 +30,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     let ep = conversation?.endpoint ?? '';
     if (
       [
+        // Using deprecated endpoints, but keeping them for now
         EModelEndpoint.chatGPTBrowser,
         EModelEndpoint.azureOpenAI,
         EModelEndpoint.gptPlugins,
@@ -58,7 +59,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   const name = entity?.name ?? '';
   const description = entity?.description ?? '';
-  const avatar = isAgent
+  // Not using avatar for now, but keeping the calculation
+  const avatarPath = isAgent
     ? ((entity as t.Agent)?.avatar?.filepath ?? '')
     : (((entity as t.Assistant)?.metadata?.avatar as string) ?? '');
 
@@ -79,7 +81,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   );
 
   const getGreeting = useCallback(() => {
-    if (startupConfig?.interface?.customWelcome === 'string') {
+    if (typeof startupConfig?.interface?.customWelcome === 'string') {
       return startupConfig.interface.customWelcome;
     }
 
@@ -92,7 +94,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       return localize('com_ui_good_afternoon');
     }
     return localize('com_ui_good_evening');
-  }, [localize]);
+  }, [localize, startupConfig?.interface?.customWelcome]);
 
   return (
     <div
@@ -123,12 +125,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           {name ? (
             <div className="flex flex-col items-center gap-0 p-2">
               <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
-              <div className="max-w-md text-center text-sm font-normal text-text-primary">
-                {description ||
-                  (typeof startupConfig?.interface?.customWelcome === 'string'
-                    ? startupConfig?.interface?.customWelcome
-                    : '')}
-              </div>
             </div>
           ) : isAgent || isAssistant ? (
             <div className="text-center text-3xl font-medium text-text-primary">{name}</div>
@@ -139,20 +135,28 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </Label>
           )}
         </div>
-        {(isAgent || isAssistant) && description && (
-          <div className="max-w-md text-center text-sm font-normal text-text-primary">
+        {(isAgent || isAssistant) && description ? (
+          <div className="mt-2 max-w-md text-center text-sm font-normal text-text-primary">
             {description}
           </div>
+        ) : (
+          typeof startupConfig?.interface?.customWelcome === 'string' && (
+            <div className="mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+              {startupConfig?.interface?.customWelcome}
+            </div>
+          )
         )}
       </div>
       <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-        {conversation_starters.slice(0, Constants.MAX_CONVO_STARTERS).map((text, index) => (
-          <ConvoStarter
-            key={`starter-${index}`}
-            text={text}
-            onClick={() => sendConversationStarter(text)}
-          />
-        ))}
+        {conversation_starters
+          .slice(0, Constants.MAX_CONVO_STARTERS)
+          .map((text: string, index: number) => (
+            <ConvoStarter
+              key={`starter-${index}`}
+              text={text}
+              onClick={() => sendConversationStarter(text)}
+            />
+          ))}
       </div>
     </div>
   );
