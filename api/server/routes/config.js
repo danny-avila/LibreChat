@@ -52,10 +52,9 @@ router.get('/', async function (req, res) {
         !!process.env.APPLE_KEY_ID &&
         !!process.env.APPLE_PRIVATE_KEY_PATH,
       openidLoginEnabled:
-        !!process.env.OPENID_CLIENT_ID &&
-        !!process.env.OPENID_CLIENT_SECRET &&
-        !!process.env.OPENID_ISSUER &&
+        !!process.env.OPENID_ENABLED &&
         !!process.env.OPENID_SESSION_SECRET,
+      openidMultiTenantEnabled: !!process.env.OPENID_MULTI_TENANT,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',

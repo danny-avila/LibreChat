@@ -74,6 +74,32 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
+# Single‑Tenant YAML
+#openid:
+#  tenants:
+#    - name: "default"
+#      domains: ""
+#      openid:
+#        clientId: "client-id-for-tenant1"
+#        clientSecret: "client-secret-for-tenant1"
+#        issuer: "https://example.com/oidc"
+
+# Add your multi-tenant OpenID settings:
+openid:
+  tenants:
+    - name: "tenant1"
+      domains: "first.com,example.com"
+      openid:
+        clientId: "client-id-for-tenant1"
+        clientSecret: "client-secret-for-tenant1"
+        issuer: "https://example.com/oidc"
+    - name: "tenant2"
+      domains: "another.com,one.com"
+      openid:
+        clientId: "client-id-for-tenant2"
+        clientSecret: "client-secret-for-tenant2"
+        issuer: "https://example.com/oidc2"
+
 # speech:
 #   tts:
 #     openai:

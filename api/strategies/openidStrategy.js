@@ -1,6 +1,6 @@
 const fetch = require('node-fetch');
 const passport = require('passport');
-const jwtDecode = require('jsonwebtoken/decode');
+const { decode: jwtDecode } = require('jsonwebtoken');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -8,6 +8,7 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const { getOpenIdTenants } = require('~/server/utils/openidHelper');
 
 let crypto;
 try {
@@ -105,16 +106,18 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
-async function setupOpenId() {
+/**
+ * Sets up a single OpenID strategy for the given tenant configuration.
+ * @param {Object} tenant - The tenant’s OpenID config (issuer, clientId, etc.).
+ * @param {string} tenant.issuer
+ * @param {string} tenant.clientId
+ * @param {string} tenant.clientSecret
+ * @param {string} strategyName - Unique name for the strategy.
+ */
+async function setupSingleStrategy(tenant, strategyName) {
   try {
-    if (process.env.PROXY) {
-      const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-      custom.setHttpOptionsDefaults({
-        agent: proxyAgent,
-      });
-      logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
-    }
-    const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
+    // Discover the issuer (this performs the .well-known lookup).
+    const issuer = await Issuer.discover(tenant.issuer);
     /* Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
       - id_token_signed_response_alg      // defaults to 'RS256'
       - request_object_signing_alg        // defaults to 'RS256'
@@ -124,8 +127,8 @@ async function setupOpenId() {
     */
     /** @type {import('openid-client').ClientMetadata} */
     const clientMetadata = {
-      client_id: process.env.OPENID_CLIENT_ID,
-      client_secret: process.env.OPENID_CLIENT_SECRET,
+      client_id: tenant.clientId,
+      client_secret: tenant.clientSecret,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     };
     if (isEnabled(process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM)) {
@@ -146,7 +149,7 @@ async function setupOpenId() {
       async (tokenset, userinfo, done) => {
         try {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
-          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+          logger.debug('[openidStrategy] verify login tokenset and userinfo', { tokenset, userinfo });
 
           let user = await findUser({ openidId: userinfo.sub });
           logger.info(
@@ -265,7 +268,65 @@ async function setupOpenId() {
       },
     );
 
-    passport.use('openid', openidLogin);
+    passport.use(strategyName, openidLogin);
+    logger.info(`Configured OpenID strategy [${strategyName}] for issuer: ${tenant.issuer}`);
+  } catch (err) {
+    logger.error(`[openidStrategy] Error configuring strategy "${strategyName}":`, err);
+  }
+}
+
+/**
+ * Reads the YAML configuration and registers strategies for multi-tenant OpenID Connect.
+ */
+async function setupOpenId() {
+  try {
+    // If a proxy is configured, set it for openid-client.
+
+    // Set global HTTP options for openid-client
+    if (process.env.PROXY) {
+      const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
+      custom.setHttpOptionsDefaults({
+        agent: proxyAgent,
+        timeout: 10000,  // 10,000ms = 10 seconds
+      });
+      logger.info(`[openidStrategy] Proxy agent added: ${process.env.PROXY} with timeout 10000ms`);
+    } else {
+      custom.setHttpOptionsDefaults({
+        timeout: 10000,  // Increase the default timeout
+      });
+      logger.info('[openidStrategy] Set default timeout to 10000ms');
+    }
+
+    const tenants = await getOpenIdTenants();
+
+    // Global mapping: tenant name (lowercase) -> strategy name.
+    const tenantMapping = new Map();
+
+    // If there is one tenant with no domains specified, register it as the default "openid" strategy.
+    if (tenants.length === 1 && (!tenants[0].domains || tenants[0].domains.trim() === '')) {
+      await setupSingleStrategy(tenants[0].openid, 'openid');
+      tenantMapping.set(tenants[0].name?.trim().toLowerCase() || 'openid', 'openid');
+      logger.info('Configured single-tenant OpenID strategy as "openid"');
+    } else {
+      // Otherwise, iterate over each tenant.
+      for (const tenantCfg of tenants) {
+        const openidCfg = tenantCfg.openid;
+        let strategyName = 'openid';
+        if (tenantCfg.name && tenantCfg.name.trim()) {
+          strategyName = `openid_${tenantCfg.name.trim()}`;
+        }else {
+          logger.warn(
+            `[openidStrategy] Tenant with issuer ${openidCfg.issuer} has no domains specified; defaulting strategy name to "openid".`,
+          );
+        }
+        await setupSingleStrategy(openidCfg, strategyName);
+        if (tenantCfg.name && tenantCfg.name.trim()) {
+          tenantMapping.set(tenantCfg.name.trim().toLowerCase(), strategyName);
+        }
+      }
+    }
+    // Store the tenant mapping globally so that the helper can choose the correct strategy.
+    global.__openidTenantMapping = tenantMapping;
   } catch (err) {
     logger.error('[openidStrategy]', err);
   }
