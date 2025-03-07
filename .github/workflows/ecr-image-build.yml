@@ -59,5 +59,5 @@ jobs:
           tags: |
             533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
             533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:latest
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           target: ${{ matrix.target }}
