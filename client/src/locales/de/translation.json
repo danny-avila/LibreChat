@@ -604,6 +604,7 @@
   "com_ui_duplication_processing": "Konversation wird dupliziert...",
   "com_ui_duplication_success": "Unterhaltung erfolgreich dupliziert",
   "com_ui_edit": "Bearbeiten",
+  "com_ui_empty_category": "-",
   "com_ui_endpoint": "Endpunkt",
   "com_ui_endpoint_menu": "LLM-Endpunkt-Menü",
   "com_ui_endpoints_available": "Verfügbare Endpunkte",
