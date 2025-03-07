@@ -11,6 +11,7 @@ RUN npm config set fetch-retry-maxtimeout 600000 && \
 COPY package*.json ./
 COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/mcp/package*.json ./packages/mcp/
+COPY packages/data-schemas/package*.json ./packages/data-schemas/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
 
@@ -32,6 +33,13 @@ COPY packages/mcp ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
 
+# Build data-schemas
+FROM base AS data-schemas-build
+WORKDIR /app/packages/data-schemas
+COPY packages/data-schemas ./
+COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
+RUN npm run build
+
 # Client build
 FROM base AS client-build
 WORKDIR /app/client
@@ -49,6 +57,7 @@ COPY api ./api
 COPY config ./config
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=mcp-build /app/packages/mcp/dist ./packages/mcp/dist
+COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
 EXPOSE 3080

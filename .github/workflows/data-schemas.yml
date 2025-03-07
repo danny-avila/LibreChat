@@ -1,0 +1,34 @@
+name: Node.js Package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/data-schemas/package.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 16
+      - run: cd packages/data-schemas && npm ci
+      - run: cd packages/data-schemas && npm run build
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 16
+          registry-url: 'https://registry.npmjs.org'
+      - run: cd packages/data-schemas && npm ci
+      - run: cd packages/data-schemas && npm run build
+      - run: cd packages/data-schemas && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}

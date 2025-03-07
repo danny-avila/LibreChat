@@ -1,7 +1,33 @@
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const mongoose = require('mongoose');
+import { Schema, Document } from 'mongoose';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 
-const roleSchema = new mongoose.Schema({
+export interface IRole extends Document {
+  name: string;
+  [PermissionTypes.BOOKMARKS]?: {
+    [Permissions.USE]?: boolean;
+  };
+  [PermissionTypes.PROMPTS]?: {
+    [Permissions.SHARED_GLOBAL]?: boolean;
+    [Permissions.USE]?: boolean;
+    [Permissions.CREATE]?: boolean;
+  };
+  [PermissionTypes.AGENTS]?: {
+    [Permissions.SHARED_GLOBAL]?: boolean;
+    [Permissions.USE]?: boolean;
+    [Permissions.CREATE]?: boolean;
+  };
+  [PermissionTypes.MULTI_CONVO]?: {
+    [Permissions.USE]?: boolean;
+  };
+  [PermissionTypes.TEMPORARY_CHAT]?: {
+    [Permissions.USE]?: boolean;
+  };
+  [PermissionTypes.RUN_CODE]?: {
+    [Permissions.USE]?: boolean;
+  };
+}
+
+const roleSchema: Schema<IRole> = new Schema({
   name: {
     type: String,
     required: true,
@@ -62,6 +88,4 @@ const roleSchema = new mongoose.Schema({
   },
 });
 
-const Role = mongoose.model('Role', roleSchema);
-
-module.exports = Role;
+export default roleSchema;
