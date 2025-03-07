@@ -4,14 +4,13 @@
 FROM node:20-alpine AS node
 
 RUN apk --no-cache add curl
-
+COPY librechat.apro.yaml /app/
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
 USER node
 
 COPY --chown=node:node . .
-COPY librechat.apro.yaml ./
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
