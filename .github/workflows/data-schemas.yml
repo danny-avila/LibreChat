@@ -29,6 +29,6 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - run: cd packages/data-schemas && npm ci
       - run: cd packages/data-schemas && npm run build
-      - run: cd packages/data-schemas && npm publish
+      - run: cd packages/data-schemas && npm publish --access=public
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
