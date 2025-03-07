@@ -55,7 +55,7 @@ jobs:
           fi
 
       - name: Prepare .env.test file
-        run: | 
+        run: |
           cp api/test/.env.test.example api/test/.env.test
           cat api/test/.env.test
 
@@ -67,3 +67,15 @@ jobs:
 
       - name: Run librechat-mcp unit tests
         run: cd packages/mcp && npm run test:ci
+
+  success:
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - tests_Backend
+    steps:
+      - name: Check backend success
+        run: '[[ ${{ needs.tests_Backend.result }} == "success" ]] || exit 1'
+      - name: Announce success
+        run: echo "Build is successful"
+

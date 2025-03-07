@@ -7,6 +7,9 @@ on:
       - feat/application-terraform
       - docker-layer-cache
   workflow_dispatch:
+  merge_group:
+    branches:
+      - main
 
 permissions:
   id-token: write # This is required for requesting the JWT
@@ -87,3 +90,14 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  success:
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - build
+    steps:
+      - name: Check build success
+        run: '[[ ${{ needs.build.result }} == "success" ]] || exit 1'
+      - name: Announce success
+        run: echo "Build is successful"

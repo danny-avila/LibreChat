@@ -2,7 +2,7 @@ name: Frontend Unit Tests
 
 on:
   pull_request:
-    branches: 
+    branches:
       - main
       - dev
       - release/*
@@ -54,3 +54,15 @@ jobs:
       - name: Run unit tests
         run: npm run test:ci --verbose
         working-directory: client
+
+  success:
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - tests_frontend_ubuntu
+    steps:
+      - name: Check frontend success
+        run: '[[ ${{ needs.tests_frontend_ubuntu.result }} == "success" ]] || exit 1'
+      - name: Announce success
+        run: echo "Test is successful"
+
