@@ -1,3 +1,4 @@
+const axios = require('axios');
 const { EventSource } = require('eventsource');
 const { Time, CacheKeys } = require('librechat-data-provider');
 const logger = require('./winston');
@@ -47,9 +48,24 @@ const sendEvent = (res, event) => {
   res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
 };
 
+function createAxiosInstance() {
+  const instance = axios.create();
+
+  if (process.env.proxy) {
+    const url = new URL(process.env.proxy);
+    instance.defaults.proxy = {
+      host: url.hostname,
+      protocol: url.protocol.replace(':', ''),
+    };
+  }
+
+  return instance;
+}
+
 module.exports = {
   logger,
   sendEvent,
   getMCPManager,
+  createAxiosInstance,
   getFlowStateManager,
 };
