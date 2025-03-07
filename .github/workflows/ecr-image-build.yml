@@ -48,7 +48,7 @@ jobs:
       - name: Prepare environment
         run: |
           cp .env.example .env
-          cp librechat.apro.yaml librechat.yaml
+          cp librechat.apro.yaml ./librechat.yaml
           cat .env
           cat librechat.yaml
 
