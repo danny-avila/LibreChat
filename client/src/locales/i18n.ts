@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
 // Import your JSON translations
+import translationCs from './cs/translation.json';
 import translationEn from './en/translation.json';
 import translationAr from './ar/translation.json';
 import translationDe from './de/translation.json';
@@ -30,6 +31,7 @@ import translationZh_Hant from './zh-Hant/translation.json';
 export const defaultNS = 'translation';
 
 export const resources = {
+  "cs-CZ": { translation: translationCs },
   en: { translation: translationEn },
   ar: { translation: translationAr },
   'zh-Hans': { translation: translationZh_Hans },
@@ -63,7 +65,7 @@ i18n
       'zh-TW': ['zh-Hant', 'en'],
       'zh-HK': ['zh-Hant', 'en'],
       'zh': ['zh-Hans', 'en'],
-      default: ['en'],
+      default: ['cs-CZ'],
     },
     fallbackNS: 'translation',
     ns: ['translation'],

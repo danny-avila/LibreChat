@@ -159,7 +159,7 @@ export default function Fork({
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <button
+        {/* <button
           className={cn(
             'hover-button active rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
             'data-[state=open]:active focus:opacity-100 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500 data-[state=open]:dark:bg-gray-700  data-[state=open]:dark:text-gray-200',
@@ -181,7 +181,7 @@ export default function Fork({
           title={localize('com_ui_fork')}
         >
           <GitFork className="h-4 w-4 hover:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
-        </button>
+        </button> */}
       </Popover.Trigger>
       <Popover.Portal>
         <div dir="ltr">

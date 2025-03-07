@@ -232,7 +232,7 @@ const ChatForm = ({ index = 0 }) => {
                 </>
               )}
             </FileFormWrapper>
-            {SpeechToText && (
+            {/* {SpeechToText && (
               <AudioRecorder
                 isRTL={isRTL}
                 methods={methods}
@@ -242,7 +242,7 @@ const ChatForm = ({ index = 0 }) => {
                 isSubmitting={isSubmitting}
               />
             )}
-            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />} */}
           </div>
           <div
             className={cn(
