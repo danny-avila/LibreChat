@@ -1,12 +1,8 @@
 name: Build and Push Docker Image to ECR
 
 on:
-  push:
-    branches:
-      - main
-      - feat/application-terraform
-      - docker-layer-cache
   workflow_dispatch:
+  pull_request:
   merge_group:
     branches:
       - main
