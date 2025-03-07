@@ -1,17 +1,12 @@
 import { useMemo, useCallback } from 'react';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import {
-  useGetAssistantDocsQuery,
-  useGetEndpointsQuery,
-  useGetStartupConfig,
-} from '~/data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
-import { useLocalize, useSubmitMessage, useAuthContext } from '~/hooks';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
+import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
-import ConvoStarter from './ConvoStarter';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
@@ -43,10 +38,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     });
   }, [conversation?.endpoint, conversation?.iconURL, endpointsConfig]);
 
-  const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpointType, {
-    select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
-  });
-
   const { entity, isAgent, isAssistant } = getEntity({
     endpoint: endpointType,
     agentsMap,
@@ -61,22 +52,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const avatarPath = isAgent
     ? ((entity as t.Agent)?.avatar?.filepath ?? '')
     : (((entity as t.Assistant)?.metadata?.avatar as string) ?? '');
-
-  const conversation_starters = useMemo(() => {
-    if (entity?.conversation_starters?.length) {
-      return entity.conversation_starters;
-    }
-    if (isAgent) {
-      return entity?.conversation_starters ?? [];
-    }
-    return documentsMap.get(entity?.id ?? '')?.conversation_starters ?? [];
-  }, [documentsMap, isAgent, entity]);
-
-  const { submitMessage } = useSubmitMessage();
-  const sendConversationStarter = useCallback(
-    (text: string) => submitMessage({ text }),
-    [submitMessage],
-  );
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -96,7 +71,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   return (
     <div
-      className={`flex h-full transform-gpu flex-col items-center justify-center pb-10 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
+      className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
     >
       <div className="flex flex-col items-center gap-0 p-2">
         <div className="flex flex-col items-center justify-center gap-4 md:flex-row">
@@ -151,17 +126,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           )
         )}
-      </div>
-      <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-        {conversation_starters
-          .slice(0, Constants.MAX_CONVO_STARTERS)
-          .map((text: string, index: number) => (
-            <ConvoStarter
-              key={`starter-${index}`}
-              text={text}
-              onClick={() => sendConversationStarter(text)}
-            />
-          ))}
       </div>
     </div>
   );

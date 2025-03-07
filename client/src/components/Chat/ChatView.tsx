@@ -7,6 +7,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import ConversationStarters from './Input/ConversationStarters';
 import MessagesView from './Messages/MessagesView';
 import { Spinner } from '~/components/svg';
 import Presentation from './Presentation';
@@ -74,6 +75,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                   {content}
                   <div className="w-full max-w-3xl transition-all duration-200 xl:max-w-4xl">
                     <ChatForm index={index} />
+                    <ConversationStarters />
                     <Footer />
                   </div>
                 </div>
