@@ -31,7 +31,7 @@ jobs:
         run: cd packages/data-schemas && npm run build
         
       - name: Set up npm authentication
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
         
       - name: Check version change
         id: check
