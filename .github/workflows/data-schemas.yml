@@ -1,4 +1,4 @@
-name: Node.js Package
+name: Publish `@librechat/data-schemas` to NPM
 
 on:
   push:
@@ -6,6 +6,12 @@ on:
       - main
     paths:
       - 'packages/data-schemas/package.json'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual publish requested'
 
 jobs:
   build:
