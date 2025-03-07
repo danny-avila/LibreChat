@@ -4,8 +4,7 @@ import { Constants } from 'librechat-data-provider';
 import React, { useRef, useState, useMemo, useCallback } from 'react';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
-import type { OptionWithIcon, AgentForm } from '~/common';
-import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
+import type { AgentForm } from '~/common';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useAgentsMapContext } from '~/Providers';
 import { TooltipAnchor } from '~/components/ui';
@@ -17,128 +16,135 @@ interface SequentialAgentsProps {
 }
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
-const maxAgents = 5;
+const MAX_AGENTS = Constants.MAX_CONVO_STARTERS;
 
-const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field }) => {
-  const nodeRef = useRef(null);
-  const [newAgentId, setNewAgentId] = useState('');
-
-  // Get agents from context
-  const agentsMapResult = useAgentsMapContext();
-
-  // Convert agents map to array
-  const agents: Agent[] = useMemo(() => {
-    console.log('agentsMapResult:', agentsMapResult);
-    return agentsMapResult ? (Object.values(agentsMapResult) as Agent[]) : [];
-  }, [agentsMapResult]);
-
-  // Create a map of agent IDs to agent names for efficient lookups
-  const agentNamesMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    agents.forEach((agent) => {
-      if (agent.id && agent.name) {
-        map[agent.id] = agent.name;
-      }
-    });
-    console.log('agentNamesMap:', map);
-    return map;
-  }, [agents]);
-
-  // Function to get agent name from ID
-  const getAgentName = useCallback(
-    (agentId: string) => {
-      console.log(`Getting name for agent ${agentId}`);
-
-      // First try the agentNamesMap
-      if (agentNamesMap[agentId]) {
-        console.log(`Found in agentNamesMap: ${agentNamesMap[agentId]}`);
-        return agentNamesMap[agentId];
-      }
-
-      // If not found, try to find it in the agents array
-      const agent = agents.find((a) => a.id === agentId);
-      if (agent?.name) {
-        console.log(`Found in agents array: ${agent.name}`);
-        return agent.name;
-      }
-
-      // If still not found, try the agentsMapResult directly
-      if (agentsMapResult?.[agentId]?.name) {
-        console.log(`Found in agentsMapResult: ${agentsMapResult[agentId].name}`);
-        return agentsMapResult[agentId].name;
-      }
-
-      // Fall back to the agent ID
-      console.log(`No name found, using ID: ${agentId}`);
-      return agentId;
-    },
-    [agentNamesMap, agents, agentsMapResult],
-  );
-
-  // Create options for dropdown
-  const agentOptions: OptionWithIcon[] = useMemo(
-    () =>
-      agents.map((agent: Agent) => {
-        return {
-          label: agent.name ?? '',
-          value: agent.id,
-          icon: (
-            <Icon
-              isCreatedByUser={false}
-              endpoint="agents"
-              agentName={agent.name ?? ''}
-              iconURL={agent.avatar?.filepath}
-            />
-          ),
-        };
-      }),
-    [agents],
-  );
-
-  const handleAddAgentId = () => {
-    if (newAgentId && (field.value?.length ?? 0) < maxAgents) {
-      const newValues = [...(field.value ?? []), newAgentId];
-      field.onChange(newValues);
-    }
-  };
-
-  const handleDeleteAgentId = (index: number) => {
-    const newValues = field.value?.filter((_, i) => i !== index);
-    field.onChange(newValues);
-  };
-
-  const handleSelectAgent = (index: number) => (value: string) => {
-    const newValues = [...(field.value ?? [])];
-    newValues[index] = value;
-    field.onChange(newValues);
-  };
-
-  const handleSelectNewAgent = (value: string) => {
-    setNewAgentId(value);
-  };
-
-  const defaultStyle = {
+// Transition styles for animations
+const transitionConfig = {
+  defaultStyle: {
     transition: 'opacity 200ms ease-in-out',
     opacity: 0,
-  };
-
-  const triggerShake = (element: HTMLElement) => {
-    element.classList.remove('shake');
-    void element.offsetWidth;
-    element.classList.add('shake');
-    setTimeout(() => {
-      element.classList.remove('shake');
-    }, 200);
-  };
-
-  const transitionStyles = {
+  },
+  styles: {
     entering: { opacity: 1 },
     entered: { opacity: 1 },
     exiting: { opacity: 0 },
     exited: { opacity: 0 },
-  };
+  },
+};
 
-  const hasReachedMax = (field.value?.length ?? 0) >= Constants.MAX_CONVO_STARTERS;
+const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field }) => {
+  const nodeRef = useRef(null);
+  const [newAgentId, setNewAgentId] = useState('');
+  const agentsMap = useAgentsMapContext() || {};
+
+  // Get current value or empty array if undefined
+  const agentIds = field.value || [];
+  const hasReachedMax = agentIds.length >= MAX_AGENTS;
+
+  // Convert agents map to array for processing
+  const agents = useMemo(() => Object.values(agentsMap) as Agent[], [agentsMap]);
+
+  // Create agent options for dropdown
+  const agentOptions = useMemo(
+    () =>
+      agents.map((agent: Agent) => ({
+        label: agent.name || '',
+        value: agent.id,
+        icon: (
+          <Icon
+            isCreatedByUser={false}
+            endpoint="agents"
+            agentName={agent.name || ''}
+            iconURL={agent.avatar?.filepath}
+          />
+        ),
+      })),
+    [agents],
+  );
+
+  // Get agent name from ID - efficient lookup with fallbacks
+  const getAgentName = useCallback(
+    (agentId: string) => {
+      // Direct lookup from agentsMap is most efficient
+      if (agentsMap[agentId]?.name) {
+        return agentsMap[agentId].name;
+      }
+
+      // Fallback to finding in the agents array
+      const agent = agents.find((a) => a.id === agentId);
+      return agent?.name || agentId;
+    },
+    [agentsMap, agents],
+  );
+
+  // Get agent avatar URL from ID
+  const getAgentAvatar = useCallback(
+    (agentId: string) => {
+      return agentsMap[agentId]?.avatar?.filepath || '';
+    },
+    [agentsMap],
+  );
+
+  // Event handlers
+  const handleAddAgentId = useCallback(() => {
+    if (newAgentId && agentIds.length < MAX_AGENTS) {
+      field.onChange([...agentIds, newAgentId]);
+      setNewAgentId(''); // Clear the input after adding
+    }
+  }, [newAgentId, agentIds, field]);
+
+  const handleDeleteAgentId = useCallback(
+    (index: number) => {
+      field.onChange(agentIds.filter((_, i) => i !== index));
+    },
+    [agentIds, field],
+  );
+
+  const handleSelectAgent = useCallback(
+    (index: number) => (value: string) => {
+      const newValues = [...agentIds];
+      newValues[index] = value;
+      field.onChange(newValues);
+    },
+    [agentIds, field],
+  );
+
+  // Render agent selection item
+  const renderAgentItem = useCallback(
+    (agentId: string, index: number) => (
+      <div key={index} className="relative">
+        <ControlCombobox
+          selectedValue={agentId}
+          displayValue={getAgentName(agentId)}
+          selectPlaceholder="Select an agent"
+          searchPlaceholder="Search agents"
+          isCollapsed={false}
+          ariaLabel={`agent-${index}`}
+          setValue={handleSelectAgent(index)}
+          items={agentOptions}
+          iconClassName="agent-item"
+          SelectIcon={
+            <Icon
+              isCreatedByUser={false}
+              endpoint="agents"
+              agentName={getAgentName(agentId)}
+              iconURL={getAgentAvatar(agentId)}
+            />
+          }
+          className="pr-10"
+        />
+        <TooltipAnchor
+          side="top"
+          description="Remove agent"
+          className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
+          onClick={() => handleDeleteAgentId(index)}
+        >
+          <X className="size-4" />
+        </TooltipAnchor>
+      </div>
+    ),
+    [agentOptions, getAgentName, getAgentAvatar, handleSelectAgent, handleDeleteAgentId],
+  );
 
   return (
     <div className="relative">
@@ -147,47 +153,11 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field }) => {
       </label>
       <div className="mt-4 space-y-2">
         <HideSequential />
-        {/* Display existing agents first */}
-        {field.value?.map((agentId, index) => {
-          console.log(`Agent ${index}:`, agentId);
-          console.log(
-            'Found agent:',
-            agents.find((agent) => agent.id === agentId),
-          );
-          return (
-            <div key={index} className="relative">
-              <ControlCombobox
-                selectedValue={agentId}
-                displayValue={getAgentName(agentId)}
-                selectPlaceholder="Select an agent"
-                searchPlaceholder="Search agents"
-                isCollapsed={false}
-                ariaLabel="agent"
-                setValue={handleSelectAgent(index)}
-                items={agentOptions}
-                iconClassName="agent-item"
-                SelectIcon={
-                  <Icon
-                    isCreatedByUser={false}
-                    endpoint="agents"
-                    agentName={getAgentName(agentId)}
-                    iconURL={agentsMapResult?.[agentId]?.avatar?.filepath ?? ''}
-                  />
-                }
-                className="pr-10"
-              />
-              <TooltipAnchor
-                side="top"
-                description={'Remove agent'}
-                className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
-                onClick={() => handleDeleteAgentId(index)}
-              >
-                <X className="size-4" />
-              </TooltipAnchor>
-            </div>
-          );
-        })}
-        {/* Input for new agent at the bottom */}
+
+        {/* Display existing agents */}
+        {agentIds.map(renderAgentItem)}
+
+        {/* Input for new agent */}
         <div className="relative">
           <ControlCombobox
             selectedValue={newAgentId}
@@ -196,7 +166,7 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field }) => {
             searchPlaceholder="Search agents"
             isCollapsed={false}
             ariaLabel="new-agent"
-            setValue={handleSelectNewAgent}
+            setValue={setNewAgentId}
             items={agentOptions}
             iconClassName="agent-item"
             disabled={hasReachedMax}
@@ -206,34 +176,30 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field }) => {
                   isCreatedByUser={false}
                   endpoint="agents"
                   agentName={getAgentName(newAgentId)}
-                  iconURL={agentsMapResult?.[newAgentId]?.avatar?.filepath ?? ''}
+                  iconURL={getAgentAvatar(newAgentId)}
                 />
               ) : undefined
             }
             className="pr-10"
           />
-          <Transition
-            nodeRef={nodeRef}
-            in={(field.value?.length ?? 0) < Constants.MAX_CONVO_STARTERS}
-            timeout={200}
-            unmountOnExit
-          >
+          <Transition nodeRef={nodeRef} in={!hasReachedMax} timeout={200} unmountOnExit>
             {(state: string) => (
               <div
                 ref={nodeRef}
                 style={{
-                  ...defaultStyle,
-                  ...transitionStyles[state as keyof typeof transitionStyles],
-                  transition: state === 'entering' ? 'none' : defaultStyle.transition,
+                  ...transitionConfig.defaultStyle,
+                  ...transitionConfig.styles[state as keyof typeof transitionConfig.styles],
+                  transition:
+                    state === 'entering' ? 'none' : transitionConfig.defaultStyle.transition,
                 }}
                 className="absolute right-1 top-1"
               >
                 <TooltipAnchor
                   side="top"
-                  description={hasReachedMax ? 'Max agents reached' : 'Add agent'}
+                  description="Add agent"
                   className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
                   onClick={handleAddAgentId}
-                  disabled={hasReachedMax}
+                  disabled={!newAgentId || hasReachedMax}
                 >
                   <Plus className="size-4" />
                 </TooltipAnchor>
