@@ -1,6 +1,15 @@
-const mongoose = require('mongoose');
+import { Schema, Document } from 'mongoose';
 
-const bannerSchema = mongoose.Schema(
+export interface IBanner extends Document {
+  bannerId: string;
+  message: string;
+  displayFrom: Date;
+  displayTo?: Date;
+  type: 'banner' | 'popup';
+  isPublic: boolean;
+}
+
+const bannerSchema = new Schema<IBanner>(
   {
     bannerId: {
       type: String,
@@ -28,9 +37,7 @@ const bannerSchema = mongoose.Schema(
       default: false,
     },
   },
-
   { timestamps: true },
 );
 
-const Banner = mongoose.model('Banner', bannerSchema);
-module.exports = Banner;
+export default bannerSchema;

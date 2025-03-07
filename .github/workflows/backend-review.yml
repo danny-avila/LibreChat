@@ -39,6 +39,9 @@ jobs:
       - name: Install MCP Package
         run: npm run build:mcp
 
+      - name: Install Data Schemas Package
+        run: npm run build:data-schemas
+
       - name: Create empty auth.json file
         run: |
           mkdir -p api/data

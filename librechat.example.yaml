@@ -113,12 +113,14 @@ mcpServers:
   everything:
     # type: sse # type can optionally be omitted
     url: http://localhost:3001/sse
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
   puppeteer:
     type: stdio
     command: npx
     args:
       - -y
       - "@modelcontextprotocol/server-puppeteer"
+    timeout: 300000  # 5 minutes timeout for this server
   filesystem:
     # type: stdio
     command: npx
