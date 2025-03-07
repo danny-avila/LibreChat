@@ -85,7 +85,7 @@ function SelectDropDownPop({
                 </span>
               </span>
               <span className="absolute inset-y-0 right-0 flex items-center pr-2">
-                <svg
+                {/* <svg
                   stroke="currentColor"
                   fill="none"
                   strokeWidth="2"
@@ -99,11 +99,11 @@ function SelectDropDownPop({
                   style={showAbove ? { transform: 'scaleY(-1)' } : {}}
                 >
                   <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
+                </svg> */}
               </span>
             </button>
           </Trigger>
-          <Portal>
+          {/* <Portal>
             <Content
               side="bottom"
               align="start"
@@ -126,7 +126,7 @@ function SelectDropDownPop({
               })}
               {footer}
             </Content>
-          </Portal>
+          </Portal> */}
         </div>
       </div>
     </Root>
