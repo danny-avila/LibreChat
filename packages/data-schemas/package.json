@@ -56,7 +56,8 @@
     "typescript": "^5.0.4"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "dependencies": {
     "mongoose": "^8.9.5"
