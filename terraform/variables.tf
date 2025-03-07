@@ -16,19 +16,6 @@ variable "ecr_repository_names" {
   default     = []
 }
 
-variable "account_ids" {
-  description = "The list of account IDs"
-  type        = list(string)
-  default     = []
-
-}
-
-variable "github_repositories" {
-  description = "The list of GitHub repositories"
-  type        = list(string)
-  default     = []
-}
-
 variable "max_session_duration" {
   description = "The maximum session duration"
   type        = number

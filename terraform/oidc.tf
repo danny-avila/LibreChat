@@ -48,13 +48,20 @@ data "aws_iam_policy_document" "genai_assume" {
 }
 
 data "aws_iam_policy_document" "genai_s3" {
-
   statement {
     sid       = "S3Write"
     effect    = "Allow"
     actions   = local.s3.config.actions
     resources = local.s3.config.resources
   }
+
+  statement {
+    sid       = "GithubCache"
+    effect    = "Allow"
+    actions   = local.s3.cache.actions
+    resources = local.s3.cache.resources
+  }
+
 }
 
 data "aws_iam_policy_document" "genai_push_and_pull" {

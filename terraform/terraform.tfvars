@@ -9,13 +9,6 @@ principals_readonly_access_all = [
   "arn:aws:iam::183631334210:root",
 ]
 
-organizations = [
-  "arn:aws:organizations::464622532012:organization/o-0b1b4b4b4b4b4b4b4",
-]
-
-
-github_repositories = ["repo:aproorg/*"]
-
-
 # TODO: We need to add a github role here for our pipelines.
 principals_push_access_all = []
+

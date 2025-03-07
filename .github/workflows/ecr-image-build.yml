@@ -4,11 +4,17 @@ on:
   push:
     branches:
       - main
+      - feat/application-terraform
+      - docker-layer-cache
   workflow_dispatch:
 
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REPO: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/genai
 
 jobs:
   build:
@@ -18,21 +24,23 @@ jobs:
         include:
           - target: api-build
             file: Dockerfile.multi
-            image_name: frontend
+            image_name: api
           - target: node
             file: Dockerfile
-            image_name: api
+            image_name: frontend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2 # More information on this action can be found below in the 'AWS Credentials' section
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::533267242259:role/github-oidc-genai
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-oidc-genai
           aws-region: eu-west-1
 
       - name: Log in to Amazon ECR
@@ -50,6 +58,16 @@ jobs:
           cp .env.example .env
           cat .env
 
+      - name: Setup Docker layer cache
+        uses: runs-on/cache@v4
+        env:
+          RUNS_ON_S3_BUCKET_CACHE: ${{ secrets.RUNS_ON_S3_BUCKET_CACHE }}
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ matrix.image_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ matrix.image_name }}-
+
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
@@ -57,7 +75,15 @@ jobs:
           file: ${{ matrix.file }}
           push: true
           tags: |
-            533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
-            533267242259.dkr.ecr.eu-west-1.amazonaws.com/genai/${{ matrix.image_name }}:latest
+            ${{ env.ECR_REPO }}/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
+            ${{ env.ECR_REPO }}/${{ matrix.image_name }}:latest
           platforms: linux/arm64
           target: ${{ matrix.target }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # Move cache to avoid unbounded cache growth
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache

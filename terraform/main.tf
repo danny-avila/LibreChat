@@ -12,8 +12,7 @@ module "label" {
 }
 
 locals {
-  principals_readonly_access_all = var.principals_readonly_access_all
-  principals                     = var.principals_readonly_access_all
+  principals = var.principals_readonly_access_all
 }
 
 ## TODO: Allow Organization Access: https://aws.amazon.com/blogs/containers/sharing-amazon-ecr-repositories-with-multiple-accounts-using-aws-organizations/
@@ -21,7 +20,7 @@ module "ecr" {
   source                     = "cloudposse/ecr/aws"
   version                    = "0.39.0"
   for_each                   = toset(var.ecr_repository_names)
-  principals_readonly_access = local.principals_readonly_access_all
+  principals_readonly_access = var.principals_readonly_access_all
   principals_push_access     = var.principals_push_access_all
   image_names                = [each.value]
   image_tag_mutability       = "MUTABLE"
