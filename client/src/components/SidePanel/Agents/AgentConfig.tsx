@@ -18,6 +18,7 @@ import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
+import AdvancedSettings from './AdvancedSettings';
 import DuplicateAgent from './DuplicateAgent';
 import { processAgentOption } from '~/utils';
 import AdminSettings from './AdminSettings';
@@ -431,6 +432,7 @@ export default function AgentConfig({
             </div>
           </div>
         </div>
+        <AdvancedSettings />
         {user?.role === SystemRoles.ADMIN && <AdminSettings />}
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
