@@ -13,6 +13,7 @@ COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/mcp/package*.json ./packages/mcp/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+COPY librechat.apro.yaml librechat.yaml
 
 # Install all dependencies for every build
 FROM base-min AS base
