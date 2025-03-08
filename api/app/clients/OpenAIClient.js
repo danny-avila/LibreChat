@@ -112,7 +112,12 @@ class OpenAIClient extends BaseClient {
     const { OPENAI_FORCE_PROMPT } = process.env ?? {};
     const { reverseProxyUrl: reverseProxy } = this.options;
 
-    if (!this.useOpenRouter && reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) {
+    if (
+      !this.useOpenRouter &&
+      ((reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) ||
+        (this.options.endpoint &&
+          this.options.endpoint.toLowerCase().includes(KnownEndpoints.openrouter)))
+    ) {
       this.useOpenRouter = true;
     }
 
@@ -1302,8 +1307,12 @@ ${convo}
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
-      } else if (!this.isOmni && modelOptions.reasoning_effort != null) {
+      } else if (
+        (!this.isOmni || /^o1-(mini|preview)/i.test(modelOptions.model)) &&
+        modelOptions.reasoning_effort != null
+      ) {
         delete modelOptions.reasoning_effort;
+        delete modelOptions.temperature;
       }
 
       let reasoningKey = 'reasoning_content';

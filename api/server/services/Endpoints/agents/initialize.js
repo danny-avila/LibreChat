@@ -22,6 +22,7 @@ const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const providerConfigMap = {
+  [Providers.XAI]: initCustom,
   [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
   [Providers.OPENROUTER]: initCustom,
@@ -101,6 +102,7 @@ const initializeAgentOptions = async ({
   });
 
   const provider = agent.provider;
+  agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
     agent.provider = provider.toLowerCase();
@@ -112,9 +114,7 @@ const initializeAgentOptions = async ({
     }
     getOptions = initCustom;
     agent.provider = Providers.OPENAI;
-    agent.endpoint = provider.toLowerCase();
   }
-
   const model_parameters = Object.assign(
     {},
     agent.model_parameters ?? { model: agent.model },

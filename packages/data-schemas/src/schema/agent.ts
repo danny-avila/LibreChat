@@ -1,6 +1,33 @@
-const mongoose = require('mongoose');
+import { Schema, Document, Types } from 'mongoose';
+export interface IAgent extends Omit<Document, 'model'> {
+  id: string;
+  name?: string;
+  description?: string;
+  instructions?: string;
+  avatar?: {
+    filepath: string;
+    source: string;
+  };
+  provider: string;
+  model: string;
+  model_parameters?: Record<string, unknown>;
+  artifacts?: string;
+  access_level?: number;
+  tools?: string[];
+  tool_kwargs?: Array<unknown>;
+  actions?: string[];
+  author: Types.ObjectId;
+  authorName?: string;
+  hide_sequential_outputs?: boolean;
+  end_after_tools?: boolean;
+  agent_ids?: string[];
+  isCollaborative?: boolean;
+  conversation_starters?: string[];
+  tool_resources?: unknown;
+  projectIds?: Types.ObjectId[];
+}
 
-const agentSchema = mongoose.Schema(
+const agentSchema = new Schema<IAgent>(
   {
     id: {
       type: String,
@@ -18,10 +45,7 @@ const agentSchema = mongoose.Schema(
       type: String,
     },
     avatar: {
-      type: {
-        filepath: String,
-        source: String,
-      },
+      type: Schema.Types.Mixed,
       default: undefined,
     },
     provider: {
@@ -46,14 +70,14 @@ const agentSchema = mongoose.Schema(
       default: undefined,
     },
     tool_kwargs: {
-      type: [{ type: mongoose.Schema.Types.Mixed }],
+      type: [{ type: Schema.Types.Mixed }],
     },
     actions: {
       type: [String],
       default: undefined,
     },
     author: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
@@ -79,11 +103,11 @@ const agentSchema = mongoose.Schema(
       default: [],
     },
     tool_resources: {
-      type: mongoose.Schema.Types.Mixed,
+      type: Schema.Types.Mixed,
       default: {},
     },
     projectIds: {
-      type: [mongoose.Schema.Types.ObjectId],
+      type: [Schema.Types.ObjectId],
       ref: 'Project',
       index: true,
     },
@@ -93,4 +117,4 @@ const agentSchema = mongoose.Schema(
   },
 );
 
-module.exports = agentSchema;
+export default agentSchema;

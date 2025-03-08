@@ -1,6 +1,7 @@
-const mongoose = require('mongoose');
+import { Schema } from 'mongoose';
 
-const conversationPreset = {
+// @ts-ignore
+export const conversationPreset = {
   // endpoint: [azureOpenAI, openAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
@@ -26,7 +27,7 @@ const conversationPreset = {
     required: false,
   },
   // for google only
-  examples: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+  examples: { type: [{ type: Schema.Types.Mixed }], default: undefined },
   modelLabel: {
     type: String,
     required: false,
@@ -53,6 +54,10 @@ const conversationPreset = {
     required: false,
   },
   maxOutputTokens: {
+    type: Number,
+    required: false,
+  },
+  maxTokens: {
     type: Number,
     required: false,
   },
@@ -130,8 +135,4 @@ const conversationPreset = {
   reasoning_effort: {
     type: String,
   },
-};
-
-module.exports = {
-  conversationPreset,
 };
