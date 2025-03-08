@@ -22,12 +22,15 @@ const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const providerConfigMap = {
+  [Providers.XAI]: initCustom,
+  [Providers.OLLAMA]: initCustom,
+  [Providers.DEEPSEEK]: initCustom,
+  [Providers.OPENROUTER]: initCustom,
   [EModelEndpoint.openAI]: initOpenAI,
+  [EModelEndpoint.google]: initGoogle,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
-  [EModelEndpoint.google]: initGoogle,
-  [Providers.OLLAMA]: initCustom,
 };
 
 /**
@@ -99,18 +102,19 @@ const initializeAgentOptions = async ({
   });
 
   const provider = agent.provider;
+  agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
-
-  if (!getOptions) {
+  if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
+    agent.provider = provider.toLowerCase();
+    getOptions = providerConfigMap[agent.provider];
+  } else if (!getOptions) {
     const customEndpointConfig = await getCustomEndpointConfig(provider);
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }
     getOptions = initCustom;
     agent.provider = Providers.OPENAI;
-    agent.endpoint = provider.toLowerCase();
   }
-
   const model_parameters = Object.assign(
     {},
     agent.model_parameters ?? { model: agent.model },

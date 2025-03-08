@@ -164,5 +164,19 @@
         "description": "Sign up at <a href=\"https://home.openweathermap.org/users/sign_up\" target=\"_blank\">OpenWeather</a>, then get your key at <a href=\"https://home.openweathermap.org/api_keys\" target=\"_blank\">API keys</a>."
       }
     ]
+  },
+  {
+    "name": "Flux",
+    "pluginKey": "flux",
+    "description": "Generate images using text with the Flux API.",
+    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "isAuthRequired": "true",
+    "authConfig": [
+      {
+        "authField": "FLUX_API_KEY",
+        "label": "Your Flux API Key",
+        "description": "Provide your Flux API key from your user profile."
+      }
+    ]
   }
 ]

@@ -113,6 +113,7 @@ const initializeClient = async ({
 
   if (!isAzureOpenAI && openAIConfig) {
     clientOptions.streamRate = openAIConfig.streamRate;
+    clientOptions.titleModel = openAIConfig.titleModel;
   }
 
   /** @type {undefined | TBaseEndpoint} */
@@ -140,6 +141,7 @@ const initializeClient = async ({
       },
       clientOptions,
     );
+    clientOptions.modelOptions.user = req.user.id;
     const options = getLLMConfig(apiKey, clientOptions);
     if (!clientOptions.streamRate) {
       return options;

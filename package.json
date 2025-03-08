@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.7.7-rc1",
+  "version": "v0.7.7",
   "description": "",
   "workspaces": [
     "api",
@@ -23,8 +23,8 @@
     "update:sudo": "node config/update.js --sudo",
     "update:deployed": "node config/deployed-update.js",
     "rebase:deployed": "node config/deployed-update.js --rebase",
-    "start:deployed": "docker-compose -f ./deploy-compose.yml up -d",
-    "stop:deployed": "docker-compose -f ./deploy-compose.yml down",
+    "start:deployed": "docker compose -f ./deploy-compose.yml up -d || docker-compose -f ./deploy-compose.yml up -d",
+    "stop:deployed": "docker compose -f ./deploy-compose.yml down || docker-compose -f ./deploy-compose.yml down",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "invite-user": "node config/invite-user.js",
@@ -39,7 +39,8 @@
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
     "build:mcp": "cd packages/mcp && npm run build",
-    "frontend": "npm run build:data-provider && npm run build:mcp && cd client && npm run build",
+    "build:data-schemas": "cd packages/data-schemas && npm run build",
+    "frontend": "npm run build:data-provider && npm run build:mcp && npm run build:data-schemas && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
@@ -61,7 +62,9 @@
     "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",
     "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
     "b:data": "cd packages/data-provider && bun run b:build",
-    "b:client": "bun --bun run b:data && cd client && bun --bun run b:build",
+    "b:mcp": "cd packages/mcp && bun run b:build",
+    "b:data-schemas": "cd packages/data-schemas && bun run b:build",
+    "b:client": "bun --bun run b:data && bun --bun run b:mcp && bun --bun run b:data-schemas && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
@@ -111,6 +114,7 @@
     "elliptic": "^6.6.1"
   },
   "overrides": {
+    "axios": "1.8.2",
     "elliptic": "^6.6.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "remark-gfm": {

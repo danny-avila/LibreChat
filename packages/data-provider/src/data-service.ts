@@ -782,3 +782,34 @@ export function updateFeedback(
 ): Promise<t.TUpdateFeedbackResponse> {
   return request.put(endpoints.feedback(conversationId, messageId), payload);
 }
+
+// 2FA 
+export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
+  return request.get(endpoints.enableTwoFactor());
+}
+
+export function verifyTwoFactor(
+  payload: t.TVerify2FARequest,
+): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.verifyTwoFactor(), payload);
+}
+
+export function confirmTwoFactor(
+  payload: t.TVerify2FARequest,
+): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.confirmTwoFactor(), payload);
+}
+
+export function disableTwoFactor(): Promise<t.TDisable2FAResponse> {
+  return request.post(endpoints.disableTwoFactor());
+}
+
+export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes());
+}
+
+export function verifyTwoFactorTemp(
+  payload: t.TVerify2FATempRequest,
+): Promise<t.TVerify2FATempResponse> {
+  return request.post(endpoints.verifyTwoFactorTemp(), payload);
+}

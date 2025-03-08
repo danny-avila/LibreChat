@@ -8,8 +8,8 @@ import {
 import { SandpackProviderProps } from '@codesandbox/sandpack-react/unstyled';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { ArtifactFiles, Artifact } from '~/common';
+import { useEditArtifact, useGetStartupConfig } from '~/data-provider';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
-import { useEditArtifact } from '~/data-provider';
 import { useEditorContext } from '~/Providers';
 
 const createDebouncedMutation = (
@@ -124,6 +124,17 @@ export const ArtifactCodeEditor = memo(function ({
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) {
+  const { data: config } = useGetStartupConfig();
+  const options: typeof sharedOptions = useMemo(() => {
+    if (!config) {
+      return sharedOptions;
+    }
+    return {
+      ...sharedOptions,
+      bundlerURL: config.bundlerURL,
+    };
+  }, [config]);
+
   if (Object.keys(files).length === 0) {
     return null;
   }
@@ -135,7 +146,7 @@ export const ArtifactCodeEditor = memo(function ({
         ...files,
         ...sharedFiles,
       }}
-      options={{ ...sharedOptions }}
+      options={options}
       {...sharedProps}
       template={template}
     >
