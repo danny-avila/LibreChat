@@ -1,4 +1,3 @@
-// index.ts
 import actionSchema from './schema/action';
 import agentSchema from './schema/agent';
 import assistantSchema from './schema/assistant';
