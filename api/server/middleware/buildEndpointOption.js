@@ -10,7 +10,7 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getToolFiles } = require('~/models/Conversation');
 const { handleError } = require('~/server/utils');
 
 const buildFunction = {
@@ -90,7 +90,7 @@ async function buildEndpointOption(req, res, next) {
     const { resendFiles = true } = req.body.endpointOption;
     req.body.endpointOption.modelsConfig = modelsConfig;
     if (isAgents && resendFiles && req.body.conversationId) {
-      const fileIds = await getConvoFiles(req.body.conversationId);
+      const fileIds = await getToolFiles(req.body.conversationId);
       const requestFiles = req.body.files ?? [];
       if (requestFiles.length || fileIds.length) {
         req.body.endpointOption.attachments = processFiles(requestFiles, fileIds);
