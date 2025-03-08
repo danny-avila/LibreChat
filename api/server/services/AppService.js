@@ -5,6 +5,7 @@ const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
+const { loadTurnstileConfig } = require('./start/turnstile');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { loadAndFormatTools } = require('./ToolService');
@@ -14,14 +15,13 @@ const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
 /**
- *
  * Loads custom config and initializes app-wide variables.
  * @function AppService
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
   await initializeRoles();
-  /** @type {TCustomConfig}*/
+  /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
@@ -39,7 +39,7 @@ const AppService = async (app) => {
     initializeFirebase();
   }
 
-  /** @type {Record<string, FunctionTool} */
+  /** @type {Record<string, FunctionTool>} */
   const availableTools = loadAndFormatTools({
     adminFilter: filteredTools,
     adminIncluded: includedTools,
@@ -55,6 +55,7 @@ const AppService = async (app) => {
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+  const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
   const defaultLocals = {
     paths,
@@ -65,6 +66,7 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    turnstileConfig,
   };
 
   if (!Object.keys(config).length) {
