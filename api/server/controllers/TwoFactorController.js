@@ -40,8 +40,8 @@ const verify2FAController = async (req, res) => {
     const { token, backupCode } = req.body;
     const user = await getUserById(userId);
     // Ensure that 2FA is enabled for this user.
-    if (!user || !user.twoFactorEnabled) {
-      return res.status(400).json({ message: '2FA is not enabled for this user' });
+    if (!user || !user.totpSecret) {
+      return res.status(400).json({ message: '2FA not initiated' });
     }
 
     // Retrieve the plain TOTP secret using getTOTPSecret.
