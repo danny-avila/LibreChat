@@ -1,7 +1,8 @@
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo, memo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
+import FeedbackTagOptions from '~/components/Chat/Messages/FeedbackTagOptions';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -50,6 +51,8 @@ const MessageRender = memo(
       copyToClipboard,
       setLatestMessage,
       regenerateMessage,
+      handleFeedback,
+      rated,
     } = useMessageActions({
       message: msg,
       currentEditId,
@@ -58,6 +61,10 @@ const MessageRender = memo(
     });
     const fontSize = useRecoilValue(store.fontSize);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+
+    const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+    const [showThankYou, setShowThankYou] = useState(false);
+
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const { isCreatedByUser, error, unfinished } = msg ?? {};
     const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -205,7 +212,34 @@ const MessageRender = memo(
                 handleContinue={handleContinue}
                 latestMessage={latestMessage}
                 isLast={isLast}
+                handleFeedback={handleFeedback}
+                rated={rated}
               />
+            </SubRow>
+          )}
+          {!isCreatedByUser && rated?.rating === 'thumbsDown' && isLatestMessage && (
+            <SubRow classes="mt-3">
+              {!feedbackSubmitted ? (
+                <FeedbackTagOptions
+                  tagChoices={rated.ratingContent?.tagChoices || []}
+                  onSelectTag={(tag, text) => {
+                    const ratingContent = {
+                      tags: [tag],
+                      ...(text ? { text } : {}),
+                    };
+                    handleFeedback('thumbsDown', { ratingContent });
+                    setFeedbackSubmitted(true);
+                    setShowThankYou(true);
+                    setTimeout(() => {
+                      setShowThankYou(false);
+                    }, 3000);
+                  }}
+                />
+              ) : showThankYou ? (
+                <div className="inline-flex rounded-lg border border-token-border-light p-4">
+                  <div className="text-sm">Thanks for your feedback!</div>
+                </div>
+              ) : null}
             </SubRow>
           )}
         </div>
