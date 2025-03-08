@@ -72,7 +72,7 @@ const EndpointsMenu: FC = () => {
 
   return (
     <Root>
-      <TitleButton primaryText={primaryText + ' '} />
+      <TitleButton primaryText="AICons" />
       <Portal>
         <div
           style={{

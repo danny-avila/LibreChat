@@ -42,8 +42,8 @@ export default function Header() {
           {modelSpecs.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets === true && <PresetsMenu />}
-          {hasAccessToBookmarks === true && <BookmarkMenu />}
-          {hasAccessToMultiConvo === true && <AddMultiConvo />}
+          {/* {hasAccessToBookmarks === true && <BookmarkMenu />} */}
+          {/* {hasAccessToMultiConvo === true && <AddMultiConvo />} */}
           {isSmallScreen && (
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
