@@ -15,8 +15,10 @@ const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const initGoogle = require('~/server/services/Endpoints/google/initialize');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
+const { processFiles } = require('~/server/services/Files/process');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
+const { getToolFiles } = require('~/models/Conversation');
 const { getModelMaxTokens } = require('~/utils');
 const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
@@ -82,7 +84,6 @@ const primeResources = async (_attachments, _tool_resources) => {
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
  * @param {object} [params.endpointOption]
- * @param {AgentToolResources} [params.tool_resources]
  * @param {boolean} [params.isInitialAgent]
  * @returns {Promise<Agent>}
  */
@@ -91,9 +92,24 @@ const initializeAgentOptions = async ({
   res,
   agent,
   endpointOption,
-  tool_resources,
   isInitialAgent = false,
 }) => {
+  let currentFiles;
+  const requestFiles = req.body.files ?? [];
+  if (
+    isInitialAgent &&
+    req.body.conversationId != null &&
+    agent.model_parameters?.resendFiles === true
+  ) {
+    const fileIds = (await getToolFiles(req.body.conversationId)).map((f) => f.file_id);
+    if (requestFiles.length || fileIds.length) {
+      currentFiles = await processFiles(requestFiles, fileIds);
+    }
+  } else if (isInitialAgent && requestFiles.length) {
+    currentFiles = await processFiles(requestFiles);
+  }
+
+  const { attachments, tool_resources } = await primeResources(currentFiles, agent.tool_resources);
   const { tools, toolContextMap } = await loadAgentTools({
     req,
     res,
@@ -160,6 +176,7 @@ const initializeAgentOptions = async ({
   return {
     ...agent,
     tools,
+    attachments,
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
@@ -197,11 +214,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('Agent not found');
   }
 
-  const { attachments, tool_resources } = await primeResources(
-    endpointOption.attachments,
-    primaryAgent.tool_resources,
-  );
-
   const agentConfigs = new Map();
 
   // Handle primary agent
@@ -210,7 +222,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     res,
     agent: primaryAgent,
     endpointOption,
-    tool_resources,
     isInitialAgent: true,
   });
 
@@ -240,18 +251,19 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
-    agent: primaryConfig,
     sender,
-    attachments,
     contentParts,
+    agentConfigs,
     eventHandlers,
     collectedUsage,
     artifactPromises,
+    agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    agentConfigs,
     endpoint: EModelEndpoint.agents,
+    attachments: primaryConfig.attachments,
     maxContextTokens: primaryConfig.maxContextTokens,
+    resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
   });
 
   return { client };
