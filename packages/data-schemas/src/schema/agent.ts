@@ -1,6 +1,4 @@
 import { Schema, Document, Types } from 'mongoose';
-
-// @ts-ignore
 export interface IAgent extends Omit<Document, 'model'> {
   id: string;
   name?: string;
@@ -47,10 +45,7 @@ const agentSchema = new Schema<IAgent>(
       type: String,
     },
     avatar: {
-      type: {
-        filepath: String,
-        source: String,
-      },
+      type: Schema.Types.Mixed,
       default: undefined,
     },
     provider: {

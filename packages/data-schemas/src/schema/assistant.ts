@@ -27,10 +27,7 @@ const assistantSchema = new Schema<IAssistant>(
       required: true,
     },
     avatar: {
-      type: {
-        filepath: String,
-        source: String,
-      },
+      type: Schema.Types.Mixed,
       default: undefined,
     },
     conversation_starters: {
