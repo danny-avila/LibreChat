@@ -18,6 +18,7 @@ export interface IUser extends Document {
   discordId?: string;
   appleId?: string;
   plugins?: unknown[];
+  twoFactorEnabled?: boolean;
   totpSecret?: string;
   backupCodes?: Array<{
     codeHash: string;
@@ -133,6 +134,10 @@ const User = new Schema<IUser>(
     },
     plugins: {
       type: Array,
+    },
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
     },
     totpSecret: {
       type: String,

@@ -18,7 +18,7 @@ interface SetupPhaseProps {
   onGenerate: () => void;
 }
 
-export const SetupPhase: React.FC<SetupPhaseProps> = ({ isGenerating, onGenerate, onNext }) => {
+export const SetupPhase: React.FC<SetupPhaseProps> = ({ isGenerating, onGenerate }) => {
   const localize = useLocalize();
 
   return (
