@@ -223,6 +223,12 @@ class AgentClient extends BaseClient {
     };
   }
 
+  /**
+   *
+   * @param {TMessage} message
+   * @param {Array<MongoFile>} attachments
+   * @returns {Promise<Array<Partial<MongoFile>>>}
+   */
   async addImageURLs(message, attachments) {
     const { files, text, image_urls } = await encodeAndFormat(
       this.options.req,
@@ -231,8 +237,8 @@ class AgentClient extends BaseClient {
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
-    if (text && message.text) {
-      message.text = [text, message.text].join('\n');
+    if (text && text.length) {
+      message.ocr = text;
     }
     return files;
   }
@@ -311,7 +317,22 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
+      if (
+        message.ocr &&
+        typeof formattedMessage.content === 'string' &&
+        i !== orderedMessages.length - 1
+      ) {
+        formattedMessage.content = [message.ocr, formattedMessage.content].join('\n');
+      } else if (
+        message.ocr &&
+        typeof formattedMessage.content === 'string' &&
+        i === orderedMessages.length - 1
+      ) {
+        systemContent = [systemContent, message.ocr].join('\n');
+      }
+
+      const needsTokenCount =
+        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
