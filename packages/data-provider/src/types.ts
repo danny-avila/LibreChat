@@ -115,6 +115,7 @@ export type TUser = {
   role: string;
   provider: string;
   plugins?: string[];
+  twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];
   createdAt: string;
   updatedAt: string;
