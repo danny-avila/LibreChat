@@ -75,7 +75,7 @@ function AuthLayout({
               {header}
             </h1>
             <BlinkAnimation active={isFetching}>
-            <div className="mt-6 h-10 w-full bg-cover">
+            <div className="mt-6 h-16 w-full bg-cover">
               <img
                 src="/assets/logo.svg"
                 className="h-full w-full object-contain"
