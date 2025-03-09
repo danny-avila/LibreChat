@@ -162,6 +162,10 @@ const processDeleteRequest = async ({ req, files }) => {
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
+    if (source === FileSources.text) {
+      resolvedFileIds.push(file.file_id);
+      continue;
+    }
 
     if (req.body.agent_id && req.body.tool_resource) {
       agentFiles.push({
