@@ -21,7 +21,11 @@ export default function SourceIcon({
   source?: FileSources;
   className?: string;
 }) {
-  if (source === FileSources.local || source === FileSources.firebase) {
+  if (
+    source === FileSources.local ||
+    source === FileSources.firebase ||
+    source === FileSources.s3
+  ) {
     return null;
   }
 
