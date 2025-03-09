@@ -243,6 +243,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
         AgentCapabilities.artifacts,
         AgentCapabilities.actions,
         AgentCapabilities.tools,
+        AgentCapabilities.ocr,
       ]),
   }),
 );

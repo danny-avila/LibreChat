@@ -459,10 +459,6 @@ const processFileUpload = async ({ req, res, metadata }) => {
  * @returns {Promise<boolean>}
  */
 const checkCapability = async (req, capability) => {
-  // testing OCR
-  if (capability === AgentCapabilities.ocr) {
-    return true;
-  }
   const endpointsConfig = await getEndpointsConfig(req);
   const capabilities = endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [];
   return capabilities.includes(capability);

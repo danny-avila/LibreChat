@@ -49,14 +49,16 @@ const AttachFile = ({ isRTL, disabled, handleFileChange }: AttachFileProps) => {
       },
     ];
 
-    items.push({
-      label: localize('com_ui_upload_ocr_text'),
-      onClick: () => {
-        setToolResource(EToolResources.ocr);
-        handleUploadClick();
-      },
-      icon: <FileType2Icon className="icon-md" />,
-    });
+    if (capabilities.includes(EToolResources.ocr)) {
+      items.push({
+        label: localize('com_ui_upload_ocr_text'),
+        onClick: () => {
+          setToolResource(EToolResources.ocr);
+          handleUploadClick();
+        },
+        icon: <FileType2Icon className="icon-md" />,
+      });
+    }
 
     if (capabilities.includes(EToolResources.file_search)) {
       items.push({
