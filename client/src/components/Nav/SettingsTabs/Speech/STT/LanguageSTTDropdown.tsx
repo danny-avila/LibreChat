@@ -28,6 +28,7 @@ export default function LanguageSTTDropdown() {
     { value: 'ar-TN', label: 'Arabic (Tunisia)' },
     { value: 'ar-YE', label: 'Arabic (Yemen)' },
     { value: 'cs', label: 'Czech' },
+    { value: 'da-DK', label: 'Dansk' },
     { value: 'nl-NL', label: 'Dutch' },
     { value: 'en-AU', label: 'English (Australia)' },
     { value: 'en-CA', label: 'English (Canada)' },
