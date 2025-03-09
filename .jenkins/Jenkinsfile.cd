@@ -1,0 +1,50 @@
+pipeline {
+    agent {
+        kubernetes {
+            cloud "k8s-agents"
+            serviceAccount "jenkins-k8s-jobs"
+            inheritFrom "jnlp-aws-helm"
+            yaml """
+              spec:
+                containers:
+                - name: docker
+                  readinessProbe:
+                    exec:
+                      command: [sh, -c, "ls -S /var/run/docker.sock"]
+                  resources:
+                    requests:
+                      memory: "200Mi"
+                      cpu: "0.2"
+            """
+        }
+    }
+    options {
+        lock("bai-cd")
+        disableConcurrentBuilds() 
+    }
+    stages {
+        stage('Deploy BAI to Management') {
+            stages {
+                stage('Deploy') {
+                    steps {
+                      container('jnlp') {
+                        script {
+                            sh """
+                              cd charts
+                              helm dependency build librechat
+                              helm upgrade bai librechat --install
+                            """
+                        }
+                    }
+                  }
+                }
+            }
+        }
+    }
+    post {
+        cleanup {
+            cleanWs()
+            cleanMachineIfFull()
+        }
+    }
+}
