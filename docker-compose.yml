@@ -11,7 +11,7 @@ services:
     depends_on:
       - mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: librechat:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -34,7 +34,7 @@ services:
     restart: always
     user: "${UID}:${GID}"
     volumes:
-      - ./data-node:/data/db
+      - /data/mongodb:/data/db
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
