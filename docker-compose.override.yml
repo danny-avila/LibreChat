@@ -75,34 +75,34 @@ services:
   #     - vectordb
   #   env_file:
   #     - .env
-  # rag_api:
-  #   image: librechat-rag-api:local
-  #   build:
-  #     context: ../rag_api
-  #     dockerfile: Dockerfile
-  #   # user: "${UID}:${GID}"
-  #   # environment:
-  #   #   - DB_HOST=vectordb
-  #   #   - RAG_PORT=${RAG_PORT:-8000}
-  #   #restart: always
-  #   # depends_on:
-  #   #   - vectordb
-  #   # env_file:
-  #   #   - .env
-  #   environment:
-  #    # - DB_HOST=vectordb
-  #     # - DB_PORT=5432
-  #     # - POSTGRES_DB=mydatabase
-  #     # - POSTGRES_USER=myuser
-  #     # - POSTGRES_PASSWORD=mypassword
-  #     #- RAG_PORT=${RAG_PORT:-8000}
-  #     - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
-  #     - RAG_UPLOAD_DIR=/uploads
-  #   volumes:
-  #     - ./uploads:/app/uploads
-  #   ports:
-  #     - "8000:8000"
-  #   # depends_on:
+  rag_api:
+    image: librechat-rag-api:local
+    build:
+      context: ../rag_api
+      dockerfile: Dockerfile
+    # user: "${UID}:${GID}"
+    # environment:
+    #   - DB_HOST=vectordb
+    #   - RAG_PORT=${RAG_PORT:-8000}
+    #restart: always
+    # depends_on:
+    #   - vectordb
+    # env_file:
+    #   - .env
+    environment:
+     # - DB_HOST=vectordb
+      # - DB_PORT=5432
+      # - POSTGRES_DB=mydatabase
+      # - POSTGRES_USER=myuser
+      # - POSTGRES_PASSWORD=mypassword
+      #- RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - RAG_UPLOAD_DIR=/uploads
+    volumes:
+      - ./uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    # depends_on:
   #   #   - vectordb
   #   env_file:
   #     - .env
