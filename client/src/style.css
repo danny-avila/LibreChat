@@ -2484,7 +2484,7 @@ display:none !important;
   
 }
 
-.light #chat-history-nav, .bg-surface-primary-alt {
+.light #chat-history-nav, .light  .bg-surface-primary-alt {
 background: #b5c4b5 !important;
   
 }
