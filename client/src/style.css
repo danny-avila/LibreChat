@@ -2484,24 +2484,24 @@ display:none !important;
   
 }
 
-#chat-history-nav, .bg-surface-primary-alt {
+.light #chat-history-nav, .bg-surface-primary-alt {
 background: #b5c4b5 !important;
   
 }
-#chat-history-nav .to-transparent {
+.light #chat-history-nav .to-transparent {
 background:none !important;
   
 }
-.sidenav {
+.light .sidenav {
 background: #b5c4b5 !important;
   
 }
-.sidenav .bg-background {
+.light .sidenav .bg-background {
 background: #b5c4b5 !important;
   
 }
 
-.sidenav .bg-token-sidebar-surface-primary button {
+.light .sidenav .bg-token-sidebar-surface-primary button {
   border:none !important;
   background: #f8f8f857 !important;
   padding-top: 22px;
