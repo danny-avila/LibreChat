@@ -96,6 +96,30 @@ module.exports = {
         update.conversationId = newConversationId;
       }
 
+      if (convo.assistant_id && (!convo.spec || !convo.iconURL)) {
+        const modelSpecs = req?.app?.locals?.modelSpecs;
+
+        if (modelSpecs && Array.isArray(modelSpecs.list)) {
+          const matchingSpec = modelSpecs.list.find(
+            (spec) => spec.preset && spec.preset.assistant_id === convo.assistant_id,
+          );
+
+          if (matchingSpec) {
+            if (!update.spec && matchingSpec.name) {
+              update.spec = matchingSpec.name;
+            }
+
+            if (!update.iconURL) {
+              update.iconURL = matchingSpec.iconURL || matchingSpec.preset?.iconURL || null;
+            }
+          } else {
+            logger.debug(
+              `[saveConvo] No matching modelSpec found for assistant_id: ${convo.assistant_id}`,
+            );
+          }
+        }
+      }
+
       if (req.body.isTemporary) {
         const expiredAt = new Date();
         expiredAt.setDate(expiredAt.getDate() + 30);
