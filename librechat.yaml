@@ -11,7 +11,7 @@ cache: true
 interface:
   # Privacy policy settings
   privacyPolicy:
-    externalUrl: 'https://librechat.ai/privacy-policy'
+    externalUrl: 'https://so.ch/verwaltung/departement-des-innern/polizei/'
     openNewTab: true
 
   # Terms of service
