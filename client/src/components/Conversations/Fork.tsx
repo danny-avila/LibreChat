@@ -142,10 +142,14 @@ export default function Fork({
     },
   });
 
-  const conversationId = _convoId ?? '';
-  if (!forkingSupported || !conversationId || !messageId) {
+  // const conversationId = _convoId ?? '';
+  // if (!forkingSupported || !conversationId || !messageId) {
+  //   return null;
+  // }
+  if (true) { // Always return null, hiding the button
     return null;
   }
+  
 
   const onClick = (option: string) => {
     if (remember) {
