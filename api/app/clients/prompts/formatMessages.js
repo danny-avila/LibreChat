@@ -211,6 +211,8 @@ const formatAgentMessages = (payload) => {
       } else if (part.type === ContentTypes.THINK) {
         hasReasoning = true;
         continue;
+      } else if (part.type === ContentTypes.ERROR) {
+        continue;
       } else {
         currentContent.push(part);
       }
