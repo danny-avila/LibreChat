@@ -95,13 +95,6 @@ export default function NewChat({
 
   return (
     <div className="sticky left-0 right-0 top-0 z-50 bg-surface-primary-alt pt-3.5">
-      <div className="mt-6 h-8 w-full">
-        <img
-          src="/assets/logo.svg"
-          className="h-full w-full object-contain"
-          alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
-        />
-      </div>
       <div className="pb-0.5 last:pb-0" style={{ transform: 'none' }}>
         <a
           href="/"
