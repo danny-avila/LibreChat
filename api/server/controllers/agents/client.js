@@ -317,17 +317,16 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      if (
-        message.ocr &&
-        typeof formattedMessage.content === 'string' &&
-        i !== orderedMessages.length - 1
-      ) {
-        formattedMessage.content = [message.ocr, formattedMessage.content].join('\n');
-      } else if (
-        message.ocr &&
-        typeof formattedMessage.content === 'string' &&
-        i === orderedMessages.length - 1
-      ) {
+      if (message.ocr && i !== orderedMessages.length - 1) {
+        if (typeof formattedMessage.content === 'string') {
+          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+        } else {
+          const textPart = formattedMessage.content.find((part) => part.type === 'text');
+          textPart
+            ? (textPart.text = message.ocr + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+        }
+      } else if (message.ocr && i === orderedMessages.length - 1) {
         systemContent = [systemContent, message.ocr].join('\n');
       }
 
