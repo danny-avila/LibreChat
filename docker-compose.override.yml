@@ -25,12 +25,30 @@ services:
 
 # # USE LIBRECHAT CONFIG FILE
   api:
+    image: librechat
+    build:
+      context: .
+      target: node
     env_file:
     - .env
     volumes:
-    - type: bind
-      source: ./librechat.yaml
-      target: /app/librechat.yaml
+    - ./librechat.yaml:/app/librechat.yaml
+    - ./images:/app/client/public/images
+    - ./logs:/app/api/logs
+    - ./src:/app/src  # Only mount the source code, NOT the entire `/app`
+    - /app/node_modules  # Keep dependencies inside the container
+
+    # volumes:
+    # - type: bind
+    #   source: ./librechat.yaml
+    #   target: /app/librechat.yaml
+    # - ./images:/app/client/public/images
+    # - ./logs:/app/api/logs
+    # - .:/app  # Mount the local code
+    # - /app/node_modules  # Keep container-installed dependencies
+
+
+
   
   vectordb:
     image: ankane/pgvector:latest
