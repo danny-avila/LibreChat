@@ -17,8 +17,8 @@ interface:
   # Terms of service
   termsOfService:
     externalUrl: 'https://librechat.ai/tos'
-    openNewTab: false
-    modalAcceptance: true
+    openNewTab: true
+    modalAcceptance: false
     modalTitle: "Terms of Service for LibreChat"
     modalContent: |
       # Terms and Conditions for LibreChat
@@ -64,8 +64,8 @@ interface:
   presets: false
   prompts: true
   bookmarks: true
-  multiConvo: true
-  agents: true
+  multiConvo: false
+  agents: false
 
 endpoints:
   custom:
@@ -86,13 +86,13 @@ endpoints:
     # Optional configurations
 
     # Title Conversation setting
-    #titleConvo: true # Set to true to enable title conversation
+    titleConvo: true # Set to true to enable title conversation
 
     # Title Method: Choose between "completion" or "functions".
-    #titleMethod: "completion"  # Defaults to "completion" if omitted.
+    titleMethod: "completion"  # Defaults to "completion" if omitted.
 
     # Title Model: Specify the model to use for titles.
-    #titleModel: 'llama-3.1-70b-instruct' # Defaults to "gpt-3.5-turbo" if omitted.
+    titleModel: 'meta/llama-3.1-70b-instruct' # Defaults to "gpt-3.5-turbo" if omitted.
 
     # Summarize setting: Set to true to enable summarization.
     # summarize: false
@@ -119,4 +119,3 @@ endpoints:
   #   titleConvo: true
   #   titleModel: 'llama-3.1-70b-instruct'
   #   modelDisplayLabel: 'llama-3.1-70b'
-
