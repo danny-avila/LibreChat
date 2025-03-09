@@ -1,6 +1,49 @@
 const { matchModelName } = require('../utils');
 const defaultRate = 6;
 
+const customTokenOverrides = {};
+const customCacheOverrides = {};
+
+/**
+ * Allows overriding the default token multipliers.
+ *
+ * @param {Object} overrides - An object mapping model keys to their custom token multipliers.
+ * @param {Object} overrides.<model> - An object containing custom multipliers for the model.
+ * @param {number} overrides.<model>.prompt - The custom prompt multiplier for the model.
+ * @param {number} overrides.<model>.completion - The custom completion multiplier for the model.
+ *
+ * @example
+ * // Override the multipliers for "gpt-4o-mini" and "gpt-3.5":
+ * setCustomTokenOverrides({
+ *   "gpt-4o-mini": { prompt: 0.2, completion: 0.5 },
+ *   "gpt-3.5": { prompt: 1.0, completion: 2.0 }
+ * });
+ */
+const setCustomTokenOverrides = (overrides) => {
+  Object.assign(customTokenOverrides, overrides);
+};
+
+/**
+ * Allows overriding the default cache multipliers.
+ * The override values should be nested under a key named "Cache".
+ *
+ * @param {Object} overrides - An object mapping model keys to their custom cache multipliers.
+ * @param {Object} overrides.<model> - An object that must include a "Cache" property.
+ * @param {Object} overrides.<model>.Cache - An object containing custom cache multipliers for the model.
+ * @param {number} overrides.<model>.Cache.write - The custom cache write multiplier for the model.
+ * @param {number} overrides.<model>.Cache.read - The custom cache read multiplier for the model.
+ *
+ * @example
+ * // Override the cache multipliers for "gpt-4o-mini" and "gpt-3.5":
+ * setCustomCacheOverrides({
+ *   "gpt-4o-mini": { cache: { write: 0.2, read: 0.5 } },
+ *   "gpt-3.5": { cache: { write: 1.0, read: 1.5 } }
+ * });
+ */
+const setCustomCacheOverrides = (overrides) => {
+  Object.assign(customCacheOverrides, overrides);
+};
+
 /**
  * AWS Bedrock pricing
  * source: https://aws.amazon.com/bedrock/pricing/
@@ -246,20 +289,23 @@ const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointToke
     return endpointTokenConfig?.[model]?.[cacheType] ?? null;
   }
 
-  if (valueKey && cacheType) {
-    return cacheTokenValues[valueKey]?.[cacheType] ?? null;
+  if (!valueKey && model) {
+    valueKey = getValueKey(model, endpoint);
   }
-
-  if (!cacheType || !model) {
-    return null;
-  }
-
-  valueKey = getValueKey(model, endpoint);
   if (!valueKey) {
     return null;
   }
 
-  // If we got this far, and values[cacheType] is undefined somehow, return a rough average of default multipliers
+  // Check for custom cache overrides under the "cache" property.
+  if (
+    customCacheOverrides[valueKey] &&
+    customCacheOverrides[valueKey].cache &&
+    customCacheOverrides[valueKey].cache[cacheType] != null
+  ) {
+    return customCacheOverrides[valueKey].cache[cacheType];
+  }
+
+  // Fallback to the default cacheTokenValues.
   return cacheTokenValues[valueKey]?.[cacheType] ?? null;
 };
 
@@ -270,4 +316,6 @@ module.exports = {
   getCacheMultiplier,
   defaultRate,
   cacheTokenValues,
+  setCustomTokenOverrides,
+  setCustomCacheOverrides,
 };
