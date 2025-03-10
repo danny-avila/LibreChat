@@ -5,7 +5,13 @@ import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import type { TConversation } from 'librechat-data-provider';
-import { useNavigateToConvo, useMediaQuery, useLocalize } from '~/hooks';
+import {
+  useNavigateToConvo,
+  useMediaQuery,
+  useLocalize,
+  useAuthContext,
+  useAssistantsMap,
+} from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useGetEndpointsQuery } from '~/data-provider';
@@ -44,6 +50,8 @@ export default function Conversation({
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const localize = useLocalize();
+  const { isAuthenticated } = useAuthContext();
+  const assistantMap = useAssistantsMap({ isAuthenticated });
 
   const clickHandler = async (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
@@ -195,6 +203,7 @@ export default function Conversation({
           <EndpointIcon
             conversation={conversation}
             endpointsConfig={endpointsConfig}
+            assistantMap={assistantMap}
             size={20}
             context="menu-item"
           />
