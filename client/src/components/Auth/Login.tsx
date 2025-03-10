@@ -49,7 +49,9 @@ function Login() {
   if (shouldAutoRedirect) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
-        <p className="text-lg font-semibold">Redirecting to OpenID provider, please wait...</p>
+        <p className="text-lg font-semibold">
+          {localize('com_ui_redirecting_to_provider', { 0: startupConfig.openidLabel })}
+        </p>
         <div className="mt-4">
           <SocialButton
             key="openid"
