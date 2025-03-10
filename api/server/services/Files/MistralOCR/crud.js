@@ -98,15 +98,35 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
   try {
     /** @type {TCustomConfig['ocr']} */
     const ocrConfig = req.app.locals?.ocr;
-    const apiKeyVarName = extractVariableName(ocrConfig.apiKey) ?? 'OCR_API_KEY';
-    const baseURLVarName = extractVariableName(ocrConfig.baseURL) ?? 'OCR_BASEURL';
-    const authValues = await loadAuthValues({
-      userId: req.user.id,
-      authFields: [baseURLVarName, apiKeyVarName],
-      optional: new Set([baseURLVarName]),
-    });
-    const apiKey = authValues[apiKeyVarName];
-    const baseURL = authValues[baseURLVarName];
+
+    const apiKeyConfig = ocrConfig.apiKey || '';
+    const baseURLConfig = ocrConfig.baseURL || '';
+
+    const isApiKeyEnvVar = envVarRegex.test(apiKeyConfig);
+    const isBaseURLEnvVar = envVarRegex.test(baseURLConfig);
+
+    const isApiKeyEmpty = !apiKeyConfig.trim();
+    const isBaseURLEmpty = !baseURLConfig.trim();
+
+    let apiKey, baseURL;
+
+    if (isApiKeyEnvVar || isBaseURLEnvVar || isApiKeyEmpty || isBaseURLEmpty) {
+      const apiKeyVarName = isApiKeyEnvVar ? extractVariableName(apiKeyConfig) : 'OCR_API_KEY';
+      const baseURLVarName = isBaseURLEnvVar ? extractVariableName(baseURLConfig) : 'OCR_BASEURL';
+
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [baseURLVarName, apiKeyVarName],
+        optional: new Set([baseURLVarName]),
+      });
+
+      apiKey = authValues[apiKeyVarName];
+      baseURL = authValues[baseURLVarName];
+    } else {
+      apiKey = apiKeyConfig;
+      baseURL = baseURLConfig;
+    }
+
     const fileBuffer = fs.readFileSync(file.path);
     const mistralFile = await uploadDocumentToMistral({
       buffer: fileBuffer,
@@ -114,14 +134,25 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
       apiKey,
       baseURL,
     });
-    const model = extractEnvVariable(ocrConfig.mistralModel) || 'mistral-ocr-latest';
-    const signedUrlResponse = await getSignedUrl({ apiKey, baseURL, fileId: mistralFile.id });
+
+    const modelConfig = ocrConfig.mistralModel || '';
+    const model = envVarRegex.test(modelConfig)
+      ? extractEnvVariable(modelConfig)
+      : modelConfig.trim() || 'mistral-ocr-latest';
+
+    const signedUrlResponse = await getSignedUrl({
+      apiKey,
+      baseURL,
+      fileId: mistralFile.id,
+    });
+
     const ocrResult = await performOCR({
       apiKey,
       baseURL,
       model,
       documentUrl: signedUrlResponse.url,
     });
+
     let aggregatedText = '';
     const images = [];
     ocrResult.pages.forEach((page, index) => {
