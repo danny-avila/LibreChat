@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const groupSchema = require('~/models/schema/groupSchema');
+const { groupSchema } = require('@librechat/data-schemas');
 
 const Group = mongoose.model('Group', groupSchema);
 
