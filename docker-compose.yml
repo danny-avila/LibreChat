@@ -3,7 +3,7 @@
 
 services:
   api:
-    image: LibreChat
+    image: librechat
     build:
       context: .
       target: node
