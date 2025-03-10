@@ -1,0 +1,31 @@
+name: Lint
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+
+concurrency:
+  group: lint-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+  success:
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - lint
+    steps:
+      - name: Check build success
+        run: '[[ ${{ needs.lint.result }} == "success" ]] || exit 1'
+      - name: Announce success
+        run: echo "Lint is successful"
