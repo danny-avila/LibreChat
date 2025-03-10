@@ -29,6 +29,7 @@ const Image = ({
   height,
   width,
   placeholderDimensions,
+  className,
 }: {
   imagePath: string;
   altText: string;
@@ -38,6 +39,7 @@ const Image = ({
     height?: string;
     width?: string;
   };
+  className?: string;
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,7 +59,12 @@ const Image = ({
   return (
     <Dialog.Root>
       <div ref={containerRef}>
-        <div className="relative mt-1 flex h-auto w-full max-w-lg items-center justify-center overflow-hidden bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+        <div
+          className={cn(
+            'relative mt-1 flex h-auto w-full max-w-lg items-center justify-center overflow-hidden bg-surface-active-alt text-text-secondary-alt',
+            className,
+          )}
+        >
           <Dialog.Trigger asChild>
             <button type="button" aria-haspopup="dialog" aria-expanded="false">
               <LazyLoadImage

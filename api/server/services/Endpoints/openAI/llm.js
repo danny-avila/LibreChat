@@ -9,6 +9,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {Object} options - Additional options for configuring the LLM.
  * @param {Object} [options.modelOptions] - Model-specific options.
  * @param {string} [options.modelOptions.model] - The name of the model to use.
+ * @param {string} [options.modelOptions.user] - The user ID
  * @param {number} [options.modelOptions.temperature] - Controls randomness in output generation (0-2).
  * @param {number} [options.modelOptions.top_p] - Controls diversity via nucleus sampling (0-1).
  * @param {number} [options.modelOptions.frequency_penalty] - Reduces repetition of token sequences (-2 to 2).
@@ -23,13 +24,13 @@ const { isEnabled } = require('~/server/utils');
  * @param {boolean} [options.streaming] - Whether to use streaming mode.
  * @param {Object} [options.addParams] - Additional parameters to add to the model options.
  * @param {string[]} [options.dropParams] - Parameters to remove from the model options.
+ * @param {string|null} [endpoint=null] - The endpoint name
  * @returns {Object} Configuration options for creating an LLM instance.
  */
-function getLLMConfig(apiKey, options = {}) {
+function getLLMConfig(apiKey, options = {}, endpoint = null) {
   const {
     modelOptions = {},
     reverseProxyUrl,
-    useOpenRouter,
     defaultQuery,
     headers,
     proxy,
@@ -56,9 +57,14 @@ function getLLMConfig(apiKey, options = {}) {
     });
   }
 
+  let useOpenRouter;
   /** @type {OpenAIClientOptions['configuration']} */
   const configOptions = {};
-  if (useOpenRouter || (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter))) {
+  if (
+    (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
+    (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    useOpenRouter = true;
     llmConfig.include_reasoning = true;
     configOptions.baseURL = reverseProxyUrl;
     configOptions.defaultHeaders = Object.assign(
@@ -116,6 +122,13 @@ function getLLMConfig(apiKey, options = {}) {
 
   if (process.env.OPENAI_ORGANIZATION && this.azure) {
     llmConfig.organization = process.env.OPENAI_ORGANIZATION;
+  }
+
+  if (useOpenRouter && llmConfig.reasoning_effort != null) {
+    llmConfig.reasoning = {
+      effort: llmConfig.reasoning_effort,
+    };
+    delete llmConfig.reasoning_effort;
   }
 
   return {

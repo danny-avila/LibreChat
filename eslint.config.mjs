@@ -220,9 +220,6 @@ export default [
       'jsx-a11y/interactive-supports-focus': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       'jsx-a11y/img-redundant-alt': 'off',
-      'jsx-a11y/media-has-caption': 'off',
-      'jsx-a11y/no-autofocus': 'off',
-      'jsx-a11y/alt-text': 'off',
     },
   },
   {
@@ -366,6 +363,18 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './packages/mcp/tsconfig.spec.json',
+      },
+    },
+  },
+  {
+    // **New Data-schemas configuration block**
+    files: ['./packages/data-schemas/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: {
+        project: './packages/data-schemas/tsconfig.json',
       },
     },
   },

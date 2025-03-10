@@ -109,4 +109,45 @@ describe('getLLMConfig', () => {
     // Just verifying that the promptCache setting is processed
     expect(result.llmConfig).toBeDefined();
   });
+
+  it('should include topK and topP for Claude-3.7 models when thinking is not enabled', () => {
+    // Test with thinking explicitly set to null/undefined
+    const result = getLLMConfig('test-api-key', {
+      modelOptions: {
+        model: 'claude-3-7-sonnet',
+        topK: 10,
+        topP: 0.9,
+        thinking: false,
+      },
+    });
+
+    expect(result.llmConfig).toHaveProperty('topK', 10);
+    expect(result.llmConfig).toHaveProperty('topP', 0.9);
+
+    // Test with thinking explicitly set to false
+    const result2 = getLLMConfig('test-api-key', {
+      modelOptions: {
+        model: 'claude-3-7-sonnet',
+        topK: 10,
+        topP: 0.9,
+        thinking: false,
+      },
+    });
+
+    expect(result2.llmConfig).toHaveProperty('topK', 10);
+    expect(result2.llmConfig).toHaveProperty('topP', 0.9);
+
+    // Test with decimal notation as well
+    const result3 = getLLMConfig('test-api-key', {
+      modelOptions: {
+        model: 'claude-3.7-sonnet',
+        topK: 10,
+        topP: 0.9,
+        thinking: false,
+      },
+    });
+
+    expect(result3.llmConfig).toHaveProperty('topK', 10);
+    expect(result3.llmConfig).toHaveProperty('topP', 0.9);
+  });
 });

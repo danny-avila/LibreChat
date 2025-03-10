@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { encryptV2 } = require('~/server/utils/crypto');
-const tokenSchema = require('./schema/tokenSchema');
+const { tokenSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
 
 /**

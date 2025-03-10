@@ -767,36 +767,6 @@
  */
 
 /**
- * @exports MongoFile
- * @typedef {import('~/models/schema/fileSchema.js').MongoFile} MongoFile
- * @memberof typedefs
- */
-
-/**
- * @exports ToolCallData
- * @typedef {import('~/models/schema/toolCallSchema.js').ToolCallData} ToolCallData
- * @memberof typedefs
- */
-
-/**
- * @exports MongoUser
- * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
- * @memberof typedefs
- */
-
-/**
- * @exports MongoProject
- * @typedef {import('~/models/schema/projectSchema.js').MongoProject} MongoProject
- * @memberof typedefs
- */
-
-/**
- * @exports MongoPromptGroup
- * @typedef {import('~/models/schema/promptSchema.js').MongoPromptGroup} MongoPromptGroup
- * @memberof typedefs
- */
-
-/**
  * @exports uploadImageBuffer
  * @typedef {import('~/server/services/Files/process').uploadImageBuffer} uploadImageBuffer
  * @memberof typedefs
