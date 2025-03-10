@@ -553,8 +553,10 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.topP,
   bedrock.topK,
   baseDefinitions.stop,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -564,8 +566,8 @@ const bedrockMistral: SettingsConfiguration = [
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -575,8 +577,8 @@ const bedrockCohere: SettingsConfiguration = [
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -585,8 +587,8 @@ const bedrockGeneral: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -602,8 +604,10 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
@@ -617,8 +621,8 @@ const bedrockMistralCol2: SettingsConfiguration = [
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -632,8 +636,8 @@ const bedrockCohereCol2: SettingsConfiguration = [
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -646,8 +650,8 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 export const settings: Record<string, SettingsConfiguration | undefined> = {

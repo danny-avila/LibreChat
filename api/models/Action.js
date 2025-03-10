@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const actionSchema = require('./schema/action');
+const { actionSchema } = require('@librechat/data-schemas');
 
 const Action = mongoose.model('action', actionSchema);
 

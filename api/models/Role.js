@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const {
   CacheKeys,
   SystemRoles,
@@ -12,8 +13,10 @@ const {
   temporaryChatPermissionsSchema,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
-const Role = require('~/models/schema/roleSchema');
+const { roleSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
+
+const Role = mongoose.model('Role', roleSchema);
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
@@ -168,6 +171,7 @@ const initializeRoles = async function () {
   }
 };
 module.exports = {
+  Role,
   getRoleByName,
   initializeRoles,
   updateRoleByName,

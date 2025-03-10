@@ -113,12 +113,14 @@ mcpServers:
   everything:
     # type: sse # type can optionally be omitted
     url: http://localhost:3001/sse
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
   puppeteer:
     type: stdio
     command: npx
     args:
       - -y
       - "@modelcontextprotocol/server-puppeteer"
+    timeout: 300000  # 5 minutes timeout for this server
   filesystem:
     # type: stdio
     command: npx
@@ -224,7 +226,6 @@ endpoints:
     - name: 'OpenRouter'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
       # recommended environment variables:
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       models:

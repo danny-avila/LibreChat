@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('~/server/utils/handleText');
-const transactionSchema = require('./schema/transaction');
+const { transactionSchema } = require('@librechat/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
 const Balance = require('./Balance');

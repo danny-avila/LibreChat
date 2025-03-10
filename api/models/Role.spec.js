@@ -8,7 +8,7 @@ const {
 } = require('librechat-data-provider');
 const { updateAccessPermissions, initializeRoles } = require('~/models/Role');
 const getLogStores = require('~/cache/getLogStores');
-const Role = require('~/models/schema/roleSchema');
+const { Role } = require('~/models/Role');
 
 // Mock the cache
 jest.mock('~/cache/getLogStores', () => {
