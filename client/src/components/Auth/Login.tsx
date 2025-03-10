@@ -1,57 +1,75 @@
-import { useOutletContext } from 'react-router-dom';
-import { useEffect, useRef } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
-import { getLoginError, shouldRedirectToOpenID, clearOpenIDRedirectFlag, getCookie } from '~/utils';
+import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
+import SocialButton from '~/components/Auth/SocialButton';
+import { OpenIDIcon } from '~/components';
 
 function Login() {
   const localize = useLocalize();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
-  const redirectAttemptedRef = useRef(false);
 
-  // Auto-redirect to OpenID provider if enabled
-  // This is controlled by the OPENID_AUTO_REDIRECT environment variable
-  // When enabled, users will be automatically redirected to the OpenID provider
-  // without seeing the login form at all
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Determine if auto-redirect should be disabled based on the URL parameter
+  const disableAutoRedirect = searchParams.get('redirect') === 'false';
+
+  // Persist the disable flag locally so that once detected, auto-redirect stays disabled.
+  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
+
+  // Once the disable flag is detected, update local state and remove the parameter from the URL.
   useEffect(() => {
-    // Check for URL parameters that indicate a failed auth attempt
-    const urlParams = new URLSearchParams(window.location.search);
-    const authFailed = urlParams.get('auth_failed') === 'true';
+    if (disableAutoRedirect) {
+      setIsAutoRedirectDisabled(true);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('redirect');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [disableAutoRedirect, searchParams, setSearchParams]);
 
-    // Use the utility function to determine if we should redirect
-    if (
-      shouldRedirectToOpenID({
-        redirectAttempted: redirectAttemptedRef.current,
-        openidLoginEnabled: startupConfig?.openidLoginEnabled,
-        openidAutoRedirect: startupConfig?.openidAutoRedirect,
-        serverDomain: startupConfig?.serverDomain,
-        authFailed
-      })
-    ) {
-      // Mark that we've attempted to redirect in this component instance
-      redirectAttemptedRef.current = true;
+  // Determine whether we should auto-redirect to OpenID.
+  const shouldAutoRedirect =
+    startupConfig?.openidLoginEnabled &&
+    startupConfig?.openidAutoRedirect &&
+    startupConfig?.serverDomain &&
+    !isAutoRedirectDisabled;
 
-      // Log and redirect
+  useEffect(() => {
+    if (shouldAutoRedirect) {
       console.log('Auto-redirecting to OpenID provider...');
-      window.location.href = `${startupConfig?.serverDomain}/oauth/openid`;
+      window.location.href = `${startupConfig.serverDomain}/oauth/openid`;
     }
-  }, [startupConfig]);
+  }, [shouldAutoRedirect, startupConfig]);
 
-  // Clear the redirect flag after successful login (when the cookie is present)
-  useEffect(() => {
-    const successfulLogin = getCookie('successful_login');
-    if (successfulLogin) {
-      // Clear the redirect flag in localStorage
-      clearOpenIDRedirectFlag();
-      
-      // Clear the cookie since we've processed it
-      document.cookie = 'successful_login=; Max-Age=0; path=/;';
-    }
-  }, []);
+  // Render fallback UI if auto-redirect is active.
+  if (shouldAutoRedirect) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-4">
+        <p className="text-lg font-semibold">Redirecting to OpenID provider, please wait...</p>
+        <div className="mt-4">
+          <SocialButton
+            key="openid"
+            enabled={startupConfig.openidLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="openid"
+            Icon={() =>
+              startupConfig.openidImageUrl ? (
+                <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+              ) : (
+                <OpenIDIcon />
+              )
+            }
+            label={startupConfig.openidLabel}
+            id="openid"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
