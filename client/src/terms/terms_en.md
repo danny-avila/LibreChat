@@ -1,0 +1,35 @@
+# Terms and Conditions for LibreChat
+
+*Effective Date: February 18, 2024*
+
+Welcome to LibreChat, the informational website for the open-source AI chat platform, available at [https://librechat.ai](https://librechat.ai). These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at [https://librechat.ai/privacy](https://librechat.ai/privacy).
+
+## 1. Ownership
+
+Upon purchasing a package from LibreChat, you are granted the right to download and use the code for accessing an admin panel for LibreChat. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from LibreChat.
+
+## 2. User Data
+
+We collect personal data, such as your name, email address, and payment information, as described in our Privacy Policy. This information is collected to provide and improve our services, process transactions, and communicate with you.
+
+## 3. Non-Personal Data Collection
+
+The Website uses cookies to enhance user experience, analyze site usage, and facilitate certain functionalities. By using the Website, you consent to the use of cookies in accordance with our Privacy Policy.
+
+## 4. Use of the Website
+
+You agree to use the Website only for lawful purposes and in a manner that does not infringe the rights of, restrict, or inhibit anyone else's use and enjoyment of the Website. Prohibited behavior includes harassing or causing distress or inconvenience to any person, transmitting obscene or offensive content, or disrupting the normal flow of dialogue within the Website.
+
+## 5. Governing Law
+
+These Terms shall be governed by and construed in accordance with the laws of the United States, without giving effect to any principles of conflicts of law.
+
+## 6. Changes to the Terms
+
+We reserve the right to modify these Terms at any time. We will notify users of any changes by email. Your continued use of the Website after such changes have been notified will constitute your consent to such changes.
+
+## 7. Contact Information
+
+If you have any questions about these Terms, please contact us at [contact@librechat.ai](mailto:contact@librechat.ai).
+
+By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
