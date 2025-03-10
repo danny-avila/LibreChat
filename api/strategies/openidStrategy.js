@@ -5,6 +5,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
+const { findGroup } = require('~/models/groupMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -105,6 +106,71 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
+/**
+ * Extracts roles from the specified token using configuration from environment variables.
+ * @param {object} tokenset - The token set returned by the OpenID provider.
+ * @returns {Array} The roles extracted from the token.
+ */
+function extractRoles(tokenset) {
+  const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+  const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
+  const token =
+    requiredRoleTokenKind === 'access'
+      ? jwtDecode(tokenset.access_token)
+      : jwtDecode(tokenset.id_token);
+  const pathParts = requiredRoleParameterPath.split('.');
+  let found = true;
+  const roles = pathParts.reduce((acc, key) => {
+    if (!acc || !(key in acc)) {
+      found = false;
+      return [];
+    }
+    return acc[key];
+  }, token);
+  if (!found) {
+    logger.error(
+      `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+    );
+  }
+  return roles;
+}
+
+/**
+ * Updates the user's groups based on the provided roles.
+ * It removes any existing OpenID group references and then adds the groups
+ * that match the roles from the external group collection.
+ *
+ * @param {object} user - The user object.
+ * @param {Array} roles - The roles extracted from the token.
+ * @returns {Promise<Array>} The updated groups array.
+ */
+async function updateUserGroups(user, roles) {
+  user.groups = user.groups || [];
+  // Remove existing OpenID group references.
+  const currentOpenIdGroups = await findGroup({
+    _id: { $in: user.groups },
+    provider: 'openid',
+  });
+  const currentOpenIdGroupIds = new Set(
+    currentOpenIdGroups.map((g) => g._id.toString()),
+  );
+  user.groups = user.groups.filter(
+    (id) => !currentOpenIdGroupIds.has(id.toString()),
+  );
+
+  // Look up groups matching the roles.
+  const matchingGroups = await findGroup({
+    provider: 'openid',
+    externalId: { $in: roles },
+  });
+  matchingGroups.forEach((group) => {
+    if (!user.groups.some((id) => id.toString() === group._id.toString())) {
+      user.groups.push(group._id);
+    }
+  });
+  return user.groups;
+}
+
 async function setupOpenId() {
   try {
     if (process.env.PROXY) {
@@ -134,8 +200,6 @@ async function setupOpenId() {
     }
     const client = new issuer.Client(clientMetadata);
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
-    const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
-    const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -145,8 +209,13 @@ async function setupOpenId() {
       },
       async (tokenset, userinfo, done) => {
         try {
-          logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
-          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+          logger.info(
+            `[openidStrategy] verify login openidId: ${userinfo.sub}`,
+          );
+          logger.debug('[openidStrategy] verify login tokenset and userinfo', {
+            tokenset,
+            userinfo,
+          });
 
           let user = await findUser({ openidId: userinfo.sub });
           logger.info(
@@ -164,29 +233,10 @@ async function setupOpenId() {
 
           const fullName = getFullName(userinfo);
 
+          // Check for the required role using extracted roles.
+          let roles = [];
           if (requiredRole) {
-            let decodedToken = '';
-            if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
-            } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
-            }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
-
-            if (!found) {
-              logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
-              );
-            }
-
+            roles = extractRoles(tokenset);
             if (!roles.includes(requiredRole)) {
               return done(null, false, {
                 message: `You must have the "${requiredRole}" role to log in.`,
@@ -241,6 +291,10 @@ async function setupOpenId() {
               });
               user.avatar = imagePath ?? '';
             }
+          }
+
+          if (requiredRole) {
+            await updateUserGroups(user, roles);
           }
 
           user = await updateUser(user._id, user);

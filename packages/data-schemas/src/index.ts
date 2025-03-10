@@ -7,6 +7,7 @@ import categoriesSchema from './schema/categories';
 import conversationTagSchema from './schema/conversationTag';
 import convoSchema from './schema/convo';
 import fileSchema from './schema/file';
+import groupSchema from './schema/group';
 import keySchema from './schema/key';
 import messageSchema from './schema/message';
 import pluginAuthSchema from './schema/pluginAuth';
@@ -32,6 +33,7 @@ export {
   conversationTagSchema,
   convoSchema,
   fileSchema,
+  groupSchema,
   keySchema,
   messageSchema,
   pluginAuthSchema,

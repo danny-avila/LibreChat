@@ -106,6 +106,16 @@ export type TBackupCode = {
   usedAt: Date | null;
 };
 
+export type TGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  externalId?: string;
+  provider: 'local' | 'openid';
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -117,6 +127,7 @@ export type TUser = {
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];
+  groups: string[];
   createdAt: string;
   updatedAt: string;
 };
