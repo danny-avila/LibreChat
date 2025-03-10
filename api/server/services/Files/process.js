@@ -162,16 +162,16 @@ const processDeleteRequest = async ({ req, files }) => {
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
-    if (source === FileSources.text) {
-      resolvedFileIds.push(file.file_id);
-      continue;
-    }
-
     if (req.body.agent_id && req.body.tool_resource) {
       agentFiles.push({
         tool_resource: req.body.tool_resource,
         file_id: file.file_id,
       });
+    }
+
+    if (source === FileSources.text) {
+      resolvedFileIds.push(file.file_id);
+      continue;
     }
 
     if (checkOpenAIStorage(source) && !client[source]) {
@@ -531,7 +531,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('OCR capability is not enabled for Agents');
     }
 
-    const { handleFileUpload } = getStrategyFunctions(FileSources.mistral_ocr);
+    const { handleFileUpload } = getStrategyFunctions(
+      req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
+    );
     const { file_id, temp_file_id } = metadata;
 
     const {

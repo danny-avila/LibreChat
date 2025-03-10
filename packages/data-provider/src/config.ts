@@ -536,9 +536,22 @@ export type TStartupConfig = {
   bundlerURL?: string;
 };
 
+export enum OCRStrategy {
+  MISTRAL_OCR = 'mistral_ocr',
+  CUSTOM_OCR = 'custom_ocr',
+}
+
+export const ocrSchema = z.object({
+  mistralModel: z.string().optional(),
+  apiKey: z.string().optional().default('OCR_API_KEY'),
+  baseURL: z.string().optional().default('OCR_BASEURL'),
+  strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  ocr: ocrSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -1177,7 +1190,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.7',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.1',
+  CONFIG_VERSION = '1.2.2',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

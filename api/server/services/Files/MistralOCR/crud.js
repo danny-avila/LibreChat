@@ -1,7 +1,7 @@
 // ~/server/ocr/mistralOCR.js
 const fs = require('fs');
 const FormData = require('form-data');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { logger, createAxiosInstance } = require('~/config');
 const { logAxiosError } = require('~/utils');
@@ -58,12 +58,17 @@ async function getSignedUrl({
  * @param {string} [params.baseURL]
  * @returns {Promise<OCRResult>}
  */
-async function performOCR({ apiKey, documentUrl, baseURL = 'https://api.mistral.ai/v1' }) {
+async function performOCR({
+  apiKey,
+  documentUrl,
+  model = 'mistral-ocr-latest',
+  baseURL = 'https://api.mistral.ai/v1',
+}) {
   return axios
     .post(
       `${baseURL}/ocr`,
       {
-        model: 'mistral-ocr-latest',
+        model,
         document: {
           type: 'document_url',
           document_url: documentUrl,
@@ -83,15 +88,24 @@ async function performOCR({ apiKey, documentUrl, baseURL = 'https://api.mistral.
     });
 }
 
+function extractVariableName(str) {
+  const match = str.match(envVarRegex);
+  return match ? match[1] : null;
+}
+
 const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
   try {
+    /** @type {TCustomConfig['ocr']} */
+    const ocrConfig = req.app.locals?.ocr;
+    const apiKeyVarName = extractVariableName(ocrConfig.apiKey) ?? 'OCR_API_KEY';
+    const baseURLVarName = extractVariableName(ocrConfig.baseURL) ?? 'OCR_BASEURL';
     const authValues = await loadAuthValues({
       userId: req.user.id,
-      authFields: ['OCR_BASEURL', 'OCR_API_KEY'],
-      optional: new Set(['OCR_BASEURL']),
+      authFields: [baseURLVarName, apiKeyVarName],
+      optional: new Set([baseURLVarName]),
     });
-    const apiKey = authValues.OCR_API_KEY;
-    const baseURL = authValues.OCR_BASEURL;
+    const apiKey = authValues[apiKeyVarName];
+    const baseURL = authValues[baseURLVarName];
     const fileBuffer = fs.readFileSync(file.path);
     const mistralFile = await uploadDocumentToMistral({
       buffer: fileBuffer,
@@ -99,8 +113,14 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
       apiKey,
       baseURL,
     });
+    const model = extractEnvVariable(ocrConfig.mistralModel) || 'mistral-ocr-latest';
     const signedUrlResponse = await getSignedUrl({ apiKey, baseURL, fileId: mistralFile.id });
-    const ocrResult = await performOCR({ apiKey, baseURL, documentUrl: signedUrlResponse.url });
+    const ocrResult = await performOCR({
+      apiKey,
+      baseURL,
+      model,
+      documentUrl: signedUrlResponse.url,
+    });
     let aggregatedText = '';
     const images = [];
     ocrResult.pages.forEach((page, index) => {
