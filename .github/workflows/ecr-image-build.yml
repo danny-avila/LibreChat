@@ -88,7 +88,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.file }}
-          push: ${{ env.SHOULD_PUSH_TO_ECR }}
+          push: ${{ env.SHOULD_PUSH_TO_ECR == 'true' }}
           tags: |
             ${{ env.ECR_REPO }}/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
           platforms: linux/arm64
