@@ -4,18 +4,6 @@ pipeline {
             cloud "k8s-agents"
             serviceAccount "jenkins-k8s-jobs"
             inheritFrom "jnlp-aws-helm"
-            yaml """
-              spec:
-                containers:
-                - name: docker
-                  readinessProbe:
-                    exec:
-                      command: [sh, -c, "ls -S /var/run/docker.sock"]
-                  resources:
-                    requests:
-                      memory: "200Mi"
-                      cpu: "0.2"
-            """
         }
     }
     options {
@@ -31,8 +19,9 @@ pipeline {
                         script {
                             sh """
                               cd charts
+                              helm repo add bitnami https://charts.bitnami.com/bitnami
                               helm dependency build librechat
-                              helm upgrade bai librechat --install
+                              helm upgrade bai librechat --install -n default
                             """
                         }
                     }
@@ -48,3 +37,4 @@ pipeline {
         }
     }
 }
+
