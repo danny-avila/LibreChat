@@ -7,6 +7,20 @@ on:
       - release/*
     paths:
       - 'api/**'
+      - '.github/**'
+
+concurrency:
+  group: backend-tests-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+
 jobs:
   tests_Backend:
     name: Run Backend unit tests
@@ -28,7 +42,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-oidc-genai
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get npm cache directory
+        id: npm-cache-dir
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
+
+      - name: Setup npm cache
+        uses: runs-on/cache@v4
+        env:
+          RUNS_ON_S3_BUCKET_CACHE: ${{ secrets.RUNS_ON_S3_BUCKET_CACHE }}
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm ci
@@ -78,4 +112,3 @@ jobs:
         run: '[[ ${{ needs.tests_Backend.result }} == "success" ]] || exit 1'
       - name: Announce success
         run: echo "Build is successful"
-

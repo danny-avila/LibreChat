@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/coderabbitai/coderabbit-docs/refs/heads/main/static/schema/schema.v2.json
+language: 'en'
+early_access: true
+reviews:
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_title_instructions: 'A conventional commit compliant PR title with subject (fix,feat,ci, et.c.) that is descriptive for a generated changelog'
+  path_filters:
+    - '!**/node_modules/**'
+    - '!**/dist/**'
+    - '!client/public/**'
+    - '!**/coverage/**'
+    - '!e2e/playwright-report/**'
+    - '!packages/*/dist/**'
+    - '!packages/*/types/**'
+    - '!meili_data/**'
+    - '!data-node/**'
+  path_instructions:
+    - path: '.github/**/*'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - GitHub Actions workflows use appropriate runners for CI/CD.
+        - CI pipelines are efficient, using appropriate caching strategies and minimal resource consumption.
+        - Workflows for frontend and backend testing are properly configured.
+        - Dependency management workflows meet security requirements.
+        - ESLint and other code quality checks are properly implemented."
+    - path: 'api/**/*.js'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - Backend code follows CommonJS module syntax (using require/module.exports).
+        - Express.js best practices for route handling, middleware, and error management.
+        - MongoDB schema and model definitions follow project standards.
+        - Authentication and authorization mechanisms are properly implemented.
+        - API endpoints are RESTful and follow consistent naming conventions."
+    - path: 'client/src/**/*.{ts,tsx,js,jsx}'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - React component structure and lifecycle management.
+        - TypeScript types are properly defined and used.
+        - State management follows project patterns.
+        - UI components follow the project's design system.
+        - Internationalization (i18n) is properly implemented using the i18next library.
+        - ES module syntax is used for imports/exports."
+    - path: 'packages/data-provider/**/*'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - Data provider package follows TypeScript best practices.
+        - API client methods are properly typed and documented.
+        - Error handling is consistent and comprehensive.
+        - Unit tests cover critical functionality."
+    - path: 'packages/mcp/**/*'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - MCP (Model Context Protocol) package follows TypeScript best practices.
+        - Interfaces and types are properly defined.
+        - Implementation follows the MCP specification.
+        - Unit tests cover critical functionality."
+    - path: 'e2e/**/*.{js,ts}'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - Playwright test structure and best practices.
+        - Test coverage for critical user flows.
+        - Test fixtures and setup/teardown procedures are properly implemented.
+        - Test assertions are clear and meaningful."
+    - path: '**/*.{js,ts,jsx,tsx}'
+      instructions: |
+        "Confirm that the code adheres to the following:
+        - ESLint rules are followed (no unused variables, proper indentation, etc.).
+        - Code is properly formatted according to the project's Prettier configuration.
+        - Import ordering follows the project's conventions (npm packages first, then TypeScript types, then local imports).
+        - No circular dependencies are introduced.
+        - Node.js version 20 compatibility is maintained."
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - 'main'
+chat:
+  auto_reply: true

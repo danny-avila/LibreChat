@@ -3,17 +3,33 @@ name: Build and Push Docker Image to ECR
 on:
   workflow_dispatch:
   pull_request:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - Dockerfile.multi
+      - 'api/**'
+      - 'client/**'
+      - 'packages/**'
+      - '.github/**'
+
   merge_group:
     branches:
       - main
-
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read
+
+concurrency:
+  group: ecr-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
   ECR_REPO: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/genai
+  IS_PR: ${{ github.event_name == 'pull_request' }}
+  SHOULD_PUSH_TO_ECR: ${{ contains(github.event.pull_request.labels.*.name, 'ecr-push') || github.event_name == 'push' }}
 
 jobs:
   build:
@@ -37,10 +53,10 @@ jobs:
           driver-opts: image=moby/buildkit:latest
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-oidc-genai
-          aws-region: eu-west-1
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -68,14 +84,13 @@ jobs:
             ${{ runner.os }}-buildx-${{ matrix.image_name }}-
 
       - name: Build and push Docker images
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.file }}
-          push: true
+          push: ${{ env.SHOULD_PUSH_TO_ECR }}
           tags: |
             ${{ env.ECR_REPO }}/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
-            ${{ env.ECR_REPO }}/${{ matrix.image_name }}:latest
           platforms: linux/arm64
           target: ${{ matrix.target }}
           cache-from: type=local,src=/tmp/.buildx-cache
