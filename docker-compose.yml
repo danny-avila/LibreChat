@@ -3,13 +3,16 @@
 
 services:
   api:
+    image: LibreChat
+    build:
+      context: .
+      target: node
     container_name: LibreChat
     ports:
       - "${PORT}:${PORT}"
     depends_on:
       - mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
