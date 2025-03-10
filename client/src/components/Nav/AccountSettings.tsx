@@ -93,7 +93,7 @@ function AccountSettings() {
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
         </Select.SelectItem>
-        {startupConfig?.helpAndFaqURL !== '/' && (
+        {/* {startupConfig?.helpAndFaqURL !== '/' && (
           <Select.SelectItem
             value=""
             onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
@@ -102,15 +102,15 @@ function AccountSettings() {
             <LinkIcon aria-hidden="true" />
             {localize('com_nav_help_faq')}
           </Select.SelectItem>
-        )}
-        <Select.SelectItem
+        )} */}
+        {/* <Select.SelectItem
           value=""
           onClick={() => setShowSettings(true)}
           className="select-item text-sm"
         >
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
-        </Select.SelectItem>
+        </Select.SelectItem> */}
         <DropdownMenuSeparator />
         <Select.SelectItem
           aria-selected={true}

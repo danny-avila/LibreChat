@@ -153,14 +153,14 @@ const MenuItem: FC<MenuItemProps> = ({
                     }
                   }}
                 >
-                  <div
+                  {/* <div
                     className={cn(
                       'invisible group-focus-within:visible group-hover:visible',
                       expiryTime ? 'text-xs' : '',
                     )}
                   >
                     {localize('com_endpoint_config_key')}
-                  </div>
+                  </div> */}
                   <Settings className={cn(expiryTime ? 'icon-sm' : 'icon-md stroke-1')} />
                 </button>
               </div>
