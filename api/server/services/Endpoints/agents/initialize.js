@@ -2,6 +2,7 @@ const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
   EModelEndpoint,
   getResponseSender,
+  AgentCapabilities,
   providerEndpointMap,
 } = require('librechat-data-provider');
 const {
@@ -37,17 +38,20 @@ const providerConfigMap = {
 };
 
 /**
- *
+ * @param {ServerRequest} req
  * @param {Promise<Array<MongoFile | null>> | undefined} _attachments
  * @param {AgentToolResources | undefined} _tool_resources
  * @returns {Promise<{ attachments: Array<MongoFile | undefined> | undefined, tool_resources: AgentToolResources | undefined }>}
  */
-const primeResources = async (_attachments, _tool_resources) => {
+const primeResources = async (req, _attachments, _tool_resources) => {
   try {
     /** @type {Array<MongoFile | undefined> | undefined} */
     let attachments;
     const tool_resources = _tool_resources ?? {};
-    if (tool_resources.ocr?.file_ids) {
+    const isOCREnabled = (req.app.locals?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
+      AgentCapabilities.ocr,
+    );
+    if (tool_resources.ocr?.file_ids && isOCREnabled) {
       const context = await getFiles(
         {
           file_id: { $in: tool_resources.ocr.file_ids },
@@ -125,7 +129,11 @@ const initializeAgentOptions = async ({
     currentFiles = await processFiles(requestFiles);
   }
 
-  const { attachments, tool_resources } = await primeResources(currentFiles, agent.tool_resources);
+  const { attachments, tool_resources } = await primeResources(
+    req,
+    currentFiles,
+    agent.tool_resources,
+  );
   const { tools, toolContextMap } = await loadAgentTools({
     req,
     res,
