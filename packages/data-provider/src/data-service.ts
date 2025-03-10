@@ -589,46 +589,42 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  //todo: this should be a DELETE request
-  return request.post(endpoints.deleteConversation(), { arg: payload });
+  return request.deleteWithOptions(endpoints.deleteConversation(), { data: { arg: payload } });
 }
 
 export function clearAllConversations(): Promise<unknown> {
-  return request.post(endpoints.deleteConversation(), { arg: {} });
+  return request.delete(endpoints.deleteAllConversation());
 }
 
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  // Assuming params has a pageNumber property
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const isArchived = params?.isArchived ?? false; // Default to false if not provided
-  const tags = params?.tags || []; // Default to an empty array if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
+  const cursor = params?.cursor;
+  const isArchived = params?.isArchived ?? false;
+  const sortBy = params?.sortBy;
+  const sortDirection = params?.sortDirection;
+  const tags = params?.tags || [];
+  const search = params?.search || '';
+  return request.get(
+    endpoints.conversations(cursor, isArchived, sortBy, sortDirection, tags, search),
+  );
 };
 
 export const listConversationsByQuery = (
-  params?: q.ConversationListParams & { searchQuery?: string },
-): Promise<q.ConversationListResponse> => {
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const searchQuery = params?.searchQuery ?? ''; // If no search query is provided, default to an empty string
-  // Update the endpoint to handle a search query
+  params?: q.SearchConversationListParams,
+): Promise<q.SearchConversationListResponse> => {
+  const nextCursor = params?.nextCursor ?? null;
+  const pageSize = params?.pageSize ?? 10;
+  const searchQuery = params?.search ?? '';
   if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, pageNumber));
+    return request.get(endpoints.search(searchQuery, pageSize, nextCursor));
   } else {
-    return request.get(endpoints.conversations(pageNumber));
+    return request.get(endpoints.conversations(nextCursor ?? ''));
   }
 };
 
-export const searchConversations = async (
-  q: string,
-  pageNumber: string,
-): Promise<t.TSearchResults> => {
-  return request.get(endpoints.search(q, pageNumber));
-};
-
-export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(pageNumber));
+export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
+  return request.get(endpoints.conversations(cursor));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {

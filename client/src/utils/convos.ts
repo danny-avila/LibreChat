@@ -16,7 +16,6 @@ import type {
   ConversationListResponse,
 } from 'librechat-data-provider';
 
-import { addData, deleteData, updateData, findPage } from './collection';
 import { InfiniteData } from '@tanstack/react-query';
 
 export const dateKeys = {
@@ -158,36 +157,55 @@ export const groupConversationsByDate = (
 export const addConversation = (
   data: InfiniteData<ConversationListResponse>,
   newConversation: TConversation,
-): ConversationData => {
-  return addData<ConversationListResponse, TConversation>(
-    data,
-    'conversations',
-    newConversation,
-    (page) =>
-      page.conversations.findIndex((c) => c.conversationId === newConversation.conversationId),
-  );
+): InfiniteData<ConversationListResponse> => {
+  const newPages = data.pages.map((page, idx) => {
+    if (idx === 0) {
+      return {
+        ...page,
+        conversations: [newConversation, ...page.conversations],
+      };
+    }
+    return page;
+  });
+
+  return {
+    ...data,
+    pages: newPages,
+  };
 };
 
 export function findPageForConversation(
   data: ConversationData,
-  conversation: TConversation | { conversationId: string },
+  conversation: { conversationId: string },
 ) {
-  return findPage<ConversationListResponse>(data, (page) =>
-    page.conversations.findIndex((c) => c.conversationId === conversation.conversationId),
-  );
+  let pageIndex = -1;
+  let index = -1;
+
+  data.pages.forEach((page, pIdx) => {
+    const idx = page.conversations.findIndex(
+      (c) => c.conversationId === conversation.conversationId,
+    );
+    if (idx !== -1) {
+      pageIndex = pIdx;
+      index = idx;
+    }
+  });
+
+  return { pageIndex, index };
 }
 
 export const updateConversation = (
   data: InfiniteData<ConversationListResponse>,
-  newConversation: TConversation,
-): ConversationData => {
-  return updateData<ConversationListResponse, TConversation>(
-    data,
-    'conversations',
-    newConversation,
-    (page) =>
-      page.conversations.findIndex((c) => c.conversationId === newConversation.conversationId),
-  );
+  updatedConversation: TConversation,
+): InfiniteData<ConversationListResponse> => {
+  const newPages = data.pages.map((page) => ({
+    ...page,
+    conversations: page.conversations.map((convo) =>
+      convo.conversationId === updatedConversation.conversationId ? updatedConversation : convo,
+    ),
+  }));
+
+  return { ...data, pages: newPages };
 };
 
 export const updateConvoFields = (
@@ -200,39 +218,41 @@ export const updateConvoFields = (
     newData,
     updatedConversation as { conversationId: string },
   );
-  if (pageIndex !== -1 && index !== -1) {
-    const oldConversation = newData.pages[pageIndex].conversations[index] as TConversation;
 
-    /**
-     * Do not change the position of the conversation if the tags are updated.
-     */
-    if (keepPosition) {
-      const updatedConvo = {
-        ...oldConversation,
-        ...updatedConversation,
-      };
-      newData.pages[pageIndex].conversations[index] = updatedConvo;
-    } else {
-      const updatedConvo = {
-        ...oldConversation,
-        ...updatedConversation,
-        updatedAt: new Date().toISOString(),
-      };
-      newData.pages[pageIndex].conversations.splice(index, 1);
-      newData.pages[0].conversations.unshift(updatedConvo);
-    }
+  if (pageIndex === -1 || index === -1) {
+    return data;
+  }
+
+  const oldConversation = newData.pages[pageIndex].conversations[index];
+
+  if (keepPosition) {
+    newData.pages[pageIndex].conversations[index] = {
+      ...oldConversation,
+      ...updatedConversation,
+    };
+  } else {
+    const updatedConvo = {
+      ...oldConversation,
+      ...updatedConversation,
+      updatedAt: new Date().toISOString(),
+    };
+    newData.pages[pageIndex].conversations.splice(index, 1);
+    newData.pages[0].conversations.unshift(updatedConvo);
   }
 
   return newData;
 };
 
 export const deleteConversation = (
-  data: ConversationData,
+  data: InfiniteData<ConversationListResponse>,
   conversationId: string,
-): ConversationData => {
-  return deleteData<ConversationListResponse, ConversationData>(data, 'conversations', (page) =>
-    page.conversations.findIndex((c) => c.conversationId === conversationId),
-  );
+): InfiniteData<ConversationListResponse> => {
+  const newPages = data.pages.map((page) => ({
+    ...page,
+    conversations: page.conversations.filter((convo) => convo.conversationId !== conversationId),
+  }));
+
+  return { ...data, pages: newPages };
 };
 
 export const getConversationById = (
