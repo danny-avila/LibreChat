@@ -56,7 +56,6 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
   let TestClient = new FakeClient(apiKey);
   TestClient.options = options;
   TestClient.abortController = { abort: jest.fn() };
-  TestClient.saveMessageToDatabase = jest.fn();
   TestClient.loadHistory = jest
     .fn()
     .mockImplementation((conversationId, parentMessageId = null) => {
@@ -86,7 +85,6 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
     return 'Mock response text';
   });
 
-  // eslint-disable-next-line no-unused-vars
   TestClient.getCompletion = jest.fn().mockImplementation(async (..._args) => {
     return {
       choices: [

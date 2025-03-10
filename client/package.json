@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.7.7-rc1",
+  "version": "v0.7.7",
   "description": "",
   "type": "module",
   "scripts": {
@@ -142,6 +142,7 @@
     "typescript": "^5.3.3",
     "vite": "^6.1.0",
     "vite-plugin-node-polyfills": "^0.17.0",
+    "vite-plugin-compression": "^0.5.1",
     "vite-plugin-pwa": "^0.21.1"
   }
 }
