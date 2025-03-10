@@ -454,7 +454,6 @@ const termsOfServiceSchema = z.object({
   openNewTab: z.boolean().optional(),
   modalAcceptance: z.boolean().optional(),
   modalTitle: z.string().optional(),
-  modalContent: z.string().or(z.array(z.string())).optional(),
 });
 
 export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;

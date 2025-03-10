@@ -1,11 +1,19 @@
-import { useMemo } from 'react';
-import type { TTermsOfService } from 'librechat-data-provider';
+import React from 'react';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useAcceptTermsMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { OGDialog } from '~/components/ui';
 import { useLocalize } from '~/hooks';
+
+interface TermsModalProps {
+  open: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  onAccept: () => void;
+  onDecline: () => void;
+  title?: string;
+  modalContent?: string;
+}
 
 const TermsAndConditionsModal = ({
   open,
@@ -14,17 +22,10 @@ const TermsAndConditionsModal = ({
   onDecline,
   title,
   modalContent,
-}: {
-  open: boolean;
-  onOpenChange: (isOpen: boolean) => void;
-  onAccept: () => void;
-  onDecline: () => void;
-  title?: string;
-  contentUrl?: string;
-  modalContent?: TTermsOfService['modalContent'];
-}) => {
+}: TermsModalProps) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+
   const acceptTermsMutation = useAcceptTermsMutation({
     onSuccess: () => {
       onAccept();
@@ -51,18 +52,6 @@ const TermsAndConditionsModal = ({
     onOpenChange(isOpen);
   };
 
-  const content = useMemo(() => {
-    if (typeof modalContent === 'string') {
-      return modalContent;
-    }
-
-    if (Array.isArray(modalContent)) {
-      return modalContent.join('\n');
-    }
-
-    return '';
-  }, [modalContent]);
-
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
       <DialogTemplate
@@ -72,15 +61,13 @@ const TermsAndConditionsModal = ({
         showCancelButton={false}
         main={
           <section
-            // Motivation: This is a dialog, so its content should be focusable
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
             tabIndex={0}
             className="max-h-[60vh] overflow-y-auto p-4"
             aria-label={localize('com_ui_terms_and_conditions')}
           >
             <div className="prose dark:prose-invert w-full max-w-none !text-text-primary">
-              {content !== '' ? (
-                <MarkdownLite content={content} />
+              {modalContent ? (
+                <MarkdownLite content={modalContent} />
               ) : (
                 <p>{localize('com_ui_no_terms_content')}</p>
               )}
