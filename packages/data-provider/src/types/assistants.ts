@@ -164,7 +164,8 @@ export type AgentModelParameters = {
 
 export interface AgentToolResources {
   execute_code?: ExecuteCodeResource;
-  file_search?: AgentFileSearchResource;
+  file_search?: AgentFileResource;
+  ocr?: Omit<AgentFileResource, 'vector_store_ids'>;
 }
 export interface ExecuteCodeResource {
   /**
@@ -178,7 +179,7 @@ export interface ExecuteCodeResource {
   files?: Array<TFile>;
 }
 
-export interface AgentFileSearchResource {
+export interface AgentFileResource {
   /**
    * The ID of the vector store attached to this agent. There
    * can be a maximum of 1 vector store attached to the agent.
