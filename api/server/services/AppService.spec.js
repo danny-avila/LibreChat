@@ -589,4 +589,33 @@ describe('AppService updating app.locals and issuing warnings', () => {
       );
     });
   });
+
+  it('should not parse environment variable references in OCR config', async () => {
+    // Mock custom configuration with env variable references in OCR config
+    const mockConfig = {
+      ocr: {
+        apiKey: '${OCR_API_KEY_CUSTOM_VAR_NAME}',
+        baseURL: '${OCR_BASEURL_CUSTOM_VAR_NAME}',
+        strategy: 'mistral_ocr',
+        mistralModel: 'mistral-medium',
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    // Set actual environment variables with different values
+    process.env.OCR_API_KEY_CUSTOM_VAR_NAME = 'actual-api-key';
+    process.env.OCR_BASEURL_CUSTOM_VAR_NAME = 'https://actual-ocr-url.com';
+
+    // Initialize app
+    const app = { locals: {} };
+    await AppService(app);
+
+    // Verify that the raw string references were preserved and not interpolated
+    expect(app.locals.ocr).toBeDefined();
+    expect(app.locals.ocr.apiKey).toEqual('${OCR_API_KEY_CUSTOM_VAR_NAME}');
+    expect(app.locals.ocr.baseURL).toEqual('${OCR_BASEURL_CUSTOM_VAR_NAME}');
+    expect(app.locals.ocr.strategy).toEqual('mistral_ocr');
+    expect(app.locals.ocr.mistralModel).toEqual('mistral-medium');
+  });
 });

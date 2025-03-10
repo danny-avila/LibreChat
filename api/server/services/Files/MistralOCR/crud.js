@@ -1,4 +1,4 @@
-// ~/server/ocr/mistralOCR.js
+// ~/server/services/Files/MistralOCR/crud.js
 const fs = require('fs');
 const FormData = require('form-data');
 const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
