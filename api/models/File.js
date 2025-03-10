@@ -17,11 +17,13 @@ const findFileById = async (file_id, options = {}) => {
  * Retrieves files matching a given filter, sorted by the most recently updated.
  * @param {Object} filter - The filter criteria to apply.
  * @param {Object} [_sortOptions] - Optional sort parameters.
+ * @param {Object|String} [selectFields={ text: 0 }] - Fields to include/exclude in the query results.
+ *                                                   Default excludes the 'text' field.
  * @returns {Promise<Array<IMongoFile>>} A promise that resolves to an array of file documents.
  */
-const getFiles = async (filter, _sortOptions) => {
+const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
-  return await File.find(filter).sort(sortOptions).lean();
+  return await File.find(filter).select(selectFields).sort(sortOptions).lean();
 };
 
 /**
