@@ -1,5 +1,6 @@
 // ~/server/services/Files/MistralOCR/crud.js
 const fs = require('fs');
+const path = require('path');
 const FormData = require('form-data');
 const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -8,15 +9,27 @@ const { logAxiosError } = require('~/utils');
 
 const axios = createAxiosInstance();
 
+/**
+ * Uploads a document to Mistral API using file streaming to avoid loading the entire file into memory
+ *
+ * @param {Object} params Upload parameters
+ * @param {string} params.filePath The path to the file on disk
+ * @param {string} [params.fileName] Optional filename to use (defaults to the name from filePath)
+ * @param {string} params.apiKey Mistral API key
+ * @param {string} [params.baseURL=https://api.mistral.ai/v1] Mistral API base URL
+ * @returns {Promise<Object>} The response from Mistral API
+ */
 async function uploadDocumentToMistral({
-  buffer,
-  fileName,
+  filePath,
+  fileName = '',
   apiKey,
   baseURL = 'https://api.mistral.ai/v1',
 }) {
   const form = new FormData();
   form.append('purpose', 'ocr');
-  form.append('file', buffer, { filename: fileName });
+  const actualFileName = fileName || path.basename(filePath);
+  const fileStream = fs.createReadStream(filePath);
+  form.append('file', fileStream, { filename: actualFileName });
 
   return axios
     .post(`${baseURL}/files`, form, {
@@ -24,6 +37,8 @@ async function uploadDocumentToMistral({
         Authorization: `Bearer ${apiKey}`,
         ...form.getHeaders(),
       },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
     })
     .then((res) => res.data)
     .catch((error) => {
@@ -127,9 +142,8 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
       baseURL = baseURLConfig;
     }
 
-    const fileBuffer = fs.readFileSync(file.path);
     const mistralFile = await uploadDocumentToMistral({
-      buffer: fileBuffer,
+      filePath: file.path,
       fileName: file.originalname,
       apiKey,
       baseURL,

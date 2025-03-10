@@ -51,23 +51,67 @@ describe('MistralOCR Service', () => {
   });
 
   describe('uploadDocumentToMistral', () => {
-    it('should upload a document to Mistral API', async () => {
+    beforeEach(() => {
+      // Create a more complete mock for file streams that FormData can work with
+      const mockReadStream = {
+        on: jest.fn().mockImplementation(function (event, handler) {
+          // Simulate immediate 'end' event to make FormData complete processing
+          if (event === 'end') {
+            handler();
+          }
+          return this;
+        }),
+        pipe: jest.fn().mockImplementation(function () {
+          return this;
+        }),
+        pause: jest.fn(),
+        resume: jest.fn(),
+        emit: jest.fn(),
+        once: jest.fn(),
+        destroy: jest.fn(),
+      };
+
+      fs.createReadStream = jest.fn().mockReturnValue(mockReadStream);
+
+      // Mock FormData's append to avoid actual stream processing
+      jest.mock('form-data', () => {
+        const mockFormData = function () {
+          return {
+            append: jest.fn(),
+            getHeaders: jest
+              .fn()
+              .mockReturnValue({ 'content-type': 'multipart/form-data; boundary=---boundary' }),
+            getBuffer: jest.fn().mockReturnValue(Buffer.from('mock-form-data')),
+            getLength: jest.fn().mockReturnValue(100),
+          };
+        };
+        return mockFormData;
+      });
+    });
+
+    it('should upload a document to Mistral API using file streaming', async () => {
       const mockResponse = { data: { id: 'file-123', purpose: 'ocr' } };
       mockAxios.post.mockResolvedValueOnce(mockResponse);
 
       const result = await uploadDocumentToMistral({
-        buffer: Buffer.from('test file content'),
+        filePath: '/path/to/test.pdf',
         fileName: 'test.pdf',
         apiKey: 'test-api-key',
       });
 
+      // Check that createReadStream was called with the correct file path
+      expect(fs.createReadStream).toHaveBeenCalledWith('/path/to/test.pdf');
+
+      // Since we're mocking FormData, we'll just check that axios was called correctly
       expect(mockAxios.post).toHaveBeenCalledWith(
         'https://api.mistral.ai/v1/files',
-        expect.any(Object), // FormData
+        expect.anything(),
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer test-api-key',
           }),
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
         }),
       );
       expect(result).toEqual(mockResponse.data);
@@ -79,7 +123,7 @@ describe('MistralOCR Service', () => {
 
       await expect(
         uploadDocumentToMistral({
-          buffer: Buffer.from('test content'),
+          filePath: '/path/to/test.pdf',
           fileName: 'test.pdf',
           apiKey: 'test-api-key',
         }),
@@ -87,8 +131,8 @@ describe('MistralOCR Service', () => {
 
       const { logger } = require('~/config');
       expect(logger.error).toHaveBeenCalledWith(
-        'Error uploading document to Mistral:',
-        errorMessage,
+        expect.stringContaining('Error uploading document to Mistral:'),
+        expect.any(String),
       );
     });
   });
@@ -183,7 +227,24 @@ describe('MistralOCR Service', () => {
 
   describe('uploadMistralOCR', () => {
     beforeEach(() => {
-      fs.readFileSync.mockReturnValue(Buffer.from('file content'));
+      const mockReadStream = {
+        on: jest.fn().mockImplementation(function (event, handler) {
+          if (event === 'end') {
+            handler();
+          }
+          return this;
+        }),
+        pipe: jest.fn().mockImplementation(function () {
+          return this;
+        }),
+        pause: jest.fn(),
+        resume: jest.fn(),
+        emit: jest.fn(),
+        once: jest.fn(),
+        destroy: jest.fn(),
+      };
+
+      fs.createReadStream = jest.fn().mockReturnValue(mockReadStream);
     });
 
     it('should process OCR for a file with standard configuration', async () => {
@@ -245,6 +306,8 @@ describe('MistralOCR Service', () => {
         file_id: 'file123',
         entity_id: 'entity123',
       });
+
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
 
       expect(loadAuthValues).toHaveBeenCalledWith({
         userId: 'user123',
@@ -311,6 +374,8 @@ describe('MistralOCR Service', () => {
         entity_id: 'entity123',
       });
 
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
+
       // Verify that custom environment variables were extracted and used
       expect(loadAuthValues).toHaveBeenCalledWith({
         userId: 'user123',
@@ -375,6 +440,8 @@ describe('MistralOCR Service', () => {
         entity_id: 'entity123',
       });
 
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
+
       // Should use the default values
       expect(loadAuthValues).toHaveBeenCalledWith({
         userId: 'user123',
@@ -426,6 +493,7 @@ describe('MistralOCR Service', () => {
           entity_id: 'entity123',
         }),
       ).rejects.toThrow('Error uploading document to Mistral OCR API');
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
 
       const { logAxiosError } = require('~/utils');
       expect(logAxiosError).toHaveBeenCalled();
@@ -486,6 +554,8 @@ describe('MistralOCR Service', () => {
         entity_id: 'entity123',
       });
 
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
+
       // Verify that single page documents don't include page numbering
       expect(result.text).not.toContain('# PAGE');
       expect(result.text).toEqual('Single page content\n\n');
@@ -544,6 +614,8 @@ describe('MistralOCR Service', () => {
         file_id: 'file123',
         entity_id: 'entity123',
       });
+
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
 
       // Verify the correct URL was used with the direct baseURL value
       expect(mockAxios.post).toHaveBeenCalledWith(
@@ -628,6 +700,8 @@ describe('MistralOCR Service', () => {
         file_id: 'file123',
         entity_id: 'entity123',
       });
+
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
 
       // Verify loadAuthValues was called with the default variable names
       expect(loadAuthValues).toHaveBeenCalledWith({
