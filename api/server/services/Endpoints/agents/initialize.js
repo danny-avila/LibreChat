@@ -21,6 +21,7 @@ const AgentClient = require('~/server/controllers/agents/client');
 const { getToolFiles } = require('~/models/Conversation');
 const { getModelMaxTokens } = require('~/utils');
 const { getAgent } = require('~/models/Agent');
+const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
 const providerConfigMap = {
@@ -43,13 +44,28 @@ const providerConfigMap = {
  */
 const primeResources = async (_attachments, _tool_resources) => {
   try {
+    /** @type {Array<MongoFile | undefined> | undefined} */
+    let attachments;
+    const tool_resources = _tool_resources ?? {};
+    if (tool_resources.ocr?.file_ids) {
+      const context = await getFiles(
+        {
+          file_id: { $in: tool_resources.ocr.file_ids },
+        },
+        {},
+        {},
+      );
+      attachments = (attachments ?? []).concat(context);
+    }
     if (!_attachments) {
-      return { attachments: undefined, tool_resources: _tool_resources };
+      return { attachments, tool_resources };
     }
     /** @type {Array<MongoFile | undefined> | undefined} */
     const files = await _attachments;
-    const attachments = [];
-    const tool_resources = _tool_resources ?? {};
+    if (!attachments) {
+      /** @type {Array<MongoFile | undefined>} */
+      attachments = [];
+    }
 
     for (const file of files) {
       if (!file) {

@@ -537,6 +537,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     const {
       text,
       bytes,
+      // TODO: OCR images support?
       images,
       filename,
       filepath: ocrFileURL,
@@ -561,7 +562,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         req,
         file_id,
         agent_id,
-        tool_resource: tool_resource,
+        tool_resource,
       });
     }
     const result = await createFile(fileInfo, true);
