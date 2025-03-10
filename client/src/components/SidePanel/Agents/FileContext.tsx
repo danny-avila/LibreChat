@@ -1,19 +1,20 @@
 import { useState, useRef } from 'react';
-import { useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { ExtendedFile, AgentForm } from '~/common';
+import type { ExtendedFile } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
-import { AttachmentIcon } from '~/components/svg';
+import { HoverCard, HoverCardContent, HoverCardPortal, HoverCardTrigger } from '~/components/ui';
+import { AttachmentIcon, CircleHelpIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
+import { ESide } from '~/common';
 
-export default function FileSearch({
+export default function FileContext({
   agent_id,
   files: _files,
 }: {
@@ -22,7 +23,6 @@ export default function FileSearch({
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
-  const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
 
@@ -63,13 +63,27 @@ export default function FileSearch({
 
   return (
     <div className="w-full">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span>
-          <label className="text-token-text-primary block font-medium">
-            {localize('com_agents_file_context')}
-          </label>
-        </span>
-      </div>
+      <HoverCard openDelay={50}>
+        <div className="mb-2 flex items-center gap-2">
+          <HoverCardTrigger asChild>
+            <span className="flex items-center gap-2">
+              <label className="text-token-text-primary block font-medium">
+                {localize('com_agents_file_context')}
+              </label>
+              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+            </span>
+          </HoverCardTrigger>
+          <HoverCardPortal>
+            <HoverCardContent side={ESide.Top} className="w-80">
+              <div className="space-y-2">
+                <p className="text-sm text-text-secondary">
+                  {localize('com_agents_file_context_info')}
+                </p>
+              </div>
+            </HoverCardContent>
+          </HoverCardPortal>
+        </div>
+      </HoverCard>
       <div className="flex flex-col gap-3">
         {/* File Context (OCR) Files */}
         <FileRow

@@ -13,6 +13,7 @@
   "com_agents_enable_file_search": "Enable File Search",
   "com_agents_file_context": "File Context (OCR)",
   "com_agents_file_context_disabled": "Agent must be created before uploading files for File Context.",
+  "com_agents_file_context_info": "Files uploaded as \"Context\" are processed using OCR to extract text, which is then added to the Agent's instructions. Ideal for documents, images with text, or PDFs where you need the full text content of a file",
   "com_agents_file_search_disabled": "Agent must be created before uploading files for File Search.",
   "com_agents_file_search_info": "When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.",
   "com_agents_instructions_placeholder": "The system instructions that the agent uses",
