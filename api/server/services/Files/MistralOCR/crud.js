@@ -69,6 +69,7 @@ async function performOCR({
       `${baseURL}/ocr`,
       {
         model,
+        include_image_base64: false,
         document: {
           type: 'document_url',
           document_url: documentUrl,
