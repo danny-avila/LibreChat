@@ -15,6 +15,7 @@ export * from './languages';
 export * from './endpoints';
 export * from './localStorage';
 export * from './promptGroups';
+export * from './termsContent';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
 export { default as buildTree } from './buildTree';

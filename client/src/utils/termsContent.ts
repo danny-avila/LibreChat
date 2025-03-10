@@ -1,6 +1,6 @@
-import terms_en from './terms_en.md?raw';
-import terms_de from './terms_de.md?raw';
-import terms_fr from './terms_fr.md?raw';
+import terms_en from '../../../terms/terms_en.md?raw';
+import terms_de from '../../../terms/terms_de.md?raw';
+import terms_fr from '../../../terms/terms_fr.md?raw';
 
 /**
  * A mapping of language codes to their respective terms markdown content.

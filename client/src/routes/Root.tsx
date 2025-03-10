@@ -11,9 +11,9 @@ import {
 import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
-import { getTermsMarkdown } from '~/terms/termsContent';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
+import { getTermsMarkdown } from '~/utils';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
