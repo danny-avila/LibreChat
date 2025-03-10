@@ -140,7 +140,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     },
     [EModelEndpoint.openAI]: {
       icon: <GPTIcon size={size * 0.5555555555555556} />,
-      bg: getOpenAIColor(model),
+      bg: "transparent", // bg: getOpenAIColor(model),
       name: 'ChatGPT',
     },
     [EModelEndpoint.gptPlugins]: {
