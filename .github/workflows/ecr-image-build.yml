@@ -29,7 +29,7 @@ env:
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
   ECR_REPO: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/genai
   IS_PR: ${{ github.event_name == 'pull_request' }}
-  SHOULD_PUSH_TO_ECR: ${{ contains(github.event.pull_request.labels.*.name, 'ecr-push') || github.event_name == 'push' }}
+  SHOULD_PUSH_TO_ECR: ${{ contains(github.event.pull_request.labels.*.name, 'ecr-push') || github.event_name == 'merge_group' }}
 
 jobs:
   build:
@@ -88,7 +88,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.file }}
-          push: ${{ env.SHOULD_PUSH_TO_ECR == 'true' }}
+          push: ${{ env.SHOULD_PUSH_TO_ECR }}
           tags: |
             ${{ env.ECR_REPO }}/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
           platforms: linux/arm64
