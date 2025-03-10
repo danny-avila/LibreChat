@@ -1,6 +1,6 @@
 const { MeiliSearch } = require('meilisearch');
-const Conversation = require('~/models/Conversation');
-const Message = require('~/models/schema/messageSchema');
+const { Conversation } = require('~/models/Conversation');
+const { Message } = require('~/models/Message');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
