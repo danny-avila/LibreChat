@@ -120,6 +120,7 @@ describe('AppService', () => {
         },
       },
       paths: expect.anything(),
+      ocr: expect.anything(),
       imageOutputType: expect.any(String),
       fileConfig: undefined,
       secureImageLinks: undefined,
