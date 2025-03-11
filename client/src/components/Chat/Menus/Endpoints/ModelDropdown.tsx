@@ -1,4 +1,4 @@
-import React, { useMemo, memo, useCallback, useRef, useState } from 'react';
+import React, { useMemo, memo, useCallback, useRef, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronRight, Search, Settings } from 'lucide-react';
 import {
@@ -8,8 +8,9 @@ import {
   alternateName,
   LocalStorageKeys,
   isAgentsEndpoint,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TConversation, Agent } from 'librechat-data-provider';
+import type { TConversation, Agent, AssistantsEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { cn, mapEndpoints, getIconKey, getEndpointField, getConvoSwitchLogic } from '~/utils';
 import {
@@ -18,8 +19,10 @@ import {
   useSetIndexOptions,
   useLocalize,
   useUserKey,
+  useAssistantListMap,
+  useSelectAssistant,
 } from '~/hooks';
-import { useChatContext, useAgentsMapContext } from '~/Providers';
+import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useGetEndpointsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
@@ -35,6 +38,7 @@ interface ExtendedEndpoint {
   icon: JSX.Element | null;
   models?: string[];
   agentNames?: Record<string, string>;
+  assistantNames?: Record<string, string>;
 }
 
 export function ModelDropdown(): JSX.Element {
@@ -56,7 +60,11 @@ export function ModelDropdown(): JSX.Element {
     [endpointsConfig],
   );
 
-  const { endpoint, agent_id: selectedAgentId } = conversation ?? {};
+  const {
+    endpoint,
+    agent_id: selectedAgentId,
+    assistant_id: selectedAssistantId,
+  } = conversation ?? {};
 
   const agentsMapResult = useAgentsMapContext();
   const agentsMap = useMemo(() => {
@@ -67,15 +75,28 @@ export function ModelDropdown(): JSX.Element {
     return Object.values(agentsMap) as Agent[];
   }, [agentsMap]);
 
+  const assistantListMap = useAssistantListMap((res) =>
+    res.data.map(({ id, name, metadata, model }) => ({ id, name, metadata, model })),
+  );
+
+  const assistantsMapResult = useAssistantsMapContext();
+  const assistantsMap = useMemo(() => {
+    return assistantsMapResult ?? {};
+  }, [assistantsMapResult]);
+
+  const assistants = useMemo(() => {
+    return assistantListMap[endpoint as string] ?? [];
+  }, [endpoint, assistantListMap]);
+
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
   });
 
   const modularChat = useRecoilValue(store.modularChat);
-  const [openDropdownFor, setOpenDropdownFor] = useState<string | null>(endpoint || null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [openDropdownFor, setOpenDropdownFor] = useState<string | null>(null);
 
   const filteredEndpoints = useMemo(() => {
     const endpointsCopy = [...endpoints];
@@ -85,6 +106,7 @@ export function ModelDropdown(): JSX.Element {
         endpointsCopy.splice(index, 1);
       }
     }
+
     return endpointsCopy;
   }, [endpoints, hasAgentAccess]);
 
@@ -96,7 +118,10 @@ export function ModelDropdown(): JSX.Element {
         const Icon = icons[iconKey];
         const hasModels =
           (ep === EModelEndpoint.agents && agents.length > 0) ||
-          (ep !== EModelEndpoint.assistants && (modelsQuery.data?.[ep]?.length ?? 0) > 0);
+          (ep === EModelEndpoint.assistants && assistants.length > 0) ||
+          (ep !== EModelEndpoint.assistants &&
+            ep !== EModelEndpoint.agents &&
+            (modelsQuery.data?.[ep]?.length ?? 0) > 0);
 
         const result: ExtendedEndpoint = {
           value: ep,
@@ -121,9 +146,17 @@ export function ModelDropdown(): JSX.Element {
           }, {});
         }
 
+        if (ep === EModelEndpoint.assistants && assistants.length > 0) {
+          result.models = assistants.map((assistant) => assistant.id);
+          result.assistantNames = assistants.reduce((acc: Record<string, string>, assistant) => {
+            acc[assistant.id] = assistant.name || '';
+            return acc;
+          }, {});
+        }
+
         return result;
       }),
-    [filteredEndpoints, endpointsConfig, modelsQuery.data, agents],
+    [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants],
   );
 
   const filteredMenuItems: ExtendedEndpoint[] = useMemo(() => {
@@ -151,6 +184,27 @@ export function ModelDropdown(): JSX.Element {
               };
             }
             return null;
+          } else if (ep.value === EModelEndpoint.assistants) {
+            const filteredAssistants = assistants.filter((assistant) =>
+              assistant.name?.toLowerCase().includes(searchTerm.toLowerCase()),
+            );
+            if (
+              ep.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              filteredAssistants.length > 0
+            ) {
+              return {
+                ...ep,
+                models: filteredAssistants.map((assistant) => assistant.id),
+                assistantNames: filteredAssistants.reduce(
+                  (acc: Record<string, string>, assistant) => {
+                    acc[assistant.id] = assistant.name || '';
+                    return acc;
+                  },
+                  {},
+                ),
+              };
+            }
+            return null;
           } else {
             const allModels = modelsQuery.data?.[ep.value] ?? [];
             const filteredModels = allModels.filter((model: string) =>
@@ -171,7 +225,7 @@ export function ModelDropdown(): JSX.Element {
         }
       })
       .filter(Boolean) as ExtendedEndpoint[];
-  }, [searchTerm, mappedEndpoints, modelsQuery.data, agents]);
+  }, [searchTerm, mappedEndpoints, modelsQuery.data, agents, assistants]);
 
   const setAgentId = useCallback(
     (agentId: string) => {
@@ -186,6 +240,25 @@ export function ModelDropdown(): JSX.Element {
       }, 150);
     },
     [setOption, index],
+  );
+
+  const setAssistantId = useCallback(
+    (assistantId: string) => {
+      const assistant = assistantsMap[endpoint as string]?.[assistantId];
+      if (assistant) {
+        setOption('model')(assistant.model);
+        setOption('assistant_id')(assistantId);
+        localStorage.setItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}${endpoint}`, assistantId);
+      }
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current = setTimeout(() => {
+        const textarea = document.getElementById(mainTextareaId);
+        if (textarea) {
+          textarea.focus();
+        }
+      }, 150);
+    },
+    [setOption, index, endpoint, assistantsMap],
   );
 
   const setModel = useCallback(
@@ -204,6 +277,44 @@ export function ModelDropdown(): JSX.Element {
 
   const handleModelSelect = useCallback(
     (ep: EModelEndpoint, selectedModel: string) => {
+      if (ep === EModelEndpoint.assistants) {
+        if (conversation?.endpoint === ep) {
+          setAssistantId(selectedModel);
+          return;
+        }
+
+        const { template } = getConvoSwitchLogic({
+          newEndpoint: ep,
+          modularChat: false,
+          conversation,
+          endpointsConfig,
+        });
+
+        const assistant = assistantsMap[ep]?.[selectedModel];
+
+        const currentConvo = getDefaultConversation({
+          conversation: {
+            ...conversation,
+            endpoint: ep,
+            assistant_id: selectedModel,
+            model: assistant?.model || '',
+          },
+          preset: {
+            ...template,
+            endpoint: ep,
+            assistant_id: selectedModel,
+            model: assistant?.model || '',
+          },
+        });
+
+        newConversation({
+          template: currentConvo,
+          preset: currentConvo,
+          keepLatestMessage: true,
+        });
+        return;
+      }
+
       if (ep === EModelEndpoint.agents) {
         if (conversation?.endpoint === ep) {
           setAgentId(selectedModel);
@@ -279,16 +390,15 @@ export function ModelDropdown(): JSX.Element {
       modelsQuery.data,
       setModel,
       setAgentId,
+      setAssistantId,
+      assistantsMap,
     ],
   );
 
   const handleEndpointSelect = useCallback(
     (ep: string, hasModels: boolean) => {
       if (hasModels) {
-        setOpenDropdownFor(ep);
-
         if (conversation?.endpoint !== ep) {
-          // If changing to a different endpoint with models, first switch to that endpoint
           const newEndpoint = ep as EModelEndpoint;
           const { template } = getConvoSwitchLogic({
             newEndpoint,
@@ -299,9 +409,13 @@ export function ModelDropdown(): JSX.Element {
 
           let initialModel = '';
           let initialAgentId = '';
+          let initialAssistantId = '';
 
           if (newEndpoint === EModelEndpoint.agents && agents.length > 0) {
             initialAgentId = agents[0].id;
+          } else if (newEndpoint === EModelEndpoint.assistants && assistants.length > 0) {
+            initialAssistantId = assistants[0].id;
+            initialModel = assistantsMap[newEndpoint]?.[initialAssistantId]?.model || '';
           } else if (
             modelsQuery.data &&
             modelsQuery.data[newEndpoint] &&
@@ -316,12 +430,14 @@ export function ModelDropdown(): JSX.Element {
               endpoint: newEndpoint,
               model: initialModel,
               agent_id: initialAgentId,
+              assistant_id: initialAssistantId,
             },
             preset: {
               ...template,
               endpoint: newEndpoint,
               model: initialModel,
               agent_id: initialAgentId,
+              assistant_id: initialAssistantId,
             },
           });
 
@@ -352,6 +468,8 @@ export function ModelDropdown(): JSX.Element {
           keepLatestMessage: true,
         });
       }
+
+      setOpenDropdownFor(null);
     },
     [
       conversation,
@@ -360,6 +478,8 @@ export function ModelDropdown(): JSX.Element {
       getDefaultConversation,
       modelsQuery.data,
       agents,
+      assistants,
+      assistantsMap,
     ],
   );
 
@@ -377,15 +497,31 @@ export function ModelDropdown(): JSX.Element {
     ? hasModelsOnCurrent
       ? isAgentsEndpoint(endpoint as string)
         ? agentsMap[selectedAgentId || '']?.name || localize('com_sidepanel_select_agent')
-        : conversation?.model || alternateName[endpoint] || endpoint
+        : isAssistantsEndpoint(endpoint as string)
+          ? assistantsMap[endpoint as string]?.[selectedAssistantId || '']?.name ||
+            localize('com_sidepanel_select_assistant')
+          : conversation?.model || alternateName[endpoint] || endpoint
       : alternateName[endpoint] || endpoint
     : 'Select an endpoint';
+
+  useEffect(() => {
+    if (menuOpen && endpoint && currentEndpointItem?.hasModels) {
+      setOpenDropdownFor(endpoint);
+    } else if (!menuOpen) {
+      setOpenDropdownFor(null);
+    }
+  }, [menuOpen, endpoint, currentEndpointItem]);
 
   return (
     <div className="relative">
       <Menu
         open={menuOpen}
-        onOpenChange={setMenuOpen}
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          if (!open) {
+            setOpenDropdownFor(null);
+          }
+        }}
         className="animate-popover"
         label={
           <div
@@ -438,10 +574,12 @@ export function ModelDropdown(): JSX.Element {
             <Menu
               key={ep.value}
               className="animate-popover-left"
-              defaultOpen={openDropdownFor === ep.value}
+              open={openDropdownFor === ep.value}
               onOpenChange={(open) => {
                 if (open) {
                   setOpenDropdownFor(ep.value);
+                } else {
+                  // Only close if this specific dropdown is being manually closed
                 }
               }}
               label={
@@ -495,8 +633,33 @@ export function ModelDropdown(): JSX.Element {
                     {ep.agentNames?.[agentId] || agentId}
                   </MenuItem>
                 ))
-                : (ep.models !== undefined ? ep.models : (modelsQuery.data?.[ep.value] ?? [])).map(
-                  (modelName: string) => (
+                : ep.value === EModelEndpoint.assistants
+                  ? (ep.models || []).map((assistantId: string) => (
+                    <MenuItem
+                      key={assistantId}
+                      onClick={() => handleModelSelect(ep.value as EModelEndpoint, assistantId)}
+                      className={cn(
+                        'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary',
+                        selectedAssistantId === assistantId && conversation?.endpoint === ep.value
+                          ? 'bg-surface-tertiary'
+                          : '',
+                      )}
+                    >
+                      <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+                        <Icon
+                          isCreatedByUser={false}
+                          endpoint={ep.value}
+                          assistantName={ep.assistantNames?.[assistantId] || ''}
+                          iconURL={assistantsMap[ep.value]?.[assistantId]?.metadata?.avatar || ''}
+                        />
+                      </div>
+                      {ep.assistantNames?.[assistantId] || assistantId}
+                    </MenuItem>
+                  ))
+                  : (ep.models !== undefined
+                    ? ep.models
+                    : (modelsQuery.data?.[ep.value] ?? [])
+                  ).map((modelName: string) => (
                     <MenuItem
                       key={modelName}
                       onClick={() => handleModelSelect(ep.value as EModelEndpoint, modelName)}
@@ -509,8 +672,7 @@ export function ModelDropdown(): JSX.Element {
                     >
                       {modelName}
                     </MenuItem>
-                  ),
-                )}
+                  ))}
             </Menu>
           ) : (
             <MenuItem
