@@ -2588,6 +2588,18 @@ html {
   transform: scale(1) translateY(0);
 }
 
+.animate-popover-left {
+  transform-origin: left;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translateX(-0.5rem);
+}
+
+.animate-popover-left[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateX(0);
+}
+
 /** Note: ensure KaTeX can spread across visible space */
 .message-content pre:has(> span.katex) {
   overflow: visible !important;

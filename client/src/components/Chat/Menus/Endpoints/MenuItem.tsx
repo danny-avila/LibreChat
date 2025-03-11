@@ -183,7 +183,7 @@ const MenuItem: FC<MenuItemProps> = ({
               </svg>
             )}
             {(!userProvidesKey || expiryTime) && (
-              <div className="text-token-text-primary hidden gap-x-1 group-hover:flex ">
+              <div className="text-token-text-primary hidden gap-x-1 group-hover:flex">
                 {!userProvidesKey && <div className="">{localize('com_ui_new_chat')}</div>}
                 <svg
                   width="24"
