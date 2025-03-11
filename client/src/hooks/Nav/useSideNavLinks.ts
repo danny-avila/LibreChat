@@ -70,21 +70,21 @@ export default function useSideNavLinks({
       });
     }
 
-    // if (
-    //   hasAccessToAgents &&
-    //   hasAccessToCreateAgents &&
-    //   isAgentsEndpoint(endpoint) &&
-    //   agents &&
-    //   agents.disableBuilder !== true
-    // ) {
-    //   links.push({
-    //     title: 'com_sidepanel_agent_builder',
-    //     label: '',
-    //     icon: Blocks,
-    //     id: 'agents',
-    //     Component: AgentPanelSwitch,
-    //   });
-    // }
+    if (
+      hasAccessToAgents &&
+      hasAccessToCreateAgents &&
+      isAgentsEndpoint(endpoint) &&
+      agents &&
+      agents.disableBuilder !== true
+    ) {
+      links.push({
+        title: 'com_sidepanel_agent_builder',
+        label: '',
+        icon: Blocks,
+        id: 'agents',
+        Component: AgentPanelSwitch,
+      });
+    }
 
     if (hasAccessToPrompts) {
       links.push({
