@@ -66,7 +66,7 @@ function createAxiosInstance() {
 
       /** @type {AxiosProxyConfig} */
       const proxyConfig = {
-        host: url.hostname,
+        host: url.hostname.replace(/^\[|\]$/g, ''),
         protocol: url.protocol.replace(':', ''),
       };
 
