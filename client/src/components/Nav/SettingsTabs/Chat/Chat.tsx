@@ -26,22 +26,22 @@ function Chat() {
       <div className="pb-3">
         <MaximizeChatSpace />
       </div>
-      <div className="pb-3">
+      {/* <div className="pb-3">
         <ShowCodeSwitch />
       </div>
       <div className="pb-3">
         <SaveDraft />
-      </div>
+      </div> */}
       <div className="pb-3">
         <ScrollButton />
       </div>
-      <ForkSettings />
+      {/* <ForkSettings />
       <div className="pb-3">
         <ModularChat />
       </div>
       <div className="pb-3">
         <LaTeXParsing />
-      </div>
+      </div> */}
       <div className="pb-3">
         <ShowThinking />
       </div>

@@ -126,15 +126,15 @@ function General() {
       <div className="pb-3">
         <LangSelector langcode={langcode} onChange={changeLang} />
       </div>
-      <div className="pb-3">
+      {/* <div className="pb-3">
         <UserMsgMarkdownSwitch />
-      </div>
+      </div> */}
       <div className="pb-3">
         <AutoScrollSwitch />
       </div>
-      <div className="pb-3">
+      {/* <div className="pb-3">
         <HideSidePanelSwitch />
-      </div>
+      </div> */}
       <div className="pb-3">
         <ArchivedChats />
       </div>

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('Settings suite', () => {
-  test('Last OpenAI settings', async ({ page }) => {
+  test('Last AICon settings', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
     await page.evaluate(() =>
       window.localStorage.setItem(
@@ -9,7 +9,7 @@ test.describe('Settings suite', () => {
         JSON.stringify({
           conversationId: 'new',
           title: 'New Chat',
-          endpoint: 'openAI',
+          endpoint: 'AICon',
           createdAt: '',
           updatedAt: '',
         }),
@@ -19,7 +19,7 @@ test.describe('Settings suite', () => {
 
     const initialLocalStorage = await page.evaluate(() => window.localStorage);
     const lastConvoSetup = JSON.parse(initialLocalStorage.lastConversationSetup);
-    expect(lastConvoSetup.endpoint).toEqual('openAI');
+    expect(lastConvoSetup.endpoint).toEqual('AICon');
 
     const newTopicButton = page.getByTestId('new-conversation-menu');
     await newTopicButton.click();
@@ -48,7 +48,7 @@ test.describe('Settings suite', () => {
 
     // Change Endpoint to see if settings will persist
     await newTopicButton.click();
-    await page.getByRole('menuitemradio', { name: 'ChatGPT OpenAI' }).click();
+    await page.getByRole('menuitemradio', { name: 'ChatGPT AICon' }).click();
 
     // Close endpoint menu & re-select BingAI
     await page.getByTestId('text-input').click();
