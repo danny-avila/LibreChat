@@ -8,12 +8,11 @@ import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { useSetIndexOptions, useMediaQuery, useLocalize } from '~/hooks';
 import { PluginStoreDialog, TooltipAnchor } from '~/components';
-import Switcher from '~/components/SidePanel/Switcher';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { cn, getEndpointField } from '~/utils';
 import OptionsPopover from './OptionsPopover';
 import PopoverButtons from './PopoverButtons';
 import { useChatContext } from '~/Providers';
+import { getEndpointField } from '~/utils';
 import store from '~/store';
 
 export default function HeaderOptions({
@@ -22,7 +21,6 @@ export default function HeaderOptions({
   interfaceConfig?: Partial<TInterfaceConfig>;
 }) {
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
@@ -78,20 +76,6 @@ export default function HeaderOptions({
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <div className="z-[61] flex w-full items-center justify-center gap-2">
-              {interfaceConfig?.modelSelect === true && (
-                <div
-                  className={cn(
-                    'flex h-[52px] flex-wrap items-center justify-center',
-                    isSmallScreen ? '' : 'min-w-56',
-                  )}
-                >
-                  <Switcher
-                    isCollapsed={isSmallScreen}
-                    endpointKeyProvided={keyProvided}
-                    endpoint={endpoint}
-                  />
-                </div>
-              )}
               {!noSettings[endpoint] &&
                 interfaceConfig?.parameters === true &&
                 paramEndpoint === false && (

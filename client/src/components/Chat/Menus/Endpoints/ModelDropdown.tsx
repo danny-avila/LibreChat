@@ -6,17 +6,20 @@ import {
   PermissionTypes,
   Permissions,
   alternateName,
+  LocalStorageKeys,
+  isAgentsEndpoint,
 } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, Agent } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { cn, mapEndpoints, getIconKey, getEndpointField, getConvoSwitchLogic } from '~/utils';
-import { useHasAccess, useDefaultConvo, useSetIndexOptions } from '~/hooks';
+import { useHasAccess, useDefaultConvo, useSetIndexOptions, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { Menu, MenuItem } from './menu';
-import { useChatContext } from '~/Providers';
+import { useChatContext, useAgentsMapContext } from '~/Providers';
 import { mainTextareaId } from '~/common';
 import { icons } from './Icons';
 import store from '~/store';
+import Icon from '~/components/Endpoints/Icon';
 
 interface ExtendedEndpoint {
   value: EModelEndpoint;
@@ -24,18 +27,29 @@ interface ExtendedEndpoint {
   hasModels: boolean;
   icon: JSX.Element | null;
   models?: string[];
+  agentNames?: Record<string, string>;
 }
 
 export function ModelDropdown(): JSX.Element {
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
   const modelsQuery = useGetModelsQuery();
-  const { conversation, newConversation } = useChatContext();
+  const { conversation, newConversation, index } = useChatContext();
   const { setOption } = useSetIndexOptions();
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const getDefaultConversation = useDefaultConvo();
+  const localize = useLocalize();
 
-  const { endpoint } = conversation ?? {};
+  const { endpoint, agent_id: selectedAgentId } = conversation ?? {};
+
+  const agentsMapResult = useAgentsMapContext();
+  const agentsMap = useMemo(() => {
+    return agentsMapResult ?? {};
+  }, [agentsMapResult]);
+
+  const agents: Agent[] = useMemo(() => {
+    return Object.values(agentsMap) as Agent[];
+  }, [agentsMap]);
 
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
@@ -65,10 +79,10 @@ export function ModelDropdown(): JSX.Element {
         const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
         const Icon = icons[iconKey];
         const hasModels =
-          ep !== EModelEndpoint.agents &&
-          ep !== EModelEndpoint.assistants &&
-          (modelsQuery.data?.[ep]?.length ?? 0) > 0;
-        return {
+          (ep === EModelEndpoint.agents && agents.length > 0) ||
+          (ep !== EModelEndpoint.assistants && (modelsQuery.data?.[ep]?.length ?? 0) > 0);
+
+        const result: ExtendedEndpoint = {
           value: ep,
           label: alternateName[ep] || ep,
           hasModels,
@@ -82,8 +96,18 @@ export function ModelDropdown(): JSX.Element {
             />
           ) : null,
         };
+
+        if (ep === EModelEndpoint.agents && agents.length > 0) {
+          result.models = agents.map((agent) => agent.id);
+          result.agentNames = agents.reduce((acc: Record<string, string>, agent) => {
+            acc[agent.id] = agent.name || '';
+            return acc;
+          }, {});
+        }
+
+        return result;
       }),
-    [filteredEndpoints, endpointsConfig, modelsQuery.data],
+    [filteredEndpoints, endpointsConfig, modelsQuery.data, agents],
   );
 
   const filteredMenuItems: ExtendedEndpoint[] = useMemo(() => {
@@ -93,17 +117,37 @@ export function ModelDropdown(): JSX.Element {
     return mappedEndpoints
       .map((ep) => {
         if (ep.hasModels) {
-          const allModels = modelsQuery.data?.[ep.value] ?? [];
-          const filteredModels = allModels.filter((model: string) =>
-            model.toLowerCase().includes(searchTerm.toLowerCase()),
-          );
-          if (
-            ep.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            filteredModels.length > 0
-          ) {
-            return { ...ep, models: filteredModels };
+          if (ep.value === EModelEndpoint.agents) {
+            const filteredAgents = agents.filter((agent) =>
+              agent.name?.toLowerCase().includes(searchTerm.toLowerCase()),
+            );
+            if (
+              ep.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              filteredAgents.length > 0
+            ) {
+              return {
+                ...ep,
+                models: filteredAgents.map((agent) => agent.id),
+                agentNames: filteredAgents.reduce((acc: Record<string, string>, agent) => {
+                  acc[agent.id] = agent.name || '';
+                  return acc;
+                }, {}),
+              };
+            }
+            return null;
+          } else {
+            const allModels = modelsQuery.data?.[ep.value] ?? [];
+            const filteredModels = allModels.filter((model: string) =>
+              model.toLowerCase().includes(searchTerm.toLowerCase()),
+            );
+            if (
+              ep.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              filteredModels.length > 0
+            ) {
+              return { ...ep, models: filteredModels };
+            }
+            return null;
           }
-          return null;
         } else {
           return ep.label.toLowerCase().includes(searchTerm.toLowerCase())
             ? { ...ep, models: [] }
@@ -111,7 +155,22 @@ export function ModelDropdown(): JSX.Element {
         }
       })
       .filter(Boolean) as ExtendedEndpoint[];
-  }, [searchTerm, mappedEndpoints, modelsQuery.data]);
+  }, [searchTerm, mappedEndpoints, modelsQuery.data, agents]);
+
+  const setAgentId = useCallback(
+    (agentId: string) => {
+      setOption('agent_id')(agentId);
+      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`, agentId);
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current = setTimeout(() => {
+        const textarea = document.getElementById(mainTextareaId);
+        if (textarea) {
+          textarea.focus();
+        }
+      }, 150);
+    },
+    [setOption, index],
+  );
 
   const setModel = useCallback(
     (model: string) => {
@@ -129,48 +188,32 @@ export function ModelDropdown(): JSX.Element {
 
   const handleModelSelect = useCallback(
     (ep: EModelEndpoint, selectedModel: string) => {
-      // Advanced check: is the selected model within the provided endpoint?
-      const modelsForEp = modelsQuery.data?.[ep] || [];
-      const modelExists = modelsForEp.some(
-        (m: string) => m.toLowerCase() === selectedModel.toLowerCase(),
-      );
-
-      if (!modelExists) {
-        // Search all endpoints (advanced, case-insensitive) for one containing the model.
-        const targetEndpoint = Object.keys(modelsQuery.data || {}).find((key) =>
-          (modelsQuery.data?.[key] || []).some(
-            (m: string) => m.toLowerCase() === selectedModel.toLowerCase(),
-          ),
-        );
-        if (targetEndpoint && targetEndpoint !== ep) {
-          const castedEndpoint = targetEndpoint as EModelEndpoint;
-          const { template } = getConvoSwitchLogic({
-            newEndpoint: castedEndpoint,
-            modularChat: false,
-            conversation,
-            endpointsConfig,
-          });
-          const newConvo = getDefaultConversation({
-            conversation: { ...conversation, endpoint: castedEndpoint },
-            preset: { ...template, endpoint: castedEndpoint },
-          });
-          newConversation({
-            template: newConvo,
-            preset: newConvo,
-            keepLatestMessage: true,
-          });
-          setModel(selectedModel);
+      if (ep === EModelEndpoint.agents) {
+        if (conversation?.endpoint === ep) {
+          setAgentId(selectedModel);
           return;
         }
-      }
 
-      // If already on this endpoint, update model
-      if (conversation?.endpoint === ep) {
-        setModel(selectedModel);
+        const { template } = getConvoSwitchLogic({
+          newEndpoint: ep,
+          modularChat: false,
+          conversation,
+          endpointsConfig,
+        });
+
+        const currentConvo = getDefaultConversation({
+          conversation: { ...conversation, endpoint: ep, agent_id: selectedModel },
+          preset: { ...template, endpoint: ep, agent_id: selectedModel },
+        });
+
+        newConversation({
+          template: currentConvo,
+          preset: currentConvo,
+          keepLatestMessage: true,
+        });
         return;
       }
 
-      // Otherwise, switch endpoint then update model
       const {
         template,
         shouldSwitch,
@@ -219,15 +262,62 @@ export function ModelDropdown(): JSX.Element {
       getDefaultConversation,
       modelsQuery.data,
       setModel,
+      setAgentId,
     ],
   );
 
   const handleEndpointSelect = useCallback(
     (ep: string, hasModels: boolean) => {
-      if (hasModels && conversation?.endpoint === ep) {
+      if (hasModels) {
         setOpenDropdownFor(ep);
+
+        if (conversation?.endpoint !== ep) {
+          // If changing to a different endpoint with models, first switch to that endpoint
+          const newEndpoint = ep as EModelEndpoint;
+          const { template } = getConvoSwitchLogic({
+            newEndpoint,
+            modularChat: false,
+            conversation,
+            endpointsConfig,
+          });
+
+          let initialModel = '';
+          let initialAgentId = '';
+
+          if (newEndpoint === EModelEndpoint.agents && agents.length > 0) {
+            initialAgentId = agents[0].id;
+          } else if (
+            modelsQuery.data &&
+            modelsQuery.data[newEndpoint] &&
+            modelsQuery.data[newEndpoint].length > 0
+          ) {
+            initialModel = modelsQuery.data[newEndpoint][0];
+          }
+
+          const currentConvo = getDefaultConversation({
+            conversation: {
+              ...conversation,
+              endpoint: newEndpoint,
+              model: initialModel,
+              agent_id: initialAgentId,
+            },
+            preset: {
+              ...template,
+              endpoint: newEndpoint,
+              model: initialModel,
+              agent_id: initialAgentId,
+            },
+          });
+
+          newConversation({
+            template: currentConvo,
+            preset: currentConvo,
+            keepLatestMessage: true,
+          });
+        }
         return;
       }
+
       if (!hasModels) {
         const newEndpoint = ep as EModelEndpoint;
         const { template } = getConvoSwitchLogic({
@@ -247,14 +337,24 @@ export function ModelDropdown(): JSX.Element {
         });
       }
     },
-    [conversation, endpointsConfig, newConversation, getDefaultConversation],
+    [
+      conversation,
+      endpointsConfig,
+      newConversation,
+      getDefaultConversation,
+      modelsQuery.data,
+      agents,
+    ],
   );
 
   const currentEndpointItem = mappedEndpoints.find((item) => item.value === endpoint);
   const hasModelsOnCurrent = currentEndpointItem?.hasModels;
+
   const displayValue = endpoint
     ? hasModelsOnCurrent
-      ? conversation?.model || alternateName[endpoint] || endpoint
+      ? isAgentsEndpoint(endpoint as string)
+        ? agentsMap[selectedAgentId || '']?.name || localize('com_sidepanel_select_agent')
+        : conversation?.model || alternateName[endpoint] || endpoint
       : alternateName[endpoint] || endpoint
     : 'Select an endpoint';
 
@@ -275,8 +375,23 @@ export function ModelDropdown(): JSX.Element {
             )}
           >
             {currentEndpointItem && currentEndpointItem.icon && (
-              <div className="flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
-                {currentEndpointItem.icon}
+              <div
+                className={cn(
+                  'flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary',
+                  isAgentsEndpoint(endpoint as string) && selectedAgentId ? 'rounded-full' : '',
+                )}
+              >
+                {isAgentsEndpoint(endpoint as string) && selectedAgentId ? (
+                  <Icon
+                    isCreatedByUser={false}
+                    endpoint={endpoint}
+                    agentName={agentsMap[selectedAgentId]?.name || ''}
+                    iconURL={agentsMap[selectedAgentId]?.avatar?.filepath}
+                    className="rounded-full"
+                  />
+                ) : (
+                  currentEndpointItem.icon
+                )}
               </div>
             )}
             <span className="flex-grow truncate text-left">{displayValue}</span>
@@ -301,6 +416,11 @@ export function ModelDropdown(): JSX.Element {
               key={ep.value}
               className="animate-popover-left"
               defaultOpen={openDropdownFor === ep.value}
+              onOpenChange={(open) => {
+                if (open) {
+                  setOpenDropdownFor(ep.value);
+                }
+              }}
               label={
                 <div
                   onClick={() => handleEndpointSelect(ep.value, true)}
@@ -318,22 +438,45 @@ export function ModelDropdown(): JSX.Element {
                 </div>
               }
             >
-              {(ep.models !== undefined ? ep.models : (modelsQuery.data?.[ep.value] ?? [])).map(
-                (modelName: string) => (
+              {ep.value === EModelEndpoint.agents
+                ? (ep.models || []).map((agentId: string) => (
                   <MenuItem
-                    key={modelName}
-                    onClick={() => handleModelSelect(ep.value as EModelEndpoint, modelName)}
+                    key={agentId}
+                    onClick={() => handleModelSelect(ep.value as EModelEndpoint, agentId)}
                     className={cn(
                       'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary',
-                      conversation?.model === modelName && conversation?.endpoint === ep.value
+                      selectedAgentId === agentId && conversation?.endpoint === ep.value
                         ? 'bg-surface-tertiary'
                         : '',
                     )}
                   >
-                    {modelName}
+                    <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+                      <Icon
+                        isCreatedByUser={false}
+                        endpoint={ep.value}
+                        agentName={ep.agentNames?.[agentId] || ''}
+                        iconURL={agentsMap[agentId]?.avatar?.filepath}
+                      />
+                    </div>
+                    {ep.agentNames?.[agentId] || agentId}
                   </MenuItem>
-                ),
-              )}
+                ))
+                : (ep.models !== undefined ? ep.models : (modelsQuery.data?.[ep.value] ?? [])).map(
+                  (modelName: string) => (
+                    <MenuItem
+                      key={modelName}
+                      onClick={() => handleModelSelect(ep.value as EModelEndpoint, modelName)}
+                      className={cn(
+                        'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary',
+                        conversation?.model === modelName && conversation?.endpoint === ep.value
+                          ? 'bg-surface-tertiary'
+                          : '',
+                      )}
+                    >
+                      {modelName}
+                    </MenuItem>
+                  ),
+                )}
             </Menu>
           ) : (
             <MenuItem
