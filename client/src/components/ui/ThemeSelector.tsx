@@ -15,7 +15,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
     light: <Sun />,
   };
 
-  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  const nextTheme = theme === 'light' ? 'light' : 'light';
   const label = `Switch to ${nextTheme} theme`;
 
   useEffect(() => {
@@ -51,7 +51,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
 };
 
 const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const [ theme, setTheme ] = useState("light");
   const [announcement, setAnnouncement] = useState('');
 
   const changeTheme = useCallback(
@@ -68,12 +68,12 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
     [setTheme],
   );
 
-  useEffect(() => {
-    if (theme === 'system') {
-      const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(prefersDarkScheme ? 'dark' : 'light');
-    }
-  }, [theme, setTheme]);
+  // useEffect(() => {
+  //   if (theme === 'system') {
+  //     const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  //     setTheme(prefersDarkScheme ? 'dark' : 'light');
+  //   }
+  // }, [theme, setTheme]);
 
   useEffect(() => {
     if (announcement) {

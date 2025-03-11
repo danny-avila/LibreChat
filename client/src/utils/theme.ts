@@ -30,7 +30,7 @@ export const getInitialTheme = () => {
 
     const userMedia = window.matchMedia('(prefers-color-scheme: dark)');
     if (userMedia.matches) {
-      return 'dark';
+      return 'light';
     }
   }
 
