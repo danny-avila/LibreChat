@@ -12,7 +12,10 @@ on:
       - 'client/**'
       - 'packages/**'
       - '.github/**'
-
+    types:
+      - opened
+      - synchronize
+      - labeled
   merge_group:
     branches:
       - main
