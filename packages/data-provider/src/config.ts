@@ -635,7 +635,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
 
 export const alternateName = {
   [EModelEndpoint.openAI]: 'AICon',
-  [EModelEndpoint.assistants]: "Assistants",
+  [EModelEndpoint.assistants]: "Asistenti",
   [EModelEndpoint.agents]: 'Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
