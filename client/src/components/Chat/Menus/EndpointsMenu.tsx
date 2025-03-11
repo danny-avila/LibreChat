@@ -72,7 +72,7 @@ const EndpointsMenu: FC = () => {
 
   return (
     <Root>
-      <TitleButton primaryText="AICons" />
+      <TitleButton primaryText="AICon" />
       <Portal>
         <div
           style={{
@@ -88,7 +88,7 @@ const EndpointsMenu: FC = () => {
             side="bottom"
             align="start"
             role="listbox"
-            id="llm-endpoint-menu"
+            id="  "
             ref={menuRef}
             onKeyDown={handleKeyDown}
             aria-label={localize('com_ui_endpoints_available')}

@@ -3,12 +3,14 @@ import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+import { useState } from 'react';
+
 export default function AutoScrollSwitch({
   onCheckedChange,
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const [autoScroll, setAutoScroll] = useRecoilState<boolean>(store.autoScroll);
+  const [autoScroll, setAutoScroll] =  useState<boolean>(true); // useRecoilState<boolean>(true);
   const localize = useLocalize();
 
   const handleCheckedChange = (value: boolean) => {
@@ -25,7 +27,7 @@ export default function AutoScrollSwitch({
         id="autoScroll"
         checked={autoScroll}
         aria-label="Auto-Scroll to latest message on chat open"
-        onCheckedChange={handleCheckedChange}
+        // onCheckedChange={handleCheckedChange}
         className="ml-4"
         data-testid="autoScroll"
       />
