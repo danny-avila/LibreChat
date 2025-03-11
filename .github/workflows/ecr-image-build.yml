@@ -50,6 +50,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug
+        id: debug
+        run: |
+          echo "LABELS: ${{ toJSON(github.event.pull_request.labels) }}"
+          echo "IS_PR: ${{ env.IS_PR }}"
+          echo "SHOULD_PUSH_TO_ECR: ${{ env.SHOULD_PUSH_TO_ECR }}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
