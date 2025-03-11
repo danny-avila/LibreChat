@@ -85,14 +85,14 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
-        <Select.SelectItem
+        {/* <Select.SelectItem
           value=""
           onClick={() => setShowFiles(true)}
           className="select-item text-sm"
         >
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
-        </Select.SelectItem>
+        </Select.SelectItem> */}
         {/* {startupConfig?.helpAndFaqURL !== '/' && (
           <Select.SelectItem
             value=""
