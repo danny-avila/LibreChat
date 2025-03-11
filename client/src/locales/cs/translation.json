@@ -20,6 +20,8 @@
     "com_agents_not_available": "Agent není k dispozici",
     "com_agents_search_name": "Hledat agenty podle jména",
     "com_agents_update_error": "Při aktualizaci agenta došlo k chybě.",
+    "com_assistants_name_placeholder": "",
+    "com_assistants_instructions_placeholder": "",
     "com_assistants_action_attempt": "Asistent se chce spojit s {{0}}",
     "com_assistants_actions": "Akce",
     "com_assistants_actions_disabled": "Než přidáte akce, musíte vytvořit asistenta.",
