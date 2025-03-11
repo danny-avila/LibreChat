@@ -1,6 +1,6 @@
 import React, { useMemo, memo, useCallback, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronRight, Search } from 'lucide-react';
+import { ChevronRight, Search, Settings } from 'lucide-react';
 import {
   EModelEndpoint,
   PermissionTypes,
@@ -12,14 +12,21 @@ import {
 import type { TConversation, Agent } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { cn, mapEndpoints, getIconKey, getEndpointField, getConvoSwitchLogic } from '~/utils';
-import { useHasAccess, useDefaultConvo, useSetIndexOptions, useLocalize } from '~/hooks';
-import { useGetEndpointsQuery } from '~/data-provider';
-import { Menu, MenuItem } from './menu';
+import {
+  useHasAccess,
+  useDefaultConvo,
+  useSetIndexOptions,
+  useLocalize,
+  useUserKey,
+} from '~/hooks';
 import { useChatContext, useAgentsMapContext } from '~/Providers';
+import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
+import { useGetEndpointsQuery } from '~/data-provider';
+import Icon from '~/components/Endpoints/Icon';
 import { mainTextareaId } from '~/common';
+import { Menu, MenuItem } from './menu';
 import { icons } from './Icons';
 import store from '~/store';
-import Icon from '~/components/Endpoints/Icon';
 
 interface ExtendedEndpoint {
   value: EModelEndpoint;
@@ -38,7 +45,16 @@ export function ModelDropdown(): JSX.Element {
   const { setOption } = useSetIndexOptions();
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const getDefaultConversation = useDefaultConvo();
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
+  const [keyDialogEndpoint, setKeyDialogEndpoint] = useState<EModelEndpoint | null>(null);
   const localize = useLocalize();
+
+  const endpointRequiresUserKey = useCallback(
+    (ep: string) => {
+      return !!getEndpointField(endpointsConfig, ep, 'userProvide');
+    },
+    [endpointsConfig],
+  );
 
   const { endpoint, agent_id: selectedAgentId } = conversation ?? {};
 
@@ -347,6 +363,13 @@ export function ModelDropdown(): JSX.Element {
     ],
   );
 
+  const handleOpenKeyDialog = useCallback((ep: EModelEndpoint, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setKeyDialogEndpoint(ep);
+    setKeyDialogOpen(true);
+  }, []);
+
   const currentEndpointItem = mappedEndpoints.find((item) => item.value === endpoint);
   const hasModelsOnCurrent = currentEndpointItem?.hasModels;
 
@@ -434,7 +457,18 @@ export function ModelDropdown(): JSX.Element {
                     )}
                     <span className="truncate text-left">{ep.label}</span>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-text-secondary" />
+                  <div className="flex items-center">
+                    {endpointRequiresUserKey(ep.value) && (
+                      <button
+                        onClick={(e) => handleOpenKeyDialog(ep.value as EModelEndpoint, e)}
+                        className="mr-2 rounded p-1 hover:bg-surface-tertiary"
+                        aria-label={`${localize('com_endpoint_config_key')} for ${ep.label}`}
+                      >
+                        <Settings className="h-4 w-4 text-text-secondary" />
+                      </button>
+                    )}
+                    <ChevronRight className="h-4 w-4 text-text-secondary" />
+                  </div>
                 </div>
               }
             >
@@ -482,18 +516,38 @@ export function ModelDropdown(): JSX.Element {
             <MenuItem
               key={ep.value}
               onClick={() => handleEndpointSelect(ep.value, false)}
-              className="flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+              className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
             >
-              {ep.icon && (
-                <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
-                  {ep.icon}
-                </div>
+              <div className="flex items-center">
+                {ep.icon && (
+                  <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
+                    {ep.icon}
+                  </div>
+                )}
+                <span>{ep.label}</span>
+              </div>
+              {endpointRequiresUserKey(ep.value) && (
+                <button
+                  onClick={(e) => handleOpenKeyDialog(ep.value as EModelEndpoint, e)}
+                  className="rounded p-1 hover:bg-surface-tertiary"
+                  aria-label={`${localize('com_endpoint_config_key')} for ${ep.label}`}
+                >
+                  <Settings className="h-4 w-4 text-text-secondary" />
+                </button>
               )}
-              {ep.label}
             </MenuItem>
           ),
         )}
       </Menu>
+      {keyDialogEndpoint && (
+        <SetKeyDialog
+          open={keyDialogOpen}
+          endpoint={keyDialogEndpoint}
+          endpointType={getEndpointField(endpointsConfig, keyDialogEndpoint, 'type')}
+          onOpenChange={setKeyDialogOpen}
+          userProvideURL={getEndpointField(endpointsConfig, keyDialogEndpoint, 'userProvideURL')}
+        />
+      )}
     </div>
   );
 }
