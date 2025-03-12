@@ -8,7 +8,6 @@ import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey
 import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useCreateAgentMutation } from '~/data-provider';
 import { ToolSelectDialog } from '~/components/Tools';
 import { processAgentOption } from '~/utils';
 import AgentAvatar from './AgentAvatar';
@@ -31,9 +30,9 @@ export default function AgentConfig({
   setAction,
   actions = [],
   agentsConfig,
-  endpointsConfig,
+  createMutation,
   setActivePanel,
-  setCurrentAgentId,
+  endpointsConfig,
 }: AgentPanelProps) {
   const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
@@ -138,26 +137,6 @@ export default function AgentConfig({
     return _agent.code_files ?? [];
   }, [agent, agent_id, fileMap]);
 
-  const create = useCreateAgentMutation({
-    onSuccess: (data) => {
-      setCurrentAgentId(data.id);
-      showToast({
-        message: `${localize('com_assistants_create_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
-
   const handleAddActions = useCallback(() => {
     if (!agent_id) {
       showToast({
@@ -193,8 +172,8 @@ export default function AgentConfig({
         {/* Avatar & Name */}
         <div className="mb-4">
           <AgentAvatar
-            createMutation={create}
             agent_id={agent_id}
+            createMutation={createMutation}
             avatar={agent?.['avatar'] ?? null}
           />
           <label className={labelClass} htmlFor="name">

@@ -277,6 +277,7 @@ export default function AgentPanel({
           <AgentConfig
             actions={actions}
             setAction={setAction}
+            createMutation={create}
             agentsConfig={agentsConfig}
             setActivePanel={setActivePanel}
             endpointsConfig={endpointsConfig}
@@ -284,7 +285,11 @@ export default function AgentPanel({
           />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && (
-          <AgentFooter setCurrentAgentId={setCurrentAgentId} />
+          <AgentFooter
+            createMutation={create}
+            updateMutation={update}
+            setCurrentAgentId={setCurrentAgentId}
+          />
         )}
       </form>
     </FormProvider>

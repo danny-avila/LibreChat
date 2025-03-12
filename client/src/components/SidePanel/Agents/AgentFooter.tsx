@@ -2,10 +2,9 @@ import React from 'react';
 import { useWatch, useFormContext } from 'react-hook-form';
 import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
-import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
+import { useUpdateAgentMutation } from '~/data-provider';
 import AdvancedSettings from './AdvancedSettings';
-import { useToastContext } from '~/Providers';
 import DuplicateAgent from './DuplicateAgent';
 import AdminSettings from './AdminSettings';
 import DeleteButton from './DeleteButton';
@@ -13,11 +12,14 @@ import { Spinner } from '~/components';
 import ShareAgent from './ShareAgent';
 
 export default function AgentFooter({
+  createMutation,
+  updateMutation,
   setCurrentAgentId,
-}: Pick<AgentPanelProps, 'setCurrentAgentId'>) {
+}: Pick<AgentPanelProps, 'setCurrentAgentId' | 'createMutation'> & {
+  updateMutation: ReturnType<typeof useUpdateAgentMutation>;
+}) {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const { showToast } = useToastContext();
 
   const methods = useFormContext<AgentForm>();
 
@@ -30,48 +32,8 @@ export default function AgentFooter({
     permission: Permissions.SHARED_GLOBAL,
   });
 
-  /* Mutations */
-  const update = useUpdateAgentMutation({
-    onSuccess: (data) => {
-      showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
-
-  const create = useCreateAgentMutation({
-    onSuccess: (data) => {
-      setCurrentAgentId(data.id);
-      showToast({
-        message: `${localize('com_assistants_create_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
-
   const renderSaveButton = () => {
-    if (create.isLoading || update.isLoading) {
+    if (createMutation.isLoading || updateMutation.isLoading) {
       return <Spinner className="icon-md" aria-hidden="true" />;
     }
 
@@ -91,7 +53,7 @@ export default function AgentFooter({
         <DeleteButton
           agent_id={agent_id}
           setCurrentAgentId={setCurrentAgentId}
-          createMutation={create}
+          createMutation={createMutation}
         />
         {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
           hasAccessToShareAgents && (
@@ -107,8 +69,8 @@ export default function AgentFooter({
         <button
           className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
           type="submit"
-          disabled={create.isLoading || update.isLoading}
-          aria-busy={create.isLoading || update.isLoading}
+          disabled={createMutation.isLoading || updateMutation.isLoading}
+          aria-busy={createMutation.isLoading || updateMutation.isLoading}
         >
           {renderSaveButton()}
         </button>
