@@ -24,6 +24,19 @@ resource "aws_iam_role" "genai" {
   assume_role_policy   = data.aws_iam_policy_document.genai_assume.json
 }
 
+data "aws_iam_policy_document" "customer_deployer_access" {
+  for_each = var.principal_account_ids
+  statement {
+    effect = "Allow"
+    actions = [
+      "sts:AssumeRole",
+    ]
+    resources = [
+      format("arn:aws:iam::%s:role/ecs-deployment-role", each.value),
+    ]
+  }
+}
+
 data "aws_iam_policy_document" "genai_assume" {
 
   dynamic "statement" {
@@ -130,3 +143,12 @@ resource "aws_iam_role_policy_attachment" "genai_s3" {
   role       = aws_iam_role.genai.name
   policy_arn = aws_iam_policy.genai_s3.arn
 }
+
+resource "aws_iam_role_policy" "genai_customer_deployer" {
+  for_each = data.aws_iam_policy_document.customer_deployer_access
+  name     = format("genai-customer-deployer-%s", each.key)
+  policy   = each.value.json
+  role     = aws_iam_role.genai.name
+}
+
+

@@ -27,4 +27,7 @@ locals {
       ]
     }
   }
+  principals_readonly_access_all = {
+    for tenant, account in var.principal_account_ids : tenant => format("arn:aws:iam::%s:root", account)
+  }
 }

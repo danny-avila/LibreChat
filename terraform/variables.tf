@@ -1,7 +1,6 @@
-variable "principals_readonly_access_all" {
-  description = "The list of principals that have readonly access to the ECR repositories"
+variable "principal_account_ids" {
+  description = "Map of principal account ids"
   type        = map(string)
-  default     = {}
 }
 
 variable "principals_push_access_all" {

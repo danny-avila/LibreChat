@@ -11,16 +11,12 @@ module "label" {
   stage     = "shared"
 }
 
-locals {
-  principals = var.principals_readonly_access_all
-}
-
 ## TODO: Allow Organization Access: https://aws.amazon.com/blogs/containers/sharing-amazon-ecr-repositories-with-multiple-accounts-using-aws-organizations/
 module "ecr" {
   source                     = "cloudposse/ecr/aws"
   version                    = "0.39.0"
   for_each                   = toset(var.ecr_repository_names)
-  principals_readonly_access = values(var.principals_readonly_access_all)
+  principals_readonly_access = values(local.principals_readonly_access_all)
   principals_push_access     = var.principals_push_access_all
   image_names                = [each.value]
   image_tag_mutability       = "MUTABLE"
@@ -40,7 +36,7 @@ data "aws_iam_policy_document" "cache_bucket" {
 }
 
 data "aws_iam_policy_document" "librechat_config" {
-  for_each = var.principals_readonly_access_all
+  for_each = local.principals_readonly_access_all
   statement {
     sid    = each.key
     effect = "Allow"
