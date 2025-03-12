@@ -10,7 +10,7 @@ import {
   isAgentsEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TConversation, Agent, AssistantsEndpoint } from 'librechat-data-provider';
+import type { TConversation, Agent } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { cn, mapEndpoints, getIconKey, getEndpointField, getConvoSwitchLogic } from '~/utils';
 import {
@@ -18,9 +18,7 @@ import {
   useDefaultConvo,
   useSetIndexOptions,
   useLocalize,
-  useUserKey,
   useAssistantListMap,
-  useSelectAssistant,
 } from '~/hooks';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
