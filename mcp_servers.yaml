@@ -17,5 +17,15 @@ mcpServers:
       - -y
       - "@modelcontextprotocol/server-brave-search"
     env:
-      BRAVE_API_KEY: "<YOUR_BRAVE_API_KEY>"
+      BRAVE_API_KEY: "BSAbtJya-Rq9Y9EpZ2qROgVYMno4d6t"
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  # MCP Server for Playwright
+  playwright:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@executeautomation/playwright-mcp-server"
+    env:
       PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
