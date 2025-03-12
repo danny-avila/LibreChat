@@ -1,0 +1,8 @@
+version: 1.0.8
+ 
+cache: true
+
+endpoints:
+  agents:
+    # (optional) Maximum recursion depth for agents, defaults to 25
+    recursionLimit: 50
