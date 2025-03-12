@@ -1,186 +1,135 @@
-import { Plus, X, ArrowDown, Info } from 'lucide-react';
-import { Constants } from 'librechat-data-provider';
+import { X, ChevronDown, Settings } from 'lucide-react';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { ControllerRenderProps } from 'react-hook-form';
-import type { Agent } from 'librechat-data-provider';
-import type { AgentForm } from '~/common';
+import type { AgentForm, OptionWithIcon } from '~/common';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useAgentsMapContext } from '~/Providers';
-import { TooltipAnchor } from '~/components/ui';
 import Icon from '~/components/Endpoints/Icon';
-import HideSequential from './HideSequential';
+// import HideSequential from './HideSequential';
+import { useLocalize } from '~/hooks';
 
 interface SequentialAgentsProps {
   field: ControllerRenderProps<AgentForm, 'agent_ids'>;
+  currentAgentId: string;
 }
 
-const labelClass = 'mb-2 text-token-text-primary block font-medium';
-const MAX_AGENTS = Constants.MAX_CONVO_STARTERS;
+const MAX_AGENTS = 10;
 
-const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field }) => {
+const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgentId }) => {
   const [newAgentId, setNewAgentId] = useState('');
   const agentsMap = useAgentsMapContext() || {};
-
-  // Get current value or empty array if undefined
   const agentIds = field.value || [];
-  const hasReachedMax = agentIds.length >= MAX_AGENTS;
 
-  // Convert agents map to array for processing
-  const agents = useMemo(() => Object.values(agentsMap) as Agent[], [agentsMap]);
+  const agents = useMemo(() => Object.values(agentsMap), [agentsMap]);
 
-  // Create agent options for dropdown
-  const agentOptions = useMemo(
-    () =>
-      agents.map((agent: Agent) => ({
-        label: agent.name || '',
-        value: agent.id,
-        icon: (
-          <Icon
-            isCreatedByUser={false}
-            endpoint="agents"
-            agentName={agent.name || ''}
-            iconURL={agent.avatar?.filepath}
-          />
-        ),
-      })),
-    [agents],
-  );
+  const selectableAgents = useMemo(() =>
+    agents
+      .filter(agent => agent?.id !== currentAgentId)
+      .map((agent) => ({
+        label: agent?.name || '',
+        value: agent?.id,
+        icon: <Icon endpoint="agents" agentName={agent?.name ?? ''} iconURL={agent?.avatar?.filepath} isCreatedByUser={false}/>,
+      } as OptionWithIcon)), [agents, currentAgentId]);
 
-  // Get agent name from ID
-  const getAgentName = useCallback(
-    (agentId: string) => {
-      if (agentsMap[agentId]?.name) {
-        return agentsMap[agentId].name;
-      }
-      const agent = agents.find((a) => a.id === agentId);
-      return agent?.name || agentId;
-    },
-    [agentsMap, agents],
-  );
+  const getAgentDetails = useCallback((id: string) => agentsMap[id], [agentsMap]);
 
-  // Get agent avatar URL from ID
-  const getAgentAvatar = useCallback(
-    (agentId: string) => {
-      return agentsMap[agentId]?.avatar?.filepath || '';
-    },
-    [agentsMap],
-  );
-
-  // Add the selected agent when newAgentId changes
   useEffect(() => {
     if (newAgentId && agentIds.length < MAX_AGENTS) {
       field.onChange([...agentIds, newAgentId]);
-      setNewAgentId(''); // Clear the input after adding
+      setNewAgentId('');
     }
   }, [newAgentId, agentIds, field]);
 
-  const handleDeleteAgentId = useCallback(
-    (index: number) => {
-      field.onChange(agentIds.filter((_, i) => i !== index));
-    },
-    [agentIds, field],
-  );
+  const removeAgentAt = (index: number) => {
+    field.onChange(agentIds.filter((_, i) => i !== index));
+  };
 
-  const handleSelectAgent = useCallback(
-    (index: number) => (value: string) => {
-      const newValues = [...agentIds];
-      newValues[index] = value;
-      field.onChange(newValues);
-    },
-    [agentIds, field],
-  );
+  const updateAgentAt = (index: number, id: string) => {
+    const updated = [...agentIds];
+    updated[index] = id;
+    field.onChange(updated);
+  };
 
   return (
-    <div className="relative">
-      <div className="flex items-center justify-between mb-2">
-        <label className={labelClass} htmlFor="agent_ids">
-          Chain of Agents
-        </label>
-        <HideSequential />
+    <div className="p-4 rounded-md border border-border-medium bg-surface-secondary">
+      <div className="flex justify-between items-center mb-4">
+        <label className="text-text-primary font-semibold">Agent Chain</label>
+        {/* <HideSequential /> */}
       </div>
 
-      {/* Simple agent chain visualization */}
-      <div className="agent-chain-container px-1">
-        <div className="agents-list space-y-1">
-          {agentIds.map((agentId, index) => (
-            <React.Fragment key={index}>
-              {/* Agent selection card */}
-              <div className="agent-card-wrapper relative bg-token-surface-primary rounded-md border border-token-border-light">
-                <div className="agent-number absolute left-2 top-1/2 transform -translate-y-1/2 w-5 h-5 rounded-full bg-token-surface-secondary flex items-center justify-center">
-                  <span className="text-xs font-medium text-token-text-secondary">{index + 1}</span>
-                </div>
-                <div className="px-8 py-1">
-                  <ControlCombobox
-                    selectedValue={agentId}
-                    displayValue={getAgentName(agentId)}
-                    selectPlaceholder="Select an agent"
-                    searchPlaceholder="Search agents"
-                    isCollapsed={false}
-                    ariaLabel={`agent-${index}`}
-                    setValue={handleSelectAgent(index)}
-                    items={agentOptions}
-                    iconClassName="agent-item"
-                    SelectIcon={
-                      <Icon
-                        isCreatedByUser={false}
-                        endpoint="agents"
-                        agentName={getAgentName(agentId)}
-                        iconURL={getAgentAvatar(agentId)}
-                      />
-                    }
-                    className="pr-10"
-                  />
-                  <TooltipAnchor
-                    side="top"
-                    description="Remove agent"
-                    className="absolute right-1 top-1/2 transform -translate-y-1/2 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
-                    onClick={() => handleDeleteAgentId(index)}
-                  >
-                    <X className="size-4" />
-                  </TooltipAnchor>
-                </div>
-              </div>
-
-              {/* Arrow between agents */}
-              {index < agentIds.length - 1 && (
-                <div className="arrow-separator flex justify-center py-1">
-                  <ArrowDown className="text-token-text-tertiary size-4" />
-                </div>
-              )}
-            </React.Fragment>
-          ))}
-
-          {/* Add agent button */}
-          {!hasReachedMax && (
-            <div className="add-agent-wrapper">
-              {agentIds.length > 0 && (
-                <div className="arrow-separator flex justify-center py-1">
-                  <ArrowDown className="text-token-text-tertiary size-4" />
-                </div>
-              )}
-              <div className="add-agent-card bg-token-surface-secondary rounded-md border border-dashed border-token-border-light">
-                <ControlCombobox
-                  selectedValue={newAgentId}
-                  displayValue=""
-                  selectPlaceholder={agentIds.length === 0 ? 'Select first agent in chain' : 'Add next agent to chain'}
-                  searchPlaceholder="Search agents"
-                  isCollapsed={false}
-                  ariaLabel="new-agent"
-                  setValue={setNewAgentId}
-                  items={agentOptions}
-                  iconClassName="agent-item"
-                />
-              </div>
+      <div className="space-y-1">
+        {/* Current fixed agent */}
+        <div className="flex justify-between items-center rounded-md py-2 px-3 bg-surface-primary-contrast border border-border-medium">
+          <div className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+              <Icon endpoint="agents" agentName={getAgentDetails(currentAgentId)?.name ?? ''} iconURL={getAgentDetails(currentAgentId)?.avatar?.filepath} isCreatedByUser={false} />
             </div>
-          )}
-
-          {/* Max agents reached message */}
-          {hasReachedMax && (
-            <div className="text-xs text-token-text-tertiary py-2 italic text-center">
-              Maximum chain length reached ({MAX_AGENTS} agents)
+            <div className="truncate text-text-primary font-medium">
+              {getAgentDetails(currentAgentId)?.name} (Current Agent)
             </div>
-          )}
+          </div>
         </div>
+
+        {agentIds.length > 0 && <ChevronDown className="text-text-secondary mx-auto" size={14} />}
+
+        {agentIds.map((agentId, idx) => (
+          <React.Fragment key={agentId}>
+            <div className="flex items-center gap-2 py-2 px-3 bg-surface-tertiary rounded-md border border-border-medium">
+              <ControlCombobox
+                isCollapsed={false}
+                ariaLabel='Select agent'
+                selectedValue={agentId}
+                setValue={(id) => updateAgentAt(idx, id)}
+                selectPlaceholder="Select agent"
+                searchPlaceholder="Search..."
+                items={selectableAgents}
+                displayValue={getAgentDetails(agentId)?.name ?? ''}
+                SelectIcon={
+                  <Icon
+                    endpoint="agents"
+                    isCreatedByUser={false}
+                    agentName={getAgentDetails(agentId)?.name ?? ''}
+                    iconURL={getAgentDetails(agentId)?.avatar?.filepath}
+                  />
+                }
+                className="flex-1 border-border-heavy"
+              />
+              {/* Future Settings button? */}
+              {/* <button className="hover:bg-surface-hover p-1 rounded transition">
+                <Settings size={16} className="text-text-secondary" />
+              </button> */}
+              <button className="p-1 hover:bg-surface-hover rounded-md transition"
+                onClick={() => removeAgentAt(idx)}>
+                <X size={16} className="text-text-secondary"/>
+              </button>
+            </div>
+            {idx < agentIds.length - 1 && <ChevronDown className="text-text-secondary mx-auto" size={14} />}
+          </React.Fragment>
+        ))}
+
+        {agentIds.length < MAX_AGENTS && (
+          <>
+            {agentIds.length > 0 && <ChevronDown className="text-text-secondary mx-auto" size={14} />}
+            <ControlCombobox
+              isCollapsed={false}
+              ariaLabel='Select agent'
+              selectedValue=""
+              setValue={setNewAgentId}
+              selectPlaceholder={agentIds.length === 0 ? 'Add first agent...' : 'Add next agent...'}
+              searchPlaceholder="Search agents"
+              items={selectableAgents}
+              className="text-text-secondary w-full p-2 text-center border-border-heavy border-dashed"
+            >
+
+            </ControlCombobox>
+          </>
+        )}
+
+        {agentIds.length >= MAX_AGENTS && (
+          <p className="text-xs italic text-text-tertiary text-center pt-1">
+            You have reached the maximum of {MAX_AGENTS} agents.
+          </p>
+        )}
       </div>
     </div>
   );

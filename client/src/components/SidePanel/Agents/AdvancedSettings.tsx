@@ -10,7 +10,8 @@ export default function AdvancedSettings() {
   const [open, setOpen] = useState(false);
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { control } = methods;
+  const { control, watch } = methods;
+  const currentAgentId = watch('id');
 
   return (
     <Collapsible
@@ -39,7 +40,7 @@ export default function AdvancedSettings() {
             name="agent_ids"
             control={control}
             defaultValue={[]}
-            render={({ field }) => <SequentialAgents field={field} />}
+            render={({ field }) => <SequentialAgents field={field} currentAgentId={currentAgentId}/>}
           />
         </div>
       </CollapsibleContent>
