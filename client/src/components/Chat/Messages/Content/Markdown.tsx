@@ -166,6 +166,46 @@ export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
+export const h1: React.ElementType = memo(({ children, ...props }: TParagraphProps) => {
+  return (
+    <h1 className="mb-2 mt-4 text-3xl font-bold" {...props}>
+      {children}
+    </h1>
+  );
+});
+
+export const h2: React.ElementType = memo(({ children, ...props }: TParagraphProps) => {
+  return (
+    <h2 className="mb-2 mt-4 text-2xl font-bold" {...props}>
+      {children}
+    </h2>
+  );
+});
+
+export const h3: React.ElementType = memo(({ children, ...props }: TParagraphProps) => {
+  return (
+    <h3 className="mb-1 mt-3 text-xl font-bold" {...props}>
+      {children}
+    </h3>
+  );
+});
+
+export const ol: React.ElementType = memo(({ children, ...props }: TParagraphProps) => {
+  return (
+    <ol className="ml-6 list-decimal" {...props}>
+      {children}
+    </ol>
+  );
+});
+
+export const ul: React.ElementType = memo(({ children, ...props }: TParagraphProps) => {
+  return (
+    <ul className="ml-6 list-disc" {...props}>
+      {children}
+    </ul>
+  );
+});
+
 const cursor = ' ';
 
 type TContentProps = {
@@ -234,6 +274,11 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
               code,
               a,
               p,
+              h1,
+              h2,
+              h3,
+              ol,
+              ul,
               artifact: Artifact,
             } as {
               [nodeType: string]: React.ElementType;

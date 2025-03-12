@@ -1,7 +1,8 @@
-import { useState, useMemo, memo, useCallback } from 'react';
+import React, { useState, useMemo, memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Atom, ChevronDown } from 'lucide-react';
 import type { MouseEvent, FC } from 'react';
+import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -21,12 +22,18 @@ const CONTENT_STYLES = {
 } as const;
 
 export const ThinkingContent: FC<{ children: React.ReactNode; isPart?: boolean }> = memo(
-  ({ isPart, children }) => (
-    <div className={CONTENT_STYLES.wrapper}>
-      <div className={isPart === true ? CONTENT_STYLES.partBorder : CONTENT_STYLES.border} />
-      <p className={CONTENT_STYLES.text}>{children}</p>
-    </div>
-  ),
+  ({ isPart, children }) => {
+    return (
+      <div className={CONTENT_STYLES.wrapper}>
+        <div className={isPart === true ? CONTENT_STYLES.partBorder : CONTENT_STYLES.border} />
+        {typeof children === 'string' ? (
+          <Markdown content={children} isLatestMessage={false} />
+        ) : (
+          <p className={CONTENT_STYLES.text}>{children}</p>
+        )}
+      </div>
+    );
+  },
 );
 
 export const ThinkingButton = memo(
