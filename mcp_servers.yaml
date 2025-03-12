@@ -48,4 +48,17 @@ mcpServers:
       - mcp-timeserver
     env:
       PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
+
+  # MCP Server for AWS Knowledge Base Retrieval
+  aws-kb-retrieval:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-aws-kb-retrieval"
+    env:
+      AWS_ACCESS_KEY_ID: "YOUR_ACCESS_KEY_HERE"
+      AWS_SECRET_ACCESS_KEY: "YOUR_SECRET_ACCESS_KEY_HERE"
+      AWS_REGION: "YOUR_AWS_REGION_HERE"
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   
