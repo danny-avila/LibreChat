@@ -1,7 +1,7 @@
 variable "principals_readonly_access_all" {
   description = "The list of principals that have readonly access to the ECR repositories"
-  type        = list(string)
-  default     = []
+  type        = map(string)
+  default     = {}
 }
 
 variable "principals_push_access_all" {

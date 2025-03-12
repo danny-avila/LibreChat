@@ -20,7 +20,7 @@ module "ecr" {
   source                     = "cloudposse/ecr/aws"
   version                    = "0.39.0"
   for_each                   = toset(var.ecr_repository_names)
-  principals_readonly_access = var.principals_readonly_access_all
+  principals_readonly_access = values(var.principals_readonly_access_all)
   principals_push_access     = var.principals_push_access_all
   image_names                = [each.value]
   image_tag_mutability       = "MUTABLE"
@@ -40,27 +40,32 @@ data "aws_iam_policy_document" "cache_bucket" {
 }
 
 data "aws_iam_policy_document" "librechat_config" {
+  for_each = var.principals_readonly_access_all
   statement {
-    sid    = "Statement1"
+    sid    = each.key
     effect = "Allow"
 
     principals {
       type        = "AWS"
-      identifiers = local.principals
+      identifiers = [each.value]
     }
 
-    actions   = local.s3.config.actions
-    resources = local.s3.config.resources
+    actions = local.s3.config.actions
+    resources = [
+      "${module.config_bucket.bucket_arn}/${each.key}",
+      "${module.config_bucket.bucket_arn}/${each.key}/*"
+    ]
   }
 }
 
 module "config_bucket" {
+
   source  = "cloudposse/s3-bucket/aws"
   version = "4.10.0"
   name    = "config"
 
   s3_object_ownership     = "BucketOwnerEnforced"
-  source_policy_documents = [data.aws_iam_policy_document.librechat_config.json]
+  source_policy_documents = [for doc in data.aws_iam_policy_document.librechat_config : doc.json]
 
   versioning_enabled = true
   context            = module.label.context
