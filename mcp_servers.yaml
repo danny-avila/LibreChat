@@ -6,3 +6,16 @@ endpoints:
   agents:
     # (optional) Maximum recursion depth for agents, defaults to 25
     recursionLimit: 50
+
+
+# MCP Servers Configuration
+mcpServers:
+  brave:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-brave-search"
+    env:
+      BRAVE_API_KEY: "<YOUR_BRAVE_API_KEY>"
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
