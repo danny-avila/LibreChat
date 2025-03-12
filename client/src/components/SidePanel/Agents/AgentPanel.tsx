@@ -21,6 +21,7 @@ import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
+import AgentFooter from './AgentFooter';
 import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
@@ -281,6 +282,9 @@ export default function AgentPanel({
             endpointsConfig={endpointsConfig}
             setCurrentAgentId={setCurrentAgentId}
           />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && (
+          <AgentFooter setCurrentAgentId={setCurrentAgentId} />
         )}
       </form>
     </FormProvider>
