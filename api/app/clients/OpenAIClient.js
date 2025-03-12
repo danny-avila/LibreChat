@@ -1272,6 +1272,29 @@ ${convo}
         });
       }
 
+      /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
+      if (modelOptions.model.includes('gpt-4o-search')) {
+        const searchExcludeParams = [
+          'frequency_penalty',
+          'presence_penalty',
+          'temperature',
+          'top_p',
+          'top_k',
+          'stop',
+          'logit_bias',
+          'seed',
+          'response_format',
+          'n',
+          'logprobs',
+          'user',
+        ];
+
+        this.options.dropParams = this.options.dropParams || [];
+        this.options.dropParams = [
+          ...new Set([...this.options.dropParams, ...searchExcludeParams]),
+        ];
+      }
+
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
