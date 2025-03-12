@@ -7,7 +7,7 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
-const { Callback, createMetadataAggregator } = require('@librechat/agents');
+const { GraphEvents, Callback, createMetadataAggregator } = require('@librechat/agents');
 const {
   Constants,
   VisionModes,
@@ -33,8 +33,8 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
+const { logger, sendEvent } = require('~/config');
 const { createRun } = require('./run');
-const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
 /** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
@@ -717,6 +717,21 @@ class AgentClient extends BaseClient {
         }
 
         if (contentData.length) {
+          const agentUpdate = {
+            type: ContentTypes.AGENT_UPDATE,
+            [ContentTypes.AGENT_UPDATE]: {
+              index: contentData.length,
+              runId: this.responseMessageId,
+              agentId: agent.id,
+            },
+          };
+          const streamData = {
+            event: GraphEvents.ON_AGENT_UPDATE,
+            data: agentUpdate,
+          };
+          this.options.aggregateContent(streamData);
+          sendEvent(this.options.res, streamData);
+          contentData.push(agentUpdate);
           run.Graph.contentData = contentData;
         }
 

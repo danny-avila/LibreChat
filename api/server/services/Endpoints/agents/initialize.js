@@ -275,11 +275,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
+    res,
     sender,
     contentParts,
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    aggregateContent,
     artifactPromises,
     agent: primaryConfig,
     spec: endpointOption.spec,

@@ -38,6 +38,8 @@ const Part = memo(({ part, isSubmitting, attachments, showCursor, isCreatedByUse
         className="my-2"
       />
     );
+  } else if (part.type === ContentTypes.AGENT_UPDATE) {
+    return <div className="my-2">{part[ContentTypes.AGENT_UPDATE]?.agentId}</div>;
   } else if (part.type === ContentTypes.TEXT) {
     const text = typeof part.text === 'string' ? part.text : part.text.value;
 

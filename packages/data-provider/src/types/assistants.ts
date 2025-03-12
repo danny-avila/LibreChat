@@ -455,6 +455,7 @@ export type TMessageContentParts =
         PartMetadata;
     }
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata }
+  | Agents.AgentUpdate
   | Agents.MessageContentImageUrl;
 
 export type StreamContentData = TMessageContentParts & {

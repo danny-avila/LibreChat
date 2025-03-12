@@ -45,7 +45,7 @@
     "@langchain/google-genai": "^0.1.9",
     "@langchain/google-vertexai": "^0.2.0",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.2.0",
+    "@librechat/agents": "^2.2.1",
     "@librechat/data-schemas": "*",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
