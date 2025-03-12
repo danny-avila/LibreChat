@@ -64,8 +64,8 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
               <Icon endpoint="agents" agentName={getAgentDetails(currentAgentId)?.name ?? ''} iconURL={getAgentDetails(currentAgentId)?.avatar?.filepath} isCreatedByUser={false} />
             </div>
-            <div className="truncate text-text-primary font-medium">
-              {getAgentDetails(currentAgentId)?.name} (Current Agent)
+            <div className="text-text-primary font-medium">
+              {getAgentDetails(currentAgentId)?.name}
             </div>
           </div>
         </div>
