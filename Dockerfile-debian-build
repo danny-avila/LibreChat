@@ -1,0 +1,124 @@
+# Base image: Node.js 20 on Debian Bookworm
+# This image already includes Python, which we need for our application
+FROM node:20-bookworm
+
+# Install system dependencies:
+# - Python pip and venv for Python package management
+# - curl and git for downloading and version control
+# - Browsers and their dependencies for testing/rendering
+# - Additional system libraries required by the application
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-venv \
+    curl \
+    git \
+    # Browser packages for Playwright/automated testing
+    chromium \
+    firefox-esr \
+    # X11 and graphics dependencies
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    # Audio and UI dependencies
+    libasound2 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgtk-3-0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libnss3 \
+    libxss1 \
+    # Font packages for proper text rendering
+    fonts-noto \
+    fonts-noto-color-emoji \
+    fonts-freefont-ttf \
+    # Media and content processing libraries
+    libwebp-dev \
+    libenchant-2-2 \
+    libvpx-dev \
+    libwoff-dev \
+    libopus0 \
+    libgudev-1.0-0 \
+    libsecret-1-0 \
+    libhyphen0 \
+    libgdk-pixbuf2.0-0 \
+    libegl1 \
+    libnotify4 \
+    libxslt1.1 \
+    libevent-2.1-7 \
+    libgles2 \
+    # Additional UI and multimedia dependencies
+    libxkbcommon0 \
+    libgstreamer-gl1.0-0 \
+    libgstreamer-plugins-bad1.0-0 \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    # Clean up package manager cache to reduce image size
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv (Python package installer, faster than pip)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh    
+
+# Set up working directory
+RUN mkdir -p /app
+WORKDIR /app
+
+# Copy application files
+COPY . .
+
+# Setup application:
+# - Create necessary files and directories
+# - Configure npm
+# - Install dependencies
+# - Build frontend
+# - Clean up unnecessary packages
+RUN \
+    # Create empty .env file if it doesn't exist
+    touch .env ; \
+    # Create directories for volume mounts
+    mkdir -p /app/client/public/images /app/api/logs ; \
+    # Configure npm retry settings for better reliability during installation
+    npm config set fetch-retry-maxtimeout 600000 ; \
+    npm config set fetch-retries 5 ; \
+    npm config set fetch-retry-mintimeout 15000 ; \
+    # Install dependencies
+    npm install --no-audit; \
+    # Build frontend with increased memory allocation
+    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
+    # Remove development dependencies
+    npm prune --production; \
+    # Clear npm cache
+    npm cache clean --force
+
+# Install Playwright (browser automation tool) and its dependencies
+RUN  npx -y playwright install-deps
+RUN  npx -y playwright install
+
+# Create directories for application data and logs
+RUN mkdir -p /app/client/public/images /app/api/logs
+
+# Configure container runtime
+EXPOSE 3080  # Expose API port
+# Environment variables for production setup
+ENV NODE_ENV=production \
+    PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0
+
+# Start the backend server
+CMD ["npm", "run", "backend"]
+
+# Below is an optional nginx configuration for serving the client
+# Commented out as it's not currently in use
+# FROM nginx:stable-alpine AS nginx-client
+# WORKDIR /usr/share/nginx/html
+# COPY --from=node /app/client/dist /usr/share/nginx/html
+# COPY client/nginx.conf /etc/nginx/conf.d/default.conf
+# ENTRYPOINT ["nginx", "-g", "daemon off;"]
+ 
