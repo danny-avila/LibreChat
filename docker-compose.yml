@@ -33,7 +33,7 @@ services:
     restart: always
     user: "${UID}:${GID}"
     volumes:
-      - ./data-node:/data/db
+      - mongodb_data:/data/db
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
@@ -70,3 +70,4 @@ services:
 
 volumes:
   pgdata2:
+  mongodb_data:
