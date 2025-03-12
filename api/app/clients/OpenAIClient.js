@@ -1273,7 +1273,7 @@ ${convo}
       }
 
       /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
-      if (modelOptions.model.includes('gpt-4o-search')) {
+      if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
         const searchExcludeParams = [
           'frequency_penalty',
           'presence_penalty',
