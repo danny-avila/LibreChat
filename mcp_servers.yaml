@@ -39,3 +39,13 @@ mcpServers:
       - "@modelcontextprotocol/server-puppeteer"
     env:
       PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  # MCP-timeserver - Server for providing time-related functions and services
+  MCP-timeserver:
+    type: stdio
+    command: uvx
+    args:
+      - mcp-timeserver
+    env:
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
+  
