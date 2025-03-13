@@ -1,43 +1,44 @@
 <!DOCTYPE html>
 <html lang="en-US">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="theme-color" content="#171717" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="AICons - Interní AI nástroj společnosti E-Cons s implementací vlastního LLM" />
-    <title>AICons</title>
-    <link rel="shortcut icon" href="#" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png" />
-    <link rel="apple-touch-icon" href="/assets/apple-touch-icon-180x180.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-      }
-    </style>
-    <script>
-      const theme = localStorage.getItem('color-theme');
-      const loadingContainerStyle = document.createElement('style');
-      let backgroundColor;
 
-      if (theme === 'dark') {
-        backgroundColor = '#0d0d0d';
-      } else if (theme === 'light') {
-        backgroundColor = '#ffffff';
-      } else if (theme === 'system') {
-        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        backgroundColor = prefersDarkScheme ? '#0d0d0d' : '#ffffff';
-      } else {
-        backgroundColor = '#ffffff';
-      }
+<head>
+  <meta charset="utf-8" />
+  <meta name="theme-color" content="#171717" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="AICons - Interní AI nástroj společnosti E-Cons s implementací vlastního LLM" />
+  <title>AICons</title>
+  <link rel="shortcut icon" href="#" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon-180x180.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+  </style>
+  <script>
+    const theme = localStorage.getItem('color-theme');
+    const loadingContainerStyle = document.createElement('style');
+    let backgroundColor;
 
-      loadingContainerStyle.innerHTML = `
+    if (theme === 'dark') {
+      backgroundColor = '#0d0d0d';
+    } else if (theme === 'light') {
+      backgroundColor = '#ffffff';
+    } else if (theme === 'system') {
+      const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      backgroundColor = prefersDarkScheme ? '#0d0d0d' : '#ffffff';
+    } else {
+      backgroundColor = '#ffffff';
+    }
+
+    loadingContainerStyle.innerHTML = `
         #loading-container {
           display: flex;
           align-items: center;
@@ -46,13 +47,24 @@
           background-color: ${backgroundColor};
         }
       `;
-      document.head.appendChild(loadingContainerStyle);
-    </script>
-    <script defer type="module" src="/src/main.jsx"></script>
-  </head>
-  <body>
-    <div id="root">
-      <div id="loading-container"></div>
-    </div>
-  </body>
+    document.head.appendChild(loadingContainerStyle);
+  </script>
+  <script defer type="module" src="/src/main.jsx"></script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-CGQQ3P28GR"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+
+    gtag('config', 'G-CGQQ3P28GR');
+  </script>
+</head>
+
+<body>
+  <div id="root">
+    <div id="loading-container"></div>
+  </div>
+</body>
+
 </html>
