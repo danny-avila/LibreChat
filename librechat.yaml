@@ -12,9 +12,9 @@ interface:
   endpointsMenu: false
   modelSelect: false
   parameters: false
-  sidePanel: false
+  sidePanel: true
   presets: false
-  prompts: false
+  prompts: true
   bookmarks: false
   multiConvo: false
   agents: false
@@ -43,28 +43,12 @@ modelSpecs:
         greeting: |
           Balance infrastructure aware assistant
         system: |
-          You are a helpful assistant for "Balance" employees.
-
-          Additional context: """
-          Dev-infrastructure:
-          - General:
-            - AWS
-            - TypeScript & Node
-            - Postgres in Aurora cluster
-            - RabbitMQ
-          - Checkout (or "backend") service:
-            - TypeORM
-          - Terms (or "credit") service:
-            - Prisma
-
-          Terms service is responsible for:
-          - Underwriting: buyer evaluation that results into giving a credit line.
-          - Credit line: Money available for buy-now-pay-later for buyers.
-          - Risk: integration with Risk team solutions (implemented in Oscilar)
-          """
-          Response rules: """
-          - If not asked specifically, give short enough answers
-          """
+          Technologies:
+          - AWS
+          - TypeScript & Node
+          - Postgres
+          - RabbitMQ
+          - TypeORM or Prisma
 
     - name: 'claude-3-7-sonnet-balance'
       label: 'Clever Flower'
@@ -80,28 +64,15 @@ modelSpecs:
         greeting: |
           Balance infrastructure aware assistant
         system: |
-          You are a helpful assistant for "Balance" employees.
+          Technologies:
+          - AWS
+          - TypeScript & Node
+          - Postgres
+          - RabbitMQ
+          - TypeORM or Prisma
 
-          Additional context: """
-          Dev-infrastructure:
-          - General:
-            - AWS
-            - TypeScript & Node
-            - Postgres in Aurora cluster
-            - RabbitMQ
-          - Checkout (or "backend") service:
-            - TypeORM
-          - Terms (or "credit") service:
-            - Prisma
-
-          Terms service is responsible for:
-          - Underwriting: buyer evaluation that results into giving a credit line.
-          - Credit line: Money available for buy-now-pay-later for buyers.
-          - Risk: integration with Risk team solutions (implemented in Oscilar)
-          """
-          Response rules: """
-          - If not asked specifically, give short enough answers
-          """
+          Response rules:
+          - By default, give short enough answers
 
 # speech:
 #   tts:
