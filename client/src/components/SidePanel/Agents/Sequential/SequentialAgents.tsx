@@ -1,4 +1,5 @@
 import { X, ChevronDown, Settings } from 'lucide-react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm, OptionWithIcon } from '~/common';
@@ -28,7 +29,7 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
       .map((agent) => ({
         label: agent?.name || '',
         value: agent?.id,
-        icon: <Icon endpoint="agents" agentName={agent?.name ?? ''} iconURL={agent?.avatar?.filepath} isCreatedByUser={false}/>,
+        icon: <Icon endpoint={EModelEndpoint.agents} agentName={agent?.name ?? ''} iconURL={agent?.avatar?.filepath} isCreatedByUser={false}/>,
       } as OptionWithIcon)), [agents, currentAgentId]);
 
   const getAgentDetails = useCallback((id: string) => agentsMap[id], [agentsMap]);
@@ -62,7 +63,7 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
         <div className="flex justify-between items-center rounded-md py-2 px-3 bg-surface-primary-contrast border border-border-medium">
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-              <Icon endpoint="agents" agentName={getAgentDetails(currentAgentId)?.name ?? ''} iconURL={getAgentDetails(currentAgentId)?.avatar?.filepath} isCreatedByUser={false} />
+              <Icon endpoint={EModelEndpoint.agents} agentName={getAgentDetails(currentAgentId)?.name ?? ''} iconURL={getAgentDetails(currentAgentId)?.avatar?.filepath} isCreatedByUser={false} />
             </div>
             <div className="text-text-primary font-medium">
               {getAgentDetails(currentAgentId)?.name}
@@ -86,7 +87,7 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
                 displayValue={getAgentDetails(agentId)?.name ?? ''}
                 SelectIcon={
                   <Icon
-                    endpoint="agents"
+                    endpoint={EModelEndpoint.agents}
                     isCreatedByUser={false}
                     agentName={getAgentDetails(agentId)?.name ?? ''}
                     iconURL={getAgentDetails(agentId)?.avatar?.filepath}
