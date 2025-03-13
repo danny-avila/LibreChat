@@ -204,8 +204,7 @@ const initializeAgentOptions = async ({
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
-      4000,
+      (getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ?? 4000) * 0.9,
   };
 };
 
