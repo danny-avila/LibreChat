@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState, useEffect } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -58,15 +58,31 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       return startupConfig.interface.customWelcome;
     }
 
-    const hours = new Date().getHours();
+    const now = new Date();
+    const hours = now.getHours();
 
-    if (hours < 12) {
+    const dayOfWeek = now.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    // Early morning (midnight to 4:59 AM)
+    if (hours >= 0 && hours < 5) {
+      return localize('com_ui_late_night');
+    }
+    // Morning (6 AM to 11:59 AM)
+    else if (hours < 12) {
+      if (isWeekend) {
+        return localize('com_ui_weekend_morning');
+      }
       return localize('com_ui_good_morning');
     }
-    if (hours < 18) {
+    // Afternoon (12 PM to 4:59 PM)
+    else if (hours < 17) {
       return localize('com_ui_good_afternoon');
     }
-    return localize('com_ui_good_evening');
+    // Evening (5 PM to 8:59 PM)
+    else {
+      return localize('com_ui_good_evening');
+    }
   }, [localize, startupConfig?.interface?.customWelcome]);
 
   return (
@@ -95,12 +111,20 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               </TooltipAnchor>
             )}
           </div>
-          {name ? (
+          {((isAgent || isAssistant) && name) || name ? (
             <div className="flex flex-col items-center gap-0 p-2">
-              <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
+              <SplitText
+                text={name}
+                className="text-4xl font-medium text-text-primary"
+                delay={50}
+                textAlign="center"
+                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
+                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+                easing="easeOutCubic"
+                threshold={0}
+                rootMargin="0px"
+              />
             </div>
-          ) : isAgent || isAssistant ? (
-            <div className="text-center text-3xl font-medium text-text-primary">{name}</div>
           ) : (
             <SplitText
               text={getGreeting() + (user?.name ? ', ' + user.name : '')}
@@ -110,18 +134,18 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
               animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
               easing="easeOutCubic"
-              threshold={0.2}
-              rootMargin="-50px"
+              threshold={0}
+              rootMargin="0px"
             />
           )}
         </div>
         {(isAgent || isAssistant) && description ? (
-          <div className="mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+          <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
             {description}
           </div>
         ) : (
           typeof startupConfig?.interface?.customWelcome === 'string' && (
-            <div className="mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+            <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
               {startupConfig?.interface?.customWelcome}
             </div>
           )

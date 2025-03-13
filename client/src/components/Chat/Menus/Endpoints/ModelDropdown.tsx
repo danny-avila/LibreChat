@@ -481,12 +481,15 @@ export function ModelDropdown(): JSX.Element {
     ],
   );
 
-  const handleOpenKeyDialog = useCallback((ep: EModelEndpoint, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setKeyDialogEndpoint(ep);
-    setKeyDialogOpen(true);
-  }, []);
+  const handleOpenKeyDialog = useCallback(
+    (ep: EModelEndpoint, e: React.MouseEvent | React.KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setKeyDialogEndpoint(ep);
+      setKeyDialogOpen(true);
+    },
+    [],
+  );
 
   const currentEndpointItem = mappedEndpoints.find((item) => item.value === endpoint);
   const hasModelsOnCurrent = currentEndpointItem?.hasModels;
@@ -503,11 +506,18 @@ export function ModelDropdown(): JSX.Element {
     : 'Select an endpoint';
 
   useEffect(() => {
+    let timer: NodeJS.Timeout;
     if (menuOpen && endpoint && currentEndpointItem?.hasModels) {
-      setOpenDropdownFor(endpoint);
+      timer = setTimeout(() => {
+        setOpenDropdownFor(endpoint);
+      }, 50);
     } else if (!menuOpen) {
       setOpenDropdownFor(null);
     }
+
+    return () => {
+      clearTimeout(timer);
+    };
   }, [menuOpen, endpoint, currentEndpointItem]);
 
   return (
@@ -524,8 +534,19 @@ export function ModelDropdown(): JSX.Element {
         label={
           <div
             onClick={() => setMenuOpen(!menuOpen)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setMenuOpen(!menuOpen);
+              }
+            }}
+            tabIndex={0}
+            role="button"
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+            aria-label={`Select model: ${displayValue}`}
             className={cn(
-              'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary',
+              'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
               menuOpen
                 ? 'bg-surface-tertiary hover:bg-surface-tertiary'
                 : 'bg-surface-secondary hover:bg-surface-tertiary',
@@ -545,6 +566,7 @@ export function ModelDropdown(): JSX.Element {
                     agentName={agentsMap[selectedAgentId]?.name || ''}
                     iconURL={agentsMap[selectedAgentId]?.avatar?.filepath}
                     className="rounded-full"
+                    aria-hidden="true"
                   />
                 ) : (
                   currentEndpointItem.icon
@@ -557,13 +579,17 @@ export function ModelDropdown(): JSX.Element {
       >
         <div className="py-1.5">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
+            <Search
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary"
+              aria-hidden="true"
+            />
             <input
               type="text"
               placeholder="Search endpoints and models"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-md bg-surface-secondary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
+              className="w-full rounded-md bg-surface-secondary py-2 pl-9 pr-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              aria-label="Search endpoints and models"
             />
           </div>
         </div>
@@ -571,23 +597,37 @@ export function ModelDropdown(): JSX.Element {
           ep.hasModels ? (
             <Menu
               key={ep.value}
-              className="animate-popover-left"
+              className="animate-popover-left transition-opacity duration-200 ease-in-out"
               open={openDropdownFor === ep.value}
               onOpenChange={(open) => {
                 if (open) {
                   setOpenDropdownFor(ep.value);
-                } else {
-                  // Only close if this specific dropdown is being manually closed
                 }
               }}
               label={
                 <div
                   onClick={() => handleEndpointSelect(ep.value, true)}
-                  className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleEndpointSelect(ep.value, true);
+                    } else if (e.key === 'ArrowRight') {
+                      e.preventDefault();
+                      setOpenDropdownFor(ep.value);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="menuitem"
+                  aria-haspopup="true"
+                  aria-expanded={openDropdownFor === ep.value}
+                  className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 >
                   <div className="flex items-center">
                     {ep.icon && (
-                      <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
+                      <div
+                        className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary"
+                        aria-hidden="true"
+                      >
                         {ep.icon}
                       </div>
                     )}
@@ -597,13 +637,21 @@ export function ModelDropdown(): JSX.Element {
                     {endpointRequiresUserKey(ep.value) && (
                       <button
                         onClick={(e) => handleOpenKeyDialog(ep.value as EModelEndpoint, e)}
-                        className="mr-2 rounded p-1 hover:bg-surface-tertiary"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleOpenKeyDialog(ep.value as EModelEndpoint, e);
+                          }
+                          // Stop propagation to prevent parent handlers from firing
+                          e.stopPropagation();
+                        }}
+                        className="mr-2 rounded p-1 hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                         aria-label={`${localize('com_endpoint_config_key')} for ${ep.label}`}
                       >
-                        <Settings className="h-4 w-4 text-text-secondary" />
+                        <Settings className="h-4 w-4 text-text-secondary" aria-hidden="true" />
                       </button>
                     )}
-                    <ChevronRight className="h-4 w-4 text-text-secondary" />
+                    <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
                   </div>
                 </div>
               }
@@ -613,14 +661,35 @@ export function ModelDropdown(): JSX.Element {
                   <MenuItem
                     key={agentId}
                     onClick={() => handleModelSelect(ep.value as EModelEndpoint, agentId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleModelSelect(ep.value as EModelEndpoint, agentId);
+                      }
+                      if (e.key === 'ArrowLeft') {
+                        // Add navigation back to main menu
+                        e.preventDefault();
+                        setOpenDropdownFor(null);
+                      }
+                    }}
+                    role="menuitem"
+                    tabIndex={0}
+                    aria-current={
+                      selectedAgentId === agentId && conversation?.endpoint === ep.value
+                        ? 'true'
+                        : undefined
+                    }
                     className={cn(
-                      'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary',
+                      'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
                       selectedAgentId === agentId && conversation?.endpoint === ep.value
                         ? 'bg-surface-tertiary'
                         : '',
                     )}
                   >
-                    <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+                    <div
+                      className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full"
+                      aria-hidden="true"
+                    >
                       <Icon
                         isCreatedByUser={false}
                         endpoint={ep.value}
@@ -636,14 +705,35 @@ export function ModelDropdown(): JSX.Element {
                     <MenuItem
                       key={assistantId}
                       onClick={() => handleModelSelect(ep.value as EModelEndpoint, assistantId)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleModelSelect(ep.value as EModelEndpoint, assistantId);
+                        }
+                        if (e.key === 'ArrowLeft') {
+                          // Add navigation back to main menu
+                          e.preventDefault();
+                          setOpenDropdownFor(null);
+                        }
+                      }}
+                      role="menuitem"
+                      tabIndex={0}
+                      aria-current={
+                        selectedAssistantId === assistantId && conversation?.endpoint === ep.value
+                          ? 'true'
+                          : undefined
+                      }
                       className={cn(
-                        'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary',
+                        'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
                         selectedAssistantId === assistantId && conversation?.endpoint === ep.value
                           ? 'bg-surface-tertiary'
                           : '',
                       )}
                     >
-                      <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+                      <div
+                        className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full"
+                        aria-hidden="true"
+                      >
                         <Icon
                           isCreatedByUser={false}
                           endpoint={ep.value}
@@ -661,8 +751,26 @@ export function ModelDropdown(): JSX.Element {
                     <MenuItem
                       key={modelName}
                       onClick={() => handleModelSelect(ep.value as EModelEndpoint, modelName)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleModelSelect(ep.value as EModelEndpoint, modelName);
+                        }
+                        if (e.key === 'ArrowLeft') {
+                          // Add navigation back to main menu
+                          e.preventDefault();
+                          setOpenDropdownFor(null);
+                        }
+                      }}
+                      role="menuitem"
+                      tabIndex={0}
+                      aria-current={
+                        conversation?.model === modelName && conversation?.endpoint === ep.value
+                          ? 'true'
+                          : undefined
+                      }
                       className={cn(
-                        'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary',
+                        'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
                         conversation?.model === modelName && conversation?.endpoint === ep.value
                           ? 'bg-surface-tertiary'
                           : '',
@@ -676,11 +784,25 @@ export function ModelDropdown(): JSX.Element {
             <MenuItem
               key={ep.value}
               onClick={() => handleEndpointSelect(ep.value, false)}
-              className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleEndpointSelect(ep.value, false);
+                }
+              }}
+              role="menuitem"
+              tabIndex={0}
+              aria-current={
+                conversation?.endpoint === ep.value && !hasModelsOnCurrent ? 'true' : undefined
+              }
+              className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <div className="flex items-center">
                 {ep.icon && (
-                  <div className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
+                  <div
+                    className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary"
+                    aria-hidden="true"
+                  >
                     {ep.icon}
                   </div>
                 )}
@@ -689,10 +811,17 @@ export function ModelDropdown(): JSX.Element {
               {endpointRequiresUserKey(ep.value) && (
                 <button
                   onClick={(e) => handleOpenKeyDialog(ep.value as EModelEndpoint, e)}
-                  className="rounded p-1 hover:bg-surface-tertiary"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleOpenKeyDialog(ep.value as EModelEndpoint, e);
+                    }
+                    e.stopPropagation();
+                  }}
+                  className="rounded p-1 hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   aria-label={`${localize('com_endpoint_config_key')} for ${ep.label}`}
                 >
-                  <Settings className="h-4 w-4 text-text-secondary" />
+                  <Settings className="h-4 w-4 text-text-secondary" aria-hidden="true" />
                 </button>
               )}
             </MenuItem>
