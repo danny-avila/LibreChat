@@ -156,18 +156,9 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     needs:
-      - tests_frontend_ubuntu
+      - detect-unused-packages
     steps:
-      - name: Check scripts success
-        run: '[[ ${{ needs.extract-used-scripts.result }} == "success" ]] || exit 1'
-      - name: Check used-code success
-        run: '[[ ${{ needs.extract-used-code.result }} == "success" ]] || exit 1'
-      - name: Check root success
-        run: '[[ ${{ needs.check-root.result }} == "success" ]] || exit 1'
-      - name: Check client success
-        run: '[[ ${{ needs.check-client.result }} == "success" ]] || exit 1'
-      - name: Check api success
-        run: '[[ ${{ needs.check-api.result }} == "success" ]] || exit 1'
+      - name: Check job success
+        run: '[[ ${{ needs.detect-unused-packages.result }} == "success" ]] || exit 1'
       - name: Announce success
         run: echo "Test is successful"
-

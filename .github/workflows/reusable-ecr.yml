@@ -1,0 +1,189 @@
+# TODO: move this to a shared reusable workflows repo
+
+name: ECR docker build
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      aws-region:
+        required: false
+        type: string
+        default: 'eu-west-1'
+      aws-account-id:
+        required: true
+        type: string
+      aws-ecr-repo:
+        required: true
+        type: string
+      push-to-ecr:
+        required: false
+        type: string
+        default: 'false'
+      build-matrix:
+        required: false
+        type: string
+        default: '{"include":[{"target":"api-build","file":"Dockerfile.multi","image_name":"api"},{"target":"node","file":"Dockerfile","image_name":"frontend"}]}'
+      repository:
+        required: false
+        type: string
+        default: ${{ github.repository }}
+      ref:
+        required: false
+        type: string
+        default: ${{ github.ref }}
+      s3-upload:
+        required: false
+        type: string
+        default: 'false'
+    secrets:
+      s3-cache-bucket:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ inputs.aws-region }}
+  AWS_ACCOUNT_ID: ${{ inputs.aws-account-id }}
+  ECR_REPO: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com/genai
+  SHOULD_PUSH_TO_ECR: ${{ inputs.push-to-ecr }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(inputs.build-matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+
+      - name: Debug
+        id: debug
+        run: |
+          echo "LABELS: ${{ toJSON(github.event.pull_request.labels) }}"
+          echo "IS_PR: ${{ env.IS_PR }}"
+          echo "SHOULD_PUSH_TO_ECR: ${{ env.SHOULD_PUSH_TO_ECR }}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-oidc-genai
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Genrate Short SHA
+        id: set_shortSHA
+        run: |
+          calculatedSHA=$(git rev-parse --short ${{ github.sha }})
+          echo "SHORT_SHA=$calculatedSHA" >> $GITHUB_ENV
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          cat .env
+
+      - name: Setup Docker layer cache
+        uses: runs-on/cache@v4
+        env:
+          RUNS_ON_S3_BUCKET_CACHE: ${{ secrets.s3-cache-bucket }}
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ matrix.image_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ matrix.image_name }}-
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          load: ${{ matrix.image_name == 'frontend' && inputs.s3-upload == 'true' }}
+          push: ${{ env.SHOULD_PUSH_TO_ECR }}
+          tags: |
+            ${{ env.ECR_REPO }}/${{ matrix.image_name }}:${{ env.SHORT_SHA }}
+          platforms: linux/amd64
+          target: ${{ matrix.target }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # Move cache to avoid unbounded cache growth
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: List Docker images
+        run: docker images
+
+      - name: Extract dist directory
+        if: ${{ matrix.image_name == 'frontend' && inputs.s3-upload == 'true' }}
+        run: |
+          IMAGE_TAG="${{ env.ECR_REPO }}/${{ matrix.image_name }}:${{ env.SHORT_SHA }}"
+          echo "Using image: $IMAGE_TAG"
+          docker image inspect $IMAGE_TAG
+          CONTAINER_ID=$(docker create $IMAGE_TAG)
+          echo "Created container: $CONTAINER_ID"
+          mkdir -p /tmp/extracted-dist
+          docker cp $CONTAINER_ID:/app/client/dist /tmp/extracted-dist/
+          ls -al /tmp/extracted-dist
+          docker rm $CONTAINER_ID
+          echo "Extracted files:"
+          ls -la /tmp/extracted-dist/dist/
+          echo "Successfully extracted dist directory from the frontend image"
+
+      - name: Upload dist as artifact
+        if: ${{ matrix.image_name == 'frontend' && inputs.s3-upload == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: /tmp/extracted-dist/dist/
+          retention-days: 1
+
+  upload-config:
+    name: Upload styling to S3
+    needs: build
+    if: ${{ inputs.s3-upload == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      SHARED_CONFIG_BUCKET: genai-shared-config
+    permissions:
+      id-token: write # Required for AWS authentication
+      contents: read
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: /tmp/dist
+
+      - name: Zip dist directory
+        run: |
+          cd /tmp/dist
+          zip -r frontend-dist.zip .
+          echo "Created /tmp/dist/frontend-dist.zip"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-oidc-genai
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp /tmp/dist/frontend-dist.zip s3://${{ env.SHARED_CONFIG_BUCKET }}/frontend/dist/${{ github.sha }}/dist.zip"
+          aws s3 cp /tmp/dist/frontend-dist.zip s3://${{ env.SHARED_CONFIG_BUCKET }}/frontend/dist/latest/dist.zip"

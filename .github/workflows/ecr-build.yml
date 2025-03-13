@@ -1,0 +1,47 @@
+name: ECR docker build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - Dockerfile.multi
+      - 'api/**'
+      - 'client/**'
+      - 'packages/**'
+      - '.github/**'
+
+  merge_group:
+    branches:
+      - main
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read
+
+concurrency:
+  group: ecr-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  docker-build:
+    uses: ./.github/workflows/reusable-ecr.yml
+    with:
+      environment: dev
+      aws-account-id: ${{ vars.AWS_ACCOUNT_ID }}
+      aws-ecr-repo: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/genai
+      push-to-ecr: ${{ contains(github.event.pull_request.labels.*.name, 'ecr-push') || github.event_name == 'merge_group' }}
+    secrets:
+      s3-cache-bucket: ${{ secrets.RUNS_ON_S3_BUCKET_CACHE }}
+
+  success:
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - docker-build
+    steps:
+      - name: Check build success
+        run: '[[ ${{ needs.docker-build.result }} == "success" ]] || exit 1'
+      - name: Announce success
+        run: echo "Build is successful"
