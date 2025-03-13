@@ -71,7 +71,9 @@
     "@modelcontextprotocol/sdk": "^1.6.1",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "playwright": "^1.51.0",
+    "puppeteer": "^24.4.0"
   },
   "peerDependencies": {
     "keyv": "^4.5.4"
