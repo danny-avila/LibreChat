@@ -140,6 +140,14 @@ export default defineConfig({
           if (assetInfo.names && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)) {
             return 'assets/fonts/[name][extname]';
           }
+          if (
+            assetInfo.names &&
+            /(logo.svg|favicon-12x12.png|favicon-32x32.png|apple-touch-icon-180x180.png)$/.test(
+              assetInfo.names,
+            )
+          ) {
+            return 'assets/[name][extname]';
+          }
           return 'assets/[name].[hash][extname]';
         },
       },
