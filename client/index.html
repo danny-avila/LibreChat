@@ -29,6 +29,8 @@
       }
     </style>
     <script>
+      // APRÓ: Hardcode the color theme to light mode
+      localStorage.setItem('color-theme', 'light');
       const theme = localStorage.getItem('color-theme');
       const loadingContainerStyle = document.createElement('style');
       let backgroundColor;
