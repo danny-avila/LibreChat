@@ -1212,12 +1212,12 @@ button {
 .btn-primary {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
+  background-color: #F98C10;
   color: rgba(255, 255, 255, var(--tw-text-opacity));
 }
 .btn-primary:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(26, 127, 100, var(--tw-bg-opacity));
+  background-color: #E6820F;
 }
 .btn-primary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
