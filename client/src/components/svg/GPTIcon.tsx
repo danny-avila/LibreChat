@@ -12,7 +12,7 @@ export default function GPTIcon({
   const width = size;
 
   return (
-    <svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width={width} height={height} viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
       <mask id="path-1-outside-1_1_6" maskUnits="userSpaceOnUse" x="3" y="3" width="54" height="54" fill="black">
         <rect fill="white" x="3" y="3" width="54" height="54" />
         <path fill-rule="evenodd" clip-rule="evenodd" d="M52.7165 25.9135C52.9366 21.5833 46.2733 19.2567 46.9015 19.539C54.7751 23.0579 57.5326 31.334 31.7315 29.0366C30.9115 28.9636 30.6656 31.5933 31.3293 31.6512C36.6039 32.1175 52.4597 30.9738 52.7165 25.9135Z" />
@@ -66,6 +66,7 @@ export default function GPTIcon({
       <path fill-rule="evenodd" clip-rule="evenodd" d="M37.2492 34.2952C39.2711 33.3047 54.5987 18.4659 47.0793 11.7393C46.1097 10.872 44.9089 10.3197 43.7548 9.96801C43.0435 9.73316 42.3341 9.58809 41.9157 9.51367C41.8792 9.50716 41.8407 9.50006 41.8043 9.49351C41.75 9.48438 41.7036 9.47627 41.6644 9.4713C41.6588 9.4709 41.6544 9.4697 41.6488 9.4693C41.5767 9.45763 41.5375 9.45267 41.5375 9.45267C40.8968 9.36114 40.2749 9.33164 39.7202 9.35296C39.6991 9.3541 39.6806 9.35362 39.6652 9.35522C39.8716 9.35404 40.6115 9.34185 41.5909 9.49863C42.151 9.58875 42.7658 9.73677 43.1923 9.85744C43.7799 10.0246 44.3462 10.2602 44.8702 10.5743C48.8235 12.9399 50.1363 19.1589 34.7538 32.8953C34.3928 33.2188 35.9655 34.9258 37.2514 34.2958L37.2492 34.2952Z" stroke="black" stroke-width="3.93295" stroke-linejoin="round" mask="url(#path-1-outside-1_1_6)" />
       <circle cx="30.3817" cy="30.3817" r="11.3817" fill="white" />
     </svg>
+
     // <svg
     //   width={width}
     //   height={height}
