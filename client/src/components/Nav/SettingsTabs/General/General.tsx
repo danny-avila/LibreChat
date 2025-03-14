@@ -119,9 +119,10 @@ function General() {
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <div className="pb-3">
+      {/* Apro only uses the customer specific theme, dark theme is not available. */}
+      {/* <div className="pb-3">
         <ThemeSelector theme={theme} onChange={changeTheme} />
-      </div>
+      </div> */}
       <div className="pb-3">
         <LangSelector langcode={langcode} onChange={changeLang} />
       </div>

@@ -29,3 +29,32 @@ docker compose up
 ## Scripts
 
 In the [./scripts/](./scripts/) folder, you will find a few scripts to validate that your Bedrock Agents work.
+
+## Deployment
+
+### Branding
+
+Branding for customers should be as follows:
+
+1. Favicon files uploaded into `client/public/assets` folder:
+
+   - favicon-16x16.png
+   - favicon-32x32.png
+
+2. Company logo uploaded into `client/public/assets` folder:
+
+   - logo.svg
+
+3. Branding colors defined in `client/public/assets/branding.css`
+
+```css
+:root {
+  /* BRAND COLORS START */
+  --primary: #121212;
+  --primary-lighter: #6737f5;
+  --background-lighter: #f1f9ff;
+  --text-on-dark: #ffffff;
+  --highlight: #d1c3fc;
+  /* BRAND COLORS END */
+}
+```

@@ -28,7 +28,7 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <LiveAnnouncer>
-          <ThemeProvider>
+          <ThemeProvider initialTheme={'light'}>
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>

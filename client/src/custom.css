@@ -1,0 +1,72 @@
+:root {
+  --presentation: var(--background-lighter);
+  --text-primary: var(--primary);
+  --text-secondary: var(--text-on-dark);
+  --text-secondary-alt: var(--text-on-dark);
+  --text-tertiary: var(--text-on-dark);
+  --ring-primary: var(--white);
+  --surface-active-alt: var(--primary-lighter);
+  --surface-hover: var(--highlight);
+  --surface-primary-alt: var(--primary);
+  --surface-tertiary: var(--white);
+  --border-xheavy: var(--white);
+  --switch-unchecked: var(--primary-lighter);
+}
+
+[data-testid='nav-new-chat-button']:hover {
+  background-color: var(--primary-lighter);
+}
+
+button[data-state='checked'] {
+  background-color: var(--primary-lighter) !important;
+}
+
+button[data-state='unchecked'] {
+  background-color: var(--gray-200) !important;
+}
+
+textarea,
+.font-normal {
+  color: var(--gray-800);
+}
+
+svg {
+  color: var(--gray-800);
+}
+
+.text-token-text-primary,
+.select-item {
+  color: var(--gray-900) !important;
+}
+
+.submitting .result-thinking:empty:last-child:after {
+  background-color: var(--primary);
+}
+
+/* Apro specific text color for branding */
+[data-testid='convo-item'] *,
+[data-testid='nav-new-chat-button'] *,
+[data-testid='nav-user'] * {
+  color: var(--text-on-dark);
+}
+
+[data-testid='nav-user']:hover {
+  background-color: var(--primary-lighter);
+}
+
+/* Apro specific hiding elements */
+[data-testid='convo-icon'],
+.h-7.w-7.flex-shrink-0 {
+  display: none;
+}
+
+/* Apro specific color for top element model selector */
+.absolute.left-0.right-0 > *,
+.sticky.top-0.z-10.flex.h-14.w-full {
+  background-color: var(--background-lighter);
+}
+
+/* Apro color for footer link */
+.text-text-secondary.underline {
+  color: var(--gray-800);
+}
