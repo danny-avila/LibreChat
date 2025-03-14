@@ -8,6 +8,7 @@ on:
     paths:
       - Dockerfile
       - Dockerfile.multi
+      - entrypoint.sh
       - 'api/**'
       - 'client/**'
       - 'packages/**'

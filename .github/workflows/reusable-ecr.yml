@@ -153,37 +153,3 @@ jobs:
           name: frontend-dist
           path: /tmp/extracted-dist/dist/
           retention-days: 1
-
-  upload-config:
-    name: Upload styling to S3
-    needs: build
-    if: ${{ inputs.s3-upload == 'true' }}
-    runs-on: ubuntu-latest
-    env:
-      SHARED_CONFIG_BUCKET: genai-shared-config
-    permissions:
-      id-token: write # Required for AWS authentication
-      contents: read
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: /tmp/dist
-
-      - name: Zip dist directory
-        run: |
-          cd /tmp/dist
-          zip -r frontend-dist.zip .
-          echo "Created /tmp/dist/frontend-dist.zip"
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-oidc-genai
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Upload to S3
-        run: |
-          aws s3 cp /tmp/dist/frontend-dist.zip s3://${{ env.SHARED_CONFIG_BUCKET }}/frontend/dist/${{ github.sha }}/dist.zip"
-          aws s3 cp /tmp/dist/frontend-dist.zip s3://${{ env.SHARED_CONFIG_BUCKET }}/frontend/dist/latest/dist.zip"
