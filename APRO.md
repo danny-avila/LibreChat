@@ -36,16 +36,16 @@ In the [./scripts/](./scripts/) folder, you will find a few scripts to validate 
 
 Branding for customers should be as follows:
 
-1. Favicon files uploaded into `client/public/assets` folder:
+1. Favicon files uploaded into `client/dist/assets` folder:
 
    - favicon-16x16.png
    - favicon-32x32.png
 
-2. Company logo uploaded into `client/public/assets` folder:
+2. Company logo uploaded into `client/dist/assets` folder:
 
    - logo.svg
 
-3. Branding colors defined in `client/public/assets/branding.css`
+3. Branding colors defined in `client/dist/assets/branding.css`
 
 ```css
 :root {
@@ -55,6 +55,7 @@ Branding for customers should be as follows:
   --background-lighter: #f1f9ff;
   --text-on-dark: #ffffff;
   --highlight: #d1c3fc;
+  --logo-background: var(--background-lighter);
   /* BRAND COLORS END */
 }
 ```

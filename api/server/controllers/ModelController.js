@@ -45,18 +45,19 @@ async function getCurrentModel(req) {
   const response = await User.findById(req.user.id).select('lastSelectedModel');
 
   console.log('currentAgentName:', response?.lastSelectedModel); // eslint-disable-line no-console
-  let agentId = '';
-  let latestAliasId = '';
-  let description = '';
+  let retAgent = {
+    agentName: '',
+    agentId: '',
+    latestAliasId: '',
+    description: '',
+  };
   availableAgents.forEach((agent) => {
     if (agent.agentName === response?.lastSelectedModel) {
-      latestAliasId = agent.latestAliasId;
-      agentId = agent.agentId;
-      description = agent.description;
+      retAgent = { ...agent };
       return;
     }
   });
-  return { agentId, latestAliasId, description };
+  return retAgent;
 }
 
 /**

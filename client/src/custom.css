@@ -13,6 +13,11 @@
   --switch-unchecked: var(--primary-lighter);
 }
 
+#landing-company-logo {
+  background-color: var(--logo-background);
+  padding: 8px;
+}
+
 [data-testid='nav-new-chat-button']:hover {
   background-color: var(--primary-lighter);
 }

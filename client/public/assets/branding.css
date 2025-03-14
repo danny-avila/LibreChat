@@ -1,9 +1,10 @@
 :root {
   /* BRAND COLORS START */
-  --primary: #121212;
-  --primary-lighter: #6737f5;
-  --background-lighter: #f1f9ff;
+  --primary: #00416a;
+  --primary-lighter: #006eb3;
+  --background-lighter: #f6f6f6;
   --text-on-dark: #ffffff;
-  --highlight: #d1c3fc;
+  --highlight: #ffea75;
+  --logo-background: var(--primary);
   /* BRAND COLORS END */
 }
