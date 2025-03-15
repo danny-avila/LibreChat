@@ -7,7 +7,15 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
-const { GraphEvents, Callback, createMetadataAggregator } = require('@librechat/agents');
+const {
+  Callback,
+  GraphEvents,
+  formatMessage,
+  formatAgentMessages,
+  formatContentStrings,
+  getTokenCountForMessage,
+  createMetadataAggregator,
+} = require('@librechat/agents');
 const {
   Constants,
   VisionModes,
@@ -20,13 +28,7 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const {
-  formatMessage,
-  addCacheControl,
-  formatAgentMessages,
-  formatContentStrings,
-  createContextHandlers,
-} = require('~/app/clients/prompts');
+const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -99,6 +101,8 @@ class AgentClient extends BaseClient {
     this.outputTokensKey = 'output_tokens';
     /** @type {UsageMetadata} */
     this.usage;
+    /** @type {Record<string, number>} */
+    this.indexTokenCountMap = {};
   }
 
   /**
@@ -377,6 +381,10 @@ class AgentClient extends BaseClient {
       }));
     }
 
+    for (let i = 0; i < messages.length; i++) {
+      this.indexTokenCountMap[i] = messages[i].tokenCount;
+    }
+
     const result = {
       tokenCountMap,
       prompt: payload,
@@ -635,13 +643,22 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const initialMessages = formatAgentMessages(payload);
+      let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+      );
       if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
-        formatContentStrings(initialMessages);
+        initialMessages = formatContentStrings(initialMessages);
       }
 
       /** @type {ReturnType<createRun>} */
       let run;
+      const countTokens = ((text) => this.getTokenCount(text)).bind(this);
+
+      /** @type {(message: BaseMessage) => number} */
+      const tokenCounter = (message) => {
+        return getTokenCountForMessage(message, countTokens);
+      };
 
       /**
        *
@@ -652,8 +669,13 @@ class AgentClient extends BaseClient {
        */
       const runAgent = async (agent, _messages, i = 0, contentData = []) => {
         config.configurable.model = agent.model_parameters.model;
+        const originalTokenCountMap = indexTokenCountMap;
+        let currentTokenCountMap = originalTokenCountMap;
         if (i > 0) {
           this.model = agent.model_parameters.model;
+          currentTokenCountMap = {
+            ...originalTokenCountMap,
+          };
         }
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;
@@ -737,6 +759,9 @@ class AgentClient extends BaseClient {
 
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
+          tokenCounter,
+          indexTokenCountMap: currentTokenCountMap,
+          maxContextTokens: agent.maxContextTokens,
           callbacks: {
             [Callback.TOOL_ERROR]: (graph, error, toolId) => {
               logger.error(
