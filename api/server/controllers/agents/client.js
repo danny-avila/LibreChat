@@ -7,6 +7,7 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
+const { setMaxListeners } = require('events');
 const {
   Callback,
   GraphEvents,
@@ -629,6 +630,8 @@ class AgentClient extends BaseClient {
       //     modelOptions,
       //   });
       // }
+
+      setMaxListeners(20, abortController.signal);
 
       /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
       const config = {
