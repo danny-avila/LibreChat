@@ -37,6 +37,18 @@ router.get('/', async function (req, res) {
   const ldap = getLdapConfig();
 
   try {
+    const isOpenIdEnabled =
+      !!process.env.OPENID_CLIENT_ID &&
+      !!process.env.OPENID_CLIENT_SECRET &&
+      !!process.env.OPENID_ISSUER &&
+      !!process.env.OPENID_SESSION_SECRET;
+
+    const isSamlEnabled =
+      !!process.env.SAML_ENTRY_POINT &&
+      !!process.env.SAML_ISSUER &&
+      !!process.env.SAML_CERT &&
+      !!process.env.SAML_SESSION_SECRET;
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -51,13 +63,12 @@ router.get('/', async function (req, res) {
         !!process.env.APPLE_TEAM_ID &&
         !!process.env.APPLE_KEY_ID &&
         !!process.env.APPLE_PRIVATE_KEY_PATH,
-      openidLoginEnabled:
-        !!process.env.OPENID_CLIENT_ID &&
-        !!process.env.OPENID_CLIENT_SECRET &&
-        !!process.env.OPENID_ISSUER &&
-        !!process.env.OPENID_SESSION_SECRET,
+      openidLoginEnabled: isOpenIdEnabled,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
+      samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
+      samlLabel: process.env.SAML_BUTTON_LABEL,
+      samlImageUrl: process.env.SAML_IMAGE_URL,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
