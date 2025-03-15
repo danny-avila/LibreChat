@@ -206,6 +206,42 @@ describe('formatAgentMessages', () => {
     ]);
   });
 
+  it('should handle failed tool calls and remove empty AIMessage', () => {
+    const payload = [
+      {
+        role: 'user',
+        content: 'what is the weather like today?',
+      },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            [ContentTypes.TEXT]: '',
+            tool_call_ids: ['search_1'],
+          },
+          {
+            type: ContentTypes.TEXT,
+            [ContentTypes.TEXT]: '',
+            tool_call_ids: ['search_2'],
+          },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Here\'s your answer.' },
+        ],
+      },
+    ];
+
+    const result = formatAgentMessages(payload);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBeInstanceOf(HumanMessage);
+    expect(result[1]).toBeInstanceOf(AIMessage);
+
+    // Check final AIMessage
+    expect(result[1].content).toStrictEqual([
+      { [ContentTypes.TEXT]: 'Here\'s your answer.', type: ContentTypes.TEXT },
+    ]);
+  });
+
   it.skip('should not produce two consecutive assistant messages and format content correctly', () => {
     const payload = [
       { role: 'user', content: 'Hello' },
@@ -357,5 +393,45 @@ describe('formatAgentMessages', () => {
         item.type === ContentTypes.ERROR || JSON.stringify(item).includes('An error occurred'),
     );
     expect(hasErrorContent).toBe(false);
+  });
+
+  it('should exclude ERROR type content and previous HumanMessage if assistant has ERROR type only', () => {
+    const payload = [
+      {
+        role: 'user',
+        content: 'what is the weather like today?',
+      },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: ContentTypes.ERROR,
+            [ContentTypes.ERROR]:
+              'An error occurred while processing the request: Something went wrong',
+          },
+        ],
+      },
+    ];
+
+    const result = formatAgentMessages(payload);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('should exclude empty content and previous HumanMessage when user stops generating', () => {
+    const payload = [
+      {
+        role: 'user',
+        content: 'what is the weather like today?',
+      },
+      {
+        role: "assistant",
+        content: [],
+      },
+    ];
+
+    const result = formatAgentMessages(payload);
+
+    expect(result).toHaveLength(0);
   });
 });

@@ -1,6 +1,7 @@
 const { ToolMessage } = require('@langchain/core/messages');
 const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
 const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
+const { isEmpty } = require('lodash');
 
 /**
  * Formats a message to OpenAI Vision API payload format.
@@ -150,6 +151,15 @@ const formatAgentMessages = (payload) => {
       continue;
     }
 
+    // User stops generating
+    if (message.content.length === 0) {
+      const prevMessage = messages[messages.length - 1];
+      if (prevMessage instanceof HumanMessage) {
+        messages.pop()
+      }
+      continue;
+    }
+
     let currentContent = [];
     let lastAIMessage = null;
 
@@ -212,6 +222,10 @@ const formatAgentMessages = (payload) => {
         hasReasoning = true;
         continue;
       } else if (part.type === ContentTypes.ERROR) {
+        const prevMessage = messages[messages.length - 1];
+        if (prevMessage instanceof HumanMessage) {
+          messages.pop()
+        }
         continue;
       } else {
         currentContent.push(part);
@@ -227,6 +241,19 @@ const formatAgentMessages = (payload) => {
           return acc;
         }, '')
         .trim();
+    }
+
+    // Remove last empty AIMessage
+    while (true) {
+      const lastMessage = messages[messages.length - 1];
+      const isEmptyAIMessage = lastMessage instanceof AIMessage
+        && isEmpty(lastMessage.content)
+        && isEmpty(lastMessage.tool_calls)
+        && isEmpty(lastMessage.invalid_tool_calls);
+      if (!isEmptyAIMessage) {
+        break;
+      }
+      messages.pop();
     }
 
     if (currentContent.length > 0) {
