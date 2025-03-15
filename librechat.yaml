@@ -12,6 +12,21 @@ registration:
 
 endpoints:
   custom:
+    # Marginal Agent Custom AI webhook endpoint
+    - name: "Marginal Agent"
+      apiKey: "" # leave empty if no apiKey
+      baseURL: "https://margial.app.n8n.cloud/webhook-test/e4a0c4e7-bd8c-4eec-8393-f1ee72b82b97"
+      models:
+        default:
+          - "firma"
+        fetch: false
+      titleConvo: true
+      titleModel: "firma"
+      summarize: false
+      forcePrompt: false
+      modelDisplayLabel: "Marginal Firma Agent"
+      iconURL: "/assets/logo.svg"
+
     # cohere
     # Model list: https://dashboard.cohere.com/playground/chat
     - name: "cohere"
