@@ -669,16 +669,13 @@ class AgentClient extends BaseClient {
        * @param {BaseMessage[]} messages
        * @param {number} [i]
        * @param {TMessageContentParts[]} [contentData]
+       * @param {Record<string, number>} [currentIndexCountMap]
        */
-      const runAgent = async (agent, _messages, i = 0, contentData = []) => {
+      const runAgent = async (agent, _messages, i = 0, contentData = [], _currentIndexCountMap) => {
         config.configurable.model = agent.model_parameters.model;
-        const originalTokenCountMap = indexTokenCountMap;
-        let currentTokenCountMap = originalTokenCountMap;
+        const currentIndexCountMap = _currentIndexCountMap ?? indexTokenCountMap;
         if (i > 0) {
           this.model = agent.model_parameters.model;
-          currentTokenCountMap = {
-            ...originalTokenCountMap,
-          };
         }
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;
@@ -763,7 +760,7 @@ class AgentClient extends BaseClient {
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
           tokenCounter,
-          indexTokenCountMap: currentTokenCountMap,
+          indexTokenCountMap: currentIndexCountMap,
           maxContextTokens: agent.maxContextTokens,
           callbacks: {
             [Callback.TOOL_ERROR]: (graph, error, toolId) => {
@@ -778,7 +775,7 @@ class AgentClient extends BaseClient {
       };
 
       await runAgent(this.options.agent, initialMessages);
-
+      const windowSize = 5;
       let finalContentStart = 0;
       if (this.agentConfigs && this.agentConfigs.size > 0) {
         let latestMessage = initialMessages.pop().content;
@@ -788,7 +785,16 @@ class AgentClient extends BaseClient {
         let i = 1;
         let runMessages = [];
 
-        const lastFiveMessages = initialMessages.slice(-5);
+        const windowIndexCountMap = {};
+        const windowMessages = initialMessages.slice(-windowSize);
+        let currentIndex = 4;
+        for (let i = initialMessages.length - 1; i >= 0; i--) {
+          windowIndexCountMap[currentIndex] = indexTokenCountMap[i];
+          currentIndex--;
+          if (currentIndex < 0) {
+            break;
+          }
+        }
         for (const [agentId, agent] of this.agentConfigs) {
           if (abortController.signal.aborted === true) {
             break;
@@ -823,7 +829,9 @@ class AgentClient extends BaseClient {
           }
           try {
             const contextMessages = [];
-            for (const message of lastFiveMessages) {
+            const runIndexCountMap = {};
+            for (let i = 0; i < windowMessages.length; i++) {
+              const message = windowMessages[i];
               const messageType = message._getType();
               if (
                 (!agent.tools || agent.tools.length === 0) &&
@@ -831,11 +839,13 @@ class AgentClient extends BaseClient {
               ) {
                 continue;
               }
-
+              runIndexCountMap[contextMessages.length] = windowIndexCountMap[i];
               contextMessages.push(message);
             }
-            const currentMessages = [...contextMessages, new HumanMessage(bufferString)];
-            await runAgent(agent, currentMessages, i, contentData);
+            const bufferMessage = new HumanMessage(bufferString);
+            runIndexCountMap[contextMessages.length] = tokenCounter(bufferMessage);
+            const currentMessages = [...contextMessages, bufferMessage];
+            await runAgent(agent, currentMessages, i, contentData, runIndexCountMap);
           } catch (err) {
             logger.error(
               `[api/server/controllers/agents/client.js #chatCompletion] Error running agent ${agentId} (${i})`,
