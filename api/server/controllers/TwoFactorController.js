@@ -11,17 +11,19 @@ const { encryptV2 } = require('~/server/utils/crypto');
 
 const enable2FAController = async (req, res) => {
   const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
-
   try {
     const userId = req.user.id;
     const secret = generateTOTPSecret();
     const { plainCodes, codeObjects } = await generateBackupCodes();
-
     const encryptedSecret = await encryptV2(secret);
-    const user = await updateUser(userId, { totpSecret: encryptedSecret, backupCodes: codeObjects });
+    // Set twoFactorEnabled to false until the user confirms 2FA.
+    const user = await updateUser(userId, {
+      totpSecret: encryptedSecret,
+      backupCodes: codeObjects,
+      twoFactorEnabled: false,
+    });
 
     const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}`;
-
     res.status(200).json({
       otpauthUrl,
       backupCodes: plainCodes,
@@ -37,6 +39,7 @@ const verify2FAController = async (req, res) => {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
     const user = await getUserById(userId);
+    // Ensure that 2FA is enabled for this user.
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
@@ -52,7 +55,6 @@ const verify2FAController = async (req, res) => {
         return res.status(200).json();
       }
     }
-
     return res.status(400).json({ message: 'Invalid token.' });
   } catch (err) {
     logger.error('[verify2FAController]', err);
@@ -74,6 +76,8 @@ const confirm2FAController = async (req, res) => {
     const secret = await getTOTPSecret(user.totpSecret);
 
     if (await verifyTOTP(secret, token)) {
+      // Upon successful verification, enable 2FA.
+      await updateUser(userId, { twoFactorEnabled: true });
       return res.status(200).json();
     }
 
@@ -87,7 +91,7 @@ const confirm2FAController = async (req, res) => {
 const disable2FAController = async (req, res) => {
   try {
     const userId = req.user.id;
-    await updateUser(userId, { totpSecret: null, backupCodes: [] });
+    await updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
     res.status(200).json();
   } catch (err) {
     logger.error('[disable2FAController]', err);

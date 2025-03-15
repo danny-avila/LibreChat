@@ -159,7 +159,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        this.logger.warn(`[MCP][${serverName}] Not connected, skipping tool fetch`);
+        this.logger.warn(`[MCP][${serverName}] Error fetching tools:`, error);
       }
     }
   }
@@ -183,7 +183,7 @@ export class MCPManager {
           });
         }
       } catch (error) {
-        this.logger.error(`[MCP][${serverName}] Error fetching tools`, error);
+        this.logger.error(`[MCP][${serverName}] Error fetching tools:`, error);
       }
     }
   }
@@ -209,6 +209,7 @@ export class MCPManager {
         },
       },
       CallToolResultSchema,
+      { timeout: connection.timeout },
     );
     return formatToolContent(result, provider);
   }

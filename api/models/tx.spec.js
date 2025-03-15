@@ -50,6 +50,16 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4-0125')).toBe('gpt-4-1106');
   });
 
+  it('should return "gpt-4.5" for model type of "gpt-4.5"', () => {
+    expect(getValueKey('gpt-4.5-preview')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-2024-08-06')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-2024-08-06-0718')).toBe('gpt-4.5');
+    expect(getValueKey('openai/gpt-4.5')).toBe('gpt-4.5');
+    expect(getValueKey('openai/gpt-4.5-2024-08-06')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-turbo')).toBe('gpt-4.5');
+    expect(getValueKey('gpt-4.5-0125')).toBe('gpt-4.5');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
     expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
