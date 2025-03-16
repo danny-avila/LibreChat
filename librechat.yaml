@@ -20,7 +20,7 @@ endpoints:
         default:
           - "firma"
         fetch: false
-      titleConvo: true
+      titleConvo: false
       titleModel: "firma"
       summarize: false
       forcePrompt: false
