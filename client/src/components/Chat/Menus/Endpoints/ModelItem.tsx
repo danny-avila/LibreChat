@@ -9,6 +9,7 @@ const ModelItem: React.FC<ModelItemProps> = ({
   onSelect,
   onNavigateBack,
   icon,
+  className,
 }) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -31,6 +32,7 @@ const ModelItem: React.FC<ModelItemProps> = ({
       className={cn(
         'flex w-full cursor-pointer items-center justify-start rounded-md px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
         isSelected ? 'bg-surface-tertiary' : '',
+        className,
       )}
     >
       {icon && (

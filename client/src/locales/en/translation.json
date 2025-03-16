@@ -854,6 +854,7 @@
   "com_ui_good_morning": "Good morning",
   "com_ui_good_afternoon": "Good afternoon",
   "com_ui_good_evening": "Good evening",
+  "com_ui_no_models_available": "No models available",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }

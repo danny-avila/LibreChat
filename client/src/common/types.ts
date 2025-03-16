@@ -513,6 +513,7 @@ export interface ModelItemProps {
   onSelect: () => void;
   onNavigateBack: () => void;
   icon?: JSX.Element;
+  className?: string;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
