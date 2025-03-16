@@ -18,22 +18,14 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
   let Icon: (props: IconMapProps) => React.JSX.Element;
 
   if (!iconURL.includes('http')) {
-    Icon = icons[iconKey] ?? icons.unknown;
+    Icon = (icons[iconKey] ?? icons.unknown) as (props: IconMapProps) => React.JSX.Element;
   } else if (iconURL) {
     return <URLIcon iconURL={iconURL} altName={currentSpec.name} />;
   } else {
-    Icon = icons[endpoint ?? ''] ?? icons.unknown;
+    Icon = (icons[endpoint ?? ''] ?? icons.unknown) as (props: IconMapProps) => React.JSX.Element;
   }
 
-  return (
-    <Icon
-      size={20}
-      endpoint={endpoint}
-      context="menu-item"
-      iconURL={endpointIconURL}
-      className="icon-lg mr-1 shrink-0 text-text-primary"
-    />
-  );
+  return <Icon endpoint={endpoint} context="menu-item" iconURL={endpointIconURL} />;
 };
 
 export default memo(SpecIcon);

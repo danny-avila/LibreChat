@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
-import { ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
-import { ModelDropdown } from './Menus/Endpoints/EndpointMenuDropdown';
+import { EndpointMenuDropdown } from './Menus/Endpoints/EndpointMenuDropdown';
+import { PresetsMenu, HeaderNewChat } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import { useMediaQuery, useHasAccess } from '~/hooks';
@@ -39,8 +39,7 @@ export default function Header() {
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-2 flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
-          {interfaceConfig.endpointsMenu === true && <ModelDropdown />}
-          {modelSpecs.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
+          {<EndpointMenuDropdown interfaceConfig={interfaceConfig} modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets === true && <PresetsMenu />}
           {hasAccessToBookmarks === true && <BookmarkMenu />}

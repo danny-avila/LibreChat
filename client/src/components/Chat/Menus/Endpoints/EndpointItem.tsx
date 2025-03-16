@@ -35,9 +35,18 @@ const EndpointItem: React.FC<EndpointItemProps> = ({
     }
   };
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onSelect();
+
+    if (hasModels) {
+      onOpenDropdown(endpoint);
+    }
+  };
+
   return (
     <div
-      onClick={onSelect}
+      onClick={handleClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
       role="menuitem"
