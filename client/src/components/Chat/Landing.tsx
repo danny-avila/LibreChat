@@ -48,10 +48,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   const name = entity?.name ?? '';
   const description = entity?.description ?? '';
-  // Not using avatar for now, but keeping the calculation
-  const avatarPath = isAgent
-    ? ((entity as t.Agent)?.avatar?.filepath ?? '')
-    : (((entity as t.Assistant)?.metadata?.avatar as string) ?? '');
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -114,6 +110,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           {((isAgent || isAssistant) && name) || name ? (
             <div className="flex flex-col items-center gap-0 p-2">
               <SplitText
+                key={`split-text-${name}`}
                 text={name}
                 className="text-4xl font-medium text-text-primary"
                 delay={50}
@@ -127,7 +124,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              text={getGreeting() + (user?.name ? ', ' + user.name : '')}
+              key={`split-text-${getGreeting()}${user?.username || ''}`}
+              text={getGreeting() + (user?.username ? ', ' + user.username : '')}
               className="text-4xl font-medium text-text-primary"
               delay={50}
               textAlign="center"

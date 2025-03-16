@@ -116,7 +116,6 @@ export default function ChatRoute() {
       hasSetConversation.current = true;
     }
     /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     startupConfig,
     initialConvoQuery.data,
@@ -127,8 +126,8 @@ export default function ChatRoute() {
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return (
-      <div aria-live="polite" role="status">
-        <Spinner className="m-auto text-black dark:text-white" />
+      <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
+        <Spinner className="text-text-primary" />
       </div>
     );
   }

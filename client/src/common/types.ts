@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { SetterOrUpdater, RecoilState } from 'recoil';
@@ -494,6 +494,25 @@ export interface ExtendedFile {
   embedded?: boolean;
   tool_resource?: string;
   metadata?: t.TFile['metadata'];
+}
+
+export interface ExtendedEndpoint {
+  value: EModelEndpoint;
+  label: string;
+  hasModels: boolean;
+  icon: JSX.Element | null;
+  models?: string[];
+  agentNames?: Record<string, string>;
+  assistantNames?: Record<string, string>;
+}
+
+export interface ModelItemProps {
+  modelName: string;
+  endpoint: EModelEndpoint;
+  isSelected: boolean;
+  onSelect: () => void;
+  onNavigateBack: () => void;
+  icon?: JSX.Element;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

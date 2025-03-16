@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
-import { ModelDropdown } from './Menus/Endpoints/ModelDropdown';
+import { ModelDropdown } from './Menus/Endpoints/EndpointMenuDropdown';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import { useMediaQuery, useHasAccess } from '~/hooks';
