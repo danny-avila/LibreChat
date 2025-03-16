@@ -295,12 +295,12 @@ export default function AgentConfig({
             </label>
             {/* Code Execution */}
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
-            {/* File Search */}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
-            {/* Artifacts */}
-            {artifactsEnabled && <Artifacts />}
             {/* File Context (OCR) */}
             {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
+            {/* Artifacts */}
+            {artifactsEnabled && <Artifacts />}
+            {/* File Search */}
+            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
           </div>
         )}
         {/* Agent Tools & Actions */}
