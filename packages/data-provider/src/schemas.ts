@@ -47,6 +47,7 @@ export enum BedrockProviders {
   Meta = 'meta',
   MistralAI = 'mistral',
   StabilityAI = 'stability',
+  DeepSeek = 'deepseek',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
