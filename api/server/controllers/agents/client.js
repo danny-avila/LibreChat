@@ -646,9 +646,11 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
+      const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
+        toolSet,
       );
       if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
         initialMessages = formatContentStrings(initialMessages);
