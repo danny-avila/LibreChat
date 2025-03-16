@@ -827,6 +827,7 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'qwen-vl',
   'grok-vision',
   'grok-2-vision',
   'grok-3',
