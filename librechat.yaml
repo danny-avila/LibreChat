@@ -11,10 +11,40 @@ registration:
     - "openid"
 
 endpoints:
+  - name: "Marginal Firma Agent"
+    endpoint: "Marginal Agent"
+    models:
+      default: "firma"
+      available:
+        - "firma"
+    iconURL: "/assets/logo.svg"
+
+  - name: "cohere"
+    endpoint: "cohere"
+    models:
+      default: "command"
+      available:
+        - "command"
+        - "command-r"
+        - "command-r-plus"
+    iconURL: "/assets/cohere.svg"
+
+  - name: "DeepSeek"
+    endpoint: "deepseek"
+    models:
+      default: "deepseek-chat"
+    iconURL: "/assets/deepseek.svg"
+
+  - name: "Perplexity"
+    endpoint: "Perplexity"
+    models:
+      default: "sonar"
+    iconURL: "/assets/perplexity.svg"
+
   custom:
     # Marginal Agent Custom AI webhook endpoint
     - name: "Marginal Agent"
-      apiKey: "" # leave empty if no apiKey
+      apiKey: ""
       baseURL: "https://margial.app.n8n.cloud/webhook-test/e4a0c4e7-bd8c-4eec-8393-f1ee72b82b97"
       models:
         default:
@@ -28,20 +58,14 @@ endpoints:
       iconURL: "/assets/logo.svg"
 
     # cohere
-    # Model list: https://dashboard.cohere.com/playground/chat
     - name: "cohere"
       apiKey: "${COHERE_API_KEY}"
       baseURL: "https://api.cohere.ai/v1"
       models:
         default:
-          - c4ai-aya-expanse-32b
           - command
-          - command-light-nightly
           - command-r
-          - command-r-08-2024
           - command-r-plus
-          - command-r-plus-08-2024
-          - command-r7b-12-2024
         fetch: false
       modelDisplayLabel: "cohere"
       titleModel: "command"
@@ -54,8 +78,6 @@ endpoints:
         - "top_p"
 
     # deepseek
-    # https://platform.deepseek.com/api_keys
-    # Model list: https://platform.deepseek.com/api-docs/pricing
     - name: "deepseek"
       apiKey: "${DEEPSEEK_API_KEY}"
       baseURL: "https://api.deepseek.com"
@@ -70,8 +92,7 @@ endpoints:
       summaryModel: "deepseek-chat"
       modelDisplayLabel: "DeepSeek"
 
-    # Preplexity
-    # Model list: https://docs.perplexity.ai/docs/model-cards
+    # perplexity
     - name: "Perplexity"
       apiKey: "${PERPLEXITY_API_KEY}"
       baseURL: "https://api.perplexity.ai/"
@@ -80,16 +101,13 @@ endpoints:
           - r1-1776
           - sonar
           - sonar-deep-research
-          - sonar-pro
-          - sonar-reasoning
-          - sonar-reasoning-pro
-        fetch: false # fetching list of models is not supported
-      titleConvo: true
-      titleModel: "llama-3.1-sonar-small-128k-chat"
-      summarize: false
-      summaryModel: "llama-3.1-sonar-small-128k-chat"
-      forcePrompt: false
+          - sonar-deep-research-online
+        fetch: false
+      modelDisplayLabel: "Perplexity"
       dropParams:
         - "stop"
         - "frequency_penalty"
-      modelDisplayLabel: "Perplexity"
+      titleConvo: true
+      titleModel: "sonar"
+      summarize: false
+      summaryModel: "sonar"
