@@ -4,18 +4,24 @@ import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provid
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import { useUpdateAgentMutation } from '~/data-provider';
-import AdvancedSettings from './AdvancedSettings';
 import DuplicateAgent from './DuplicateAgent';
+import AdvancedButton from './AdvancedButton';
 import AdminSettings from './AdminSettings';
 import DeleteButton from './DeleteButton';
 import { Spinner } from '~/components';
 import ShareAgent from './ShareAgent';
+import { Panel } from '~/common';
 
 export default function AgentFooter({
+  activePanel,
   createMutation,
   updateMutation,
+  setActivePanel,
   setCurrentAgentId,
-}: Pick<AgentPanelProps, 'setCurrentAgentId' | 'createMutation'> & {
+}: Pick<
+  AgentPanelProps,
+  'setCurrentAgentId' | 'createMutation' | 'activePanel' | 'setActivePanel'
+> & {
   updateMutation: ReturnType<typeof useUpdateAgentMutation>;
 }) {
   const localize = useLocalize();
@@ -45,8 +51,8 @@ export default function AgentFooter({
   };
 
   return (
-    <div className="mx-1 mb-1 flex w-full flex-col">
-      <AdvancedSettings />
+    <div className="mx-1 mb-1 flex w-full flex-col gap-2">
+      {activePanel !== Panel.advanced && <AdvancedButton setActivePanel={setActivePanel} />}
       {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">

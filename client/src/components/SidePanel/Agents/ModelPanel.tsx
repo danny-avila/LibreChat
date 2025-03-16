@@ -77,7 +77,7 @@ export default function Parameters({
   };
 
   return (
-    <div className="scrollbar-gutter-stable h-full min-h-[50vh] overflow-auto pb-12 text-sm">
+    <div className="mx-1 mb-1 flex h-full min-h-[50vh] w-full flex-col gap-2 text-sm">
       <div className="model-panel relative flex flex-col items-center px-16 py-4 text-center">
         <div className="absolute left-0 top-4">
           <button
@@ -224,19 +224,17 @@ export default function Parameters({
               );
             })}
           </div>
-          {/* Reset Parameters Button */}
-          <div className="mt-6 flex justify-center">
-            <button
-              type="button"
-              onClick={handleResetParameters}
-              className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
-            >
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-            </button>
-          </div>
         </div>
       )}
+      {/* Reset Parameters Button */}
+      <button
+        type="button"
+        onClick={handleResetParameters}
+        className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+      >
+        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+        {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
+      </button>
     </div>
   );
 }

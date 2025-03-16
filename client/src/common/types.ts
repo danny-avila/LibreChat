@@ -131,6 +131,7 @@ export interface DataColumnMeta {
 }
 
 export enum Panel {
+  advanced = 'advanced',
   builder = 'builder',
   actions = 'actions',
   model = 'model',

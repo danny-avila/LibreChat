@@ -19,6 +19,7 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
+import AdvancedPanel from './AdvancedPanel';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
@@ -284,10 +285,15 @@ export default function AgentPanel({
             setCurrentAgentId={setCurrentAgentId}
           />
         )}
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
+          <AdvancedPanel setActivePanel={setActivePanel} />
+        )}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter
             createMutation={create}
             updateMutation={update}
+            activePanel={activePanel}
+            setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}
           />
         )}
