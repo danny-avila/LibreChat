@@ -1,4 +1,4 @@
-import { X, ChevronDown, Settings } from 'lucide-react';
+import { X, Link2, PlusCircle } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { ControllerRenderProps } from 'react-hook-form';
@@ -52,7 +52,7 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
   };
 
   return (
-    <div className="p-4 rounded-md border border-border-medium bg-surface-secondary">
+    <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <label className="text-text-primary font-semibold">Agent Chain</label>
         {/* <HideSequential /> */}
@@ -60,7 +60,7 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
 
       <div className="space-y-1">
         {/* Current fixed agent */}
-        <div className="flex justify-between items-center rounded-md py-2 px-3 bg-surface-primary-contrast border border-border-medium">
+        <div className="flex justify-between items-center rounded-md py-2 px-3 bg-surface-primary-contrast border border-border-medium h-10">
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
               <Icon endpoint={EModelEndpoint.agents} agentName={getAgentDetails(currentAgentId)?.name ?? ''} iconURL={getAgentDetails(currentAgentId)?.avatar?.filepath} isCreatedByUser={false} />
@@ -71,11 +71,11 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
           </div>
         </div>
 
-        {agentIds.length > 0 && <ChevronDown className="text-text-secondary mx-auto" size={14} />}
+        {agentIds.length > 0 && <Link2 className="text-text-secondary mx-auto" size={14} />}
 
         {agentIds.map((agentId, idx) => (
           <React.Fragment key={agentId}>
-            <div className="flex items-center gap-2 py-2 px-3 bg-surface-tertiary rounded-md border border-border-medium">
+            <div className="flex items-center gap-2 pr-2 bg-surface-tertiary rounded-md border border-border-medium h-10">
               <ControlCombobox
                 isCollapsed={false}
                 ariaLabel='Select agent'
@@ -94,23 +94,24 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
                   />
                 }
                 className="flex-1 border-border-heavy"
+                containerClassName='px-0'
               />
               {/* Future Settings button? */}
               {/* <button className="hover:bg-surface-hover p-1 rounded transition">
                 <Settings size={16} className="text-text-secondary" />
               </button> */}
-              <button className="p-1 hover:bg-surface-hover rounded-md transition"
+              <button className="p-1 hover:bg-surface-hover rounded-xl transition"
                 onClick={() => removeAgentAt(idx)}>
-                <X size={16} className="text-text-secondary"/>
+                <X size={18} className="text-text-secondary"/>
               </button>
             </div>
-            {idx < agentIds.length - 1 && <ChevronDown className="text-text-secondary mx-auto" size={14} />}
+            {idx < agentIds.length - 1 && <Link2 className="text-text-secondary mx-auto" size={14} />}
           </React.Fragment>
         ))}
 
         {agentIds.length < MAX_AGENTS && (
           <>
-            {agentIds.length > 0 && <ChevronDown className="text-text-secondary mx-auto" size={14} />}
+            {agentIds.length > 0 && <Link2 className="text-text-secondary mx-auto" size={14} />}
             <ControlCombobox
               isCollapsed={false}
               ariaLabel='Select agent'
@@ -119,10 +120,12 @@ const SequentialAgents: React.FC<SequentialAgentsProps> = ({ field, currentAgent
               selectPlaceholder={agentIds.length === 0 ? 'Add first agent...' : 'Add next agent...'}
               searchPlaceholder="Search agents"
               items={selectableAgents}
-              className="text-text-secondary w-full p-2 text-center border-border-heavy border-dashed"
-            >
-
-            </ControlCombobox>
+              className="text-text-secondary w-full text-center border-border-heavy border-dashed h-10 hover:text-text-primary"
+              containerClassName="px-0"
+              SelectIcon={
+                <PlusCircle size={16} className="text-text-secondary" />
+              }
+            />
           </>
         )}
 
