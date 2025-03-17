@@ -1,63 +1,69 @@
 import React from 'react';
 import { Settings } from 'lucide-react';
-import type { TModelSpec } from 'librechat-data-provider';
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { TModelSpec, Agent } from 'librechat-data-provider';
+import type { ExtendedEndpoint } from '~/common';
 import Icon from '~/components/Endpoints/Icon';
 import EndpointItem from './EndpointItem';
 import { Menu, MenuItem } from './Menu';
+import { useLocalize } from '~/hooks';
 import ModelItem from './ModelItem';
+import SearchBar from './SearchBar';
 import SpecItem from './SpecItem';
 
 interface DesktopDropdownContentProps {
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
   modelSpecs?: TModelSpec[];
-  filteredMenuItems: any[];
+  filteredMenuItems: TModelSpec[] | ExtendedEndpoint[];
   selectedSpec?: string;
-  conversation: any;
-  endpointsConfig: any;
-  modelSelectEnabled: boolean;
-  selectedProvider: string | null;
-  setSelectedProvider: (provider: string | null) => void;
+  endpointsConfig: Record<string, any>;
+  selectedProvider: EModelEndpoint | null;
+  setSelectedProvider: (provider: EModelEndpoint) => void;
   onSelectSpec: (spec: TModelSpec) => void;
-  onSelectEndpoint: (endpoint: string, hasModels: boolean) => void;
-  handleModelSelect: (endpoint: EModelEndpoint, modelId: string) => void;
+  onSelectEndpoint: (ep: EModelEndpoint, hasModels: boolean) => void;
   endpointRequiresUserKey: (endpoint: string) => boolean;
   handleOpenKeyDialog: (
     endpoint: EModelEndpoint,
     e: React.MouseEvent | React.KeyboardEvent,
   ) => void;
+  handleModelSelect: (endpoint: EModelEndpoint, modelId: string) => void;
+  conversation: any;
   selectedAgentId?: string;
   selectedAssistantId?: string;
-  agentsMap: Record<string, any>;
-  assistantsMap: Record<string, any>;
+  agentsMap: Record<string, Agent>;
+  assistantsMap: Record<string, Record<string, any>>;
   modelsQuery: any;
-  localize: (key: string) => string;
 }
 
-const DesktopDropdownContent = ({
+const DesktopDropdownContent: React.FC<DesktopDropdownContentProps> = ({
+  searchTerm,
+  setSearchTerm,
   modelSpecs,
   filteredMenuItems,
   selectedSpec,
-  conversation,
   endpointsConfig,
-  modelSelectEnabled,
   selectedProvider,
   setSelectedProvider,
   onSelectSpec,
   onSelectEndpoint,
-  handleModelSelect,
   endpointRequiresUserKey,
   handleOpenKeyDialog,
+  handleModelSelect,
+  conversation,
   selectedAgentId,
   selectedAssistantId,
   agentsMap,
   assistantsMap,
   modelsQuery,
-  localize,
-}: DesktopDropdownContentProps) => {
+}) => {
+  const localize = useLocalize();
+
   return (
     <>
+      <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
       {modelSpecs && modelSpecs.length > 0
-        ? filteredMenuItems.map((spec: TModelSpec) => (
+        ? (filteredMenuItems as TModelSpec[]).map((spec: TModelSpec) => (
           <React.Fragment key={`spec-${spec.name}`}>
             <SpecItem
               spec={spec}
@@ -67,8 +73,8 @@ const DesktopDropdownContent = ({
             />
           </React.Fragment>
         ))
-        : filteredMenuItems.map((ep) =>
-          ep.hasModels && modelSelectEnabled !== false ? (
+        : (filteredMenuItems as ExtendedEndpoint[]).map((ep: ExtendedEndpoint) =>
+          ep.hasModels ? (
             <Menu
               key={ep.value}
               className="animate-popover-left transition-opacity duration-200 ease-in-out"
@@ -86,9 +92,9 @@ const DesktopDropdownContent = ({
                   hasModels={ep.hasModels}
                   isSelected={ep.value === selectedProvider}
                   requiresUserKey={endpointRequiresUserKey(ep.value)}
-                  onSelect={() => onSelectEndpoint(ep.value, modelSelectEnabled)}
+                  onSelect={() => onSelectEndpoint(ep.value, true)}
                   onOpenKeyDialog={handleOpenKeyDialog}
-                  onOpenDropdown={setSelectedProvider}
+                  onOpenDropdown={(endpoint) => setSelectedProvider(endpoint as EModelEndpoint)}
                 />
               }
             >
@@ -97,12 +103,12 @@ const DesktopDropdownContent = ({
                   <ModelItem
                     key={agentId}
                     modelName={ep.agentNames?.[agentId] || agentId}
-                    endpoint={ep.value}
+                    endpoint={ep.value as EModelEndpoint}
                     isSelected={
                       selectedAgentId === agentId && conversation?.endpoint === ep.value
                     }
-                    onSelect={() => handleModelSelect(ep.value, agentId)}
-                    onNavigateBack={() => setSelectedProvider(null)}
+                    onSelect={() => handleModelSelect(ep.value as EModelEndpoint, agentId)}
+                    onNavigateBack={() => {}}
                     icon={
                       <Icon
                         isCreatedByUser={false}
@@ -118,13 +124,15 @@ const DesktopDropdownContent = ({
                     <ModelItem
                       key={assistantId}
                       modelName={ep.assistantNames?.[assistantId] || assistantId}
-                      endpoint={ep.value}
+                      endpoint={ep.value as EModelEndpoint}
                       isSelected={
                         selectedAssistantId === assistantId &&
                             conversation?.endpoint === ep.value
                       }
-                      onSelect={() => handleModelSelect(ep.value, assistantId)}
-                      onNavigateBack={() => setSelectedProvider(null)}
+                      onSelect={() =>
+                        handleModelSelect(ep.value as EModelEndpoint, assistantId)
+                      }
+                      onNavigateBack={() => {}}
                       icon={
                         <Icon
                           isCreatedByUser={false}
@@ -144,12 +152,12 @@ const DesktopDropdownContent = ({
                     <ModelItem
                       key={modelName}
                       modelName={modelName}
-                      endpoint={ep.value}
+                      endpoint={ep.value as EModelEndpoint}
                       isSelected={
                         conversation?.model === modelName && conversation?.endpoint === ep.value
                       }
-                      onSelect={() => handleModelSelect(ep.value, modelName)}
-                      onNavigateBack={() => setSelectedProvider(null)}
+                      onSelect={() => handleModelSelect(ep.value as EModelEndpoint, modelName)}
+                      onNavigateBack={() => {}}
                     />
                   ))}
             </Menu>

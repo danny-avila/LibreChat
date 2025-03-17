@@ -21,16 +21,13 @@ import {
 } from '~/hooks';
 import { cn, getModelSpecIconURL, filterMenuItems, getConvoSwitchLogic } from '~/utils';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import DesktopDropdownContent from './DesktopDropdownContent';
+import MobileDropdownContent from './MobileDropdownContent';
+import ModelDropdownButton from './ModelDropdownButton';
 import { useGetEndpointsQuery } from '~/data-provider';
 import type { ExtendedEndpoint } from '~/common';
-import Icon from '~/components/Endpoints/Icon';
 import DialogManager from './DialogManager';
-import EndpointItem from './EndpointItem';
-import { Menu, MenuItem } from './Menu';
-import ModelItem from './ModelItem';
-import SearchBar from './SearchBar';
-import SpecItem from './SpecItem';
-import SpecIcon from './SpecIcon';
+import { Menu } from './Menu';
 import store from '~/store';
 
 interface EndpointMenuDropdownProps {
@@ -59,7 +56,19 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
   } = conversation ?? {};
 
   const agentsMapResult = useAgentsMapContext();
-  const agentsMap = useMemo(() => agentsMapResult ?? {}, [agentsMapResult]);
+
+  const agentsMap = useMemo(() => {
+    const result: Record<string, Agent> = {};
+    if (agentsMapResult) {
+      Object.entries(agentsMapResult).forEach(([key, agent]) => {
+        if (agent !== undefined) {
+          result[key] = agent;
+        }
+      });
+    }
+    return result;
+  }, [agentsMapResult]);
+
   const agents = useMemo(
     () =>
       Object.values(agentsMap).filter(
@@ -335,390 +344,69 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
         onOpenChange={(open) => setMenuOpen(open)}
         className={cn('animate-popover', isMobile && 'w-full max-w-full')}
         label={
-          <div
-            onClick={() => setMenuOpen(!menuOpen)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setMenuOpen(!menuOpen);
-              }
-            }}
-            tabIndex={0}
-            role="button"
-            aria-haspopup="true"
-            aria-expanded={menuOpen}
-            aria-label={`Select model: ${displayValue}`}
-            className={cn(
-              'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
-              menuOpen
-                ? 'bg-surface-tertiary hover:bg-surface-tertiary'
-                : 'bg-surface-secondary hover:bg-surface-tertiary',
-            )}
-          >
-            {currentModelSpec ? (
-              <div className="flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
-                <SpecIcon currentSpec={currentModelSpec} endpointsConfig={endpointsConfig} />
-              </div>
-            ) : (
-              currentEndpointItem &&
-              currentEndpointItem.icon && (
-                <div
-                  className={cn(
-                    'flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary',
-                    isAgentsEndpoint(endpoint as string) && selectedAgentId ? 'rounded-full' : '',
-                    isMobile && 'h-6 w-6',
-                  )}
-                >
-                  {isAgentsEndpoint(endpoint as string) && selectedAgentId ? (
-                    <Icon
-                      isCreatedByUser={false}
-                      endpoint={endpoint}
-                      agentName={agentsMap[selectedAgentId]?.name || ''}
-                      iconURL={agentsMap[selectedAgentId]?.avatar?.filepath}
-                      className="rounded-full"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    currentEndpointItem.icon
-                  )}
-                </div>
-              )
-            )}
-            <span className="flex-grow truncate text-left">{displayValue}</span>
-          </div>
+          <ModelDropdownButton
+            displayValue={displayValue}
+            currentModelSpec={currentModelSpec}
+            currentEndpointItem={currentEndpointItem}
+            endpoint={endpoint ?? undefined}
+            selectedAgentId={selectedAgentId}
+            agentsMap={agentsMap}
+            menuOpen={menuOpen}
+            setMenuOpen={setMenuOpen}
+            isMobile={isMobile}
+            endpointsConfig={endpointsConfig}
+          />
         }
       >
         {!isMobile ? (
-          <>
-            <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
-            {modelSpecs && modelSpecs.length > 0
-              ? (filteredMenuItems as TModelSpec[]).map((spec: TModelSpec) => (
-                <React.Fragment key={`spec-${spec.name}`}>
-                  <SpecItem
-                    spec={spec}
-                    isSelected={selectedSpec === spec.name}
-                    endpointsConfig={endpointsConfig}
-                    onSelect={onSelectSpec}
-                  />
-                </React.Fragment>
-              ))
-              : (filteredMenuItems as ExtendedEndpoint[]).map((ep: ExtendedEndpoint) =>
-                ep.hasModels && modelSelectEnabled !== false ? (
-                  <Menu
-                    key={ep.value}
-                    className="animate-popover-left transition-opacity duration-200 ease-in-out"
-                    open={ep.value === selectedProvider}
-                    onOpenChange={(open: boolean) => {
-                      if (open) {
-                        setSelectedProvider(ep.value);
-                      }
-                    }}
-                    label={
-                      <EndpointItem
-                        endpoint={ep.value}
-                        label={ep.label}
-                        icon={ep.icon}
-                        hasModels={ep.hasModels}
-                        isSelected={ep.value === selectedProvider}
-                        requiresUserKey={endpointRequiresUserKey(ep.value)}
-                        onSelect={() => onSelectEndpoint(ep.value, modelSelectEnabled)}
-                        onOpenKeyDialog={handleOpenKeyDialog}
-                        onOpenDropdown={(endpoint) =>
-                          setSelectedProvider(endpoint as EModelEndpoint)
-                        }
-                      />
-                    }
-                  >
-                    {ep.value === EModelEndpoint.agents
-                      ? (ep.models || []).map((agentId: string) => (
-                        <ModelItem
-                          key={agentId}
-                          modelName={ep.agentNames?.[agentId] || agentId}
-                          endpoint={ep.value as EModelEndpoint}
-                          isSelected={
-                            selectedAgentId === agentId && conversation?.endpoint === ep.value
-                          }
-                          onSelect={() =>
-                            handleModelSelect(ep.value as EModelEndpoint, agentId)
-                          }
-                          onNavigateBack={() => {}}
-                          icon={
-                            <Icon
-                              isCreatedByUser={false}
-                              endpoint={ep.value}
-                              agentName={ep.agentNames?.[agentId] || ''}
-                              iconURL={agentsMap[agentId]?.avatar?.filepath}
-                            />
-                          }
-                        />
-                      ))
-                      : ep.value === EModelEndpoint.assistants
-                        ? (ep.models || []).map((assistantId: string) => (
-                          <ModelItem
-                            key={assistantId}
-                            modelName={ep.assistantNames?.[assistantId] || assistantId}
-                            endpoint={ep.value as EModelEndpoint}
-                            isSelected={
-                              selectedAssistantId === assistantId &&
-                                  conversation?.endpoint === ep.value
-                            }
-                            onSelect={() =>
-                              handleModelSelect(ep.value as EModelEndpoint, assistantId)
-                            }
-                            onNavigateBack={() => {}}
-                            icon={
-                              <Icon
-                                isCreatedByUser={false}
-                                endpoint={ep.value}
-                                assistantName={ep.assistantNames?.[assistantId] || ''}
-                                iconURL={
-                                  assistantsMap[ep.value]?.[assistantId]?.metadata?.avatar || ''
-                                }
-                              />
-                            }
-                          />
-                        ))
-                        : (ep.models !== undefined
-                          ? ep.models
-                          : (modelsQuery.data?.[ep.value] ?? [])
-                        ).map((modelName: string) => (
-                          <ModelItem
-                            key={modelName}
-                            modelName={modelName}
-                            endpoint={ep.value as EModelEndpoint}
-                            isSelected={
-                              conversation?.model === modelName &&
-                                  conversation?.endpoint === ep.value
-                            }
-                            onSelect={() =>
-                              handleModelSelect(ep.value as EModelEndpoint, modelName)
-                            }
-                            onNavigateBack={() => {}}
-                          />
-                        ))}
-                  </Menu>
-                ) : (
-                  <MenuItem
-                    key={ep.value}
-                    onClick={() => onSelectEndpoint(ep.value, false)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onSelectEndpoint(ep.value, false);
-                      }
-                    }}
-                    role="menuitem"
-                    tabIndex={0}
-                    aria-current={
-                      conversation?.endpoint === ep.value && !hasModelsOnCurrent
-                        ? 'true'
-                        : undefined
-                    }
-                    className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                  >
-                    <div className="flex items-center">
-                      {ep.icon && (
-                        <div
-                          className="mr-2 flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary"
-                          aria-hidden="true"
-                        >
-                          {ep.icon}
-                        </div>
-                      )}
-                      <span>{ep.label}</span>
-                    </div>
-                    {endpointRequiresUserKey(ep.value) && (
-                      <button
-                        onClick={(e) => handleOpenKeyDialog(ep.value as EModelEndpoint, e)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleOpenKeyDialog(ep.value as EModelEndpoint, e);
-                          }
-                          e.stopPropagation();
-                        }}
-                        className="rounded p-1 hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                        aria-label={`${localize('com_endpoint_config_key')} for ${ep.label}`}
-                      >
-                        <Settings className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-                      </button>
-                    )}
-                  </MenuItem>
-                ),
-              )}
-          </>
+          <DesktopDropdownContent
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            modelSpecs={modelSpecs}
+            filteredMenuItems={filteredMenuItems}
+            selectedSpec={selectedSpec || undefined}
+            endpointsConfig={endpointsConfig}
+            selectedProvider={selectedProvider}
+            setSelectedProvider={setSelectedProvider}
+            onSelectSpec={onSelectSpec}
+            onSelectEndpoint={onSelectEndpoint}
+            endpointRequiresUserKey={endpointRequiresUserKey}
+            handleOpenKeyDialog={handleOpenKeyDialog}
+            handleModelSelect={handleModelSelect}
+            conversation={conversation}
+            selectedAgentId={selectedAgentId}
+            selectedAssistantId={selectedAssistantId}
+            agentsMap={agentsMap}
+            assistantsMap={assistantsMap}
+            modelsQuery={modelsQuery}
+          />
         ) : (
-          <div className="relative w-full">
-            <SearchBar
-              searchTerm={searchTerm}
-              setSearchTerm={setSearchTerm}
-              className={cn(currentView === 'models' && 'hidden')}
-            />
-            <div
-              className={cn(
-                'w-full transform transition-all duration-300 ease-in-out',
-                currentView === 'models'
-                  ? 'pointer-events-none absolute h-0 -translate-x-full overflow-hidden opacity-0'
-                  : 'pointer-events-auto relative max-h-[70vh] translate-x-0 overflow-y-auto opacity-100',
-              )}
-            >
-              {modelSpecs && modelSpecs.length > 0
-                ? (filteredMenuItems as TModelSpec[]).map((spec: TModelSpec) => (
-                  <React.Fragment key={`spec-${spec.name}`}>
-                    <SpecItem
-                      spec={spec}
-                      isSelected={selectedSpec === spec.name}
-                      endpointsConfig={endpointsConfig}
-                      onSelect={onSelectSpec}
-                    />
-                  </React.Fragment>
-                ))
-                : (filteredMenuItems as ExtendedEndpoint[]).map((ep: ExtendedEndpoint) => (
-                  <MenuItem
-                    key={ep.value}
-                    onClick={() =>
-                      onSelectEndpoint(ep.value, ep.hasModels && modelSelectEnabled !== false)
-                    }
-                    hideOnClick={!(ep.hasModels && modelSelectEnabled && isMobile)}
-                    role="menuitem"
-                    tabIndex={0}
-                    aria-current={
-                      conversation?.endpoint === ep.value && !hasModelsOnCurrent
-                        ? 'true'
-                        : undefined
-                    }
-                    className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-3 text-base text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                  >
-                    <div className="flex items-center">
-                      {ep.icon && (
-                        <div
-                          className="mr-3 flex h-6 w-6 items-center justify-center overflow-hidden text-text-primary"
-                          aria-hidden="true"
-                        >
-                          {ep.icon}
-                        </div>
-                      )}
-                      <span>{ep.label}</span>
-                    </div>
-                    {endpointRequiresUserKey(ep.value) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenKeyDialog(ep.value as EModelEndpoint, e);
-                        }}
-                        className="rounded p-2 hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                        aria-label={`${localize('com_endpoint_config_key')} for ${ep.label}`}
-                      >
-                        <Settings className="h-5 w-5 text-text-secondary" aria-hidden="true" />
-                      </button>
-                    )}
-                  </MenuItem>
-                ))}
-            </div>
-            {/* Mobile models view */}
-            <div
-              className={cn(
-                'w-full transform transition-all duration-300 ease-in-out',
-                currentView === 'endpoints'
-                  ? 'pointer-events-none absolute h-0 translate-x-full overflow-hidden opacity-0'
-                  : 'pointer-events-auto relative translate-x-0 opacity-100',
-              )}
-            >
-              {currentView === 'models' && selectedProviderData ? (
-                <>
-                  <div className="sticky top-0 z-10 bg-surface-secondary">
-                    <MenuItem
-                      onClick={handleGoBack}
-                      className="flex w-full cursor-pointer items-center border-b border-border-light px-3 py-3 text-base text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary"
-                    >
-                      <ChevronLeft className="mr-2 h-5 w-5" />
-                      <span>{localize('com_ui_go_back')}</span>
-                    </MenuItem>
-                  </div>
-                  <div className="mt-2 overflow-y-auto">
-                    {modelsQuery.isLoading ? (
-                      <div className="px-3 py-3 text-center text-text-primary">
-                        {localize('com_ui_loading')}
-                      </div>
-                    ) : modelsForProvider.length === 0 ? (
-                      <div className="px-3 py-3 text-center text-text-primary">
-                        {searchTerm
-                          ? localize('com_ui_no_matching_models')
-                          : localize('com_ui_no_models_available')}
-                      </div>
-                    ) : selectedProvider === EModelEndpoint.agents ? (
-                      modelsForProvider.map((agentId: string) => (
-                        <ModelItem
-                          key={agentId}
-                          modelName={selectedProviderData.agentNames?.[agentId] || agentId}
-                          endpoint={selectedProvider as EModelEndpoint}
-                          isSelected={
-                            selectedAgentId === agentId &&
-                            conversation?.endpoint === selectedProvider
-                          }
-                          onSelect={() => handleModelChoice(selectedProvider, agentId)}
-                          onNavigateBack={handleGoBack}
-                          icon={
-                            <Icon
-                              isCreatedByUser={false}
-                              endpoint={selectedProvider}
-                              agentName={selectedProviderData.agentNames?.[agentId] || ''}
-                              iconURL={agentsMap[agentId]?.avatar?.filepath}
-                              className="mr-3 h-6 w-6"
-                            />
-                          }
-                        />
-                      ))
-                    ) : selectedProvider === EModelEndpoint.assistants ? (
-                      modelsForProvider.map((assistantId: string) => (
-                        <ModelItem
-                          key={assistantId}
-                          modelName={
-                            selectedProviderData.assistantNames?.[assistantId] || assistantId
-                          }
-                          endpoint={selectedProvider as EModelEndpoint}
-                          isSelected={
-                            selectedAssistantId === assistantId &&
-                            conversation?.endpoint === selectedProvider
-                          }
-                          onSelect={() => handleModelChoice(selectedProvider, assistantId)}
-                          onNavigateBack={handleGoBack}
-                          icon={
-                            <Icon
-                              isCreatedByUser={false}
-                              endpoint={selectedProvider}
-                              assistantName={
-                                selectedProviderData.assistantNames?.[assistantId] || ''
-                              }
-                              iconURL={
-                                assistantsMap[selectedProvider]?.[assistantId]?.metadata?.avatar ||
-                                ''
-                              }
-                              className="mr-3 h-6 w-6"
-                            />
-                          }
-                        />
-                      ))
-                    ) : (
-                      modelsForProvider.map((modelName: string) => (
-                        <ModelItem
-                          key={modelName}
-                          modelName={modelName}
-                          endpoint={selectedProvider as EModelEndpoint}
-                          isSelected={
-                            conversation?.model === modelName &&
-                            conversation?.endpoint === selectedProvider
-                          }
-                          onSelect={() => handleModelChoice(selectedProvider!, modelName)}
-                          onNavigateBack={handleGoBack}
-                        />
-                      ))
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
+          <MobileDropdownContent
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            currentView={currentView}
+            modelSpecs={modelSpecs}
+            filteredMenuItems={filteredMenuItems}
+            selectedSpec={selectedSpec || undefined}
+            endpointsConfig={endpointsConfig}
+            onSelectSpec={onSelectSpec}
+            onSelectEndpoint={onSelectEndpoint}
+            endpointRequiresUserKey={endpointRequiresUserKey}
+            handleOpenKeyDialog={handleOpenKeyDialog}
+            handleGoBack={handleGoBack}
+            handleModelChoice={handleModelChoice}
+            conversation={conversation}
+            selectedProvider={selectedProvider}
+            selectedProviderData={selectedProviderData}
+            modelsForProvider={modelsForProvider}
+            selectedAgentId={selectedAgentId}
+            selectedAssistantId={selectedAssistantId}
+            agentsMap={agentsMap}
+            assistantsMap={assistantsMap}
+            modelSelectEnabled={modelSelectEnabled !== false}
+            hasModelsOnCurrent={hasModelsOnCurrent}
+            modelsQuery={modelsQuery}
+          />
         )}
       </Menu>
       <DialogManager

@@ -53,7 +53,10 @@ const ModelDropdownButton = ({
       )}
     >
       {currentModelSpec ? (
-        <div className="flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary">
+        <div
+          className="flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary"
+          aria-hidden="true"
+        >
           <SpecIcon currentSpec={currentModelSpec} endpointsConfig={endpointsConfig} />
         </div>
       ) : (
@@ -65,6 +68,7 @@ const ModelDropdownButton = ({
               isAgentsEndpoint(endpoint as string) && selectedAgentId ? 'rounded-full' : '',
               isMobile && 'h-6 w-6',
             )}
+            aria-hidden="true"
           >
             {isAgentsEndpoint(endpoint as string) && selectedAgentId ? (
               <Icon
