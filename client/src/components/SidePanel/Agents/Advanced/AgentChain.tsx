@@ -66,8 +66,8 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
   };
 
   return (
-    <div className="p-4">
-      <div className="mb-4 flex items-center justify-between">
+    <>
+      <div className="flex items-center justify-between">
         <label className="font-semibold text-text-primary">{localize('com_ui_agent_chain')}</label>
       </div>
       <div className="space-y-1">
@@ -152,7 +152,7 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
           </p>
         )}
       </div>
-    </div>
+    </>
   );
 };
 
