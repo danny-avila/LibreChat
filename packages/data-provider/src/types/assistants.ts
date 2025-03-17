@@ -222,6 +222,7 @@ export type Agent = {
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
+  recursion_limit?: number;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -236,7 +237,10 @@ export type AgentCreateParams = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
-} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts'>;
+} & Pick<
+  Agent,
+  'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts' | 'recursion_limit'
+>;
 
 export type AgentUpdateParams = {
   name?: string | null;
@@ -252,7 +256,10 @@ export type AgentUpdateParams = {
   projectIds?: string[];
   removeProjectIds?: string[];
   isCollaborative?: boolean;
-} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts'>;
+} & Pick<
+  Agent,
+  'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts' | 'recursion_limit'
+>;
 
 export type AgentListParams = {
   limit?: number;

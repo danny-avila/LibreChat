@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm, AgentModelPanelProps } from '~/common';
+import FormInput from '~/components/ui/FormInput';
 import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
@@ -32,12 +33,28 @@ export default function AdvancedPanel({
         </div>
         <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_advanced_settings')}</div>
       </div>
-      <Controller
-        name="agent_ids"
-        control={control}
-        defaultValue={[]}
-        render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
-      />
+      <div className="flex flex-col gap-4 px-2">
+        <Controller
+          name="recursion_limit"
+          control={control}
+          render={({ field }) => (
+            <FormInput
+              field={field}
+              containerClass="w-1/2"
+              inputClass="w-full"
+              label={localize('com_ui_agent_recursion_limit')}
+              placeholder={localize('com_nav_theme_system')}
+              type="number"
+            />
+          )}
+        />
+        <Controller
+          name="agent_ids"
+          control={control}
+          defaultValue={[]}
+          render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
+        />
+      </div>
     </div>
   );
 }

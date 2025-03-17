@@ -679,6 +679,9 @@ class AgentClient extends BaseClient {
         if (i > 0) {
           this.model = agent.model_parameters.model;
         }
+        if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
+          config.recursionLimit = agent.recursion_limit;
+        }
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;
         config.configurable.agent_index = i;

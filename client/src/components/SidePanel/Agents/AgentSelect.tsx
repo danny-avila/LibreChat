@@ -99,6 +99,11 @@ export default function AgentSelect({
           return;
         }
 
+        if (name === 'recursion_limit' && typeof value === 'number') {
+          formValues[name] = value;
+          return;
+        }
+
         if (typeof value !== 'number' && typeof value !== 'object') {
           formValues[name] = value;
         }

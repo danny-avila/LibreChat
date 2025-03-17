@@ -132,6 +132,7 @@ export default function AgentPanel({
         agent_ids,
         end_after_tools,
         hide_sequential_outputs,
+        recursion_limit,
       } = data;
 
       const model = _model ?? '';
@@ -153,6 +154,7 @@ export default function AgentPanel({
             agent_ids,
             end_after_tools,
             hide_sequential_outputs,
+            recursion_limit,
           },
         });
         return;
@@ -177,6 +179,7 @@ export default function AgentPanel({
         agent_ids,
         end_after_tools,
         hide_sequential_outputs,
+        recursion_limit,
       });
     },
     [agent_id, create, update, showToast, localize],

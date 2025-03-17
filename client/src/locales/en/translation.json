@@ -468,6 +468,7 @@
   "com_ui_advanced_settings": "Advanced Settings",
   "com_ui_agent": "Agent",
   "com_ui_agent_chain": "Agent Chain",
+  "com_ui_agent_recursion_limit": "Max Agent Steps",
   "com_ui_agent_chain_max": "You have reached the maximum of {{0}} agents.",
   "com_ui_agent_delete_error": "There was an error deleting the agent",
   "com_ui_agent_deleted": "Successfully deleted agent",
