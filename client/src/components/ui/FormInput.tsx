@@ -8,6 +8,7 @@ export default function FormInput({
   labelClass,
   inputClass,
   containerClass,
+  labelAdjacent,
   placeholder = '',
   type = 'string',
 }: {
@@ -18,6 +19,7 @@ export default function FormInput({
   placeholder?: string;
   containerClass?: string;
   type?: 'string' | 'number';
+  labelAdjacent?: React.ReactNode;
 }) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -36,12 +38,15 @@ export default function FormInput({
 
   return (
     <div className={cn('flex w-full flex-col items-center gap-2', containerClass)}>
-      <Label
-        htmlFor={`${field.name}-input`}
-        className={cn('text-left text-sm font-semibold text-text-primary', labelClass)}
-      >
-        {label}
-      </Label>
+      <div className="flex w-full items-center justify-between">
+        <Label
+          htmlFor={`${field.name}-input`}
+          className={cn('text-left text-sm font-semibold text-text-primary', labelClass)}
+        >
+          {label}
+        </Label>
+        {labelAdjacent}
+      </div>
       <Input
         id={`${field.name}-input`}
         value={field.value ?? ''}

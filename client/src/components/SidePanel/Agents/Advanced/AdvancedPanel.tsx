@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm, AgentPanelProps } from '~/common';
-import FormInput from '~/components/ui/FormInput';
+import MaxAgentSteps from './MaxAgentSteps';
 import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
@@ -40,20 +40,7 @@ export default function AdvancedPanel({
         <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_advanced_settings')}</div>
       </div>
       <div className="flex flex-col gap-4 px-2">
-        <Controller
-          name="recursion_limit"
-          control={control}
-          render={({ field }) => (
-            <FormInput
-              field={field}
-              containerClass="w-1/2"
-              inputClass="w-full"
-              label={localize('com_ui_agent_recursion_limit')}
-              placeholder={localize('com_nav_theme_system')}
-              type="number"
-            />
-          )}
-        />
+        <MaxAgentSteps />
         {chainEnabled && (
           <Controller
             name="agent_ids"
