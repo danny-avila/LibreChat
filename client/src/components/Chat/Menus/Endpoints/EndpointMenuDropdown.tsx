@@ -201,9 +201,11 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
     }
   };
 
-  const handleGoBack = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleGoBack = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setCurrentView('endpoints');
   };
 
@@ -701,7 +703,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
       </Menu>
       <DialogManager
         keyDialogOpen={keyDialogOpen}
-        keyDialogEndpoint={keyDialogEndpoint}
+        keyDialogEndpoint={keyDialogEndpoint ?? undefined}
         setKeyDialogOpen={setKeyDialogOpen}
         endpointsConfig={endpointsConfig}
       />

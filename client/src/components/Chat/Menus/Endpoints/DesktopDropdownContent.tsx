@@ -1,7 +1,7 @@
 import React from 'react';
 import { Settings } from 'lucide-react';
 import type { TModelSpec } from 'librechat-data-provider';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import Icon from '~/components/Endpoints/Icon';
 import EndpointItem from './EndpointItem';
 import { Menu, MenuItem } from './Menu';
@@ -21,7 +21,10 @@ interface DesktopDropdownContentProps {
   onSelectEndpoint: (endpoint: string, hasModels: boolean) => void;
   handleModelSelect: (endpoint: EModelEndpoint, modelId: string) => void;
   endpointRequiresUserKey: (endpoint: string) => boolean;
-  handleOpenKeyDialog: (endpoint: EModelEndpoint, e?: React.MouseEvent) => void;
+  handleOpenKeyDialog: (
+    endpoint: EModelEndpoint,
+    e: React.MouseEvent | React.KeyboardEvent,
+  ) => void;
   selectedAgentId?: string;
   selectedAssistantId?: string;
   agentsMap: Record<string, any>;
@@ -54,7 +57,7 @@ const DesktopDropdownContent = ({
   return (
     <>
       {modelSpecs && modelSpecs.length > 0
-        ? filteredMenuItems.map((spec: TModelSpec, i: number) => (
+        ? filteredMenuItems.map((spec: TModelSpec) => (
           <React.Fragment key={`spec-${spec.name}`}>
             <SpecItem
               spec={spec}
@@ -99,6 +102,7 @@ const DesktopDropdownContent = ({
                       selectedAgentId === agentId && conversation?.endpoint === ep.value
                     }
                     onSelect={() => handleModelSelect(ep.value, agentId)}
+                    onNavigateBack={() => setSelectedProvider(null)}
                     icon={
                       <Icon
                         isCreatedByUser={false}
@@ -120,6 +124,7 @@ const DesktopDropdownContent = ({
                             conversation?.endpoint === ep.value
                       }
                       onSelect={() => handleModelSelect(ep.value, assistantId)}
+                      onNavigateBack={() => setSelectedProvider(null)}
                       icon={
                         <Icon
                           isCreatedByUser={false}
@@ -144,6 +149,7 @@ const DesktopDropdownContent = ({
                         conversation?.model === modelName && conversation?.endpoint === ep.value
                       }
                       onSelect={() => handleModelSelect(ep.value, modelName)}
+                      onNavigateBack={() => setSelectedProvider(null)}
                     />
                   ))}
             </Menu>
