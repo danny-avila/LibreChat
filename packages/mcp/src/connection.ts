@@ -269,7 +269,7 @@ export class MCPConnection extends EventEmitter {
         this.transport = this.constructTransport(this.options);
         this.setupTransportDebugHandlers();
 
-        const connectTimeout = 10000;
+	const connectTimeout = this.options.initTimeout ?? 10000
         await Promise.race([
           this.client.connect(this.transport),
           new Promise((_resolve, reject) =>
