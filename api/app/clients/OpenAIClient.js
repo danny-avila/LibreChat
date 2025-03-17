@@ -112,7 +112,12 @@ class OpenAIClient extends BaseClient {
     const { OPENAI_FORCE_PROMPT } = process.env ?? {};
     const { reverseProxyUrl: reverseProxy } = this.options;
 
-    if (!this.useOpenRouter && reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) {
+    if (
+      !this.useOpenRouter &&
+      ((reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) ||
+        (this.options.endpoint &&
+          this.options.endpoint.toLowerCase().includes(KnownEndpoints.openrouter)))
+    ) {
       this.useOpenRouter = true;
     }
 
@@ -1267,6 +1272,29 @@ ${convo}
         });
       }
 
+      /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
+      if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
+        const searchExcludeParams = [
+          'frequency_penalty',
+          'presence_penalty',
+          'temperature',
+          'top_p',
+          'top_k',
+          'stop',
+          'logit_bias',
+          'seed',
+          'response_format',
+          'n',
+          'logprobs',
+          'user',
+        ];
+
+        this.options.dropParams = this.options.dropParams || [];
+        this.options.dropParams = [
+          ...new Set([...this.options.dropParams, ...searchExcludeParams]),
+        ];
+      }
+
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
@@ -1302,8 +1330,12 @@ ${convo}
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
-      } else if (!this.isOmni && modelOptions.reasoning_effort != null) {
+      } else if (
+        (!this.isOmni || /^o1-(mini|preview)/i.test(modelOptions.model)) &&
+        modelOptions.reasoning_effort != null
+      ) {
         delete modelOptions.reasoning_effort;
+        delete modelOptions.temperature;
       }
 
       let reasoningKey = 'reasoning_content';

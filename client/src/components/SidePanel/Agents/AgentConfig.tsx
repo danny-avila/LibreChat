@@ -23,6 +23,7 @@ import { processAgentOption } from '~/utils';
 import AdminSettings from './AdminSettings';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
+import FileContext from './FileContext';
 import { Spinner } from '~/components';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
@@ -82,6 +83,10 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities.includes(AgentCapabilities.artifacts) ?? false,
     [agentsConfig],
   );
+  const ocrEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.ocr) ?? false,
+    [agentsConfig],
+  );
   const fileSearchEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.file_search) ?? false,
     [agentsConfig],
@@ -90,6 +95,26 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities.includes(AgentCapabilities.execute_code) ?? false,
     [agentsConfig],
   );
+
+  const context_files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
+
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.context_files) {
+      return agent.context_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.context_files ?? [];
+  }, [agent, agent_id, fileMap]);
 
   const knowledge_files = useMemo(() => {
     if (typeof agent === 'string') {
@@ -334,7 +359,7 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
-        {(codeEnabled || fileSearchEnabled || artifactsEnabled) && (
+        {(codeEnabled || fileSearchEnabled || artifactsEnabled || ocrEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
               {localize('com_assistants_capabilities')}
@@ -345,6 +370,8 @@ export default function AgentConfig({
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
             {/* Artifacts */}
             {artifactsEnabled && <Artifacts />}
+            {/* File Context (OCR) */}
+            {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
           </div>
         )}
         {/* Agent Tools & Actions */}

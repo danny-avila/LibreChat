@@ -1152,7 +1152,6 @@ export const compactAgentsSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     agent_id: true,
-    resendFiles: true,
     instructions: true,
     additional_instructions: true,
   })

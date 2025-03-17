@@ -8,7 +8,7 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if (req.user.backupCodes != null && req.user.backupCodes.length > 0) {
+    if (req.user.twoFactorEnabled) {
       const tempToken = generate2FATempToken(req.user._id);
       return res.status(200).json({ twoFAPending: true, tempToken });
     }

@@ -1,9 +1,11 @@
-const ToolCall = require('./schema/toolCallSchema');
+const mongoose = require('mongoose');
+const { toolCallSchema } = require('@librechat/data-schemas');
+const ToolCall = mongoose.model('ToolCall', toolCallSchema);
 
 /**
  * Create a new tool call
- * @param {ToolCallData} toolCallData - The tool call data
- * @returns {Promise<ToolCallData>} The created tool call document
+ * @param {IToolCallData} toolCallData - The tool call data
+ * @returns {Promise<IToolCallData>} The created tool call document
  */
 async function createToolCall(toolCallData) {
   try {
@@ -16,7 +18,7 @@ async function createToolCall(toolCallData) {
 /**
  * Get a tool call by ID
  * @param {string} id - The tool call document ID
- * @returns {Promise<ToolCallData|null>} The tool call document or null if not found
+ * @returns {Promise<IToolCallData|null>} The tool call document or null if not found
  */
 async function getToolCallById(id) {
   try {
@@ -44,7 +46,7 @@ async function getToolCallsByMessage(messageId, userId) {
  * Get tool calls by conversation ID and user
  * @param {string} conversationId - The conversation ID
  * @param {string} userId - The user's ObjectId
- * @returns {Promise<ToolCallData[]>} Array of tool call documents
+ * @returns {Promise<IToolCallData[]>} Array of tool call documents
  */
 async function getToolCallsByConvo(conversationId, userId) {
   try {
@@ -57,8 +59,8 @@ async function getToolCallsByConvo(conversationId, userId) {
 /**
  * Update a tool call
  * @param {string} id - The tool call document ID
- * @param {Partial<ToolCallData>} updateData - The data to update
- * @returns {Promise<ToolCallData|null>} The updated tool call document or null if not found
+ * @param {Partial<IToolCallData>} updateData - The data to update
+ * @returns {Promise<IToolCallData|null>} The updated tool call document or null if not found
  */
 async function updateToolCall(id, updateData) {
   try {
