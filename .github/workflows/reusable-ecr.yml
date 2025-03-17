@@ -38,6 +38,10 @@ on:
         required: false
         type: string
         default: 'false'
+    outputs:
+      SHORT_SHA:
+        description: 'Short SHA of the commit'
+        value: ${{ jobs.build.outputs.SHORT_SHA }}
     secrets:
       s3-cache-bucket:
         required: true
@@ -58,7 +62,7 @@ jobs:
     strategy:
       matrix: ${{ fromJson(inputs.build-matrix) }}
     outputs:
-      SHORT_SHA: ${{ steps.set_shortSHA.outputs.SHORT_SHA }}
+      SHORT_SHA: ${{ steps.SHORT_SHA.outputs.SHORT_SHA }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -89,7 +93,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Genrate Short SHA
-        id: set_shortSHA
+        id: SHORT_SHA
         run: |
           calculatedSHA=$(git rev-parse --short ${{ github.sha }})
           echo "SHORT_SHA=$calculatedSHA" >> $GITHUB_ENV
