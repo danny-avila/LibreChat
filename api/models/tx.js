@@ -61,6 +61,7 @@ const bedrockValues = {
   'amazon.nova-micro-v1:0': { prompt: 0.035, completion: 0.14 },
   'amazon.nova-lite-v1:0': { prompt: 0.06, completion: 0.24 },
   'amazon.nova-pro-v1:0': { prompt: 0.8, completion: 3.2 },
+  'deepseek.r1': { prompt: 1.35, completion: 5.4 },
 };
 
 /**

@@ -172,7 +172,7 @@ Error Message: ${error.message}`);
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:image/jpeg;base64,${base64}`,
+            url: `data:image/png;base64,${base64}`,
           },
         },
       ];
