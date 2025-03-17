@@ -70,11 +70,18 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
 
   return (
     <HoverCard openDelay={50}>
-      <div className="flex items-center justify-start gap-2">
-        <label className="font-semibold text-text-primary">{localize('com_ui_agent_chain')}</label>
-        <HoverCardTrigger>
-          <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
-        </HoverCardTrigger>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <label className="font-semibold text-text-primary">
+            {localize('com_ui_agent_chain')}
+          </label>
+          <HoverCardTrigger>
+            <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+          </HoverCardTrigger>
+        </div>
+        <div className="text-xs text-text-secondary">
+          {agentIds.length} / {MAX_AGENTS}
+        </div>
       </div>
       <div className="space-y-1">
         {/* Current fixed agent */}
