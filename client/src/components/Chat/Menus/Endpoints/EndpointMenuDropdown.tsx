@@ -295,13 +295,34 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
     if (!ep) {
       return [];
     }
+
+    let models: string[] = [];
+
     if (provider === EModelEndpoint.agents) {
-      return ep.models || [];
+      models = ep.models || [];
+    } else if (provider === EModelEndpoint.assistants) {
+      models = ep.models || [];
+    } else {
+      models = ep.models !== undefined ? ep.models : (modelsQuery.data?.[provider] ?? []);
     }
-    if (provider === EModelEndpoint.assistants) {
-      return ep.models || [];
+
+    // Apply search filtering to models
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      if (provider === EModelEndpoint.agents) {
+        return models.filter((agentId) =>
+          (ep.agentNames?.[agentId] || agentId).toLowerCase().includes(lowerSearchTerm),
+        );
+      } else if (provider === EModelEndpoint.assistants) {
+        return models.filter((assistantId) =>
+          (ep.assistantNames?.[assistantId] || assistantId).toLowerCase().includes(lowerSearchTerm),
+        );
+      } else {
+        return models.filter((modelName) => modelName.toLowerCase().includes(lowerSearchTerm));
+      }
     }
-    return ep.models !== undefined ? ep.models : (modelsQuery.data?.[provider] ?? []);
+
+    return models;
   };
 
   const selectedProviderData = mappedEndpoints.find((e) => e.value === selectedProvider);
@@ -332,7 +353,6 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
               menuOpen
                 ? 'bg-surface-tertiary hover:bg-surface-tertiary'
                 : 'bg-surface-secondary hover:bg-surface-tertiary',
-              isMobile && 'text-base',
             )}
           >
             {currentModelSpec ? (
@@ -606,10 +626,10 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
             >
               {currentView === 'models' && selectedProviderData ? (
                 <>
-                  <div className="sticky top-0 z-10 border-b border-border-light bg-surface-secondary">
+                  <div className="sticky top-0 z-10 bg-surface-secondary">
                     <MenuItem
                       onClick={handleGoBack}
-                      className="flex w-full cursor-pointer items-center px-3 py-3 text-base text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary"
+                      className="flex w-full cursor-pointer items-center border-b border-border-light px-3 py-3 text-base text-text-primary transition-colors duration-75 hover:bg-surface-tertiary focus:bg-surface-tertiary"
                     >
                       <ChevronLeft className="mr-2 h-5 w-5" />
                       <span>{localize('com_ui_go_back')}</span>
@@ -622,7 +642,9 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
                       </div>
                     ) : modelsForProvider.length === 0 ? (
                       <div className="px-3 py-3 text-center text-text-primary">
-                        {localize('com_ui_no_models_available')}
+                        {searchTerm
+                          ? localize('com_ui_no_matching_models')
+                          : localize('com_ui_no_models_available')}
                       </div>
                     ) : selectedProvider === EModelEndpoint.agents ? (
                       modelsForProvider.map((agentId: string) => (
