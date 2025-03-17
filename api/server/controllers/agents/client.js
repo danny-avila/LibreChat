@@ -7,7 +7,7 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
-const { setMaxListeners } = require('events');
+require('events').EventEmitter.defaultMaxListeners = 100;
 const {
   Callback,
   GraphEvents,
@@ -26,14 +26,15 @@ const {
   KnownEndpoints,
   anthropicSchema,
   isAgentsEndpoint,
+  AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { getCustomEndpointConfig, checkCapability } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 const { logger, sendEvent } = require('~/config');
@@ -631,8 +632,6 @@ class AgentClient extends BaseClient {
       //   });
       // }
 
-      setMaxListeners(20, abortController.signal);
-
       /** @type {TCustomConfig['endpoints']['agents']} */
       const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
 
@@ -789,9 +788,13 @@ class AgentClient extends BaseClient {
       };
 
       await runAgent(this.options.agent, initialMessages);
-      const windowSize = 5;
       let finalContentStart = 0;
-      if (this.agentConfigs && this.agentConfigs.size > 0) {
+      if (
+        this.agentConfigs &&
+        this.agentConfigs.size > 0 &&
+        (await checkCapability(this.options.req, AgentCapabilities.chain))
+      ) {
+        const windowSize = 5;
         let latestMessage = initialMessages.pop().content;
         if (typeof latestMessage !== 'string') {
           latestMessage = latestMessage[0].text;
@@ -870,6 +873,7 @@ class AgentClient extends BaseClient {
         }
       }
 
+      /** Note: not implemented */
       if (config.configurable.hide_sequential_outputs !== true) {
         finalContentStart = 0;
       }
