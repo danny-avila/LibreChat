@@ -289,7 +289,7 @@ export default function AgentPanel({
           />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel setActivePanel={setActivePanel} />
+          <AdvancedPanel setActivePanel={setActivePanel} agentsConfig={agentsConfig} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter

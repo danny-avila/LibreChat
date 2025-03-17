@@ -168,6 +168,7 @@ export enum AgentCapabilities {
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
+  chain = 'chain',
   ocr = 'ocr',
 }
 
@@ -244,6 +245,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
         AgentCapabilities.actions,
         AgentCapabilities.tools,
         AgentCapabilities.ocr,
+        AgentCapabilities.chain,
       ]),
   }),
 );

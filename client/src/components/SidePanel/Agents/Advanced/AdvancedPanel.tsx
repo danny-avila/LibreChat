@@ -1,19 +1,25 @@
-import React from 'react';
+import { useMemo } from 'react';
 import { ChevronLeft } from 'lucide-react';
+import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
-import type { AgentForm, AgentModelPanelProps } from '~/common';
+import type { AgentForm, AgentPanelProps } from '~/common';
 import FormInput from '~/components/ui/FormInput';
 import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
 export default function AdvancedPanel({
+  agentsConfig,
   setActivePanel,
-}: Pick<AgentModelPanelProps, 'setActivePanel'>) {
+}: Pick<AgentPanelProps, 'setActivePanel' | 'agentsConfig'>) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, watch } = methods;
   const currentAgentId = watch('id');
+  const chainEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.chain) ?? false,
+    [agentsConfig],
+  );
 
   return (
     <div className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm">
@@ -48,12 +54,14 @@ export default function AdvancedPanel({
             />
           )}
         />
-        <Controller
-          name="agent_ids"
-          control={control}
-          defaultValue={[]}
-          render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
-        />
+        {chainEnabled && (
+          <Controller
+            name="agent_ids"
+            control={control}
+            defaultValue={[]}
+            render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
+          />
+        )}
       </div>
     </div>
   );
