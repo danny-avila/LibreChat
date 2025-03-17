@@ -42,7 +42,7 @@
     "@keyv/redis": "^2.8.1",
     "@langchain/community": "^0.3.34",
     "@langchain/core": "^0.3.40",
-    "@langchain/google-genai": "^0.1.9",
+    "@langchain/google-genai": "^0.1.11",
     "@langchain/google-vertexai": "^0.2.0",
     "@langchain/textsplitters": "^0.1.0",
     "@librechat/data-schemas": "*",
