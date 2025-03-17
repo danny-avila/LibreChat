@@ -19,23 +19,18 @@ import {
   useKeyDialog,
   useMediaQuery,
 } from '~/hooks';
-import {
-  cn,
-  getEndpointField,
-  getModelSpecIconURL,
-  filterMenuItems,
-  getConvoSwitchLogic,
-} from '~/utils';
+import { cn, getModelSpecIconURL, filterMenuItems, getConvoSwitchLogic } from '~/utils';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery } from '~/data-provider';
+import type { ExtendedEndpoint } from '~/common';
 import Icon from '~/components/Endpoints/Icon';
+import DialogManager from './DialogManager';
 import EndpointItem from './EndpointItem';
 import { Menu, MenuItem } from './Menu';
 import ModelItem from './ModelItem';
 import SearchBar from './SearchBar';
 import SpecItem from './SpecItem';
 import SpecIcon from './SpecIcon';
-import DialogManager from './DialogManager';
 import store from '~/store';
 
 interface EndpointMenuDropdownProps {
@@ -88,7 +83,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentView, setCurrentView] = useState<'endpoints' | 'models'>('endpoints');
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<EModelEndpoint | null>(null);
   const animationTimeoutRef = useRef<NodeJS.Timeout>();
   const openingAnimationRef = useRef<NodeJS.Timeout>();
 
@@ -171,7 +166,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
     setMenuOpen(false);
   };
 
-  const filteredMenuItems = useMemo(() => {
+  const filteredMenuItems = useMemo<TModelSpec[] | ExtendedEndpoint[]>(() => {
     if (modelSpecs && modelSpecs.length > 0) {
       const lowerSearchTerm = searchTerm.toLowerCase();
       return modelSpecs.filter(
@@ -183,7 +178,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
     return filterMenuItems(searchTerm, mappedEndpoints, agents, assistants, modelsQuery.data);
   }, [searchTerm, mappedEndpoints, agents, assistants, modelsQuery.data, modelSpecs]);
 
-  const onSelectEndpoint = (ep: string, hasModels: boolean) => {
+  const onSelectEndpoint = (ep: EModelEndpoint, hasModels: boolean) => {
     setSelectedProvider(ep);
     if (hasModels && isMobile) {
       setCurrentView('models');
@@ -193,9 +188,9 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
     }
   };
 
-  const handleModelChoice = (ep: string, modelId: string) => {
-    if (ep && typeof ep === 'string') {
-      handleModelSelect(ep as EModelEndpoint, modelId);
+  const handleModelChoice = (ep: EModelEndpoint, modelId: string) => {
+    if (ep) {
+      handleModelSelect(ep, modelId);
       setMenuOpen(false);
       setCurrentView('endpoints');
     }
@@ -295,7 +290,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
     return <></>;
   }
 
-  const getModelsForProvider = (provider: string) => {
+  const getModelsForProvider = (provider: EModelEndpoint) => {
     const ep = mappedEndpoints.find((e) => e.value === provider);
     if (!ep) {
       return [];
@@ -387,7 +382,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
                   />
                 </React.Fragment>
               ))
-              : filteredMenuItems.map((ep: any) =>
+              : (filteredMenuItems as ExtendedEndpoint[]).map((ep: ExtendedEndpoint) =>
                 ep.hasModels && modelSelectEnabled !== false ? (
                   <Menu
                     key={ep.value}
@@ -408,7 +403,9 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
                         requiresUserKey={endpointRequiresUserKey(ep.value)}
                         onSelect={() => onSelectEndpoint(ep.value, modelSelectEnabled)}
                         onOpenKeyDialog={handleOpenKeyDialog}
-                        onOpenDropdown={setSelectedProvider}
+                        onOpenDropdown={(endpoint) =>
+                          setSelectedProvider(endpoint as EModelEndpoint)
+                        }
                       />
                     }
                   >
@@ -546,7 +543,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
               )}
             >
               {modelSpecs && modelSpecs.length > 0
-                ? filteredMenuItems.map((spec: TModelSpec) => (
+                ? (filteredMenuItems as TModelSpec[]).map((spec: TModelSpec) => (
                   <React.Fragment key={`spec-${spec.name}`}>
                     <SpecItem
                       spec={spec}
@@ -556,7 +553,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
                     />
                   </React.Fragment>
                 ))
-                : filteredMenuItems.map((ep: any) => (
+                : (filteredMenuItems as ExtendedEndpoint[]).map((ep: ExtendedEndpoint) => (
                   <MenuItem
                     key={ep.value}
                     onClick={() =>
@@ -598,6 +595,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
                   </MenuItem>
                 ))}
             </div>
+            {/* Mobile models view */}
             <div
               className={cn(
                 'w-full transform transition-all duration-300 ease-in-out',
