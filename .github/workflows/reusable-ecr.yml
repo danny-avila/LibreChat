@@ -57,6 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(inputs.build-matrix) }}
+    outputs:
+      SHORT_SHA: ${{ steps.set_shortSHA.outputs.SHORT_SHA }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -91,6 +93,7 @@ jobs:
         run: |
           calculatedSHA=$(git rev-parse --short ${{ github.sha }})
           echo "SHORT_SHA=$calculatedSHA" >> $GITHUB_ENV
+          echo "SHORT_SHA=$calculatedSHA" >> $GITHUB_OUTPUT
 
       - name: Prepare environment
         run: |
