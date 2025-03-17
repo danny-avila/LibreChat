@@ -615,7 +615,7 @@ export function EndpointMenuDropdown({ interfaceConfig, modelSpecs }: EndpointMe
                       <span>{localize('com_ui_go_back')}</span>
                     </MenuItem>
                   </div>
-                  <div className="mt-2 max-h-[65vh] overflow-y-auto">
+                  <div className="mt-2 overflow-y-auto">
                     {modelsQuery.isLoading ? (
                       <div className="px-3 py-3 text-center text-text-primary">
                         {localize('com_ui_loading')}
