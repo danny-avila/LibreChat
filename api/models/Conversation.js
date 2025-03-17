@@ -15,19 +15,6 @@ const searchConversation = async (conversationId) => {
     throw new Error('Error searching conversation');
   }
 };
-/**
- * Searches for a conversation by conversationId and returns associated file ids.
- * @param {string} conversationId - The conversation's ID.
- * @returns {Promise<string[] | null>}
- */
-const getConvoFiles = async (conversationId) => {
-  try {
-    return (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
-  } catch (error) {
-    logger.error('[getConvoFiles] Error getting conversation files', error);
-    throw new Error('Error getting conversation files');
-  }
-};
 
 /**
  * Retrieves a single conversation for a given user and conversation ID.
@@ -73,9 +60,46 @@ const deleteNullOrEmptyConversations = async () => {
   }
 };
 
+/**
+ * Retrieves files from a conversation that have either embedded=true
+ * or a metadata.fileIdentifier. Simplified and efficient query.
+ *
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<MongoFile[]>} - Filtered array of matching file objects
+ */
+const getToolFiles = async (conversationId) => {
+  try {
+    const [result] = await Conversation.aggregate([
+      { $match: { conversationId } },
+      {
+        $project: {
+          files: {
+            $filter: {
+              input: '$files',
+              as: 'file',
+              cond: {
+                $or: [
+                  { $eq: ['$$file.embedded', true] },
+                  { $ifNull: ['$$file.metadata.fileIdentifier', false] },
+                ],
+              },
+            },
+          },
+          _id: 0,
+        },
+      },
+    ]).exec();
+
+    return result?.files || [];
+  } catch (error) {
+    logger.error('[getConvoEmbeddedFiles] Error fetching embedded files:', error);
+    throw new Error('Error fetching embedded files');
+  }
+};
+
 module.exports = {
   Conversation,
-  getConvoFiles,
+  getToolFiles,
   searchConversation,
   deleteNullOrEmptyConversations,
   /**
