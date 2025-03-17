@@ -122,21 +122,22 @@ export default function useMessageActions(props: TMessageActions) {
     message?.messageId || '',
   );
 
-  // Updated: Always send feedback update if conversation and message exist.
   const handleFeedback = useCallback(
     (rating: 'thumbsUp' | 'thumbsDown', extraPayload?: Partial<TUpdateFeedbackRequest>) => {
-      if (conversation?.conversationId && message?.messageId) {
-        feedbackMutation.mutate(
-          { rating, ...extraPayload },
-          {
-            onSuccess: (data) => {
-              setRated(data);
-            },
-          }
-        );
+      if (!conversation?.conversationId || !message?.messageId || !feedbackMutation?.mutate) {
+        console.error('Feedback mutation is not available.');
+        return;
       }
+      feedbackMutation.mutate(
+        { rating, ...extraPayload },
+        {
+          onSuccess: (data) => {
+            setRated(data);
+          },
+        },
+      );
     },
-    [conversation?.conversationId, message?.messageId, feedbackMutation]
+    [conversation?.conversationId, message?.messageId, feedbackMutation],
   );
 
   return {

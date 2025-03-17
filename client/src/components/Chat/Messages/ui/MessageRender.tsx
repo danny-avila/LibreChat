@@ -11,7 +11,7 @@ import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
-import { useMessageActions } from '~/hooks';
+import { useMessageActions, useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -59,6 +59,7 @@ const MessageRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
+    const localize = useLocalize();
     const fontSize = useRecoilValue(store.fontSize);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
 
@@ -236,8 +237,8 @@ const MessageRender = memo(
                   }}
                 />
               ) : showThankYou ? (
-                <div className="inline-flex rounded-lg border border-token-border-light p-4">
-                  <div className="text-sm">Thanks for your feedback!</div>
+                <div className="border-token-border-light inline-flex rounded-lg border p-4">
+                  <div className="text-sm">{localize('com_ui_feedback_thank_you')}</div>
                 </div>
               ) : null}
             </SubRow>

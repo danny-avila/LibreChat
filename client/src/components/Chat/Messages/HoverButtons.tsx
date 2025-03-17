@@ -139,7 +139,7 @@ export default function HoverButtons({
               className={cn(
                 'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
               )}
-              onClick={() => handleFeedback('thumbsUp')}
+              onClick={() => handleFeedback?.('thumbsUp')}
               type="button"
               title={localize('com_ui_feedback_positive')}
               disabled={disableFeedback}
@@ -153,7 +153,7 @@ export default function HoverButtons({
               className={cn(
                 'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
               )}
-              onClick={() => handleFeedback('thumbsDown')}
+              onClick={() => handleFeedback?.('thumbsDown')}
               type="button"
               title={localize('com_ui_feedback_negative')}
               disabled={disableFeedback}

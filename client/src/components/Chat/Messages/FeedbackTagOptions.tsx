@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Check } from 'lucide-react';
 import { cn } from '~/utils';
 import {
   OGDialog,
@@ -7,6 +8,7 @@ import {
   OGDialogHeader,
   OGDialogTitle,
 } from '~/components';
+import { useLocalize } from '~/hooks';
 
 type FeedbackTagOptionsProps = {
   tagChoices: string[];
@@ -14,6 +16,7 @@ type FeedbackTagOptionsProps = {
 };
 
 const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onSelectTag }) => {
+  const localize = useLocalize();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [text, setText] = useState('');
@@ -36,15 +39,17 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
   return (
     <>
       {!isDismissed && (
-        <div className="mt-3 w-full relative">
+        <div className="relative mt-3 w-full">
           <div className="min-h-[96px] w-full">
-            <div className="relative mt-2 flex w-full flex-col gap-3 rounded-lg border border-token-border-light p-4">
-              <div className="flex justify-between items-center">
-                <div className="text-sm text-token-text-secondary">Tell us more:</div>
+            <div className="border-token-border-light relative mt-2 flex w-full flex-col gap-3 rounded-lg border p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-token-text-secondary text-sm">
+                  {localize('com_ui_feedback_tag_options')}
+                </div>
                 <button
                   type="button"
                   onClick={() => setIsDismissed(true)}
-                  className="text-xl text-token-text-secondary hover:text-token-text-primary"
+                  className="text-token-text-secondary hover:text-token-text-primary text-xl"
                   aria-label="Dismiss feedback options"
                 >
                   &times;
@@ -56,7 +61,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                     key={tag}
                     type="button"
                     onClick={() => handleInlineTagClick(tag)}
-                    className="rounded-lg border border-token-border-light px-3 py-1 text-sm text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary"
+                    className="border-token-border-light text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary rounded-lg border px-3 py-1 text-sm"
                   >
                     {tag}
                   </button>
@@ -69,7 +74,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                       setSelectedTag(null);
                       setText('');
                     }}
-                    className="rounded-lg border border-token-border-light px-3 py-1 text-sm text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary"
+                    className="border-token-border-light text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary rounded-lg border px-3 py-1 text-sm"
                   >
                     More...
                   </button>
@@ -88,8 +93,8 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
         </OGDialogTrigger>
         <OGDialogContent className="w-11/12 max-w-xl">
           <OGDialogHeader>
-            <OGDialogTitle className="text-lg font-semibold leading-6 text-token-text-primary">
-              Provide additional feedback
+            <OGDialogTitle className="text-token-text-primary text-lg font-semibold leading-6">
+              {localize('com_ui_feedback_more_information')}
             </OGDialogTitle>
           </OGDialogHeader>
           <div className="flex-grow overflow-y-auto p-4 sm:p-6">
@@ -101,16 +106,16 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                     type="button"
                     onClick={() => setSelectedTag(tag)}
                     className={cn(
-                      'relative rounded-lg border border-token-border-light px-3 py-1 text-sm',
+                      'border-token-border-light relative rounded-lg border px-3 py-1 text-sm',
                       selectedTag === tag
                         ? 'bg-token-main-surface-secondary text-token-text-primary'
-                        : 'text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary'
+                        : 'text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary',
                     )}
                   >
                     {tag}
                     {selectedTag === tag && (
-                      <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-white text-xs">
-                        ✓
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-white">
+                        <Check className="h-4 w-4" />
                       </span>
                     )}
                   </button>
@@ -129,15 +134,15 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
               />
             </div>
           </div>
-          <div className="flex w-full flex-row items-center justify-end p-4 border-t border-token-border-light">
+          <div className="border-token-border-light flex w-full flex-row items-center justify-end border-t p-4">
             <div className="flex flex-col gap-3 sm:flex-row-reverse">
               <button
                 type="button"
                 onClick={handleSubmit}
-                className={cn('btn btn-primary', !selectedTag && 'opacity-50 cursor-not-allowed')}
+                className={cn('btn btn-primary', !selectedTag && 'cursor-not-allowed opacity-50')}
                 disabled={!selectedTag}
               >
-                Submit
+                {localize('com_ui_submit')}
               </button>
             </div>
           </div>
