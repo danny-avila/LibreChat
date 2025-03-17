@@ -1121,9 +1121,13 @@ class BaseClient {
         return message;
       }
 
-      const files = await getFiles({
-        file_id: { $in: fileIds },
-      });
+      const files = await getFiles(
+        {
+          file_id: { $in: fileIds },
+        },
+        {},
+        {},
+      );
 
       await this.addImageURLs(message, files, this.visionMode);
 

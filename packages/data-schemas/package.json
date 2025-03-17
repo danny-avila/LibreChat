@@ -60,7 +60,7 @@
     "access": "public"
   },
   "dependencies": {
-    "mongoose": "^8.9.5"
+    "mongoose": "^8.12.1"
   },
   "peerDependencies": {
     "keyv": "^4.5.4"

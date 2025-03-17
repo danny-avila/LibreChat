@@ -28,8 +28,8 @@ const { addResourceFileId, deleteResourceFileId } = require('~/server/controller
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getEndpointsConfig } = require('~/server/services/Config');
-const { loadAuthValues } = require('~/app/clients/tools/util');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
@@ -162,12 +162,16 @@ const processDeleteRequest = async ({ req, files }) => {
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
-
     if (req.body.agent_id && req.body.tool_resource) {
       agentFiles.push({
         tool_resource: req.body.tool_resource,
         file_id: file.file_id,
       });
+    }
+
+    if (source === FileSources.text) {
+      resolvedFileIds.push(file.file_id);
+      continue;
     }
 
     if (checkOpenAIStorage(source) && !client[source]) {
@@ -521,6 +525,52 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
+  } else if (tool_resource === EToolResources.ocr) {
+    const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
+    if (!isOCREnabled) {
+      throw new Error('OCR capability is not enabled for Agents');
+    }
+
+    const { handleFileUpload } = getStrategyFunctions(
+      req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
+    );
+    const { file_id, temp_file_id } = metadata;
+
+    const {
+      text,
+      bytes,
+      // TODO: OCR images support?
+      images,
+      filename,
+      filepath: ocrFileURL,
+    } = await handleFileUpload({ req, file, file_id, entity_id: agent_id });
+
+    const fileInfo = removeNullishValues({
+      text,
+      bytes,
+      file_id,
+      temp_file_id,
+      user: req.user.id,
+      type: file.mimetype,
+      filepath: ocrFileURL,
+      source: FileSources.text,
+      filename: filename ?? file.originalname,
+      model: messageAttachment ? undefined : req.body.model,
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+    });
+
+    if (!messageAttachment && tool_resource) {
+      await addAgentResourceFile({
+        req,
+        file_id,
+        agent_id,
+        tool_resource,
+      });
+    }
+    const result = await createFile(fileInfo, true);
+    return res
+      .status(200)
+      .json({ message: 'Agent file uploaded and processed successfully', ...result });
   }
 
   const source =

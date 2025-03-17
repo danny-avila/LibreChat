@@ -223,14 +223,23 @@ class AgentClient extends BaseClient {
     };
   }
 
+  /**
+   *
+   * @param {TMessage} message
+   * @param {Array<MongoFile>} attachments
+   * @returns {Promise<Array<Partial<MongoFile>>>}
+   */
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
+    const { files, text, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.agent.provider,
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
+    if (text && text.length) {
+      message.ocr = text;
+    }
     return files;
   }
 
@@ -308,7 +317,21 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
+      if (message.ocr && i !== orderedMessages.length - 1) {
+        if (typeof formattedMessage.content === 'string') {
+          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+        } else {
+          const textPart = formattedMessage.content.find((part) => part.type === 'text');
+          textPart
+            ? (textPart.text = message.ocr + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+        }
+      } else if (message.ocr && i === orderedMessages.length - 1) {
+        systemContent = [systemContent, message.ocr].join('\n');
+      }
+
+      const needsTokenCount =
+        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {

@@ -1,7 +1,9 @@
-const axios = require('axios');
 const FormData = require('form-data');
 const { getCodeBaseURL } = require('@librechat/agents');
+const { createAxiosInstance } = require('~/config');
 const { logAxiosError } = require('~/utils');
+
+const axios = createAxiosInstance();
 
 const MAX_FILE_SIZE = 150 * 1024 * 1024;
 
@@ -26,13 +28,6 @@ async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
       },
       timeout: 15000,
     };
-
-    if (process.env.PROXY) {
-      options.proxy = {
-        host: process.env.PROXY,
-        protocol: process.env.PROXY.startsWith('https') ? 'https' : 'http',
-      };
-    }
 
     const response = await axios(options);
     return response;
@@ -78,13 +73,6 @@ async function uploadCodeEnvFile({ req, stream, filename, apiKey, entity_id = ''
       maxContentLength: MAX_FILE_SIZE,
       maxBodyLength: MAX_FILE_SIZE,
     };
-
-    if (process.env.PROXY) {
-      options.proxy = {
-        host: process.env.PROXY,
-        protocol: process.env.PROXY.startsWith('https') ? 'https' : 'http',
-      };
-    }
 
     const response = await axios.post(`${baseURL}/upload`, form, options);
 
