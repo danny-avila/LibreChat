@@ -4,9 +4,12 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm, OptionWithIcon } from '~/common';
 import ControlCombobox from '~/components/ui/ControlCombobox';
+import { HoverCard, HoverCardPortal, HoverCardContent, HoverCardTrigger } from '~/components/ui';
+import { CircleHelpIcon } from '~/components/svg';
 import { useAgentsMapContext } from '~/Providers';
 import Icon from '~/components/Endpoints/Icon';
 import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 interface AgentChainProps {
   field: ControllerRenderProps<AgentForm, 'agent_ids'>;
@@ -66,9 +69,12 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
   };
 
   return (
-    <>
-      <div className="flex items-center justify-between">
+    <HoverCard openDelay={50}>
+      <div className="flex items-center justify-start gap-2">
         <label className="font-semibold text-text-primary">{localize('com_ui_agent_chain')}</label>
+        <HoverCardTrigger>
+          <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+        </HoverCardTrigger>
       </div>
       <div className="space-y-1">
         {/* Current fixed agent */}
@@ -152,7 +158,14 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
           </p>
         )}
       </div>
-    </>
+      <HoverCardPortal>
+        <HoverCardContent side={ESide.Top} className="w-80">
+          <div className="space-y-2">
+            <p className="text-sm text-text-secondary">{localize('com_ui_agent_chain_info')}</p>
+          </div>
+        </HoverCardContent>
+      </HoverCardPortal>
+    </HoverCard>
   );
 };
 
