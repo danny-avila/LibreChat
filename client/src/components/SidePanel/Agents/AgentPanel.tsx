@@ -19,7 +19,7 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
-import AdvancedPanel from './AdvancedPanel';
+import AdvancedPanel from './Advanced/AdvancedPanel';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';

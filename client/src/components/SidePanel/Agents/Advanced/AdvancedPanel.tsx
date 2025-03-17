@@ -2,7 +2,7 @@ import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm, AgentModelPanelProps } from '~/common';
-import SequentialAgents from './Sequential/SequentialAgents';
+import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -30,14 +30,13 @@ export default function AdvancedPanel({
             </div>
           </button>
         </div>
-
-        <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_advanced')}</div>
+        <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_advanced_settings')}</div>
       </div>
       <Controller
         name="agent_ids"
         control={control}
         defaultValue={[]}
-        render={({ field }) => <SequentialAgents field={field} currentAgentId={currentAgentId} />}
+        render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
       />
     </div>
   );

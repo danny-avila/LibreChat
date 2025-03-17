@@ -4,8 +4,8 @@ import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provid
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import { useUpdateAgentMutation } from '~/data-provider';
+import AdvancedButton from './Advanced/AdvancedButton';
 import DuplicateAgent from './DuplicateAgent';
-import AdvancedButton from './AdvancedButton';
 import AdminSettings from './AdminSettings';
 import DeleteButton from './DeleteButton';
 import { Spinner } from '~/components';
