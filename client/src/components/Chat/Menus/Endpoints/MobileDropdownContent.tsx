@@ -2,14 +2,14 @@ import React from 'react';
 import { ChevronLeft, Settings } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import type { ExtendedEndpoint } from '~/common';
 import Icon from '~/components/Endpoints/Icon';
-import { MenuItem } from './Menu';
+import { useLocalize } from '~/hooks';
 import ModelItem from './ModelItem';
 import SearchBar from './SearchBar';
+import { MenuItem } from './Menu';
 import SpecItem from './SpecItem';
-import type { ExtendedEndpoint } from '~/common';
+import { cn } from '~/utils';
 
 interface MobileDropdownContentProps {
   searchTerm: string;

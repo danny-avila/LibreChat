@@ -1,5 +1,4 @@
 import React, { useMemo, memo, useRef, useState, useEffect } from 'react';
-import { Settings, ChevronLeft } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import {
   EModelEndpoint,

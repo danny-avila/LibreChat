@@ -1,6 +1,6 @@
-import * as Ariakit from '@ariakit/react';
-import clsx from 'clsx';
 import * as React from 'react';
+import clsx from 'clsx';
+import * as Ariakit from '@ariakit/react';
 import { cn } from '~/utils';
 
 export type MenuItemProps = Ariakit.MenuItemProps;
