@@ -633,6 +633,9 @@ class AgentClient extends BaseClient {
 
       setMaxListeners(20, abortController.signal);
 
+      /** @type {TCustomConfig['endpoints']['agents']} */
+      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+
       /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
       const config = {
         configurable: {
@@ -640,7 +643,7 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
-        recursionLimit: this.options.req.app.locals[EModelEndpoint.agents]?.recursionLimit,
+        recursionLimit: agentsEConfig?.recursionLimit,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -681,6 +684,12 @@ class AgentClient extends BaseClient {
         }
         if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
           config.recursionLimit = agent.recursion_limit;
+        }
+        if (
+          agentsEConfig?.maxRecursionLimit &&
+          config.recursionLimit > agentsEConfig?.maxRecursionLimit
+        ) {
+          config.recursionLimit = agentsEConfig?.maxRecursionLimit;
         }
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;

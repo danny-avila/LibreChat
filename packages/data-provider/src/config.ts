@@ -235,6 +235,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     /* agents specific */
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
+    maxRecursionLimit: z.number().optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
