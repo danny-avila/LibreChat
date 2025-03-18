@@ -61,7 +61,8 @@ svg {
 
 /* Apro specific hiding elements */
 [data-testid='convo-icon'],
-.h-7.w-7.flex-shrink-0 {
+.h-7.w-7.flex-shrink-0,
+[data-testid='nav-new-chat-button'] .rounded-full {
   display: none;
 }
 
@@ -74,4 +75,19 @@ svg {
 /* Apro color for footer link */
 .text-text-secondary.underline {
   color: var(--gray-800);
+}
+
+/* Apro search bar custom color */
+.group.relative.mt-1.flex.h-10.cursor-pointer {
+  background-color: var(--white);
+}
+
+/* Apro search bar icon color */
+.group.relative.mt-1.flex.h-10.cursor-pointer > * {
+  color: var(--gray-800);
+}
+
+/* Apro search bar placeholder color */
+.group.relative.mt-1.flex.h-10.cursor-pointer input::placeholder {
+  color: var(--gray-400);
 }
