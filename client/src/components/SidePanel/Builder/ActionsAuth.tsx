@@ -362,12 +362,12 @@ const OAuth = () => {
       />
       {(oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow || oauth_flow == null)   && (
         <>
-        <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
-        <input
-          className={inputClasses}
-          {...register('authorization_url', { required: oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow })}
-        />
-      </>
+          <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
+          <input
+            className={inputClasses}
+            {...register('authorization_url', { required: oauth_flow === OAuthFlowTypeEnum.AuthorizationCodeFlow })}
+          />
+        </>
       )}
       <label className="mb-1 block text-sm font-medium">{localize('com_ui_token_url')}</label>
       <input

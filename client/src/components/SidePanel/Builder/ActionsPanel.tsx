@@ -85,7 +85,7 @@ export default function ActionsPanel({
         token_exchange_method:
           action.metadata.auth.token_exchange_method ?? TokenExchangeMethodEnum.DefaultPost,
         oauth_flow:
-          action.metadata.auth.oauth_flow ?? OAuthFlowTypeEnum.AuthorizationCodeFlow,  
+          action.metadata.auth.oauth_flow ?? OAuthFlowTypeEnum.AuthorizationCodeFlow,
       });
     }
   }, [action, reset]);

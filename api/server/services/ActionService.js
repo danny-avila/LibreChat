@@ -176,7 +176,7 @@ async function createActionTool({
                   encrypted_oauth_client_id: encrypted.oauth_client_id,
                   encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                 });
-              
+
               metadata.oauth_access_token = accessToken.access_token;
               const expiresAt = new Date(Date.now() + accessToken.expires_in * 1000);
               metadata.oauth_token_expires_at = expiresAt.toISOString();
