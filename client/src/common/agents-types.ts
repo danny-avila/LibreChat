@@ -28,4 +28,5 @@ export type AgentForm = {
   provider?: AgentProvider | OptionWithIcon;
   agent_ids?: string[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
+  recursion_limit?: number;
 } & TAgentCapabilities;

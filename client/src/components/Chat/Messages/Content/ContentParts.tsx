@@ -139,6 +139,7 @@ const ContentParts = memo(
                   isSubmitting={isSubmitting}
                   key={`part-${messageId}-${idx}`}
                   isCreatedByUser={isCreatedByUser}
+                  isLast={idx === content.length - 1}
                   showCursor={idx === content.length - 1 && isLast}
                 />
               </MessageContext.Provider>

@@ -29,7 +29,7 @@ const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Age
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { getEndpointsConfig } = require('~/server/services/Config');
+const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
@@ -455,17 +455,6 @@ const processFileUpload = async ({ req, res, metadata }) => {
     true,
   );
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
-};
-
-/**
- * @param {ServerRequest} req
- * @param {AgentCapabilities} capability
- * @returns {Promise<boolean>}
- */
-const checkCapability = async (req, capability) => {
-  const endpointsConfig = await getEndpointsConfig(req);
-  const capabilities = endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [];
-  return capabilities.includes(capability);
 };
 
 /**

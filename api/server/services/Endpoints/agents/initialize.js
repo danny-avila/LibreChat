@@ -204,8 +204,7 @@ const initializeAgentOptions = async ({
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
-      4000,
+      (getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ?? 4000) * 0.9,
   };
 };
 
@@ -275,11 +274,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
+    res,
     sender,
     contentParts,
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    aggregateContent,
     artifactPromises,
     agent: primaryConfig,
     spec: endpointOption.spec,

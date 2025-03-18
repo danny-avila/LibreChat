@@ -5,6 +5,7 @@ const {
   isAgentsEndpoint,
   isParamEndpoint,
   EModelEndpoint,
+  ContentTypes,
   excludedKeys,
   ErrorTypes,
   Constants,
@@ -1021,11 +1022,17 @@ class BaseClient {
     const processValue = (value) => {
       if (Array.isArray(value)) {
         for (let item of value) {
-          if (!item || !item.type || item.type === 'image_url') {
+          if (
+            !item ||
+            !item.type ||
+            item.type === ContentTypes.THINK ||
+            item.type === ContentTypes.ERROR ||
+            item.type === ContentTypes.IMAGE_URL
+          ) {
             continue;
           }
 
-          if (item.type === 'tool_call' && item.tool_call != null) {
+          if (item.type === ContentTypes.TOOL_CALL && item.tool_call != null) {
             const toolName = item.tool_call?.name || '';
             if (toolName != null && toolName && typeof toolName === 'string') {
               numTokens += this.getTokenCount(toolName);
