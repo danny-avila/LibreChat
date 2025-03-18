@@ -109,15 +109,15 @@ class OpenAIClient extends BaseClient {
     const omniPattern = /\b(o1|o3)\b/i;
     this.isOmni = omniPattern.test(this.modelOptions.model);
 
-    const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
-    if (OPENROUTER_API_KEY && !this.azure) {
-      this.apiKey = OPENROUTER_API_KEY;
-      this.useOpenRouter = true;
-    }
-
+    const { OPENAI_FORCE_PROMPT } = process.env ?? {};
     const { reverseProxyUrl: reverseProxy } = this.options;
 
-    if (!this.useOpenRouter && reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) {
+    if (
+      !this.useOpenRouter &&
+      ((reverseProxy && reverseProxy.includes(KnownEndpoints.openrouter)) ||
+        (this.options.endpoint &&
+          this.options.endpoint.toLowerCase().includes(KnownEndpoints.openrouter)))
+    ) {
       this.useOpenRouter = true;
     }
 
@@ -303,7 +303,9 @@ class OpenAIClient extends BaseClient {
   }
 
   getEncoding() {
-    return this.model?.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
+    return this.modelOptions?.model && /gpt-4[^-\s]/.test(this.modelOptions.model)
+      ? 'o200k_base'
+      : 'cl100k_base';
   }
 
   /**
@@ -610,7 +612,7 @@ class OpenAIClient extends BaseClient {
   }
 
   initializeLLM({
-    model = 'gpt-4o-mini',
+    model = openAISettings.model.default,
     modelName,
     temperature = 0.2,
     max_tokens,
@@ -711,7 +713,7 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-4o-mini';
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? openAISettings.model.default;
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
     }
@@ -904,7 +906,7 @@ ${convo}
     let prompt;
 
     // TODO: remove the gpt fallback and make it specific to endpoint
-    const { OPENAI_SUMMARY_MODEL = 'gpt-4o-mini' } = process.env ?? {};
+    const { OPENAI_SUMMARY_MODEL = openAISettings.model.default } = process.env ?? {};
     let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
@@ -1270,6 +1272,29 @@ ${convo}
         });
       }
 
+      /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
+      if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
+        const searchExcludeParams = [
+          'frequency_penalty',
+          'presence_penalty',
+          'temperature',
+          'top_p',
+          'top_k',
+          'stop',
+          'logit_bias',
+          'seed',
+          'response_format',
+          'n',
+          'logprobs',
+          'user',
+        ];
+
+        this.options.dropParams = this.options.dropParams || [];
+        this.options.dropParams = [
+          ...new Set([...this.options.dropParams, ...searchExcludeParams]),
+        ];
+      }
+
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
@@ -1305,14 +1330,24 @@ ${convo}
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
-      } else if (!this.isOmni && modelOptions.reasoning_effort != null) {
+      } else if (
+        (!this.isOmni || /^o1-(mini|preview)/i.test(modelOptions.model)) &&
+        modelOptions.reasoning_effort != null
+      ) {
         delete modelOptions.reasoning_effort;
+        delete modelOptions.temperature;
       }
 
       let reasoningKey = 'reasoning_content';
       if (this.useOpenRouter) {
         modelOptions.include_reasoning = true;
         reasoningKey = 'reasoning';
+      }
+      if (this.useOpenRouter && modelOptions.reasoning_effort != null) {
+        modelOptions.reasoning = {
+          effort: modelOptions.reasoning_effort,
+        };
+        delete modelOptions.reasoning_effort;
       }
 
       this.streamHandler = new SplitStreamHandler({

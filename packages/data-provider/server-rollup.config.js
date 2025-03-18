@@ -19,7 +19,7 @@ export default {
   input: entryPath,
   output: {
     dir: 'test_bundle',
-    format: 'cjs',
+    format: 'es',
   },
   plugins: [
     alias(customAliases),

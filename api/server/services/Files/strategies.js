@@ -24,6 +24,7 @@ const {
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { uploadMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
@@ -127,6 +128,26 @@ const codeOutputStrategy = () => ({
   getDownloadStream: getCodeOutputDownloadStream,
 });
 
+const mistralOCRStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadMistralOCR,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -141,6 +162,8 @@ const getStrategyFunctions = (fileSource) => {
     return vectorStrategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
+  } else if (fileSource === FileSources.mistral_ocr) {
+    return mistralOCRStrategy();
   } else {
     throw new Error('Invalid file source');
   }

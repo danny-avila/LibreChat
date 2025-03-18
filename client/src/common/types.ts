@@ -484,6 +484,7 @@ export interface ExtendedFile {
   attached?: boolean;
   embedded?: boolean;
   tool_resource?: string;
+  metadata?: t.TFile['metadata'];
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

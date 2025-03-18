@@ -81,7 +81,7 @@
   - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
 
 - 💬 **Multimodal & File Interactions**:  
-  - Upload and analyze images with Claude 3, GPT-4o, o1, Llama-Vision, and Gemini 📸  
+  - Upload and analyze images with Claude 3, GPT-4.5, GPT-4o, o1, Llama-Vision, and Gemini 📸  
   - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
 
 - 🌎 **Multilingual UI**:  
@@ -197,6 +197,6 @@ We thank [Locize](https://locize.com) for their translation management tools tha
 
 <p align="center">
   <a href="https://locize.com" target="_blank" rel="noopener noreferrer">
-    <img src="https://locize.com/img/locize_color.svg" alt="Locize Logo" height="50">
+    <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>

@@ -278,10 +278,40 @@ const anthropic: Record<string, SettingDefinition> = {
     description: 'com_endpoint_anthropic_prompt_cache',
     descriptionCode: true,
     type: 'boolean',
-    default: true,
+    default: anthropicSettings.promptCache.default,
     component: 'switch',
     optionType: 'conversation',
     showDefault: false,
+    columnSpan: 2,
+  },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: anthropicSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking_budget',
+    descriptionCode: true,
+    type: 'number',
+    component: 'input',
+    default: anthropicSettings.thinkingBudget.default,
+    range: {
+      min: anthropicSettings.thinkingBudget.min,
+      max: anthropicSettings.thinkingBudget.max,
+      step: anthropicSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
     columnSpan: 2,
   },
 };
@@ -492,6 +522,8 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.topK,
   librechat.resendFiles,
   anthropic.promptCache,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -508,6 +540,8 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.topK,
   librechat.resendFiles,
   anthropic.promptCache,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
@@ -519,8 +553,10 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.topP,
   bedrock.topK,
   baseDefinitions.stop,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -530,8 +566,8 @@ const bedrockMistral: SettingsConfiguration = [
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -541,8 +577,8 @@ const bedrockCohere: SettingsConfiguration = [
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -551,8 +587,8 @@ const bedrockGeneral: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -568,8 +604,10 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
+  anthropic.thinking,
+  anthropic.thinkingBudget,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
@@ -583,8 +621,8 @@ const bedrockMistralCol2: SettingsConfiguration = [
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -598,8 +636,8 @@ const bedrockCohereCol2: SettingsConfiguration = [
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -612,8 +650,8 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
-  bedrock.region,
   librechat.resendFiles,
+  bedrock.region,
 ];
 
 export const settings: Record<string, SettingsConfiguration | undefined> = {
