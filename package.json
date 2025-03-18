@@ -129,5 +129,16 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@aws-crypto/sha256-browser": "^5.2.0",
+    "@aws-sdk/client-cognito-identity": "^3.768.0",
+    "@aws-sdk/credential-provider-cognito-identity": "^3.768.0",
+    "@aws-sdk/credential-provider-node": "^3.758.0",
+    "@aws-sdk/node-http-handler": "^3.370.0",
+    "@aws-sdk/protocol-http": "^3.370.0",
+    "@aws-sdk/signature-v4": "^3.370.0",
+    "@aws-sdk/util-utf8-node": "^3.259.0",
+    "jsonwebtoken": "^9.0.2"
   }
 }
