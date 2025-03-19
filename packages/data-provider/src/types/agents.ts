@@ -19,6 +19,15 @@ export namespace Agents {
     tool_call_ids?: string[];
   };
 
+  export type AgentUpdate = {
+    type: ContentTypes.AGENT_UPDATE;
+    agent_update: {
+      index: number;
+      runId: string;
+      agentId: string;
+    };
+  };
+
   export type MessageContentImageUrl = {
     type: ContentTypes.IMAGE_URL;
     image_url: string | { url: string; detail?: ImageDetail };
@@ -26,6 +35,7 @@ export namespace Agents {
 
   export type MessageContentComplex =
     | ReasoningContentText
+    | AgentUpdate
     | MessageContentText
     | MessageContentImageUrl
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,12 +169,7 @@ export namespace Agents {
     index: number; // #new
     stepIndex?: number; // #new
     stepDetails: StepDetails;
-    usage: null | {
-      // Define usage structure if it's ever non-null
-      // prompt_tokens: number; // #new
-      // completion_tokens: number; // #new
-      // total_tokens: number; // #new
-    };
+    usage: null | object;
   };
   /**
    * Represents a run step delta i.e. any changed fields on a run step during

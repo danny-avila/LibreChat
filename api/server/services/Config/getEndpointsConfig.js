@@ -72,4 +72,15 @@ async function getEndpointsConfig(req) {
   return endpointsConfig;
 }
 
-module.exports = { getEndpointsConfig };
+/**
+ * @param {ServerRequest} req
+ * @param {import('librechat-data-provider').AgentCapabilities} capability
+ * @returns {Promise<boolean>}
+ */
+const checkCapability = async (req, capability) => {
+  const endpointsConfig = await getEndpointsConfig(req);
+  const capabilities = endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [];
+  return capabilities.includes(capability);
+};
+
+module.exports = { getEndpointsConfig, checkCapability };

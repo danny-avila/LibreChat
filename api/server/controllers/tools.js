@@ -10,7 +10,8 @@ const {
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
-const { loadAuthValues, loadTools } = require('~/app/clients/tools/util');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { loadTools } = require('~/app/clients/tools/util');
 const { checkAccess } = require('~/server/middleware');
 const { getMessage } = require('~/models/Message');
 const { logger } = require('~/config');

@@ -10,8 +10,8 @@ const {
   ChatModelStreamHandler,
 } = require('@librechat/agents');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
-const { loadAuthValues } = require('~/app/clients/tools/util');
 const { logger, sendEvent } = require('~/config');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */

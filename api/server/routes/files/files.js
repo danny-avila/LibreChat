@@ -16,7 +16,7 @@ const {
 } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { loadAuthValues } = require('~/app/clients/tools/util');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');

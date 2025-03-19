@@ -75,7 +75,7 @@ const MenuItem: FC<MenuItemProps> = ({
               {showIconInMenu && <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />}
               <div>
                 {title}
-                <div className="text-token-text-tertiary">{description}</div>
+                <div className="text-text-secondary">{description}</div>
                 {spec.badges && spec.badges.length > 0 && (
                   <div className="mt-1 flex gap-2">
                     {spec.badges.map((badge, index) => (

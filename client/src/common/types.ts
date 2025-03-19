@@ -131,6 +131,7 @@ export interface DataColumnMeta {
 }
 
 export enum Panel {
+  advanced = 'advanced',
   builder = 'builder',
   actions = 'actions',
   model = 'model',
@@ -181,6 +182,7 @@ export type AgentPanelProps = {
   activePanel?: string;
   action?: t.Action;
   actions?: t.Action[];
+  createMutation: UseMutationResult<t.Agent, Error, t.AgentCreateParams>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   endpointsConfig?: t.TEndpointsConfig;
@@ -483,6 +485,7 @@ export interface ExtendedFile {
   attached?: boolean;
   embedded?: boolean;
   tool_resource?: string;
+  metadata?: t.TFile['metadata'];
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

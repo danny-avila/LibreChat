@@ -665,6 +665,7 @@ export const settings: Record<string, SettingsConfiguration | undefined> = {
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.DeepSeek}`]: bedrockGeneral,
   [EModelEndpoint.google]: googleConfig,
 };
 
@@ -708,6 +709,7 @@ export const presetSettings: Record<
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneralColumns,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.DeepSeek}`]: bedrockGeneralColumns,
   [EModelEndpoint.google]: {
     col1: googleCol1,
     col2: googleCol2,

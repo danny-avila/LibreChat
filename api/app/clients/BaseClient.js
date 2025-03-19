@@ -5,6 +5,7 @@ const {
   isAgentsEndpoint,
   isParamEndpoint,
   EModelEndpoint,
+  ContentTypes,
   excludedKeys,
   ErrorTypes,
   Constants,
@@ -365,17 +366,14 @@ class BaseClient {
    *  context: TMessage[],
    *  remainingContextTokens: number,
    *  messagesToRefine: TMessage[],
-   *  summaryIndex: number,
-   * }>} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
+   * }>} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
-   *    `summaryIndex` is the index of the first message in the `messagesToRefine` array.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
   async getMessagesWithinTokenLimit({ messages: _messages, maxContextTokens, instructions }) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
-    let summaryIndex = -1;
     let currentTokenCount = 3;
     const instructionsTokenCount = instructions?.tokenCount ?? 0;
     let remainingContextTokens =
@@ -408,14 +406,12 @@ class BaseClient {
     }
 
     const prunedMemory = messages;
-    summaryIndex = prunedMemory.length - 1;
     remainingContextTokens -= currentTokenCount;
 
     return {
       context: context.reverse(),
       remainingContextTokens,
       messagesToRefine: prunedMemory,
-      summaryIndex,
     };
   }
 
@@ -458,7 +454,7 @@ class BaseClient {
 
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
 
-    let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
+    let { context, remainingContextTokens, messagesToRefine } =
       await this.getMessagesWithinTokenLimit({
         messages: orderedWithInstructions,
         instructions,
@@ -528,7 +524,7 @@ class BaseClient {
     }
 
     // Make sure to only continue summarization logic if the summary message was generated
-    shouldSummarize = summaryMessage && shouldSummarize;
+    shouldSummarize = summaryMessage != null && shouldSummarize === true;
 
     logger.debug('[BaseClient] Context Count (2/2)', {
       remainingContextTokens,
@@ -538,17 +534,18 @@ class BaseClient {
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;
     if (buildTokenMap) {
-      tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+      const currentPayload = shouldSummarize ? orderedWithInstructions : context;
+      tokenCountMap = currentPayload.reduce((map, message, index) => {
         const { messageId } = message;
         if (!messageId) {
           return map;
         }
 
-        if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
+        if (shouldSummarize && index === messagesToRefine.length - 1 && !usePrevSummary) {
           map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
         }
 
-        map[messageId] = orderedWithInstructions[index].tokenCount;
+        map[messageId] = currentPayload[index].tokenCount;
         return map;
       }, {});
     }
@@ -1021,11 +1018,17 @@ class BaseClient {
     const processValue = (value) => {
       if (Array.isArray(value)) {
         for (let item of value) {
-          if (!item || !item.type || item.type === 'image_url') {
+          if (
+            !item ||
+            !item.type ||
+            item.type === ContentTypes.THINK ||
+            item.type === ContentTypes.ERROR ||
+            item.type === ContentTypes.IMAGE_URL
+          ) {
             continue;
           }
 
-          if (item.type === 'tool_call' && item.tool_call != null) {
+          if (item.type === ContentTypes.TOOL_CALL && item.tool_call != null) {
             const toolName = item.tool_call?.name || '';
             if (toolName != null && toolName && typeof toolName === 'string') {
               numTokens += this.getTokenCount(toolName);
@@ -1121,9 +1124,13 @@ class BaseClient {
         return message;
       }
 
-      const files = await getFiles({
-        file_id: { $in: fileIds },
-      });
+      const files = await getFiles(
+        {
+          file_id: { $in: fileIds },
+        },
+        {},
+        {},
+      );
 
       await this.addImageURLs(message, files, this.visionMode);
 
