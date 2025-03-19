@@ -4,6 +4,7 @@ import { extractEnvVariable } from './utils';
 const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
+  initTimeout: z.number().optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
