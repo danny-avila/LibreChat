@@ -21,6 +21,17 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
+const {
+  getS3URL,
+  saveURLToS3,
+  saveBufferToS3,
+  getS3FileStream,
+  uploadImageToS3,
+  prepareImageURLS3,
+  deleteFileFromS3,
+  processS3Avatar,
+  uploadFileToS3,
+} = require('./S3');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
@@ -56,6 +67,22 @@ const localStrategy = () => ({
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
   getDownloadStream: getLocalFileStream,
+});
+
+/**
+ * S3 Storage Strategy Functions
+ *
+ * */
+const s3Strategy = () => ({
+  handleFileUpload: uploadFileToS3,
+  saveURL: saveURLToS3,
+  getFileURL: getS3URL,
+  deleteFile: deleteFileFromS3,
+  saveBuffer: saveBufferToS3,
+  prepareImagePayload: prepareImageURLS3,
+  processAvatar: processS3Avatar,
+  handleImageUpload: uploadImageToS3,
+  getDownloadStream: getS3FileStream,
 });
 
 /**
@@ -160,6 +187,8 @@ const getStrategyFunctions = (fileSource) => {
     return openAIStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
+  } else if (fileSource === FileSources.s3) {
+    return s3Strategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
   } else if (fileSource === FileSources.mistral_ocr) {

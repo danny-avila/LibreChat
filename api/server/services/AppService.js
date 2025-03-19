@@ -8,6 +8,7 @@ const {
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
+const { initializeS3 } = require('./Files/S3/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
@@ -44,6 +45,8 @@ const AppService = async (app) => {
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();
+  } else if (fileStrategy === FileSources.s3) {
+    initializeS3();
   }
 
   /** @type {Record<string, FunctionTool} */
