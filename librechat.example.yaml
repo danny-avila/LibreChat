@@ -7,6 +7,9 @@ version: 1.2.1
 # Cache settings: Set to true to enable caching
 cache: true
 
+# File strategy s3/firebase
+# fileStrategy: "s3"
+
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
@@ -73,32 +76,32 @@ actions:
     - "google.com"
 
 # Example MCP Servers Object Structure
-mcpServers:
-  everything:
-    # type: sse # type can optionally be omitted
-    url: http://localhost:3001/sse
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-  puppeteer:
-    type: stdio
-    command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-puppeteer"
-    timeout: 300000  # 5 minutes timeout for this server
-  filesystem:
-    # type: stdio
-    command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-filesystem"
-      - /home/user/LibreChat/
-    iconPath: /home/user/LibreChat/client/public/assets/logo.svg
-  mcp-obsidian:
-    command: npx
-    args:
-      - -y
-      - "mcp-obsidian"
-      - /path/to/obsidian/vault
+# mcpServers:
+#   everything:
+#     # type: sse # type can optionally be omitted
+#     url: http://localhost:3001/sse
+#     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   puppeteer:
+#     type: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-puppeteer"
+#     timeout: 300000  # 5 minutes timeout for this server
+#   filesystem:
+#     # type: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-filesystem"
+#       - /home/user/LibreChat/
+#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#   mcp-obsidian:
+#     command: npx
+#     args:
+#       - -y
+#       - "mcp-obsidian"
+#       - /path/to/obsidian/vault
 
 # Definition of custom endpoints
 endpoints:
@@ -116,8 +119,10 @@ endpoints:
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   # agents:
-  #   (optional) Maximum recursion depth for agents, defaults to 25
+  #   (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
+  #   (optional) Max recursion depth for agents, defaults to 25
+  #   maxRecursionLimit: 100
   #   (optional) Disable the builder interface for agents
   #   disableBuilder: false
   #   (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.

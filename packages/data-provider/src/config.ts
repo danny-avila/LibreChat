@@ -168,6 +168,8 @@ export enum AgentCapabilities {
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
+  chain = 'chain',
+  ocr = 'ocr',
 }
 
 export const defaultAssistantsVersion = {
@@ -233,6 +235,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     /* agents specific */
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
+    maxRecursionLimit: z.number().optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
@@ -242,6 +245,8 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
         AgentCapabilities.artifacts,
         AgentCapabilities.actions,
         AgentCapabilities.tools,
+        AgentCapabilities.ocr,
+        AgentCapabilities.chain,
       ]),
   }),
 );
@@ -533,9 +538,22 @@ export type TStartupConfig = {
   bundlerURL?: string;
 };
 
+export enum OCRStrategy {
+  MISTRAL_OCR = 'mistral_ocr',
+  CUSTOM_OCR = 'custom_ocr',
+}
+
+export const ocrSchema = z.object({
+  mistralModel: z.string().optional(),
+  apiKey: z.string().optional().default('OCR_API_KEY'),
+  baseURL: z.string().optional().default('OCR_BASEURL'),
+  strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  ocr: ocrSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -811,28 +829,29 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
-  'grok-3',
-  'grok-2-vision',
+  'qwen-vl',
   'grok-vision',
-  'gpt-4.5',
-  'gpt-4o',
+  'grok-2-vision',
+  'grok-3',
   'gpt-4o-mini',
-  'o1',
+  'gpt-4o',
   'gpt-4-turbo',
   'gpt-4-vision',
+  'o1',
+  'gpt-4.5',
   'llava',
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
-  'gemini-2.0',
-  'gemini-1.5',
   'gemini-exp',
+  'gemini-1.5',
+  'gemini-2.0',
   'moondream',
   'llama3.2-vision',
-  'llama-3.2-90b-vision',
   'llama-3.2-11b-vision',
-  'llama-3-2-90b-vision',
   'llama-3-2-11b-vision',
+  'llama-3.2-90b-vision',
+  'llama-3-2-90b-vision',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -1174,7 +1193,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.7',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.1',
+  CONFIG_VERSION = '1.2.3',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
