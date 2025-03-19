@@ -33,7 +33,7 @@ export class MCPManager {
 
   public async initializeMCP(
     mcpServers: t.MCPServers,
-    processMCPEnv: (obj: MCPOptions) => MCPOptions,
+    processMCPEnv?: (obj: MCPOptions) => MCPOptions,
   ): Promise<void> {
     this.logger.info('[MCP] Initializing servers');
 
@@ -41,7 +41,7 @@ export class MCPManager {
     const initializedServers = new Set();
     const connectionResults = await Promise.allSettled(
       entries.map(async ([serverName, _config], i) => {
-        const config = processMCPEnv(_config);
+        const config = processMCPEnv ? processMCPEnv(_config) : _config;
         const connection = new MCPConnection(serverName, config, this.logger);
 
         connection.on('connectionChange', (state) => {
