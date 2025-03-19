@@ -180,6 +180,17 @@ export class MCPConnection extends EventEmitter {
         this.isInitializing = false;
         this.shouldStopReconnecting = false;
         this.reconnectAttempts = 0;
+        /**
+         * // FOR DEBUGGING
+         * // this.client.setRequestHandler(PingRequestSchema, async (request, extra) => {
+         * //    this.logger?.info(`[MCP][${this.serverName}] PingRequest: ${JSON.stringify(request)}`);
+         * //    if (getEventListeners && extra.signal) {
+         * //      const listenerCount = getEventListeners(extra.signal, 'abort').length;
+         * //      this.logger?.debug(`Signal has ${listenerCount} abort listeners`);
+         * //    }
+         * //    return {};
+         * //  });
+         */
       } else if (state === 'error' && !this.isReconnecting && !this.isInitializing) {
         this.handleReconnection().catch((error) => {
           this.logger?.error(`[MCP][${this.serverName}] Reconnection handler failed:`, error);
