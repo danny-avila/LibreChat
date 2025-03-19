@@ -21,9 +21,21 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
+const {
+  getS3URL,
+  saveURLToS3,
+  saveBufferToS3,
+  getS3FileStream,
+  uploadImageToS3,
+  prepareImageURLS3,
+  deleteFileFromS3,
+  processS3Avatar,
+  uploadFileToS3,
+} = require('./S3');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { uploadMistralOCR } = require('./MistralOCR');
 
 // Import Azure functions
 const {
@@ -69,6 +81,21 @@ const localStrategy = () => ({
 });
 
 /**
+ * S3 Storage Strategy Functions
+ * */
+const s3Strategy = () => ({
+  handleFileUpload: uploadFileToS3,
+  saveURL: saveURLToS3,
+  getFileURL: getS3URL,
+  deleteFile: deleteFileFromS3,
+  saveBuffer: saveBufferToS3,
+  prepareImagePayload: prepareImageURLS3,
+  processAvatar: processS3Avatar,
+  handleImageUpload: uploadImageToS3,
+  getDownloadStream: getS3FileStream,
+});
+
+/**
  * Azure Blob Storage Strategy Functions
  */
 const azureStrategy = () => ({
@@ -81,7 +108,7 @@ const azureStrategy = () => ({
   processAvatar: processAzureAvatar,
   handleImageUpload: uploadImageToAzure,
   getDownloadStream: getAzureFileStream,
-});
+ });
 
 /**
  * VectorDB Storage Strategy Functions
@@ -152,6 +179,26 @@ const codeOutputStrategy = () => ({
   getDownloadStream: getCodeOutputDownloadStream,
 });
 
+const mistralOCRStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadMistralOCR,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -164,8 +211,12 @@ const getStrategyFunctions = (fileSource) => {
     return azureStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
+  } else if (fileSource === FileSources.s3) {
+    return s3Strategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
+  } else if (fileSource === FileSources.mistral_ocr) {
+    return mistralOCRStrategy();
   } else {
     throw new Error('Invalid file source');
   }

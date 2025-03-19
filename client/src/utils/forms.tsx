@@ -58,6 +58,9 @@ export const processAgentOption = ({
     label: _agent?.name ?? '',
     value: _agent?.id ?? '',
     icon: isGlobal ? <EarthIcon className="icon-md text-green-400" /> : null,
+    context_files: _agent?.tool_resources?.ocr?.file_ids
+      ? ([] as Array<[string, ExtendedFile]>)
+      : undefined,
     knowledge_files: _agent?.tool_resources?.file_search?.file_ids
       ? ([] as Array<[string, ExtendedFile]>)
       : undefined,
@@ -83,7 +86,7 @@ export const processAgentOption = ({
     const source =
       tool_resource === EToolResources.file_search
         ? FileSources.vectordb
-        : file?.source ?? FileSources.local;
+        : (file?.source ?? FileSources.local);
 
     if (file) {
       list?.push([
@@ -97,6 +100,7 @@ export const processAgentOption = ({
           height: file.height,
           size: file.bytes,
           preview: file.filepath,
+          metadata: file.metadata,
           progress: 1,
           source,
         },
@@ -116,6 +120,16 @@ export const processAgentOption = ({
       ]);
     }
   };
+
+  if (agent.context_files && _agent?.tool_resources?.ocr?.file_ids) {
+    _agent.tool_resources.ocr.file_ids.forEach((file_id) =>
+      handleFile({
+        file_id,
+        list: agent.context_files,
+        tool_resource: EToolResources.ocr,
+      }),
+    );
+  }
 
   if (agent.knowledge_files && _agent?.tool_resources?.file_search?.file_ids) {
     _agent.tool_resources.file_search.file_ids.forEach((file_id) =>

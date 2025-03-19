@@ -1,5 +1,5 @@
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { JsonSchemaType } from 'librechat-data-provider';
+import type { JsonSchemaType, MCPOptions } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type * as t from './types/mcp';
 import { formatToolContent } from './parsers';
@@ -31,13 +31,17 @@ export class MCPManager {
     return MCPManager.instance;
   }
 
-  public async initializeMCP(mcpServers: t.MCPServers): Promise<void> {
+  public async initializeMCP(
+    mcpServers: t.MCPServers,
+    processMCPEnv?: (obj: MCPOptions) => MCPOptions,
+  ): Promise<void> {
     this.logger.info('[MCP] Initializing servers');
 
     const entries = Object.entries(mcpServers);
     const initializedServers = new Set();
     const connectionResults = await Promise.allSettled(
-      entries.map(async ([serverName, config], i) => {
+      entries.map(async ([serverName, _config], i) => {
+        const config = processMCPEnv ? processMCPEnv(_config) : _config;
         const connection = new MCPConnection(serverName, config, this.logger);
 
         connection.on('connectionChange', (state) => {
@@ -159,7 +163,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        this.logger.warn(`[MCP][${serverName}] Not connected, skipping tool fetch`);
+        this.logger.warn(`[MCP][${serverName}] Error fetching tools:`, error);
       }
     }
   }
@@ -183,7 +187,7 @@ export class MCPManager {
           });
         }
       } catch (error) {
-        this.logger.error(`[MCP][${serverName}] Error fetching tools`, error);
+        this.logger.error(`[MCP][${serverName}] Error fetching tools:`, error);
       }
     }
   }
@@ -209,6 +213,7 @@ export class MCPManager {
         },
       },
       CallToolResultSchema,
+      { timeout: connection.timeout },
     );
     return formatToolContent(result, provider);
   }

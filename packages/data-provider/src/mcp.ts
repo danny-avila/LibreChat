@@ -3,6 +3,8 @@ import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
+  timeout: z.number().optional(),
+  initTimeout: z.number().optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
@@ -84,3 +86,26 @@ export const MCPOptionsSchema = z.union([
 ]);
 
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
+
+export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
+
+/**
+ * Recursively processes an object to replace environment variables in string values
+ * @param {MCPOptions} obj - The object to process
+ * @returns {MCPOptions} - The processed object with environment variables replaced
+ */
+export function processMCPEnv(obj: MCPOptions): MCPOptions {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if ('env' in obj && obj.env) {
+    const processedEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(obj.env)) {
+      processedEnv[key] = extractEnvVariable(value);
+    }
+    obj.env = processedEnv;
+  }
+
+  return obj;
+}

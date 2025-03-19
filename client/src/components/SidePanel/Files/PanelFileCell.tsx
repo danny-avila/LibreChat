@@ -6,7 +6,6 @@ import { getFileType } from '~/utils';
 
 export default function PanelFileCell({ row }: { row: Row<TFile | undefined> }) {
   const file = row.original;
-
   return (
     <div className="flex w-full items-center gap-2">
       {file?.type.startsWith('image') === true ? (

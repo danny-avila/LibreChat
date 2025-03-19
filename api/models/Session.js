@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const signPayload = require('~/server/services/signPayload');
 const { hashToken } = require('~/server/utils/crypto');
-const sessionSchema = require('./schema/session');
+const { sessionSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
 
 const Session = mongoose.model('Session', sessionSchema);

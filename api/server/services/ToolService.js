@@ -362,7 +362,12 @@ async function processRequiredActions(client, requiredActions) {
         continue;
       }
 
-      tool = await createActionTool({ action: actionSet, requestBuilder });
+      tool = await createActionTool({
+        req: client.req,
+        res: client.res,
+        action: actionSet,
+        requestBuilder,
+      });
       if (!tool) {
         logger.warn(
           `Invalid action: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | toolName: ${currentAction.tool}`,

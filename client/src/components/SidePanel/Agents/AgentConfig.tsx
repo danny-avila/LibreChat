@@ -1,31 +1,19 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import {
-  QueryKeys,
-  SystemRoles,
-  Permissions,
-  EModelEndpoint,
-  PermissionTypes,
-  AgentCapabilities,
-} from 'librechat-data-provider';
+import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
-import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
-import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
-import DuplicateAgent from './DuplicateAgent';
 import { processAgentOption } from '~/utils';
-import AdminSettings from './AdminSettings';
-import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
-import { Spinner } from '~/components';
+import FileContext from './FileContext';
+import { useLocalize } from '~/hooks';
 import FileSearch from './FileSearch';
-import ShareAgent from './ShareAgent';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
@@ -42,11 +30,10 @@ export default function AgentConfig({
   setAction,
   actions = [],
   agentsConfig,
-  endpointsConfig,
+  createMutation,
   setActivePanel,
-  setCurrentAgentId,
+  endpointsConfig,
 }: AgentPanelProps) {
-  const { user } = useAuthContext();
   const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
 
@@ -65,11 +52,6 @@ export default function AgentConfig({
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
 
-  const hasAccessToShareAgents = useHasAccess({
-    permissionType: PermissionTypes.AGENTS,
-    permission: Permissions.SHARED_GLOBAL,
-  });
-
   const toolsEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.tools),
     [agentsConfig],
@@ -82,6 +64,10 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities.includes(AgentCapabilities.artifacts) ?? false,
     [agentsConfig],
   );
+  const ocrEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.ocr) ?? false,
+    [agentsConfig],
+  );
   const fileSearchEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.file_search) ?? false,
     [agentsConfig],
@@ -90,6 +76,26 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities.includes(AgentCapabilities.execute_code) ?? false,
     [agentsConfig],
   );
+
+  const context_files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
+
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.context_files) {
+      return agent.context_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.context_files ?? [];
+  }, [agent, agent_id, fileMap]);
 
   const knowledge_files = useMemo(() => {
     if (typeof agent === 'string') {
@@ -131,46 +137,6 @@ export default function AgentConfig({
     return _agent.code_files ?? [];
   }, [agent, agent_id, fileMap]);
 
-  /* Mutations */
-  const update = useUpdateAgentMutation({
-    onSuccess: (data) => {
-      showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
-
-  const create = useCreateAgentMutation({
-    onSuccess: (data) => {
-      setCurrentAgentId(data.id);
-      showToast({
-        message: `${localize('com_assistants_create_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
-
   const handleAddActions = useCallback(() => {
     if (!agent_id) {
       showToast({
@@ -200,26 +166,14 @@ export default function AgentConfig({
     Icon = icons[iconKey];
   }
 
-  const renderSaveButton = () => {
-    if (create.isLoading || update.isLoading) {
-      return <Spinner className="icon-md" aria-hidden="true" />;
-    }
-
-    if (agent_id) {
-      return localize('com_ui_save');
-    }
-
-    return localize('com_ui_create');
-  };
-
   return (
     <>
-      <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
+      <div className="h-auto bg-white px-4 pt-3 dark:bg-transparent">
         {/* Avatar & Name */}
         <div className="mb-4">
           <AgentAvatar
-            createMutation={create}
             agent_id={agent_id}
+            createMutation={createMutation}
             avatar={agent?.['avatar'] ?? null}
           />
           <label className={labelClass} htmlFor="name">
@@ -334,17 +288,19 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
-        {(codeEnabled || fileSearchEnabled || artifactsEnabled) && (
+        {(codeEnabled || fileSearchEnabled || artifactsEnabled || ocrEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
               {localize('com_assistants_capabilities')}
             </label>
             {/* Code Execution */}
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
-            {/* File Search */}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {/* File Context (OCR) */}
+            {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
             {/* Artifacts */}
             {artifactsEnabled && <Artifacts />}
+            {/* File Search */}
+            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
           </div>
         )}
         {/* Agent Tools & Actions */}
@@ -403,34 +359,6 @@ export default function AgentConfig({
               )}
             </div>
           </div>
-        </div>
-        {user?.role === SystemRoles.ADMIN && <AdminSettings />}
-        {/* Context Button */}
-        <div className="flex items-center justify-end gap-2">
-          <DeleteButton
-            agent_id={agent_id}
-            setCurrentAgentId={setCurrentAgentId}
-            createMutation={create}
-          />
-          {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
-            hasAccessToShareAgents && (
-            <ShareAgent
-              agent_id={agent_id}
-              agentName={agent?.name ?? ''}
-              projectIds={agent?.projectIds ?? []}
-              isCollaborative={agent?.isCollaborative}
-            />
-          )}
-          {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
-          {/* Submit Button */}
-          <button
-            className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
-            type="submit"
-            disabled={create.isLoading || update.isLoading}
-            aria-busy={create.isLoading || update.isLoading}
-          >
-            {renderSaveButton()}
-          </button>
         </div>
       </div>
       <ToolSelectDialog

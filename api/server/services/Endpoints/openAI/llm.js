@@ -9,6 +9,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {Object} options - Additional options for configuring the LLM.
  * @param {Object} [options.modelOptions] - Model-specific options.
  * @param {string} [options.modelOptions.model] - The name of the model to use.
+ * @param {string} [options.modelOptions.user] - The user ID
  * @param {number} [options.modelOptions.temperature] - Controls randomness in output generation (0-2).
  * @param {number} [options.modelOptions.top_p] - Controls diversity via nucleus sampling (0-1).
  * @param {number} [options.modelOptions.frequency_penalty] - Reduces repetition of token sequences (-2 to 2).
@@ -23,10 +24,11 @@ const { isEnabled } = require('~/server/utils');
  * @param {boolean} [options.streaming] - Whether to use streaming mode.
  * @param {Object} [options.addParams] - Additional parameters to add to the model options.
  * @param {string[]} [options.dropParams] - Parameters to remove from the model options.
+ * @param {string|null} [endpoint=null] - The endpoint name
  * @returns {Object} Configuration options for creating an LLM instance.
  */
-function getLLMConfig(apiKey, options = {}) {
-  const {
+function getLLMConfig(apiKey, options = {}, endpoint = null) {
+  let {
     modelOptions = {},
     reverseProxyUrl,
     defaultQuery,
@@ -48,17 +50,42 @@ function getLLMConfig(apiKey, options = {}) {
   if (addParams && typeof addParams === 'object') {
     Object.assign(llmConfig, addParams);
   }
+  /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
+  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
+    const searchExcludeParams = [
+      'frequency_penalty',
+      'presence_penalty',
+      'temperature',
+      'top_p',
+      'top_k',
+      'stop',
+      'logit_bias',
+      'seed',
+      'response_format',
+      'n',
+      'logprobs',
+      'user',
+    ];
+
+    dropParams = dropParams || [];
+    dropParams = [...new Set([...dropParams, ...searchExcludeParams])];
+  }
 
   if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => {
-      delete llmConfig[param];
+      if (llmConfig[param]) {
+        llmConfig[param] = undefined;
+      }
     });
   }
 
   let useOpenRouter;
   /** @type {OpenAIClientOptions['configuration']} */
   const configOptions = {};
-  if (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) {
+  if (
+    (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
+    (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
     useOpenRouter = true;
     llmConfig.include_reasoning = true;
     configOptions.baseURL = reverseProxyUrl;

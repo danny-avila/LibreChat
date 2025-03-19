@@ -1,5 +1,9 @@
-const Banner = require('./schema/banner');
+const mongoose = require('mongoose');
 const logger = require('~/config/winston');
+const { bannerSchema } = require('@librechat/data-schemas');
+
+const Banner = mongoose.model('Banner', bannerSchema);
+
 /**
  * Retrieves the current active banner.
  * @returns {Promise<Object|null>} The active banner object or null if no active banner is found.
@@ -24,4 +28,4 @@ const getBanner = async (user) => {
   }
 };
 
-module.exports = { getBanner };
+module.exports = { Banner, getBanner };
