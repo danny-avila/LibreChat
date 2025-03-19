@@ -2,13 +2,12 @@ version: 1.2.1
 
 cache: true
 
+interface:
+  customWelcome: "Velkommen til MChat"
+
 registration:
   socialLogins:
-    - "discord"
-    - "facebook"
-    - "github"
     - "google"
-    - "openid"
 
 endpoints:
   custom:
@@ -21,8 +20,7 @@ endpoints:
         default:
           - "firma"
         fetch: false
-      titleConvo: false
-      titleModel: "firma"
+      titleConvo: true
       summarize: false
       forcePrompt: false
       modelDisplayLabel: "Marginal Firma Agent"
