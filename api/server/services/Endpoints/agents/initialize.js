@@ -19,7 +19,8 @@ const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { processFiles } = require('~/server/services/Files/process');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getToolFiles } = require('~/models/Conversation');
+const { getConvoFiles } = require('~/models/Conversation');
+const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
@@ -115,15 +116,17 @@ const initializeAgentOptions = async ({
   isInitialAgent = false,
 }) => {
   let currentFiles;
+  /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   if (
     isInitialAgent &&
     req.body.conversationId != null &&
-    agent.model_parameters?.resendFiles === true
+    (agent.model_parameters?.resendFiles ?? true) === true
   ) {
-    const fileIds = (await getToolFiles(req.body.conversationId)).map((f) => f.file_id);
-    if (requestFiles.length || fileIds.length) {
-      currentFiles = await processFiles(requestFiles, fileIds);
+    const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
+    const toolFiles = await getToolFilesByIds(fileIds);
+    if (requestFiles.length || toolFiles.length) {
+      currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }
   } else if (isInitialAgent && requestFiles.length) {
     currentFiles = await processFiles(requestFiles);
