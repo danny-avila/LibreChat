@@ -32,12 +32,6 @@ const {
   processS3Avatar,
   uploadFileToS3,
 } = require('./S3');
-const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
-const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
-const { uploadVectors, deleteVectors } = require('./VectorDB');
-const { uploadMistralOCR } = require('./MistralOCR');
-
-// Import Azure functions
 const {
   saveBufferToAzure,
   saveURLToAzure,
@@ -49,6 +43,10 @@ const {
   prepareAzureImageURL,
   processAzureAvatar,
 } = require('./Azure');
+const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
+const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
+const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { uploadMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
@@ -108,7 +106,7 @@ const azureStrategy = () => ({
   processAvatar: processAzureAvatar,
   handleImageUpload: uploadImageToAzure,
   getDownloadStream: getAzureFileStream,
- });
+});
 
 /**
  * VectorDB Storage Strategy Functions
