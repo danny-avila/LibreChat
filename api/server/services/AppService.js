@@ -2,6 +2,7 @@ const {
   FileSources,
   EModelEndpoint,
   loadOCRConfig,
+  processMCPEnv,
   getConfigDefaults,
 } = require('librechat-data-provider');
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
@@ -54,7 +55,7 @@ const AppService = async (app) => {
 
   if (config.mcpServers != null) {
     const mcpManager = await getMCPManager();
-    await mcpManager.initializeMCP(config.mcpServers);
+    await mcpManager.initializeMCP(config.mcpServers, processMCPEnv);
     await mcpManager.mapAvailableTools(availableTools);
   }
 
