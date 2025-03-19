@@ -178,6 +178,7 @@ const initializeAgentOptions = async ({
     agent.provider = options.provider;
   }
 
+  /** @type {import('@librechat/agents').ClientOptions} */
   agent.model_parameters = Object.assign(model_parameters, options.llmConfig);
   if (options.configOptions) {
     agent.model_parameters.configuration = options.configOptions;
@@ -196,6 +197,7 @@ const initializeAgentOptions = async ({
 
   const tokensModel =
     agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
+  const maxTokens = agent.model_parameters.maxOutputTokens ?? agent.model_parameters.maxTokens ?? 0;
 
   return {
     ...agent,
@@ -204,7 +206,7 @@ const initializeAgentOptions = async ({
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      (getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ?? 4000) * 0.9,
+      ((getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ?? 4000) - maxTokens) * 0.9,
   };
 };
 
