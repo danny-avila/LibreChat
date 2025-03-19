@@ -159,7 +159,7 @@ describe('AppService', () => {
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
     expect(app.locals).toEqual({
-      paths: expect.any(Object),
+      paths: expect.anything(),
       fileStrategy: 'testStrategy',
       socialLogins: ['testLogin'],
       filteredTools: undefined,
@@ -178,9 +178,9 @@ describe('AppService', () => {
           }),
         },
       },
-      paths: expect.anything(),
       ocr: expect.anything(),
       imageOutputType: expect.any(String),
+      interfaceConfig: mockedInterfaceConfig,
       turnstileConfig: mockedTurnstileConfig,
       fileConfig: undefined,
       secureImageLinks: undefined,
