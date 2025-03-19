@@ -50,7 +50,7 @@ const { uploadMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
- */
+ * */
 const firebaseStrategy = () => ({
   handleFileUpload: uploadFileToFirebase,
   saveURL: saveURLToFirebase,
@@ -65,7 +65,7 @@ const firebaseStrategy = () => ({
 
 /**
  * Local Server Storage Strategy Functions
- */
+ * */
 const localStrategy = () => ({
   handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
@@ -95,7 +95,7 @@ const s3Strategy = () => ({
 
 /**
  * Azure Blob Storage Strategy Functions
- */
+ * */
 const azureStrategy = () => ({
   handleFileUpload: uploadFileToAzure,
   saveURL: saveURLToAzure,
@@ -110,7 +110,7 @@ const azureStrategy = () => ({
 
 /**
  * VectorDB Storage Strategy Functions
- */
+ * */
 const vectorStrategy = () => ({
   /** @type {typeof saveFileFromURL | null} */
   saveURL: null,
@@ -134,7 +134,7 @@ const vectorStrategy = () => ({
  * OpenAI Strategy Functions
  *
  * Note: null values mean that the strategy is not supported.
- */
+ * */
 const openAIStrategy = () => ({
   /** @type {typeof saveFileFromURL | null} */
   saveURL: null,
@@ -157,7 +157,7 @@ const openAIStrategy = () => ({
  * Code Output Strategy Functions
  *
  * Note: null values mean that the strategy is not supported.
- */
+ * */
 const codeOutputStrategy = () => ({
   /** @type {typeof saveFileFromURL | null} */
   saveURL: null,
