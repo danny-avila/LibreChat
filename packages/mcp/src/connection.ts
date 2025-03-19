@@ -134,7 +134,12 @@ export class MCPConnection extends EventEmitter {
           }
           const url = new URL(options.url);
           this.logger?.info(`[MCP][${this.serverName}] Creating SSE transport: ${url.toString()}`);
-          const transport = new SSEClientTransport(url);
+          const abortController = new AbortController();
+          const transport = new SSEClientTransport(url, {
+            requestInit: {
+              signal: abortController.signal,
+            },
+          });
 
           transport.onclose = () => {
             this.logger?.info(`[MCP][${this.serverName}] SSE transport closed`);
@@ -304,6 +309,9 @@ export class MCPConnection extends EventEmitter {
 
     const originalSend = this.transport.send.bind(this.transport);
     this.transport.send = async (msg) => {
+      if ('result' in msg && !('method' in msg) && Object.keys(msg.result ?? {}).length === 0) {
+        throw new Error('Empty result');
+      }
       this.logger?.debug(`[MCP][${this.serverName}] Transport sending: ${JSON.stringify(msg)}`);
       return originalSend(msg);
     };
