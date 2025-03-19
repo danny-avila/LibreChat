@@ -1,10 +1,11 @@
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const {
-  FileContext,
-  Constants,
   Tools,
+  Constants,
+  FileContext,
   SystemRoles,
+  EToolResources,
   actionDelimiter,
 } = require('librechat-data-provider');
 const {
@@ -203,13 +204,20 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     const {
-      _id: __id,
       id: _id,
+      _id: __id,
       author: _author,
       createdAt: _createdAt,
       updatedAt: _updatedAt,
+      tool_resources: _tool_resources = {},
       ...cloneData
     } = agent;
+
+    if (_tool_resources?.[EToolResources.ocr]) {
+      cloneData.tool_resources = {
+        [EToolResources.ocr]: _tool_resources[EToolResources.ocr],
+      };
+    }
 
     const newAgentId = `agent_${nanoid()}`;
     const newAgentData = Object.assign(cloneData, {
