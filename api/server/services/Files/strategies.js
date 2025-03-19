@@ -32,6 +32,17 @@ const {
   processS3Avatar,
   uploadFileToS3,
 } = require('./S3');
+const {
+  saveBufferToAzure,
+  saveURLToAzure,
+  getAzureURL,
+  deleteFileFromAzure,
+  uploadFileToAzure,
+  getAzureFileStream,
+  uploadImageToAzure,
+  prepareAzureImageURL,
+  processAzureAvatar,
+} = require('./Azure');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
@@ -83,6 +94,22 @@ const s3Strategy = () => ({
   processAvatar: processS3Avatar,
   handleImageUpload: uploadImageToS3,
   getDownloadStream: getS3FileStream,
+});
+
+/**
+ * Azure Blob Storage Strategy Functions
+ *
+ * */
+const azureStrategy = () => ({
+  handleFileUpload: uploadFileToAzure,
+  saveURL: saveURLToAzure,
+  getFileURL: getAzureURL,
+  deleteFile: deleteFileFromAzure,
+  saveBuffer: saveBufferToAzure,
+  prepareImagePayload: prepareAzureImageURL,
+  processAvatar: processAzureAvatar,
+  handleImageUpload: uploadImageToAzure,
+  getDownloadStream: getAzureFileStream,
 });
 
 /**
@@ -184,7 +211,7 @@ const getStrategyFunctions = (fileSource) => {
   } else if (fileSource === FileSources.openai) {
     return openAIStrategy();
   } else if (fileSource === FileSources.azure) {
-    return openAIStrategy();
+    return azureStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
   } else if (fileSource === FileSources.s3) {
