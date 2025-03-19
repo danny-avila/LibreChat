@@ -161,9 +161,9 @@ async function createActionTool({
 
       if (metadata.auth && metadata.auth.type !== AuthTypeEnum.None) {
         try {
-          const action_id = action.action_id;
-          const identifier = `${req.user.id}:${action.action_id}`;
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
+            const action_id = action.action_id;
+            const identifier = `${req.user.id}:${action.action_id}`;
             const requestLogin = async () => {
               const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
               if (!stepId) {

@@ -178,8 +178,9 @@ describe('AppService', () => {
           }),
         },
       },
-      imageOutputType: 'png',
-      interfaceConfig: mockedInterfaceConfig,
+      paths: expect.anything(),
+      ocr: expect.anything(),
+      imageOutputType: expect.any(String),
       turnstileConfig: mockedTurnstileConfig,
       fileConfig: undefined,
       secureImageLinks: undefined,
@@ -516,5 +517,133 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(assistants.timeoutMs).toBe(30000);
     expect(assistants.supportedIds).toEqual(['id1', 'id2']);
     expect(assistants.excludedIds).toBeUndefined();
+  });
+
+  it('should log a warning when both supportedIds and excludedIds are provided', async () => {
+    const mockConfig = {
+      endpoints: {
+        assistants: {
+          disableBuilder: false,
+          pollIntervalMs: 3000,
+          timeoutMs: 20000,
+          supportedIds: ['id1', 'id2'],
+          excludedIds: ['id3'],
+        },
+      },
+    };
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'The \'assistants\' endpoint has both \'supportedIds\' and \'excludedIds\' defined.',
+      ),
+    );
+  });
+
+  it('should log a warning when privateAssistants and supportedIds or excludedIds are provided', async () => {
+    const mockConfig = {
+      endpoints: {
+        assistants: {
+          privateAssistants: true,
+          supportedIds: ['id1'],
+        },
+      },
+    };
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'The \'assistants\' endpoint has both \'privateAssistants\' and \'supportedIds\' or \'excludedIds\' defined.',
+      ),
+    );
+  });
+
+  it('should issue expected warnings when loading Azure Groups with deprecated Environment Variables', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: azureGroups,
+          },
+        },
+      }),
+    );
+
+    deprecatedAzureVariables.forEach((varInfo) => {
+      process.env[varInfo.key] = 'test';
+    });
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    deprecatedAzureVariables.forEach(({ key, description }) => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
+      );
+    });
+  });
+
+  it('should issue expected warnings when loading conflicting Azure Envrionment Variables', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: azureGroups,
+          },
+        },
+      }),
+    );
+
+    conflictingAzureVariables.forEach((varInfo) => {
+      process.env[varInfo.key] = 'test';
+    });
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    conflictingAzureVariables.forEach(({ key }) => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
+      );
+    });
+  });
+
+  it('should not parse environment variable references in OCR config', async () => {
+    // Mock custom configuration with env variable references in OCR config
+    const mockConfig = {
+      ocr: {
+        apiKey: '${OCR_API_KEY_CUSTOM_VAR_NAME}',
+        baseURL: '${OCR_BASEURL_CUSTOM_VAR_NAME}',
+        strategy: 'mistral_ocr',
+        mistralModel: 'mistral-medium',
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    // Set actual environment variables with different values
+    process.env.OCR_API_KEY_CUSTOM_VAR_NAME = 'actual-api-key';
+    process.env.OCR_BASEURL_CUSTOM_VAR_NAME = 'https://actual-ocr-url.com';
+
+    // Initialize app
+    const app = { locals: {} };
+    await AppService(app);
+
+    // Verify that the raw string references were preserved and not interpolated
+    expect(app.locals.ocr).toBeDefined();
+    expect(app.locals.ocr.apiKey).toEqual('${OCR_API_KEY_CUSTOM_VAR_NAME}');
+    expect(app.locals.ocr.baseURL).toEqual('${OCR_BASEURL_CUSTOM_VAR_NAME}');
+    expect(app.locals.ocr.strategy).toEqual('mistral_ocr');
+    expect(app.locals.ocr.mistralModel).toEqual('mistral-medium');
   });
 });

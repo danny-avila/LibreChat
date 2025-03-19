@@ -1,3 +1,4 @@
+const axios = require('axios');
 const { EventSource } = require('eventsource');
 const { Time, CacheKeys } = require('librechat-data-provider');
 const logger = require('./winston');
@@ -47,9 +48,46 @@ const sendEvent = (res, event) => {
   res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
 };
 
+/**
+ * Creates and configures an Axios instance with optional proxy settings.
+ *
+ * @typedef {import('axios').AxiosInstance} AxiosInstance
+ * @typedef {import('axios').AxiosProxyConfig} AxiosProxyConfig
+ *
+ * @returns {AxiosInstance} A configured Axios instance
+ * @throws {Error} If there's an issue creating the Axios instance or parsing the proxy URL
+ */
+function createAxiosInstance() {
+  const instance = axios.create();
+
+  if (process.env.proxy) {
+    try {
+      const url = new URL(process.env.proxy);
+
+      /** @type {AxiosProxyConfig} */
+      const proxyConfig = {
+        host: url.hostname.replace(/^\[|\]$/g, ''),
+        protocol: url.protocol.replace(':', ''),
+      };
+
+      if (url.port) {
+        proxyConfig.port = parseInt(url.port, 10);
+      }
+
+      instance.defaults.proxy = proxyConfig;
+    } catch (error) {
+      console.error('Error parsing proxy URL:', error);
+      throw new Error(`Invalid proxy URL: ${process.env.proxy}`);
+    }
+  }
+
+  return instance;
+}
+
 module.exports = {
   logger,
   sendEvent,
   getMCPManager,
+  createAxiosInstance,
   getFlowStateManager,
 };

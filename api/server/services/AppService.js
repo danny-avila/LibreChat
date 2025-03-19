@@ -1,7 +1,14 @@
-const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
+const {
+  FileSources,
+  EModelEndpoint,
+  loadOCRConfig,
+  processMCPEnv,
+  getConfigDefaults,
+} = require('librechat-data-provider');
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
+const { initializeS3 } = require('./Files/S3/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
@@ -25,6 +32,7 @@ const AppService = async (app) => {
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
+  const ocr = loadOCRConfig(config.ocr);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
@@ -37,6 +45,8 @@ const AppService = async (app) => {
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();
+  } else if (fileStrategy === FileSources.s3) {
+    initializeS3();
   }
 
   /** @type {Record<string, FunctionTool>} */
@@ -48,7 +58,7 @@ const AppService = async (app) => {
 
   if (config.mcpServers != null) {
     const mcpManager = await getMCPManager();
-    await mcpManager.initializeMCP(config.mcpServers);
+    await mcpManager.initializeMCP(config.mcpServers, processMCPEnv);
     await mcpManager.mapAvailableTools(availableTools);
   }
 
@@ -58,6 +68,7 @@ const AppService = async (app) => {
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
   const defaultLocals = {
+    ocr,
     paths,
     fileStrategy,
     socialLogins,

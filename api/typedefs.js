@@ -1787,3 +1787,51 @@
  * @typedef {Promise<{ message: TMessage, conversation: TConversation }> | undefined} ClientDatabaseSavePromise
  * @memberof typedefs
  */
+
+/**
+ * @exports OCRImage
+ * @typedef {Object} OCRImage
+ * @property {string} id - The identifier of the image.
+ * @property {number} top_left_x - X-coordinate of the top left corner of the image.
+ * @property {number} top_left_y - Y-coordinate of the top left corner of the image.
+ * @property {number} bottom_right_x - X-coordinate of the bottom right corner of the image.
+ * @property {number} bottom_right_y - Y-coordinate of the bottom right corner of the image.
+ * @property {string} image_base64 - Base64-encoded image data.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports PageDimensions
+ * @typedef {Object} PageDimensions
+ * @property {number} dpi - The dots per inch resolution of the page.
+ * @property {number} height - The height of the page in pixels.
+ * @property {number} width - The width of the page in pixels.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRPage
+ * @typedef {Object} OCRPage
+ * @property {number} index - The index of the page in the document.
+ * @property {string} markdown - The extracted text content of the page in markdown format.
+ * @property {OCRImage[]} images - Array of images found on the page.
+ * @property {PageDimensions} dimensions - The dimensions of the page.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRUsageInfo
+ * @typedef {Object} OCRUsageInfo
+ * @property {number} pages_processed - Number of pages processed in the document.
+ * @property {number} doc_size_bytes - Size of the document in bytes.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRResult
+ * @typedef {Object} OCRResult
+ * @property {OCRPage[]} pages - Array of pages extracted from the document.
+ * @property {string} model - The model used for OCR processing.
+ * @property {OCRUsageInfo} usage_info - Usage information for the OCR operation.
+ * @memberof typedefs
+ */
