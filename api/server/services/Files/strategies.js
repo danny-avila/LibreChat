@@ -50,6 +50,7 @@ const { uploadMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
+ *
  * */
 const firebaseStrategy = () => ({
   handleFileUpload: uploadFileToFirebase,
@@ -65,6 +66,7 @@ const firebaseStrategy = () => ({
 
 /**
  * Local Server Storage Strategy Functions
+ *
  * */
 const localStrategy = () => ({
   handleFileUpload: uploadLocalFile,
@@ -80,6 +82,7 @@ const localStrategy = () => ({
 
 /**
  * S3 Storage Strategy Functions
+ *
  * */
 const s3Strategy = () => ({
   handleFileUpload: uploadFileToS3,
@@ -95,6 +98,7 @@ const s3Strategy = () => ({
 
 /**
  * Azure Blob Storage Strategy Functions
+ *
  * */
 const azureStrategy = () => ({
   handleFileUpload: uploadFileToAzure,
@@ -110,6 +114,7 @@ const azureStrategy = () => ({
 
 /**
  * VectorDB Storage Strategy Functions
+ *
  * */
 const vectorStrategy = () => ({
   /** @type {typeof saveFileFromURL | null} */
