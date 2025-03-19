@@ -3,10 +3,23 @@ const {
   InvokeAgentCommand,
 } = require('@aws-sdk/client-bedrock-agent-runtime');
 const { TextDecoder } = require('util');
+const { isEnabled } = require('~/server/utils');
 
 class BedrockAgentClient {
   constructor(config) {
     this.client = new BedrockAgentRuntimeClient();
+  }
+
+  b64DecodeUnicode(str) {
+    // Going backwards: from bytestream, to percent-encoding, to original string.
+    return decodeURIComponent(
+      atob(str)
+        .split('')
+        .map(function (c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        })
+        .join(''),
+    );
   }
 
   async sendMessage({ agentId, agentAliasId, sessionId, inputText }) {
@@ -16,7 +29,7 @@ class BedrockAgentClient {
         agentAliasId,
         sessionId,
         inputText,
-        enableTrace: true,
+        enableTrace: isEnabled(process.env.TRACE_AGENT_ORCHESTRATION),
       });
 
       const response = await this.client.send(command);
@@ -49,6 +62,11 @@ class BedrockAgentClient {
 
           try {
             const jsonData = JSON.parse(chunkText);
+            //Handle base64 encoded text
+            if (jsonData.bytes) {
+              text += this.b64DecodeUnicode(jsonData.bytes);
+              continue;
+            }
             let extractedText = '';
 
             // Try to extract text from various possible locations in the response
