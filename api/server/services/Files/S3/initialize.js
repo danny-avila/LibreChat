@@ -9,6 +9,8 @@ let s3 = null;
  * If AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are provided, they will be used.
  * Otherwise, the AWS SDK's default credentials chain (including IRSA) is used.
  *
+ * If AWS_ENDPOINT_URL is provided, it will be used as the endpoint.
+ *
  * @returns {S3Client|null} An instance of S3Client if the region is provided; otherwise, null.
  */
 const initializeS3 = () => {
@@ -22,18 +24,26 @@ const initializeS3 = () => {
     return null;
   }
 
+  // Read the custom endpoint if provided.
+  const endpoint = process.env.AWS_ENDPOINT_URL;
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
 
+  const config = {
+    region,
+    // Conditionally add the endpoint if it is provided
+    ...(endpoint ? { endpoint } : {}),
+  };
+
   if (accessKeyId && secretAccessKey) {
     s3 = new S3Client({
-      region,
+      ...config,
       credentials: { accessKeyId, secretAccessKey },
     });
     logger.info('[initializeS3] S3 initialized with provided credentials.');
   } else {
     // When using IRSA, credentials are automatically provided via the IAM Role attached to the ServiceAccount.
-    s3 = new S3Client({ region });
+    s3 = new S3Client(config);
     logger.info('[initializeS3] S3 initialized using default credentials (IRSA).');
   }
 
