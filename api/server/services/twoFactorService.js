@@ -1,6 +1,6 @@
 const { sign } = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { hashBackupCode, decryptV2 } = require('~/server/utils/crypto');
+const { hashBackupCode, decryptV2, decryptV3 } = require('~/server/utils/crypto');
 const { updateUser } = require('~/models/userMethods');
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -207,15 +207,23 @@ const verifyBackupCode = async ({ user, backupCode }) => {
 
 /**
  * Retrieves and, if necessary, decrypts a stored TOTP secret.
- * If the secret contains a colon, it is assumed to be in the format "iv:encryptedData" and will be decrypted.
- * If the secret is exactly 16 characters long, it is assumed to be a legacy plain secret.
+ *
+ * - If the secret starts with "v3:" then it is decrypted using decryptV3.
+ * - Otherwise, if it contains a colon, it is assumed to be in the v2 format and is decrypted using decryptV2.
+ * - If the secret is exactly 16 characters long, it is assumed to be a legacy plain secret.
  *
  * @param {string|null} storedSecret - The stored TOTP secret (which may be encrypted).
  * @returns {Promise<string|null>} A promise that resolves to the plain TOTP secret, or null if none is provided.
  */
 const getTOTPSecret = async (storedSecret) => {
-  if (!storedSecret) { return null; }
-  // Check for a colon marker (encrypted secrets are stored as "iv:encryptedData")
+  if (!storedSecret) {
+    return null;
+  }
+  // Check for the v3 prefix.
+  if (storedSecret.startsWith('v3:')) {
+    return decryptV3(storedSecret);
+  }
+  // Check for a colon marker (v2 encrypted secrets are stored as "iv:encryptedData")
   if (storedSecret.includes(':')) {
     return await decryptV2(storedSecret);
   }

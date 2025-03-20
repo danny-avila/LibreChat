@@ -7,7 +7,7 @@ const {
 } = require('~/server/services/twoFactorService');
 const { updateUser, getUserById } = require('~/models');
 const { logger } = require('~/config');
-const { encryptV2 } = require('~/server/utils/crypto');
+const { encryptV3 } = require('~/server/utils/crypto');
 
 const enable2FAController = async (req, res) => {
   const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
@@ -15,7 +15,8 @@ const enable2FAController = async (req, res) => {
     const userId = req.user.id;
     const secret = generateTOTPSecret();
     const { plainCodes, codeObjects } = await generateBackupCodes();
-    const encryptedSecret = await encryptV2(secret);
+    // Encrypt using v3 method.
+    const encryptedSecret = encryptV3(secret);
     // Set twoFactorEnabled to false until the user confirms 2FA.
     const user = await updateUser(userId, {
       totpSecret: encryptedSecret,

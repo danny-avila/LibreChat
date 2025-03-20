@@ -1,6 +1,9 @@
 require('dotenv').config();
 
-const { webcrypto } = require('node:crypto');
+const crypto = require('node:crypto');
+const { webcrypto } = crypto; // for v1/v2 functions
+
+// v1/v2: using AES-CBC with key and IV stored as hex
 const key = Buffer.from(process.env.CREDS_KEY, 'hex');
 const iv = Buffer.from(process.env.CREDS_IV, 'hex');
 const algorithm = 'AES-CBC';
@@ -14,10 +17,7 @@ async function encrypt(value) {
   const data = encoder.encode(value);
 
   const encryptedBuffer = await webcrypto.subtle.encrypt(
-    {
-      name: algorithm,
-      iv: iv,
-    },
+    { name: algorithm, iv: iv },
     cryptoKey,
     data,
   );
@@ -33,10 +33,7 @@ async function decrypt(encryptedValue) {
   const encryptedBuffer = Buffer.from(encryptedValue, 'hex');
 
   const decryptedBuffer = await webcrypto.subtle.decrypt(
-    {
-      name: algorithm,
-      iv: iv,
-    },
+    { name: algorithm, iv: iv },
     cryptoKey,
     encryptedBuffer,
   );
@@ -45,10 +42,10 @@ async function decrypt(encryptedValue) {
   return decoder.decode(decryptedBuffer);
 }
 
-// Programmatically generate iv
+// v2: uses AES-CBC with a random IV per encryption.
+// Format: "<iv in hex>:<encrypted payload in hex>"
 async function encryptV2(value) {
   const gen_iv = webcrypto.getRandomValues(new Uint8Array(16));
-
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
     'encrypt',
   ]);
@@ -57,10 +54,7 @@ async function encryptV2(value) {
   const data = encoder.encode(value);
 
   const encryptedBuffer = await webcrypto.subtle.encrypt(
-    {
-      name: algorithm,
-      iv: gen_iv,
-    },
+    { name: algorithm, iv: gen_iv },
     cryptoKey,
     data,
   );
@@ -70,7 +64,7 @@ async function encryptV2(value) {
 
 async function decryptV2(encryptedValue) {
   const parts = encryptedValue.split(':');
-  // Already decrypted from an earlier invocation
+  // If no separator, assume it's a legacy plain secret.
   if (parts.length === 1) {
     return parts[0];
   }
@@ -84,16 +78,39 @@ async function decryptV2(encryptedValue) {
   const encryptedBuffer = Buffer.from(encrypted, 'hex');
 
   const decryptedBuffer = await webcrypto.subtle.decrypt(
-    {
-      name: algorithm,
-      iv: gen_iv,
-    },
+    { name: algorithm, iv: gen_iv },
     cryptoKey,
     encryptedBuffer,
   );
 
   const decoder = new TextDecoder();
   return decoder.decode(decryptedBuffer);
+}
+
+// v3: uses AES-256-CTR via Node's crypto functions.
+// Expect the key to be stored as Base64 so that it decodes to 32 bytes.
+const algorithm_v3 = 'aes-256-ctr';
+const key_v3 = Buffer.from(process.env.CREDS_KEY, 'base64');
+
+function encryptV3(value) {
+  const iv_v3 = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(algorithm_v3, key_v3, iv_v3);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  // Prefix with a version marker so we know which decryption method to use.
+  return 'v3:' + iv_v3.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decryptV3(encryptedValue) {
+  // Expected format: "v3:<iv in hex>:<encrypted payload in hex>"
+  const parts = encryptedValue.split(':');
+  if (parts[0] !== 'v3') {
+    throw new Error('Not a v3 encrypted value');
+  }
+  const iv_v3 = Buffer.from(parts[1], 'hex');
+  const encryptedText = Buffer.from(parts.slice(2).join(':'), 'hex');
+  const decipher = crypto.createDecipheriv(algorithm_v3, key_v3, iv_v3);
+  const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+  return decrypted.toString('utf8');
 }
 
 async function hashToken(str) {
@@ -113,7 +130,7 @@ async function getRandomValues(length) {
 }
 
 /**
- * Computes SHA-256 hash for the given input using WebCrypto
+ * Computes SHA-256 hash for the given input using WebCrypto.
  * @param {string} input
  * @returns {Promise<string>} - Hex hash string
  */
@@ -130,6 +147,8 @@ module.exports = {
   decrypt,
   encryptV2,
   decryptV2,
+  encryptV3,
+  decryptV3,
   hashToken,
   hashBackupCode,
   getRandomValues,
