@@ -148,20 +148,20 @@ endpoints:
   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
   #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
   #   # excludedIds: ["asst_excludedAssistantId"]
-  #   Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+  #   # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
   #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
   #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
   #   retrievalModels: ["gpt-4-turbo-preview"]
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   # agents:
-  #   (optional) Default recursion depth for agents, defaults to 25
+  #   # (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
-  #   (optional) Max recursion depth for agents, defaults to 25
+  #   # (optional) Max recursion depth for agents, defaults to 25
   #   maxRecursionLimit: 100
-  #   (optional) Disable the builder interface for agents
+  #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
-  #   (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+  #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
   custom:
     # Groq Example
@@ -277,5 +277,5 @@ endpoints:
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
-# See the Custom Configuration Guide for more information on Assistants Config:
-# https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+# # See the Custom Configuration Guide for more information on Assistants Config:
+# # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
