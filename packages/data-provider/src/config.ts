@@ -513,6 +513,7 @@ export type TStartupConfig = {
   appleLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  openidAutoRedirect: boolean;
   /** LDAP Auth Configuration */
   ldap?: {
     /** LDAP enabled */
