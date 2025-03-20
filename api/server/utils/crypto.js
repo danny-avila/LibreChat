@@ -2,10 +2,12 @@ require('dotenv').config();
 const crypto = require('node:crypto');
 const { webcrypto } = crypto;
 
-// --- Legacy v1/v2 Setup: AES-CBC with fixed key and IV ---
+// Use hex decoding for both key and IV for legacy methods.
 const key = Buffer.from(process.env.CREDS_KEY, 'hex');
 const iv = Buffer.from(process.env.CREDS_IV, 'hex');
 const algorithm = 'AES-CBC';
+
+// --- Legacy v1/v2 Setup: AES-CBC with fixed key and IV ---
 
 async function encrypt(value) {
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
@@ -36,6 +38,7 @@ async function decrypt(encryptedValue) {
 }
 
 // --- v2: AES-CBC with a random IV per encryption ---
+
 async function encryptV2(value) {
   const gen_iv = webcrypto.getRandomValues(new Uint8Array(16));
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
@@ -73,13 +76,22 @@ async function decryptV2(encryptedValue) {
 
 // --- v3: AES-256-CTR using Node's crypto functions ---
 const algorithm_v3 = 'aes-256-ctr';
-const key_v3 = Buffer.from(process.env.CREDS_KEY, 'base64');
 
+/**
+ * Encrypts a value using AES-256-CTR.
+ * Note: AES-256 requires a 32-byte key. Ensure that process.env.CREDS_KEY is a 64-character hex string.
+ *
+ * @param {string} value - The plaintext to encrypt.
+ * @returns {string} The encrypted string with a "v3:" prefix.
+ */
 function encryptV3(value) {
+  if (key.length !== 32) {
+    throw new Error(`Invalid key length: expected 32 bytes, got ${key.length} bytes`);
+  }
   const iv_v3 = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(algorithm_v3, key_v3, iv_v3);
+  const cipher = crypto.createCipheriv(algorithm_v3, key, iv_v3);
   const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-  return 'v3:' + iv_v3.toString('hex') + ':' + encrypted.toString('hex');
+  return `v3:${iv_v3.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
 function decryptV3(encryptedValue) {
@@ -89,7 +101,7 @@ function decryptV3(encryptedValue) {
   }
   const iv_v3 = Buffer.from(parts[1], 'hex');
   const encryptedText = Buffer.from(parts.slice(2).join(':'), 'hex');
-  const decipher = crypto.createDecipheriv(algorithm_v3, key_v3, iv_v3);
+  const decipher = crypto.createDecipheriv(algorithm_v3, key, iv_v3);
   const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
   return decrypted.toString('utf8');
 }
