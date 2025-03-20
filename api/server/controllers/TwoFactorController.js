@@ -1,23 +1,30 @@
 const {
-  verifyTOTP,
-  verifyBackupCode,
   generateTOTPSecret,
   generateBackupCodes,
+  verifyTOTP,
+  verifyBackupCode,
   getTOTPSecret,
-} = require('~/server/services/twoFactorService');
+} = require('../services/twoFactorService');
 const { updateUser, getUserById } = require('~/models');
 const { logger } = require('~/config');
-const { encryptV3 } = require('~/server/utils/crypto');
+const { encryptV3 } = require('../utils/crypto');
 
-const enable2FAController = async (req, res) => {
-  const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
+const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
+
+/**
+ * Enable 2FA for the user by generating a new TOTP secret and backup codes.
+ * The secret is encrypted and stored, and 2FA is marked as disabled until confirmed.
+ */
+const enable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const secret = generateTOTPSecret();
     const { plainCodes, codeObjects } = await generateBackupCodes();
-    // Encrypt using v3 method.
+
+    // Encrypt the secret with v3 encryption before saving.
     const encryptedSecret = encryptV3(secret);
-    // Set twoFactorEnabled to false until the user confirms 2FA.
+
+    // Update the user record: store the secret & backup codes and set twoFactorEnabled to false.
     const user = await updateUser(userId, {
       totpSecret: encryptedSecret,
       backupCodes: codeObjects,
@@ -25,45 +32,50 @@ const enable2FAController = async (req, res) => {
     });
 
     const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}`;
-    res.status(200).json({
-      otpauthUrl,
-      backupCodes: plainCodes,
-    });
+
+    return res.status(200).json({ otpauthUrl, backupCodes: plainCodes });
   } catch (err) {
-    logger.error('[enable2FAController]', err);
-    res.status(500).json({ message: err.message });
+    logger.error('[enable2FA]', err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
-const verify2FAController = async (req, res) => {
+/**
+ * Verify a 2FA code (either TOTP or backup code) during setup.
+ */
+const verify2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
     const user = await getUserById(userId);
-    // Ensure that 2FA is enabled for this user.
+
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
-    // Retrieve the plain TOTP secret using getTOTPSecret.
     const secret = await getTOTPSecret(user.totpSecret);
+    let isVerified = false;
 
-    if (token && (await verifyTOTP(secret, token))) {
-      return res.status(200).json();
+    if (token) {
+      isVerified = await verifyTOTP(secret, token);
     } else if (backupCode) {
-      const verified = await verifyBackupCode({ user, backupCode });
-      if (verified) {
-        return res.status(200).json();
-      }
+      isVerified = await verifyBackupCode({ user, backupCode });
     }
-    return res.status(400).json({ message: 'Invalid token.' });
+
+    if (isVerified) {
+      return res.status(200).json();
+    }
+    return res.status(400).json({ message: 'Invalid token or backup code.' });
   } catch (err) {
-    logger.error('[verify2FAController]', err);
-    res.status(500).json({ message: err.message });
+    logger.error('[verify2FA]', err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
-const confirm2FAController = async (req, res) => {
+/**
+ * Confirm and enable 2FA after a successful verification.
+ */
+const confirm2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
@@ -73,52 +85,54 @@ const confirm2FAController = async (req, res) => {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
-    // Retrieve the plain TOTP secret using getTOTPSecret.
     const secret = await getTOTPSecret(user.totpSecret);
-
     if (await verifyTOTP(secret, token)) {
-      // Upon successful verification, enable 2FA.
       await updateUser(userId, { twoFactorEnabled: true });
       return res.status(200).json();
     }
-
     return res.status(400).json({ message: 'Invalid token.' });
   } catch (err) {
-    logger.error('[confirm2FAController]', err);
-    res.status(500).json({ message: err.message });
+    logger.error('[confirm2FA]', err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
-const disable2FAController = async (req, res) => {
+/**
+ * Disable 2FA by clearing the stored secret and backup codes.
+ */
+const disable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     await updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
-    res.status(200).json();
+    return res.status(200).json();
   } catch (err) {
-    logger.error('[disable2FAController]', err);
-    res.status(500).json({ message: err.message });
+    logger.error('[disable2FA]', err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
-const regenerateBackupCodesController = async (req, res) => {
+/**
+ * Regenerate backup codes for the user.
+ */
+const regenerateBackupCodes = async (req, res) => {
   try {
     const userId = req.user.id;
     const { plainCodes, codeObjects } = await generateBackupCodes();
     await updateUser(userId, { backupCodes: codeObjects });
-    res.status(200).json({
+    return res.status(200).json({
       backupCodes: plainCodes,
       backupCodesHash: codeObjects,
     });
   } catch (err) {
-    logger.error('[regenerateBackupCodesController]', err);
-    res.status(500).json({ message: err.message });
+    logger.error('[regenerateBackupCodes]', err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
 module.exports = {
-  enable2FAController,
-  verify2FAController,
-  confirm2FAController,
-  disable2FAController,
-  regenerateBackupCodesController,
+  enable2FA,
+  verify2FA,
+  confirm2FA,
+  disable2FA,
+  regenerateBackupCodes,
 };
