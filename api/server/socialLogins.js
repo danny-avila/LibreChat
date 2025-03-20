@@ -53,7 +53,7 @@ const configureSocialLogins = (app) => {
     if (isEnabled(process.env.USE_REDIS)) {
       logger.info('Using Redis for session storage in OpenID...');
       const keyv = new Keyv({ store: keyvRedis });
-      sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+      sessionOptions.store = new RedisStore({ client: keyv.opts.store.redis, prefix: 'librechat' });
     } else {
       sessionOptions.store = new MemoryStore({
         checkPeriod: 86400000, // prune expired entries every 24h
