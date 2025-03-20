@@ -4,10 +4,10 @@ const {
   verifyTOTP,
   verifyBackupCode,
   getTOTPSecret,
-} = require('../services/twoFactorService');
+} = require('~/server/services/twoFactorService');
 const { updateUser, getUserById } = require('~/models');
 const { logger } = require('~/config');
-const { encryptV3 } = require('../utils/crypto');
+const { encryptV3 } = require('~/server/utils/crypto');
 
 const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 
