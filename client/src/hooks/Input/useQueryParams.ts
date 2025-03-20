@@ -14,6 +14,7 @@ import type { ZodAny } from 'zod';
 import { getConvoSwitchLogic, removeUnavailableTools } from '~/utils';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useChatFormContext } from '~/Providers';
+import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
 import store from '~/store';
 
 const parseQueryValue = (value: string) => {
@@ -76,6 +77,7 @@ export default function useQueryParams({
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
+  const { submitMessage } = useSubmitMessage();
 
   const queryClient = useQueryClient();
   const { conversation, newConversation } = useChatContext();
@@ -160,10 +162,12 @@ export default function useQueryParams({
       });
 
       const decodedPrompt = queryParams.prompt || '';
+      const shouldAutoSubmit = queryParams.submit === 'true';
       delete queryParams.prompt;
+      delete queryParams.submit;
       const validSettings = processValidSettings(queryParams);
 
-      return { decodedPrompt, validSettings };
+      return { decodedPrompt, validSettings, shouldAutoSubmit };
     };
 
     const intervalId = setInterval(() => {
@@ -180,7 +184,7 @@ export default function useQueryParams({
       if (!textAreaRef.current) {
         return;
       }
-      const { decodedPrompt, validSettings } = processQueryParams();
+      const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
       const currentText = methods.getValues('text');
 
       /** Clean up URL parameters after successful processing */
@@ -196,6 +200,15 @@ export default function useQueryParams({
         methods.setValue('text', decodedPrompt, { shouldValidate: true });
         textAreaRef.current.focus();
         textAreaRef.current.setSelectionRange(decodedPrompt.length, decodedPrompt.length);
+
+        // Auto-submit if the submit parameter is true
+        if (shouldAutoSubmit) {
+          methods.handleSubmit((data) => {
+            if (data.text?.trim()) {
+              submitMessage(data);
+            }
+          })();
+        }
       }
 
       if (Object.keys(validSettings).length > 0) {
@@ -208,5 +221,5 @@ export default function useQueryParams({
     return () => {
       clearInterval(intervalId);
     };
-  }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation]);
+  }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation, submitMessage]);
 }
