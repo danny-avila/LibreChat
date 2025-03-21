@@ -1,9 +1,9 @@
+const Keyv = require('keyv');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
-const Keyv = require('keyv');
 const { removePorts, isEnabled } = require('~/server/utils');
-const { logViolation } = require('~/cache');
 const keyvRedis = require('~/cache/keyvRedis');
+const { logViolation } = require('~/cache');
 const { logger } = require('~/config');
 
 const { REGISTER_WINDOW = 60, REGISTER_MAX = 5, REGISTRATION_VIOLATION_SCORE: score } = process.env;

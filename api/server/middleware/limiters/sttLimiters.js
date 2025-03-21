@@ -1,9 +1,9 @@
+const Keyv = require('keyv');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const { ViolationTypes } = require('librechat-data-provider');
-const Keyv = require('keyv');
-const { isEnabled } = require('~/server/utils');
 const logViolation = require('~/cache/logViolation');
+const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
 
