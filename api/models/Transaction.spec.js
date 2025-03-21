@@ -4,6 +4,10 @@ const { Transaction } = require('./Transaction');
 const Balance = require('./Balance');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
+
+// Mock the custom config module so we can control the balance flag.
+jest.mock('~/server/services/Config/getCustomConfig');
 
 let mongoServer;
 
@@ -20,8 +24,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
-  // Set the balance feature enabled by default for each test
-  global.interfaceConfig = { balance: { enabled: true } };
+  // Default: enable balance updates in tests.
+  getCustomConfig.mockResolvedValue({ balance: { enabled: true } });
 });
 
 describe('Regular Token Spending Tests', () => {
@@ -45,33 +49,23 @@ describe('Regular Token Spending Tests', () => {
       completionTokens: 50,
     };
 
-    // Act: Balance feature enabled via global configuration
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     await spendTokens(txData, tokenUsage);
 
     // Assert
-    console.log('Initial Balance:', initialBalance);
     const updatedBalance = await Balance.findOne({ user: userId });
-    console.log('Updated Balance:', updatedBalance.tokenCredits);
-
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
-    const expectedPromptCost = tokenUsage.promptTokens * promptMultiplier;
-    const expectedCompletionCost = tokenUsage.completionTokens * completionMultiplier;
-    const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
+    const expectedTotalCost = 100 * promptMultiplier + 50 * completionMultiplier;
     const expectedBalance = initialBalance - expectedTotalCost;
 
-    expect(updatedBalance.tokenCredits).toBeLessThan(initialBalance);
     expect(updatedBalance.tokenCredits).toBeCloseTo(expectedBalance, 0);
-
-    console.log('Expected Total Cost:', expectedTotalCost);
-    console.log('Actual Balance Decrease:', initialBalance - updatedBalance.tokenCredits);
   });
 
   test('spendTokens should handle zero completion tokens', async () => {
     // Arrange
     const userId = new mongoose.Types.ObjectId();
-    const initialBalance = 10000000; // $10.00
+    const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
@@ -88,24 +82,20 @@ describe('Regular Token Spending Tests', () => {
       completionTokens: 0,
     };
 
-    // Act: Enable balance feature via global configuration
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     await spendTokens(txData, tokenUsage);
 
     // Assert
     const updatedBalance = await Balance.findOne({ user: userId });
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
-    const expectedCost = tokenUsage.promptTokens * promptMultiplier;
+    const expectedCost = 100 * promptMultiplier;
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
-
-    console.log('Initial Balance:', initialBalance);
-    console.log('Updated Balance:', updatedBalance.tokenCredits);
-    console.log('Expected Cost:', expectedCost);
   });
 
   test('spendTokens should handle undefined token counts', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
-    const initialBalance = 10000000; // $10.00
+    const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
@@ -119,13 +109,17 @@ describe('Regular Token Spending Tests', () => {
 
     const tokenUsage = {};
 
+    // Act
     const result = await spendTokens(txData, tokenUsage);
+
+    // Assert: No transaction should be created
     expect(result).toBeUndefined();
   });
 
   test('spendTokens should handle only prompt tokens', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
-    const initialBalance = 10000000; // $10.00
+    const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
@@ -139,9 +133,10 @@ describe('Regular Token Spending Tests', () => {
 
     const tokenUsage = { promptTokens: 100 };
 
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     await spendTokens(txData, tokenUsage);
 
+    // Assert
     const updatedBalance = await Balance.findOne({ user: userId });
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = 100 * promptMultiplier;
@@ -149,10 +144,10 @@ describe('Regular Token Spending Tests', () => {
   });
 
   test('spendTokens should not update balance when balance feature is disabled', async () => {
-    // Set the global balance feature to disabled
-    global.interfaceConfig = { balance: { enabled: false } };
+    // Arrange: Override the config to disable balance updates.
+    getCustomConfig.mockResolvedValue({ balance: { enabled: false } });
     const userId = new mongoose.Types.ObjectId();
-    const initialBalance = 10000000; // $10.00
+    const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
@@ -163,14 +158,16 @@ describe('Regular Token Spending Tests', () => {
       context: 'test',
       endpointTokenConfig: null,
     };
+
     const tokenUsage = {
       promptTokens: 100,
       completionTokens: 50,
     };
 
+    // Act
     await spendTokens(txData, tokenUsage);
 
-    // Expect that Balance was not updated because balance updates are disabled
+    // Assert: Balance should remain unchanged.
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(updatedBalance.tokenCredits).toBe(initialBalance);
   });
@@ -189,7 +186,7 @@ describe('Structured Token Spending Tests', () => {
       conversationId: 'c23a18da-706c-470a-ac28-ec87ed065199',
       model,
       context: 'message',
-      endpointTokenConfig: null, // We'll use the default rates
+      endpointTokenConfig: null,
     };
 
     const tokenUsage = {
@@ -201,28 +198,15 @@ describe('Structured Token Spending Tests', () => {
       completionTokens: 5,
     };
 
-    // Get the actual multipliers
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
     const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
     const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
 
-    console.log('Multipliers:', {
-      promptMultiplier,
-      completionMultiplier,
-      writeMultiplier,
-      readMultiplier,
-    });
-
     // Act
-    global.interfaceConfig = { balance: { enabled: true } };
     const result = await spendStructuredTokens(txData, tokenUsage);
 
-    // Assert
-    console.log('Initial Balance:', initialBalance);
-    console.log('Updated Balance:', result.completion.balance);
-    console.log('Transaction Result:', result);
-
+    // Calculate expected costs.
     const expectedPromptCost =
       tokenUsage.promptTokens.input * promptMultiplier +
       tokenUsage.promptTokens.write * writeMultiplier +
@@ -231,37 +215,21 @@ describe('Structured Token Spending Tests', () => {
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
     const expectedBalance = initialBalance - expectedTotalCost;
 
-    console.log('Expected Cost:', expectedTotalCost);
-    console.log('Expected Balance:', expectedBalance);
-
+    // Assert
     expect(result.completion.balance).toBeLessThan(initialBalance);
-
-    // Allow for a small difference (e.g., 100 token credits)
     const allowedDifference = 100;
     expect(Math.abs(result.completion.balance - expectedBalance)).toBeLessThan(allowedDifference);
-
-    // Check if the decrease is approximately as expected
     const balanceDecrease = initialBalance - result.completion.balance;
     expect(balanceDecrease).toBeCloseTo(expectedTotalCost, 0);
 
-    // Check token values
-    const expectedPromptTokenValue = -(
-      tokenUsage.promptTokens.input * promptMultiplier +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier
-    );
-    const expectedCompletionTokenValue = -tokenUsage.completionTokens * completionMultiplier;
-
+    const expectedPromptTokenValue = -expectedPromptCost;
+    const expectedCompletionTokenValue = -expectedCompletionCost;
     expect(result.prompt.prompt).toBeCloseTo(expectedPromptTokenValue, 1);
     expect(result.completion.completion).toBe(expectedCompletionTokenValue);
-
-    console.log('Expected prompt tokenValue:', expectedPromptTokenValue);
-    console.log('Actual prompt tokenValue:', result.prompt.prompt);
-    console.log('Expected completion tokenValue:', expectedCompletionTokenValue);
-    console.log('Actual completion tokenValue:', result.completion.completion);
   });
 
   test('should handle zero completion tokens in structured spending', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 17613154.55;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
@@ -283,15 +251,17 @@ describe('Structured Token Spending Tests', () => {
       completionTokens: 0,
     };
 
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     const result = await spendStructuredTokens(txData, tokenUsage);
 
+    // Assert
     expect(result.prompt).toBeDefined();
     expect(result.completion).toBeUndefined();
     expect(result.prompt.prompt).toBeLessThan(0);
   });
 
   test('should handle only prompt tokens in structured spending', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 17613154.55;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
@@ -312,15 +282,17 @@ describe('Structured Token Spending Tests', () => {
       },
     };
 
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     const result = await spendStructuredTokens(txData, tokenUsage);
 
+    // Assert
     expect(result.prompt).toBeDefined();
     expect(result.completion).toBeUndefined();
     expect(result.prompt.prompt).toBeLessThan(0);
   });
 
   test('should handle undefined token counts in structured spending', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 17613154.55;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
@@ -335,9 +307,10 @@ describe('Structured Token Spending Tests', () => {
 
     const tokenUsage = {};
 
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     const result = await spendStructuredTokens(txData, tokenUsage);
 
+    // Assert
     expect(result).toEqual({
       prompt: undefined,
       completion: undefined,
@@ -345,6 +318,7 @@ describe('Structured Token Spending Tests', () => {
   });
 
   test('should handle incomplete context for completion tokens', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 17613154.55;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
@@ -366,16 +340,18 @@ describe('Structured Token Spending Tests', () => {
       completionTokens: 50,
     };
 
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     const result = await spendStructuredTokens(txData, tokenUsage);
 
-    // Assuming multiplier for completion is 15 and cancelRate is 1.15
+    // Assert:
+    // (Assuming a multiplier for completion of 15 and a cancel rate of 1.15 as noted in the original test.)
     expect(result.completion.completion).toBeCloseTo(-50 * 15 * 1.15, 0);
   });
 });
 
 describe('NaN Handling Tests', () => {
   test('should skip transaction creation when rawAmount is NaN', async () => {
+    // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
@@ -391,11 +367,11 @@ describe('NaN Handling Tests', () => {
       tokenType: 'prompt',
     };
 
-    // Even if balance updates are enabled, a NaN rawAmount should skip transaction creation.
-    global.interfaceConfig = { balance: { enabled: true } };
+    // Act
     const result = await Transaction.create(txData);
-    expect(result).toBeUndefined();
 
+    // Assert: No transaction should be created and balance remains unchanged.
+    expect(result).toBeUndefined();
     const balance = await Balance.findOne({ user: userId });
     expect(balance.tokenCredits).toBe(initialBalance);
   });
