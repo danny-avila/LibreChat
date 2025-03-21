@@ -162,7 +162,7 @@ export default function useQueryParams({
       });
 
       const decodedPrompt = queryParams.prompt || '';
-      const shouldAutoSubmit = queryParams.submit === 'true';
+      const shouldAutoSubmit = queryParams.submit?.toLowerCase() === 'true';
       delete queryParams.prompt;
       delete queryParams.submit;
       const validSettings = processValidSettings(queryParams);
