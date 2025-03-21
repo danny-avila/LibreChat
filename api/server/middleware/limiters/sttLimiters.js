@@ -68,7 +68,7 @@ const createSTTLimiters = () => {
   };
 
   if (isEnabled(process.env.USE_REDIS)) {
-    logger.info('Using Redis for STT rate limiters.');
+    logger.debug('Using Redis for STT rate limiters.');
     const keyv = new Keyv({ store: keyvRedis });
     const client = keyv.opts.store.redis;
     const sendCommand = (...args) => client.call(...args);

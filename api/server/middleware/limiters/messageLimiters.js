@@ -64,7 +64,7 @@ const userLimiterOptions = {
 };
 
 if (isEnabled(process.env.USE_REDIS)) {
-  logger.info('Using Redis for message rate limiters.');
+  logger.debug('Using Redis for message rate limiters.');
   const keyv = new Keyv({ store: keyvRedis });
   const client = keyv.opts.store.redis;
   const sendCommand = (...args) => client.call(...args);

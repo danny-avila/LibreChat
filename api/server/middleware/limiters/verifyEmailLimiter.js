@@ -37,7 +37,7 @@ const limiterOptions = {
 };
 
 if (isEnabled(process.env.USE_REDIS)) {
-  logger.info('Using Redis for verify email rate limiter.');
+  logger.debug('Using Redis for verify email rate limiter.');
   const keyv = new Keyv({ store: keyvRedis });
   const client = keyv.opts.store.redis;
   const sendCommand = (...args) => client.call(...args);
