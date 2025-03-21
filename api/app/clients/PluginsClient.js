@@ -4,7 +4,6 @@ const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { processFileURL } = require('~/server/services/Files/process');
-const { getBalanceConfig } = require('~/server/services/Config');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { formatLangChainMessages } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
@@ -336,7 +335,7 @@ class PluginsClient extends OpenAIClient {
       }
     }
 
-    const balance = await getBalanceConfig();
+    const balance = this.options.req?.app?.locals?.balance;
     if (balance?.enabled) {
       await checkBalance({
         req: this.options.req,
