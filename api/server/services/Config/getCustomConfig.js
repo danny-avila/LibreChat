@@ -31,22 +31,15 @@ async function getCustomConfig() {
 async function getBalanceConfig() {
   const isLegacyEnabled = isEnabled(process.env.CHECK_BALANCE);
   const startBalance = process.env.START_BALANCE;
-  if (isLegacyEnabled) {
+  if (isLegacyEnabled || (startBalance != null && startBalance)) {
     /** @type {TCustomConfig['balance']} */
     const config = {
-      enabled: true,
+      enabled: isLegacyEnabled,
       startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
     };
     return config;
   }
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  /** @type {ReturnType<loadCustomConfig>} */
-  let customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
-
-  if (!customConfig) {
-    customConfig = await loadCustomConfig();
-  }
-
+  const customConfig = await getCustomConfig();
   if (!customConfig) {
     return null;
   }
