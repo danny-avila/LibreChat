@@ -104,6 +104,7 @@
   "com_auth_google_login": "Continue with Google",
   "com_auth_here": "HERE",
   "com_auth_login": "Login",
+  "com_ui_redirecting_to_provider": "Redirecting to {{0}}, please wait...",
   "com_auth_login_with_new_password": "You may now login with your new password.",
   "com_auth_name_max_length": "Name must be less than 80 characters",
   "com_auth_name_min_length": "Name must be at least 3 characters",

@@ -201,15 +201,17 @@ const initializeAgentOptions = async ({
   const tokensModel =
     agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
   const maxTokens = agent.model_parameters.maxOutputTokens ?? agent.model_parameters.maxTokens ?? 0;
-
+  const maxContextTokens =
+    agent.model_parameters.maxContextTokens ??
+    agent.max_context_tokens ??
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
+    4096;
   return {
     ...agent,
     tools,
     attachments,
     toolContextMap,
-    maxContextTokens:
-      agent.max_context_tokens ??
-      ((getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ?? 4000) - maxTokens) * 0.9,
+    maxContextTokens: (maxContextTokens - maxTokens) * 0.9,
   };
 };
 

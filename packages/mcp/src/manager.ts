@@ -1,4 +1,5 @@
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { JsonSchemaType, MCPOptions } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type * as t from './types/mcp';
@@ -192,12 +193,19 @@ export class MCPManager {
     }
   }
 
-  async callTool(
-    serverName: string,
-    toolName: string,
-    provider: t.Provider,
-    toolArguments?: Record<string, unknown>,
-  ): Promise<t.FormattedToolResponse> {
+  async callTool({
+    serverName,
+    toolName,
+    provider,
+    toolArguments,
+    options,
+  }: {
+    serverName: string;
+    toolName: string;
+    provider: t.Provider;
+    toolArguments?: Record<string, unknown>;
+    options?: RequestOptions;
+  }): Promise<t.FormattedToolResponse> {
     const connection = this.connections.get(serverName);
     if (!connection) {
       throw new Error(
@@ -213,7 +221,10 @@ export class MCPManager {
         },
       },
       CallToolResultSchema,
-      { timeout: connection.timeout },
+      {
+        timeout: connection.timeout,
+        ...options,
+      },
     );
     return formatToolContent(result, provider);
   }
