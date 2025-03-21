@@ -13,7 +13,7 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
-  # Example Billing Object Structure (optional)
+  # Example Balance settings
   balance:
     enabled: false
     startBalance: 20000
