@@ -1,4 +1,4 @@
-import { Schema, Document } from 'mongoose';
+import { Schema, Document, Types } from 'mongoose';
 import { SystemRoles } from 'librechat-data-provider';
 
 export interface IUser extends Document {
@@ -18,6 +18,7 @@ export interface IUser extends Document {
   discordId?: string;
   appleId?: string;
   plugins?: unknown[];
+  groups?: Types.ObjectId[];
   twoFactorEnabled?: boolean;
   totpSecret?: string;
   backupCodes?: Array<{
@@ -134,6 +135,11 @@ const User = new Schema<IUser>(
     },
     plugins: {
       type: Array,
+    },
+    groups: {
+      type: [Schema.Types.ObjectId],
+      ref: 'Group',
+      default: [],
     },
     twoFactorEnabled: {
       type: Boolean,

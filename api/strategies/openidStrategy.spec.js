@@ -19,6 +19,9 @@ jest.mock('~/models/userMethods', () => ({
   createUser: jest.fn(),
   updateUser: jest.fn(),
 }));
+jest.mock('~/models/groupMethods', () => ({
+  findGroup: jest.fn().mockResolvedValue([]),
+}));
 jest.mock('~/server/utils/crypto', () => ({
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
