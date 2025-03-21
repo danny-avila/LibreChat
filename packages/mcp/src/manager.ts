@@ -1,5 +1,6 @@
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { JsonSchemaType } from 'librechat-data-provider';
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import type { JsonSchemaType, MCPOptions } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type * as t from './types/mcp';
 import { formatToolContent } from './parsers';
@@ -31,13 +32,17 @@ export class MCPManager {
     return MCPManager.instance;
   }
 
-  public async initializeMCP(mcpServers: t.MCPServers): Promise<void> {
+  public async initializeMCP(
+    mcpServers: t.MCPServers,
+    processMCPEnv?: (obj: MCPOptions) => MCPOptions,
+  ): Promise<void> {
     this.logger.info('[MCP] Initializing servers');
 
     const entries = Object.entries(mcpServers);
     const initializedServers = new Set();
     const connectionResults = await Promise.allSettled(
-      entries.map(async ([serverName, config], i) => {
+      entries.map(async ([serverName, _config], i) => {
+        const config = processMCPEnv ? processMCPEnv(_config) : _config;
         const connection = new MCPConnection(serverName, config, this.logger);
 
         connection.on('connectionChange', (state) => {
@@ -188,12 +193,19 @@ export class MCPManager {
     }
   }
 
-  async callTool(
-    serverName: string,
-    toolName: string,
-    provider: t.Provider,
-    toolArguments?: Record<string, unknown>,
-  ): Promise<t.FormattedToolResponse> {
+  async callTool({
+    serverName,
+    toolName,
+    provider,
+    toolArguments,
+    options,
+  }: {
+    serverName: string;
+    toolName: string;
+    provider: t.Provider;
+    toolArguments?: Record<string, unknown>;
+    options?: RequestOptions;
+  }): Promise<t.FormattedToolResponse> {
     const connection = this.connections.get(serverName);
     if (!connection) {
       throw new Error(
@@ -209,7 +221,10 @@ export class MCPManager {
         },
       },
       CallToolResultSchema,
-      { timeout: connection.timeout },
+      {
+        timeout: connection.timeout,
+        ...options,
+      },
     );
     return formatToolContent(result, provider);
   }

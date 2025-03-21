@@ -168,6 +168,7 @@ export enum AgentCapabilities {
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
+  chain = 'chain',
   ocr = 'ocr',
 }
 
@@ -234,6 +235,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     /* agents specific */
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
+    maxRecursionLimit: z.number().optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
@@ -244,6 +246,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
         AgentCapabilities.actions,
         AgentCapabilities.tools,
         AgentCapabilities.ocr,
+        AgentCapabilities.chain,
       ]),
   }),
 );
@@ -511,6 +514,7 @@ export type TStartupConfig = {
   appleLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  openidAutoRedirect: boolean;
   /** LDAP Auth Configuration */
   ldap?: {
     /** LDAP enabled */
@@ -827,6 +831,7 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'qwen-vl',
   'grok-vision',
   'grok-2-vision',
   'grok-3',
@@ -1190,7 +1195,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.7',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.2',
+  CONFIG_VERSION = '1.2.3',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

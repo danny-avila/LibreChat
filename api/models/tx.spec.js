@@ -288,7 +288,7 @@ describe('AWS Bedrock Model Tests', () => {
 });
 
 describe('Deepseek Model Tests', () => {
-  const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'];
+  const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner', 'deepseek.r1'];
 
   it('should return the correct prompt multipliers for all models', () => {
     const results = deepseekModels.map((model) => {

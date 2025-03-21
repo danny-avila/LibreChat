@@ -423,6 +423,9 @@ describe('Meta Models Tests', () => {
       expect(getModelMaxTokens('deepseek-reasoner')).toBe(
         maxTokensMap[EModelEndpoint.openAI]['deepseek-reasoner'],
       );
+      expect(getModelMaxTokens('deepseek.r1')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['deepseek.r1'],
+      );
     });
   });
 
