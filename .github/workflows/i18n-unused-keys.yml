@@ -5,12 +5,13 @@ on:
     paths:
       - "client/src/**"
       - "api/**"
+      - "packages/data-provider/src/**"
 
 jobs:
   detect-unused-i18n-keys:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write  # Required for posting PR comments
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -22,7 +23,7 @@ jobs:
 
           # Define paths
           I18N_FILE="client/src/locales/en/translation.json"
-          SOURCE_DIRS=("client/src" "api")
+          SOURCE_DIRS=("client/src" "api" "packages/data-provider/src")
 
           # Check if translation file exists
           if [[ ! -f "$I18N_FILE" ]]; then
