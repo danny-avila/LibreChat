@@ -497,10 +497,10 @@ const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
   openAIParams.chatGptLabel,
   librechat.promptPrefix,
-  librechat.maxContextTokens,
 ];
 
 const openAICol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
   openAIParams.max_tokens,
   openAIParams.temperature,
   openAIParams.top_p,
