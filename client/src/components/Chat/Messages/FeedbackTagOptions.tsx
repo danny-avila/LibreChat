@@ -9,29 +9,30 @@ import {
   OGDialogTitle,
 } from '~/components';
 import { useLocalize } from '~/hooks';
+import { type TFeedbackTag } from 'librechat-data-provider';
 
 type FeedbackTagOptionsProps = {
-  tagChoices: string[];
-  onSelectTag: (tag: string, text?: string) => void;
+  tagChoices: readonly TFeedbackTag[];
+  onSelectTag: (tag: TFeedbackTag, text?: string) => void;
 };
 
 const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onSelectTag }) => {
   const localize = useLocalize();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedTag, setSelectedTag] = useState<TFeedbackTag | null>(null);
   const [text, setText] = useState('');
   const [isDismissed, setIsDismissed] = useState(false);
 
   const inlineOptions = tagChoices.slice(0, 3);
   const hasMore = tagChoices.length > 3;
 
-  const handleInlineTagClick = (tag: string) => {
-    onSelectTag(tag);
+  const handleInlineTagClick = (tag: TFeedbackTag) => {
+    onSelectTag(localize(tag));
   };
 
   const handleSubmit = () => {
     if (selectedTag) {
-      onSelectTag(selectedTag, text);
+      onSelectTag(localize(selectedTag), text);
       setIsDialogOpen(false);
     }
   };
@@ -63,7 +64,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                     onClick={() => handleInlineTagClick(tag)}
                     className="border-token-border-light text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary rounded-lg border px-3 py-1 text-sm"
                   >
-                    {tag}
+                    {localize(tag)}
                   </button>
                 ))}
                 {hasMore && (
@@ -76,7 +77,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                     }}
                     className="border-token-border-light text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary rounded-lg border px-3 py-1 text-sm"
                   >
-                    More...
+                    {localize('com_ui_feedback_more')}
                   </button>
                 )}
               </div>
@@ -112,7 +113,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                         : 'text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary',
                     )}
                   >
-                    {tag}
+                    {localize(tag)}
                     {selectedTag === tag && (
                       <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-white">
                         <Check className="h-4 w-4" />

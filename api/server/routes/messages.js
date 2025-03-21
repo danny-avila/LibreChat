@@ -180,19 +180,6 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
     const { conversationId, messageId } = req.params;
     const { rating, ratingContent } = req.body;
 
-    // Define default tag choices (for thumbsDown only).
-    const defaultTagChoices = [
-      'Shouldn\'t have used Memory',
-      'Don\'t like the style',
-      'Not factually correct',
-      'Didn\'t fully follow instructions',
-      'Refused when it shouldn\'t have',
-      'Being lazy',
-      'Unsafe or problematic',
-      'Biased',
-      'Other',
-    ];
-
     // Update the message feedback.
     const updatedMessage = await updateMessage(req, {
       messageId,
@@ -210,9 +197,6 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
 
     // For thumbsDown, if no tag choices are present, merge the default choices.
     if (rating === 'thumbsDown') {
-      if (!responseRatingContent.tagChoices || responseRatingContent.tagChoices.length === 0) {
-        responseRatingContent.tagChoices = defaultTagChoices;
-      }
       if (ratingContent && ratingContent.tags && !responseRatingContent.tags) {
         responseRatingContent.tags = ratingContent.tags;
       }

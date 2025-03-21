@@ -469,7 +469,6 @@ export type TMessageFeedback = {
   rating: 'thumbsUp' | 'thumbsDown' | null;
   ratingContent?: {
     tags?: string[];
-    tagChoices?: string[];
     text?: string;
   };
 };
@@ -511,7 +510,6 @@ export const tMessageSchema = z.object({
   ratingContent: z
     .object({
       tags: z.array(z.string()).optional(),
-      tagChoices: z.array(z.string()).optional(),
       text: z.string().optional(),
     })
     .nullable()

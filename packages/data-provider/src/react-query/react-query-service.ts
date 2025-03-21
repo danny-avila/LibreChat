@@ -382,10 +382,13 @@ export const useUpdateFeedbackMutation = (
   messageId: string,
 ): UseMutationResult<t.TUpdateFeedbackResponse, unknown, t.TUpdateFeedbackRequest, unknown> => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TUpdateFeedbackRequest) =>
-    dataService.updateFeedback(conversationId, messageId,payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.messages, messageId]);
+  return useMutation(
+    (payload: t.TUpdateFeedbackRequest) =>
+      dataService.updateFeedback(conversationId, messageId, payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.messages, messageId]);
+      },
     },
-  });
+  );
 };

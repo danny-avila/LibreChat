@@ -536,7 +536,6 @@ export type TUpdateFeedbackRequest = {
   rating: 'thumbsUp' | 'thumbsDown';
   ratingContent?: {
     tags?: string[];
-    tagChoices?: string[];
     text?: string;
   };
 };
@@ -547,7 +546,6 @@ export type TUpdateFeedbackResponse = {
   rating: 'thumbsUp' | 'thumbsDown';
   ratingContent?: {
     tags?: string[];
-    tagChoices?: string[];
     text?: string;
   };
 };

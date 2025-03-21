@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import { feedbackTags, type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import FeedbackTagOptions from '~/components/Chat/Messages/FeedbackTagOptions';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
@@ -222,7 +222,7 @@ const MessageRender = memo(
             <SubRow classes="mt-3">
               {!feedbackSubmitted ? (
                 <FeedbackTagOptions
-                  tagChoices={rated.ratingContent?.tagChoices || []}
+                  tagChoices={feedbackTags.thumbsDown}
                   onSelectTag={(tag, text) => {
                     const ratingContent = {
                       tags: [tag],
