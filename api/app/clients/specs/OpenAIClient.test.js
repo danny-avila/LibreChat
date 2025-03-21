@@ -44,6 +44,10 @@ jest.mock('@langchain/openai', () => {
   };
 });
 
+jest.mock('~/server/services/Config/getCustomConfig', () => ({
+  getCustomConfig: jest.fn().mockResolvedValue({ balance: { enabled: false } }),
+}));
+
 jest.mock('openai');
 
 jest.spyOn(OpenAI, 'constructor').mockImplementation(function (...options) {
