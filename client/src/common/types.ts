@@ -504,6 +504,7 @@ export interface ExtendedEndpoint {
   models?: string[];
   agentNames?: Record<string, string>;
   assistantNames?: Record<string, string>;
+  modelIcons?: Record<string, string | undefined>;
 }
 
 export interface ModelItemProps {

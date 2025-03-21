@@ -1,4 +1,5 @@
 import React from 'react';
+import { MenuButton } from '@ariakit/react';
 import { isAgentsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import Icon from '~/components/Endpoints/Icon';
@@ -30,8 +31,33 @@ const ModelDropdownButton = ({
   isMobile,
   endpointsConfig,
 }: ModelDropdownButtonProps) => {
+  const isAgent = isAgentsEndpoint(endpoint as string) && selectedAgentId;
+
+  const renderIcon = () => {
+    if (currentModelSpec) {
+      return <SpecIcon currentSpec={currentModelSpec} endpointsConfig={endpointsConfig} />;
+    }
+
+    if (currentEndpointItem?.icon) {
+      return isAgent ? (
+        <Icon
+          isCreatedByUser={false}
+          endpoint={endpoint}
+          agentName={agentsMap[selectedAgentId]?.name || ''}
+          iconURL={agentsMap[selectedAgentId]?.avatar?.filepath}
+          className="rounded-full"
+          aria-hidden="true"
+        />
+      ) : (
+        currentEndpointItem.icon
+      );
+    }
+
+    return null;
+  };
+
   return (
-    <div
+    <MenuButton
       onClick={() => setMenuOpen(!menuOpen)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -46,47 +72,24 @@ const ModelDropdownButton = ({
       aria-label={`Select model: ${displayValue}`}
       className={cn(
         'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
-        menuOpen
-          ? 'bg-surface-tertiary hover:bg-surface-tertiary'
-          : 'bg-surface-secondary hover:bg-surface-tertiary',
+        menuOpen ? 'bg-surface-tertiary' : 'bg-surface-secondary hover:bg-surface-tertiary',
         isMobile && 'text-base',
       )}
     >
-      {currentModelSpec ? (
+      {(currentModelSpec || currentEndpointItem?.icon) && (
         <div
-          className="flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary"
+          className={cn(
+            'flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary',
+            isAgent && 'rounded-full',
+            isMobile && 'h-6 w-6',
+          )}
           aria-hidden="true"
         >
-          <SpecIcon currentSpec={currentModelSpec} endpointsConfig={endpointsConfig} />
+          {renderIcon()}
         </div>
-      ) : (
-        currentEndpointItem &&
-        currentEndpointItem.icon && (
-          <div
-            className={cn(
-              'flex h-5 w-5 items-center justify-center overflow-hidden text-text-primary',
-              isAgentsEndpoint(endpoint as string) && selectedAgentId ? 'rounded-full' : '',
-              isMobile && 'h-6 w-6',
-            )}
-            aria-hidden="true"
-          >
-            {isAgentsEndpoint(endpoint as string) && selectedAgentId ? (
-              <Icon
-                isCreatedByUser={false}
-                endpoint={endpoint}
-                agentName={agentsMap[selectedAgentId]?.name || ''}
-                iconURL={agentsMap[selectedAgentId]?.avatar?.filepath}
-                className="rounded-full"
-                aria-hidden="true"
-              />
-            ) : (
-              currentEndpointItem.icon
-            )}
-          </div>
-        )
       )}
       <span className="flex-grow truncate text-left">{displayValue}</span>
-    </div>
+    </MenuButton>
   );
 };
 
