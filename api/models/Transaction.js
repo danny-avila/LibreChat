@@ -55,13 +55,11 @@ transactionSchema.statics.create = async function (txData) {
     incrementValue = -balanceResponse.tokenCredits;
   }
 
-  balanceResponse = await balanceResponse
-    .findOneAndUpdate(
-      { user: transaction.user },
-      { $inc: { tokenCredits: incrementValue } },
-      { upsert: true, new: true },
-    )
-    .lean();
+  balanceResponse = await Balance.findOneAndUpdate(
+    { user: transaction.user },
+    { $inc: { tokenCredits: incrementValue } },
+    { upsert: true, new: true },
+  ).lean();
 
   return {
     rate: transaction.rate,
