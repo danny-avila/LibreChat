@@ -136,10 +136,11 @@ OpenAI.mockImplementation(() => ({
 }));
 
 describe('OpenAIClient', () => {
-  const mockSet = jest.fn();
-  const mockCache = { set: mockSet };
-
   beforeEach(() => {
+    const mockCache = {
+      get: jest.fn().mockResolvedValue({}), // Add the get method
+      set: jest.fn(),
+    };
     getLogStores.mockReturnValue(mockCache);
   });
   let client;
