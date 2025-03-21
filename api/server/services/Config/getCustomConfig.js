@@ -1,5 +1,5 @@
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { normalizeEndpointName } = require('~/server/utils');
+const { normalizeEndpointName, isEnabled } = require('~/server/utils');
 const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -24,6 +24,34 @@ async function getCustomConfig() {
 }
 
 /**
+ * Retrieves the configuration object
+ * @function getBalanceConfig
+ * @returns {Promise<TCustomConfig['balance'] | null>}
+ * */
+async function getBalanceConfig() {
+  const isLegacyEnabled = isEnabled(process.env.CHECK_BALANCE);
+  if (isLegacyEnabled) {
+    /** @type {TCustomConfig['balance']} */
+    const config = {
+      enabled: true,
+    };
+    return config;
+  }
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  /** @type {ReturnType<loadCustomConfig>} */
+  let customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
+
+  if (!customConfig) {
+    customConfig = await loadCustomConfig();
+  }
+
+  if (!customConfig) {
+    return null;
+  }
+  return customConfig?.['balance'] ?? null;
+}
+
+/**
  *
  * @param {string | EModelEndpoint} endpoint
  */
@@ -40,4 +68,4 @@ const getCustomEndpointConfig = async (endpoint) => {
   );
 };
 
-module.exports = { getCustomConfig, getCustomEndpointConfig };
+module.exports = { getCustomConfig, getBalanceConfig, getCustomEndpointConfig };
