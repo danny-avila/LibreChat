@@ -1,7 +1,6 @@
 import { SelectDropDown, SelectDropDownPop } from '~/components/ui';
 import type { TModelSelectProps } from '~/common';
 import { cn, cardStyle } from '~/utils/';
-import { TemporaryChat } from './TemporaryChat';
 
 export default function Anthropic({
   conversation,
@@ -22,7 +21,6 @@ export default function Anthropic({
         cardStyle,
         'z-50 flex h-[40px] w-48 min-w-48 flex-none items-center justify-center px-4 ring-0 hover:cursor-pointer',
       )}
-      footer={<TemporaryChat />}
     />
   );
 }

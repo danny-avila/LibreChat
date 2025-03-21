@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import CodeArtifacts from './CodeArtifacts';
+import ChatBadges from './ChatBadges';
 
 function Beta() {
   return (
@@ -7,6 +8,9 @@ function Beta() {
       <div className="pb-3">
         <CodeArtifacts />
       </div>
+      {/* <div className="pb-3">
+        <ChatBadges />
+      </div> */}
     </div>
   );
 }

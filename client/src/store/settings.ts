@@ -45,6 +45,8 @@ const localStorageAtoms = {
   codeArtifacts: atomWithLocalStorage('codeArtifacts', false),
   includeShadcnui: atomWithLocalStorage('includeShadcnui', false),
   customPromptMode: atomWithLocalStorage('customPromptMode', false),
+  centerFormOnLanding: atomWithLocalStorage('centerFormOnLanding', true),
+  showFooter: atomWithLocalStorage('showFooter', true),
 
   // Commands settings
   atCommand: atomWithLocalStorage('atCommand', true),

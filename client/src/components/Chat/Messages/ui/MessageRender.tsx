@@ -102,7 +102,6 @@ const MessageRender = memo(
         }
         : undefined;
 
-    // Style classes
     const baseClasses =
       'final-completion group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu';
     let layoutClasses = '';
@@ -113,7 +112,7 @@ const MessageRender = memo(
     } else if (maximizeChatSpace) {
       layoutClasses = 'md:max-w-full md:px-5';
     } else {
-      layoutClasses = 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5';
+      layoutClasses = 'md:max-w-[47rem] xl:max-w-[55rem]';
     }
 
     const latestCardClasses = isLatestCard ? 'bg-surface-secondary' : '';

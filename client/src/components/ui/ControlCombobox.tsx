@@ -107,7 +107,7 @@ function ControlCombobox({
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',
           'border border-border-light',
-          isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
+          isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-xl px-3 py-2 text-sm',
           className,
         )}
       >
@@ -132,17 +132,19 @@ function ControlCombobox({
         store={select}
         gutter={4}
         portal
-        className="z-50 overflow-hidden rounded-md border border-border-light bg-surface-secondary shadow-lg"
+        className={cn(
+          'animate-popover z-50 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+        )}
         style={{ width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
       >
-        <div className="p-2">
+        <div className="py-1.5">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
             <Ariakit.Combobox
               store={combobox}
               autoSelect
               placeholder={searchPlaceholder}
-              className="w-full rounded-md border border-border-light bg-surface-tertiary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
+              className="w-full rounded-md bg-surface-secondary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
             />
           </div>
         </div>
