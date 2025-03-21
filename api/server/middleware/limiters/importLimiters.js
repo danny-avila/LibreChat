@@ -72,8 +72,14 @@ const createImportLimiters = () => {
     const keyv = new Keyv({ store: keyvRedis });
     const client = keyv.opts.store.redis;
     const sendCommand = (...args) => client.call(...args);
-    const ipStore = new RedisStore({ sendCommand });
-    const userStore = new RedisStore({ sendCommand });
+    const ipStore = new RedisStore({
+      sendCommand,
+      prefix: 'import_ip_limiter:',
+    });
+    const userStore = new RedisStore({
+      sendCommand,
+      prefix: 'import_user_limiter:',
+    });
     ipLimiterOptions.store = ipStore;
     userLimiterOptions.store = userStore;
   }

@@ -1,6 +1,11 @@
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const { ViolationTypes } = require('librechat-data-provider');
+const Keyv = require('keyv');
+const { isEnabled } = require('~/server/utils');
 const logViolation = require('~/cache/logViolation');
+const keyvRedis = require('~/cache/keyvRedis');
+const { logger } = require('~/config');
 
 const getEnvironmentVariables = () => {
   const STT_IP_MAX = parseInt(process.env.STT_IP_MAX) || 100;
@@ -47,20 +52,40 @@ const createSTTHandler = (ip = true) => {
 const createSTTLimiters = () => {
   const { sttIpWindowMs, sttIpMax, sttUserWindowMs, sttUserMax } = getEnvironmentVariables();
 
-  const sttIpLimiter = rateLimit({
+  const ipLimiterOptions = {
     windowMs: sttIpWindowMs,
     max: sttIpMax,
     handler: createSTTHandler(),
-  });
+  };
 
-  const sttUserLimiter = rateLimit({
+  const userLimiterOptions = {
     windowMs: sttUserWindowMs,
     max: sttUserMax,
     handler: createSTTHandler(false),
     keyGenerator: function (req) {
       return req.user?.id; // Use the user ID or NULL if not available
     },
-  });
+  };
+
+  if (isEnabled(process.env.USE_REDIS)) {
+    logger.info('Using Redis for STT rate limiters.');
+    const keyv = new Keyv({ store: keyvRedis });
+    const client = keyv.opts.store.redis;
+    const sendCommand = (...args) => client.call(...args);
+    const ipStore = new RedisStore({
+      sendCommand,
+      prefix: 'stt_ip_limiter:',
+    });
+    const userStore = new RedisStore({
+      sendCommand,
+      prefix: 'stt_user_limiter:',
+    });
+    ipLimiterOptions.store = ipStore;
+    userLimiterOptions.store = userStore;
+  }
+
+  const sttIpLimiter = rateLimit(ipLimiterOptions);
+  const sttUserLimiter = rateLimit(userLimiterOptions);
 
   return { sttIpLimiter, sttUserLimiter };
 };
