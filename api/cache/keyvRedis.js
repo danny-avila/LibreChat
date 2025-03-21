@@ -77,7 +77,7 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
   keyvRedis.setMaxListeners(redis_max_listeners);
   logger.info(
-    '[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache for values to refresh.',
+    '[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache to refresh values.',
   );
 } else {
   logger.info('[Optional] Redis not initialized.');
