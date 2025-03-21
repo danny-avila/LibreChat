@@ -33,6 +33,7 @@ const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 
 /**
  * @route POST /
@@ -248,7 +249,12 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      if (!global.interfaceConfig?.balance?.enabled) {
+      const customConfig = await getCustomConfig();
+      if (!customConfig) {
+        return {};
+      }
+      const { balance = {} } = customConfig ?? {};
+      if (!balance?.enabled) {
         return;
       }
       const transactions =

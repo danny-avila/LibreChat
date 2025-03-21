@@ -13,6 +13,7 @@ const { initializeS3 } = require('./Files/S3/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
+const { loadDefaultBalance } = require('./start/balance');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { loadAndFormatTools } = require('./ToolService');
@@ -68,6 +69,7 @@ const AppService = async (app) => {
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+  const balanceConfig = await loadDefaultBalance(config, configDefaults);
 
   const defaultLocals = {
     ocr,
@@ -79,12 +81,11 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    balanceConfig,
   };
 
   if (!Object.keys(config).length) {
     app.locals = defaultLocals;
-    // Make the interfaceConfig globally accessible
-    global.interfaceConfig = interfaceConfig;
     return;
   }
 
@@ -144,9 +145,6 @@ const AppService = async (app) => {
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs),
     ...endpointLocals,
   };
-
-  // Make the interfaceConfig globally accessible
-  global.interfaceConfig = interfaceConfig;
 };
 
 module.exports = AppService;

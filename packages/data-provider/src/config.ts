@@ -485,18 +485,6 @@ export const intefaceSchema = z
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
     runCode: z.boolean().optional(),
-    balance: z
-      .object({
-        enabled: z.boolean().optional(),
-        startBalance: z.number().optional(),
-        autoRefillEnabled: z.boolean().optional(),
-        refillIntervalValue: z.number().optional(),
-        refillIntervalUnit: z
-          .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
-          .optional(),
-        refillAmount: z.number().optional(),
-      })
-      .optional(),
   })
   .default({
     endpointsMenu: true,
@@ -510,22 +498,16 @@ export const intefaceSchema = z
     agents: true,
     temporaryChat: true,
     runCode: true,
-    balance: {
-      enabled: false,
-      startBalance: 20000,
-      autoRefillEnabled: false,
-      refillIntervalValue: 30,
-      refillIntervalUnit: 'days',
-      refillAmount: 10000,
-    },
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
+export type TBalanceConfig = z.infer<typeof balanceSchema>;
 
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
+  balance?: TBalanceConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
@@ -571,6 +553,18 @@ export const ocrSchema = z.object({
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
+export const balanceSchema = z.object({
+  enabled: z.boolean().optional().default(false),
+  startBalance: z.number().optional().default(20000),
+  autoRefillEnabled: z.boolean().optional().default(false),
+  refillIntervalValue: z.number().optional().default(30),
+  refillIntervalUnit: z
+    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
+    .optional()
+    .default('days'),
+  refillAmount: z.number().optional().default(10000),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -593,6 +587,7 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
+  balance: balanceSchema.optional(),
   speech: z
     .object({
       tts: ttsSchema.optional(),

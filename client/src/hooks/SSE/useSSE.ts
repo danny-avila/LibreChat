@@ -76,7 +76,7 @@ export default function useSSE(
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.interface?.balance?.enabled,
+    enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
 
   useEffect(() => {
@@ -114,7 +114,7 @@ export default function useSSE(
       if (data.final != null) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
-        (startupConfig?.interface?.balance?.enabled ?? false) && balanceQuery.refetch();
+        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -208,7 +208,7 @@ export default function useSSE(
       }
 
       console.log('error in server stream.');
-      (startupConfig?.interface?.balance?.enabled ?? false) && balanceQuery.refetch();
+      (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
       let data: TResData | undefined = undefined;
       try {

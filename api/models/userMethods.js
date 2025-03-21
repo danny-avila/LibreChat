@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const signPayload = require('~/server/services/signPayload');
 const Balance = require('./Balance');
 const User = require('./User');
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
@@ -59,6 +60,14 @@ const updateUser = async function (userId, updateData) {
  * @throws {Error} If a user with the same user_id already exists.
  */
 const createUser = async (data, disableTTL = true, returnUser = false) => {
+  const customConfig = await getCustomConfig();
+
+  if (!customConfig) {
+    return {};
+  }
+
+  const { balance = {} } = customConfig ?? {};
+
   const userData = {
     ...data,
     expiresAt: disableTTL ? null : new Date(Date.now() + 604800 * 1000), // 1 week in milliseconds
@@ -71,23 +80,22 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
   const user = await User.create(userData);
 
   // If balance is enabled, create or update a balance record for the user using global.interfaceConfig.balance
-  if (global.interfaceConfig?.balance?.enabled && global.interfaceConfig?.balance?.startBalance) {
-    const balanceConfig = global.interfaceConfig.balance;
+  if (balance?.enabled && balance?.startBalance) {
     const update = {
-      $inc: { tokenCredits: balanceConfig.startBalance },
+      $inc: { tokenCredits: balance.startBalance },
     };
 
     if (
-      balanceConfig.autoRefillEnabled &&
-      balanceConfig.refillIntervalValue != null &&
-      balanceConfig.refillIntervalUnit != null &&
-      balanceConfig.refillAmount != null
+      balance.autoRefillEnabled &&
+      balance.refillIntervalValue != null &&
+      balance.refillIntervalUnit != null &&
+      balance.refillAmount != null
     ) {
       update.$set = {
         autoRefillEnabled: true,
-        refillIntervalValue: balanceConfig.refillIntervalValue,
-        refillIntervalUnit: balanceConfig.refillIntervalUnit,
-        refillAmount: balanceConfig.refillAmount,
+        refillIntervalValue: balance.refillIntervalValue,
+        refillIntervalUnit: balance.refillIntervalUnit,
+        refillAmount: balance.refillAmount,
       };
     }
 
