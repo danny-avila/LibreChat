@@ -77,10 +77,10 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
   keyvRedis.setMaxListeners(redis_max_listeners);
   logger.info(
-    '[Optional] Redis initialized. Note: Redis support is experimental. If you have issues, disable it. Cache needs to be flushed for values to refresh.',
+    '[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache for values to refresh.',
   );
 } else {
-  logger.info('[Optional] Redis not initialized. Note: Redis support is experimental.');
+  logger.info('[Optional] Redis not initialized.');
 }
 
 module.exports = keyvRedis;
