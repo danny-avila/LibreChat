@@ -9,15 +9,16 @@ const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = requir
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
-const { initializeS3 } = require('./Files/S3/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
+const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
+const { isEnabled } = require('~/server/utils');
 const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
@@ -37,7 +38,11 @@ const AppService = async (app) => {
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
-  const balance = config.balance ?? configDefaults.balance;
+  const startBalance = process.env.START_BALANCE;
+  const balance = config.balance ?? {
+    enabled: isEnabled(process.env.CHECK_BALANCE),
+    startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
+  };
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;

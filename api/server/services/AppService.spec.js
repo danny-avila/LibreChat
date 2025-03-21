@@ -445,7 +445,12 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
-    expect(app.locals.balance).toBeUndefined();
+    expect(app.locals.balance).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        startBalance: undefined,
+      }),
+    );
   });
 
   it('should update app.locals with values from loadCustomConfig', async () => {
