@@ -29,7 +29,7 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   await initializeRoles();
-  /** @type {TCustomConfig}*/
+  /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
@@ -52,7 +52,7 @@ const AppService = async (app) => {
     initializeS3();
   }
 
-  /** @type {Record<string, FunctionTool} */
+  /** @type {Record<string, FunctionTool>} */
   const availableTools = loadAndFormatTools({
     adminFilter: filteredTools,
     adminIncluded: includedTools,
@@ -83,6 +83,8 @@ const AppService = async (app) => {
 
   if (!Object.keys(config).length) {
     app.locals = defaultLocals;
+    // Make the interfaceConfig globally accessible
+    global.interfaceConfig = interfaceConfig;
     return;
   }
 
@@ -142,6 +144,9 @@ const AppService = async (app) => {
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs),
     ...endpointLocals,
   };
+
+  // Make the interfaceConfig globally accessible
+  global.interfaceConfig = interfaceConfig;
 };
 
 module.exports = AppService;

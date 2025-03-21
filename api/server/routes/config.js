@@ -69,7 +69,6 @@ router.get('/', async function (req, res) {
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,
       passwordResetEnabled,
-      checkBalance: isEnabled(process.env.CHECK_BALANCE),
       showBirthdayIcon:
         isBirthday() ||
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||

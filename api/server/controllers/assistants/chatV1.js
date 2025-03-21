@@ -248,7 +248,7 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      if (!isEnabled(process.env.CHECK_BALANCE)) {
+      if (!global.interfaceConfig?.balance?.enabled) {
         return;
       }
       const transactions =

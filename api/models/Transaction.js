@@ -37,14 +37,14 @@ transactionSchema.statics.create = async function (txData) {
 
   await transaction.save();
 
-  if (!isEnabled(process.env.CHECK_BALANCE)) {
+  if (!global.interfaceConfig?.balance?.enabled) {
     return;
   }
 
   let balance = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
 
-  if (balance && balance?.tokenCredits + incrementValue < 0) {
+  if (balance && balance.tokenCredits + incrementValue < 0) {
     incrementValue = -balance.tokenCredits;
   }
 
@@ -78,14 +78,15 @@ transactionSchema.statics.createStructured = async function (txData) {
 
   await transaction.save();
 
-  if (!isEnabled(process.env.CHECK_BALANCE)) {
+  // Check the global interface config for balance enabled.
+  if (!global.interfaceConfig?.balance?.enabled) {
     return;
   }
 
   let balance = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
 
-  if (balance && balance?.tokenCredits + incrementValue < 0) {
+  if (balance && balance.tokenCredits + incrementValue < 0) {
     incrementValue = -balance.tokenCredits;
   }
 

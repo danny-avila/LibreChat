@@ -336,7 +336,7 @@ class PluginsClient extends OpenAIClient {
       }
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE)) {
+    if (global.interfaceConfig?.balance?.enabled) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,

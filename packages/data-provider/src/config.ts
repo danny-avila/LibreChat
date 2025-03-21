@@ -485,6 +485,13 @@ export const intefaceSchema = z
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
     runCode: z.boolean().optional(),
+    balance: z
+      .object({
+        enabled: z.boolean().optional(),
+        startBalance: z.number().optional(),
+        autoRefill: z.boolean().optional(),
+      })
+      .optional(),
   })
   .default({
     endpointsMenu: true,
@@ -498,6 +505,11 @@ export const intefaceSchema = z
     agents: true,
     temporaryChat: true,
     runCode: true,
+    balance: {
+      enabled: false,
+      startBalance: 0,
+      autoRefill: false,
+    },
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
@@ -528,7 +540,6 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
-  checkBalance: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;

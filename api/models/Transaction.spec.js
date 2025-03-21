@@ -20,6 +20,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  // Set the balance feature enabled by default for each test
+  global.interfaceConfig = { balance: { enabled: true } };
 });
 
 describe('Regular Token Spending Tests', () => {
@@ -43,19 +45,17 @@ describe('Regular Token Spending Tests', () => {
       completionTokens: 50,
     };
 
-    // Act
-    process.env.CHECK_BALANCE = 'true';
+    // Act: Balance feature enabled via global configuration
+    global.interfaceConfig = { balance: { enabled: true } };
     await spendTokens(txData, tokenUsage);
 
     // Assert
     console.log('Initial Balance:', initialBalance);
-
     const updatedBalance = await Balance.findOne({ user: userId });
     console.log('Updated Balance:', updatedBalance.tokenCredits);
 
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
-
     const expectedPromptCost = tokenUsage.promptTokens * promptMultiplier;
     const expectedCompletionCost = tokenUsage.completionTokens * completionMultiplier;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
@@ -88,13 +88,12 @@ describe('Regular Token Spending Tests', () => {
       completionTokens: 0,
     };
 
-    // Act
-    process.env.CHECK_BALANCE = 'true';
+    // Act: Enable balance feature via global configuration
+    global.interfaceConfig = { balance: { enabled: true } };
     await spendTokens(txData, tokenUsage);
 
     // Assert
     const updatedBalance = await Balance.findOne({ user: userId });
-
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = tokenUsage.promptTokens * promptMultiplier;
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
@@ -121,7 +120,6 @@ describe('Regular Token Spending Tests', () => {
     const tokenUsage = {};
 
     const result = await spendTokens(txData, tokenUsage);
-
     expect(result).toBeUndefined();
   });
 
@@ -141,13 +139,40 @@ describe('Regular Token Spending Tests', () => {
 
     const tokenUsage = { promptTokens: 100 };
 
+    global.interfaceConfig = { balance: { enabled: true } };
     await spendTokens(txData, tokenUsage);
 
     const updatedBalance = await Balance.findOne({ user: userId });
-
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = 100 * promptMultiplier;
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendTokens should not update balance when balance feature is disabled', async () => {
+    // Set the global balance feature to disabled
+    global.interfaceConfig = { balance: { enabled: false } };
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000; // $10.00
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+    };
+    const tokenUsage = {
+      promptTokens: 100,
+      completionTokens: 50,
+    };
+
+    await spendTokens(txData, tokenUsage);
+
+    // Expect that Balance was not updated because balance updates are disabled
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBe(initialBalance);
   });
 });
 
@@ -190,7 +215,7 @@ describe('Structured Token Spending Tests', () => {
     });
 
     // Act
-    process.env.CHECK_BALANCE = 'true';
+    global.interfaceConfig = { balance: { enabled: true } };
     const result = await spendStructuredTokens(txData, tokenUsage);
 
     // Assert
@@ -211,7 +236,7 @@ describe('Structured Token Spending Tests', () => {
 
     expect(result.completion.balance).toBeLessThan(initialBalance);
 
-    // Allow for a small difference (e.g., 100 token credits, which is $0.0001)
+    // Allow for a small difference (e.g., 100 token credits)
     const allowedDifference = 100;
     expect(Math.abs(result.completion.balance - expectedBalance)).toBeLessThan(allowedDifference);
 
@@ -258,7 +283,7 @@ describe('Structured Token Spending Tests', () => {
       completionTokens: 0,
     };
 
-    process.env.CHECK_BALANCE = 'true';
+    global.interfaceConfig = { balance: { enabled: true } };
     const result = await spendStructuredTokens(txData, tokenUsage);
 
     expect(result.prompt).toBeDefined();
@@ -287,7 +312,7 @@ describe('Structured Token Spending Tests', () => {
       },
     };
 
-    process.env.CHECK_BALANCE = 'true';
+    global.interfaceConfig = { balance: { enabled: true } };
     const result = await spendStructuredTokens(txData, tokenUsage);
 
     expect(result.prompt).toBeDefined();
@@ -310,7 +335,7 @@ describe('Structured Token Spending Tests', () => {
 
     const tokenUsage = {};
 
-    process.env.CHECK_BALANCE = 'true';
+    global.interfaceConfig = { balance: { enabled: true } };
     const result = await spendStructuredTokens(txData, tokenUsage);
 
     expect(result).toEqual({
@@ -341,10 +366,11 @@ describe('Structured Token Spending Tests', () => {
       completionTokens: 50,
     };
 
-    process.env.CHECK_BALANCE = 'true';
+    global.interfaceConfig = { balance: { enabled: true } };
     const result = await spendStructuredTokens(txData, tokenUsage);
 
-    expect(result.completion.completion).toBeCloseTo(-50 * 15 * 1.15, 0); // Assuming multiplier is 15 and cancelRate is 1.15
+    // Assuming multiplier for completion is 15 and cancelRate is 1.15
+    expect(result.completion.completion).toBeCloseTo(-50 * 15 * 1.15, 0);
   });
 });
 
@@ -365,6 +391,8 @@ describe('NaN Handling Tests', () => {
       tokenType: 'prompt',
     };
 
+    // Even if balance updates are enabled, a NaN rawAmount should skip transaction creation.
+    global.interfaceConfig = { balance: { enabled: true } };
     const result = await Transaction.create(txData);
     expect(result).toBeUndefined();
 

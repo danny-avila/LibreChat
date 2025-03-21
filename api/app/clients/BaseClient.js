@@ -635,7 +635,7 @@ class BaseClient {
     }
 
     if (
-      isEnabled(process.env.CHECK_BALANCE) &&
+      global.interfaceConfig?.balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({

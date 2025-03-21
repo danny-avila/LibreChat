@@ -23,10 +23,11 @@ jest.mock('~/config', () => ({
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { Transaction } = require('./Transaction');
 const Balance = require('./Balance');
+
 describe('spendTokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.CHECK_BALANCE = 'true';
+    global.interfaceConfig = { balance: { enabled: true } };
   });
 
   it('should create transactions for both prompt and completion tokens', async () => {
@@ -92,7 +93,7 @@ describe('spendTokens', () => {
     expect(Transaction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         tokenType: 'completion',
-        rawAmount: -0, // Changed from 0 to -0
+        rawAmount: -0,
       }),
     );
   });
@@ -111,8 +112,9 @@ describe('spendTokens', () => {
     expect(Transaction.create).not.toHaveBeenCalled();
   });
 
-  it('should not update balance when CHECK_BALANCE is false', async () => {
-    process.env.CHECK_BALANCE = 'false';
+  it('should not update balance when the balance feature is disabled', async () => {
+    // Set the global interface balance feature to disable.
+    global.interfaceConfig.balance.enabled = false;
     const txData = {
       user: new mongoose.Types.ObjectId(),
       conversationId: 'test-convo',

@@ -76,7 +76,7 @@ export default function useSSE(
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+    enabled: !!isAuthenticated && startupConfig?.interface?.balance?.enabled,
   });
 
   useEffect(() => {
@@ -114,7 +114,7 @@ export default function useSSE(
       if (data.final != null) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
-        (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
+        (startupConfig?.interface?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -208,7 +208,7 @@ export default function useSSE(
       }
 
       console.log('error in server stream.');
-      (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
+      (startupConfig?.interface?.balance?.enabled ?? false) && balanceQuery.refetch();
 
       let data: TResData | undefined = undefined;
       try {
@@ -234,6 +234,5 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 }

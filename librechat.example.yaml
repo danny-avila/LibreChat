@@ -13,6 +13,12 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  # Example Billing Object Structure (optional)
+  balance:
+    enabled: true
+    startBalance: 20000
+    autoRefill: false
+
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'

@@ -50,7 +50,7 @@ const createStartHandler = ({
 
     try {
       // TODO: if plugins extends to non-OpenAI models, this will need to be updated
-      if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[EModelEndpoint.openAI]) {
+      if (global.interfaceConfig?.balance?.enabled && supportsBalanceCheck[EModelEndpoint.openAI]) {
         const generations =
           initialMessageCount && messages.length > initialMessageCount
             ? messages.slice(initialMessageCount)
