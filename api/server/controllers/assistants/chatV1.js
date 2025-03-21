@@ -19,13 +19,14 @@ const {
   addThreadMetadata,
   saveAssistantMessage,
 } = require('~/server/services/Threads');
-const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { sendResponse, sendMessage, sleep, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
@@ -33,7 +34,6 @@ const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 
 /**
  * @route POST /
@@ -249,11 +249,7 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const customConfig = await getCustomConfig();
-      if (!customConfig) {
-        return {};
-      }
-      const { balance = {} } = customConfig ?? {};
+      const balance = await getBalanceConfig();
       if (!balance?.enabled) {
         return;
       }

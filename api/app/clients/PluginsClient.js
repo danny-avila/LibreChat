@@ -3,12 +3,11 @@ const { CallbackManager } = require('@langchain/core/callbacks/manager');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { processFileURL } = require('~/server/services/Files/process');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { formatLangChainMessages } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
-const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
 const { logger } = require('~/config');
@@ -337,12 +336,7 @@ class PluginsClient extends OpenAIClient {
       }
     }
 
-    const customConfig = await getCustomConfig();
-    if (!customConfig) {
-      return {};
-    }
-    const { balance = {} } = customConfig ?? {};
-
+    const balance = await getBalanceConfig();
     if (balance?.enabled) {
       await checkBalance({
         req: this.options.req,

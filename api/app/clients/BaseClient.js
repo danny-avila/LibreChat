@@ -11,9 +11,9 @@ const {
   Constants,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
-const { addSpaceIfNeeded } = require('~/server/utils');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { truncateToolCallOutputs } = require('./prompts');
+const { addSpaceIfNeeded } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
@@ -635,12 +635,7 @@ class BaseClient {
       }
     }
 
-    const customConfig = await getCustomConfig();
-    if (!customConfig) {
-      return {};
-    }
-    const { balance = {} } = customConfig ?? {};
-
+    const balance = await getBalanceConfig();
     if (
       balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]

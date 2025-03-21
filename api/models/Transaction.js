@@ -1,10 +1,9 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('~/server/utils/handleText');
 const { transactionSchema } = require('@librechat/data-schemas');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
 const Balance = require('./Balance');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const cancelRate = 1.15;
 
 /** Method to calculate and set the tokenValue for a transaction */
@@ -38,12 +37,7 @@ transactionSchema.statics.create = async function (txData) {
 
   await transaction.save();
 
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return {};
-  }
-  const { balance = {} } = customConfig ?? {};
-
+  const balance = await getBalanceConfig();
   if (!balance?.enabled) {
     return;
   }
@@ -85,12 +79,7 @@ transactionSchema.statics.createStructured = async function (txData) {
 
   await transaction.save();
 
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return {};
-  }
-  const { balance = {} } = customConfig ?? {};
-
+  const balance = await getBalanceConfig();
   if (!balance?.enabled) {
     return;
   }

@@ -30,10 +30,12 @@ async function getCustomConfig() {
  * */
 async function getBalanceConfig() {
   const isLegacyEnabled = isEnabled(process.env.CHECK_BALANCE);
+  const startBalance = process.env.START_BALANCE;
   if (isLegacyEnabled) {
     /** @type {TCustomConfig['balance']} */
     const config = {
       enabled: true,
+      startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
     };
     return config;
   }

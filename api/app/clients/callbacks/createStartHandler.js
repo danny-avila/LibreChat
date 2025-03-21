@@ -1,10 +1,9 @@
 const { promptTokensEstimate } = require('openai-chat-tokens');
 const { EModelEndpoint, supportsBalanceCheck } = require('librechat-data-provider');
 const { formatFromLangChain } = require('~/app/clients/prompts');
+const { getBalanceConfig } = require('~/server/services/Config');
 const checkBalance = require('~/models/checkBalance');
-const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 
 const createStartHandler = ({
   context,
@@ -51,13 +50,7 @@ const createStartHandler = ({
 
     try {
       // TODO: if plugins extends to non-OpenAI models, this will need to be updated
-
-      const customConfig = await getCustomConfig();
-      if (!customConfig) {
-        return {};
-      }
-      const { balance = {} } = customConfig ?? {};
-
+      const balance = await getBalanceConfig();
       if (balance?.enabled && supportsBalanceCheck[EModelEndpoint.openAI]) {
         const generations =
           initialMessageCount && messages.length > initialMessageCount
