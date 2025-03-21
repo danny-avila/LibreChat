@@ -21,7 +21,7 @@ const {
  * @function
  * @param {Object} req - Express request object containing user information.
  * @param {Object} res - Express response object.
- * @param {function} next - Express next middleware function.
+ * @param {import('express').NextFunction} next - Next middleware function.
  * @throws {Error} Throws an error if the user exceeds the concurrent request limit.
  */
 const concurrentLimiter = async (req, res, next) => {
