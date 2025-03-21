@@ -127,7 +127,9 @@ describe('AppService', () => {
       imageOutputType: expect.any(String),
       fileConfig: undefined,
       secureImageLinks: undefined,
-      balance: undefined,
+      balance: { enabled: true },
+      filteredTools: undefined,
+      includedTools: undefined,
     });
   });
 
@@ -443,15 +445,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
-    // When config is undefined, balance should fallback to defaults from the schema:
-    expect(app.locals.balance).toEqual({
-      enabled: false,
-      startBalance: 20000,
-      autoRefillEnabled: false,
-      refillIntervalValue: 30,
-      refillIntervalUnit: 'days',
-      refillAmount: 10000,
-    });
+    expect(app.locals.balance).toBeUndefined();
   });
 
   it('should update app.locals with values from loadCustomConfig', async () => {
