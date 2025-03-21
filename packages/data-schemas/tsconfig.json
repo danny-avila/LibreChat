@@ -1,28 +1,19 @@
 {
   "compilerOptions": {
-    "declaration": true,
-    "declarationDir": "./dist/types",
-    "module": "esnext",
-    "noImplicitAny": true,
-    "outDir": "./dist",
-    "target": "es2015",
+    "target": "ES2019",
+    "module": "ESNext",
     "moduleResolution": "node",
-    "lib": ["es2017", "dom", "ES2021.String"],
-    "skipLibCheck": true,
-    "esModuleInterop": true,
+    "declaration": true,
+    "declarationDir": "dist/types",
+    "outDir": "dist",
     "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": false,
-    "sourceMap": true,
-    "baseUrl": "."
+    "sourceMap": true
   },
-  "ts-node": {
-    "experimentalSpecifierResolution": "node",
-    "transpileOnly": true,
-    "esm": true
-  },
-  "exclude": ["node_modules", "dist", "types"],
-  "include": ["src/**/*", "types/index.d.ts", "types/react-query/index.d.ts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests"]
 }
