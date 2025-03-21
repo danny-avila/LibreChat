@@ -47,16 +47,17 @@ router.get('/', async function (req, res) {
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
       appleLoginEnabled:
-          !!process.env.APPLE_CLIENT_ID &&
-          !!process.env.APPLE_TEAM_ID &&
-          !!process.env.APPLE_KEY_ID &&
-          !!process.env.APPLE_PRIVATE_KEY_PATH,
+        !!process.env.APPLE_CLIENT_ID &&
+        !!process.env.APPLE_TEAM_ID &&
+        !!process.env.APPLE_KEY_ID &&
+        !!process.env.APPLE_PRIVATE_KEY_PATH,
       openidLoginEnabled:
         !!process.env.OPENID_ENABLED &&
         !!process.env.OPENID_SESSION_SECRET,
       openidMultiTenantEnabled: !!process.env.OPENID_MULTI_TENANT,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
+      openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
@@ -79,6 +80,7 @@ router.get('/', async function (req, res) {
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
       instanceProjectId: instanceProject._id.toString(),
+      bundlerURL: process.env.SANDPACK_BUNDLER_URL,
     };
 
     if (ldap) {

@@ -153,6 +153,7 @@ const formatAgentMessages = (payload) => {
     let currentContent = [];
     let lastAIMessage = null;
 
+    let hasReasoning = false;
     for (const part of message.content) {
       if (part.type === ContentTypes.TEXT && part.tool_call_ids) {
         /*
@@ -207,9 +208,25 @@ const formatAgentMessages = (payload) => {
             content: output || '',
           }),
         );
+      } else if (part.type === ContentTypes.THINK) {
+        hasReasoning = true;
+        continue;
+      } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
+        continue;
       } else {
         currentContent.push(part);
       }
+    }
+
+    if (hasReasoning) {
+      currentContent = currentContent
+        .reduce((acc, curr) => {
+          if (curr.type === ContentTypes.TEXT) {
+            return `${acc}${curr[ContentTypes.TEXT]}\n`;
+          }
+          return acc;
+        }, '')
+        .trim();
     }
 
     if (currentContent.length > 0) {

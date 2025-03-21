@@ -34,6 +34,8 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
     agents: interfaceConfig?.agents ?? defaults.agents,
     temporaryChat: interfaceConfig?.temporaryChat ?? defaults.temporaryChat,
+    runCode: interfaceConfig?.runCode ?? defaults.runCode,
+    customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
   });
 
   await updateAccessPermissions(roleName, {
@@ -41,12 +43,16 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
+    [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
+    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
   });
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
+    [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
+    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
   });
 
   let i = 0;

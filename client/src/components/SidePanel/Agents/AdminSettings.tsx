@@ -142,7 +142,7 @@ const AdminSettings = () => {
         <Button
           size={'sm'}
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative mb-4 h-9 w-full gap-1 rounded-lg font-medium"
+          className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
           {localize('com_ui_admin_settings')}

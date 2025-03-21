@@ -1,6 +1,7 @@
+import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback } from 'react';
+import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { Controller, useWatch, useForm, FormProvider } from 'react-hook-form';
 import {
   Tools,
   SystemRoles,
@@ -18,8 +19,10 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
+import AdvancedPanel from './Advanced/AdvancedPanel';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
+import AgentFooter from './AgentFooter';
 import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
@@ -129,6 +132,7 @@ export default function AgentPanel({
         agent_ids,
         end_after_tools,
         hide_sequential_outputs,
+        recursion_limit,
       } = data;
 
       const model = _model ?? '';
@@ -150,6 +154,7 @@ export default function AgentPanel({
             agent_ids,
             end_after_tools,
             hide_sequential_outputs,
+            recursion_limit,
           },
         });
         return;
@@ -174,6 +179,7 @@ export default function AgentPanel({
         agent_ids,
         end_after_tools,
         hide_sequential_outputs,
+        recursion_limit,
       });
     },
     [agent_id, create, update, showToast, localize],
@@ -200,10 +206,6 @@ export default function AgentPanel({
     user?.role,
   ]);
 
-  if (agentQuery.isInitialLoading) {
-    return <AgentPanelSkeleton />;
-  }
-
   return (
     <FormProvider {...methods}>
       <form
@@ -211,37 +213,53 @@ export default function AgentPanel({
         className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
         aria-label="Agent configuration form"
       >
-        <div className="mt-2 flex w-full flex-wrap gap-2">
-          <Controller
-            name="agent"
-            control={control}
-            render={({ field }) => (
-              <AgentSelect
-                reset={reset}
-                value={field.value}
-                agentQuery={agentQuery}
-                setCurrentAgentId={setCurrentAgentId}
-                selectedAgentId={current_agent_id ?? null}
-                createMutation={create}
-              />
-            )}
-          />
-          {/* Select Button */}
+        <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
+          <div className="w-full">
+            <AgentSelect
+              createMutation={create}
+              agentQuery={agentQuery}
+              setCurrentAgentId={setCurrentAgentId}
+              // The following is required to force re-render the component when the form's agent ID changes
+              // Also maintains ComboBox Focus for Accessibility
+              selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
+            />
+          </div>
+          {/* Create + Select Button */}
           {agent_id && (
-            <Button
-              variant="submit"
-              disabled={!agent_id}
-              onClick={(e) => {
-                e.preventDefault();
-                handleSelectAgent();
-              }}
-              aria-label="Select agent"
-            >
-              {localize('com_ui_select')}
-            </Button>
+            <div className="flex w-full gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center"
+                onClick={() => {
+                  reset(defaultAgentFormValues);
+                  setCurrentAgentId(undefined);
+                }}
+                disabled={agentQuery.isInitialLoading}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                {localize('com_ui_create') +
+                  ' ' +
+                  localize('com_ui_new') +
+                  ' ' +
+                  localize('com_ui_agent')}
+              </Button>
+              <Button
+                variant="submit"
+                disabled={!agent_id || agentQuery.isInitialLoading}
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleSelectAgent();
+                }}
+                aria-label={localize('com_ui_select') + ' ' + localize('com_ui_agent')}
+              >
+                {localize('com_ui_select')}
+              </Button>
+            </div>
           )}
         </div>
-        {!canEditAgent && (
+        {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
+        {!canEditAgent && !agentQuery.isInitialLoading && (
           <div className="flex h-[30vh] w-full items-center justify-center">
             <div className="text-center">
               <h2 className="text-token-text-primary m-2 text-xl font-semibold">
@@ -251,7 +269,7 @@ export default function AgentPanel({
             </div>
           </div>
         )}
-        {canEditAgent && activePanel === Panel.model && (
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
           <ModelPanel
             setActivePanel={setActivePanel}
             agent_id={agent_id}
@@ -259,13 +277,26 @@ export default function AgentPanel({
             models={models}
           />
         )}
-        {canEditAgent && activePanel === Panel.builder && (
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
           <AgentConfig
             actions={actions}
             setAction={setAction}
+            createMutation={create}
             agentsConfig={agentsConfig}
             setActivePanel={setActivePanel}
             endpointsConfig={endpointsConfig}
+            setCurrentAgentId={setCurrentAgentId}
+          />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
+          <AdvancedPanel setActivePanel={setActivePanel} agentsConfig={agentsConfig} />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && (
+          <AgentFooter
+            createMutation={create}
+            updateMutation={update}
+            activePanel={activePanel}
+            setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}
           />
         )}

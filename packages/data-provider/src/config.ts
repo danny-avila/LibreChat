@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TModelsConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { fileConfigSchema } from './file-config';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
@@ -15,6 +15,7 @@ export const defaultRetrievalModels = [
   'o1-preview',
   'o1-mini-2024-09-12',
   'o1-mini',
+  'o3-mini',
   'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
   'gpt-4o-2024-08-06',
@@ -30,6 +31,27 @@ export const defaultRetrievalModels = [
   'gpt-4-0125',
   'gpt-4-1106',
 ];
+
+export const excludedKeys = new Set([
+  'conversationId',
+  'title',
+  'iconURL',
+  'greeting',
+  'endpoint',
+  'endpointType',
+  'createdAt',
+  'updatedAt',
+  'expiredAt',
+  'messages',
+  'isArchived',
+  'tags',
+  'user',
+  '__v',
+  '_id',
+  'tools',
+  'model',
+  'files',
+]);
 
 export enum SettingsViews {
   default = 'default',
@@ -146,6 +168,8 @@ export enum AgentCapabilities {
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
+  chain = 'chain',
+  ocr = 'ocr',
 }
 
 export const defaultAssistantsVersion = {
@@ -211,6 +235,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     /* agents specific */
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
+    maxRecursionLimit: z.number().optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
@@ -220,6 +245,8 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
         AgentCapabilities.artifacts,
         AgentCapabilities.actions,
         AgentCapabilities.tools,
+        AgentCapabilities.ocr,
+        AgentCapabilities.chain,
       ]),
   }),
 );
@@ -446,6 +473,7 @@ export const intefaceSchema = z
       })
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
+    customWelcome: z.string().optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
@@ -456,6 +484,7 @@ export const intefaceSchema = z
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
+    runCode: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -468,6 +497,7 @@ export const intefaceSchema = z
     prompts: true,
     agents: true,
     temporaryChat: true,
+    runCode: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
@@ -485,6 +515,7 @@ export type TStartupConfig = {
   appleLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  openidAutoRedirect: boolean;
   /** LDAP Auth Configuration */
   ldap?: {
     /** LDAP enabled */
@@ -507,11 +538,25 @@ export type TStartupConfig = {
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
   instanceProjectId: string;
+  bundlerURL?: string;
 };
+
+export enum OCRStrategy {
+  MISTRAL_OCR = 'mistral_ocr',
+  CUSTOM_OCR = 'custom_ocr',
+}
+
+export const ocrSchema = z.object({
+  mistralModel: z.string().optional(),
+  apiKey: z.string().optional().default('OCR_API_KEY'),
+  baseURL: z.string().optional().default('OCR_BASEURL'),
+  strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+});
 
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  ocr: ocrSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -639,12 +684,15 @@ export const alternateName = {
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
   [KnownEndpoints.ollama]: 'Ollama',
+  [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
 };
 
 const sharedOpenAIModels = [
   'gpt-4o-mini',
   'gpt-4o',
+  'gpt-4.5-preview',
+  'gpt-4.5-preview-2025-02-27',
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0125',
   'gpt-4-turbo',
@@ -663,6 +711,8 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-3-7-sonnet-latest',
+  'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
   'claude-3-5-sonnet-20241022',
   'claude-3-5-sonnet-20240620',
@@ -715,14 +765,14 @@ export const bedrockModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
     // Shared Google Models between Vertex AI & Gen AI
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
-    'gemini-2.0-flash-lite-preview-02-05',
+    'gemini-2.0-flash-lite',
     'gemini-2.0-pro-exp-02-05',
     // Gemini 1.5 Models
     'gemini-1.5-flash-001',
@@ -734,8 +784,8 @@ export const defaultModels = {
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
-    'chatgpt-4o-latest',
     ...sharedOpenAIModels,
+    'chatgpt-4o-latest',
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
     'gpt-3.5-turbo-instruct',
@@ -800,24 +850,29 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
-  'gpt-4o',
+  'qwen-vl',
+  'grok-vision',
+  'grok-2-vision',
+  'grok-3',
   'gpt-4o-mini',
-  'o1',
+  'gpt-4o',
   'gpt-4-turbo',
   'gpt-4-vision',
+  'o1',
+  'gpt-4.5',
   'llava',
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
-  'gemini-2.0',
-  'gemini-1.5',
   'gemini-exp',
+  'gemini-1.5',
+  'gemini-2.0',
   'moondream',
   'llama3.2-vision',
-  'llama-3.2-90b-vision',
   'llama-3.2-11b-vision',
-  'llama-3-2-90b-vision',
   'llama-3-2-11b-vision',
+  'llama-3.2-90b-vision',
+  'llama-3-2-90b-vision',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -848,7 +903,7 @@ export function validateVisionModel({
   return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
 }
 
-export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
+export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion', 'flux']);
 
 /**
  * Enum for collections using infinite queries
@@ -1157,9 +1212,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.7-rc1',
+  VERSION = 'v0.7.7',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.1',
+  CONFIG_VERSION = '1.2.3',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1227,7 +1282,9 @@ export enum ForkOptions {
   /** Key for including branches */
   INCLUDE_BRANCHES = 'includeBranches',
   /** Key for target level fork (default) */
-  TARGET_LEVEL = '',
+  TARGET_LEVEL = 'targetLevel',
+  /** Default option */
+  DEFAULT = 'default',
 }
 
 /**

@@ -1,7 +1,10 @@
 import { z } from 'zod';
+import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
+  timeout: z.number().optional(),
+  initTimeout: z.number().optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
@@ -18,8 +21,22 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
    * The environment to use when spawning the process.
    *
    * If not specified, the result of getDefaultEnvironment() will be used.
+   * Environment variables can be referenced using ${VAR_NAME} syntax.
    */
-  env: z.record(z.string(), z.string()).optional(),
+  env: z
+    .record(z.string(), z.string())
+    .optional()
+    .transform((env) => {
+      if (!env) {
+        return env;
+      }
+
+      const processedEnv: Record<string, string> = {};
+      for (const [key, value] of Object.entries(env)) {
+        processedEnv[key] = extractEnvVariable(value);
+      }
+      return processedEnv;
+    }),
   /**
    * How to handle stderr of the child process. This matches the semantics of Node's `child_process.spawn`.
    *
@@ -69,3 +86,26 @@ export const MCPOptionsSchema = z.union([
 ]);
 
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
+
+export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
+
+/**
+ * Recursively processes an object to replace environment variables in string values
+ * @param {MCPOptions} obj - The object to process
+ * @returns {MCPOptions} - The processed object with environment variables replaced
+ */
+export function processMCPEnv(obj: MCPOptions): MCPOptions {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if ('env' in obj && obj.env) {
+    const processedEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(obj.env)) {
+      processedEnv[key] = extractEnvVariable(value);
+    }
+    obj.env = processedEnv;
+  }
+
+  return obj;
+}

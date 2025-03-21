@@ -1,7 +1,7 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
-const { loginLimiter, checkBan, checkDomainAllowed } = require('~/server/middleware');
+const { loginLimiter, logHeaders, checkBan, checkDomainAllowed } = require('~/server/middleware');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
 const { chooseOpenIdStrategy } = require('~/server/utils/openidHelper');
@@ -13,6 +13,7 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+router.use(logHeaders);
 router.use(loginLimiter);
 
 const oauthHandler = async (req, res) => {
@@ -31,8 +32,10 @@ const oauthHandler = async (req, res) => {
 
 router.get('/error', (req, res) => {
   // A single error message is pushed by passport when authentication fails.
-  logger.error('Error in OAuth authentication:', { message: req.session?.messages?.pop() });
-  res.redirect(`${domains.client}/login`);
+  logger.error('Error in OAuth authentication:', { message: req.session.messages.pop() });
+
+  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
+  res.redirect(`${domains.client}/login?redirect=false`);
 });
 
 /**
