@@ -604,7 +604,6 @@ export const configSchema = z.object({
       message: 'At least one `endpoints` field must be provided.',
     })
     .optional(),
-  // ===== Add your OpenID configuration =====
   openid: z
     .object({
       tenants: z
