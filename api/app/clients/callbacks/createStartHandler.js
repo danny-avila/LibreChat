@@ -49,7 +49,6 @@ const createStartHandler = ({
     prelimPromptTokens += tokenBuffer;
 
     try {
-      // TODO: if plugins extends to non-OpenAI models, this will need to be updated
       const balance = await getBalanceConfig();
       if (balance?.enabled && supportsBalanceCheck[EModelEndpoint.openAI]) {
         const generations =

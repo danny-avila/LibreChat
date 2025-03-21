@@ -26,7 +26,6 @@ const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
-const { getBalanceConfig } = require('~/server/services/Config');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
@@ -249,7 +248,7 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balance = await getBalanceConfig();
+      const balance = req.app?.locals?.balance;
       if (!balance?.enabled) {
         return;
       }
