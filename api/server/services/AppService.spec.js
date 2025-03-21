@@ -17,7 +17,14 @@ jest.mock('./Config/loadCustomConfig', () => {
     Promise.resolve({
       registration: { socialLogins: ['testLogin'] },
       fileStrategy: 'testStrategy',
-      balance: { enabled: true },
+      balance: {
+        enabled: true,
+        startBalance: 20000,
+        autoRefillEnabled: false,
+        refillIntervalValue: 30,
+        refillIntervalUnit: 'days',
+        refillAmount: 10000,
+      },
     }),
   );
 });
@@ -127,7 +134,6 @@ describe('AppService', () => {
       imageOutputType: expect.any(String),
       fileConfig: undefined,
       secureImageLinks: undefined,
-      // When only enabled is provided, the rest should fall back to schema defaults.
       balance: {
         enabled: true,
         startBalance: 20000,
@@ -145,7 +151,6 @@ describe('AppService', () => {
         version: '0.9.0', // An outdated version for this test
         registration: { socialLogins: ['testLogin'] },
         fileStrategy: 'testStrategy',
-        balance: { enabled: true },
       }),
     );
 
@@ -160,7 +165,6 @@ describe('AppService', () => {
       Promise.resolve({
         version: '0.10.0',
         imageOutputType: EImageOutputType.WEBP,
-        balance: { enabled: true },
       }),
     );
 
@@ -172,7 +176,6 @@ describe('AppService', () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
-        balance: { enabled: true },
       }),
     );
 
@@ -191,7 +194,6 @@ describe('AppService', () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({
         fileStrategy: FileSources.firebase,
-        balance: { enabled: true },
       }),
     );
 
@@ -240,7 +242,6 @@ describe('AppService', () => {
             privateAssistants: false,
           },
         },
-        balance: { enabled: true },
       }),
     );
 
@@ -268,7 +269,6 @@ describe('AppService', () => {
             assistants: true,
           },
         },
-        balance: { enabled: true },
       }),
     );
 
@@ -288,7 +288,6 @@ describe('AppService', () => {
             groups: azureGroups,
           },
         },
-        balance: { enabled: true },
       }),
     );
 
@@ -338,7 +337,6 @@ describe('AppService', () => {
           userWindowInMinutes: '30',
         },
       },
-      balance: { enabled: true },
     };
 
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
@@ -360,11 +358,6 @@ describe('AppService', () => {
     process.env.FILE_UPLOAD_IP_WINDOW = 'initialWindow';
     process.env.FILE_UPLOAD_USER_MAX = 'initialUserMax';
     process.env.FILE_UPLOAD_USER_WINDOW = 'initialUserWindow';
-
-    // Mock a custom configuration without specific rate limits
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve({ balance: { enabled: true } }),
-    );
 
     await AppService(app);
 
@@ -404,7 +397,6 @@ describe('AppService', () => {
           userWindowInMinutes: '30',
         },
       },
-      balance: { enabled: true },
     };
 
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
@@ -426,11 +418,6 @@ describe('AppService', () => {
     process.env.IMPORT_IP_WINDOW = 'initialWindow';
     process.env.IMPORT_USER_MAX = 'initialUserMax';
     process.env.IMPORT_USER_WINDOW = 'initialUserWindow';
-
-    // Mock a custom configuration without specific rate limits
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve({ balance: { enabled: true } }),
-    );
 
     await AppService(app);
 
@@ -519,7 +506,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
           supportedIds: ['id1', 'id2'],
         },
       },
-      balance: { enabled: true },
     };
     require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
 
@@ -546,7 +532,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
           excludedIds: ['id3'],
         },
       },
-      balance: { enabled: true },
     };
     require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
 
@@ -569,7 +554,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
           supportedIds: ['id1'],
         },
       },
-      balance: { enabled: true },
     };
     require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
 
@@ -592,7 +576,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
             groups: azureGroups,
           },
         },
-        balance: { enabled: true },
       }),
     );
 
@@ -619,7 +602,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
             groups: azureGroups,
           },
         },
-        balance: { enabled: true },
       }),
     );
 
@@ -647,7 +629,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
         strategy: 'mistral_ocr',
         mistralModel: 'mistral-medium',
       },
-      balance: { enabled: true },
     };
 
     require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));

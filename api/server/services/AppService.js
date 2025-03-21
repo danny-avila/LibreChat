@@ -69,7 +69,7 @@ const AppService = async (app) => {
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
-  const balanceConfig = await loadDefaultBalance(config, configDefaults);
+  const balance = await loadDefaultBalance(config, configDefaults);
 
   const defaultLocals = {
     ocr,
@@ -81,7 +81,7 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
-    balanceConfig,
+    balance,
   };
 
   if (!Object.keys(config).length) {
