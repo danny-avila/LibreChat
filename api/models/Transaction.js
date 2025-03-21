@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('~/server/utils/handleText');
 const { transactionSchema } = require('@librechat/data-schemas');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
 const Balance = require('./Balance');
@@ -37,18 +37,19 @@ transactionSchema.statics.create = async function (txData) {
 
   await transaction.save();
 
-  if (!isEnabled(process.env.CHECK_BALANCE)) {
+  const balance = await getBalanceConfig();
+  if (!balance?.enabled) {
     return;
   }
 
-  let balance = await Balance.findOne({ user: transaction.user }).lean();
+  let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
 
-  if (balance && balance?.tokenCredits + incrementValue < 0) {
-    incrementValue = -balance.tokenCredits;
+  if (balanceResponse && balanceResponse.tokenCredits + incrementValue < 0) {
+    incrementValue = -balanceResponse.tokenCredits;
   }
 
-  balance = await Balance.findOneAndUpdate(
+  balanceResponse = await Balance.findOneAndUpdate(
     { user: transaction.user },
     { $inc: { tokenCredits: incrementValue } },
     { upsert: true, new: true },
@@ -57,7 +58,7 @@ transactionSchema.statics.create = async function (txData) {
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balance.tokenCredits,
+    balance: balanceResponse.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
 };
@@ -78,18 +79,19 @@ transactionSchema.statics.createStructured = async function (txData) {
 
   await transaction.save();
 
-  if (!isEnabled(process.env.CHECK_BALANCE)) {
+  const balance = await getBalanceConfig();
+  if (!balance?.enabled) {
     return;
   }
 
-  let balance = await Balance.findOne({ user: transaction.user }).lean();
+  let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
 
-  if (balance && balance?.tokenCredits + incrementValue < 0) {
-    incrementValue = -balance.tokenCredits;
+  if (balanceResponse && balanceResponse.tokenCredits + incrementValue < 0) {
+    incrementValue = -balanceResponse.tokenCredits;
   }
 
-  balance = await Balance.findOneAndUpdate(
+  balanceResponse = await Balance.findOneAndUpdate(
     { user: transaction.user },
     { $inc: { tokenCredits: incrementValue } },
     { upsert: true, new: true },
@@ -98,7 +100,7 @@ transactionSchema.statics.createStructured = async function (txData) {
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balance.tokenCredits,
+    balance: balanceResponse.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
 };
