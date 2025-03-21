@@ -1,8 +1,8 @@
 import { useMemo, useCallback, useState, useEffect } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';

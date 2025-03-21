@@ -1,19 +1,25 @@
-import { useCallback } from 'react';
+import { useCallback, useRef, useContext, useMemo } from 'react';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { getConvoSwitchLogic } from '~/utils';
 import { mainTextareaId } from '~/common';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { useSetIndexOptions, useDefaultConvo } from '~/hooks';
+import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useGetEndpointsQuery } from '~/data-provider';
+import store from '~/store';
 
-export const useModelSelection = (
-  conversation: any,
-  setOption: any,
-  index: number,
-  getDefaultConversation: any,
-  newConversation: any,
-  endpointsConfig: any,
-  modularChat: boolean,
-  assistantsMap: any,
-  timeoutIdRef: React.MutableRefObject<NodeJS.Timeout | undefined>,
-) => {
+export const useModelSelection = () => {
+  const { setOption } = useSetIndexOptions();
+  const getDefaultConversation = useDefaultConvo();
+  const { conversation, newConversation, index } = useChatContext();
+  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const modularChat = useRecoilValue(store.modularChat);
+  const assistantsMapResult = useAssistantsMapContext();
+  const assistantsMap = useMemo(() => assistantsMapResult ?? {}, [assistantsMapResult]);
+
+  // Create timeout ref internally
+  const timeoutIdRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
   const setAgentId = useCallback(
     (agentId: string) => {
       setOption('agent_id')(agentId);
@@ -29,6 +35,7 @@ export const useModelSelection = (
     [setOption, index, timeoutIdRef],
   );
 
+  // Rest of the code remains the same as in your original file
   const setAssistantId = useCallback(
     (endpoint: string, assistantId: string) => {
       const assistant = assistantsMap[endpoint]?.[assistantId];
