@@ -70,13 +70,28 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
 
   const user = await User.create(userData);
 
+  // If balance is enabled, create or update a balance record for the user using global.interfaceConfig.balance
   if (global.interfaceConfig?.balance?.enabled && global.interfaceConfig?.balance?.startBalance) {
-    let incrementValue = global.interfaceConfig.balance.startBalance;
-    await Balance.findOneAndUpdate(
-      { user: user._id },
-      { $inc: { tokenCredits: incrementValue } },
-      { upsert: true, new: true },
-    ).lean();
+    const balanceConfig = global.interfaceConfig.balance;
+    const update = {
+      $inc: { tokenCredits: balanceConfig.startBalance },
+    };
+
+    if (
+      balanceConfig.autoRefillEnabled &&
+      balanceConfig.refillIntervalValue != null &&
+      balanceConfig.refillIntervalUnit != null &&
+      balanceConfig.refillAmount != null
+    ) {
+      update.$set = {
+        autoRefillEnabled: true,
+        refillIntervalValue: balanceConfig.refillIntervalValue,
+        refillIntervalUnit: balanceConfig.refillIntervalUnit,
+        refillAmount: balanceConfig.refillAmount,
+      };
+    }
+
+    await Balance.findOneAndUpdate({ user: user._id }, update, { upsert: true, new: true }).lean();
   }
 
   if (returnUser) {

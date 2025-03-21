@@ -15,8 +15,12 @@ interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
   # Example Billing Object Structure (optional)
   balance:
-    enabled: true
+    enabled: false
     startBalance: 20000
+    autoRefillEnabled: false
+    refillIntervalValue: 30
+    refillIntervalUnit: 'days'
+    refillAmount: 10000
 
   # Privacy policy settings
   privacyPolicy:

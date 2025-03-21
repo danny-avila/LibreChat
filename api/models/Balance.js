@@ -73,9 +73,8 @@ balanceSchema.statics.check = async function ({
     endpointTokenConfig: !!endpointTokenConfig,
   });
 
-  // If auto-refill is enabled on this balance record and a refill amount is configured,
-  // perform auto-refill only when the refill interval has elapsed.
-  if (record.autoRefillEnabled && record.refillAmount > 0) {
+  // Only perform auto-refill if spending would bring the balance to 0 or below
+  if (balance - tokenCost <= 0 && record.autoRefillEnabled && record.refillAmount > 0) {
     const lastRefillDate = new Date(record.lastRefill);
     const nextRefillDate = addIntervalToDate(
       lastRefillDate,

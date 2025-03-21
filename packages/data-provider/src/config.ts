@@ -489,6 +489,12 @@ export const intefaceSchema = z
       .object({
         enabled: z.boolean().optional(),
         startBalance: z.number().optional(),
+        autoRefillEnabled: z.boolean().optional(),
+        refillIntervalValue: z.number().optional(),
+        refillIntervalUnit: z
+          .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
+          .optional(),
+        refillAmount: z.number().optional(),
       })
       .optional(),
   })
@@ -506,7 +512,11 @@ export const intefaceSchema = z
     runCode: true,
     balance: {
       enabled: false,
-      startBalance: 0,
+      startBalance: 20000,
+      autoRefillEnabled: false,
+      refillIntervalValue: 30,
+      refillIntervalUnit: 'days',
+      refillAmount: 10000,
     },
   });
 
