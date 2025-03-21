@@ -11,7 +11,6 @@ const {
   Constants,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
 const { truncateToolCallOutputs } = require('./prompts');
 const { addSpaceIfNeeded } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
@@ -635,7 +634,7 @@ class BaseClient {
       }
     }
 
-    const balance = await getBalanceConfig();
+    const balance = this.options.req?.app?.locals?.balance;
     if (
       balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]

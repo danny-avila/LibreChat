@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { spendTokens, spendStructuredTokens } = require('./spendTokens');
+const { getBalanceConfig } = require('~/server/services/Config');
+const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { Transaction } = require('./Transaction');
 const Balance = require('./Balance');
-const { spendTokens, spendStructuredTokens } = require('./spendTokens');
-const { getMultiplier, getCacheMultiplier } = require('./tx');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 
 // Mock the custom config module so we can control the balance flag.
-jest.mock('~/server/services/Config/getCustomConfig');
+jest.mock('~/server/services/Config');
 
 let mongoServer;
 
@@ -25,7 +25,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
   // Default: enable balance updates in tests.
-  getCustomConfig.mockResolvedValue({ balance: { enabled: true } });
+  getBalanceConfig.mockResolvedValue({ enabled: true });
 });
 
 describe('Regular Token Spending Tests', () => {
@@ -145,7 +145,7 @@ describe('Regular Token Spending Tests', () => {
 
   test('spendTokens should not update balance when balance feature is disabled', async () => {
     // Arrange: Override the config to disable balance updates.
-    getCustomConfig.mockResolvedValue({ balance: { enabled: false } });
+    getBalanceConfig.mockResolvedValue({ balance: { enabled: false } });
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });

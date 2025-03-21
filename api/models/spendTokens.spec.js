@@ -20,8 +20,8 @@ jest.mock('~/config', () => ({
 }));
 
 // New config module
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
-jest.mock('~/server/services/Config/getCustomConfig');
+const { getBalanceConfig } = require('~/server/services/Config');
+jest.mock('~/server/services/Config');
 
 // Import after mocking
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
@@ -31,7 +31,7 @@ const Balance = require('./Balance');
 describe('spendTokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    getCustomConfig.mockResolvedValue({ balance: { enabled: true } });
+    getBalanceConfig.mockResolvedValue({ enabled: true });
   });
 
   it('should create transactions for both prompt and completion tokens', async () => {
@@ -118,7 +118,7 @@ describe('spendTokens', () => {
 
   it('should not update balance when the balance feature is disabled', async () => {
     // Override configuration: disable balance updates.
-    getCustomConfig.mockResolvedValue({ balance: { enabled: false } });
+    getBalanceConfig.mockResolvedValue({ enabled: false });
     const txData = {
       user: new mongoose.Types.ObjectId(),
       conversationId: 'test-convo',

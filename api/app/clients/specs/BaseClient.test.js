@@ -40,10 +40,6 @@ jest.mock('@langchain/openai', () => {
   };
 });
 
-jest.mock('~/server/services/Config/getCustomConfig', () => ({
-  getCustomConfig: jest.fn().mockResolvedValue({ balance: { enabled: false } }),
-}));
-
 let parentMessageId;
 let conversationId;
 const fakeMessages = [];
