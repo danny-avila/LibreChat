@@ -79,13 +79,13 @@ registration:
 
 
 # Example Balance settings
-balance:
-  enabled: false
-  startBalance: 20000
-  autoRefillEnabled: false
-  refillIntervalValue: 30
-  refillIntervalUnit: 'days'
-  refillAmount: 10000
+# balance:
+#   enabled: false
+#   startBalance: 20000
+#   autoRefillEnabled: false
+#   refillIntervalValue: 30
+#   refillIntervalUnit: 'days'
+#   refillAmount: 10000
 
 # speech:
 #   tts:
