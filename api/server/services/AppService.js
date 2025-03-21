@@ -13,7 +13,6 @@ const { initializeS3 } = require('./Files/S3/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
-const { loadDefaultBalance } = require('./start/balance');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { loadAndFormatTools } = require('./ToolService');
@@ -38,6 +37,7 @@ const AppService = async (app) => {
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const balance = config.balance ?? configDefaults.balance;
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;
@@ -69,7 +69,6 @@ const AppService = async (app) => {
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
-  const balance = await loadDefaultBalance(config, configDefaults);
 
   const defaultLocals = {
     ocr,

@@ -10,8 +10,6 @@ const {
 
 const AppService = require('./AppService');
 
-// Update default mock to include a partial balance configuration.
-// Since only `enabled` is provided, the defaults for all other fields will be applied.
 jest.mock('./Config/loadCustomConfig', () => {
   return jest.fn(() =>
     Promise.resolve({
@@ -19,11 +17,6 @@ jest.mock('./Config/loadCustomConfig', () => {
       fileStrategy: 'testStrategy',
       balance: {
         enabled: true,
-        startBalance: 20000,
-        autoRefillEnabled: false,
-        refillIntervalValue: 30,
-        refillIntervalUnit: 'days',
-        refillAmount: 10000,
       },
     }),
   );
@@ -134,14 +127,7 @@ describe('AppService', () => {
       imageOutputType: expect.any(String),
       fileConfig: undefined,
       secureImageLinks: undefined,
-      balance: {
-        enabled: true,
-        startBalance: 20000,
-        autoRefillEnabled: false,
-        refillIntervalValue: 30,
-        refillIntervalUnit: 'days',
-        refillAmount: 10000,
-      },
+      balance: undefined,
     });
   });
 
