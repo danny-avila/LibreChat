@@ -489,7 +489,6 @@ export const intefaceSchema = z
       .object({
         enabled: z.boolean().optional(),
         startBalance: z.number().optional(),
-        autoRefill: z.boolean().optional(),
       })
       .optional(),
   })
@@ -508,7 +507,6 @@ export const intefaceSchema = z
     balance: {
       enabled: false,
       startBalance: 0,
-      autoRefill: false,
     },
   });
 

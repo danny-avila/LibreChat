@@ -17,7 +17,6 @@ interface:
   balance:
     enabled: true
     startBalance: 20000
-    autoRefill: false
 
   # Privacy policy settings
   privacyPolicy:
