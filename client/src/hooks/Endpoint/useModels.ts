@@ -17,7 +17,6 @@ export const useModelSelection = () => {
   const assistantsMapResult = useAssistantsMapContext();
   const assistantsMap = useMemo(() => assistantsMapResult ?? {}, [assistantsMapResult]);
 
-  // Create timeout ref internally
   const timeoutIdRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const setAgentId = useCallback(
@@ -35,7 +34,6 @@ export const useModelSelection = () => {
     [setOption, index, timeoutIdRef],
   );
 
-  // Rest of the code remains the same as in your original file
   const setAssistantId = useCallback(
     (endpoint: string, assistantId: string) => {
       const assistant = assistantsMap[endpoint]?.[assistantId];
