@@ -163,6 +163,104 @@ describe('spendTokens', () => {
     expect(balance.tokenCredits).toBe(10000);
   });
 
+  it('should not allow balance to go below zero when spending tokens', async () => {
+    // Create a balance with a low amount
+    await Balance.create({
+      user: userId,
+      tokenCredits: 5000,
+    });
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model: 'gpt-4', // Using a more expensive model
+      context: 'test',
+    };
+
+    // Spending more tokens than the user has balance for
+    const tokenUsage = {
+      promptTokens: 1000,
+      completionTokens: 500,
+    };
+
+    await spendTokens(txData, tokenUsage);
+
+    // Verify transactions were created
+    const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+    expect(transactions).toHaveLength(2);
+
+    // Verify balance was reduced to exactly 0, not negative
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance).toBeDefined();
+    expect(balance.tokenCredits).toBe(0);
+
+    // Check that the transaction records show the adjusted values
+    const transactionResults = await Promise.all(
+      transactions.map((t) =>
+        Transaction.create({
+          ...txData,
+          tokenType: t.tokenType,
+          rawAmount: t.rawAmount,
+        }),
+      ),
+    );
+
+    // The second transaction should have an adjusted value since balance is already 0
+    expect(transactionResults[1]).toEqual(
+      expect.objectContaining({
+        balance: 0,
+      }),
+    );
+  });
+
+  it('should not allow balance to go below zero when spending structured tokens', async () => {
+    // Create a balance with a low amount
+    await Balance.create({
+      user: userId,
+      tokenCredits: 5000,
+    });
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model: 'claude-3-5-sonnet', // Using a model that supports structured tokens
+      context: 'test',
+    };
+
+    // Spending more tokens than the user has balance for
+    const tokenUsage = {
+      promptTokens: {
+        input: 100,
+        write: 1000,
+        read: 50,
+      },
+      completionTokens: 500,
+    };
+
+    const result = await spendStructuredTokens(txData, tokenUsage);
+
+    // Verify transactions were created
+    const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+    expect(transactions).toHaveLength(2);
+
+    // Verify balance was reduced to exactly 0, not negative
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance).toBeDefined();
+    expect(balance.tokenCredits).toBe(0);
+
+    // The result should show the adjusted values
+    expect(result).toEqual({
+      prompt: expect.objectContaining({
+        user: userId.toString(),
+        balance: expect.any(Number),
+      }),
+      completion: expect.objectContaining({
+        user: userId.toString(),
+        balance: 0, // Final balance should be 0
+      }),
+    });
+  });
+
   it('should create structured transactions for both prompt and completion tokens', async () => {
     // Create a balance for the user
     await Balance.create({
