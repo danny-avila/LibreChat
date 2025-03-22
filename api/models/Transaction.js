@@ -4,7 +4,44 @@ const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
 const Balance = require('./Balance');
+
 const cancelRate = 1.15;
+
+/**
+ * Updates a user's token balance based on a transaction.
+ *
+ * @async
+ * @function
+ * @param {Object} params - The function parameters.
+ * @param {string} params.user - The user ID.
+ * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
+ * @param {import('mongoose').UpdateQuery<import('@librechat/data-schemas').IBalance>['$set']} params.setValues
+ * @returns {Promise<Object>} Returns the updated balance response.
+ */
+const updateBalance = async ({ user, incrementValue, setValues }) => {
+  // Use findOneAndUpdate with a conditional update to make the balance update atomic
+  // This prevents race conditions when multiple transactions are processed concurrently
+  const balanceResponse = await Balance.findOneAndUpdate(
+    { user },
+    [
+      {
+        $set: {
+          tokenCredits: {
+            $cond: {
+              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
+              then: 0,
+              else: { $add: ['$tokenCredits', incrementValue] },
+            },
+          },
+          ...setValues,
+        },
+      },
+    ],
+    { upsert: true, new: true },
+  ).lean();
+
+  return balanceResponse;
+};
 
 /** Method to calculate and set the tokenValue for a transaction */
 transactionSchema.methods.calculateTokenValue = function () {
@@ -19,6 +56,39 @@ transactionSchema.methods.calculateTokenValue = function () {
     this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
     this.rate *= cancelRate;
   }
+};
+
+/**
+ * New static method to create an auto-refill transaction that does NOT trigger a balance update.
+ * @param {object} txData - Transaction data.
+ * @param {string} txData.user - The user ID.
+ * @param {string} txData.tokenType - The type of token.
+ * @param {string} txData.context - The context of the transaction.
+ * @param {number} txData.rawAmount - The raw amount of tokens.
+ * @returns {Promise<object>} - The created transaction.
+ */
+transactionSchema.statics.createAutoRefillTransaction = async function (txData) {
+  if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
+  }
+  const transaction = new this(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.calculateTokenValue();
+  await transaction.save();
+
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue: txData.rawAmount,
+    setValues: { lastRefill: new Date() },
+  });
+  const result = {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    balance: balanceResponse.tokenCredits,
+  };
+  logger.debug('[Balance.check] Auto-refill performed', result);
+  result.transaction = transaction;
+  return result;
 };
 
 /**
@@ -42,18 +112,12 @@ transactionSchema.statics.create = async function (txData) {
     return;
   }
 
-  let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
 
-  if (balanceResponse && balanceResponse.tokenCredits + incrementValue < 0) {
-    incrementValue = -balanceResponse.tokenCredits;
-  }
-
-  balanceResponse = await Balance.findOneAndUpdate(
-    { user: transaction.user },
-    { $inc: { tokenCredits: incrementValue } },
-    { upsert: true, new: true },
-  ).lean();
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue,
+  });
 
   return {
     rate: transaction.rate,
@@ -84,18 +148,12 @@ transactionSchema.statics.createStructured = async function (txData) {
     return;
   }
 
-  let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
 
-  if (balanceResponse && balanceResponse.tokenCredits + incrementValue < 0) {
-    incrementValue = -balanceResponse.tokenCredits;
-  }
-
-  balanceResponse = await Balance.findOneAndUpdate(
-    { user: transaction.user },
-    { $inc: { tokenCredits: incrementValue } },
-    { upsert: true, new: true },
-  ).lean();
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue,
+  });
 
   return {
     rate: transaction.rate,

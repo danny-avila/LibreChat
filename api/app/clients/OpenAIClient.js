@@ -5,6 +5,7 @@ const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
 const {
   Constants,
   ImageDetail,
+  ContentTypes,
   EModelEndpoint,
   resolveHeaders,
   KnownEndpoints,
@@ -505,8 +506,24 @@ class OpenAIClient extends BaseClient {
     if (promptPrefix && this.isOmni === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
-        payload[lastUserMessageIndex].content =
-          `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
+        if (Array.isArray(payload[lastUserMessageIndex].content)) {
+          const firstTextPartIndex = payload[lastUserMessageIndex].content.findIndex(
+            (part) => part.type === ContentTypes.TEXT,
+          );
+          if (firstTextPartIndex !== -1) {
+            const firstTextPart = payload[lastUserMessageIndex].content[firstTextPartIndex];
+            payload[lastUserMessageIndex].content[firstTextPartIndex].text =
+              `${promptPrefix}\n${firstTextPart.text}`;
+          } else {
+            payload[lastUserMessageIndex].content.unshift({
+              type: ContentTypes.TEXT,
+              text: promptPrefix,
+            });
+          }
+        } else {
+          payload[lastUserMessageIndex].content =
+            `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
+        }
       }
     }
 
