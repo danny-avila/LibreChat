@@ -388,7 +388,7 @@ Step 3: Replace the current `fontFamily` config in ./client/tailwind.config.cjs 
 ```
 
 Step 4: Uncomment all Söhne font-face declarations below.
-Step 5: rebuild frontend code: `npm run frontend` (or rebuild docker).
+Step 5: rebuild frontend code: `npm run build:frontend` (or rebuild docker).
 
 */
 

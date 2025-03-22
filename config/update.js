@@ -116,7 +116,7 @@ async function validateDockerRunning() {
 
     // Build client-side code
     console.purple('Building frontend...');
-    execSync(bun ? 'bun b:client' : 'npm run frontend', { stdio: 'inherit' });
+    execSync(bun ? 'bun b:client' : 'npm run build:frontend', { stdio: 'inherit' });
   }
 
   let startCommand = 'npm run backend';

@@ -52,7 +52,7 @@
 #       #   run: cd api && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --arch=x64 --platform=linux --libc=glibc sharp
 
 #       - name: Build Client
-#         run: npm run frontend
+#         run: npm run build:frontend
 
 #       - name: Install Playwright
 #         run: |
