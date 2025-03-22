@@ -3,7 +3,7 @@ const { transactionSchema } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
-const Balance = require('./Balance');
+
 const cancelRate = 1.15;
 
 /** Method to calculate and set the tokenValue for a transaction */
@@ -37,10 +37,13 @@ transactionSchema.statics.create = async function (txData) {
 
   await transaction.save();
 
-  const balance = await getBalanceConfig();
-  if (!balance?.enabled) {
+  const balanceConfig = await getBalanceConfig();
+  if (!balanceConfig?.enabled) {
     return;
   }
+
+  // Lazy require Balance to avoid circular dependency.
+  const Balance = require('./Balance');
 
   let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
@@ -64,6 +67,25 @@ transactionSchema.statics.create = async function (txData) {
 };
 
 /**
+ * New static method to create an auto-refill transaction that does NOT trigger a balance update.
+ */
+transactionSchema.statics.createAutoRefillTransaction = async function (txData) {
+  if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
+  }
+  const transaction = new this(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.calculateTokenValue();
+  await transaction.save();
+  return {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    // No balance update is done here.
+    transaction,
+  };
+};
+
+/**
  * Static method to create a structured transaction and update the balance
  * @param {txData} txData - Transaction data.
  */
@@ -79,10 +101,13 @@ transactionSchema.statics.createStructured = async function (txData) {
 
   await transaction.save();
 
-  const balance = await getBalanceConfig();
-  if (!balance?.enabled) {
+  const balanceConfig = await getBalanceConfig();
+  if (!balanceConfig?.enabled) {
     return;
   }
+
+  // Lazy require Balance to avoid circular dependency.
+  const Balance = require('./Balance');
 
   let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
@@ -105,7 +130,9 @@ transactionSchema.statics.createStructured = async function (txData) {
   };
 };
 
-/** Method to calculate token value for structured tokens */
+/**
+ * Method to calculate token value for structured tokens.
+ */
 transactionSchema.methods.calculateStructuredTokenValue = function () {
   if (!this.tokenType) {
     this.tokenValue = this.rawAmount;

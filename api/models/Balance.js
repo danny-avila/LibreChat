@@ -94,11 +94,26 @@ balanceSchema.statics.check = async function ({
       ).lean();
       balance = record.tokenCredits;
       logger.debug('[Balance.check] Auto-refill performed', { balance });
+
+      try {
+        // Lazy require Transaction to avoid circular dependency.
+        const { Transaction } = require('~/models/Transaction');
+        await Transaction.createAutoRefillTransaction({
+          user: user,
+          tokenType: 'credits',
+          context: 'autoRefill',
+          rawAmount: record.refillAmount,
+        });
+        logger.debug('[Balance.check] Transaction recorded for auto-refill', {
+          refillAmount: record.refillAmount,
+        });
+      } catch (error) {
+        logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
+      }
     }
   }
 
   logger.debug('[Balance.check] Token cost', { tokenCost });
-
   return { canSpend: balance >= tokenCost, balance, tokenCost };
 };
 
