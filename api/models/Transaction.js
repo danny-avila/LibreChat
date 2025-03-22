@@ -15,9 +15,10 @@ const cancelRate = 1.15;
  * @param {Object} params - The function parameters.
  * @param {string} params.user - The user ID.
  * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
+ * @param {import('mongoose').UpdateQuery<import('@librechat/data-schemas').IBalance>['$set']} params.setValues
  * @returns {Promise<Object>} Returns the updated balance response.
  */
-const updateBalance = async ({ user, incrementValue }) => {
+const updateBalance = async ({ user, incrementValue, setValues }) => {
   // Use findOneAndUpdate with a conditional update to make the balance update atomic
   // This prevents race conditions when multiple transactions are processed concurrently
   const balanceResponse = await Balance.findOneAndUpdate(
@@ -32,6 +33,7 @@ const updateBalance = async ({ user, incrementValue }) => {
               else: { $add: ['$tokenCredits', incrementValue] },
             },
           },
+          ...setValues,
         },
       },
     ],
@@ -58,6 +60,12 @@ transactionSchema.methods.calculateTokenValue = function () {
 
 /**
  * New static method to create an auto-refill transaction that does NOT trigger a balance update.
+ * @param {object} txData - Transaction data.
+ * @param {string} txData.user - The user ID.
+ * @param {string} txData.tokenType - The type of token.
+ * @param {string} txData.context - The context of the transaction.
+ * @param {number} txData.rawAmount - The raw amount of tokens.
+ * @returns {Promise<object>} - The created transaction.
  */
 transactionSchema.statics.createAutoRefillTransaction = async function (txData) {
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
@@ -67,12 +75,20 @@ transactionSchema.statics.createAutoRefillTransaction = async function (txData) 
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   transaction.calculateTokenValue();
   await transaction.save();
-  return {
+
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue: txData.rawAmount,
+    setValues: { lastRefill: new Date() },
+  });
+  const result = {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    // No balance update is done here.
-    transaction,
+    balance: balanceResponse.tokenCredits,
   };
+  logger.debug('[Balance.check] Auto-refill performed', result);
+  result.transaction = transaction;
+  return result;
 };
 
 /**

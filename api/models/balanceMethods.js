@@ -54,29 +54,16 @@ const checkBalanceRecord = async function ({
       record.refillIntervalUnit,
     );
     const now = new Date();
-
     if (now >= nextRefillDate) {
-      record = await Balance.findOneAndUpdate(
-        { user },
-        {
-          $inc: { tokenCredits: record.refillAmount },
-          $set: { lastRefill: new Date() },
-        },
-        { new: true },
-      ).lean();
-      balance = record.tokenCredits;
-      logger.debug('[Balance.check] Auto-refill performed', { balance });
-
       try {
-        await Transaction.createAutoRefillTransaction({
+        /** @type {{ rate: number, user: string, balance: number, transaction: import('@librechat/data-schemas').ITransaction}} */
+        const result = await Transaction.createAutoRefillTransaction({
           user: user,
           tokenType: 'credits',
           context: 'autoRefill',
           rawAmount: record.refillAmount,
         });
-        logger.debug('[Balance.check] Transaction recorded for auto-refill', {
-          refillAmount: record.refillAmount,
-        });
+        balance = result.balance;
       } catch (error) {
         logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
       }
@@ -136,7 +123,7 @@ const addIntervalToDate = (date, value, unit) => {
  * @param {number} params.txData.amount - The amount of tokens.
  * @param {string} params.txData.model - The model name or identifier.
  * @param {string} [params.txData.endpointTokenConfig] - The token configuration for the endpoint.
- * @returns {boolean} Throws error if the user cannot spend the amount.
+ * @returns {Promise<boolean>} Throws error if the user cannot spend the amount.
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
