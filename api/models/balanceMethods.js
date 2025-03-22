@@ -56,7 +56,7 @@ const checkBalanceRecord = async function ({
     const now = new Date();
 
     if (now >= nextRefillDate) {
-      record = await this.findOneAndUpdate(
+      record = await Balance.findOneAndUpdate(
         { user },
         {
           $inc: { tokenCredits: record.refillAmount },
