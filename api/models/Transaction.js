@@ -22,6 +22,25 @@ transactionSchema.methods.calculateTokenValue = function () {
 };
 
 /**
+ * New static method to create an auto-refill transaction that does NOT trigger a balance update.
+ */
+transactionSchema.statics.createAutoRefillTransaction = async function (txData) {
+  if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
+  }
+  const transaction = new this(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.calculateTokenValue();
+  await transaction.save();
+  return {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    // No balance update is done here.
+    transaction,
+  };
+};
+
+/**
  * Static method to create a transaction and update the balance
  * @param {txData} txData - Transaction data.
  */
