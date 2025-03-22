@@ -143,10 +143,8 @@ const MessageRender = memo(
         )}
         <div className="relative flex flex-shrink-0 flex-col items-end">
           <div>
-            <div className="pt-0.5">
-              <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                <MessageIcon iconData={iconData} assistant={assistant} />
-              </div>
+            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full pt-0.5">
+              <MessageIcon iconData={iconData} assistant={assistant} />
             </div>
           </div>
         </div>
@@ -163,6 +161,7 @@ const MessageRender = memo(
                 value={{
                   messageId: msg.messageId,
                   conversationId: conversation?.conversationId,
+                  isExpanded: false,
                 }}
               >
                 {msg.plugin && <Plugin plugin={msg.plugin} />}
