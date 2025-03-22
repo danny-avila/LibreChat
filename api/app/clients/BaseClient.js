@@ -13,7 +13,7 @@ const {
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
 const { truncateToolCallOutputs } = require('./prompts');
 const { addSpaceIfNeeded } = require('~/server/utils');
-const checkBalance = require('~/models/checkBalance');
+const checkBalance = require('models/balanceMethods');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
