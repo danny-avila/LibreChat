@@ -2,9 +2,44 @@ const mongoose = require('mongoose');
 const { transactionSchema } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const { updateBalance } = require('./balanceMethods');
 const { logger } = require('~/config');
+const Balance = require('./Balance');
+
 const cancelRate = 1.15;
+
+/**
+ * Updates a user's token balance based on a transaction.
+ *
+ * @async
+ * @function
+ * @param {Object} params - The function parameters.
+ * @param {string} params.user - The user ID.
+ * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
+ * @returns {Promise<Object>} Returns the updated balance response.
+ */
+const updateBalance = async ({ user, incrementValue }) => {
+  // Use findOneAndUpdate with a conditional update to make the balance update atomic
+  // This prevents race conditions when multiple transactions are processed concurrently
+  const balanceResponse = await Balance.findOneAndUpdate(
+    { user },
+    [
+      {
+        $set: {
+          tokenCredits: {
+            $cond: {
+              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
+              then: 0,
+              else: { $add: ['$tokenCredits', incrementValue] },
+            },
+          },
+        },
+      },
+    ],
+    { upsert: true, new: true },
+  ).lean();
+
+  return balanceResponse;
+};
 
 /** Method to calculate and set the tokenValue for a transaction */
 transactionSchema.methods.calculateTokenValue = function () {

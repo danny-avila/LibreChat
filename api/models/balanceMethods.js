@@ -1,7 +1,91 @@
 const { ViolationTypes } = require('librechat-data-provider');
 const { logViolation } = require('~/cache');
+const { getMultiplier } = require('./tx');
+const { Transaction } = require('./Transaction');
 const { logger } = require('~/config');
 const Balance = require('./Balance');
+
+/**
+ * Simple check method that calculates token cost and returns balance info.
+ * The auto-refill logic has been moved to balanceMethods.js to prevent circular dependencies.
+ */
+const checkBalanceRecord = async function ({
+  user,
+  model,
+  endpoint,
+  valueKey,
+  tokenType,
+  amount,
+  endpointTokenConfig,
+}) {
+  const multiplier = getMultiplier({ valueKey, tokenType, model, endpoint, endpointTokenConfig });
+  const tokenCost = amount * multiplier;
+
+  // Retrieve the balance record
+  let record = await Balance.findOne({ user }).lean();
+  if (!record) {
+    logger.debug('[Balance.check] No balance record found for user', { user });
+    return {
+      canSpend: false,
+      balance: 0,
+      tokenCost,
+    };
+  }
+  let balance = record.tokenCredits;
+
+  logger.debug('[Balance.check] Initial state', {
+    user,
+    model,
+    endpoint,
+    valueKey,
+    tokenType,
+    amount,
+    balance,
+    multiplier,
+    endpointTokenConfig: !!endpointTokenConfig,
+  });
+
+  // Only perform auto-refill if spending would bring the balance to 0 or below
+  if (balance - tokenCost <= 0 && record.autoRefillEnabled && record.refillAmount > 0) {
+    const lastRefillDate = new Date(record.lastRefill);
+    const nextRefillDate = addIntervalToDate(
+      lastRefillDate,
+      record.refillIntervalValue,
+      record.refillIntervalUnit,
+    );
+    const now = new Date();
+
+    if (now >= nextRefillDate) {
+      record = await this.findOneAndUpdate(
+        { user },
+        {
+          $inc: { tokenCredits: record.refillAmount },
+          $set: { lastRefill: new Date() },
+        },
+        { new: true },
+      ).lean();
+      balance = record.tokenCredits;
+      logger.debug('[Balance.check] Auto-refill performed', { balance });
+
+      try {
+        await Transaction.createAutoRefillTransaction({
+          user: user,
+          tokenType: 'credits',
+          context: 'autoRefill',
+          rawAmount: record.refillAmount,
+        });
+        logger.debug('[Balance.check] Transaction recorded for auto-refill', {
+          refillAmount: record.refillAmount,
+        });
+      } catch (error) {
+        logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
+      }
+    }
+  }
+
+  logger.debug('[Balance.check] Token cost', { tokenCost });
+  return { canSpend: balance >= tokenCost, balance, tokenCost };
+};
 
 /**
  * Adds a time interval to a given date.
@@ -38,40 +122,6 @@ const addIntervalToDate = (date, value, unit) => {
 };
 
 /**
- * Updates a user's token balance based on a transaction.
- *
- * @async
- * @function
- * @param {Object} params - The function parameters.
- * @param {string} params.user - The user ID.
- * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
- * @returns {Promise<Object>} Returns the updated balance response.
- */
-const updateBalance = async ({ user, incrementValue }) => {
-  // Use findOneAndUpdate with a conditional update to make the balance update atomic
-  // This prevents race conditions when multiple transactions are processed concurrently
-  const balanceResponse = await Balance.findOneAndUpdate(
-    { user },
-    [
-      {
-        $set: {
-          tokenCredits: {
-            $cond: {
-              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
-              then: 0,
-              else: { $add: ['$tokenCredits', incrementValue] },
-            },
-          },
-        },
-      },
-    ],
-    { upsert: true, new: true },
-  ).lean();
-
-  return balanceResponse;
-};
-
-/**
  * Checks the balance for a user and determines if they can spend a certain amount.
  * If the user cannot spend the amount, it logs a violation and denies the request.
  *
@@ -86,57 +136,21 @@ const updateBalance = async ({ user, incrementValue }) => {
  * @param {number} params.txData.amount - The amount of tokens.
  * @param {string} params.txData.model - The model name or identifier.
  * @param {string} [params.txData.endpointTokenConfig] - The token configuration for the endpoint.
- * @returns {Promise<import('@librechat/data-schemas').IBalance & { refilled: boolean }>} Throws error if the user cannot spend the amount.
+ * @returns {boolean} Throws error if the user cannot spend the amount.
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
-  // Use Balance.check to get basic balance information
-  /** @type {{ canSpend: boolean, balance: number, tokenCost: number, record: import('@librechat/data-schemas').IBalance }} */
-  const { canSpend, balance, tokenCost, record } = await Balance.check(txData);
-  const { user, amount } = txData;
-
-  // Handle auto-refill if needed
-  let updatedBalance = balance;
-  if (record && !canSpend && record.autoRefillEnabled && record.refillAmount > 0) {
-    const lastRefillDate = new Date(record.lastRefill);
-    const nextRefillDate = addIntervalToDate(
-      lastRefillDate,
-      record.refillIntervalValue,
-      record.refillIntervalUnit,
-    );
-    const now = new Date();
-
-    if (now >= nextRefillDate) {
-      const updatedRecord = await Balance.findOneAndUpdate(
-        { user },
-        {
-          $inc: { tokenCredits: record.refillAmount },
-          $set: { lastRefill: new Date() },
-        },
-        { new: true },
-      ).lean();
-      updatedBalance = updatedRecord.tokenCredits;
-      logger.debug('[checkBalance] Auto-refill performed', { updatedBalance });
-      record.refilled = true;
-      // Check if the balance is now sufficient after auto-refill
-      if (updatedBalance >= tokenCost) {
-        return record;
-      }
-    }
-  }
-
-  // If we can spend or auto-refill made it possible to spend
+  const { canSpend, balance, tokenCost } = await checkBalanceRecord(txData);
   if (canSpend) {
-    return record;
+    return true;
   }
 
-  // Otherwise, log violation and throw error
   const type = ViolationTypes.TOKEN_BALANCE;
   const errorMessage = {
     type,
-    balance: updatedBalance,
+    balance,
     tokenCost,
-    promptTokens: amount,
+    promptTokens: txData.amount,
   };
 
   if (txData.generations && txData.generations.length > 0) {
@@ -149,5 +163,4 @@ const checkBalance = async ({ req, res, txData }) => {
 
 module.exports = {
   checkBalance,
-  updateBalance,
 };
