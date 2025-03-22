@@ -7,7 +7,6 @@ const { processFileURL } = require('~/server/services/Files/process');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { checkBalance } = require('~/models/balanceMethods');
 const { formatLangChainMessages } = require('./prompts');
-const { logRefill } = require('~/models/txMethods');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
 const { logger } = require('~/config');
@@ -350,12 +349,6 @@ class PluginsClient extends OpenAIClient {
           endpoint: EModelEndpoint.openAI,
         },
       });
-      if (balanceRecord?.refilled) {
-        await logRefill({
-          user: this.user,
-          record: balanceRecord,
-        });
-      }
     }
 
     const responseMessage = {

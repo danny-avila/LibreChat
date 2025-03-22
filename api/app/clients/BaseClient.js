@@ -14,7 +14,6 @@ const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { addSpaceIfNeeded } = require('~/server/utils');
-const { logRefill } = require('~/models/txMethods');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
@@ -652,12 +651,6 @@ class BaseClient {
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
-      if (balanceRecord?.refilled) {
-        await logRefill({
-          user: this.user,
-          record: balanceRecord,
-        });
-      }
     }
 
     /** @type {string|string[]|undefined} */

@@ -28,7 +28,6 @@ const { getTransactions } = require('~/models/Transaction');
 const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { logRefill } = require('~/models/txMethods');
 const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
@@ -158,12 +157,6 @@ const chatV2 = async (req, res) => {
           amount: promptTokens,
         },
       });
-      if (balanceRecord?.refilled) {
-        await logRefill({
-          user: req.user.id,
-          record: balanceRecord,
-        });
-      }
     };
 
     const { openai: _openai, client } = await getOpenAIClient({
