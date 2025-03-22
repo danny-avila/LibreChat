@@ -47,6 +47,7 @@ export enum BedrockProviders {
   Meta = 'meta',
   MistralAI = 'mistral',
   StabilityAI = 'stability',
+  DeepSeek = 'deepseek',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
@@ -157,6 +158,7 @@ export const defaultAgentFormValues = {
   projectIds: [],
   artifacts: '',
   isCollaborative: false,
+  recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
 };

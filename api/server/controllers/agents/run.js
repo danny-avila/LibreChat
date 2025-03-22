@@ -68,7 +68,7 @@ async function createRun({
   };
 
   // TEMPORARY FOR TESTING
-  if (agent.provider === Providers.ANTHROPIC) {
+  if (agent.provider === Providers.ANTHROPIC || agent.provider === Providers.BEDROCK) {
     graphConfig.streamBuffer = 2000;
   }
 

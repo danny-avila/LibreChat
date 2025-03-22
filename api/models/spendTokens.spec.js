@@ -19,14 +19,19 @@ jest.mock('~/config', () => ({
   },
 }));
 
+// New config module
+const { getBalanceConfig } = require('~/server/services/Config');
+jest.mock('~/server/services/Config');
+
 // Import after mocking
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { Transaction } = require('./Transaction');
 const Balance = require('./Balance');
+
 describe('spendTokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.CHECK_BALANCE = 'true';
+    getBalanceConfig.mockResolvedValue({ enabled: true });
   });
 
   it('should create transactions for both prompt and completion tokens', async () => {
@@ -92,7 +97,7 @@ describe('spendTokens', () => {
     expect(Transaction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         tokenType: 'completion',
-        rawAmount: -0, // Changed from 0 to -0
+        rawAmount: -0,
       }),
     );
   });
@@ -111,8 +116,9 @@ describe('spendTokens', () => {
     expect(Transaction.create).not.toHaveBeenCalled();
   });
 
-  it('should not update balance when CHECK_BALANCE is false', async () => {
-    process.env.CHECK_BALANCE = 'false';
+  it('should not update balance when the balance feature is disabled', async () => {
+    // Override configuration: disable balance updates.
+    getBalanceConfig.mockResolvedValue({ enabled: false });
     const txData = {
       user: new mongoose.Types.ObjectId(),
       conversationId: 'test-convo',
@@ -130,6 +136,7 @@ describe('spendTokens', () => {
     await spendTokens(txData, tokenUsage);
 
     expect(Transaction.create).toHaveBeenCalledTimes(2);
+    // When balance updates are disabled, Balance methods should not be called.
     expect(Balance.findOne).not.toHaveBeenCalled();
     expect(Balance.findOneAndUpdate).not.toHaveBeenCalled();
   });

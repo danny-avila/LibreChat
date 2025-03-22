@@ -19,7 +19,8 @@ const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { processFiles } = require('~/server/services/Files/process');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getToolFiles } = require('~/models/Conversation');
+const { getConvoFiles } = require('~/models/Conversation');
+const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
@@ -115,15 +116,17 @@ const initializeAgentOptions = async ({
   isInitialAgent = false,
 }) => {
   let currentFiles;
+  /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   if (
     isInitialAgent &&
     req.body.conversationId != null &&
-    agent.model_parameters?.resendFiles === true
+    (agent.model_parameters?.resendFiles ?? true) === true
   ) {
-    const fileIds = (await getToolFiles(req.body.conversationId)).map((f) => f.file_id);
-    if (requestFiles.length || fileIds.length) {
-      currentFiles = await processFiles(requestFiles, fileIds);
+    const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
+    const toolFiles = await getToolFilesByIds(fileIds);
+    if (requestFiles.length || toolFiles.length) {
+      currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }
   } else if (isInitialAgent && requestFiles.length) {
     currentFiles = await processFiles(requestFiles);
@@ -178,6 +181,7 @@ const initializeAgentOptions = async ({
     agent.provider = options.provider;
   }
 
+  /** @type {import('@librechat/agents').ClientOptions} */
   agent.model_parameters = Object.assign(model_parameters, options.llmConfig);
   if (options.configOptions) {
     agent.model_parameters.configuration = options.configOptions;
@@ -196,16 +200,18 @@ const initializeAgentOptions = async ({
 
   const tokensModel =
     agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
-
+  const maxTokens = agent.model_parameters.maxOutputTokens ?? agent.model_parameters.maxTokens ?? 0;
+  const maxContextTokens =
+    agent.model_parameters.maxContextTokens ??
+    agent.max_context_tokens ??
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
+    4096;
   return {
     ...agent,
     tools,
     attachments,
     toolContextMap,
-    maxContextTokens:
-      agent.max_context_tokens ??
-      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
-      4000,
+    maxContextTokens: (maxContextTokens - maxTokens) * 0.9,
   };
 };
 
@@ -275,11 +281,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
+    res,
     sender,
     contentParts,
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    aggregateContent,
     artifactPromises,
     agent: primaryConfig,
     spec: endpointOption.spec,

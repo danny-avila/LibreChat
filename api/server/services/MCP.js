@@ -37,11 +37,19 @@ async function createMCPTool({ req, toolKey, provider }) {
   }
 
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
-  /** @type {(toolInput: Object | string) => Promise<unknown>} */
-  const _call = async (toolInput) => {
+  /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
+  const _call = async (toolArguments, config) => {
     try {
       const mcpManager = await getMCPManager();
-      const result = await mcpManager.callTool(serverName, toolName, provider, toolInput);
+      const result = await mcpManager.callTool({
+        serverName,
+        toolName,
+        provider,
+        toolArguments,
+        options: {
+          signal: config?.signal,
+        },
+      });
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
       }
