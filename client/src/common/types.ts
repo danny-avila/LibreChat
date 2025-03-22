@@ -446,11 +446,20 @@ export type VoiceOption = {
 };
 
 export type TMessageAudio = {
-  messageId?: string;
-  content?: t.TMessageContentParts[] | string;
-  className?: string;
-  isLast: boolean;
+  isLast?: boolean;
   index: number;
+  messageId: string;
+  content: string;
+  className?: string;
+  renderButton?: (props: {
+    onClick: (e?: React.MouseEvent<HTMLButtonElement>) => void;
+    title: string;
+    icon: React.ReactNode;
+    isActive?: boolean;
+    isVisible?: boolean;
+    isDisabled?: boolean;
+    className?: string;
+  }) => React.ReactNode;
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };

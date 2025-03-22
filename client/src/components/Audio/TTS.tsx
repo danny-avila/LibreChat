@@ -3,12 +3,19 @@ import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSEdge, useTTSExternal } from '~/hooks';
-import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components/svg';
+import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components';
 import { useToastContext } from '~/Providers/ToastContext';
 import { logger } from '~/utils';
 import store from '~/store';
 
-export function BrowserTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
+export function BrowserTTS({
+  isLast,
+  index,
+  messageId,
+  content,
+  className,
+  renderButton,
+}: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -47,21 +54,30 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: TMe
     audioRef.current,
   );
 
+  const handleClick = () => {
+    if (audioRef.current) {
+      audioRef.current.muted = false;
+    }
+    toggleSpeech();
+  };
+
+  const title = isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud');
+
   return (
     <>
-      <button
-        className={className}
-        onClickCapture={() => {
-          if (audioRef.current) {
-            audioRef.current.muted = false;
-          }
-          toggleSpeech();
-        }}
-        type="button"
-        title={isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
-      >
-        {renderIcon('19')}
-      </button>
+      {renderButton ? (
+        renderButton({
+          onClick: handleClick,
+          title: title,
+          icon: renderIcon('19'),
+          isActive: isSpeaking,
+          className,
+        })
+      ) : (
+        <button className={className} onClickCapture={handleClick} type="button" title={title}>
+          {renderIcon('19')}
+        </button>
+      )}
       <audio
         ref={audioRef}
         controls

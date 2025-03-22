@@ -77,7 +77,11 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
         (hoverTitle != null && hoverTitle !== '') ||
         (hoverDescription != null && hoverDescription !== '')) && (
         <HoverCardPortal>
-          <HoverCardContent side="right" className="z-[999] w-80 dark:bg-gray-700" sideOffset={sideOffset}>
+          <HoverCardContent
+            side="right"
+            className="z-[999] w-80 dark:bg-gray-700"
+            sideOffset={sideOffset}
+          >
             <div className="space-y-2">
               <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
                 {hoverInfo && hoverInfo}
@@ -161,9 +165,18 @@ export default function Fork({
       <Popover.Trigger asChild>
         <button
           className={cn(
-            'hover-button active rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
-            'data-[state=open]:active focus:opacity-100 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500 data-[state=open]:dark:bg-gray-700  data-[state=open]:dark:text-gray-200',
-            !isLast ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100' : '',
+            'hover-button rounded-lg p-1.5 focus-visible:outline focus-visible:ring-2',
+
+            'hover:bg-gray-100 hover:text-gray-500 focus-visible:ring-black',
+            'data-[state=open]:active data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500',
+
+            'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 dark:focus-visible:ring-white',
+            'data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+            'disabled:dark:hover:text-gray-400',
+
+            isLast ? '' : 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100',
+
+            'focus:opacity-100 md:group-focus-within:visible md:group-hover:visible md:group-[.final-completion]:visible',
           )}
           onClick={(e) => {
             if (rememberGlobal) {
@@ -180,7 +193,7 @@ export default function Fork({
           type="button"
           title={localize('com_ui_fork')}
         >
-          <GitFork className="h-4 w-4 hover:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <GitFork size="19" />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -195,7 +208,7 @@ export default function Fork({
             align="center"
           >
             <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
-              {localize(activeSetting )}
+              {localize(activeSetting)}
               <HoverCard openDelay={50}>
                 <HoverCardTrigger asChild>
                   <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50" />

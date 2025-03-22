@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage, TMessageFeedback } from 'librechat-data-provider';
 import {
@@ -32,7 +32,93 @@ type THoverButtons = {
   rated: TMessageFeedback | undefined;
 };
 
-export default function HoverButtons({
+type HoverButtonProps = {
+  onClick: (e?: React.MouseEvent<HTMLButtonElement>) => void;
+  title: string;
+  icon: React.ReactNode;
+  isActive?: boolean;
+  isVisible?: boolean;
+  isDisabled?: boolean;
+  isLast?: boolean;
+  className?: string;
+};
+
+const HoverButton = memo(
+  ({
+    onClick,
+    title,
+    icon,
+    isActive = false,
+    isVisible = true,
+    isDisabled = false,
+    isLast = false,
+    className = '',
+  }: HoverButtonProps) => {
+    const buttonStyle = cn(
+      'hover-button rounded-lg p-1.5',
+
+      'hover:bg-gray-100 hover:text-gray-500',
+
+      'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+      'disabled:dark:hover:text-gray-400',
+
+      'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
+      !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+      !isVisible && 'opacity-0',
+
+      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
+
+      isActive && 'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
+
+      className,
+    );
+
+    return (
+      <button
+        className={buttonStyle}
+        onClick={onClick}
+        type="button"
+        title={title}
+        disabled={isDisabled}
+      >
+        {icon}
+      </button>
+    );
+  },
+);
+
+HoverButton.displayName = 'HoverButton';
+
+const extractMessageContent = (message: TMessage): string => {
+  if (typeof message.content === 'string') {
+    return message.content;
+  }
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+        if ('text' in part) {
+          return part.text || '';
+        }
+        if ('think' in part) {
+          const think = part.think;
+          if (typeof think === 'string') {
+            return think;
+          }
+          return think && 'text' in think ? think.text || '' : '';
+        }
+        return '';
+      })
+      .join('');
+  }
+
+  return message.text || '';
+};
+
+const HoverButtons = ({
   index,
   isEditing,
   enterEdit,
@@ -46,20 +132,19 @@ export default function HoverButtons({
   isLast,
   handleFeedback,
   rated,
-}: THoverButtons) {
+}: THoverButtons) => {
   const localize = useLocalize();
-  const { endpoint: _endpoint, endpointType } = conversation ?? {};
-  const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
-  const {
-    hideEditButton,
-    regenerateEnabled,
-    continueSupported,
-    forkingSupported,
-    isEditableEndpoint,
-  } = useGenerationsByLatest({
+  const endpoint = useMemo(() => {
+    if (!conversation) {
+      return '';
+    }
+    return conversation.endpointType ?? conversation.endpoint;
+  }, [conversation]);
+
+  const generationCapabilities = useGenerationsByLatest({
     isEditing,
     isSubmitting,
     error: message.error,
@@ -70,6 +155,15 @@ export default function HoverButtons({
     isCreatedByUser: message.isCreatedByUser,
     latestMessageId: latestMessage?.messageId,
   });
+
+  const {
+    hideEditButton,
+    regenerateEnabled,
+    continueSupported,
+    forkingSupported,
+    isEditableEndpoint,
+  } = generationCapabilities;
+
   if (!conversation) {
     return null;
   }
@@ -77,37 +171,21 @@ export default function HoverButtons({
   const { isCreatedByUser, error } = message;
 
   const safeRated: TMessageFeedback = rated || { rating: null };
-
-  // Use != null so that both null and undefined are treated as "no rating"
   const currentRating = message.rating != null ? message.rating : safeRated.rating;
   const disableFeedback = message.rating != null || safeRated.rating != null;
 
-  const renderRegenerate = () => {
-    if (!regenerateEnabled) {
-      return null;
-    }
-    return (
-      <button
-        className={cn(
-          'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
-          !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-        )}
-        onClick={regenerate}
-        type="button"
-        title={localize('com_ui_regenerate')}
-      >
-        <RegenerateIcon
-          className="hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
-          size="19"
-        />
-      </button>
-    );
-  };
-
+  // If message has an error, only show regenerate button
   if (error === true) {
     return (
-      <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-500 lg:justify-start">
-        {renderRegenerate()}
+      <div className="visible flex justify-center self-end lg:justify-start">
+        {regenerateEnabled && (
+          <HoverButton
+            onClick={regenerate}
+            title={localize('com_ui_regenerate')}
+            icon={<RegenerateIcon size="19" />}
+            isLast={isLast}
+          />
+        )}
       </div>
     );
   }
@@ -119,83 +197,67 @@ export default function HoverButtons({
     enterEdit();
   };
 
+  const handleCopy = () => copyToClipboard(setIsCopied);
+
   return (
-    <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-500 lg:justify-start">
+    <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
+      {/* Text to Speech */}
       {TextToSpeech && (
         <MessageAudio
           index={index}
           messageId={message.messageId}
-          content={message.content ?? message.text}
+          content={extractMessageContent(message)}
           isLast={isLast}
-          className={cn(
-            'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+          renderButton={(props) => (
+            <HoverButton
+              onClick={props.onClick}
+              title={props.title}
+              icon={props.icon}
+              isActive={props.isActive}
+              isLast={isLast}
+              className={props.className}
+            />
           )}
         />
       )}
-      {!isCreatedByUser && (
-        <>
-          {currentRating !== 'thumbsDown' && (
-            <button
-              className={cn(
-                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
-              )}
-              onClick={() => handleFeedback?.('thumbsUp')}
-              type="button"
-              title={localize('com_ui_feedback_positive')}
-              disabled={disableFeedback}
-            >
-              <ThumbUpIcon size="19" bold={currentRating === 'thumbsUp'} />
-            </button>
-          )}
 
-          {currentRating !== 'thumbsUp' && (
-            <button
-              className={cn(
-                'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
-              )}
-              onClick={() => handleFeedback?.('thumbsDown')}
-              type="button"
-              title={localize('com_ui_feedback_negative')}
-              disabled={disableFeedback}
-            >
-              <ThumbDownIcon size="19" bold={currentRating === 'thumbsDown'} />
-            </button>
-          )}
-        </>
-      )}
-      {isEditableEndpoint && (
-        <button
-          id={`edit-${message.messageId}`}
-          className={cn(
-            'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
-            isCreatedByUser ? '' : 'active',
-            hideEditButton ? 'opacity-0' : '',
-            isEditing ? 'active text-gray-700 dark:text-gray-200' : '',
-            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-          )}
-          onClick={onEdit}
-          type="button"
-          title={localize('com_ui_edit')}
-          disabled={hideEditButton}
-        >
-          <EditIcon size="19" />
-        </button>
-      )}
-      <button
-        className={cn(
-          'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
-          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-          !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-        )}
-        onClick={() => copyToClipboard(setIsCopied)}
-        type="button"
+      {/* Copy Button */}
+      <HoverButton
+        onClick={handleCopy}
         title={
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
         }
-      >
-        {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
-      </button>
-      {renderRegenerate()}
+        icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
+        isLast={isLast}
+        className={`ml-0 flex items-center gap-1.5 text-xs ${isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : ''}`}
+      />
+
+      {/* Edit Button */}
+      {isEditableEndpoint && (
+        <HoverButton
+          onClick={onEdit}
+          title={localize('com_ui_edit')}
+          icon={<EditIcon size="19" />}
+          isActive={isEditing}
+          isVisible={!hideEditButton}
+          isDisabled={hideEditButton}
+          isLast={isLast}
+          className={isCreatedByUser ? '' : 'active'}
+        />
+      )}
+
+      {/* Regenerate Button */}
+      {regenerateEnabled && (
+        <HoverButton
+          onClick={regenerate}
+          title={localize('com_ui_regenerate')}
+          icon={<RegenerateIcon size="19" />}
+          isLast={isLast}
+          className="active"
+        />
+      )}
+
+      {/* Fork Button */}
       <Fork
         isLast={isLast}
         messageId={message.messageId}
@@ -203,19 +265,44 @@ export default function HoverButtons({
         forkingSupported={forkingSupported}
         latestMessageId={latestMessage?.messageId}
       />
-      {continueSupported === true ? (
-        <button
-          className={cn(
-            'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
-            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-          )}
-          onClick={handleContinue}
-          type="button"
+
+      {/* Feedback Buttons */}
+      {!isCreatedByUser && (
+        <>
+          <HoverButton
+            onClick={() => handleFeedback('thumbsUp')}
+            title={localize('com_ui_feedback_positive')}
+            icon={<ThumbUpIcon size="19" bold={currentRating === 'thumbsUp'} />}
+            isDisabled={disableFeedback || currentRating === 'thumbsDown'}
+            isVisible={currentRating !== 'thumbsDown'}
+            isLast={isLast}
+            className="active"
+          />
+
+          <HoverButton
+            onClick={() => handleFeedback('thumbsDown')}
+            title={localize('com_ui_feedback_negative')}
+            icon={<ThumbDownIcon size="19" bold={currentRating === 'thumbsDown'} />}
+            isDisabled={disableFeedback || currentRating === 'thumbsUp'}
+            isVisible={currentRating !== 'thumbsUp'}
+            isLast={isLast}
+            className="active"
+          />
+        </>
+      )}
+
+      {/* Continue Button */}
+      {continueSupported && (
+        <HoverButton
+          onClick={(e) => e && handleContinue(e)}
           title={localize('com_ui_continue')}
-        >
-          <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
-        </button>
-      ) : null}
+          icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
+          isLast={isLast}
+          className="active"
+        />
+      )}
     </div>
   );
-}
+};
+
+export default memo(HoverButtons);
