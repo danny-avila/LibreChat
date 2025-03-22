@@ -166,6 +166,7 @@ export default function ActionsInput({
           client_url: authFormData.client_url,
           scope: authFormData.scope,
           token_exchange_method: authFormData.token_exchange_method,
+          oauth_flow: authFormData.oauth_flow,
         },
         oauth_client_id: authFormData.oauth_client_id,
         oauth_client_secret: authFormData.oauth_client_secret,
