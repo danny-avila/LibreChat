@@ -37,6 +37,10 @@ const addIntervalToDate = (date, value, unit) => {
   return result;
 };
 
+/**
+ * Simple check method that calculates token cost and returns balance info.
+ * The auto-refill logic has been moved to balanceMethods.js to prevent circular dependencies.
+ */
 balanceSchema.statics.check = async function ({
   user,
   model,
@@ -49,8 +53,8 @@ balanceSchema.statics.check = async function ({
   const multiplier = getMultiplier({ valueKey, tokenType, model, endpoint, endpointTokenConfig });
   const tokenCost = amount * multiplier;
 
-  // Retrieve the complete balance record
-  let record = await this.findOne({ user }).lean();
+  // Retrieve the balance record
+  const record = await this.findOne({ user }).lean();
   if (!record) {
     logger.debug('[Balance.check] No balance record found for user', { user });
     return {
@@ -59,47 +63,20 @@ balanceSchema.statics.check = async function ({
       tokenCost,
     };
   }
-  let balance = record.tokenCredits;
+  const balance = record.tokenCredits;
 
-  logger.debug('[Balance.check] Initial state', {
+  logger.debug('[Balance.check] Balance check', {
     user,
-    model,
-    endpoint,
-    valueKey,
-    tokenType,
-    amount,
     balance,
-    multiplier,
-    endpointTokenConfig: !!endpointTokenConfig,
+    tokenCost,
   });
 
-  // Only perform auto-refill if spending would bring the balance to 0 or below
-  if (balance - tokenCost <= 0 && record.autoRefillEnabled && record.refillAmount > 0) {
-    const lastRefillDate = new Date(record.lastRefill);
-    const nextRefillDate = addIntervalToDate(
-      lastRefillDate,
-      record.refillIntervalValue,
-      record.refillIntervalUnit,
-    );
-    const now = new Date();
-
-    if (now >= nextRefillDate) {
-      record = await this.findOneAndUpdate(
-        { user },
-        {
-          $inc: { tokenCredits: record.refillAmount },
-          $set: { lastRefill: new Date() },
-        },
-        { new: true },
-      ).lean();
-      balance = record.tokenCredits;
-      logger.debug('[Balance.check] Auto-refill performed', { balance });
-    }
-  }
-
-  logger.debug('[Balance.check] Token cost', { tokenCost });
-
-  return { canSpend: balance >= tokenCost, balance, tokenCost };
+  return {
+    canSpend: balance >= tokenCost,
+    balance,
+    tokenCost,
+    record, // Include the full record for use in balanceMethods
+  };
 };
 
 module.exports = mongoose.model('Balance', balanceSchema);

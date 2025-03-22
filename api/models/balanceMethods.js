@@ -1,6 +1,41 @@
 const { ViolationTypes } = require('librechat-data-provider');
 const { logViolation } = require('~/cache');
+const { logger } = require('~/config');
 const Balance = require('./Balance');
+
+/**
+ * Adds a time interval to a given date.
+ * @param {Date} date - The starting date.
+ * @param {number} value - The numeric value of the interval.
+ * @param {'seconds'|'minutes'|'hours'|'days'|'weeks'|'months'} unit - The unit of time.
+ * @returns {Date} A new Date representing the starting date plus the interval.
+ */
+const addIntervalToDate = (date, value, unit) => {
+  const result = new Date(date);
+  switch (unit) {
+    case 'seconds':
+      result.setSeconds(result.getSeconds() + value);
+      break;
+    case 'minutes':
+      result.setMinutes(result.getMinutes() + value);
+      break;
+    case 'hours':
+      result.setHours(result.getHours() + value);
+      break;
+    case 'days':
+      result.setDate(result.getDate() + value);
+      break;
+    case 'weeks':
+      result.setDate(result.getDate() + value * 7);
+      break;
+    case 'months':
+      result.setMonth(result.getMonth() + value);
+      break;
+    default:
+      break;
+  }
+  return result;
+};
 
 /**
  * Updates a user's token balance based on a transaction.
@@ -55,18 +90,52 @@ const updateBalance = async ({ user, incrementValue }) => {
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
-  const { canSpend, balance, tokenCost } = await Balance.check(txData);
+  // Use Balance.check to get basic balance information
+  const { canSpend, balance, tokenCost, record } = await Balance.check(txData);
+  const { user, amount } = txData;
 
+  // Handle auto-refill if needed
+  let updatedBalance = balance;
+  if (record && !canSpend && record.autoRefillEnabled && record.refillAmount > 0) {
+    const lastRefillDate = new Date(record.lastRefill);
+    const nextRefillDate = addIntervalToDate(
+      lastRefillDate,
+      record.refillIntervalValue,
+      record.refillIntervalUnit,
+    );
+    const now = new Date();
+
+    if (now >= nextRefillDate) {
+      const updatedRecord = await Balance.findOneAndUpdate(
+        { user },
+        {
+          $inc: { tokenCredits: record.refillAmount },
+          $set: { lastRefill: new Date() },
+        },
+        { new: true },
+      ).lean();
+      updatedBalance = updatedRecord.tokenCredits;
+      logger.debug('[checkBalance] Auto-refill performed', { updatedBalance });
+
+      // Check if the balance is now sufficient after auto-refill
+      if (updatedBalance >= tokenCost) {
+        return true;
+      }
+    }
+  }
+
+  // If we can spend or auto-refill made it possible to spend
   if (canSpend) {
     return true;
   }
 
+  // Otherwise, log violation and throw error
   const type = ViolationTypes.TOKEN_BALANCE;
   const errorMessage = {
     type,
-    balance,
+    balance: updatedBalance,
     tokenCost,
-    promptTokens: txData.amount,
+    promptTokens: amount,
   };
 
   if (txData.generations && txData.generations.length > 0) {
