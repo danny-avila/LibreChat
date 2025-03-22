@@ -42,16 +42,25 @@ transactionSchema.statics.create = async function (txData) {
     return;
   }
 
-  let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
+  // Use findOneAndUpdate with a conditional update to make the balance update atomic
+  // This prevents race conditions when multiple transactions are processed concurrently
   let incrementValue = transaction.tokenValue;
 
-  if (balanceResponse && balanceResponse.tokenCredits + incrementValue < 0) {
-    incrementValue = -balanceResponse.tokenCredits;
-  }
-
-  balanceResponse = await Balance.findOneAndUpdate(
+  const balanceResponse = await Balance.findOneAndUpdate(
     { user: transaction.user },
-    { $inc: { tokenCredits: incrementValue } },
+    [
+      {
+        $set: {
+          tokenCredits: {
+            $cond: {
+              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
+              then: 0,
+              else: { $add: ['$tokenCredits', incrementValue] },
+            },
+          },
+        },
+      },
+    ],
     { upsert: true, new: true },
   ).lean();
 
@@ -84,16 +93,25 @@ transactionSchema.statics.createStructured = async function (txData) {
     return;
   }
 
-  let balanceResponse = await Balance.findOne({ user: transaction.user }).lean();
+  // Use findOneAndUpdate with a conditional update to make the balance update atomic
+  // This prevents race conditions when multiple transactions are processed concurrently
   let incrementValue = transaction.tokenValue;
 
-  if (balanceResponse && balanceResponse.tokenCredits + incrementValue < 0) {
-    incrementValue = -balanceResponse.tokenCredits;
-  }
-
-  balanceResponse = await Balance.findOneAndUpdate(
+  const balanceResponse = await Balance.findOneAndUpdate(
     { user: transaction.user },
-    { $inc: { tokenCredits: incrementValue } },
+    [
+      {
+        $set: {
+          tokenCredits: {
+            $cond: {
+              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
+              then: 0,
+              else: { $add: ['$tokenCredits', incrementValue] },
+            },
+          },
+        },
+      },
+    ],
     { upsert: true, new: true },
   ).lean();
 
