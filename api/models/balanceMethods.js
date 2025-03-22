@@ -86,11 +86,12 @@ const updateBalance = async ({ user, incrementValue }) => {
  * @param {number} params.txData.amount - The amount of tokens.
  * @param {string} params.txData.model - The model name or identifier.
  * @param {string} [params.txData.endpointTokenConfig] - The token configuration for the endpoint.
- * @returns {Promise<boolean>} Returns true if the user can spend the amount, otherwise denies the request.
+ * @returns {Promise<import('@librechat/data-schemas').IBalance & { refilled: boolean }>} Throws error if the user cannot spend the amount.
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
   // Use Balance.check to get basic balance information
+  /** @type {{ canSpend: boolean, balance: number, tokenCost: number, record: import('@librechat/data-schemas').IBalance }} */
   const { canSpend, balance, tokenCost, record } = await Balance.check(txData);
   const { user, amount } = txData;
 
@@ -116,17 +117,17 @@ const checkBalance = async ({ req, res, txData }) => {
       ).lean();
       updatedBalance = updatedRecord.tokenCredits;
       logger.debug('[checkBalance] Auto-refill performed', { updatedBalance });
-
+      record.refilled = true;
       // Check if the balance is now sufficient after auto-refill
       if (updatedBalance >= tokenCost) {
-        return true;
+        return record;
       }
     }
   }
 
   // If we can spend or auto-refill made it possible to spend
   if (canSpend) {
-    return true;
+    return record;
   }
 
   // Otherwise, log violation and throw error

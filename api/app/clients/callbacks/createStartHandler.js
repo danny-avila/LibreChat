@@ -3,6 +3,7 @@ const { EModelEndpoint, supportsBalanceCheck } = require('librechat-data-provide
 const { formatFromLangChain } = require('~/app/clients/prompts');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { checkBalance } = require('~/models/balanceMethods');
+const { logRefill } = require('~/models/txMethods');
 const { logger } = require('~/config');
 
 const createStartHandler = ({
@@ -55,7 +56,7 @@ const createStartHandler = ({
           initialMessageCount && messages.length > initialMessageCount
             ? messages.slice(initialMessageCount)
             : null;
-        await checkBalance({
+        const balanceRecord = await checkBalance({
           req: manager.req,
           res: manager.res,
           txData: {
@@ -68,6 +69,12 @@ const createStartHandler = ({
             endpoint: EModelEndpoint.openAI,
           },
         });
+        if (balanceRecord?.refilled) {
+          await logRefill({
+            user: manager.user,
+            record: balanceRecord,
+          });
+        }
       }
     } catch (err) {
       logger.error(`[createStartHandler][${context}] checkBalance error`, err);
