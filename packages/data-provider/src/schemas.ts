@@ -465,6 +465,14 @@ export const tAgentOptionsSchema = z.object({
   temperature: z.number().default(agentOptionSettings.temperature.default),
 });
 
+export type TMessageFeedback = {
+  rating: 'thumbsUp' | 'thumbsDown' | null;
+  ratingContent?: {
+    tags?: string[];
+    text?: string;
+  };
+};
+
 export const tMessageSchema = z.object({
   messageId: z.string(),
   endpoint: z.string().optional(),
@@ -498,6 +506,14 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  rating: z.enum(['thumbsUp', 'thumbsDown']).nullable().optional(),
+  ratingContent: z
+    .object({
+      tags: z.array(z.string()).optional(),
+      text: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };

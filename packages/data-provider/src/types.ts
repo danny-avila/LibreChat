@@ -531,3 +531,21 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+export type TUpdateFeedbackRequest = {
+  rating: 'thumbsUp' | 'thumbsDown';
+  ratingContent?: {
+    tags?: string[];
+    text?: string;
+  };
+};
+
+export type TUpdateFeedbackResponse = {
+  messageId: string;
+  conversationId: string;
+  rating: 'thumbsUp' | 'thumbsDown';
+  ratingContent?: {
+    tags?: string[];
+    text?: string;
+  };
+};

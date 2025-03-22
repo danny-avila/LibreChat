@@ -1,6 +1,11 @@
 import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo } from 'react';
-import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  isAssistantsEndpoint,
+  isAgentsEndpoint,
+  TMessageFeedback,
+  TUpdateFeedbackRequest,
+} from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import {
   useChatContext,
@@ -12,6 +17,7 @@ import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
+import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
 
 export type TMessageActions = Pick<
   TMessageProps,
@@ -46,6 +52,7 @@ export default function useMessageActions(props: TMessageActions) {
 
   const { text, content, messageId = null, isCreatedByUser } = message ?? {};
   const edit = useMemo(() => messageId === currentEditId, [messageId, currentEditId]);
+  const [rated, setRated] = useState<TMessageFeedback>({ rating: null });
 
   const enterEdit = useCallback(
     (cancel?: boolean) => setCurrentEditId && setCurrentEditId(cancel === true ? -1 : messageId),
@@ -110,6 +117,29 @@ export default function useMessageActions(props: TMessageActions) {
     }
   }, [message, agent, assistant, UsernameDisplay, user, localize]);
 
+  const feedbackMutation = useUpdateFeedbackMutation(
+    conversation?.conversationId || '',
+    message?.messageId || '',
+  );
+
+  const handleFeedback = useCallback(
+    (rating: 'thumbsUp' | 'thumbsDown', extraPayload?: Partial<TUpdateFeedbackRequest>) => {
+      if (!conversation?.conversationId || !message?.messageId || !feedbackMutation?.mutate) {
+        console.error('Feedback mutation is not available.');
+        return;
+      }
+      feedbackMutation.mutate(
+        { rating, ...extraPayload },
+        {
+          onSuccess: (data) => {
+            setRated(data);
+          },
+        },
+      );
+    },
+    [conversation?.conversationId, message?.messageId, feedbackMutation],
+  );
+
   return {
     ask,
     edit,
@@ -125,5 +155,7 @@ export default function useMessageActions(props: TMessageActions) {
     copyToClipboard,
     setLatestMessage,
     regenerateMessage,
+    handleFeedback,
+    rated,
   };
 }

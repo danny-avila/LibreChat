@@ -20,6 +20,11 @@ export interface IMessage extends Document {
   unfinished?: boolean;
   error?: boolean;
   finish_reason?: string;
+  rating?: 'thumbsUp' | 'thumbsDown' | null;
+  ratingContent?: {
+    tags: string[];
+    text?: string | null;
+  };
   _meiliIndex?: boolean;
   files?: unknown[];
   plugin?: {
@@ -109,6 +114,21 @@ const messageSchema: Schema<IMessage> = new Schema(
     },
     finish_reason: {
       type: String,
+    },
+    rating: {
+      type: String,
+      enum: ['thumbsUp', 'thumbsDown'],
+      default: undefined,
+    },
+    ratingContent: {
+      tags: {
+        type: [String],
+        default: undefined,
+      },
+      text: {
+        type: String,
+        default: undefined,
+      },
     },
     _meiliIndex: {
       type: Boolean,
