@@ -1,17 +1,10 @@
 const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const { Transaction } = require('./Transaction');
+const Balance = require('./Balance');
+const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 
-jest.mock('./Transaction', () => ({
-  Transaction: {
-    create: jest.fn(),
-    createStructured: jest.fn(),
-  },
-}));
-
-jest.mock('./Balance', () => ({
-  findOne: jest.fn(),
-  findOneAndUpdate: jest.fn(),
-}));
-
+// Mock the logger to prevent console output during tests
 jest.mock('~/config', () => ({
   logger: {
     debug: jest.fn(),
@@ -19,24 +12,46 @@ jest.mock('~/config', () => ({
   },
 }));
 
-// New config module
+// Mock the Config service
 const { getBalanceConfig } = require('~/server/services/Config');
 jest.mock('~/server/services/Config');
 
-// Import after mocking
-const { spendTokens, spendStructuredTokens } = require('./spendTokens');
-const { Transaction } = require('./Transaction');
-const Balance = require('./Balance');
-
 describe('spendTokens', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+  let mongoServer;
+  let userId;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    // Clear collections before each test
+    await Transaction.deleteMany({});
+    await Balance.deleteMany({});
+
+    // Create a new user ID for each test
+    userId = new mongoose.Types.ObjectId();
+
+    // Mock the balance config to be enabled by default
     getBalanceConfig.mockResolvedValue({ enabled: true });
   });
 
   it('should create transactions for both prompt and completion tokens', async () => {
+    // Create a balance for the user
+    await Balance.create({
+      user: userId,
+      tokenCredits: 10000,
+    });
+
     const txData = {
-      user: new mongoose.Types.ObjectId(),
+      user: userId,
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
@@ -46,31 +61,35 @@ describe('spendTokens', () => {
       completionTokens: 50,
     };
 
-    Transaction.create.mockResolvedValueOnce({ tokenType: 'prompt', rawAmount: -100 });
-    Transaction.create.mockResolvedValueOnce({ tokenType: 'completion', rawAmount: -50 });
-    Balance.findOne.mockResolvedValue({ tokenCredits: 10000 });
-    Balance.findOneAndUpdate.mockResolvedValue({ tokenCredits: 9850 });
-
     await spendTokens(txData, tokenUsage);
 
-    expect(Transaction.create).toHaveBeenCalledTimes(2);
-    expect(Transaction.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tokenType: 'prompt',
-        rawAmount: -100,
-      }),
-    );
-    expect(Transaction.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tokenType: 'completion',
-        rawAmount: -50,
-      }),
-    );
+    // Verify transactions were created
+    const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+    expect(transactions).toHaveLength(2);
+
+    // Check completion transaction
+    expect(transactions[0].tokenType).toBe('completion');
+    expect(transactions[0].rawAmount).toBe(-50);
+
+    // Check prompt transaction
+    expect(transactions[1].tokenType).toBe('prompt');
+    expect(transactions[1].rawAmount).toBe(-100);
+
+    // Verify balance was updated
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance).toBeDefined();
+    expect(balance.tokenCredits).toBeLessThan(10000); // Balance should be reduced
   });
 
   it('should handle zero completion tokens', async () => {
+    // Create a balance for the user
+    await Balance.create({
+      user: userId,
+      tokenCredits: 10000,
+    });
+
     const txData = {
-      user: new mongoose.Types.ObjectId(),
+      user: userId,
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
@@ -80,31 +99,26 @@ describe('spendTokens', () => {
       completionTokens: 0,
     };
 
-    Transaction.create.mockResolvedValueOnce({ tokenType: 'prompt', rawAmount: -100 });
-    Transaction.create.mockResolvedValueOnce({ tokenType: 'completion', rawAmount: -0 });
-    Balance.findOne.mockResolvedValue({ tokenCredits: 10000 });
-    Balance.findOneAndUpdate.mockResolvedValue({ tokenCredits: 9850 });
-
     await spendTokens(txData, tokenUsage);
 
-    expect(Transaction.create).toHaveBeenCalledTimes(2);
-    expect(Transaction.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tokenType: 'prompt',
-        rawAmount: -100,
-      }),
-    );
-    expect(Transaction.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tokenType: 'completion',
-        rawAmount: -0,
-      }),
-    );
+    // Verify transactions were created
+    const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+    expect(transactions).toHaveLength(2);
+
+    // Check completion transaction
+    expect(transactions[0].tokenType).toBe('completion');
+    // In JavaScript -0 and 0 are different but functionally equivalent
+    // Use Math.abs to handle both 0 and -0
+    expect(Math.abs(transactions[0].rawAmount)).toBe(0);
+
+    // Check prompt transaction
+    expect(transactions[1].tokenType).toBe('prompt');
+    expect(transactions[1].rawAmount).toBe(-100);
   });
 
   it('should handle undefined token counts', async () => {
     const txData = {
-      user: new mongoose.Types.ObjectId(),
+      user: userId,
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
@@ -113,14 +127,22 @@ describe('spendTokens', () => {
 
     await spendTokens(txData, tokenUsage);
 
-    expect(Transaction.create).not.toHaveBeenCalled();
+    // Verify no transactions were created
+    const transactions = await Transaction.find({ user: userId });
+    expect(transactions).toHaveLength(0);
   });
 
   it('should not update balance when the balance feature is disabled', async () => {
-    // Override configuration: disable balance updates.
+    // Override configuration: disable balance updates
     getBalanceConfig.mockResolvedValue({ enabled: false });
+    // Create a balance for the user
+    await Balance.create({
+      user: userId,
+      tokenCredits: 10000,
+    });
+
     const txData = {
-      user: new mongoose.Types.ObjectId(),
+      user: userId,
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
@@ -130,20 +152,26 @@ describe('spendTokens', () => {
       completionTokens: 50,
     };
 
-    Transaction.create.mockResolvedValueOnce({ tokenType: 'prompt', rawAmount: -100 });
-    Transaction.create.mockResolvedValueOnce({ tokenType: 'completion', rawAmount: -50 });
-
     await spendTokens(txData, tokenUsage);
 
-    expect(Transaction.create).toHaveBeenCalledTimes(2);
-    // When balance updates are disabled, Balance methods should not be called.
-    expect(Balance.findOne).not.toHaveBeenCalled();
-    expect(Balance.findOneAndUpdate).not.toHaveBeenCalled();
+    // Verify transactions were created
+    const transactions = await Transaction.find({ user: userId });
+    expect(transactions).toHaveLength(2);
+
+    // Verify balance was not updated (should still be 10000)
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(10000);
   });
 
   it('should create structured transactions for both prompt and completion tokens', async () => {
+    // Create a balance for the user
+    await Balance.create({
+      user: userId,
+      tokenCredits: 10000,
+    });
+
     const txData = {
-      user: new mongoose.Types.ObjectId(),
+      user: userId,
       conversationId: 'test-convo',
       model: 'claude-3-5-sonnet',
       context: 'test',
@@ -157,48 +185,37 @@ describe('spendTokens', () => {
       completionTokens: 50,
     };
 
-    Transaction.createStructured.mockResolvedValueOnce({
-      rate: 3.75,
-      user: txData.user.toString(),
-      balance: 9570,
-      prompt: -430,
-    });
-    Transaction.create.mockResolvedValueOnce({
-      rate: 15,
-      user: txData.user.toString(),
-      balance: 8820,
-      completion: -750,
-    });
-
     const result = await spendStructuredTokens(txData, tokenUsage);
 
-    expect(Transaction.createStructured).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tokenType: 'prompt',
-        inputTokens: -10,
-        writeTokens: -100,
-        readTokens: -5,
-      }),
-    );
-    expect(Transaction.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tokenType: 'completion',
-        rawAmount: -50,
-      }),
-    );
+    // Verify transactions were created
+    const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+    expect(transactions).toHaveLength(2);
+
+    // Check completion transaction
+    expect(transactions[0].tokenType).toBe('completion');
+    expect(transactions[0].rawAmount).toBe(-50);
+
+    // Check prompt transaction
+    expect(transactions[1].tokenType).toBe('prompt');
+    expect(transactions[1].inputTokens).toBe(-10);
+    expect(transactions[1].writeTokens).toBe(-100);
+    expect(transactions[1].readTokens).toBe(-5);
+
+    // Verify result contains transaction info
     expect(result).toEqual({
       prompt: expect.objectContaining({
-        rate: 3.75,
-        user: txData.user.toString(),
-        balance: 9570,
-        prompt: -430,
+        user: userId.toString(),
+        prompt: expect.any(Number),
       }),
       completion: expect.objectContaining({
-        rate: 15,
-        user: txData.user.toString(),
-        balance: 8820,
-        completion: -750,
+        user: userId.toString(),
+        completion: expect.any(Number),
       }),
     });
+
+    // Verify balance was updated
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance).toBeDefined();
+    expect(balance.tokenCredits).toBeLessThan(10000); // Balance should be reduced
   });
 });
