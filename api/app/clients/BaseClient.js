@@ -639,7 +639,7 @@ class BaseClient {
       balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
-      const balanceRecord = await checkBalance({
+      await checkBalance({
         req: this.options.req,
         res: this.options.res,
         txData: {

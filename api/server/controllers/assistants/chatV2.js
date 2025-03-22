@@ -147,7 +147,7 @@ const chatV2 = async (req, res) => {
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
-      const balanceRecord = await checkBalance({
+      await checkBalance({
         req,
         res,
         txData: {

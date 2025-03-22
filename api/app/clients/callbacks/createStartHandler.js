@@ -55,7 +55,7 @@ const createStartHandler = ({
           initialMessageCount && messages.length > initialMessageCount
             ? messages.slice(initialMessageCount)
             : null;
-        const balanceRecord = await checkBalance({
+        await checkBalance({
           req: manager.req,
           res: manager.res,
           txData: {

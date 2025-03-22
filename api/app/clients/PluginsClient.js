@@ -337,7 +337,7 @@ class PluginsClient extends OpenAIClient {
 
     const balance = this.options.req?.app?.locals?.balance;
     if (balance?.enabled) {
-      const balanceRecord = await checkBalance({
+      await checkBalance({
         req: this.options.req,
         res: this.options.res,
         txData: {
