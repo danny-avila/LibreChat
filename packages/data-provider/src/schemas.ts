@@ -566,6 +566,8 @@ export const tConversationSchema = z.object({
   maxOutputTokens: coerceNumber.optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
+  /* OpenAI */
+  seed: z.number().optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),
   system: z.string().optional(),
@@ -1005,6 +1007,7 @@ export const openAISchema = tConversationSchema
     maxContextTokens: true,
     max_tokens: true,
     reasoning_effort: true,
+    seed: true,
   })
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
   .catch(() => ({}));

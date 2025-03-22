@@ -204,6 +204,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  seed: {
+    key: 'seed',
+    label: 'com_endpoint_seed',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_openai_seed',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    optionType: 'model',
+    columnSpan: 4,
+  },
   reasoning_effort: {
     key: 'reasoning_effort',
     label: 'com_endpoint_reasoning_effort',
@@ -491,6 +504,7 @@ const openAI: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
+  openAIParams.seed,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -510,6 +524,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.reasoning_effort,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.seed,
 ];
 
 const anthropicConfig: SettingsConfiguration = [

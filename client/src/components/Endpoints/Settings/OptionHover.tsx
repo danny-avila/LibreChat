@@ -17,6 +17,7 @@ const openAI = {
   pres: 'com_endpoint_openai_pres',
   resend: 'com_endpoint_openai_resend_files',
   detail: 'com_endpoint_openai_detail',
+  seed: 'com_endpoint_openai_seed',
 };
 
 const types = {

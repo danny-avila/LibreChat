@@ -26,6 +26,10 @@ export const conversationPreset = {
     type: String,
     required: false,
   },
+  seed: {
+    type: Number,
+    required: false,
+  },
   // for google only
   examples: { type: [{ type: Schema.Types.Mixed }], default: undefined },
   modelLabel: {
