@@ -1,6 +1,41 @@
 const { ViolationTypes } = require('librechat-data-provider');
 const { logViolation } = require('~/cache');
 const Balance = require('./Balance');
+
+/**
+ * Updates a user's token balance based on a transaction.
+ *
+ * @async
+ * @function
+ * @param {Object} params - The function parameters.
+ * @param {string} params.user - The user ID.
+ * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
+ * @returns {Promise<Object>} Returns the updated balance response.
+ */
+const updateBalance = async ({ user, incrementValue }) => {
+  // Use findOneAndUpdate with a conditional update to make the balance update atomic
+  // This prevents race conditions when multiple transactions are processed concurrently
+  const balanceResponse = await Balance.findOneAndUpdate(
+    { user },
+    [
+      {
+        $set: {
+          tokenCredits: {
+            $cond: {
+              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
+              then: 0,
+              else: { $add: ['$tokenCredits', incrementValue] },
+            },
+          },
+        },
+      },
+    ],
+    { upsert: true, new: true },
+  ).lean();
+
+  return balanceResponse;
+};
+
 /**
  * Checks the balance for a user and determines if they can spend a certain amount.
  * If the user cannot spend the amount, it logs a violation and denies the request.
@@ -42,4 +77,7 @@ const checkBalance = async ({ req, res, txData }) => {
   throw new Error(JSON.stringify(errorMessage));
 };
 
-module.exports = checkBalance;
+module.exports = {
+  checkBalance,
+  updateBalance,
+};

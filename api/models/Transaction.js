@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 const { transactionSchema } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
+const { updateBalance } = require('./balanceMethods');
 const { logger } = require('~/config');
-const Balance = require('./Balance');
 const cancelRate = 1.15;
 
 /** Method to calculate and set the tokenValue for a transaction */
@@ -42,27 +42,12 @@ transactionSchema.statics.create = async function (txData) {
     return;
   }
 
-  // Use findOneAndUpdate with a conditional update to make the balance update atomic
-  // This prevents race conditions when multiple transactions are processed concurrently
   let incrementValue = transaction.tokenValue;
 
-  const balanceResponse = await Balance.findOneAndUpdate(
-    { user: transaction.user },
-    [
-      {
-        $set: {
-          tokenCredits: {
-            $cond: {
-              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
-              then: 0,
-              else: { $add: ['$tokenCredits', incrementValue] },
-            },
-          },
-        },
-      },
-    ],
-    { upsert: true, new: true },
-  ).lean();
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue,
+  });
 
   return {
     rate: transaction.rate,
@@ -93,27 +78,12 @@ transactionSchema.statics.createStructured = async function (txData) {
     return;
   }
 
-  // Use findOneAndUpdate with a conditional update to make the balance update atomic
-  // This prevents race conditions when multiple transactions are processed concurrently
   let incrementValue = transaction.tokenValue;
 
-  const balanceResponse = await Balance.findOneAndUpdate(
-    { user: transaction.user },
-    [
-      {
-        $set: {
-          tokenCredits: {
-            $cond: {
-              if: { $lt: [{ $add: ['$tokenCredits', incrementValue] }, 0] },
-              then: 0,
-              else: { $add: ['$tokenCredits', incrementValue] },
-            },
-          },
-        },
-      },
-    ],
-    { upsert: true, new: true },
-  ).lean();
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue,
+  });
 
   return {
     rate: transaction.rate,

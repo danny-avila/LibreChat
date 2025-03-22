@@ -11,9 +11,9 @@ const {
   Constants,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const { checkBalance } = require('models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { addSpaceIfNeeded } = require('~/server/utils');
-const checkBalance = require('models/balanceMethods');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
