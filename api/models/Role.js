@@ -15,19 +15,21 @@ const Role = mongoose.model('Role', roleSchema);
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
- * If the role with the given name doesn't exist and the name is a system defined role, create it and return the lean version.
+ * If the role with the given name doesn't exist and the name is a system defined role,
+ * create it and return the lean version.
  *
  * @param {string} roleName - The name of the role to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
  * @returns {Promise<Object>} A plain object representing the role document.
  */
 const getRoleByName = async function (roleName, fieldsToSelect = null) {
+  const cache = getLogStores(CacheKeys.ROLES);
   try {
-    const cache = getLogStores(CacheKeys.ROLES);
     const cachedRole = await cache.get(roleName);
     if (cachedRole) {
       return cachedRole;
     }
+
     let query = Role.findOne({ name: roleName });
     if (fieldsToSelect) {
       query = query.select(fieldsToSelect);
@@ -35,8 +37,7 @@ const getRoleByName = async function (roleName, fieldsToSelect = null) {
     let role = await query.lean().exec();
 
     if (!role && SystemRoles[roleName]) {
-      role = roleDefaults[roleName];
-      role = await new Role(role).save();
+      role = await new Role(roleDefaults[roleName]).save();
       await cache.set(roleName, role);
       return role.toObject();
     }
@@ -55,8 +56,8 @@ const getRoleByName = async function (roleName, fieldsToSelect = null) {
  * @returns {Promise<TRole>} Updated role document.
  */
 const updateRoleByName = async function (roleName, updates) {
+  const cache = getLogStores(CacheKeys.ROLES);
   try {
-    const cache = getLogStores(CacheKeys.ROLES);
     const role = await Role.findOneAndUpdate(
       { name: roleName },
       { $set: updates },
@@ -74,18 +75,18 @@ const updateRoleByName = async function (roleName, updates) {
 
 /**
  * Updates access permissions for a specific role and multiple permission types.
- * @param {SystemRoles} roleName - The role to update.
+ * @param {string} roleName - The role to update.
  * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
  */
 async function updateAccessPermissions(roleName, permissionsUpdate) {
+  // Filter and clean the permission updates based on our schema definition.
   const updates = {};
   for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
-    if (permissionsSchema[permissionType]) {
+    if (permissionsSchema.shape && permissionsSchema.shape[permissionType]) {
       updates[permissionType] = removeNullishValues(permissions);
     }
   }
-
-  if (Object.keys(updates).length === 0) {
+  if (!Object.keys(updates).length) {
     return;
   }
 
@@ -95,7 +96,6 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
       return;
     }
 
-    // Retrieve current permissions or default to an empty object
     const currentPermissions = role.permissions || {};
     const updatedPermissions = { ...currentPermissions };
     let hasChanges = false;
@@ -116,7 +116,7 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
     }
 
     if (hasChanges) {
-      // Update the permissions field only
+      // Update only the permissions field.
       await updateRoleByName(roleName, { permissions: updatedPermissions });
       logger.info(`Updated '${roleName}' role permissions`);
     } else {
@@ -135,25 +135,25 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
  * @returns {Promise<void>}
  */
 const initializeRoles = async function () {
-  const defaultRoles = [SystemRoles.ADMIN, SystemRoles.USER];
-
-  for (const roleName of defaultRoles) {
+  for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
     let role = await Role.findOne({ name: roleName });
+    const defaultPerms = roleDefaults[roleName].permissions;
 
     if (!role) {
-      // Create new role if it doesn't exist
+      // Create new role if it doesn't exist.
       role = new Role(roleDefaults[roleName]);
     } else {
-      // Ensure the role has a "permissions" field and add missing permission types
-      if (!role.permissions) {
-        role.permissions = roleDefaults[roleName].permissions;
-      } else {
-        const defaultPermissions = roleDefaults[roleName].permissions;
-        for (const permType of Object.keys(defaultPermissions)) {
-          if (!role.permissions[permType]) {
-            role.permissions[permType] = defaultPermissions[permType];
-          }
-        }
+      // Merge existing permissions with defaults; existing values take precedence.
+      role.permissions = {
+        ...defaultPerms,
+        ...role.permissions,
+      };
+      // For nested permission objects, ensure missing subkeys are added.
+      for (const key of Object.keys(defaultPerms)) {
+        role.permissions[key] = {
+          ...defaultPerms[key],
+          ...role.permissions[key],
+        };
       }
     }
     await role.save();
