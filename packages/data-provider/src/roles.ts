@@ -42,6 +42,7 @@ const defaultRolesSchema = z.object({
         [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
+        // [Permissions.SHARE]: z.boolean().default(true),
       }),
       [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -50,6 +51,7 @@ const defaultRolesSchema = z.object({
         [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
+        // [Permissions.SHARE]: z.boolean().default(true),
       }),
       [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
