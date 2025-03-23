@@ -107,14 +107,14 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     }
   }, [isCollapsed]);
 
-  const { clearDraft } = useAutoSave({
+  useAutoSave({
     conversationId: conversation?.conversationId,
     textAreaRef,
     files,
     setFiles,
   });
 
-  const { submitMessage, submitPrompt } = useSubmitMessage({ clearDraft });
+  const { submitMessage, submitPrompt } = useSubmitMessage();
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
