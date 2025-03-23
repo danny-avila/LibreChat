@@ -68,7 +68,7 @@ const HoverButton = memo(
 
       'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
 
-      isActive && 'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
+      isActive && isVisible && 'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
 
       className,
     );
