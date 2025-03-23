@@ -4,13 +4,8 @@ const {
   SystemRoles,
   roleDefaults,
   PermissionTypes,
+  permissionsSchema,
   removeNullishValues,
-  agentPermissionsSchema,
-  promptPermissionsSchema,
-  runCodePermissionsSchema,
-  bookmarkPermissionsSchema,
-  multiConvoPermissionsSchema,
-  temporaryChatPermissionsSchema,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const { roleSchema } = require('@librechat/data-schemas');
@@ -77,15 +72,6 @@ const updateRoleByName = async function (roleName, updates) {
   }
 };
 
-const permissionSchemas = {
-  [PermissionTypes.AGENTS]: agentPermissionsSchema,
-  [PermissionTypes.PROMPTS]: promptPermissionsSchema,
-  [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
-  [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
-  [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
-  [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
-};
-
 /**
  * Updates access permissions for a specific role and multiple permission types.
  * @param {SystemRoles} roleName - The role to update.
@@ -94,7 +80,7 @@ const permissionSchemas = {
 async function updateAccessPermissions(roleName, permissionsUpdate) {
   const updates = {};
   for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
-    if (permissionSchemas[permissionType]) {
+    if (permissionsSchema[permissionType]) {
       updates[permissionType] = removeNullishValues(permissions);
     }
   }
@@ -109,26 +95,29 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
       return;
     }
 
-    const updatedPermissions = {};
+    // Retrieve current permissions or default to an empty object
+    const currentPermissions = role.permissions || {};
+    const updatedPermissions = { ...currentPermissions };
     let hasChanges = false;
 
     for (const [permissionType, permissions] of Object.entries(updates)) {
-      const currentPermissions = role[permissionType] || {};
-      updatedPermissions[permissionType] = { ...currentPermissions };
+      const currentTypePermissions = currentPermissions[permissionType] || {};
+      updatedPermissions[permissionType] = { ...currentTypePermissions };
 
       for (const [permission, value] of Object.entries(permissions)) {
-        if (currentPermissions[permission] !== value) {
+        if (currentTypePermissions[permission] !== value) {
           updatedPermissions[permissionType][permission] = value;
           hasChanges = true;
           logger.info(
-            `Updating '${roleName}' role ${permissionType} '${permission}' permission from ${currentPermissions[permission]} to: ${value}`,
+            `Updating '${roleName}' role permission '${permissionType}' '${permission}' from ${currentTypePermissions[permission]} to: ${value}`,
           );
         }
       }
     }
 
     if (hasChanges) {
-      await updateRoleByName(roleName, updatedPermissions);
+      // Update the permissions field only
+      await updateRoleByName(roleName, { permissions: updatedPermissions });
       logger.info(`Updated '${roleName}' role permissions`);
     } else {
       logger.info(`No changes needed for '${roleName}' role permissions`);
@@ -155,21 +144,22 @@ const initializeRoles = async function () {
       // Create new role if it doesn't exist
       role = new Role(roleDefaults[roleName]);
     } else {
-      // Add missing permission types
-      let isUpdated = false;
-      for (const permType of Object.values(PermissionTypes)) {
-        if (!role[permType]) {
-          role[permType] = roleDefaults[roleName][permType];
-          isUpdated = true;
+      // Ensure the role has a "permissions" field and add missing permission types
+      if (!role.permissions) {
+        role.permissions = roleDefaults[roleName].permissions;
+      } else {
+        const defaultPermissions = roleDefaults[roleName].permissions;
+        for (const permType of Object.keys(defaultPermissions)) {
+          if (!role.permissions[permType]) {
+            role.permissions[permType] = defaultPermissions[permType];
+          }
         }
-      }
-      if (isUpdated) {
-        await role.save();
       }
     }
     await role.save();
   }
 };
+
 module.exports = {
   Role,
   getRoleByName,
