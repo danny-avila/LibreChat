@@ -9,7 +9,7 @@ import store from '~/store';
 
 const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
-}, 1500);
+}, 2500);
 
 export const useAutoSave = ({
   conversationId,
