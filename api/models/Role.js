@@ -29,7 +29,6 @@ const getRoleByName = async function (roleName, fieldsToSelect = null) {
     if (cachedRole) {
       return cachedRole;
     }
-
     let query = Role.findOne({ name: roleName });
     if (fieldsToSelect) {
       query = query.select(fieldsToSelect);
@@ -143,17 +142,13 @@ const initializeRoles = async function () {
       // Create new role if it doesn't exist.
       role = new Role(roleDefaults[roleName]);
     } else {
-      // Merge existing permissions with defaults; existing values take precedence.
-      role.permissions = {
-        ...defaultPerms,
-        ...role.permissions,
-      };
-      // For nested permission objects, ensure missing subkeys are added.
-      for (const key of Object.keys(defaultPerms)) {
-        role.permissions[key] = {
-          ...defaultPerms[key],
-          ...role.permissions[key],
-        };
+      // Ensure role.permissions is defined.
+      role.permissions = role.permissions || {};
+      // For each permission type in defaults, add it if missing.
+      for (const permType of Object.keys(defaultPerms)) {
+        if (role.permissions[permType] == null) {
+          role.permissions[permType] = defaultPerms[permType];
+        }
       }
     }
     await role.save();
