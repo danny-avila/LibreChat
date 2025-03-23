@@ -9,7 +9,7 @@ import {
   SetConvoProvider,
 } from '~/Providers';
 import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import TermsAndConditionsModal from '~/components/Chat/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
@@ -49,7 +49,6 @@ export default function Root() {
     setShowTerms(false);
   };
 
-  // Pass the desired redirect parameter to logout
   const handleDeclineTerms = () => {
     setShowTerms(false);
     logout('/login?redirect=false');
