@@ -2,13 +2,12 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
-  PermissionTypes,
-  roleDefaults,
   Permissions,
+  roleDefaults,
+  PermissionTypes,
 } = require('librechat-data-provider');
-const { getRoleByName, updateAccessPermissions, initializeRoles } = require('~/models/Role');
+const { Role, getRoleByName, updateAccessPermissions, initializeRoles } = require('~/models/Role');
 const getLogStores = require('~/cache/getLogStores');
-const { Role } = require('~/models/Role');
 
 // Mock the cache
 jest.mock('~/cache/getLogStores', () =>
