@@ -25,6 +25,9 @@ export type { IConversation } from './schema/convo';
 export { default as fileSchema } from './schema/file';
 export type { IMongoFile } from './schema/file';
 
+export { default as groupSchema } from './schema/group';
+export type { IGroup } from './schema/group';
+
 export { default as keySchema } from './schema/key';
 export type { IKey } from './schema/key';
 

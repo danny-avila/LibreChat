@@ -16,6 +16,7 @@ export * from './models';
 export * from './mcp';
 /* RBAC */
 export * from './roles';
+export * from './groups';
 /* types (exports schemas from `./types` as they contain needed in other defs) */
 export * from './types';
 export * from './types/agents';
