@@ -1185,10 +1185,6 @@ ${convo}
         opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
       }
 
-      if (this.isVisionModel) {
-        modelOptions.max_tokens = 4000;
-      }
-
       /** @type {TAzureConfig | undefined} */
       const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
 
