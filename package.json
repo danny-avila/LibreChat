@@ -141,8 +141,5 @@
       "admin/",
       "packages/"
     ]
-  },
-  "dependencies": {
-    "caniuse-lite": "^1.0.30001706"
   }
 }
