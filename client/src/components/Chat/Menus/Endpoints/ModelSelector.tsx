@@ -1,10 +1,10 @@
 import React from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
+import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
 import { useLocalize, useKeyDialog } from '~/hooks';
 import { CustomMenu as Menu } from './CustomMenu';
-import { ModelSelectorProps } from './types';
 import DialogManager from './DialogManager';
 import { getSelectedIcon } from './utils';
 
