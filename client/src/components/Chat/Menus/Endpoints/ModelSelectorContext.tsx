@@ -19,11 +19,13 @@ interface ModelSelectorContextType {
   searchResults: (TModelSpec | Endpoint)[] | null;
   // LibreChat
   modelSpecs: TModelSpec[];
+  mappedEndpoints: Endpoint[];
   agentsMap: TAgentsMap | undefined;
   assistantsMap: TAssistantsMap | undefined;
 
   // Functions
   getDisplayValue: () => string;
+  endpointRequiresUserKey: (endpoint: string) => boolean;
   setSelectedValues: React.Dispatch<React.SetStateAction<SelectedValues>>;
   setSearchValue: (value: string) => void;
   setEndpointSearchValue: (endpoint: string, value: string) => void;
@@ -54,9 +56,9 @@ export function ModelSelectorProvider({
   interfaceConfig,
 }: ModelSelectorProviderProps) {
   const agentsMap = useAgentsMapContext();
-  const { mappedEndpoints } = useEndpoints();
   const assistantsMap = useAssistantsMapContext();
   const { handleModelSelect } = useModelSelection();
+  const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints();
 
   // State
   const [selectedValues, setSelectedValues] = useState<SelectedValues>({
@@ -158,23 +160,25 @@ export function ModelSelectorProvider({
 
   const value = {
     // State
-    selectedValues,
     searchValue,
-    endpointSearchValues,
     searchResults,
+    selectedValues,
+    endpointSearchValues,
     // LibreChat
-    modelSpecs,
     agentsMap,
+    modelSpecs,
     assistantsMap,
+    mappedEndpoints,
 
     // Functions
-    setSelectedValues,
     setSearchValue,
-    setEndpointSearchValue,
-    handleSelectSpec,
-    handleSelectEndpoint,
-    handleSelectModel,
     getDisplayValue,
+    handleSelectSpec,
+    handleSelectModel,
+    setSelectedValues,
+    handleSelectEndpoint,
+    setEndpointSearchValue,
+    endpointRequiresUserKey,
   };
 
   return <ModelSelectorContext.Provider value={value}>{children}</ModelSelectorContext.Provider>;
