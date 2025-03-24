@@ -75,7 +75,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
           {endpoint.icon}
         </div>
       )}
-      <span className={cn('truncate text-left', isUserProvided ? 'group-hover:w-8' : '')}>
+      <span className={cn('truncate text-left', isUserProvided ? 'group-hover:w-24' : '')}>
         {endpoint.label}
       </span>
     </div>
