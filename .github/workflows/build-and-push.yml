@@ -54,7 +54,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile.frontend
+          file: Dockerfile
           push: true
           tags: ghcr.io/danieldjupvik/librechat-dev:latest
           platforms: linux/amd64
