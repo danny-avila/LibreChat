@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { isAgentsEndpoint, isAssistantsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { SelectedValues } from '~/common';
@@ -38,6 +38,18 @@ export default function useSelectorEffects({
     }
   }, [index, agents, selectedAgentId, agentsMap, endpoint, setOption]);
 
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const debouncedSetSelectedValues = (values: SelectedValues) => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      setSelectedValues(values);
+    }, 150);
+  };
+
   useEffect(() => {
     if (!conversation?.endpoint) {
       return;
@@ -49,24 +61,31 @@ export default function useSelectorEffects({
       conversation?.spec
     ) {
       if (isAgentsEndpoint(conversation?.endpoint)) {
-        return setSelectedValues({
+        debouncedSetSelectedValues({
           endpoint: conversation.endpoint || '',
           model: conversation.agent_id ?? '',
           modelSpec: '',
         });
+        return;
       } else if (isAssistantsEndpoint(conversation?.endpoint)) {
-        return setSelectedValues({
+        debouncedSetSelectedValues({
           endpoint: conversation.endpoint || '',
           model: conversation.assistant_id || '',
           modelSpec: conversation.spec || '',
         });
+        return;
       }
-      setSelectedValues({
+      debouncedSetSelectedValues({
         endpoint: conversation.endpoint || '',
         model: conversation.model || '',
         modelSpec: conversation.spec || '',
       });
     }
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
   }, [
     conversation?.spec,
     conversation?.model,
