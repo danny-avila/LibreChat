@@ -15,10 +15,22 @@ export const useKeyDialog = () => {
     [],
   );
 
+  const onOpenChange = (open: boolean) => {
+    if (!open && keyDialogEndpoint) {
+      const button = document.getElementById(`endpoint-${keyDialogEndpoint}-settings`);
+      if (button) {
+        setTimeout(() => {
+          button.focus();
+        }, 5);
+      }
+    }
+    setKeyDialogOpen(open);
+  };
+
   return {
     keyDialogOpen,
     keyDialogEndpoint,
-    setKeyDialogOpen,
+    onOpenChange,
     handleOpenKeyDialog,
   };
 };

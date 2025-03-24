@@ -26,7 +26,7 @@ function ModelSelectorContent() {
     setSelectedValues,
     // Dialog
     keyDialogOpen,
-    setKeyDialogOpen,
+    onOpenChange,
     keyDialogEndpoint,
   } = useModelSelectorContext();
 
@@ -73,7 +73,7 @@ function ModelSelectorContent() {
       </Menu>
       <DialogManager
         keyDialogOpen={keyDialogOpen}
-        setKeyDialogOpen={setKeyDialogOpen}
+        onOpenChange={onOpenChange}
         endpointsConfig={endpointsConfig || {}}
         keyDialogEndpoint={keyDialogEndpoint || undefined}
       />

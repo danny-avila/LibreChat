@@ -27,6 +27,7 @@ const SettingsButton = ({
   const text = localize('com_endpoint_config_key');
   return (
     <button
+      id={`endpoint-${endpoint.value}-settings`}
       onClick={(e) => {
         if (!endpoint.value) {
           return;
@@ -39,6 +40,7 @@ const SettingsButton = ({
         'rounded-md px-1 hover:bg-surface-secondary',
         className,
       )}
+      aria-label={`${text} ${endpoint.label}`}
     >
       <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto">
         <SettingsIcon className="h-4 w-4 flex-shrink-0" />

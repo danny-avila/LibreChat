@@ -6,14 +6,14 @@ import { getEndpointField } from '~/utils';
 interface DialogManagerProps {
   keyDialogOpen: boolean;
   keyDialogEndpoint?: EModelEndpoint;
-  setKeyDialogOpen: (open: boolean) => void;
+  onOpenChange: (open: boolean) => void;
   endpointsConfig: Record<string, any>;
 }
 
 const DialogManager = ({
   keyDialogOpen,
   keyDialogEndpoint,
-  setKeyDialogOpen,
+  onOpenChange,
   endpointsConfig,
 }: DialogManagerProps) => {
   return (
@@ -23,7 +23,7 @@ const DialogManager = ({
           open={keyDialogOpen}
           endpoint={keyDialogEndpoint}
           endpointType={getEndpointField(endpointsConfig, keyDialogEndpoint, 'type')}
-          onOpenChange={setKeyDialogOpen}
+          onOpenChange={onOpenChange}
           userProvideURL={getEndpointField(endpointsConfig, keyDialogEndpoint, 'userProvideURL')}
         />
       )}
