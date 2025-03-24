@@ -39,9 +39,7 @@ function ModelSelectorContent() {
       aria-label="Select model"
     >
       {selectedIcon && React.isValidElement(selectedIcon) && (
-        <div className="flex items-center justify-center overflow-hidden rounded-full">
-          {selectedIcon}
-        </div>
+        <div className="flex items-center justify-center overflow-hidden">{selectedIcon}</div>
       )}
       <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
     </button>

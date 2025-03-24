@@ -1,7 +1,8 @@
 import React from 'react';
+import type { TModelSpec } from 'librechat-data-provider';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
-import { TModelSpec } from 'librechat-data-provider/dist/types';
+import SpecIcon from './SpecIcon';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -9,21 +10,20 @@ interface ModelSpecItemProps {
 }
 
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
-  const { handleSelectSpec } = useModelSelectorContext();
+  const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
+  const { showIconInMenu = true } = spec;
   return (
     <MenuItem
       key={spec.name}
       onClick={() => handleSelectSpec(spec)}
       className="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
-      <div className="flex items-center gap-2">
-        {/* {spec.icon && (
-          <div className="my-1 flex-shrink-0">
-            <div className="flex items-center justify-center overflow-hidden rounded-full">
-              {spec.icon}
-            </div>
+      <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
+        {showIconInMenu && (
+          <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
+            <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />
           </div>
-        )} */}
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-1">
             <span className="truncate text-left">{spec.label}</span>

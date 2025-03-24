@@ -71,7 +71,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   const renderIconLabel = () => (
     <div className="flex items-center gap-2">
       {endpoint.icon && (
-        <div className="flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+        <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
           {endpoint.icon}
         </div>
       )}
