@@ -31,7 +31,7 @@ function ModelSelectorContent() {
   } = useModelSelectorContext();
 
   const selectedIcon = getSelectedIcon({
-    mappedEndpoints,
+    mappedEndpoints: mappedEndpoints ?? [],
     selectedValues,
     modelSpecs,
     endpointsConfig,
@@ -50,6 +50,12 @@ function ModelSelectorContent() {
     </button>
   );
 
+  console.log(
+    'searchResults, modelSpecs, mappedEndpoints',
+    searchResults,
+    modelSpecs,
+    mappedEndpoints,
+  );
   return (
     <div className="relative flex w-full max-w-md flex-col items-center gap-2">
       <Menu
@@ -70,7 +76,7 @@ function ModelSelectorContent() {
         ) : (
           <>
             {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
-            {renderEndpoints(mappedEndpoints)}
+            {renderEndpoints(mappedEndpoints ?? [])}
           </>
         )}
       </Menu>

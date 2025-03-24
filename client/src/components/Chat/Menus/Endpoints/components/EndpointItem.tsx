@@ -87,7 +87,8 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       : null;
     return (
       <Menu
-        key={endpoint.value}
+        id={`endpoint-${endpoint.value}-menu`}
+        key={`endpoint-${endpoint.value}-item`}
         className="transition-opacity duration-200 ease-in-out"
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
@@ -119,7 +120,8 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   } else {
     return (
       <MenuItem
-        key={endpoint.value}
+        id={`endpoint-${endpoint.value}-menu`}
+        key={`endpoint-${endpoint.value}-item`}
         onClick={() => handleSelectEndpoint(endpoint)}
         className="flex h-8 w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
       >
@@ -155,6 +157,6 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
   return mappedEndpoints.map((endpoint) => (
-    <EndpointItem endpoint={endpoint} key={endpoint.value} />
+    <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />
   ));
 }

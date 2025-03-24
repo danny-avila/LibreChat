@@ -19,7 +19,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       onClick={() => handleSelectSpec(spec)}
       className={cn(
         'flex w-full cursor-pointer justify-between rounded-lg px-2 text-sm',
-        spec.description ? 'w-72 items-start' : 'items-center',
+        spec.description ? 'items-start' : 'items-center',
       )}
     >
       <div
