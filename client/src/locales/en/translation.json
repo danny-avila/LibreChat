@@ -447,8 +447,6 @@
   "com_sidepanel_hide_panel": "Hide Panel",
   "com_sidepanel_manage_files": "Manage Files",
   "com_sidepanel_parameters": "Parameters",
-  "com_sidepanel_select_agent": "Select an Agent",
-  "com_sidepanel_select_assistant": "Select an Assistant",
   "com_ui_2fa_account_security": "Two-factor authentication adds an extra layer of security to your account",
   "com_ui_2fa_disable": "Disable 2FA",
   "com_ui_2fa_disable_error": "There was an error disabling two-factor authentication",
@@ -851,8 +849,6 @@
   "com_ui_good_morning": "Good morning",
   "com_ui_good_afternoon": "Good afternoon",
   "com_ui_good_evening": "Good evening",
-  "com_ui_no_models_available": "No models available",
-  "com_ui_no_matching_models": "No matching models",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }
