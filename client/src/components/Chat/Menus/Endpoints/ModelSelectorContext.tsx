@@ -1,14 +1,11 @@
 import React, { createContext, useContext, useState, useMemo, startTransition } from 'react';
-import {
-  EModelEndpoint,
-  TModelSpec,
-  TAgentsMap,
-  TAssistantsMap,
-  TInterfaceConfig,
-} from 'librechat-data-provider';
-import { useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
+import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
+import useSelectMention from '~/hooks/Input/useSelectMention';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { Endpoint, SelectedValues } from './types';
-import { useModelSelection, useEndpoints } from '~/hooks';
+import { useEndpoints } from '~/hooks';
 import { filterItems } from './utils';
 
 interface ModelSelectorContextType {
@@ -16,12 +13,13 @@ interface ModelSelectorContextType {
   searchValue: string;
   selectedValues: SelectedValues;
   endpointSearchValues: Record<string, string>;
-  searchResults: (TModelSpec | Endpoint)[] | null;
+  searchResults: (t.TModelSpec | Endpoint)[] | null;
   // LibreChat
-  modelSpecs: TModelSpec[];
+  modelSpecs: t.TModelSpec[];
   mappedEndpoints: Endpoint[];
-  agentsMap: TAgentsMap | undefined;
-  assistantsMap: TAssistantsMap | undefined;
+  agentsMap: t.TAgentsMap | undefined;
+  assistantsMap: t.TAssistantsMap | undefined;
+  endpointsConfig: t.TEndpointsConfig;
 
   // Functions
   getDisplayValue: () => string;
@@ -29,7 +27,7 @@ interface ModelSelectorContextType {
   setSelectedValues: React.Dispatch<React.SetStateAction<SelectedValues>>;
   setSearchValue: (value: string) => void;
   setEndpointSearchValue: (endpoint: string, value: string) => void;
-  handleSelectSpec: (spec: TModelSpec) => void;
+  handleSelectSpec: (spec: t.TModelSpec) => void;
   handleSelectEndpoint: (endpoint: Endpoint) => void;
   handleSelectModel: (endpoint: Endpoint, model: string) => void;
 }
@@ -46,8 +44,8 @@ export function useModelSelectorContext() {
 
 interface ModelSelectorProviderProps {
   children: React.ReactNode;
-  modelSpecs: TModelSpec[];
-  interfaceConfig: TInterfaceConfig;
+  modelSpecs: t.TModelSpec[];
+  interfaceConfig: t.TInterfaceConfig;
 }
 
 export function ModelSelectorProvider({
@@ -56,9 +54,18 @@ export function ModelSelectorProvider({
   interfaceConfig,
 }: ModelSelectorProviderProps) {
   const agentsMap = useAgentsMapContext();
+  const { newConversation } = useChatContext();
   const assistantsMap = useAssistantsMapContext();
-  const { handleModelSelect } = useModelSelection();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints();
+  const { onSelectEndpoint, onSelectSpec } = useSelectMention({
+    // presets,
+    modelSpecs,
+    endpointsConfig,
+    newConversation,
+    assistantMap: assistantsMap,
+    returnHandlers: true,
+  });
 
   // State
   const [selectedValues, setSelectedValues] = useState<SelectedValues>({
@@ -90,7 +97,8 @@ export function ModelSelectorProvider({
     }));
   };
 
-  const handleSelectSpec = (spec: TModelSpec) => {
+  const handleSelectSpec = (spec: t.TModelSpec) => {
+    onSelectSpec?.(spec);
     setSelectedValues({
       endpoint: spec.preset.endpoint,
       model: spec.preset.model ?? null,
@@ -100,6 +108,9 @@ export function ModelSelectorProvider({
 
   const handleSelectEndpoint = (endpoint: Endpoint) => {
     if (!endpoint.hasModels) {
+      if (endpoint.value) {
+        onSelectEndpoint?.(endpoint.value);
+      }
       setSelectedValues({
         endpoint: endpoint.value,
         model: '',
@@ -109,8 +120,17 @@ export function ModelSelectorProvider({
   };
 
   const handleSelectModel = (endpoint: Endpoint, model: string) => {
-    if (endpoint) {
-      handleModelSelect(endpoint.value as EModelEndpoint, model);
+    if (isAgentsEndpoint(endpoint.value)) {
+      onSelectEndpoint?.(endpoint.value, {
+        agent_id: model,
+      });
+    } else if (isAssistantsEndpoint(endpoint.value)) {
+      onSelectEndpoint?.(endpoint.value, {
+        assistant_id: model,
+        model: assistantsMap?.[endpoint.value]?.[model]?.model ?? '',
+      });
+    } else if (endpoint.value) {
+      onSelectEndpoint?.(endpoint.value, { model });
     }
     setSelectedValues({
       endpoint: endpoint.value,
@@ -169,6 +189,7 @@ export function ModelSelectorProvider({
     modelSpecs,
     assistantsMap,
     mappedEndpoints,
+    endpointsConfig,
 
     // Functions
     setSearchValue,

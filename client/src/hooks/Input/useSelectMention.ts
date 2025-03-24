@@ -20,12 +20,14 @@ export default function useSelectMention({
   assistantMap,
   endpointsConfig,
   newConversation,
+  returnHandlers,
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
   assistantMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
+  returnHandlers?: boolean;
 }) {
   const { conversation } = useChatContext();
   const getDefaultConversation = useDefaultConvo();
@@ -252,6 +254,13 @@ export default function useSelectMention({
     },
     [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets, assistantMap],
   );
+
+  if (returnHandlers) {
+    return {
+      onSelectSpec,
+      onSelectEndpoint,
+    };
+  }
 
   return {
     onSelectMention,

@@ -2,7 +2,6 @@ import React from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize, useKeyDialog } from '~/hooks';
 import { CustomMenu as Menu } from './CustomMenu';
 import { ModelSelectorProps } from './types';
@@ -11,7 +10,6 @@ import { getSelectedIcon } from './utils';
 
 function ModelSelectorContent() {
   const localize = useLocalize();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { keyDialogOpen, keyDialogEndpoint, setKeyDialogOpen, handleOpenKeyDialog } =
     useKeyDialog();
 
@@ -19,6 +17,7 @@ function ModelSelectorContent() {
     // LibreChat
     modelSpecs,
     mappedEndpoints,
+    endpointsConfig,
     // State
     searchValue,
     searchResults,
