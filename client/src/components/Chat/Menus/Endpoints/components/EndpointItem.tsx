@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { Spinner } from '~/components';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -91,6 +91,10 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
     const filteredModels = searchValue
       ? filterModels(endpoint, endpoint.models || [], searchValue, agentsMap, assistantsMap)
       : null;
+    const placeholder =
+      isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
+        ? localize('com_endpoint_search_var', { 0: endpoint.label })
+        : localize('com_endpoint_search_endpoint_models', { 0: endpoint.label });
     return (
       <Menu
         id={`endpoint-${endpoint.value}-menu`}
@@ -99,9 +103,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
-        combobox={
-          <input placeholder={localize('com_endpoint_search_models', { 0: endpoint.label })} />
-        }
+        combobox={<input placeholder={placeholder} />}
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}
