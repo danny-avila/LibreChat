@@ -54,7 +54,7 @@ export function ModelSelectorProvider({
   interfaceConfig,
 }: ModelSelectorProviderProps) {
   const agentsMap = useAgentsMapContext();
-  const { newConversation } = useChatContext();
+  const { conversation, newConversation } = useChatContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints();
@@ -69,9 +69,9 @@ export function ModelSelectorProvider({
 
   // State
   const [selectedValues, setSelectedValues] = useState<SelectedValues>({
-    endpoint: '',
-    model: '',
-    modelSpec: '',
+    endpoint: conversation?.endpoint || '',
+    model: conversation?.model || '',
+    modelSpec: conversation?.spec || '',
   });
   const [searchValue, setSearchValueState] = useState('');
   const [endpointSearchValues, setEndpointSearchValues] = useState<Record<string, string>>({});
