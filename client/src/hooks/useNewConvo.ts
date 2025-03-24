@@ -223,7 +223,8 @@ const useNewConvo = (index = 0) => {
       if (
         !preset &&
         startupConfig &&
-        startupConfig.modelSpecs?.prioritize === true &&
+        (startupConfig.modelSpecs?.prioritize === true ||
+          (startupConfig.interface?.modelSelect ?? true) !== true) &&
         defaultModelSpec
       ) {
         preset = {
