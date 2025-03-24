@@ -7,10 +7,36 @@ import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
 import { filterModels } from '../utils';
+import { cn } from '~/utils';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
 }
+
+const SettingsButton = ({
+  endpoint,
+  className,
+  handleOpenKeyDialog,
+}: {
+  endpoint: Endpoint;
+  className?: string;
+  handleOpenKeyDialog: (endpoint: EModelEndpoint, e: React.MouseEvent) => void;
+}) => {
+  return (
+    <button
+      onClick={(e) => {
+        if (!endpoint.value) {
+          return;
+        }
+        e.stopPropagation();
+        handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
+      }}
+      className={cn('flex items-center text-text-primary', className)}
+    >
+      <SettingsIcon className="h-4 w-4" />
+    </button>
+  );
+};
 
 export function EndpointItem({ endpoint }: EndpointItemProps) {
   const {
@@ -54,18 +80,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
               <span className="truncate text-left">{endpoint.label}</span>
             </div>
             {endpointRequiresUserKey(endpoint.value) && (
-              <button
-                onClick={(e) => {
-                  if (!endpoint.value) {
-                    return;
-                  }
-                  e.stopPropagation();
-                  handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
-                }}
-                className="flex items-center text-text-primary"
-              >
-                <SettingsIcon className="h-4 w-4" />
-              </button>
+              <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
             )}
           </div>
         }
@@ -98,18 +113,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         </div>
         <div className="flex items-center gap-2">
           {endpointRequiresUserKey(endpoint.value) && (
-            <button
-              onClick={(e) => {
-                if (!endpoint.value) {
-                  return;
-                }
-                e.stopPropagation();
-                handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
-              }}
-              className="text-text-primary"
-            >
-              <SettingsIcon className="h-4 w-4" />
-            </button>
+            <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
           )}
           {selectedEndpoint === endpoint.value && (
             <svg
