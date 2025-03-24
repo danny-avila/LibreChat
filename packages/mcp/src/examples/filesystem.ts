@@ -640,7 +640,6 @@ async function runServer(transport: 'stdio' | 'sse', port?: number) {
     console.error('Allowed directories:', allowedDirectories);
   } else {
     const app = express();
-    app.use(express.json());
 
     // Set up CORS
     app.use((req, res, next) => {
