@@ -62,7 +62,7 @@ export default function usePresets() {
     }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [presetsQuery.data, user, modelsData]);
 
   const setPresets = useCallback(
@@ -181,6 +181,8 @@ export default function usePresets() {
       conversation,
       endpointsConfig,
     });
+
+    newPreset.spec = null;
 
     const isModular = isCurrentModular && isNewModular && shouldSwitch;
     if (isExistingConversation && isModular) {

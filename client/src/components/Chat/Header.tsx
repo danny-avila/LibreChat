@@ -7,7 +7,6 @@ import { PresetsMenu, HeaderNewChat } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import { useMediaQuery, useHasAccess } from '~/hooks';
-import HeaderOptions from './Input/HeaderOptions';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import AddMultiConvo from './AddMultiConvo';
 

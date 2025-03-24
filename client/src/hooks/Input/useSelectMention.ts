@@ -114,6 +114,7 @@ export default function useSelectMention({
     model?: string;
     agent_id?: string;
     assistant_id?: string;
+    spec?: string | null;
   };
 
   const onSelectEndpoint = useCallback(
@@ -151,6 +152,8 @@ export default function useSelectMention({
         template.agent_id = agent_id;
       }
 
+      kwargs.spec = null;
+
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
         template.endpointType = newEndpointType;
 
@@ -167,7 +170,7 @@ export default function useSelectMention({
 
       newConversation({
         template: { ...(template as Partial<TConversation>) },
-        preset: { ...kwargs, spec: null, endpoint: newEndpoint },
+        preset: { ...kwargs, endpoint: newEndpoint },
       });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
@@ -195,6 +198,8 @@ export default function useSelectMention({
         conversation,
         endpointsConfig,
       });
+
+      newPreset.spec = null;
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
