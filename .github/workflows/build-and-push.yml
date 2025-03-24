@@ -1,15 +1,14 @@
 name: Build and Push LibreChat Dev Image
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
     paths:
+      - 'api/**'
       - 'client/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'Dockerfile.frontend'
-  workflow_dispatch:
+      - 'packages/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
