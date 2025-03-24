@@ -41,7 +41,7 @@ const SettingsButton = ({
         className,
       )}
     >
-      <div className="flex items-center whitespace-nowrap">
+      <div className="flex w-[28px] items-center whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto">
         <SettingsIcon className="h-4 w-4 flex-shrink-0" />
         <span className="ml-1.5 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100">
           {text}
@@ -116,7 +116,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         onClick={() => handleSelectEndpoint(endpoint)}
         className="flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
       >
-        <div className="group flex w-full items-center justify-between">
+        <div className="group flex w-full min-w-0 items-center justify-between">
           <div className="flex items-center gap-2">
             {endpoint.icon && (
               <div className="flex items-center justify-center overflow-hidden rounded-full p-1">

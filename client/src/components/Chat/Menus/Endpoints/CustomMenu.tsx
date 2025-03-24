@@ -1,7 +1,6 @@
-import * as Ariakit from '@ariakit/react';
-import { twMerge } from 'tailwind-merge';
 import * as React from 'react';
-import { SearchIcon } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
+import { cn } from '~/utils';
 
 export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
   label?: React.ReactNode;
@@ -43,7 +42,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
       <Ariakit.MenuButton
         ref={ref}
         {...props}
-        className={twMerge(
+        className={cn(
           !parent &&
             'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
           menuStore.useState('open')
@@ -62,12 +61,13 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
         overlap
         unmountOnHide
         gutter={parent ? -4 : 4}
-        className={twMerge(
+        className={cn(
           `${parent ? 'animate-popover-left ml-3' : 'animate-popover'} outline-none! z-50 flex max-h-[min(450px,var(--popover-available-height))] w-full`,
-          'min-w-[220px] flex-col overflow-auto rounded-xl border border-border-light',
+          'w-[var(--menu-width,auto)] min-w-[220px] flex-col overflow-auto rounded-xl border border-border-light',
           'bg-surface-secondary px-3 py-2 text-sm text-text-primary shadow-lg',
           searchable && 'p-0',
         )}
+        style={{ '--menu-width': parent ? 'auto' : '220px' } as React.CSSProperties}
       >
         <SearchableContext.Provider value={searchable}>
           {searchable ? (
@@ -76,7 +76,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
                 <Ariakit.Combobox
                   autoSelect
                   render={combobox}
-                  className={twMerge(
+                  className={cn(
                     'h-10 w-full rounded border-none bg-transparent px-2 text-base',
                     'sm:h-8 sm:text-sm',
                   )}
@@ -114,7 +114,7 @@ export const CustomMenuSeparator = React.forwardRef<HTMLHRElement, Ariakit.MenuS
       <Ariakit.MenuSeparator
         ref={ref}
         {...props}
-        className={twMerge(
+        className={cn(
           'my-0.5 h-0 w-full border-t border-slate-200 dark:border-slate-700',
           props.className,
         )}
@@ -130,7 +130,7 @@ export interface CustomMenuGroupProps extends Ariakit.MenuGroupProps {
 export const CustomMenuGroup = React.forwardRef<HTMLDivElement, CustomMenuGroupProps>(
   function CustomMenuGroup({ label, ...props }, ref) {
     return (
-      <Ariakit.MenuGroup ref={ref} {...props} className={twMerge('', props.className)}>
+      <Ariakit.MenuGroup ref={ref} {...props} className={cn('', props.className)}>
         {label && (
           <Ariakit.MenuGroupLabel className="cursor-default p-2 text-sm font-medium opacity-60 sm:py-1 sm:text-xs">
             {label}
@@ -157,8 +157,8 @@ export const CustomMenuItem = React.forwardRef<HTMLDivElement, CustomMenuItemPro
       focusOnHover: true,
       blurOnHoverEnd: false,
       ...props,
-      className: twMerge(
-        'flex cursor-default items-center gap-2 rounded-lg p-2 outline-none! scroll-m-1 scroll-mt-[calc(var(--combobox-height,0px)+var(--label-height,4px))] aria-disabled:opacity-25 data-[active-item]:bg-black/[0.075] data-[active-item]:text-black active:pt-[9px] active:pb-[7px] active:bg-black/10 dark:data-[active-item]:bg-white/10 dark:data-[active-item]:text-white dark:active:bg-white/5 sm:py-1 sm:text-sm sm:active:pt-[5px] sm:active:pb-[3px]',
+      className: cn(
+        'flex cursor-default items-center gap-2 rounded-lg p-2 outline-none! scroll-m-1 scroll-mt-[calc(var(--combobox-height,0px)+var(--label-height,4px))] aria-disabled:opacity-25 data-[active-item]:bg-black/[0.075] data-[active-item]:text-black active:pt-[9px] active:pb-[7px] active:bg-black/10 dark:data-[active-item]:bg-white/10 dark:data-[active-item]:text-white dark:active:bg-white/5 sm:py-1 sm:text-sm sm:active:pt-[5px] sm:active:pb-[3px] min-w-0 w-full',
         props.className,
       ),
     };
