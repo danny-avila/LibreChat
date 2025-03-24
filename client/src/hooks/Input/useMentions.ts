@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
+  Permissions,
   alternateName,
   EModelEndpoint,
+  PermissionTypes,
   isAgentsEndpoint,
   getConfigDefaults,
   isAssistantsEndpoint,
@@ -18,6 +20,7 @@ import {
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
+import useHasAccess from '~/hooks/Roles/useHasAccess';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -53,6 +56,11 @@ export default function useMentions({
   assistantMap: TAssistantsMap;
   includeAssistants: boolean;
 }) {
+  const hasAgentAccess = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
+
   const { data: presets } = useGetPresetsQuery();
   const { data: modelsConfig } = useGetModelsQuery();
   const { data: startupConfig } = useGetStartupConfig();
@@ -68,6 +76,7 @@ export default function useMentions({
     })),
   );
   const { data: agentsList = null } = useListAgentsQuery(undefined, {
+    enabled: hasAgentAccess,
     select: (res) => {
       const { data } = res;
       return data.map(({ id, name, avatar }) => ({
