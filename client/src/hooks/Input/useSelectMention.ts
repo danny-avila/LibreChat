@@ -167,7 +167,7 @@ export default function useSelectMention({
 
       newConversation({
         template: { ...(template as Partial<TConversation>) },
-        preset: { ...kwargs, endpoint: newEndpoint },
+        preset: { ...kwargs, spec: null, endpoint: newEndpoint },
       });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
