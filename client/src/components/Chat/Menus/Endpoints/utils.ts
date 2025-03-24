@@ -1,8 +1,14 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TAgentsMap, TAssistantsMap, TModelSpec } from 'librechat-data-provider';
-import { Endpoint, SelectedValues } from './types';
+import type {
+  TAgentsMap,
+  TAssistantsMap,
+  TEndpointsConfig,
+  TModelSpec,
+} from 'librechat-data-provider';
+import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
+import { Endpoint, SelectedValues } from '~/common';
 
 export function filterItems<
   T extends { label: string; name?: string; value?: string; models?: string[] },
@@ -86,16 +92,32 @@ export function filterModels(
   });
 }
 
-export function getSelectedIcon(
-  mappedEndpoints: Endpoint[],
-  selectedValues: SelectedValues,
-  modelSpecs: TModelSpec[],
-): React.ReactNode | null {
+export function getSelectedIcon({
+  mappedEndpoints,
+  selectedValues,
+  modelSpecs,
+  endpointsConfig,
+}: {
+  mappedEndpoints: Endpoint[];
+  selectedValues: SelectedValues;
+  modelSpecs: TModelSpec[];
+  endpointsConfig: TEndpointsConfig;
+}): React.ReactNode | null {
   const { endpoint, model, modelSpec } = selectedValues;
 
   if (modelSpec) {
     const spec = modelSpecs.find((s) => s.name === modelSpec);
-    return spec?.iconURL || null;
+    if (!spec) {
+      return null;
+    }
+    const { showIconInHeader } = spec;
+    if (!showIconInHeader) {
+      return null;
+    }
+    return React.createElement(SpecIcon, {
+      currentSpec: spec,
+      endpointsConfig,
+    });
   }
 
   if (endpoint && model) {
