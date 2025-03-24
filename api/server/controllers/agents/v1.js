@@ -212,6 +212,11 @@ const duplicateAgentHandler = async (req, res) => {
       tool_resources: _tool_resources = {},
       ...cloneData
     } = agent;
+    cloneData.name = `${agent.name} (${new Date().toLocaleString('en-US', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      hour12: false,
+    })})`;
 
     if (_tool_resources?.[EToolResources.ocr]) {
       cloneData.tool_resources = {

@@ -100,6 +100,19 @@ const primeResources = async (req, _attachments, _tool_resources) => {
 };
 
 /**
+ * @param  {...string | number} values
+ * @returns {string | number | undefined}
+ */
+function optionalChainWithEmptyCheck(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return values[values.length - 1];
+}
+
+/**
  * @param {object} params
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
@@ -200,16 +213,23 @@ const initializeAgentOptions = async ({
 
   const tokensModel =
     agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
-  const maxTokens = agent.model_parameters.maxOutputTokens ?? agent.model_parameters.maxTokens ?? 0;
-
+  const maxTokens = optionalChainWithEmptyCheck(
+    agent.model_parameters.maxOutputTokens,
+    agent.model_parameters.maxTokens,
+    0,
+  );
+  const maxContextTokens = optionalChainWithEmptyCheck(
+    agent.model_parameters.maxContextTokens,
+    agent.max_context_tokens,
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
+    4096,
+  );
   return {
     ...agent,
     tools,
     attachments,
     toolContextMap,
-    maxContextTokens:
-      agent.max_context_tokens ??
-      ((getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ?? 4000) - maxTokens) * 0.9,
+    maxContextTokens: (maxContextTokens - maxTokens) * 0.9,
   };
 };
 

@@ -1,15 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const fetch = require('node-fetch');
-const { getBufferMetadata } = require('~/server/utils');
-const { initializeS3 } = require('./initialize');
-const { logger } = require('~/config');
 const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { initializeS3 } = require('./initialize');
+const { logger } = require('~/config');
 
 const bucketName = process.env.AWS_BUCKET_NAME;
-const s3 = initializeS3();
 const defaultBasePath = 'images';
 
 /**
@@ -32,6 +29,7 @@ async function saveBufferToS3({ userId, buffer, fileName, basePath = defaultBase
   const params = { Bucket: bucketName, Key: key, Body: buffer };
 
   try {
+    const s3 = initializeS3();
     await s3.send(new PutObjectCommand(params));
     return await getS3URL({ userId, fileName, basePath });
   } catch (error) {
@@ -54,6 +52,7 @@ async function getS3URL({ userId, fileName, basePath = defaultBasePath }) {
   const params = { Bucket: bucketName, Key: key };
 
   try {
+    const s3 = initializeS3();
     return await getSignedUrl(s3, new GetObjectCommand(params), { expiresIn: 86400 });
   } catch (error) {
     logger.error('[getS3URL] Error getting signed URL from S3:', error.message);
@@ -97,6 +96,7 @@ async function deleteFileFromS3({ userId, fileName, basePath = defaultBasePath }
   const params = { Bucket: bucketName, Key: key };
 
   try {
+    const s3 = initializeS3();
     await s3.send(new DeleteObjectCommand(params));
     logger.debug('[deleteFileFromS3] File deleted successfully from S3');
   } catch (error) {
@@ -144,6 +144,7 @@ async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }
 async function getS3FileStream(filePath) {
   const params = { Bucket: bucketName, Key: filePath };
   try {
+    const s3 = initializeS3();
     const data = await s3.send(new GetObjectCommand(params));
     return data.Body; // Returns a Node.js ReadableStream.
   } catch (error) {

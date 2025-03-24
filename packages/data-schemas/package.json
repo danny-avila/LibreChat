@@ -1,8 +1,8 @@
 {
   "name": "@librechat/data-schemas",
-  "version": "0.0.3",
-  "type": "module",
+  "version": "0.0.5",
   "description": "Mongoose schemas and models for LibreChat",
+  "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",
@@ -13,6 +13,9 @@
       "types": "./dist/types/index.d.ts"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "clean": "rimraf dist",
     "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
@@ -55,14 +58,20 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4"
   },
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
-    "access": "public"
-  },
   "dependencies": {
     "mongoose": "^8.12.1"
   },
   "peerDependencies": {
     "keyv": "^4.5.4"
-  }
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "keywords": [
+    "mongoose",
+    "schema",
+    "typescript",
+    "librechat"
+  ]
 }

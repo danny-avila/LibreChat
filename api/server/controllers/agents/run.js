@@ -51,10 +51,6 @@ async function createRun({
   ) {
     reasoningKey = 'reasoning';
   }
-  if (/o1(?!-(?:mini|preview)).*$/.test(llmConfig.model)) {
-    llmConfig.streaming = false;
-    llmConfig.disableStreaming = true;
-  }
 
   /** @type {StandardGraphConfig} */
   const graphConfig = {
@@ -68,7 +64,7 @@ async function createRun({
   };
 
   // TEMPORARY FOR TESTING
-  if (agent.provider === Providers.ANTHROPIC) {
+  if (agent.provider === Providers.ANTHROPIC || agent.provider === Providers.BEDROCK) {
     graphConfig.streamBuffer = 2000;
   }
 
