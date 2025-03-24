@@ -219,7 +219,7 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const defaultModelSpec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
+      const defaultModelSpec = getDefaultModelSpec(startupConfig);
       if (
         !preset &&
         startupConfig &&

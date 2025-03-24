@@ -57,7 +57,7 @@ export default function ChatRoute() {
     }
 
     if (conversationId === Constants.NEW_CONVO && endpointsQuery.data && modelsQuery.data) {
-      const spec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
+      const spec = getDefaultModelSpec(startupConfig);
 
       newConversation({
         modelsData: modelsQuery.data,
@@ -88,7 +88,7 @@ export default function ChatRoute() {
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
-      const spec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
+      const spec = getDefaultModelSpec(startupConfig);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
