@@ -53,6 +53,7 @@ const SettingsButton = ({
 };
 
 export function EndpointItem({ endpoint }: EndpointItemProps) {
+  const localize = useLocalize();
   const {
     agentsMap,
     assistantsMap,
@@ -98,7 +99,9 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
-        combobox={<input placeholder={`Search ${endpoint.label} models...`} />}
+        combobox={
+          <input placeholder={localize('com_endpoint_search_models', { 0: endpoint.label })} />
+        }
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}

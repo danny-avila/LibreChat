@@ -41,7 +41,7 @@ function ModelSelectorContent() {
   const trigger = (
     <button
       className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-      aria-label="Select model"
+      aria-label={localize('com_endpoint_select_model')}
     >
       {selectedIcon && React.isValidElement(selectedIcon) && (
         <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
@@ -64,7 +64,7 @@ function ModelSelectorContent() {
           });
         }}
         onSearch={(value) => setSearchValue(value)}
-        combobox={<input placeholder="Search models and endpoints..." />}
+        combobox={<input placeholder={localize('com_endpoint_search_models_endpoints')} />}
         trigger={trigger}
       >
         {searchResults ? (
