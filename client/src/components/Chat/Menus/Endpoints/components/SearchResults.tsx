@@ -156,7 +156,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                     <MenuItem
                       key={`${endpoint.value}-${modelId}-search-${i}`}
                       onClick={() => handleSelectModel(endpoint, modelId)}
-                      className="flex w-full cursor-pointer items-center justify-start rounded-xl px-3 py-2 pl-6 text-sm"
+                      className="flex w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 pl-6 text-sm"
                     >
                       <div className="flex items-center gap-2">
                         {endpoint.modelIcons?.[modelId] && (
