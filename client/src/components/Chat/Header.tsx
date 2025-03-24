@@ -39,7 +39,7 @@ export default function Header() {
         <div className="mx-2 flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
           {<ModelSelector interfaceConfig={interfaceConfig} modelSpecs={modelSpecs} />}
-          {interfaceConfig.presets === true && <PresetsMenu />}
+          {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
           {hasAccessToBookmarks === true && <BookmarkMenu />}
           {hasAccessToMultiConvo === true && <AddMultiConvo />}
           {isSmallScreen && (
