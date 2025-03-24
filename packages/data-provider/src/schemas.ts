@@ -1007,6 +1007,8 @@ export const openAISchema = tConversationSchema
     maxContextTokens: true,
     max_tokens: true,
     reasoning_effort: true,
+    thinking: true,
+    thinkingBudget: true,
   })
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
   .catch(() => ({}));
