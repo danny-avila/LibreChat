@@ -37,7 +37,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
     <MenuItem
       key={modelId}
       onClick={() => handleSelectModel(endpoint, modelId ?? '')}
-      className="flex w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 text-sm"
+      className="flex h-8 w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 text-sm"
     >
       <div className="flex items-center gap-2">
         {avatarUrl ? (
