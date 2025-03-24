@@ -1,4 +1,4 @@
-import React from 'react';
+import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { Spinner } from '~/components';
 import { EModelEndpoint } from 'librechat-data-provider';
@@ -36,14 +36,13 @@ const SettingsButton = ({
       }}
       className={cn(
         'flex items-center overflow-visible text-text-primary transition-all duration-300 ease-in-out',
-        'rounded-md hover:bg-gray-100 dark:hover:bg-gray-800',
-        'px-1.5 py-1',
+        'rounded-md hover:bg-surface-secondary',
         className,
       )}
     >
-      <div className="flex w-[28px] items-center whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto">
+      <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto">
         <SettingsIcon className="h-4 w-4 flex-shrink-0" />
-        <span className="ml-1.5 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100">
+        <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100">
           {text}
         </span>
       </div>
@@ -65,12 +64,25 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   const { model: selectedModel, endpoint: selectedEndpoint } = selectedValues;
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
+  const isUserProvided = useMemo(() => endpointRequiresUserKey(endpoint.value), [endpoint.value]);
+
+  const renderIconLabel = () => (
+    <div className="flex items-center gap-2">
+      {endpoint.icon && (
+        <div className="flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+          {endpoint.icon}
+        </div>
+      )}
+      <span className={cn('truncate text-left', isUserProvided ? 'group-hover:w-8' : '')}>
+        {endpoint.label}
+      </span>
+    </div>
+  );
 
   if (endpoint.hasModels) {
     const filteredModels = searchValue
       ? filterModels(endpoint, endpoint.models || [], searchValue, agentsMap, assistantsMap)
       : null;
-
     return (
       <Menu
         key={endpoint.value}
@@ -82,17 +94,10 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}
-            className="group flex w-full cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm"
+            className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1.5 text-sm"
           >
-            <div className="flex items-center gap-2">
-              {endpoint.icon && (
-                <div className="flex items-center justify-center overflow-hidden rounded-full">
-                  {endpoint.icon}
-                </div>
-              )}
-              <span className="truncate text-left">{endpoint.label}</span>
-            </div>
-            {endpointRequiresUserKey(endpoint.value) && (
+            {renderIconLabel()}
+            {isUserProvided && (
               <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
             )}
           </div>
@@ -114,17 +119,10 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       <MenuItem
         key={endpoint.value}
         onClick={() => handleSelectEndpoint(endpoint)}
-        className="flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
+        className="flex h-8 w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
       >
         <div className="group flex w-full min-w-0 items-center justify-between">
-          <div className="flex items-center gap-2">
-            {endpoint.icon && (
-              <div className="flex items-center justify-center overflow-hidden rounded-full p-1">
-                {endpoint.icon}
-              </div>
-            )}
-            <span>{endpoint.label}</span>
-          </div>
+          {renderIconLabel()}
           <div className="flex items-center gap-2">
             {endpointRequiresUserKey(endpoint.value) && (
               <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
