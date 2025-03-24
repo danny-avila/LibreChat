@@ -14,7 +14,7 @@ endpoints:
     # Marginal Agent Custom AI webhook endpoint
     - name: "Marginal Agent"
       apiKey: "${MARGINAL_API_KEY}"
-      baseURL: "https://margial.app.n8n.cloud/webhook/e4a0c4e7-bd8c-4eec-8393-f1ee72b82b97"
+      baseURL: "https://margial.app.n8n.cloud/webhook/c9ba4f9f-9bfd-4ab5-bb2d-54ec9631f63e"
       directEndpoint: true
       models:
         default:
