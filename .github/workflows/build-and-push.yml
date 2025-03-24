@@ -32,4 +32,4 @@ jobs:
           context: .
           file: dev-images.yml
           push: true
-          tags: ghcr.io/${{ github.repository }}/librechat-dev:latest
+          tags: ghcr.io/danieldjupvik/librechat-fork/librechat-dev:latest
