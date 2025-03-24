@@ -1,0 +1,30 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # This runs daily at midnight (UTC); adjust as needed.
+  workflow_dispatch:    # Allows manual triggering of the workflow.
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Ensure full history is fetched.
+
+      - name: Add Upstream Remote and Fetch
+        run: |
+          git remote add upstream https://github.com/danny-avila/LibreChat.git || true
+          git fetch upstream
+
+      - name: Merge Upstream Changes
+        run: |
+          git merge upstream/main --allow-unrelated-histories -m "Sync upstream changes"
+          # Adjust the branch name if the upstream default branch is different.
+
+      - name: Push Changes
+        run: |
+          git push origin HEAD:main
