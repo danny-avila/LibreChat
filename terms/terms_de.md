@@ -1,35 +1,60 @@
-# Nutzungsbedingungen für LibreChat
+# Allgemeine Geschäftsbedingungen für [Ihr Unternehmen/Produktname]
 
-*Gültig ab: 18. Februar 2024*
+*Gültigkeitsdatum: [Datum einfügen]*
 
-Willkommen bei LibreChat, der Informationsseite für die Open-Source-AI-Chat-Plattform, verfügbar unter [https://librechat.ai](https://librechat.ai). Diese Nutzungsbedingungen ("Bedingungen") regeln Ihre Nutzung unserer Webseite sowie der von uns angebotenen Dienste. Mit dem Zugriff auf oder der Nutzung der Webseite erklären Sie sich mit diesen Bedingungen und unserer Datenschutzrichtlinie, die unter [https://librechat.ai/privacy](https://librechat.ai/privacy) abrufbar ist, einverstanden.
+Willkommen bei [Ihre Webseite], erreichbar unter [URL einfügen]. Diese Allgemeinen Geschäftsbedingungen („AGB“) regeln Ihre Nutzung unserer Website und Dienstleistungen. Durch den Zugriff auf oder die Nutzung unserer Website stimmen Sie diesen Bedingungen und unserer Datenschutzerklärung zu, die unter [URL zur Datenschutzerklärung einfügen] verfügbar ist.
 
-## 1. Eigentum
+## Inhaltsverzeichnis
 
-Beim Kauf eines Pakets von LibreChat erhalten Sie das Recht, den Code für den Zugriff auf ein Admin-Panel von LibreChat herunterzuladen und zu verwenden. Obwohl Sie den heruntergeladenen Code besitzen, ist es Ihnen ausdrücklich untersagt, diesen ohne ausdrückliche Genehmigung von LibreChat an Dritte weiterzuverkaufen, weiterzugeben oder anderweitig zu übertragen.
+1. **Akzeptanz der Bedingungen**
+    - Zustimmung durch Nutzung
 
-## 2. Benutzerdaten
+2. **Eigentum und Lizenz**
+    - Gewährte Rechte
+    - Einschränkungen bei Weitergabe oder Weiterverkauf
 
-Wir erheben personenbezogene Daten, wie Ihren Namen, Ihre E-Mail-Adresse und Zahlungsinformationen, wie in unserer Datenschutzrichtlinie beschrieben. Diese Informationen werden erhoben, um unsere Dienste bereitzustellen und zu verbessern, Transaktionen abzuwickeln und mit Ihnen zu kommunizieren.
+3. **Benutzerkonten** (falls zutreffend)
+    - Erstellung und Sicherheit des Kontos
+    - Verantwortlichkeiten des Benutzers
 
-## 3. Erhebung nicht-personenbezogener Daten
+4. **Benutzerdaten**
+    - Erhebung und Nutzung personenbezogener Daten
+    - Hinweis auf Datenschutzerklärung
 
-Die Webseite verwendet Cookies, um die Benutzererfahrung zu verbessern, die Nutzung der Seite zu analysieren und bestimmte Funktionalitäten zu ermöglichen. Durch die Nutzung der Webseite stimmen Sie der Verwendung von Cookies gemäß unserer Datenschutzrichtlinie zu.
+5. **Cookies und nicht-personenbezogene Daten**
+    - Nutzung und Zustimmung
 
-## 4. Nutzung der Webseite
+6. **Richtlinien zur akzeptablen Nutzung**
+    - Zulässige und verbotene Aktivitäten
+    - Konsequenzen bei Verstößen
 
-Sie verpflichten sich, die Webseite ausschließlich für rechtmäßige Zwecke zu nutzen und in einer Weise, die nicht die Rechte anderer beeinträchtigt, einschränkt oder deren Nutzung und Freude an der Webseite behindert. Zu den verbotenen Verhaltensweisen zählen das Belästigen oder das Zufügen von Unannehmlichkeiten, das Übermitteln obszöner oder anstößiger Inhalte sowie das Stören des normalen Dialogflusses innerhalb der Webseite.
+7. **Links und Dienste Dritter**
+    - Haftungsausschluss für Inhalte Dritter
 
-## 5. Anwendbares Recht
+8. **Rechte am geistigen Eigentum**
+    - Eigentum am Inhalt
+    - Einschränkungen der Nutzung geistigen Eigentums
 
-Diese Bedingungen unterliegen den Gesetzen der Vereinigten Staaten und werden in Übereinstimmung mit diesen ausgelegt, ohne dass Prinzipien des Kollisionsrechts Anwendung finden.
+9. **Gewährleistungsausschluss**
+    - Haftungsbeschränkungen
 
-## 6. Änderungen der Bedingungen
+10. **Freistellung**
+    - Verpflichtungen des Nutzers zur Freistellung des Unternehmens
 
-Wir behalten uns das Recht vor, diese Bedingungen jederzeit zu ändern. Wir werden die Nutzer per E-Mail über etwaige Änderungen informieren. Ihre fortgesetzte Nutzung der Webseite nach Bekanntgabe solcher Änderungen gilt als Zustimmung zu den geänderten Bedingungen.
+11. **Haftungsbeschränkung**
+    - Begrenzung der Haftung und Ausschlüsse
 
-## 7. Kontaktinformationen
+12. **Kündigung**
+    - Gründe für eine Kündigung
+    - Auswirkungen einer Kündigung
 
-Wenn Sie Fragen zu diesen Bedingungen haben, kontaktieren Sie uns bitte unter [contact@librechat.ai](mailto:contact@librechat.ai).
+13. **Geltendes Recht und Gerichtsstand**
+    - Anwendbares Recht und Gerichtsstand
 
-Durch die Nutzung der Webseite bestätigen Sie, dass Sie diese Nutzungsbedingungen gelesen haben und an diese gebunden sind.
+14. **Änderungen dieser Bedingungen**
+    - Benachrichtigung und Zustimmung zu Änderungen
+
+15. **Kontaktinformationen**
+    - Kontaktmöglichkeiten bei Fragen
+
+Durch den Zugriff auf und die Nutzung von [Ihre Webseite/Dienstleistung] erkennen Sie an, dass Sie diese Allgemeinen Geschäftsbedingungen gelesen und verstanden haben und ihnen zustimmen.

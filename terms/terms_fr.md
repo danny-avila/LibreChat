@@ -1,35 +1,60 @@
-# Conditions Générales pour LibreChat
+# Conditions Générales pour [Votre Entreprise/Nom du Produit]
 
-*Date d'entrée en vigueur : 18 février 2024*
+*Date d'entrée en vigueur : [Insérer la date]*
 
-Bienvenue sur LibreChat, le site d'information dédié à la plateforme de chat IA open source, accessible à l'adresse [https://librechat.ai](https://librechat.ai). Les présentes Conditions d'Utilisation ("Conditions") régissent votre usage de notre site et des services que nous proposons. En accédant ou en utilisant le site, vous acceptez d'être lié par ces Conditions ainsi que par notre Politique de Confidentialité, disponible à [https://librechat.ai/privacy](https://librechat.ai/privacy).
+Bienvenue sur [Votre site web], accessible à l'adresse [Insérer URL]. Ces Conditions Générales (« CG ») régissent votre utilisation de notre site web et de nos services. En accédant ou en utilisant notre site web, vous acceptez ces conditions ainsi que notre Politique de confidentialité disponible à l'adresse [Insérer URL vers la Politique de confidentialité].
 
-## 1. Propriété
+## Table des matières
 
-Lors de l'achat d'un package auprès de LibreChat, vous obtenez le droit de télécharger et d'utiliser le code permettant d'accéder à un panneau d'administration de LibreChat. Bien que vous soyez propriétaire du code téléchargé, il vous est expressément interdit de revendre, redistribuer ou transférer ce code à des tiers sans l'autorisation explicite de LibreChat.
+1. **Acceptation des conditions**
+    - Accord des conditions par utilisation
 
-## 2. Données Utilisateurs
+2. **Propriété et Licence**
+    - Droits accordés
+    - Restrictions sur la redistribution ou la revente
 
-Nous collectons des données personnelles telles que votre nom, votre adresse e-mail et vos informations de paiement, comme indiqué dans notre Politique de Confidentialité. Ces informations sont collectées afin de fournir et d'améliorer nos services, de traiter les transactions et de communiquer avec vous.
+3. **Comptes utilisateur** (le cas échéant)
+    - Création et sécurité du compte
+    - Responsabilités de l'utilisateur
 
-## 3. Collecte de Données Non-Personnelles
+4. **Données Utilisateur**
+    - Collecte et utilisation des données personnelles
+    - Référence à la Politique de confidentialité
 
-Le site utilise des cookies pour améliorer l'expérience utilisateur, analyser l'utilisation du site et faciliter certaines fonctionnalités. En utilisant le site, vous consentez à l'utilisation des cookies conformément à notre Politique de Confidentialité.
+5. **Cookies et données non personnelles**
+    - Utilisation et consentement
 
-## 4. Utilisation du Site
+6. **Politique d'utilisation acceptable**
+    - Activités autorisées et interdites
+    - Conséquences en cas de violations
 
-Vous vous engagez à utiliser le site uniquement à des fins légales et d'une manière qui ne porte pas atteinte aux droits d'autrui, ne restreint pas ou n'entrave pas l'utilisation et le plaisir que d'autres peuvent avoir du site. Les comportements interdits incluent le harcèlement, la création de désagréments, la transmission de contenus obscènes ou offensants, ainsi que la perturbation du déroulement normal des échanges sur le site.
+7. **Liens et services tiers**
+    - Exclusion de responsabilité pour les contenus tiers
 
-## 5. Loi Applicable
+8. **Droits de propriété intellectuelle**
+    - Propriété du contenu
+    - Restrictions sur l'utilisation de la propriété intellectuelle
 
-Les présentes Conditions sont régies et interprétées conformément aux lois des États-Unis, sans égard aux principes de conflits de lois.
+9. **Exclusion de garanties**
+    - Limitations de responsabilité
 
-## 6. Modifications des Conditions
+10. **Indemnisation**
+    - Obligations de l'utilisateur à indemniser l'entreprise
 
-Nous nous réservons le droit de modifier ces Conditions à tout moment. Les utilisateurs seront informés des modifications par e-mail. Votre utilisation continue du site après notification des modifications vaudra acceptation de ces changements.
+11. **Limitation de responsabilité**
+    - Plafond de responsabilité et exclusions
 
-## 7. Informations de Contact
+12. **Résiliation**
+    - Motifs de résiliation
+    - Effets de la résiliation
 
-Si vous avez des questions concernant ces Conditions, veuillez nous contacter à [contact@librechat.ai](mailto:contact@librechat.ai).
+13. **Loi applicable et juridiction compétente**
+    - Lois applicables et juridiction
 
-En utilisant le site, vous reconnaissez avoir lu ces Conditions d'Utilisation et acceptez d'en être lié.
+14. **Modifications des présentes conditions**
+    - Notification et acceptation des modifications
+
+15. **Informations de contact**
+    - Comment nous contacter en cas de questions
+
+En accédant et en utilisant [Votre site web/service], vous reconnaissez avoir lu, compris et accepté d'être lié par ces Conditions Générales.
