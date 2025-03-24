@@ -67,7 +67,6 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
           'bg-surface-secondary px-3 py-2 text-sm text-text-primary shadow-lg',
           searchable && 'p-0',
         )}
-        style={{ '--menu-width': parent ? 'auto' : '220px' } as React.CSSProperties}
       >
         <SearchableContext.Provider value={searchable}>
           {searchable ? (
