@@ -1,7 +1,6 @@
 const fetch = require('node-fetch');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logger } = require('~/config');
-const { URL } = require('url');
 
 // Microsoft SDK
 const { Client: MicrosoftGraphClient } = require('@microsoft/microsoft-graph-client');
@@ -15,7 +14,7 @@ class BaseDataMapper {
    * @param {string} accessToken - The access token to authenticate the request.
    * @param {string|Array<string>} customQuery - Either a full query string (if it contains operators)
    *   or an array of fields to select.
-   * @returns {Promise<Map<string, any>>} A promise that resolves to a map of custom fields.
+   * @returns {Promise<Record<string, unknown>>} A promise that resolves to an object of custom fields.
    * @throws {Error} Throws an error if not implemented in the subclass.
    */
   async mapCustomData(accessToken, customQuery) {
@@ -83,7 +82,7 @@ class MicrosoftDataMapper extends BaseDataMapper {
    *
    * @param {string} accessToken - The access token to authenticate the request.
    * @param {string|Array<string>} customQuery - Fields to select from the Microsoft Graph API.
-   * @returns {Promise<Map<string, any>>} A promise that resolves to a map of custom fields.
+   * @returns {Promise<Record<string, unknown>>} A promise that resolves to an object of custom fields.
    */
   async mapCustomData(accessToken, customQuery) {
     try {
@@ -91,7 +90,7 @@ class MicrosoftDataMapper extends BaseDataMapper {
 
       if (!customQuery) {
         logger.warn('[MicrosoftDataMapper] No customQuery provided.');
-        return new Map();
+        return {};
       }
 
       // Convert customQuery to a comma-separated string if it's an array
@@ -99,25 +98,24 @@ class MicrosoftDataMapper extends BaseDataMapper {
 
       if (!fields) {
         logger.warn('[MicrosoftDataMapper] No fields specified in customQuery.');
-        return new Map();
+        return {};
       }
 
-      const result = await this.client
-        .api('/me')
-        .select(fields)
-        .get();
+      const result = await this.client.api('/me').select(fields).get();
 
-      const cleanedData = this.cleanData(result);
-      return new Map(Object.entries(cleanedData));
+      // Clean and return the data as a plain object
+      return this.cleanData(result);
     } catch (error) {
       // Handle specific Microsoft Graph errors if needed
-      logger.error(`[MicrosoftDataMapper] Error fetching user data: ${error.message}`, { stack: error.stack });
-      return new Map();
+      logger.error(`[MicrosoftDataMapper] Error fetching user data: ${error.message}`, {
+        stack: error.stack,
+      });
+      return {};
     }
   }
 
   /**
-   * Recursively remove all keys starting with @odata. from an object and convert Maps.
+   * Recursively remove all keys starting with @odata. from an object or array.
    *
    * @param {object|Array} obj - The object or array to clean.
    * @returns {object|Array} - The cleaned object or array.

@@ -25,7 +25,9 @@ try {
  * @returns {Promise<Buffer|string>}
  */
 const downloadImage = async (url, accessToken) => {
-  if (!url) {return '';}
+  if (!url) {
+    return '';
+  }
 
   const options = {
     method: 'GET',
@@ -82,8 +84,12 @@ const getFullName = (userinfo) => {
  * @returns {string} The processed input as a string suitable for a username.
  */
 const convertToUsername = (input, defaultValue = '') => {
-  if (typeof input === 'string') {return input;}
-  if (Array.isArray(input)) {return input.join('_');}
+  if (typeof input === 'string') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.join('_');
+  }
   return defaultValue;
 };
 
@@ -95,7 +101,9 @@ const convertToUsername = (input, defaultValue = '') => {
 const safeDecode = (token) => {
   try {
     const decoded = jwtDecode(token);
-    if (decoded && typeof decoded === 'object') {return decoded;}
+    if (decoded && typeof decoded === 'object') {
+      return decoded;
+    }
     logger.error('[openidStrategy] Decoded token is not an object.');
   } catch (error) {
     logger.error('[openidStrategy] Error decoding token:', error);
@@ -110,9 +118,13 @@ const safeDecode = (token) => {
  * @returns {string[]}
  */
 const extractRolesFromToken = (decodedToken, parameterPath) => {
-  if (!decodedToken) {return [];}
-  if (!parameterPath) {return [];}
-  const roles = parameterPath.split('.').reduce((obj, key) => (obj?.[key] ?? null), decodedToken);
+  if (!decodedToken) {
+    return [];
+  }
+  if (!parameterPath) {
+    return [];
+  }
+  const roles = parameterPath.split('.').reduce((obj, key) => obj?.[key] ?? null, decodedToken);
   if (!Array.isArray(roles)) {
     logger.error('[openidStrategy] Roles extracted from token are not in array format.');
     return [];
@@ -128,12 +140,11 @@ const extractRolesFromToken = (decodedToken, parameterPath) => {
  * @returns {Promise<Object>} The updated user object.
  */
 const updateUserAvatar = async (user, pictureUrl, accessToken) => {
-  // The type annotation /** @type {string | undefined} */ is maintained via the JSDoc above.
-  if (!pictureUrl || (user.avatar && user.avatar.includes('manual=true'))) {return user;}
+  if (!pictureUrl || (user.avatar && user.avatar.includes('manual=true'))) {
+    return user;
+  }
 
-  const fileName = crypto
-    ? (await hashToken(user.openidId)) + '.png'
-    : `${user.openidId}.png`;
+  const fileName = crypto ? (await hashToken(user.openidId)) + '.png' : `${user.openidId}.png`;
 
   const imageBuffer = await downloadImage(pictureUrl, accessToken);
   if (imageBuffer) {
@@ -184,9 +195,7 @@ async function setupOpenId() {
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
     const adminRolesEnv = process.env.OPENID_ADMIN_ROLE;
-    const adminRoles = adminRolesEnv
-      ? adminRolesEnv.split(',').map((role) => role.trim())
-      : [];
+    const adminRoles = adminRolesEnv ? adminRolesEnv.split(',').map((role) => role.trim()) : [];
 
     const openidLogin = new OpenIDStrategy(
       {
@@ -209,7 +218,8 @@ async function setupOpenId() {
             : convertToUsername(userinfo.username || userinfo.given_name || userinfo.email);
 
           // Use the token specified by configuration to extract roles.
-          const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
+          const token =
+            requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
           const decodedToken = safeDecode(token);
           const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
 
@@ -223,10 +233,12 @@ async function setupOpenId() {
           // Determine system role.
           const isAdmin = tokenBasedRoles.some((role) => adminRoles.includes(role));
           const assignedRole = isAdmin ? SystemRoles.ADMIN : SystemRoles.USER;
-          logger.debug(`[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`);
+          logger.debug(
+            `[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`,
+          );
 
           // Map custom OpenID data if configured.
-          let customOpenIdData = new Map();
+          let customOpenIdData = {};
           if (process.env.OPENID_CUSTOM_DATA) {
             const dataMapper = OpenIdDataMapper.getMapper(
               process.env.OPENID_PROVIDER.toLowerCase(),
@@ -236,7 +248,7 @@ async function setupOpenId() {
               process.env.OPENID_CUSTOM_DATA,
             );
             if (tokenBasedRoles.length) {
-              customOpenIdData.set('roles', tokenBasedRoles);
+              customOpenIdData.roles = tokenBasedRoles;
             } else {
               logger.warn('[openidStrategy] tokenBasedRoles is missing or invalid.');
             }
