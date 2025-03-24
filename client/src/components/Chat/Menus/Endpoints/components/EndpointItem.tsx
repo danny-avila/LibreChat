@@ -36,7 +36,7 @@ const SettingsButton = ({
       }}
       className={cn(
         'flex items-center overflow-visible text-text-primary transition-all duration-300 ease-in-out',
-        'rounded-md hover:bg-surface-secondary',
+        'rounded-md px-1 hover:bg-surface-secondary',
         className,
       )}
     >
@@ -94,7 +94,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}
-            className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1.5 text-sm"
+            className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm"
           >
             {renderIconLabel()}
             {isUserProvided && (
