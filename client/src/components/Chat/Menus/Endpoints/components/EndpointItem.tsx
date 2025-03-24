@@ -111,15 +111,17 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
           </div>
         }
       >
-        {endpoint.value === EModelEndpoint.assistants && endpoint.models === undefined ? (
-          <div className="flex items-center justify-center p-2">
-            <Spinner />
-          </div>
-        ) : filteredModels ? (
-          renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
-        ) : (
-          endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)
-        )}
+        {(endpoint.value === EModelEndpoint.assistants ||
+          endpoint.value === EModelEndpoint.azureAssistants) &&
+        endpoint.models === undefined ? (
+            <div className="flex items-center justify-center p-2">
+              <Spinner />
+            </div>
+          ) : filteredModels ? (
+            renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
+          ) : (
+            endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)
+          )}
       </Menu>
     );
   } else {

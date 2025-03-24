@@ -44,8 +44,13 @@ export function filterItems<
           return typeof agentName === 'string' && agentName.toLowerCase().includes(searchTermLower);
         }
 
-        if (item.value === EModelEndpoint.assistants && assistantsMap && modelId in assistantsMap) {
-          const assistant = assistantsMap[modelId][EModelEndpoint.assistants];
+        if (
+          (item.value === EModelEndpoint.assistants ||
+            item.value === EModelEndpoint.azureAssistants) &&
+          assistantsMap
+        ) {
+          const endpoint = item.value;
+          const assistant = assistantsMap[endpoint][modelId];
           if (assistant && typeof assistant.name === 'string') {
             return assistant.name.toLowerCase().includes(searchTermLower);
           }
@@ -78,14 +83,14 @@ export function filterModels(
     if (endpoint.value === EModelEndpoint.agents && agentsMap && agentsMap[modelId]) {
       modelName = agentsMap[modelId].name || modelId;
     } else if (
-      endpoint.value === EModelEndpoint.assistants &&
+      (endpoint.value === EModelEndpoint.assistants ||
+        endpoint.value === EModelEndpoint.azureAssistants) &&
       assistantsMap &&
-      assistantsMap[modelId]
+      assistantsMap[endpoint.value]
     ) {
+      const assistant = assistantsMap[endpoint.value][modelId];
       modelName =
-        typeof assistantsMap[modelId].name === 'string'
-          ? (assistantsMap[modelId].name as string)
-          : modelId;
+        typeof assistant.name === 'string' && assistant.name ? (assistant.name as string) : modelId;
     }
 
     return modelName.toLowerCase().includes(searchTermLower);
