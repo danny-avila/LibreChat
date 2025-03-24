@@ -1,0 +1,36 @@
+# Start with the official LibreChat development image
+FROM ghcr.io/danny-avila/librechat-dev:latest as base
+
+# Use the same working directory and user as original
+WORKDIR /app
+USER node
+
+# Copy only package files first to leverage Docker cache
+COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node client/package.json client/package-lock.json ./client/
+
+# Install only client dependencies
+RUN npm ci --prefix client --only=production
+
+# Copy only client source files with correct ownership
+COPY --chown=node:node client/public ./client/public
+COPY --chown=node:node client/src ./client/src
+COPY --chown=node:node client/index.html client/vite.config.ts client/tailwind.config.js client/postcss.config.js ./client/
+
+# Build the frontend with the same settings as original
+RUN NODE_OPTIONS="--max-old-space-size=2048" npm run frontend:build && \
+    npm cache clean --force
+
+# Final image - just update the client build in the original image
+FROM ghcr.io/danny-avila/librechat-dev:latest
+
+# Ensure the image directory exists with correct permissions
+RUN mkdir -p /app/client/public/images
+
+# Copy the built frontend files to replace the existing ones
+COPY --from=base /app/client/dist /app/client/dist
+
+# The rest of the image (backend, etc.) remains unchanged from the base image
+EXPOSE 3080
+ENV HOST=0.0.0.0
+CMD ["npm", "run", "backend"]

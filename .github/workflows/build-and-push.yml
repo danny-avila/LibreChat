@@ -1,10 +1,19 @@
-name: Build and Push Docker Image
+name: Build and Push LibreChat Dev Image
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'client/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile.frontend'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -33,12 +42,21 @@ jobs:
         run: |
           cp .env.example .env
 
-      - name: Build and Push Image
+      - name: Cache npm dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Build and Push Frontend-only Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.frontend
           push: true
           tags: ghcr.io/danieldjupvik/librechat-dev:latest
-          platforms: linux/amd64,linux/arm64
-          target: node
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
