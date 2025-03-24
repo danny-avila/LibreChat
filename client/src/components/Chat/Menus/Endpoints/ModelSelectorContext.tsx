@@ -3,8 +3,8 @@ import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librecha
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
-import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useEndpoints, useSelectorEffects, useKeyDialog } from '~/hooks';
+import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { filterItems } from './utils';
 
@@ -54,10 +54,15 @@ export function ModelSelectorProvider({
   interfaceConfig,
 }: ModelSelectorProviderProps) {
   const agentsMap = useAgentsMapContext();
-  const { conversation, newConversation } = useChatContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints();
+  const { conversation, newConversation } = useChatContext();
+  const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+    agentsMap,
+    assistantsMap,
+    endpointsConfig,
+    interfaceConfig,
+  });
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
     modelSpecs,

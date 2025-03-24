@@ -6,19 +6,34 @@ import {
   Permissions,
   alternateName,
 } from 'librechat-data-provider';
-import type { Agent, Assistant } from 'librechat-data-provider';
-import { useChatContext, useAgentsMapContext } from '~/Providers';
-import { useHasAccess, useAssistantListMap } from '~/hooks';
+import type {
+  Agent,
+  Assistant,
+  TEndpointsConfig,
+  TAgentsMap,
+  TInterfaceConfig,
+  TAssistantsMap,
+} from 'librechat-data-provider';
+import type { ExtendedEndpoint } from '~/common';
 import { mapEndpoints, getIconKey, getEndpointField } from '~/utils';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { ExtendedEndpoint } from '~/common';
+import { useChatContext } from '~/Providers';
+import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
 
-export const useEndpoints = () => {
+export const useEndpoints = ({
+  agentsMap,
+  assistantsMap,
+  endpointsConfig,
+  interfaceConfig,
+}: {
+  agentsMap?: TAgentsMap;
+  assistantsMap?: TAssistantsMap;
+  endpointsConfig: TEndpointsConfig;
+  interfaceConfig: TInterfaceConfig;
+}) => {
   const modelsQuery = useGetModelsQuery();
   const { conversation } = useChatContext();
-  const agentsMapResult = useAgentsMapContext();
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
 
   const { endpoint } = conversation ?? {};
@@ -28,35 +43,26 @@ export const useEndpoints = () => {
     permission: Permissions.USE,
   });
 
-  const agentsMap = useMemo(() => {
-    const result: Record<string, Agent> = {};
-    if (agentsMapResult) {
-      Object.entries(agentsMapResult).forEach(([key, agent]) => {
-        if (agent !== undefined) {
-          result[key] = agent;
-        }
-      });
-    }
-    return result;
-  }, [agentsMapResult]);
-
   const agents = useMemo(
     () =>
-      Object.values(agentsMap).filter(
+      Object.values(agentsMap ?? {}).filter(
         (agent): agent is Agent & { name: string } =>
           agent !== undefined && 'id' in agent && 'name' in agent && agent.name !== null,
       ),
     [agentsMap],
   );
 
-  const assistantListMap = useAssistantListMap((res) =>
-    res.data.map(({ id, name, metadata, model }) => ({ id, name, metadata, model })),
+  const assistants: Assistant[] = useMemo(
+    () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),
+    [endpoint, assistantsMap],
   );
 
-  const assistants = useMemo(
-    () => assistantListMap[endpoint as string] ?? [],
-    [endpoint, assistantListMap],
+  const azureAssistants: Assistant[] = useMemo(
+    () => Object.values(assistantsMap?.[EModelEndpoint.azureAssistants] ?? {}),
+    [endpoint, assistantsMap],
   );
+
+  console.log(assistantsMap, azureAssistants);
 
   const filteredEndpoints = useMemo(() => {
     const endpointsCopy = [...endpoints];
@@ -118,20 +124,34 @@ export const useEndpoints = () => {
       }
 
       // Handle assistants case
-      if (ep === EModelEndpoint.assistants && assistants.length > 0) {
+      else if (ep === EModelEndpoint.assistants && assistants.length > 0) {
         result.models = assistants.map((assistant: { id: string }) => assistant.id);
         result.assistantNames = assistants.reduce(
-          (acc: Record<string, string>, assistant: { id: string; name: string | null }) => {
+          (acc: Record<string, string>, assistant: Assistant) => {
             acc[assistant.id] = assistant.name || '';
             return acc;
           },
           {},
         );
         result.modelIcons = assistants.reduce(
-          (
-            acc: Record<string, string | undefined>,
-            assistant: { id: string; metadata?: { avatar?: string } },
-          ) => {
+          (acc: Record<string, string | undefined>, assistant: Assistant) => {
+            acc[assistant.id] = assistant.metadata?.avatar;
+            return acc;
+          },
+          {},
+        );
+      } else if (ep === EModelEndpoint.azureAssistants && azureAssistants.length > 0) {
+        result.models = azureAssistants.map((assistant: { id: string }) => assistant.id);
+        result.assistantNames = azureAssistants.reduce(
+          (acc: Record<string, string>, assistant: Assistant) => {
+            acc[assistant.id] = assistant.name || '';
+            return acc;
+          },
+          {},
+        );
+        console.log(result.assistantNames);
+        result.modelIcons = azureAssistants.reduce(
+          (acc: Record<string, string | undefined>, assistant: Assistant) => {
             acc[assistant.id] = assistant.metadata?.avatar;
             return acc;
           },
@@ -140,7 +160,7 @@ export const useEndpoints = () => {
       }
 
       // For other endpoints with models from the modelsQuery
-      if (
+      else if (
         ep !== EModelEndpoint.agents &&
         ep !== EModelEndpoint.assistants &&
         (modelsQuery.data?.[ep]?.length ?? 0) > 0

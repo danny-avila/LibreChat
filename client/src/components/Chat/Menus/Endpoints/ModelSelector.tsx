@@ -52,12 +52,6 @@ function ModelSelectorContent() {
     </button>
   );
 
-  console.log(
-    'searchResults, modelSpecs, mappedEndpoints',
-    searchResults,
-    modelSpecs,
-    mappedEndpoints,
-  );
   return (
     <div className="relative flex w-full max-w-md flex-col items-center gap-2">
       <Menu
