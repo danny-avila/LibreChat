@@ -22,7 +22,7 @@ endpoints:
         fetch: false
       titleConvo: true
       summarize: false
-      forcePrompt: true
+      forcePrompt: false
       disableHistory: true
       modelDisplayLabel: "Marginal Firma Agent"
       iconURL: "/assets/logo.svg"
