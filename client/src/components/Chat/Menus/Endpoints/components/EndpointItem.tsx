@@ -37,14 +37,14 @@ const SettingsButton = ({
       }}
       className={cn(
         'flex items-center overflow-visible text-text-primary transition-all duration-300 ease-in-out',
-        'rounded-md px-1 hover:bg-surface-secondary',
+        'group/button rounded-md px-1 hover:bg-surface-secondary focus:bg-surface-secondary',
         className,
       )}
       aria-label={`${text} ${endpoint.label}`}
     >
-      <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto">
+      <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto group-focus/button:w-auto">
         <SettingsIcon className="h-4 w-4 flex-shrink-0" />
-        <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100">
+        <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100 group-focus/button:max-w-[100px] group-focus/button:opacity-100">
           {text}
         </span>
       </div>
@@ -75,7 +75,12 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
           {endpoint.icon}
         </div>
       )}
-      <span className={cn('truncate text-left', isUserProvided ? 'group-hover:w-24' : '')}>
+      <span
+        className={cn(
+          'truncate text-left',
+          isUserProvided ? 'group-hover:w-24 group-focus:w-24' : '',
+        )}
+      >
         {endpoint.label}
       </span>
     </div>
