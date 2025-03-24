@@ -65,7 +65,7 @@ export default function Mention({
       setSearchValue('');
       setOpen(false);
       setShowMentionPopover(false);
-      onSelectMention(mention);
+      onSelectMention?.(mention);
 
       if (textAreaRef.current) {
         removeCharIfLast(textAreaRef.current, commandChar);
@@ -162,7 +162,7 @@ export default function Mention({
       <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
           // The user expects focus to transition to the input field when the popover is opened
-
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           ref={inputRef}
           placeholder={localize(placeholder)}
