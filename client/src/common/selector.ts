@@ -1,11 +1,5 @@
 import React from 'react';
-import {
-  EModelEndpoint,
-  TModelSpec,
-  TInterfaceConfig,
-  TAgentsMap,
-  TAssistantsMap,
-} from 'librechat-data-provider';
+import { TModelSpec, TInterfaceConfig } from 'librechat-data-provider';
 
 export interface Endpoint {
   value: string;

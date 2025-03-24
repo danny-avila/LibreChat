@@ -1,11 +1,23 @@
-import React, { createContext, useContext, useState, useMemo, startTransition } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useMemo,
+  useEffect,
+  startTransition,
+} from 'react';
+import {
+  EModelEndpoint,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import type { Endpoint, SelectedValues } from '~/common';
 import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
+import { useEndpoints, useSelectorEffects } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { Endpoint, SelectedValues } from './types';
-import { useEndpoints } from '~/hooks';
 import { filterItems } from './utils';
 
 interface ModelSelectorContextType {
@@ -73,6 +85,13 @@ export function ModelSelectorProvider({
     model: conversation?.model || '',
     modelSpec: conversation?.spec || '',
   });
+  useSelectorEffects({
+    agentsMap,
+    conversation,
+    assistantsMap,
+    setSelectedValues,
+  });
+
   const [searchValue, setSearchValueState] = useState('');
   const [endpointSearchValues, setEndpointSearchValues] = useState<Record<string, string>>({});
 
