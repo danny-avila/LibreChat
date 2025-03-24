@@ -141,9 +141,9 @@ const MessageRender = memo(
         {isLatestCard === true && (
           <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary"></div>
         )}
-        <div className="relative flex flex-shrink-0 flex-col items-end">
+        <div className="relative flex flex-shrink-0 flex-col items-end pt-0.5">
           <div>
-            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full pt-0.5">
+            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
               <MessageIcon iconData={iconData} assistant={assistant} />
             </div>
           </div>
