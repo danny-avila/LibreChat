@@ -62,17 +62,19 @@ export const useEndpoints = ({
     [endpoint, assistantsMap],
   );
 
-  console.log(assistantsMap, azureAssistants);
-
   const filteredEndpoints = useMemo(() => {
-    const endpointsCopy = [...endpoints];
-    if (!hasAgentAccess) {
-      const index = endpointsCopy.indexOf(EModelEndpoint.agents);
-      if (index > -1) {
-        endpointsCopy.splice(index, 1);
-      }
+    if (!interfaceConfig.modelSelect) {
+      return [];
     }
-    return endpointsCopy;
+    const result: EModelEndpoint[] = [];
+    for (let i = 0; i < endpoints.length; i++) {
+      if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
+        continue;
+      }
+      result.push(endpoints[i]);
+    }
+
+    return result;
   }, [endpoints, hasAgentAccess]);
 
   const endpointRequiresUserKey = useCallback(
