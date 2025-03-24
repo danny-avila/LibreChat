@@ -13,6 +13,7 @@ export interface IUser extends Document {
   googleId?: string;
   facebookId?: string;
   openidId?: string;
+  customOpenIdData?: Record<string, unknown>;
   ldapId?: string;
   githubId?: string;
   discordId?: string;
@@ -111,6 +112,10 @@ const User = new Schema<IUser>(
       type: String,
       unique: true,
       sparse: true,
+    },
+    customOpenIdData: {
+      type: Schema.Types.Mixed,
+      default: undefined,
     },
     ldapId: {
       type: String,

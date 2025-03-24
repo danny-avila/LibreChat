@@ -52,6 +52,7 @@
     "@librechat/agents": "^2.3.94",
     "@librechat/data-schemas": "*",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",
     "cohere-ai": "^7.9.1",
