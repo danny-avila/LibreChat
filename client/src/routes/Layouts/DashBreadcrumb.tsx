@@ -17,10 +17,10 @@ import {
 } from '~/components/ui';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
-import { RightPanel } from '../../components/Prompts/RightPanel';
+// import { RightPanel } from '../../components/Prompts/RightPanel';
 import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
-import { PromptsEditorMode } from '~/common';
+// import { PromptsEditorMode } from '~/common';
 import store from '~/store';
 
 const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;

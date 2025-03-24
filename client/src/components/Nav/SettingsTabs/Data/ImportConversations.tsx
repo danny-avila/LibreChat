@@ -82,7 +82,7 @@ function ImportConversations() {
         onClick={handleImportClick}
         onKeyDown={handleKeyDown}
         disabled={!allowImport}
-        aria-label={localize('com_ui_import_conversation')}
+        aria-label={localize('com_ui_import')}
         className="btn btn-neutral relative"
       >
         {allowImport ? (
@@ -90,7 +90,7 @@ function ImportConversations() {
         ) : (
           <Spinner className="mr-1 w-4" />
         )}
-        <span>{localize('com_ui_import_conversation')}</span>
+        <span>{localize('com_ui_import')}</span>
       </button>
       <input
         ref={fileInputRef}

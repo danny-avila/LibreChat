@@ -23,6 +23,7 @@ type TStepEvent = {
   event: string;
   data:
     | Agents.MessageDeltaEvent
+    | Agents.AgentUpdate
     | Agents.RunStep
     | Agents.ToolEndEvent
     | {
@@ -87,6 +88,17 @@ export default function useStepHandler({
       if (contentPart.tool_call_ids != null) {
         update.tool_call_ids = contentPart.tool_call_ids;
       }
+      updatedContent[index] = update;
+    } else if (
+      contentType.startsWith(ContentTypes.AGENT_UPDATE) &&
+      ContentTypes.AGENT_UPDATE in contentPart &&
+      contentPart.agent_update
+    ) {
+      const update: Agents.AgentUpdate = {
+        type: ContentTypes.AGENT_UPDATE,
+        agent_update: contentPart.agent_update,
+      };
+
       updatedContent[index] = update;
     } else if (
       contentType.startsWith(ContentTypes.THINK) &&
@@ -191,29 +203,20 @@ export default function useStepHandler({
           });
         }
       } else if (event === 'on_agent_update') {
-        const { runId, message } = data as { runId?: string; message: string };
-        const responseMessageId = runId ?? '';
+        const { agent_update } = data as Agents.AgentUpdate;
+        const responseMessageId = agent_update.runId || '';
         if (!responseMessageId) {
           console.warn('No message id found in agent update event');
           return;
         }
 
-        const responseMessage = messages[messages.length - 1] as TMessage;
-
-        const response = {
-          ...responseMessage,
-          parentMessageId: userMessage.messageId,
-          conversationId: userMessage.conversationId,
-          messageId: responseMessageId,
-          content: [
-            {
-              type: ContentTypes.TEXT,
-              text: message,
-            },
-          ],
-        } as TMessage;
-
-        setMessages([...messages.slice(0, -1), response]);
+        const response = messageMap.current.get(responseMessageId);
+        if (response) {
+          const updatedResponse = updateContent(response, agent_update.index, data);
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
       } else if (event === 'on_message_delta') {
         const messageDelta = data as Agents.MessageDeltaEvent;
         const runStep = stepMap.current.get(messageDelta.id);

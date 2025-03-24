@@ -106,7 +106,7 @@ export type IconsRecord = {
 export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
-  title: string;
+  title: TranslationKeys;
   label?: string;
   icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
@@ -131,6 +131,7 @@ export interface DataColumnMeta {
 }
 
 export enum Panel {
+  advanced = 'advanced',
   builder = 'builder',
   actions = 'actions',
   model = 'model',
@@ -181,6 +182,7 @@ export type AgentPanelProps = {
   activePanel?: string;
   action?: t.Action;
   actions?: t.Action[];
+  createMutation: UseMutationResult<t.Agent, Error, t.AgentCreateParams>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   endpointsConfig?: t.TEndpointsConfig;
@@ -370,12 +372,12 @@ export type TDangerButtonProps = {
   showText?: boolean;
   mutation?: UseMutationResult<unknown>;
   onClick: () => void;
-  infoTextCode: string;
-  actionTextCode: string;
+  infoTextCode: TranslationKeys;
+  actionTextCode: TranslationKeys;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
-  infoDescriptionCode?: string;
-  confirmActionTextCode?: string;
+  infoDescriptionCode?: TranslationKeys;
+  confirmActionTextCode?: TranslationKeys;
 };
 
 export type TDialogProps = {
@@ -399,7 +401,7 @@ export type TAuthContext = {
   isAuthenticated: boolean;
   error: string | undefined;
   login: (data: t.TLoginUser) => void;
-  logout: () => void;
+  logout: (redirect?: string) => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
   roles?: Record<string, t.TRole | null | undefined>;
 };
@@ -483,6 +485,7 @@ export interface ExtendedFile {
   attached?: boolean;
   embedded?: boolean;
   tool_resource?: string;
+  metadata?: t.TFile['metadata'];
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

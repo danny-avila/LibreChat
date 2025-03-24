@@ -49,6 +49,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
   const encodingMethods = {};
   const result = {
+    text: '',
     files: [],
     image_urls: [],
   };
@@ -59,6 +60,9 @@ async function encodeAndFormat(req, files, endpoint, mode) {
 
   for (let file of files) {
     const source = file.source ?? FileSources.local;
+    if (source === FileSources.text && file.text) {
+      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${file.text}\n`;
+    }
 
     if (!file.height) {
       promises.push([file, null]);
@@ -83,6 +87,10 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       continue;
     }
     promises.push(preparePayload(req, file));
+  }
+
+  if (result.text) {
+    result.text += '\n```';
   }
 
   const detail = req.body.imageDetail ?? ImageDetail.auto;

@@ -14,7 +14,7 @@ const appendIndex = (index: number, value?: string) => {
   return `${value}${Constants.COMMON_DIVIDER}${index}`;
 };
 
-export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) {
+export default function useSubmitMessage() {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
@@ -66,12 +66,10 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
         );
       }
       methods.reset();
-      helpers?.clearDraft && helpers.clearDraft();
     },
     [
       ask,
       methods,
-      helpers,
       addedIndex,
       addedConvo,
       setMessages,

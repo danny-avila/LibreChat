@@ -7,6 +7,7 @@ export * from './file-config';
 export * from './artifacts';
 /* schema helpers  */
 export * from './parsers';
+export * from './ocr';
 export * from './zod';
 /* custom/dynamic configurations  */
 export * from './generate';
@@ -31,5 +32,6 @@ export { default as request } from './request';
 export { dataService };
 import * as dataService from './data-service';
 /* general helpers */
+export * from './utils';
 export * from './actions';
 export { default as createPayload } from './createPayload';

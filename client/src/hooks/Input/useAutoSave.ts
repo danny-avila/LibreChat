@@ -7,6 +7,10 @@ import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
 
+const clearDraft = debounce((id?: string | null) => {
+  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
+}, 2500);
+
 export const useAutoSave = ({
   conversationId,
   textAreaRef,
@@ -103,7 +107,7 @@ export const useAutoSave = ({
       }
       // Save the draft of the current conversation before switching
       if (textAreaRef.current.value === '') {
-        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+        clearDraft(id);
       } else {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${id}`,
@@ -208,13 +212,4 @@ export const useAutoSave = ({
       );
     }
   }, [files, conversationId, saveDrafts, currentConversationId, fileIds]);
-
-  const clearDraft = useCallback(() => {
-    if (conversationId != null && conversationId) {
-      localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-      localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-    }
-  }, [conversationId]);
-
-  return { clearDraft };
 };

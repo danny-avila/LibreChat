@@ -362,7 +362,12 @@ async function processRequiredActions(client, requiredActions) {
         continue;
       }
 
-      tool = await createActionTool({ action: actionSet, requestBuilder });
+      tool = await createActionTool({
+        req: client.req,
+        res: client.res,
+        action: actionSet,
+        requestBuilder,
+      });
       if (!tool) {
         logger.warn(
           `Invalid action: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | toolName: ${currentAction.tool}`,
@@ -420,21 +425,16 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   }
 
   const endpointsConfig = await getEndpointsConfig(req);
-  const capabilities = endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [];
-  const areToolsEnabled = capabilities.includes(AgentCapabilities.tools);
-  if (!areToolsEnabled) {
-    logger.debug('Tools are not enabled for this agent.');
-    return {};
-  }
-
-  const isFileSearchEnabled = capabilities.includes(AgentCapabilities.file_search);
-  const isCodeEnabled = capabilities.includes(AgentCapabilities.execute_code);
-  const areActionsEnabled = capabilities.includes(AgentCapabilities.actions);
+  const enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  const checkCapability = (capability) => enabledCapabilities.has(capability);
+  const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
   const _agentTools = agent.tools?.filter((tool) => {
-    if (tool === Tools.file_search && !isFileSearchEnabled) {
+    if (tool === Tools.file_search && !checkCapability(AgentCapabilities.file_search)) {
       return false;
-    } else if (tool === Tools.execute_code && !isCodeEnabled) {
+    } else if (tool === Tools.execute_code && !checkCapability(AgentCapabilities.execute_code)) {
+      return false;
+    } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
     return true;
@@ -465,6 +465,10 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     const tool = loadedTools[i];
     if (tool.name && (tool.name === Tools.execute_code || tool.name === Tools.file_search)) {
       agentTools.push(tool);
+      continue;
+    }
+
+    if (!areToolsEnabled) {
       continue;
     }
 
@@ -500,7 +504,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     return map;
   }, {});
 
-  if (!areActionsEnabled) {
+  if (!checkCapability(AgentCapabilities.actions)) {
     return {
       tools: agentTools,
       toolContextMap,

@@ -14,6 +14,7 @@ import { useDeleteUserMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { LocalizeFunction } from '~/common';
 
 const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolean }) => {
   const localize = useLocalize();
@@ -56,7 +57,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
             </Button>
           </OGDialogTrigger>
         </div>
-        <OGDialogContent className="w-11/12 max-w-2xl">
+        <OGDialogContent className="w-11/12 max-w-md">
           <OGDialogHeader>
             <OGDialogTitle className="text-lg font-medium leading-6">
               {localize('com_nav_delete_account_confirm')}
@@ -103,7 +104,7 @@ const renderDeleteButton = (
   handleDeleteUser: () => void,
   isDeleting: boolean,
   isLocked: boolean,
-  localize: (key: string) => string,
+  localize: LocalizeFunction,
 ) => (
   <button
     className={cn(

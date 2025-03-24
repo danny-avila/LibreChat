@@ -136,10 +136,11 @@ OpenAI.mockImplementation(() => ({
 }));
 
 describe('OpenAIClient', () => {
-  const mockSet = jest.fn();
-  const mockCache = { set: mockSet };
-
   beforeEach(() => {
+    const mockCache = {
+      get: jest.fn().mockResolvedValue({}),
+      set: jest.fn(),
+    };
     getLogStores.mockReturnValue(mockCache);
   });
   let client;
@@ -200,14 +201,6 @@ describe('OpenAIClient', () => {
       expect(client.apiKey).toBe('new-api-key');
       expect(client.modelOptions.model).toBe(model);
       expect(client.modelOptions.temperature).toBe(0.7);
-    });
-
-    it('should set apiKey and useOpenRouter if OPENROUTER_API_KEY is present', () => {
-      process.env.OPENROUTER_API_KEY = 'openrouter-key';
-      client.setOptions({});
-      expect(client.apiKey).toBe('openrouter-key');
-      expect(client.useOpenRouter).toBe(true);
-      delete process.env.OPENROUTER_API_KEY; // Cleanup
     });
 
     it('should set FORCE_PROMPT based on OPENAI_FORCE_PROMPT or reverseProxyUrl', () => {
@@ -534,7 +527,6 @@ describe('OpenAIClient', () => {
     afterEach(() => {
       delete process.env.AZURE_OPENAI_DEFAULT_MODEL;
       delete process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME;
-      delete process.env.OPENROUTER_API_KEY;
     });
 
     it('should call getCompletion and fetchEventSource when using a text/instruct model', async () => {

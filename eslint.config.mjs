@@ -8,6 +8,7 @@ import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
 import { FlatCompat } from '@eslint/eslintrc';
 import jsxA11Y from 'eslint-plugin-jsx-a11y';
+import i18next from 'eslint-plugin-i18next';
 import react from 'eslint-plugin-react';
 import jest from 'eslint-plugin-jest';
 import globals from 'globals';
@@ -24,6 +25,7 @@ const compat = new FlatCompat({
 export default [
   {
     ignores: [
+      'client/vite.config.ts',
       'client/dist/**/*',
       'client/public/**/*',
       'client/coverage/**/*',
@@ -58,6 +60,7 @@ export default [
       import: importPlugin,
       'jsx-a11y': fixupPluginRules(jsxA11Y),
       'import/parsers': tsParser,
+      i18next,
       // perfectionist,
     },
 
@@ -217,9 +220,6 @@ export default [
       'jsx-a11y/interactive-supports-focus': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       'jsx-a11y/img-redundant-alt': 'off',
-      'jsx-a11y/media-has-caption': 'off',
-      'jsx-a11y/no-autofocus': 'off',
-      'jsx-a11y/alt-text': 'off',
     },
   },
   {
@@ -284,6 +284,13 @@ export default [
       },
     },
     rules: {
+      // i18n
+      'i18next/no-literal-string': [
+        'error', {
+          mode: 'jsx-text-only',
+          'should-validate-template': true,
+        }],
+      //
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
@@ -356,6 +363,18 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './packages/mcp/tsconfig.spec.json',
+      },
+    },
+  },
+  {
+    // **New Data-schemas configuration block**
+    files: ['./packages/data-schemas/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: {
+        project: './packages/data-schemas/tsconfig.json',
       },
     },
   },

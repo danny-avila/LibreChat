@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, EModelEndpoint, LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
@@ -20,7 +20,7 @@ const useNavigateToConvo = (index = 0) => {
     invalidateMessages = false,
   ) => {
     if (!conversation) {
-      console.log('Conversation not provided');
+      logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
     hasSetConversation.current = true;
@@ -34,10 +34,10 @@ const useNavigateToConvo = (index = 0) => {
     }
 
     let convo = { ...conversation };
-    if (!convo.endpoint) {
-      /* undefined endpoint edge case */
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    if (!convo.endpoint || !endpointsConfig?.[convo.endpoint]) {
+      /* undefined/removed endpoint edge case */
       const modelsConfig = queryClient.getQueryData<TModelsConfig>([QueryKeys.models]);
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
       const defaultEndpoint = getDefaultEndpoint({
         convoSetup: conversation,
         endpointsConfig,
@@ -51,10 +51,10 @@ const useNavigateToConvo = (index = 0) => {
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
 
       convo = buildDefaultConvo({
+        models,
         conversation,
         endpoint: defaultEndpoint,
         lastConversationSetup: conversation,
-        models,
       });
     }
     clearAllConversations(true);
@@ -68,7 +68,7 @@ const useNavigateToConvo = (index = 0) => {
     invalidateMessages?: boolean,
   ) => {
     if (!conversation) {
-      console.log('Conversation not provided');
+      logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
     // set conversation to the new conversation
@@ -78,7 +78,7 @@ const useNavigateToConvo = (index = 0) => {
         lastSelectedTools =
           JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
       } catch (e) {
-        // console.error(e);
+        logger.error('conversation', 'Error parsing last selected tools', e);
       }
       const hasTools = (conversation.tools?.length ?? 0) > 0;
       navigateToConvo(

@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
+const { getBalanceConfig } = require('~/server/services/Config');
 const signPayload = require('~/server/services/signPayload');
-const { isEnabled } = require('~/server/utils/handleText');
 const Balance = require('./Balance');
 const User = require('./User');
 
@@ -13,11 +13,9 @@ const User = require('./User');
  */
 const getUserById = async function (userId, fieldsToSelect = null) {
   const query = User.findById(userId);
-
   if (fieldsToSelect) {
     query.select(fieldsToSelect);
   }
-
   return await query.lean();
 };
 
@@ -32,7 +30,6 @@ const findUser = async function (searchCriteria, fieldsToSelect = null) {
   if (fieldsToSelect) {
     query.select(fieldsToSelect);
   }
-
   return await query.lean();
 };
 
@@ -58,11 +55,12 @@ const updateUser = async function (userId, updateData) {
  * Creates a new user, optionally with a TTL of 1 week.
  * @param {MongoUser} data - The user data to be created, must contain user_id.
  * @param {boolean} [disableTTL=true] - Whether to disable the TTL. Defaults to `true`.
- * @param {boolean} [returnUser=false] - Whether to disable the TTL. Defaults to `true`.
- * @returns {Promise<ObjectId>} A promise that resolves to the created user document ID.
+ * @param {boolean} [returnUser=false] - Whether to return the created user object.
+ * @returns {Promise<ObjectId|MongoUser>} A promise that resolves to the created user document ID or user object.
  * @throws {Error} If a user with the same user_id already exists.
  */
 const createUser = async (data, disableTTL = true, returnUser = false) => {
+  const balance = await getBalanceConfig();
   const userData = {
     ...data,
     expiresAt: disableTTL ? null : new Date(Date.now() + 604800 * 1000), // 1 week in milliseconds
@@ -74,13 +72,27 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
 
   const user = await User.create(userData);
 
-  if (isEnabled(process.env.CHECK_BALANCE) && process.env.START_BALANCE) {
-    let incrementValue = parseInt(process.env.START_BALANCE);
-    await Balance.findOneAndUpdate(
-      { user: user._id },
-      { $inc: { tokenCredits: incrementValue } },
-      { upsert: true, new: true },
-    ).lean();
+  // If balance is enabled, create or update a balance record for the user using global.interfaceConfig.balance
+  if (balance?.enabled && balance?.startBalance) {
+    const update = {
+      $inc: { tokenCredits: balance.startBalance },
+    };
+
+    if (
+      balance.autoRefillEnabled &&
+      balance.refillIntervalValue != null &&
+      balance.refillIntervalUnit != null &&
+      balance.refillAmount != null
+    ) {
+      update.$set = {
+        autoRefillEnabled: true,
+        refillIntervalValue: balance.refillIntervalValue,
+        refillIntervalUnit: balance.refillIntervalUnit,
+        refillAmount: balance.refillAmount,
+      };
+    }
+
+    await Balance.findOneAndUpdate({ user: user._id }, update, { upsert: true, new: true }).lean();
   }
 
   if (returnUser) {
@@ -123,7 +135,7 @@ const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
 /**
  * Generates a JWT token for a given user.
  *
- * @param {MongoUser} user - ID of the user for whom the token is being generated.
+ * @param {MongoUser} user - The user for whom the token is being generated.
  * @returns {Promise<string>} A promise that resolves to a JWT token.
  */
 const generateToken = async (user) => {
@@ -146,7 +158,7 @@ const generateToken = async (user) => {
 /**
  * Compares the provided password with the user's password.
  *
- * @param {MongoUser} user - the user to compare password for.
+ * @param {MongoUser} user - The user to compare the password for.
  * @param {string} candidatePassword - The password to test against the user's password.
  * @returns {Promise<boolean>} A promise that resolves to a boolean indicating if the password matches.
  */

@@ -109,7 +109,9 @@ const ContentParts = memo(
                   return val;
                 })
               }
-              label={isSubmitting ? localize('com_ui_thinking') : localize('com_ui_thoughts')}
+              label={
+                isSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts')
+              }
             />
           </div>
         )}
@@ -137,6 +139,7 @@ const ContentParts = memo(
                   isSubmitting={isSubmitting}
                   key={`part-${messageId}-${idx}`}
                   isCreatedByUser={isCreatedByUser}
+                  isLast={idx === content.length - 1}
                   showCursor={idx === content.length - 1 && isLast}
                 />
               </MessageContext.Provider>

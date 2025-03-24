@@ -362,3 +362,13 @@ div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-la
 .cm-content:focus {
   outline: none !important;
 }
+
+p.whitespace-pre-wrap a, li a {
+  color: #0066cc;
+  text-decoration: underline;
+  font-weight: bold;
+}
+
+.dark p.whitespace-pre-wrap a, .dark li a {
+  color: #52a0ff;
+}
