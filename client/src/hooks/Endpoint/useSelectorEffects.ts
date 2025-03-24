@@ -39,12 +39,14 @@ export default function useSelectorEffects({
   }, [index, agents, selectedAgentId, agentsMap, endpoint, setOption]);
 
   useEffect(() => {
+    if (!conversation?.endpoint) {
+      return;
+    }
     if (
-      conversation?.endpoint ||
-      conversation?.model ||
-      conversation?.spec ||
+      conversation?.assistant_id ||
       conversation?.agent_id ||
-      conversation?.assistant_id
+      conversation?.model ||
+      conversation?.spec
     ) {
       if (isAgentsEndpoint(conversation?.endpoint)) {
         return setSelectedValues({
