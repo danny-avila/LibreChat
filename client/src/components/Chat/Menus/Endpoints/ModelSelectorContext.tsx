@@ -1,26 +1,14 @@
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useMemo,
-  useEffect,
-  startTransition,
-} from 'react';
-import {
-  EModelEndpoint,
-  isAgentsEndpoint,
-  isAssistantsEndpoint,
-  LocalStorageKeys,
-} from 'librechat-data-provider';
+import React, { startTransition, createContext, useContext, useState, useMemo } from 'react';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useEndpoints, useSelectorEffects } from '~/hooks';
+import { useEndpoints, useSelectorEffects, useKeyDialog } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { filterItems } from './utils';
 
-interface ModelSelectorContextType {
+type ModelSelectorContextType = {
   // State
   searchValue: string;
   selectedValues: SelectedValues;
@@ -42,7 +30,7 @@ interface ModelSelectorContextType {
   handleSelectSpec: (spec: t.TModelSpec) => void;
   handleSelectEndpoint: (endpoint: Endpoint) => void;
   handleSelectModel: (endpoint: Endpoint, model: string) => void;
-}
+} & ReturnType<typeof useKeyDialog>;
 
 const ModelSelectorContext = createContext<ModelSelectorContextType | undefined>(undefined);
 
@@ -94,6 +82,8 @@ export function ModelSelectorProvider({
 
   const [searchValue, setSearchValueState] = useState('');
   const [endpointSearchValues, setEndpointSearchValues] = useState<Record<string, string>>({});
+
+  const keyProps = useKeyDialog();
 
   // Memoized search results
   const searchResults = useMemo(() => {
@@ -219,6 +209,8 @@ export function ModelSelectorProvider({
     handleSelectEndpoint,
     setEndpointSearchValue,
     endpointRequiresUserKey,
+    // Dialog
+    ...keyProps,
   };
 
   return <ModelSelectorContext.Provider value={value}>{children}</ModelSelectorContext.Provider>;

@@ -2,7 +2,7 @@ import React from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { Spinner } from '~/components';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { Endpoint } from '../types';
+import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
@@ -10,22 +10,18 @@ import { filterModels } from '../utils';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
-  handleOpenKeyDialog: (endpoint: string) => void;
-  endpointRequiresUserKey: (endpoint: string) => boolean;
 }
 
-export function EndpointItem({
-  endpoint,
-  handleOpenKeyDialog,
-  endpointRequiresUserKey,
-}: EndpointItemProps) {
+export function EndpointItem({ endpoint }: EndpointItemProps) {
   const {
     agentsMap,
     assistantsMap,
     selectedValues,
+    handleOpenKeyDialog,
     handleSelectEndpoint,
     endpointSearchValues,
     setEndpointSearchValue,
+    endpointRequiresUserKey,
   } = useModelSelectorContext();
   const { model: selectedModel, endpoint: selectedEndpoint } = selectedValues;
 
@@ -58,15 +54,18 @@ export function EndpointItem({
               <span className="truncate text-left">{endpoint.label}</span>
             </div>
             {endpointRequiresUserKey(endpoint.value) && (
-              <div
+              <button
                 onClick={(e) => {
+                  if (!endpoint.value) {
+                    return;
+                  }
                   e.stopPropagation();
-                  handleOpenKeyDialog(endpoint.value);
+                  handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
                 }}
                 className="flex items-center text-text-primary"
               >
                 <SettingsIcon className="h-4 w-4" />
-              </div>
+              </button>
             )}
           </div>
         }
@@ -99,15 +98,18 @@ export function EndpointItem({
         </div>
         <div className="flex items-center gap-2">
           {endpointRequiresUserKey(endpoint.value) && (
-            <div
+            <button
               onClick={(e) => {
+                if (!endpoint.value) {
+                  return;
+                }
                 e.stopPropagation();
-                handleOpenKeyDialog(endpoint.value);
+                handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
               }}
               className="text-text-primary"
             >
               <SettingsIcon className="h-4 w-4" />
-            </div>
+            </button>
           )}
           {selectedEndpoint === endpoint.value && (
             <svg
@@ -132,17 +134,8 @@ export function EndpointItem({
   }
 }
 
-export function renderEndpoints(
-  mappedEndpoints: Endpoint[],
-  handleOpenKeyDialog: (endpoint: string) => void,
-  endpointRequiresUserKey: (endpoint: string) => boolean,
-) {
+export function renderEndpoints(mappedEndpoints: Endpoint[]) {
   return mappedEndpoints.map((endpoint) => (
-    <EndpointItem
-      endpoint={endpoint}
-      key={endpoint.value}
-      handleOpenKeyDialog={handleOpenKeyDialog}
-      endpointRequiresUserKey={endpointRequiresUserKey}
-    />
+    <EndpointItem endpoint={endpoint} key={endpoint.value} />
   ));
 }

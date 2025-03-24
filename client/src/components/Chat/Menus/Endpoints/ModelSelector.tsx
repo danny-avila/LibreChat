@@ -1,17 +1,14 @@
 import React from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
-import { useLocalize, useKeyDialog } from '~/hooks';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { getSelectedIcon } from './utils';
+import { useLocalize } from '~/hooks';
 
 function ModelSelectorContent() {
   const localize = useLocalize();
-  const { keyDialogOpen, keyDialogEndpoint, setKeyDialogOpen, handleOpenKeyDialog } =
-    useKeyDialog();
 
   const {
     // LibreChat
@@ -27,7 +24,10 @@ function ModelSelectorContent() {
     setSearchValue,
     getDisplayValue,
     setSelectedValues,
-    endpointRequiresUserKey,
+    // Dialog
+    keyDialogOpen,
+    setKeyDialogOpen,
+    keyDialogEndpoint,
   } = useModelSelectorContext();
 
   const selectedIcon = getSelectedIcon(mappedEndpoints, selectedValues, []);
@@ -46,10 +46,6 @@ function ModelSelectorContent() {
       <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
     </button>
   );
-
-  const handleOpenKeyDialogWrapper = (endpoint: string) => {
-    handleOpenKeyDialog(endpoint as EModelEndpoint, {} as React.MouseEvent);
-  };
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-2">
@@ -71,15 +67,15 @@ function ModelSelectorContent() {
         ) : (
           <>
             {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
-            {renderEndpoints(mappedEndpoints, handleOpenKeyDialogWrapper, endpointRequiresUserKey)}
+            {renderEndpoints(mappedEndpoints)}
           </>
         )}
       </Menu>
       <DialogManager
         keyDialogOpen={keyDialogOpen}
-        keyDialogEndpoint={keyDialogEndpoint || undefined}
         setKeyDialogOpen={setKeyDialogOpen}
         endpointsConfig={endpointsConfig || {}}
+        keyDialogEndpoint={keyDialogEndpoint || undefined}
       />
     </div>
   );
