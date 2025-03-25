@@ -1,0 +1,22 @@
+/* Daniel AI Custom Styles */
+
+/* Hide the model icons in the sidebar */
+[data-testid='convo-item'] > div:first-of-type {
+  display: none !important;
+}
+
+/* Adjust footer padding */
+div[role='contentinfo'] {
+  padding-top: 0.9rem !important;
+  padding-bottom: 1rem !important;
+}
+
+/* Balance form padding */
+form.mx-auto.pl-2 {
+  padding-right: 0.5rem;
+}
+
+/* Fix line breaks in model descriptions */
+.text-text-secondary {
+  white-space: pre-line;
+}

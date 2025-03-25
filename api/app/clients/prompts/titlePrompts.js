@@ -12,11 +12,14 @@ const langPrompt = new ChatPromptTemplate({
   inputVariables: ['inputText'],
 });
 
+const emojiPrompt =
+  'Start the title with one emoji that fits the topic (REQUIRED), The emoji should help communicate the subject';
+
 const createTitlePrompt = ({ convo }) => {
   const titlePrompt = new ChatPromptTemplate({
     promptMessages: [
       SystemMessagePromptTemplate.fromTemplate(
-        `Write a concise title for this conversation in the given language. Title in 5 Words or Less. No Punctuation or Quotation. Must be in Title Case, written in the given Language.
+        `Write a concise title for this conversation in the given language. Title in 5 Words or Less. No Punctuation or Quotation. Must be in Title Case, written in the given Language. ${emojiPrompt}
 ${convo}`,
       ),
       HumanMessagePromptTemplate.fromTemplate('Language: {language}'),
@@ -27,8 +30,7 @@ ${convo}`,
   return titlePrompt;
 };
 
-const titleInstruction =
-  'a concise, 5-word-or-less title for the conversation, using its same language, with no punctuation. Apply title case conventions appropriate for the language. Never directly mention the language name or the word "title"';
+const titleInstruction = `a concise, 5-word-or-less title for the conversation, using its same language, with no punctuation. Apply title case conventions appropriate for the language. Never directly mention the language name or the word "title".${emojiPrompt}`;
 const titleFunctionPrompt = `In this environment you have access to a set of tools you can use to generate the conversation title.
   
 You may call them like this:

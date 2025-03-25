@@ -8,6 +8,7 @@ import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
 import { Dropdown } from '~/components/ui';
 import store from '~/store';
+import { Constants } from 'librechat-data-provider';
 
 export const ThemeSelector = ({
   theme,
@@ -137,6 +138,19 @@ function General() {
       </div>
       <div className="pb-3">
         <ArchivedChats />
+      </div>
+      <div className="flex items-center justify-between pb-3">
+        <div>Version</div>
+        <div className="text-text-secondary">
+          <a
+            href="https://www.librechat.ai/changelog"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:underline"
+          >
+            Daniel AI {Constants.VERSION}
+          </a>
+        </div>
       </div>
     </div>
   );
