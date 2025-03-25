@@ -9,9 +9,9 @@ import {
   tQueryParamsSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import type { TPreset, TEndpointsConfig, TStartupConfig } from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
-import { getConvoSwitchLogic, removeUnavailableTools } from '~/utils';
+import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
@@ -87,8 +87,20 @@ export default function useQueryParams({
       if (!_newPreset) {
         return;
       }
+      let newPreset = removeUnavailableTools(_newPreset, availableTools);
+      if (newPreset.spec != null && newPreset.spec !== '') {
+        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
+        const spec = modelSpecs.find((s) => s.name === newPreset.spec);
+        if (!spec) {
+          return;
+        }
+        const { preset } = spec;
+        preset.iconURL = getModelSpecIconURL(spec);
+        preset.spec = spec.name;
+        newPreset = preset;
+      }
 
-      const newPreset = removeUnavailableTools(_newPreset, availableTools);
       let newEndpoint = newPreset.endpoint ?? '';
       const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
 
@@ -122,14 +134,28 @@ export default function useQueryParams({
         endpointsConfig,
       });
 
+      let resetParams = {};
+      if (newPreset.spec == null) {
+        template.spec = null;
+        template.iconURL = null;
+        template.modelLabel = null;
+        resetParams = { spec: null, iconURL: null, modelLabel: null };
+        newPreset = { ...newPreset, ...resetParams };
+      }
+
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
 
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+          conversation: {
+            ...(conversation ?? {}),
+            endpointType: template.endpointType,
+            ...resetParams,
+          },
           preset: template,
+          cleanOutput: newPreset.spec != null && newPreset.spec !== '',
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
@@ -184,6 +210,10 @@ export default function useQueryParams({
       attemptsRef.current += 1;
 
       if (!textAreaRef.current) {
+        return;
+      }
+      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      if (!startupConfig) {
         return;
       }
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
