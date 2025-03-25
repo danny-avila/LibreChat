@@ -4,7 +4,11 @@ require('winston-daily-rotate-file');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
-const { NODE_ENV } = process.env;
+const { NODE_ENV, PRODUCTION_LOGS = false } = process.env;
+
+const useProductionLogs =
+  (typeof PRODUCTION_LOGS === 'string' && PRODUCTION_LOGS?.toLowerCase() === 'true') ||
+  PRODUCTION_LOGS === true;
 
 const levels = {
   error: 0,
@@ -36,9 +40,10 @@ const fileFormat = winston.format.combine(
   winston.format.splat(),
 );
 
+const logLevel = useProductionLogs ? 'error' : 'debug';
 const transports = [
   new winston.transports.DailyRotateFile({
-    level: 'debug',
+    level: logLevel,
     filename: `${logDir}/meiliSync-%DATE%.log`,
     datePattern: 'YYYY-MM-DD',
     zippedArchive: true,
