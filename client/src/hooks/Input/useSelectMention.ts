@@ -152,14 +152,21 @@ export default function useSelectMention({
         template.agent_id = agent_id;
       }
 
-      kwargs.spec = null;
-
+      template.spec = null;
+      template.iconURL = null;
+      template.modelLabel = null;
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
         template.endpointType = newEndpointType;
 
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+          conversation: {
+            ...(conversation ?? {}),
+            spec: null,
+            iconURL: null,
+            modelLabel: null,
+            endpointType: template.endpointType,
+          },
           preset: template,
         });
 
@@ -170,7 +177,7 @@ export default function useSelectMention({
 
       newConversation({
         template: { ...(template as Partial<TConversation>) },
-        preset: { ...kwargs, endpoint: newEndpoint },
+        preset: { ...kwargs, spec: null, iconURL: null, modelLabel: null, endpoint: newEndpoint },
       });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
@@ -200,11 +207,14 @@ export default function useSelectMention({
       });
 
       newPreset.spec = null;
-
+      newPreset.iconURL = newPreset.iconURL ?? null;
+      newPreset.modelLabel = newPreset.modelLabel ?? null;
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
-
+        template.spec = null;
+        template.iconURL = null;
+        template.modelLabel = null;
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
           conversation: { ...(conversation ?? {}), endpointType: template.endpointType },

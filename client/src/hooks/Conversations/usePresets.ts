@@ -62,7 +62,6 @@ export default function usePresets() {
     }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
-
   }, [presetsQuery.data, user, modelsData]);
 
   const setPresets = useCallback(
@@ -183,12 +182,19 @@ export default function usePresets() {
     });
 
     newPreset.spec = null;
-
+    newPreset.iconURL = newPreset.iconURL ?? null;
+    newPreset.modelLabel = newPreset.modelLabel ?? null;
     const isModular = isCurrentModular && isNewModular && shouldSwitch;
     if (isExistingConversation && isModular) {
       const currentConvo = getDefaultConversation({
         /* target endpointType is necessary to avoid endpoint mixing */
-        conversation: { ...(conversation ?? {}), endpointType: newEndpointType },
+        conversation: {
+          ...(conversation ?? {}),
+          spec: null,
+          iconURL: null,
+          modelLabel: null,
+          endpointType: newEndpointType,
+        },
         preset: { ...newPreset, endpointType: newEndpointType },
       });
 
