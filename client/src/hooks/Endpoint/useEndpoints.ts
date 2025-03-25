@@ -151,7 +151,6 @@ export const useEndpoints = ({
           },
           {},
         );
-        console.log(result.assistantNames);
         result.modelIcons = azureAssistants.reduce(
           (acc: Record<string, string | undefined>, assistant: Assistant) => {
             acc[assistant.id] = assistant.metadata?.avatar;
