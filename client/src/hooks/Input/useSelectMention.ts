@@ -17,14 +17,14 @@ import store from '~/store';
 export default function useSelectMention({
   presets,
   modelSpecs,
-  assistantMap,
+  assistantsMap,
   endpointsConfig,
   newConversation,
   returnHandlers,
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
-  assistantMap?: TAssistantsMap;
+  assistantsMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
   returnHandlers?: boolean;
@@ -71,7 +71,7 @@ export default function useSelectMention({
         preset.assistant_id != null &&
         !(preset.model ?? '')
       ) {
-        preset.model = assistantMap?.[newEndpoint]?.[preset.assistant_id]?.model;
+        preset.model = assistantsMap?.[newEndpoint]?.[preset.assistant_id]?.model;
       }
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
@@ -107,7 +107,7 @@ export default function useSelectMention({
       modularChat,
       newConversation,
       endpointsConfig,
-      assistantMap,
+      assistantsMap,
     ],
   );
 
@@ -261,7 +261,7 @@ export default function useSelectMention({
       } else if (isAssistantsEndpoint(option.type)) {
         onSelectEndpoint(option.type, {
           assistant_id: key,
-          model: assistantMap?.[option.type]?.[key]?.model ?? '',
+          model: assistantsMap?.[option.type]?.[key]?.model ?? '',
         });
       } else if (isAgentsEndpoint(option.type)) {
         onSelectEndpoint(option.type, {
@@ -269,7 +269,7 @@ export default function useSelectMention({
         });
       }
     },
-    [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets, assistantMap],
+    [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets, assistantsMap],
   );
 
   if (returnHandlers) {

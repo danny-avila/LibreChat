@@ -67,9 +67,9 @@ export function ModelSelectorProvider({
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
     modelSpecs,
+    assistantsMap,
     endpointsConfig,
     newConversation,
-    assistantMap: assistantsMap,
     returnHandlers: true,
   });
 
