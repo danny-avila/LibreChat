@@ -22,7 +22,7 @@ endpoints:
         fetch: false
       titleConvo: true
       summarize: false
-      forcePrompt: true
+      forcePrompt: false
       stream: false
       disableHistory: true
       modelDisplayLabel: "Marginal Firma Agent"
