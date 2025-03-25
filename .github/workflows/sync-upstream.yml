@@ -2,8 +2,8 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # This runs daily at midnight (UTC); adjust as needed.
-  workflow_dispatch:    # Allows manual triggering of the workflow.
+    - cron: '0 */1 * * *'  # Run every hour
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -13,18 +13,39 @@ jobs:
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0  # Ensure full history is fetched.
+          fetch-depth: 0
+          
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
 
       - name: Add Upstream Remote and Fetch
         run: |
           git remote add upstream https://github.com/danny-avila/LibreChat.git || true
           git fetch upstream
 
-      - name: Merge Upstream Changes
+      - name: Check for merge conflicts
+        id: check_conflicts
         run: |
-          git merge upstream/main --allow-unrelated-histories -m "Sync upstream changes"
-          # Adjust the branch name if the upstream default branch is different.
+          if git merge-tree $(git merge-base HEAD upstream/main) HEAD upstream/main | grep -e "^<<<<<<< " -e "^=======$" -e "^>>>>>>> "; then
+            echo "conflicts=true" >> $GITHUB_OUTPUT
+          else
+            echo "conflicts=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Push Changes
+      - name: Merge Upstream Changes (if no conflicts)
+        if: steps.check_conflicts.outputs.conflicts == 'false'
         run: |
+          git merge upstream/main -m "Sync upstream changes"
           git push origin HEAD:main
+
+      - name: Create PR for conflicted changes
+        if: steps.check_conflicts.outputs.conflicts == 'true'
+        run: |
+          git checkout -b upstream-sync-$(date +%Y%m%d)
+          git merge upstream/main || true
+          git push origin upstream-sync-$(date +%Y%m%d)
+          gh pr create --title "Upstream Sync (Conflicts to Resolve)" --body "This PR contains upstream changes that resulted in conflicts. Please resolve manually." --base main --head upstream-sync-$(date +%Y%m%d)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -49,7 +49,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Build and Push Frontend-only Image
+      - name: Build and Push
         uses: docker/build-push-action@v5
         with:
           context: .
