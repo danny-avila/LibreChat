@@ -3,11 +3,11 @@ import { useEffect, useCallback } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-
+// eslint-disable-next-line import/no-cycle
 import MessageContent from '~/components/Messages/MessageContent';
-
+// eslint-disable-next-line import/no-cycle
 import MessageParts from './MessageParts';
-
+// eslint-disable-next-line import/no-cycle
 import Message from './Message';
 import store from '~/store';
 
@@ -30,7 +30,6 @@ export default function MultiMessage({
   useEffect(() => {
     // reset siblingIdx when the tree changes, mostly when a new message is submitting.
     setSiblingIdx(0);
-
   }, [messagesTree?.length]);
 
   useEffect(() => {
