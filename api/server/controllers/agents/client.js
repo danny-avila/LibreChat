@@ -929,9 +929,6 @@ class AgentClient extends BaseClient {
     /** @type {import('@librechat/agents').ClientOptions} */
     const clientOptions = {
       maxTokens: 75,
-      // Add the emoji instruction to the title generation
-      instructions:
-        'Start the title with one emoji that fits the topic (REQUIRED), The emoji should help communicate the subject',
     };
     let endpointConfig = this.options.req.app.locals[this.options.agent.endpoint];
     if (!endpointConfig) {
@@ -945,10 +942,15 @@ class AgentClient extends BaseClient {
       clientOptions.model = endpointConfig.titleModel;
     }
     try {
+      // Custom title prompt that includes the emoji instruction
+      const customTitlePrompt = `Write a concise title for this conversation in the detected language. Title in 5 Words or Less. No Punctuation or Quotation. Start the title with one emoji that fits the topic (REQUIRED), The emoji should help communicate the subject.
+{convo}`;
+
       const titleResult = await this.run.generateTitle({
         inputText: text,
         contentParts: this.contentParts,
         clientOptions,
+        titlePrompt: customTitlePrompt, // Pass the custom prompt
         chainOptions: {
           callbacks: [
             {
