@@ -119,7 +119,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   const language = isNonCode ? 'json' : lang;
 
   return (
-    <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+    <div className="w-full rounded-md bg-surface-primary text-xs text-white/80">
       <CodeBar
         lang={lang}
         error={error}

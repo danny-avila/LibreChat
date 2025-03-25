@@ -1,11 +1,7 @@
-import { memo, useRef, useMemo, useEffect, useState } from 'react';
+import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { useWatch } from 'react-hook-form';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import {
-  supportsFiles,
-  mergeFileConfig,
-  isAssistantsEndpoint,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'librechat-data-provider';
 import {
   useChatContext,
   useChatFormContext,
@@ -20,47 +16,105 @@ import {
   useQueryParams,
   useSubmitMessage,
 } from '~/hooks';
-import { cn, removeFocusRings, checkIfScrollable } from '~/utils';
-import FileFormWrapper from './Files/FileFormWrapper';
-import { TextareaAutosize } from '~/components/ui';
-import { useGetFileConfig } from '~/data-provider';
-import { TemporaryChat } from './TemporaryChat';
+import { mainTextareaId, BadgeItem } from '~/common';
+import AttachFileChat from './Files/AttachFileChat';
+import FileFormChat from './Files/FileFormChat';
+import { TextareaAutosize } from '~/components';
+import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
-import { mainTextareaId } from '~/common';
 import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
+import { BadgeRow } from './BadgeRow';
+import EditBadges from './EditBadges';
 import Mention from './Mention';
 import store from '~/store';
 
-const ChatForm = ({ index = 0 }) => {
+const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  useQueryParams({ textAreaRef });
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isScrollable, setIsScrollable] = useState(false);
+  const [, setIsScrollable] = useState(false);
+  const [visualRowCount, setVisualRowCount] = useState(1);
+  const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
+  const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const [isTemporaryChat, setIsTemporaryChat] = useRecoilState<boolean>(store.isTemporary);
-
+  const chatDirection = useRecoilValue(store.chatDirection);
   const isSearching = useRecoilValue(store.isSearching);
+
+  const [badges, setBadges] = useRecoilState(store.chatBadges);
+  const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
     store.showMentionPopoverFamily(index),
   );
 
-  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
-  const isRTL = chatDirection === 'rtl';
-
   const { requiresKey } = useRequiresKey();
+  const methods = useChatFormContext();
+  const {
+    files,
+    setFiles,
+    conversation,
+    isSubmitting,
+    filesLoading,
+    newConversation,
+    handleStopGenerating,
+  } = useChatContext();
+  const {
+    addedIndex,
+    generateConversation,
+    conversation: addedConvo,
+    setConversation: setAddedConvo,
+    isSubmitting: isSubmittingAdded,
+  } = useAddedChatContext();
+  const assistantMap = useAssistantsMapContext();
+  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
+
+  const endpoint = useMemo(
+    () => conversation?.endpointType ?? conversation?.endpoint,
+    [conversation?.endpointType, conversation?.endpoint],
+  );
+
+  const isRTL = useMemo(() => chatDirection === 'rtl', [chatDirection.toLowerCase()]);
+  const invalidAssistant = useMemo(
+    () =>
+      isAssistantsEndpoint(endpoint) &&
+      (!(conversation?.assistant_id ?? '') ||
+        !assistantMap?.[endpoint ?? '']?.[conversation?.assistant_id ?? '']),
+    [conversation?.assistant_id, endpoint, assistantMap],
+  );
+  const disableInputs = useMemo(
+    () => requiresKey || invalidAssistant,
+    [requiresKey, invalidAssistant],
+  );
+
+  const handleContainerClick = useCallback(() => {
+    textAreaRef.current?.focus();
+  }, []);
+
+  const handleFocusOrClick = useCallback(() => {
+    if (isCollapsed) {
+      setIsCollapsed(false);
+    }
+  }, [isCollapsed]);
+
+  useAutoSave({
+    conversationId: conversation?.conversationId,
+    textAreaRef,
+    files,
+    setFiles,
+  });
+
+  const { submitMessage, submitPrompt } = useSubmitMessage();
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -71,64 +125,21 @@ const ChatForm = ({ index = 0 }) => {
     textAreaRef,
     submitButtonRef,
     setIsScrollable,
-    disabled: !!(requiresKey ?? false),
+    disabled: disableInputs,
   });
 
-  const {
-    files,
-    setFiles,
-    conversation,
-    isSubmitting,
-    filesLoading,
-    newConversation,
-    handleStopGenerating,
-  } = useChatContext();
-  const methods = useChatFormContext();
-  const {
-    addedIndex,
-    generateConversation,
-    conversation: addedConvo,
-    setConversation: setAddedConvo,
-    isSubmitting: isSubmittingAdded,
-  } = useAddedChatContext();
-  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
-
-  useAutoSave({
-    conversationId: useMemo(() => conversation?.conversationId, [conversation]),
-    textAreaRef,
-    files,
-    setFiles,
-  });
-
-  const assistantMap = useAssistantsMapContext();
-  const { submitMessage, submitPrompt } = useSubmitMessage();
-
-  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
-  const endpoint = endpointType ?? _endpoint;
-
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
-
-  const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
-  const invalidAssistant = useMemo(
-    () =>
-      isAssistantsEndpoint(conversation?.endpoint) &&
-      (!(conversation?.assistant_id ?? '') ||
-        !assistantMap?.[conversation?.endpoint ?? ''][conversation?.assistant_id ?? '']),
-    [conversation?.assistant_id, conversation?.endpoint, assistantMap],
-  );
-  const disableInputs = useMemo(
-    () => !!((requiresKey ?? false) || invalidAssistant),
-    [requiresKey, invalidAssistant],
-  );
+  useQueryParams({ textAreaRef });
 
   const { ref, ...registerProps } = methods.register('text', {
     required: true,
-    onChange: (e) => {
-      methods.setValue('text', e.target.value, { shouldValidate: true });
-    },
+    onChange: useCallback(
+      (e: React.ChangeEvent<HTMLTextAreaElement>) =>
+        methods.setValue('text', e.target.value, { shouldValidate: true }),
+      [methods],
+    ),
   });
+
+  const textValue = useWatch({ control: methods.control, name: 'text' });
 
   useEffect(() => {
     if (!isSearching && textAreaRef.current && !disableInputs) {
@@ -138,33 +149,53 @@ const ChatForm = ({ index = 0 }) => {
 
   useEffect(() => {
     if (textAreaRef.current) {
-      checkIfScrollable(textAreaRef.current);
+      const style = window.getComputedStyle(textAreaRef.current);
+      const lineHeight = parseFloat(style.lineHeight);
+      setVisualRowCount(Math.floor(textAreaRef.current.scrollHeight / lineHeight));
     }
+  }, [textValue]);
+
+  useEffect(() => {
+    if (isEditingBadges && backupBadges.length === 0) {
+      setBackupBadges([...badges]);
+    }
+  }, [isEditingBadges, badges, backupBadges.length]);
+
+  const handleSaveBadges = useCallback(() => {
+    setIsEditingBadges(false);
+    setBackupBadges([]);
   }, []);
 
-  const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
-  const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
+  const handleCancelBadges = useCallback(() => {
+    if (backupBadges.length > 0) {
+      setBadges([...backupBadges]);
+    }
+    setIsEditingBadges(false);
+    setBackupBadges([]);
+  }, [backupBadges, setBadges]);
 
-  const baseClasses = cn(
-    'md:py-3.5 m-0 w-full resize-none py-[13px] bg-surface-tertiary placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-    isCollapsed ? 'max-h-[52px]' : 'max-h-[65vh] md:max-h-[75vh]',
+  const isMoreThanThreeRows = visualRowCount > 3;
+
+  const baseClasses = useMemo(
+    () =>
+      cn(
+        'md:py-3.5 m-0 w-full resize-none py-[13px] bg-surface-chat placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
+        isMoreThanThreeRows ? 'pl-5' : 'px-5',
+      ),
+    [isCollapsed, isMoreThanThreeRows],
   );
-
-  const uploadActive = endpointSupportsFiles && !isUploadDisabled;
-  const speechClass = isRTL
-    ? `pr-${uploadActive ? '12' : '4'} pl-12`
-    : `pl-${uploadActive ? '12' : '4'} pr-12`;
 
   return (
     <form
-      onSubmit={methods.handleSubmit((data) => submitMessage(data))}
+      onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
-        'mx-auto flex flex-row gap-3 pl-2 transition-all duration-200 last:mb-2',
-        maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-2xl xl:max-w-3xl',
+        'mx-auto flex flex-row gap-3 transition-all duration-200 sm:mb-2 sm:px-2',
+        maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
       )}
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
-        <div className="flex w-full items-center">
+        <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
               setShowMentionPopover={setShowPlusPopover}
@@ -183,90 +214,101 @@ const ChatForm = ({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl bg-surface-tertiary text-text-primary duration-200">
-            <TemporaryChat
-              isTemporaryChat={isTemporaryChat}
-              setIsTemporaryChat={setIsTemporaryChat}
-            />
+          <div
+            onClick={handleContainerClick}
+            className={cn(
+              'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border border-border-light bg-surface-chat text-text-primary transition-all duration-200 sm:rounded-3xl',
+              isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
+            )}
+          >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
-            <FileFormWrapper disableInputs={disableInputs}>
-              {endpoint && (
-                <>
+            <EditBadges
+              isEditingChatBadges={isEditingBadges}
+              handleCancelBadges={handleCancelBadges}
+              handleSaveBadges={handleSaveBadges}
+              setBadges={setBadges}
+            />
+            <FileFormChat disableInputs={disableInputs} />
+            {endpoint && (
+              <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
+                <TextareaAutosize
+                  {...registerProps}
+                  ref={(e) => {
+                    ref(e);
+                    (textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = e;
+                  }}
+                  disabled={disableInputs}
+                  onPaste={handlePaste}
+                  onKeyDown={handleKeyDown}
+                  onKeyUp={handleKeyUp}
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={handleCompositionEnd}
+                  id={mainTextareaId}
+                  tabIndex={0}
+                  data-testid="text-input"
+                  rows={1}
+                  onFocus={() => {
+                    handleFocusOrClick();
+                    setIsTextAreaFocused(true);
+                  }}
+                  onBlur={setIsTextAreaFocused.bind(null, false)}
+                  onClick={handleFocusOrClick}
+                  style={{ height: 44, overflowY: 'auto' }}
+                  className={cn(
+                    baseClasses,
+                    removeFocusRings,
+                    'transition-[max-height] duration-200',
+                  )}
+                />
+                <div className="flex flex-col items-start justify-start pt-1.5">
                   <CollapseChat
                     isCollapsed={isCollapsed}
-                    isScrollable={isScrollable}
+                    isScrollable={isMoreThanThreeRows}
                     setIsCollapsed={setIsCollapsed}
                   />
-                  <TextareaAutosize
-                    {...registerProps}
-                    ref={(e) => {
-                      ref(e);
-                      textAreaRef.current = e;
-                    }}
-                    disabled={disableInputs}
-                    onPaste={handlePaste}
-                    onKeyDown={handleKeyDown}
-                    onKeyUp={handleKeyUp}
-                    onHeightChange={() => {
-                      if (textAreaRef.current) {
-                        const scrollable = checkIfScrollable(textAreaRef.current);
-                        setIsScrollable(scrollable);
-                      }
-                    }}
-                    onCompositionStart={handleCompositionStart}
-                    onCompositionEnd={handleCompositionEnd}
-                    id={mainTextareaId}
-                    tabIndex={0}
-                    data-testid="text-input"
-                    rows={1}
-                    onFocus={() => isCollapsed && setIsCollapsed(false)}
-                    onClick={() => isCollapsed && setIsCollapsed(false)}
-                    style={{ height: 44, overflowY: 'auto' }}
-                    className={cn(
-                      baseClasses,
-                      speechClass,
-                      removeFocusRings,
-                      'transition-[max-height] duration-200',
-                    )}
-                  />
-                </>
+                </div>
+              </div>
+            )}
+            <div
+              className={cn(
+                'items-between flex gap-2 pb-2',
+                isRTL ? 'flex-row-reverse' : 'flex-row',
               )}
-            </FileFormWrapper>
-            {SpeechToText && (
-              <AudioRecorder
-                isRTL={isRTL}
-                methods={methods}
-                ask={submitMessage}
-                textAreaRef={textAreaRef}
-                disabled={!!disableInputs}
-                isSubmitting={isSubmitting}
-              />
-            )}
-            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
-          </div>
-          <div
-            className={cn(
-              'mb-[5px] ml-[8px] flex flex-col items-end justify-end',
-              isRTL && 'order-first mr-[8px]',
-            )}
-            style={{ alignSelf: 'flex-end' }}
-          >
-            {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
-              <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-            ) : (
-              endpoint && (
-                <SendButton
-                  ref={submitButtonRef}
-                  control={methods.control}
-                  disabled={!!(filesLoading || isSubmitting || disableInputs)}
+            >
+              <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
+                <AttachFileChat disableInputs={disableInputs} />
+              </div>
+              <BadgeRow onChange={(newBadges) => setBadges(newBadges)} />
+              <div className="mx-auto flex" />
+              {SpeechToText && (
+                <AudioRecorder
+                  methods={methods}
+                  ask={submitMessage}
+                  textAreaRef={textAreaRef}
+                  disabled={disableInputs}
+                  isSubmitting={isSubmitting}
                 />
-              )
-            )}
+              )}
+              <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
+                  <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+                ) : (
+                  endpoint && (
+                    <SendButton
+                      ref={submitButtonRef}
+                      control={methods.control}
+                      disabled={filesLoading || isSubmitting || disableInputs}
+                    />
+                  )
+                )}
+              </div>
+            </div>
+            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
         </div>
       </div>
     </form>
   );
-};
+});
 
-export default memo(ChatForm);
+export default ChatForm;
