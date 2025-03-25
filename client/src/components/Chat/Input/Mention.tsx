@@ -28,7 +28,7 @@ export default function Mention({
   includeAssistants?: boolean;
 }) {
   const localize = useLocalize();
-  const assistantMap = useAssistantsMapContext();
+  const assistantsMap = useAssistantsMapContext();
   const {
     options,
     presets,
@@ -37,11 +37,11 @@ export default function Mention({
     modelsConfig,
     endpointsConfig,
     assistantListMap,
-  } = useMentions({ assistantMap: assistantMap || {}, includeAssistants });
+  } = useMentions({ assistantMap: assistantsMap || {}, includeAssistants });
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
-    assistantMap,
+    assistantsMap,
     endpointsConfig,
     newConversation,
   });
