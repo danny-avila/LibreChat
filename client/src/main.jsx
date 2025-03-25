@@ -4,6 +4,7 @@ import './locales/i18n';
 import App from './App';
 import './style.css';
 import './mobile.css';
+import './custom-daniel-ai.css';
 import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 
 const container = document.getElementById('root');
