@@ -161,9 +161,11 @@ export default function useQueryParams({
         queryParams[key] = value;
       });
 
-      const decodedPrompt = queryParams.prompt || '';
+      // Support both 'prompt' and 'q' as query parameters, with 'prompt' taking precedence
+      const decodedPrompt = queryParams.prompt || queryParams.q || '';
       const shouldAutoSubmit = queryParams.submit?.toLowerCase() === 'true';
       delete queryParams.prompt;
+      delete queryParams.q;
       delete queryParams.submit;
       const validSettings = processValidSettings(queryParams);
 
