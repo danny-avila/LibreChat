@@ -7,6 +7,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import ConversationStarters from './Input/ConversationStarters';
 import MessagesView from './Messages/MessagesView';
 import { Spinner } from '~/components/svg';
 import Presentation from './Presentation';
@@ -21,6 +22,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
+  const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
 
   const fileMap = useFileMapContext();
 
@@ -46,16 +48,18 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   let content: JSX.Element | null | undefined;
+  const isLandingPage = !messagesTree || messagesTree.length === 0;
+
   if (isLoading && conversationId !== 'new') {
     content = (
       <div className="flex h-screen items-center justify-center">
-        <Spinner className="opacity-0" />
+        <Spinner className="text-text-primary" />
       </div>
     );
-  } else if (messagesTree && messagesTree.length !== 0) {
-    content = <MessagesView messagesTree={messagesTree} Header={<Header />} />;
+  } else if (!isLandingPage) {
+    content = <MessagesView messagesTree={messagesTree} />;
   } else {
-    content = <Landing Header={<Header />} />;
+    content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }
 
   return (
@@ -63,10 +67,27 @@ function ChatView({ index = 0 }: { index?: number }) {
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
-            {content}
-            <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-              <ChatForm index={index} />
-              <Footer />
+            <div className="flex h-full w-full flex-col">
+              {!isLoading && <Header />}
+
+              {isLandingPage ? (
+                <div className="flex flex-1 flex-col items-center justify-end sm:justify-center">
+                  {content}
+                  <div className="w-full max-w-3xl transition-all duration-200 xl:max-w-4xl">
+                    <ChatForm index={index} />
+                    <ConversationStarters />
+                    <Footer />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-full flex-col overflow-y-auto">
+                  {content}
+                  <div className="w-full">
+                    <ChatForm index={index} />
+                    <Footer />
+                  </div>
+                </div>
+              )}
             </div>
           </Presentation>
         </AddedChatContext.Provider>

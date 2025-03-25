@@ -38,7 +38,13 @@ const Part = memo(
     if (part.type === ContentTypes.ERROR) {
       return (
         <ErrorMessage
-          text={part[ContentTypes.ERROR] ?? part[ContentTypes.TEXT]?.value}
+          text={
+            part[ContentTypes.ERROR] ??
+            (typeof part[ContentTypes.TEXT] === 'string'
+              ? part[ContentTypes.TEXT]
+              : part.text?.value) ??
+            ''
+          }
           className="my-2"
         />
       );

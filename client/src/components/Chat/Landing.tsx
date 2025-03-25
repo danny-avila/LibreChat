@@ -1,47 +1,45 @@
-import { useMemo } from 'react';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { useMemo, useCallback, useState, useEffect } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import type { ReactNode } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
-import {
-  useGetAssistantDocsQuery,
-  useGetEndpointsQuery,
-  useGetStartupConfig,
-} from '~/data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { getIconEndpoint, getEntity, cn } from '~/utils';
-import { useLocalize, useSubmitMessage } from '~/hooks';
-import { TooltipAnchor } from '~/components/ui';
-import { BirthdayIcon } from '~/components/svg';
-import ConvoStarter from './ConvoStarter';
+import { useLocalize, useAuthContext } from '~/hooks';
+import { getIconEndpoint, getEntity } from '~/utils';
 
-export default function Landing({ Header }: { Header?: ReactNode }) {
+const containerClassName =
+  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+
+export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-
+  const { user } = useAuthContext();
   const localize = useLocalize();
 
-  let { endpoint = '' } = conversation ?? {};
-
-  if (
-    endpoint === EModelEndpoint.chatGPTBrowser ||
-    endpoint === EModelEndpoint.azureOpenAI ||
-    endpoint === EModelEndpoint.gptPlugins
-  ) {
-    endpoint = EModelEndpoint.openAI;
-  }
-
-  const iconURL = conversation?.iconURL;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
-  const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpoint, {
-    select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
-  });
+  const endpointType = useMemo(() => {
+    let ep = conversation?.endpoint ?? '';
+    if (
+      [
+        EModelEndpoint.chatGPTBrowser,
+        EModelEndpoint.azureOpenAI,
+        EModelEndpoint.gptPlugins,
+      ].includes(ep as EModelEndpoint)
+    ) {
+      ep = EModelEndpoint.openAI;
+    }
+    return getIconEndpoint({
+      endpointsConfig,
+      iconURL: conversation?.iconURL,
+      endpoint: ep,
+    });
+  }, [conversation?.endpoint, conversation?.iconURL, endpointsConfig]);
 
   const { entity, isAgent, isAssistant } = getEntity({
-    endpoint,
+    endpoint: endpointType,
     agentsMap,
     assistantMap,
     agent_id: conversation?.agent_id,
@@ -50,102 +48,106 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
 
   const name = entity?.name ?? '';
   const description = entity?.description ?? '';
-  const avatar = isAgent
-    ? (entity as t.Agent | undefined)?.avatar?.filepath ?? ''
-    : ((entity as t.Assistant | undefined)?.metadata?.avatar as string | undefined) ?? '';
-  const conversation_starters = useMemo(() => {
-    /* The user made updates, use client-side cache, or they exist in an Agent */
-    if (entity && (entity.conversation_starters?.length ?? 0) > 0) {
-      return entity.conversation_starters;
-    }
-    if (isAgent) {
-      return entity?.conversation_starters ?? [];
+
+  const getGreeting = useCallback(() => {
+    if (typeof startupConfig?.interface?.customWelcome === 'string') {
+      return startupConfig.interface.customWelcome;
     }
 
-    /* If none in cache, we use the latest assistant docs */
-    const entityDocs = documentsMap.get(entity?.id ?? '');
-    return entityDocs?.conversation_starters ?? [];
-  }, [documentsMap, isAgent, entity]);
+    const now = new Date();
+    const hours = now.getHours();
 
-  const containerClassName =
-    'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+    const dayOfWeek = now.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-  const { submitMessage } = useSubmitMessage();
-  const sendConversationStarter = (text: string) => submitMessage({ text });
-
-  const getWelcomeMessage = () => {
-    const greeting = conversation?.greeting ?? '';
-    if (greeting) {
-      return greeting;
+    // Early morning (midnight to 4:59 AM)
+    if (hours >= 0 && hours < 5) {
+      return localize('com_ui_late_night');
     }
-
-    if (isAssistant) {
-      return localize('com_nav_welcome_assistant');
+    // Morning (6 AM to 11:59 AM)
+    else if (hours < 12) {
+      if (isWeekend) {
+        return localize('com_ui_weekend_morning');
+      }
+      return localize('com_ui_good_morning');
     }
-
-    if (isAgent) {
-      return localize('com_nav_welcome_agent');
+    // Afternoon (12 PM to 4:59 PM)
+    else if (hours < 17) {
+      return localize('com_ui_good_afternoon');
     }
-
-    return typeof startupConfig?.interface?.customWelcome === 'string'
-      ? startupConfig?.interface?.customWelcome
-      : localize('com_nav_welcome_message');
-  };
+    // Evening (5 PM to 8:59 PM)
+    else {
+      return localize('com_ui_good_evening');
+    }
+  }, [localize, startupConfig?.interface?.customWelcome]);
 
   return (
-    <div className="relative h-full">
-      <div className="absolute left-0 right-0">{Header != null ? Header : null}</div>
-      <div className="flex h-full flex-col items-center justify-center">
-        <div className={cn('relative h-12 w-12', name && avatar ? 'mb-0' : 'mb-3')}>
-          <ConvoIcon
-            agentsMap={agentsMap}
-            assistantMap={assistantMap}
-            conversation={conversation}
-            endpointsConfig={endpointsConfig}
-            containerClassName={containerClassName}
-            context="landing"
-            className="h-2/3 w-2/3"
-            size={41}
-          />
-          {startupConfig?.showBirthdayIcon === true ? (
-            <TooltipAnchor
-              className="absolute bottom-8 right-2.5"
-              description={localize('com_ui_happy_birthday')}
-            >
-              <BirthdayIcon />
-            </TooltipAnchor>
-          ) : null}
-        </div>
-        {name ? (
-          <div className="flex flex-col items-center gap-0 p-2">
-            <div className="text-center text-2xl font-medium dark:text-white">{name}</div>
-            <div className="max-w-md text-center text-sm font-normal text-text-primary ">
-              {description ||
-                (typeof startupConfig?.interface?.customWelcome === 'string'
-                  ? startupConfig?.interface?.customWelcome
-                  : localize('com_nav_welcome_message'))}
+    <div
+      className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
+    >
+      <div className="flex flex-col items-center gap-0 p-2">
+        <div className="flex flex-col items-center justify-center gap-4 md:flex-row">
+          <div className="relative size-10 justify-center">
+            <ConvoIcon
+              agentsMap={agentsMap}
+              assistantMap={assistantMap}
+              conversation={conversation}
+              endpointsConfig={endpointsConfig}
+              containerClassName={containerClassName}
+              context="landing"
+              className="h-2/3 w-2/3"
+              size={41}
+            />
+            {startupConfig?.showBirthdayIcon && (
+              <TooltipAnchor
+                className="absolute bottom-[27px] right-2"
+                description={localize('com_ui_happy_birthday')}
+              >
+                <BirthdayIcon />
+              </TooltipAnchor>
+            )}
+          </div>
+          {((isAgent || isAssistant) && name) || name ? (
+            <div className="flex flex-col items-center gap-0 p-2">
+              <SplitText
+                key={`split-text-${name}`}
+                text={name}
+                className="text-4xl font-medium text-text-primary"
+                delay={50}
+                textAlign="center"
+                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
+                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+                easing="easeOutCubic"
+                threshold={0}
+                rootMargin="0px"
+              />
             </div>
-            {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
-             <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
-          </div> */}
+          ) : (
+            <SplitText
+              key={`split-text-${getGreeting()}${user?.username || ''}`}
+              text={getGreeting() + (user?.username ? ', ' + user.username : '')}
+              className="text-4xl font-medium text-text-primary"
+              delay={50}
+              textAlign="center"
+              animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
+              animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+              easing="easeOutCubic"
+              threshold={0}
+              rootMargin="0px"
+            />
+          )}
+        </div>
+        {(isAgent || isAssistant) && description ? (
+          <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+            {description}
           </div>
         ) : (
-          <h2 className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-            {getWelcomeMessage()}
-          </h2>
+          typeof startupConfig?.interface?.customWelcome === 'string' && (
+            <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+              {startupConfig?.interface?.customWelcome}
+            </div>
+          )
         )}
-        <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-          {conversation_starters.length > 0 &&
-            conversation_starters
-              .slice(0, Constants.MAX_CONVO_STARTERS)
-              .map((text: string, index: number) => (
-                <ConvoStarter
-                  key={index}
-                  text={text}
-                  onClick={() => sendConversationStarter(text)}
-                />
-              ))}
-        </div>
       </div>
     </div>
   );

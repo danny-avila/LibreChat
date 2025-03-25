@@ -180,11 +180,27 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
  *
  * First, the admin defined default, then last selected spec, followed by first spec
  */
-export function getDefaultModelSpec(modelSpecs?: t.TModelSpec[]) {
-  const defaultSpec = modelSpecs?.find((spec) => spec.default);
-  const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
-  const lastSelectedSpec = modelSpecs?.find((spec) => spec.name === lastSelectedSpecName);
-  return defaultSpec || lastSelectedSpec || modelSpecs?.[0];
+export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
+  const { modelSpecs, interface: interfaceConfig } = startupConfig ?? {};
+  const { list, prioritize } = modelSpecs ?? {};
+  if (!list) {
+    return;
+  }
+  const defaultSpec = list?.find((spec) => spec.default);
+  if (prioritize === true || !interfaceConfig?.modelSelect) {
+    const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
+    const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
+    return defaultSpec || lastSelectedSpec || list?.[0];
+  } else if (defaultSpec) {
+    return defaultSpec;
+  }
+  const lastConversationSetup = JSON.parse(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
+  );
+  if (!lastConversationSetup.spec) {
+    return;
+  }
+  return list?.find((spec) => spec.name === lastConversationSetup.spec);
 }
 
 /** Gets the default spec iconURL by order or definition.
@@ -208,7 +224,7 @@ export function getIconEndpoint({
   iconURL?: string | null;
   endpoint?: string | null;
 }) {
-  return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
+  return (endpointsConfig?.[iconURL ?? ''] ? (iconURL ?? endpoint) : endpoint) ?? '';
 }
 
 /** Gets the key to use for the default endpoint iconURL, as defined by the custom config */
@@ -228,7 +244,7 @@ export function getIconKey({
   if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {
     return endpointIconURL;
   }
-  return endpointType ? 'unknown' : endpoint ?? 'unknown';
+  return endpointType ? 'unknown' : (endpoint ?? 'unknown');
 }
 
 export const getEntity = ({

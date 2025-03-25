@@ -879,13 +879,14 @@ class BaseClient {
         : await getConvo(this.options.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
+    const exceptions = new Set(['spec', 'iconURL']);
     if (existingConvo != null) {
       this.fetchedConvo = true;
       for (const key in existingConvo) {
         if (!key) {
           continue;
         }
-        if (excludedKeys.has(key)) {
+        if (excludedKeys.has(key) && !exceptions.has(key)) {
           continue;
         }
 
