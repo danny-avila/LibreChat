@@ -82,6 +82,7 @@ export default function useSelectMention({
           /* target endpointType is necessary to avoid endpoint mixing */
           conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
           preset: template,
+          cleanOutput: true,
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
@@ -219,6 +220,7 @@ export default function useSelectMention({
           /* target endpointType is necessary to avoid endpoint mixing */
           conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
           preset: template,
+          cleanInput: true,
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */

@@ -196,6 +196,7 @@ export default function usePresets() {
           endpointType: newEndpointType,
         },
         preset: { ...newPreset, endpointType: newEndpointType },
+        cleanInput: true,
       });
 
       /* We don't reset the latest message, only when changing settings mid-converstion */
