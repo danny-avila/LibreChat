@@ -11,12 +11,12 @@ const badgeConfig = [
     label: 'com_ui_temporary',
     atom: store.isTemporary,
   },
-  {
-    id: '2',
-    icon: Box,
-    label: 'com_ui_artifacts',
-    atom: store.codeArtifacts,
-  },
+  // {
+  //   id: '2',
+  //   icon: Box,
+  //   label: 'com_ui_artifacts',
+  //   atom: store.codeArtifacts,
+  // },
   // TODO: add more badges here (missing store atoms)
 ] as const;
 
