@@ -8,9 +8,9 @@ function Beta() {
       <div className="pb-3">
         <CodeArtifacts />
       </div>
-      <div className="pb-3">
+      {/* <div className="pb-3">
         <ChatBadges />
-      </div>
+      </div> */}
     </div>
   );
 }
