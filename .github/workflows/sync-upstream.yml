@@ -2,7 +2,7 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 */1 * * *'  # Run every hour
+    - cron: '0 */1 * * *' # Run every hour
   workflow_dispatch:
 
 jobs:
@@ -14,7 +14,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-          
+
       - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
@@ -34,11 +34,35 @@ jobs:
             echo "conflicts=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Merge Upstream Changes (if no conflicts)
+      - name: Merge Upstream Changes
+        id: merge
         if: steps.check_conflicts.outputs.conflicts == 'false'
         run: |
+          # Get current commit hash
+          CURRENT_HASH=$(git rev-parse HEAD)
+
+          # Attempt merge
           git merge upstream/main -m "Sync upstream changes"
-          git push origin HEAD:main
+
+          # Get new commit hash
+          NEW_HASH=$(git rev-parse HEAD)
+
+          # Check if anything changed
+          if [ "$CURRENT_HASH" != "$NEW_HASH" ]; then
+            echo "Changes were merged successfully"
+            echo "changes_merged=true" >> $GITHUB_OUTPUT
+            git push origin HEAD:main
+          else
+            echo "No new changes to merge"
+            echo "changes_merged=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Build Workflow
+        if: steps.merge.outputs.changes_merged == 'true'
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: upstream-changes-merged
 
       - name: Create PR for conflicted changes
         if: steps.check_conflicts.outputs.conflicts == 'true'
