@@ -184,13 +184,13 @@ class AgentClient extends BaseClient {
     let runOptions =
       this.options.endpoint === EModelEndpoint.agents
         ? {
-          model: undefined,
-          // TODO:
-          // would need to be override settings; otherwise, model needs to be undefined
-          // model: this.override.model,
-          // instructions: this.override.instructions,
-          // additional_instructions: this.override.additional_instructions,
-        }
+            model: undefined,
+            // TODO:
+            // would need to be override settings; otherwise, model needs to be undefined
+            // model: this.override.model,
+            // instructions: this.override.instructions,
+            // additional_instructions: this.override.additional_instructions,
+          }
         : {};
 
     if (parseOptions) {
@@ -929,6 +929,9 @@ class AgentClient extends BaseClient {
     /** @type {import('@librechat/agents').ClientOptions} */
     const clientOptions = {
       maxTokens: 75,
+      // Add the emoji instruction to the title generation
+      instructions:
+        'Start the title with one emoji that fits the topic (REQUIRED), The emoji should help communicate the subject',
     };
     let endpointConfig = this.options.req.app.locals[this.options.agent.endpoint];
     if (!endpointConfig) {
