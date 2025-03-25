@@ -30,75 +30,63 @@ data "aws_subnets" "default" {
   }
 }
 
+# Locals
+locals {
+  env_file_content = file("${path.module}/../.env")
+  env_vars = {
+    for line in split("\n", local.env_file_content) :
+      split("=", line)[0] => split("=", line)[1]
+      if length(split("=", line)) == 2 && !startswith(trimsuffix(split("=", line)[0], " "), "#")
+  }
+  rag_port = lookup(local.env_vars, "RAG_PORT", "8000")
+}
+
 # ECR Repositories
 resource "aws_ecr_repository" "librechat_repo" {
   name = "librechat-repo"
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "aws_ecr_repository" "mongodb_repo" {
   name = "mongodb-repo"
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "aws_ecr_repository" "meilisearch_repo" {
   name = "meilisearch-repo"
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "aws_ecr_repository" "vectordb_repo" {
   name = "vectordb-repo"
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "aws_ecr_repository" "rag_api_repo" {
   name = "rag-api-repo"
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 # Docker image build and push
 resource "null_resource" "docker_build_push" {
   provisioner "local-exec" {
     command = <<EOT
-      # Pull images
       docker pull mongo:latest
       docker pull getmeili/meilisearch:v1.12.3
       docker pull ankane/pgvector:latest
       docker pull ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
 
-      # Build LibreChat image
       docker build -t librechat:latest .
 
-      # Login to ECR
       aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${aws_ecr_repository.librechat_repo.repository_url}
 
-      # Tag and push LibreChat
       docker tag librechat:latest ${aws_ecr_repository.librechat_repo.repository_url}:latest
       docker push ${aws_ecr_repository.librechat_repo.repository_url}:latest
 
-      # Tag and push MongoDB
       docker tag mongo:latest ${aws_ecr_repository.mongodb_repo.repository_url}:latest
       docker push ${aws_ecr_repository.mongodb_repo.repository_url}:latest
 
-      # Tag and push Meilisearch
       docker tag getmeili/meilisearch:v1.12.3 ${aws_ecr_repository.meilisearch_repo.repository_url}:latest
       docker push ${aws_ecr_repository.meilisearch_repo.repository_url}:latest
 
-      # Tag and push Vectordb
       docker tag ankane/pgvector:latest ${aws_ecr_repository.vectordb_repo.repository_url}:latest
       docker push ${aws_ecr_repository.vectordb_repo.repository_url}:latest
 
-      # Tag and push RAG API
       docker tag ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest ${aws_ecr_repository.rag_api_repo.repository_url}:latest
       docker push ${aws_ecr_repository.rag_api_repo.repository_url}:latest
     EOT
@@ -128,6 +116,93 @@ resource "aws_efs_mount_target" "librechat_efs_mount" {
   security_groups = [aws_security_group.efs_sg.id]
 }
 
+# EFS Access Points
+resource "aws_efs_access_point" "logs" {
+  file_system_id = aws_efs_file_system.librechat_efs.id
+  posix_user {
+    gid = 1000
+    uid = 1000
+  }
+  root_directory {
+    path = "/logs"
+    creation_info {
+      owner_gid   = 1000
+      owner_uid   = 1000
+      permissions = "755"
+    }
+  }
+}
+
+resource "aws_efs_access_point" "images" {
+  file_system_id = aws_efs_file_system.librechat_efs.id
+  posix_user {
+    gid = 1000
+    uid = 1000
+  }
+  root_directory {
+    path = "/images"
+    creation_info {
+      owner_gid   = 1000
+      owner_uid   = 1000
+      permissions = "755"
+    }
+  }
+}
+
+resource "aws_efs_access_point" "mongodb" {
+  file_system_id = aws_efs_file_system.librechat_efs.id
+  posix_user {
+    gid = 1000
+    uid = 1000
+  }
+  root_directory {
+    path = "/mongodb"
+    creation_info {
+      owner_gid   = 1000
+      owner_uid   = 1000
+      permissions = "755"
+    }
+  }
+}
+
+resource "aws_efs_access_point" "meilisearch" {
+  file_system_id = aws_efs_file_system.librechat_efs.id
+  posix_user {
+    gid = 1000
+    uid = 1000
+  }
+  root_directory {
+    path = "/meilisearch"
+    creation_info {
+      owner_gid   = 1000
+      owner_uid   = 1000
+      permissions = "755"
+    }
+  }
+}
+
+resource "aws_efs_access_point" "vectordb" {
+  file_system_id = aws_efs_file_system.librechat_efs.id
+  posix_user {
+    gid = 1000
+    uid = 1000
+  }
+  root_directory {
+    path = "/vectordb"
+    creation_info {
+      owner_gid   = 1000
+      owner_uid   = 1000
+      permissions = "755"
+    }
+  }
+}
+
+# CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "librechat_logs" {
+  name              = "/ecs/librechat"
+  retention_in_days = 14
+}
+
 # Task Definition
 resource "aws_ecs_task_definition" "librechat_task" {
   family                   = "librechat-task"
@@ -149,11 +224,31 @@ resource "aws_ecs_task_definition" "librechat_task" {
           hostPort      = var.app_port
         }
       ]
-      environment = [
+      environment = concat([
+        { name = "HOST", value = "0.0.0.0" },
         { name = "MONGO_URI", value = "mongodb://localhost:27017/LibreChat" },
         { name = "MEILI_HOST", value = "http://localhost:7700" },
-        { name = "RAG_API_URL", value = "http://localhost:8000" }
+        { name = "RAG_PORT", value = local.rag_port },
+        { name = "RAG_API_URL", value = "http://localhost:${local.rag_port}" }
+      ], [for k, v in local.env_vars : { name = k, value = v }])
+      mountPoints = [
+        {
+          sourceVolume  = "images"
+          containerPath = "/app/client/public/images"
+        },
+        {
+          sourceVolume  = "logs"
+          containerPath = "/app/api/logs"
+        }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.librechat_logs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
     },
     {
       name  = "mongodb"
@@ -164,12 +259,22 @@ resource "aws_ecs_task_definition" "librechat_task" {
           containerPath = "/data/db"
         }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.librechat_logs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
     },
     {
       name  = "meilisearch"
       image = "${aws_ecr_repository.meilisearch_repo.repository_url}:latest"
       environment = [
-        { name = "MEILI_NO_ANALYTICS", value = "true" }
+        { name = "MEILI_HOST", value = "http://localhost:7700" },
+        { name = "MEILI_NO_ANALYTICS", value = "true" },
+        { name = "MEILI_MASTER_KEY", value = local.env_vars["MEILI_MASTER_KEY"] }
       ]
       mountPoints = [
         {
@@ -177,6 +282,14 @@ resource "aws_ecs_task_definition" "librechat_task" {
           containerPath = "/meili_data"
         }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.librechat_logs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
     },
     {
       name  = "vectordb"
@@ -192,38 +305,104 @@ resource "aws_ecs_task_definition" "librechat_task" {
           containerPath = "/var/lib/postgresql/data"
         }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.librechat_logs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
     },
     {
       name  = "rag_api"
       image = "${aws_ecr_repository.rag_api_repo.repository_url}:latest"
-      environment = [
+      environment = concat([
         { name = "DB_HOST", value = "localhost" },
-        { name = "RAG_PORT", value = "8000" }
+        { name = "RAG_PORT", value = local.rag_port },
+        { name = "POSTGRES_DB", value = "mydatabase" },
+        { name = "POSTGRES_USER", value = "myuser" },
+        { name = "POSTGRES_PASSWORD", value = "mypassword" }
+      ], [for k, v in local.env_vars : { name = k, value = v }])
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.librechat_logs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+      dependsOn = [
+        {
+          containerName = "vectordb"
+          condition     = "START"
+        }
       ]
     }
   ])
 
   volume {
+    name = "logs"
+    efs_volume_configuration {
+      file_system_id     = aws_efs_file_system.librechat_efs.id
+      root_directory     = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.logs.id
+        iam             = "ENABLED"
+      }
+    }
+  }
+
+  volume {
+    name = "images"
+    efs_volume_configuration {
+      file_system_id     = aws_efs_file_system.librechat_efs.id
+      root_directory     = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.images.id
+        iam             = "ENABLED"
+      }
+    }
+  }
+
+  volume {
     name = "mongodb_data"
     efs_volume_configuration {
-      file_system_id = aws_efs_file_system.librechat_efs.id
-      root_directory = "/mongodb"
+      file_system_id     = aws_efs_file_system.librechat_efs.id
+      root_directory     = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.mongodb.id
+        iam             = "ENABLED"
+      }
     }
   }
 
   volume {
     name = "meilisearch_data"
     efs_volume_configuration {
-      file_system_id = aws_efs_file_system.librechat_efs.id
-      root_directory = "/meilisearch"
+      file_system_id     = aws_efs_file_system.librechat_efs.id
+      root_directory     = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.meilisearch.id
+        iam             = "ENABLED"
+      }
     }
   }
 
   volume {
     name = "vectordb_data"
     efs_volume_configuration {
-      file_system_id = aws_efs_file_system.librechat_efs.id
-      root_directory = "/vectordb"
+      file_system_id     = aws_efs_file_system.librechat_efs.id
+      root_directory     = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.vectordb.id
+        iam             = "ENABLED"
+      }
     }
   }
 
@@ -250,7 +429,16 @@ resource "aws_ecs_service" "librechat_service" {
     container_port   = var.app_port
   }
 
-  depends_on = [aws_lb_listener.front_end]
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
+  health_check_grace_period_seconds  = 300
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  depends_on = [aws_lb_listener.front_end, aws_efs_mount_target.librechat_efs_mount]
 }
 
 # Application Load Balancer
@@ -359,6 +547,25 @@ resource "aws_security_group" "efs_sg" {
   }
 }
 
+# Security Group Rules for NFS
+resource "aws_security_group_rule" "ecs_tasks_nfs_ingress" {
+  type                     = "ingress"
+  from_port                = 2049
+  to_port                  = 2049
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.ecs_tasks_sg.id
+  source_security_group_id = aws_security_group.efs_sg.id
+}
+
+resource "aws_security_group_rule" "efs_nfs_ingress" {
+  type                     = "ingress"
+  from_port                = 2049
+  to_port                  = 2049
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.efs_sg.id
+  source_security_group_id = aws_security_group.ecs_tasks_sg.id
+}
+
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_execution_role" {
   name = "ecs_execution_role"
@@ -382,6 +589,11 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy_logs" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+}
+
 # IAM Role for ECS Task
 resource "aws_iam_role" "ecs_task_role" {
   name = "ecs_task_role"
@@ -400,8 +612,40 @@ resource "aws_iam_role" "ecs_task_role" {
   })
 }
 
+# IAM Policy for ECS Task Role
+resource "aws_iam_role_policy" "ecs_task_role_policy" {
+  name = "ecs_task_role_policy"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "efs:ClientMount",
+          "efs:ClientWrite",
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite"
+        ]
+        Resource = aws_efs_file_system.librechat_efs.arn
+      }
+    ]
+  })
+}
+
 # Output the ALB DNS name
 output "alb_dns_name" {
   value       = aws_lb.librechat_alb.dns_name
   description = "The DNS name of the Application Load Balancer"
+}
+
+# Output for debugging
+output "env_vars" {
+  value     = local.env_vars
+  sensitive = true
+}
+
+output "rag_port" {
+  value = local.rag_port
 }
