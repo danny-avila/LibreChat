@@ -115,7 +115,7 @@ export function getSelectedIcon({
     if (!spec) {
       return null;
     }
-    const { showIconInHeader } = spec;
+    const { showIconInHeader = true } = spec;
     if (!showIconInHeader) {
       return null;
     }
