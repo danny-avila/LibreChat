@@ -74,37 +74,66 @@ const Nav = memo(
     });
 
     const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-    const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
+    const { searchQuery, searchQueryRes } = useSearchContext();
 
-    const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
-      useConversationsInfiniteQuery(
-        {
-          pageNumber: pageNumber.toString(),
-          isArchived: false,
-          tags: tags.length === 0 ? undefined : tags,
-        },
-        {
-          enabled: isAuthenticated,
-          staleTime: 30000,
-          cacheTime: 300000,
-        },
-      );
+    const { data, fetchNextPage, isFetchingNextPage, refetch } = useConversationsInfiniteQuery(
+      {
+        isArchived: false,
+        tags: tags.length === 0 ? undefined : tags,
+      },
+      {
+        enabled: isAuthenticated,
+        staleTime: 30000,
+        cacheTime: 300000,
+      },
+    );
 
-    const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
+    const computedHasNextPage = useMemo(() => {
+      if (searchQuery && searchQueryRes?.data) {
+        const pages = searchQueryRes.data.pages;
+        return pages[pages.length - 1]?.nextCursor !== null;
+      } else if (data?.pages && data.pages.length > 0) {
+        const lastPage: ConversationListResponse = data.pages[data.pages.length - 1];
+        return lastPage.nextCursor !== null;
+      }
+      return false;
+    }, [searchQuery, searchQueryRes?.data, data?.pages]);
+
+    const { containerRef, moveToTop } = useNavScrolling<
+      ConversationListResponse | SearchConversationListResponse
+    >({
       setShowLoading,
-      hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
-      fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
-      isFetchingNextPage: searchQuery
+      fetchNextPage: async (options?) => {
+        if (computedHasNextPage) {
+          if (searchQuery && searchQueryRes) {
+            const pages = searchQueryRes.data?.pages;
+            if (pages && pages.length > 0 && pages[pages.length - 1]?.nextCursor !== null) {
+              return searchQueryRes.fetchNextPage(options);
+            }
+          } else {
+            return fetchNextPage(options);
+          }
+        }
+        return Promise.resolve(
+          {} as InfiniteQueryObserverResult<
+            SearchConversationListResponse | ConversationListResponse,
+            unknown
+          >,
+        );
+      },
+      isFetchingNext: searchQuery
         ? (searchQueryRes?.isFetchingNextPage ?? false)
         : isFetchingNextPage,
     });
 
-    const conversations = useMemo(
-      () =>
-        (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
-        [],
-      [data, searchQuery, searchQueryRes?.data],
-    );
+    const conversations = useMemo(() => {
+      if (searchQuery && searchQueryRes?.data) {
+        return searchQueryRes.data.pages.flatMap(
+          (page) => page.conversations ?? [],
+        ) as TConversation[];
+      }
+      return data ? data.pages.flatMap((page) => page.conversations) : [];
+    }, [data, searchQuery, searchQueryRes?.data]);
 
     const toggleNavVisible = useCallback(() => {
       setNavVisible((prev: boolean) => {
@@ -139,22 +168,17 @@ const Nav = memo(
     }, [tags, refetch]);
 
     const loadMoreConversations = useCallback(() => {
-      if (isFetchingNextPage) {
+      if (isFetchingNextPage || !computedHasNextPage) {
         return;
       }
-      if (searchQuery && searchQueryRes?.hasNextPage) {
-        searchQueryRes.fetchNextPage();
-      } else if (hasNextPage) {
-        fetchNextPage();
-      }
-    }, [isFetchingNextPage, searchQuery, searchQueryRes, hasNextPage, fetchNextPage]);
+
+      fetchNextPage();
+    }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
       () => (
         <>
-          {isSearchEnabled && (
-            <SearchBar setPageNumber={setPageNumber} isSmallScreen={isSmallScreen} />
-          )}
+          {isSearchEnabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
           {hasAccessToBookmarks && (
             <>
               <div className="mt-1.5" />
@@ -165,7 +189,7 @@ const Nav = memo(
           )}
         </>
       ),
-      [isSearchEnabled, hasAccessToBookmarks, setPageNumber, isSmallScreen, tags, setTags],
+      [isSearchEnabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
     );
 
     return (
@@ -210,7 +234,7 @@ const Nav = memo(
                           toggleNav={itemToggleNav}
                           containerRef={containerRef}
                           loadMoreConversations={loadMoreConversations}
-                          isFetchingNextPage={isFetchingNextPage}
+                          isFetchingNextPage={isFetchingNextPage || showLoading}
                         />
                       </div>
                     </div>
