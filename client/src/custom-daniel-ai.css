@@ -19,4 +19,5 @@ form.mx-auto.pl-2 {
 /* Fix line breaks in model descriptions */
 .break-words.text-xs {
   white-space: pre-line !important;
+  line-height: 1.1rem !important;
 }
