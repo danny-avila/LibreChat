@@ -11,6 +11,8 @@ const { logger } = require('~/config');
 const logAxiosError = ({ message, error }) => {
   let logMessage = message;
   try {
+    const stack = error.stack || 'No stack trace available';
+
     if (error.response?.status) {
       const { status, headers, data } = error.response;
       logMessage = `${message} The server responded with status ${status}: ${error.message}`;
@@ -18,21 +20,25 @@ const logAxiosError = ({ message, error }) => {
         status,
         headers,
         data,
+        stack,
       });
     } else if (error.request) {
       const { method, url } = error.config || {};
       logMessage = `${message} No response received for ${method ? method.toUpperCase() : ''} ${url || ''}: ${error.message}`;
-      logger.error(logMessage, { requestInfo: { method, url } });
+      logger.error(logMessage, {
+        requestInfo: { method, url },
+        stack,
+      });
     } else if (error?.message?.includes('Cannot read properties of undefined (reading \'status\')')) {
       logMessage = `${message} It appears the request timed out or was unsuccessful: ${error.message}`;
-      logger.error(logMessage);
+      logger.error(logMessage, { stack });
     } else {
       logMessage = `${message} An error occurred while setting up the request: ${error.message}`;
-      logger.error(logMessage);
+      logger.error(logMessage, { stack });
     }
   } catch (err) {
     logMessage = `Error in logAxiosError: ${err.message}`;
-    logger.error(logMessage);
+    logger.error(logMessage, { stack: err.stack || 'No stack trace available' });
   }
   return logMessage;
 };
