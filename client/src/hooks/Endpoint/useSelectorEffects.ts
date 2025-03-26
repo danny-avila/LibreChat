@@ -21,22 +21,51 @@ export default function useSelectorEffects({
   const agents: t.Agent[] = useMemo(() => {
     return Object.values(agentsMap ?? {}) as t.Agent[];
   }, [agentsMap]);
-  const { agent_id: selectedAgentId = null, endpoint } = conversation ?? {};
+  const {
+    agent_id: selectedAgentId = null,
+    assistant_id: selectedAssistantId = null,
+    endpoint,
+  } = conversation ?? {};
+  const assistants: t.Assistant[] = useMemo(() => {
+    if (!isAssistantsEndpoint(endpoint)) {
+      return [];
+    }
+    return Object.values(assistantsMap?.[endpoint ?? ''] ?? {}) as t.Assistant[];
+  }, [assistantsMap, endpoint]);
 
   useEffect(() => {
+    if (!isAgentsEndpoint(endpoint as string)) {
+      return;
+    }
     if (selectedAgentId == null && agents.length > 0) {
       let agent_id = localStorage.getItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`);
       if (agent_id == null) {
-        agent_id = agents[0].id;
+        agent_id = agents[0]?.id;
       }
       const agent = agentsMap?.[agent_id];
 
-      if (agent !== undefined && isAgentsEndpoint(endpoint as string) === true) {
+      if (agent !== undefined) {
         setOption('model')('');
         setOption('agent_id')(agent_id);
       }
     }
   }, [index, agents, selectedAgentId, agentsMap, endpoint, setOption]);
+  useEffect(() => {
+    if (!isAssistantsEndpoint(endpoint as string)) {
+      return;
+    }
+    if (selectedAssistantId == null && assistants.length > 0) {
+      let assistant_id = localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`);
+      if (assistant_id == null) {
+        assistant_id = assistants[0]?.id;
+      }
+      const assistant = assistantsMap?.[endpoint ?? '']?.[assistant_id];
+      if (assistant !== undefined) {
+        setOption('model')('');
+        setOption('assistant_id')(assistant_id);
+      }
+    }
+  }, [index, assistants, selectedAssistantId, assistantsMap, endpoint, setOption]);
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
