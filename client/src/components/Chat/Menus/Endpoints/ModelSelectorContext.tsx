@@ -113,10 +113,16 @@ export function ModelSelectorProvider({
   };
 
   const handleSelectSpec = (spec: t.TModelSpec) => {
+    let model = spec.preset.model ?? null;
     onSelectSpec?.(spec);
+    if (isAgentsEndpoint(spec.preset.endpoint)) {
+      model = spec.preset.agent_id ?? '';
+    } else if (isAssistantsEndpoint(spec.preset.endpoint)) {
+      model = spec.preset.assistant_id ?? '';
+    }
     setSelectedValues({
       endpoint: spec.preset.endpoint,
-      model: spec.preset.model ?? null,
+      model,
       modelSpec: spec.name,
     });
   };
@@ -157,13 +163,13 @@ export function ModelSelectorProvider({
   const getDisplayValue = () => {
     if (selectedValues.modelSpec) {
       const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
-      return spec?.label || localize('com_endpoint_select_model');
+      return spec?.label || localize('com_ui_select_model');
     }
 
     if (selectedValues.model && selectedValues.endpoint) {
       const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
       if (!endpoint) {
-        return localize('com_endpoint_select_model');
+        return localize('com_ui_select_model');
       }
 
       if (
@@ -188,10 +194,10 @@ export function ModelSelectorProvider({
 
     if (selectedValues.endpoint) {
       const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-      return endpoint?.label || localize('com_endpoint_select_model');
+      return endpoint?.label || localize('com_ui_select_model');
     }
 
-    return localize('com_endpoint_select_model');
+    return localize('com_ui_select_model');
   };
 
   const value = {
