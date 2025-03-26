@@ -13,7 +13,6 @@ const {
   actionDomainSeparator,
 } = require('librechat-data-provider');
 const { refreshAccessToken } = require('~/server/services/TokenService');
-const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
@@ -130,6 +129,7 @@ async function loadActionSets(searchParams) {
  * @param {string | undefined} [params.name] - The name of the tool.
  * @param {string | undefined} [params.description] - The description for the tool.
  * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
+ * @param {{ oauth_client_id?: string; oauth_client_secret?: string; }} params.encrypted - The encrypted values for the action.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createActionTool({
@@ -140,17 +140,8 @@ async function createActionTool({
   zodSchema,
   name,
   description,
+  encrypted,
 }) {
-  const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
-  if (!isDomainAllowed) {
-    return null;
-  }
-  const encrypted = {
-    oauth_client_id: action.metadata.oauth_client_id,
-    oauth_client_secret: action.metadata.oauth_client_secret,
-  };
-  action.metadata = await decryptMetadata(action.metadata);
-
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
     try {

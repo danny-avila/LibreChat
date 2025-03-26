@@ -15,9 +15,15 @@ const {
   AgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
+const {
+  loadActionSets,
+  createActionTool,
+  decryptMetadata,
+  domainParser,
+} = require('./ActionService');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { createYouTubeTools, manifestToolMap, toolkits } = require('~/app/clients/tools');
-const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -511,7 +517,62 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     };
   }
 
-  let actionSets = [];
+  const actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
+  if (actionSets.length === 0) {
+    if (_agentTools.length > 0 && agentTools.length === 0) {
+      logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
+    }
+    return {
+      tools: agentTools,
+      toolContextMap,
+    };
+  }
+
+  // Process each action set once (validate spec, decrypt metadata)
+  const processedActionSets = new Map();
+  const domainMap = new Map();
+
+  for (const action of actionSets) {
+    const domain = await domainParser(req, action.metadata.domain, true);
+    domainMap.set(domain, action);
+
+    // Check if domain is allowed (do this once per action set)
+    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+    if (!isDomainAllowed) {
+      continue;
+    }
+
+    // Validate and parse OpenAPI spec once per action set
+    const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
+    if (!validationResult.spec) {
+      continue;
+    }
+
+    const encrypted = {
+      oauth_client_id: action.metadata.oauth_client_id,
+      oauth_client_secret: action.metadata.oauth_client_secret,
+    };
+
+    // Decrypt metadata once per action set
+    const decryptedAction = { ...action };
+    decryptedAction.metadata = await decryptMetadata(action.metadata);
+
+    // Process the OpenAPI spec once per action set
+    const { requestBuilders, functionSignatures, zodSchemas } = openapiToFunction(
+      validationResult.spec,
+      true,
+    );
+
+    processedActionSets.set(domain, {
+      action: decryptedAction,
+      requestBuilders,
+      functionSignatures,
+      zodSchemas,
+      encrypted,
+    });
+  }
+
+  // Now map tools to the processed action sets
   const ActionToolMap = {};
 
   for (const toolName of _agentTools) {
@@ -519,55 +580,47 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       continue;
     }
 
-    if (!actionSets.length) {
-      actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
-    }
-
-    let actionSet = null;
+    // Find the matching domain for this tool
     let currentDomain = '';
-    for (let action of actionSets) {
-      const domain = await domainParser(req, action.metadata.domain, true);
+    for (const domain of domainMap.keys()) {
       if (toolName.includes(domain)) {
         currentDomain = domain;
-        actionSet = action;
         break;
       }
     }
 
-    if (!actionSet) {
+    if (!currentDomain || !processedActionSets.has(currentDomain)) {
       continue;
     }
 
-    const validationResult = validateAndParseOpenAPISpec(actionSet.metadata.raw_spec);
-    if (validationResult.spec) {
-      const { requestBuilders, functionSignatures, zodSchemas } = openapiToFunction(
-        validationResult.spec,
-        true,
-      );
-      const functionName = toolName.replace(`${actionDelimiter}${currentDomain}`, '');
-      const functionSig = functionSignatures.find((sig) => sig.name === functionName);
-      const requestBuilder = requestBuilders[functionName];
-      const zodSchema = zodSchemas[functionName];
+    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
+      processedActionSets.get(currentDomain);
+    const functionName = toolName.replace(`${actionDelimiter}${currentDomain}`, '');
+    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
+    const requestBuilder = requestBuilders[functionName];
+    const zodSchema = zodSchemas[functionName];
 
-      if (requestBuilder) {
-        const tool = await createActionTool({
-          req,
-          res,
-          action: actionSet,
-          requestBuilder,
-          zodSchema,
-          name: toolName,
-          description: functionSig.description,
-        });
-        if (!tool) {
-          logger.warn(
-            `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
-          );
-          throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
-        }
-        agentTools.push(tool);
-        ActionToolMap[toolName] = tool;
+    if (requestBuilder) {
+      const tool = await createActionTool({
+        req,
+        res,
+        action,
+        requestBuilder,
+        zodSchema,
+        encrypted,
+        name: toolName,
+        description: functionSig.description,
+      });
+
+      if (!tool) {
+        logger.warn(
+          `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
+        );
+        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
       }
+
+      agentTools.push(tool);
+      ActionToolMap[toolName] = tool;
     }
   }
 
