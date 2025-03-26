@@ -321,58 +321,95 @@ async function processRequiredActions(client, requiredActions) {
     if (!tool) {
       // throw new Error(`Tool ${currentAction.tool} not found.`);
 
+      // Load all action sets once if not already loaded
       if (!actionSets.length) {
         actionSets =
           (await loadActionSets({
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
+
+        // Process all action sets once
+        // Map domains to their processed action sets
+        const processedDomains = new Map();
+        const domainMap = new Map();
+
+        for (const action of actionSets) {
+          const domain = await domainParser(client.req, action.metadata.domain, true);
+          domainMap.set(domain, action);
+
+          // Check if domain is allowed
+          const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+          if (!isDomainAllowed) {
+            continue;
+          }
+
+          // Validate and parse OpenAPI spec
+          const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
+          if (!validationResult.spec) {
+            throw new Error(
+              `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+            );
+          }
+
+          // Process the OpenAPI spec
+          const { requestBuilders } = openapiToFunction(validationResult.spec);
+
+          // Store encrypted values for OAuth flow
+          const encrypted = {
+            oauth_client_id: action.metadata.oauth_client_id,
+            oauth_client_secret: action.metadata.oauth_client_secret,
+          };
+
+          // Decrypt metadata
+          const decryptedAction = { ...action };
+          decryptedAction.metadata = await decryptMetadata(action.metadata);
+
+          processedDomains.set(domain, {
+            action: decryptedAction,
+            requestBuilders,
+            encrypted,
+          });
+
+          // Store builders for reuse
+          ActionBuildersMap[action.metadata.domain] = requestBuilders;
+        }
+
+        // Update actionSets reference to use the domain map
+        actionSets = { domainMap, processedDomains };
       }
 
-      let actionSet = null;
+      // Find the matching domain for this tool
       let currentDomain = '';
-      for (let action of actionSets) {
-        const domain = await domainParser(client.req, action.metadata.domain, true);
+      for (const domain of actionSets.domainMap.keys()) {
         if (currentAction.tool.includes(domain)) {
           currentDomain = domain;
-          actionSet = action;
           break;
         }
       }
 
-      if (!actionSet) {
+      if (!currentDomain || !actionSets.processedDomains.has(currentDomain)) {
         // TODO: try `function` if no action set is found
         // throw new Error(`Tool ${currentAction.tool} not found.`);
         continue;
       }
 
-      let builders = ActionBuildersMap[actionSet.metadata.domain];
-
-      if (!builders) {
-        const validationResult = validateAndParseOpenAPISpec(actionSet.metadata.raw_spec);
-        if (!validationResult.spec) {
-          throw new Error(
-            `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
-          );
-        }
-        const { requestBuilders } = openapiToFunction(validationResult.spec);
-        ActionToolMap[actionSet.metadata.domain] = requestBuilders;
-        builders = requestBuilders;
-      }
-
+      const { action, requestBuilders, encrypted } = actionSets.processedDomains.get(currentDomain);
       const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
-
-      const requestBuilder = builders[functionName];
+      const requestBuilder = requestBuilders[functionName];
 
       if (!requestBuilder) {
         // throw new Error(`Tool ${currentAction.tool} not found.`);
         continue;
       }
 
+      // We've already decrypted the metadata, so we can pass it directly
       tool = await createActionTool({
         req: client.req,
         res: client.res,
-        action: actionSet,
+        action,
         requestBuilder,
+        // Note: intentionally not passing zodSchema, name, and description for assistants API
+        encrypted, // Pass the encrypted values for OAuth flow
       });
       if (!tool) {
         logger.warn(
