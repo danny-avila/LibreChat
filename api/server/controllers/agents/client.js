@@ -184,13 +184,13 @@ class AgentClient extends BaseClient {
     let runOptions =
       this.options.endpoint === EModelEndpoint.agents
         ? {
-            model: undefined,
-            // TODO:
-            // would need to be override settings; otherwise, model needs to be undefined
-            // model: this.override.model,
-            // instructions: this.override.instructions,
-            // additional_instructions: this.override.additional_instructions,
-          }
+          model: undefined,
+          // TODO:
+          // would need to be override settings; otherwise, model needs to be undefined
+          // model: this.override.model,
+          // instructions: this.override.instructions,
+          // additional_instructions: this.override.additional_instructions,
+        }
         : {};
 
     if (parseOptions) {

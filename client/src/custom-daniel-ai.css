@@ -21,3 +21,13 @@ form.mx-auto.pl-2 {
   white-space: pre-line !important;
   line-height: 1.1rem !important;
 }
+
+/* Align selected model icon in modelSelect vertically */
+div[role='option'] {
+  align-items: center;
+}
+
+/* Align model logo in modelSelect vertically */
+.flex.w-full.min-w-0.gap-2.px-1.py-1.items-start {
+  align-items: center;
+}
