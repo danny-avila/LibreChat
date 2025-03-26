@@ -1,4 +1,5 @@
-import React, { startTransition, createContext, useContext, useState, useMemo } from 'react';
+import debounce from 'lodash/debounce';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
@@ -99,10 +100,13 @@ export function ModelSelectorProvider({
   }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap]);
 
   // Functions
-  const setSearchValue = (value: string) => {
-    startTransition(() => setSearchValueState(value));
-  };
-
+  const setDebouncedSearchValue = useMemo(
+    () =>
+      debounce((value: string) => {
+        setSearchValueState(value);
+      }, 200),
+    [],
+  );
   const setEndpointSearchValue = (endpoint: string, value: string) => {
     setEndpointSearchValues((prev) => ({
       ...prev,
@@ -172,13 +176,13 @@ export function ModelSelectorProvider({
     endpointsConfig,
 
     // Functions
-    setSearchValue,
     handleSelectSpec,
     handleSelectModel,
     setSelectedValues,
     handleSelectEndpoint,
     setEndpointSearchValue,
     endpointRequiresUserKey,
+    setSearchValue: setDebouncedSearchValue,
     // Dialog
     ...keyProps,
   };
