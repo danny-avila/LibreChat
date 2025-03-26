@@ -164,6 +164,7 @@ export type ActionAuthForm = {
   client_url: string;
   scope: string;
   token_exchange_method: t.TokenExchangeMethodEnum;
+  oauth_flow:t.OAuthFlowTypeEnum;
 };
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
