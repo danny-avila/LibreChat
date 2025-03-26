@@ -92,7 +92,9 @@ const SplitText: React.FC<SplitTextProps> = ({
               </animated.span>
             );
           })}
-          <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
+          {wordIndex < words.length - 1 && (
+            <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
+          )}
         </span>
       ))}
     </p>
