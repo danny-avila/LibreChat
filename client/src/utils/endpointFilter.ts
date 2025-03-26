@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import { ExtendedEndpoint } from '~/common';
 
 export const filterMenuItems = (
@@ -17,7 +17,7 @@ export const filterMenuItems = (
   return mappedEndpoints
     .map((ep) => {
       if (ep.hasModels) {
-        if (ep.value === EModelEndpoint.agents) {
+        if (isAgentsEndpoint(ep.value)) {
           const filteredAgents = agents.filter((agent) =>
             agent.name?.toLowerCase().includes(lowercaseSearchTerm),
           );
@@ -32,7 +32,7 @@ export const filterMenuItems = (
             };
           }
           return null;
-        } else if (ep.value === EModelEndpoint.assistants) {
+        } else if (isAssistantsEndpoint(ep.value)) {
           const filteredAssistants = assistants.filter((assistant) =>
             assistant.name?.toLowerCase().includes(lowercaseSearchTerm),
           );

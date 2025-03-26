@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
   TAgentsMap,
   TAssistantsMap,
@@ -39,17 +39,13 @@ export function filterItems<
           return true;
         }
 
-        if (item.value === EModelEndpoint.agents && agentsMap && modelId in agentsMap) {
+        if (isAgentsEndpoint(item.value) && agentsMap && modelId in agentsMap) {
           const agentName = agentsMap[modelId]?.name;
           return typeof agentName === 'string' && agentName.toLowerCase().includes(searchTermLower);
         }
 
-        if (
-          (item.value === EModelEndpoint.assistants ||
-            item.value === EModelEndpoint.azureAssistants) &&
-          assistantsMap
-        ) {
-          const endpoint = item.value;
+        if (isAssistantsEndpoint(item.value) && assistantsMap) {
+          const endpoint = item.value ?? '';
           const assistant = assistantsMap[endpoint][modelId];
           if (assistant && typeof assistant.name === 'string') {
             return assistant.name.toLowerCase().includes(searchTermLower);
@@ -80,11 +76,10 @@ export function filterModels(
   return models.filter((modelId) => {
     let modelName = modelId;
 
-    if (endpoint.value === EModelEndpoint.agents && agentsMap && agentsMap[modelId]) {
+    if (isAgentsEndpoint(endpoint.value) && agentsMap && agentsMap[modelId]) {
       modelName = agentsMap[modelId].name || modelId;
     } else if (
-      (endpoint.value === EModelEndpoint.assistants ||
-        endpoint.value === EModelEndpoint.azureAssistants) &&
+      isAssistantsEndpoint(endpoint.value) &&
       assistantsMap &&
       assistantsMap[endpoint.value]
     ) {

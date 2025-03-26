@@ -173,7 +173,7 @@ export function ModelSelectorProvider({
       }
 
       if (
-        endpoint.value === EModelEndpoint.agents &&
+        isAgentsEndpoint(endpoint.value) &&
         endpoint.agentNames &&
         endpoint.agentNames[selectedValues.model]
       ) {
@@ -181,8 +181,7 @@ export function ModelSelectorProvider({
       }
 
       if (
-        (endpoint.value === EModelEndpoint.assistants ||
-          endpoint.value === EModelEndpoint.azureAssistants) &&
+        isAssistantsEndpoint(endpoint.value) &&
         endpoint.assistantNames &&
         endpoint.assistantNames[selectedValues.model]
       ) {
