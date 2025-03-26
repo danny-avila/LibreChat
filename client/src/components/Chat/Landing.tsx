@@ -1,5 +1,5 @@
+import { useMemo, useCallback, useState } from 'react';
 import { easings } from '@react-spring/web';
-import { useMemo, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -19,6 +19,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+
+  const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
+
+  // Add handler for line count changes
+  const handleLineCountChange = useCallback((lineCount: number) => {
+    setTextHasMultipleLines(lineCount > 1);
+  }, []);
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
@@ -86,8 +93,10 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
     >
       <div className="flex flex-col items-center gap-0 p-2">
-        <div className="flex flex-col items-center justify-center gap-4 md:flex-row">
-          <div className="relative size-10 justify-center">
+        <div
+          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-4`}
+        >
+          <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <ConvoIcon
               agentsMap={agentsMap}
               assistantMap={assistantMap}
@@ -120,6 +129,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
                 easing={easings.easeOutCubic}
                 threshold={0}
                 rootMargin="0px"
+                onLineCountChange={handleLineCountChange}
               />
             </div>
           ) : (
@@ -134,6 +144,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               easing={easings.easeOutCubic}
               threshold={0}
               rootMargin="0px"
+              onLineCountChange={handleLineCountChange}
             />
           )}
         </div>
