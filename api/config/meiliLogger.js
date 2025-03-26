@@ -4,11 +4,11 @@ require('winston-daily-rotate-file');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
-const { NODE_ENV, PRODUCTION_LOGS = false } = process.env;
+const { NODE_ENV, DEBUG_LOGGING = false } = process.env;
 
-const useProductionLogs =
-  (typeof PRODUCTION_LOGS === 'string' && PRODUCTION_LOGS?.toLowerCase() === 'true') ||
-  PRODUCTION_LOGS === true;
+const useDebugLogging =
+  (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
+  DEBUG_LOGGING === true;
 
 const levels = {
   error: 0,
@@ -40,7 +40,7 @@ const fileFormat = winston.format.combine(
   winston.format.splat(),
 );
 
-const logLevel = useProductionLogs ? 'error' : 'debug';
+const logLevel = useDebugLogging ? 'debug' : 'error';
 const transports = [
   new winston.transports.DailyRotateFile({
     level: logLevel,
@@ -52,14 +52,6 @@ const transports = [
     format: fileFormat,
   }),
 ];
-
-// if (NODE_ENV !== 'production') {
-//   transports.push(
-//     new winston.transports.Console({
-//       format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
-//     }),
-//   );
-// }
 
 const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
