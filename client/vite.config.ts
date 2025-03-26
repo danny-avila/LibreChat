@@ -139,11 +139,6 @@ export default defineConfig({
           return 'assets/[name].[hash][extname]';
         },
       },
-      external: [
-        'vite-plugin-node-polyfills/shims/global',
-        'vite-plugin-node-polyfills/shims/process',
-        'vite-plugin-node-polyfills/shims/buffer',
-      ],
       /**
        * Ignore "use client" warning since we are not using SSR
        * @see {@link https://github.com/TanStack/query/pull/5161#issuecomment-1477389761 Preserve 'use client' directives TanStack/query#5161}
@@ -161,11 +156,6 @@ export default defineConfig({
     alias: {
       '~': path.join(__dirname, 'src/'),
       $fonts: resolve('public/fonts'),
-      // add the alias for the missing polyfill:
-      'vite-plugin-node-polyfills/shims/global': path.resolve(
-        __dirname,
-        'node_modules/vite-plugin-node-polyfills/shims/global.js',
-      ),
     },
   },
 });
