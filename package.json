@@ -111,6 +111,7 @@
     "prettier-eslint": "^16.3.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "typescript-eslint": "^8.24.0",
+    "vite-plugin-node-polyfills": "^0.23.0",
     "elliptic": "^6.6.1"
   },
   "overrides": {
