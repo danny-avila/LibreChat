@@ -124,8 +124,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              key={`split-text-${getGreeting()}${user?.username || ''}`}
-              text={getGreeting() + (user?.username ? ', ' + user.username : '')}
+              key={`split-text-${getGreeting()}${user?.name || ''}`}
+              text={getGreeting() + (user?.name ? ', ' + user.name : '')}
               className="text-4xl font-medium text-text-primary"
               delay={50}
               textAlign="center"
