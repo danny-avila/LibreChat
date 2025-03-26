@@ -5,7 +5,7 @@ const FormData = require('form-data');
 const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { logger, createAxiosInstance } = require('~/config');
-const { logAxiosError } = require('~/utils');
+const { logAxiosError } = require('~/utils/axios');
 
 const axios = createAxiosInstance();
 
