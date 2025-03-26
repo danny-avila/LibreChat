@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
-import { getSelectedIcon } from './utils';
 import { useLocalize } from '~/hooks';
 
 function ModelSelectorContent() {
@@ -22,7 +22,6 @@ function ModelSelectorContent() {
 
     // Functions
     setSearchValue,
-    getDisplayValue,
     setSelectedValues,
     // Dialog
     keyDialogOpen,
@@ -30,18 +29,31 @@ function ModelSelectorContent() {
     keyDialogEndpoint,
   } = useModelSelectorContext();
 
-  const selectedIcon = getSelectedIcon({
-    mappedEndpoints: mappedEndpoints ?? [],
-    selectedValues,
-    modelSpecs,
-    endpointsConfig,
-  });
-  const selectedDisplayValue = getDisplayValue();
+  const selectedIcon = useMemo(
+    () =>
+      getSelectedIcon({
+        mappedEndpoints: mappedEndpoints ?? [],
+        selectedValues,
+        modelSpecs,
+        endpointsConfig,
+      }),
+    [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig],
+  );
+  const selectedDisplayValue = useMemo(
+    () =>
+      getDisplayValue({
+        localize,
+        modelSpecs,
+        selectedValues,
+        mappedEndpoints,
+      }),
+    [localize, modelSpecs, selectedValues, mappedEndpoints],
+  );
 
   const trigger = (
     <button
       className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-      aria-label={localize('com_endpoint_select_model')}
+      aria-label={localize('com_ui_select_model')}
     >
       {selectedIcon && React.isValidElement(selectedIcon) && (
         <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
