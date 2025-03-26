@@ -81,7 +81,9 @@ export default defineConfig({
       },
     }),
     sourcemapExclude({ excludeNodeModules: true }),
-    compression(),
+    compression({
+      threshold: 10240,
+    }),
   ],
   publicDir: './public',
   build: {
