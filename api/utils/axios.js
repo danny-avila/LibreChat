@@ -12,8 +12,8 @@ const logAxiosError = ({ message, error }) => {
   let logMessage = message;
   try {
     if (error.response?.status) {
-      logMessage = `${message} The server responded with status ${status}: ${error.message}`;
       const { status, headers, data } = error.response;
+      logMessage = `${message} The server responded with status ${status}: ${error.message}`;
       logger.error(logMessage, {
         status,
         headers,
