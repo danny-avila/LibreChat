@@ -17,8 +17,7 @@ export default function AddedConvo({
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const title = useMemo(() => {
     const sender = getSender(addedConvo as TEndpointOption);
-    const title = getPresetTitle(addedConvo as TPreset);
-    return `+ ${sender}: ${title}`;
+    return `+ ${sender}`;
   }, [addedConvo, getSender]);
 
   if (!addedConvo) {
