@@ -1,5 +1,3 @@
-'use client';
-
 import type React from 'react';
 
 import { X, Plus } from 'lucide-react';
@@ -11,10 +9,12 @@ import { cn } from '~/utils';
 interface BadgeProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: LucideIcon;
   label: string;
+  id?: string;
   isActive?: boolean;
   isEditing?: boolean;
   isDragging?: boolean;
   isAvailable: boolean;
+  isInChat?: boolean;
   onBadgeAction?: () => void;
   onToggle?: () => void;
 }
@@ -22,18 +22,27 @@ interface BadgeProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export default function Badge({
   icon: Icon,
   label,
+  id,
   isActive = false,
   isEditing = false,
   isDragging = false,
   isAvailable = true,
+  isInChat = false,
   onBadgeAction,
   onToggle,
   className,
   ...props
 }: BadgeProps) {
   const isMoveable = isEditing && isAvailable;
+  const isDisabled = id === '1' && isInChat;
 
   const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    if (isDisabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     if (!isEditing && onToggle) {
       if (typeof window !== 'undefined' && window.innerWidth >= 768) {
         e.preventDefault();
@@ -55,13 +64,14 @@ export default function Badge({
           : 'bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md',
         'active:scale-95 active:shadow-inner',
         isMoveable && 'cursor-move',
+        isDisabled && 'cursor-not-allowed opacity-50 hover:shadow-sm',
         className,
       )}
       animate={{
         scale: isDragging ? 1.1 : 1,
         boxShadow: isDragging ? '0 10px 25px rgba(0,0,0,0.1)' : undefined,
       }}
-      whileTap={{ scale: isDragging ? 1.1 : 0.97 }}
+      whileTap={{ scale: isDragging ? 1.1 : isDisabled ? 1 : 0.97 }}
       transition={{ type: 'tween', duration: 0.1, ease: 'easeOut' }}
       {...props}
     >
