@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
-import { getSelectedIcon } from './utils';
 import { useLocalize } from '~/hooks';
 
 function ModelSelectorContent() {
@@ -22,7 +22,6 @@ function ModelSelectorContent() {
 
     // Functions
     setSearchValue,
-    getDisplayValue,
     setSelectedValues,
     // Dialog
     keyDialogOpen,
@@ -30,13 +29,26 @@ function ModelSelectorContent() {
     keyDialogEndpoint,
   } = useModelSelectorContext();
 
-  const selectedIcon = getSelectedIcon({
-    mappedEndpoints: mappedEndpoints ?? [],
-    selectedValues,
-    modelSpecs,
-    endpointsConfig,
-  });
-  const selectedDisplayValue = getDisplayValue();
+  const selectedIcon = useMemo(
+    () =>
+      getSelectedIcon({
+        mappedEndpoints: mappedEndpoints ?? [],
+        selectedValues,
+        modelSpecs,
+        endpointsConfig,
+      }),
+    [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig],
+  );
+  const selectedDisplayValue = useMemo(
+    () =>
+      getDisplayValue({
+        localize,
+        modelSpecs,
+        selectedValues,
+        mappedEndpoints,
+      }),
+    [localize, modelSpecs, selectedValues, mappedEndpoints],
+  );
 
   const trigger = (
     <button

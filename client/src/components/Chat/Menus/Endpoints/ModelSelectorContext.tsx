@@ -3,7 +3,7 @@ import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librecha
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
-import { useEndpoints, useSelectorEffects, useKeyDialog, useLocalize } from '~/hooks';
+import { useEndpoints, useSelectorEffects, useKeyDialog } from '~/hooks';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { filterItems } from './utils';
@@ -22,7 +22,6 @@ type ModelSelectorContextType = {
   endpointsConfig: t.TEndpointsConfig;
 
   // Functions
-  getDisplayValue: () => string;
   endpointRequiresUserKey: (endpoint: string) => boolean;
   setSelectedValues: React.Dispatch<React.SetStateAction<SelectedValues>>;
   setSearchValue: (value: string) => void;
@@ -53,7 +52,6 @@ export function ModelSelectorProvider({
   modelSpecs,
   interfaceConfig,
 }: ModelSelectorProviderProps) {
-  const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
@@ -160,45 +158,6 @@ export function ModelSelectorProvider({
     });
   };
 
-  const getDisplayValue = () => {
-    if (selectedValues.modelSpec) {
-      const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
-      return spec?.label || localize('com_ui_select_model');
-    }
-
-    if (selectedValues.model && selectedValues.endpoint) {
-      const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-      if (!endpoint) {
-        return localize('com_ui_select_model');
-      }
-
-      if (
-        isAgentsEndpoint(endpoint.value) &&
-        endpoint.agentNames &&
-        endpoint.agentNames[selectedValues.model]
-      ) {
-        return endpoint.agentNames[selectedValues.model];
-      }
-
-      if (
-        isAssistantsEndpoint(endpoint.value) &&
-        endpoint.assistantNames &&
-        endpoint.assistantNames[selectedValues.model]
-      ) {
-        return endpoint.assistantNames[selectedValues.model];
-      }
-
-      return selectedValues.model;
-    }
-
-    if (selectedValues.endpoint) {
-      const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-      return endpoint?.label || localize('com_ui_select_model');
-    }
-
-    return localize('com_ui_select_model');
-  };
-
   const value = {
     // State
     searchValue,
@@ -214,7 +173,6 @@ export function ModelSelectorProvider({
 
     // Functions
     setSearchValue,
-    getDisplayValue,
     handleSelectSpec,
     handleSelectModel,
     setSelectedValues,
