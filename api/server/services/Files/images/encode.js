@@ -37,17 +37,21 @@ const base64Only = new Set([
   EModelEndpoint.bedrock,
 ]);
 
+const blobStorageSources = new Set([FileSources.azure, FileSources.s3]);
+
 /**
  * Encodes and formats the given files.
  * @param {Express.Request} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
  * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
  * @param {string} [mode] - Optional: The endpoint mode for the image.
- * @returns {Promise<Object>} - A promise that resolves to the result object containing the encoded images and file details.
+ * @returns {Promise<{ text: string; files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
+  /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
   const encodingMethods = {};
+  /** @type {{ text: string; files: MongoFile[]; image_urls: MessageContentImageUrl[] }} */
   const result = {
     text: '',
     files: [],
@@ -59,6 +63,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   }
 
   for (let file of files) {
+    /** @type {FileSources} */
     const source = file.source ?? FileSources.local;
     if (source === FileSources.text && file.text) {
       result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${file.text}\n`;
@@ -70,18 +75,51 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     }
 
     if (!encodingMethods[source]) {
-      const { prepareImagePayload } = getStrategyFunctions(source);
+      const { prepareImagePayload, getDownloadStream } = getStrategyFunctions(source);
       if (!prepareImagePayload) {
         throw new Error(`Encoding function not implemented for ${source}`);
       }
 
-      encodingMethods[source] = prepareImagePayload;
+      encodingMethods[source] = { prepareImagePayload, getDownloadStream };
     }
 
-    const preparePayload = encodingMethods[source];
+    const preparePayload = encodingMethods[source].prepareImagePayload;
+    /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob storage. */
+    if (blobStorageSources.has(source)) {
+      try {
+        const downloadStream = encodingMethods[source].getDownloadStream;
+        const stream = await downloadStream(req, file.filepath);
+        const streamPromise = new Promise((resolve, reject) => {
+          /** @type {Uint8Array[]} */
+          const chunks = [];
+          stream.on('readable', () => {
+            let chunk;
+            while (null !== (chunk = stream.read())) {
+              chunks.push(chunk);
+            }
+          });
 
-    /* Google & Anthropic don't support passing URLs to payload */
-    if (source !== FileSources.local && base64Only.has(endpoint)) {
+          stream.on('end', () => {
+            const buffer = Buffer.concat(chunks);
+            const base64Data = buffer.toString('base64');
+            resolve(base64Data);
+          });
+          stream.on('error', (error) => {
+            reject(error);
+          });
+        });
+        const base64Data = await streamPromise;
+        promises.push([file, base64Data]);
+      } catch (error) {
+        logger.error(
+          `Error processing blob storage file stream for ${file.name} base64 payload:`,
+          error,
+        );
+        continue;
+      }
+
+      /* Google & Anthropic don't support passing URLs to payload */
+    } else if (source !== FileSources.local && base64Only.has(endpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);
       promises.push([_file, await fetchImageToBase64(imageURL)]);
       continue;
