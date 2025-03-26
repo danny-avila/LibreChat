@@ -168,13 +168,9 @@ export const getDisplayValue = ({
   mappedEndpoints: Endpoint[];
   modelSpecs: TModelSpec[];
 }) => {
-  if (
-    selectedValues.modelSpec &&
-    !isAgentsEndpoint(selectedValues.endpoint) &&
-    !isAssistantsEndpoint(selectedValues.endpoint)
-  ) {
+  if (selectedValues.modelSpec) {
     const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
-    return spec?.label || localize('com_ui_select_model');
+    return spec?.label || spec?.name || localize('com_ui_select_model');
   }
 
   if (selectedValues.model && selectedValues.endpoint) {

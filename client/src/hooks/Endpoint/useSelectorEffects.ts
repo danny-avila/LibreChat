@@ -93,7 +93,7 @@ export default function useSelectorEffects({
         debouncedSetSelectedValues({
           endpoint: conversation.endpoint || '',
           model: conversation.agent_id ?? '',
-          modelSpec: '',
+          modelSpec: conversation.spec || '',
         });
         return;
       } else if (isAssistantsEndpoint(conversation?.endpoint)) {

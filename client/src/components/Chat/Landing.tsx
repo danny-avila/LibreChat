@@ -1,7 +1,6 @@
 import { easings } from '@react-spring/web';
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { useMemo, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
