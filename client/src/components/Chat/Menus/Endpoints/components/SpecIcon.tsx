@@ -22,7 +22,15 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
   if (!iconURL.includes('http')) {
     Icon = (icons[iconKey] ?? icons.unknown) as IconType;
   } else if (iconURL) {
-    return <URLIcon iconURL={iconURL} altName={currentSpec.name} />;
+    return (
+      <URLIcon
+        iconURL={iconURL}
+        altName={currentSpec.name}
+        containerStyle={{ width: 20, height: 20 }}
+        className="icon-md shrink-0 overflow-hidden rounded-full"
+        endpoint={endpoint || undefined}
+      />
+    );
   } else {
     Icon = (icons[endpoint ?? ''] ?? icons.unknown) as IconType;
   }

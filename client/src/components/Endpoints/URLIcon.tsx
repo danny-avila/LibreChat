@@ -1,14 +1,14 @@
 import React, { memo, useState } from 'react';
+import { AlertCircle } from 'lucide-react';
 import { icons } from '~/hooks/Endpoint/Icons';
-import { AlertCircle } from 'lucide-react'; // Assuming you have lucide-react for icons
 
 export const URLIcon = memo(
   ({
     iconURL,
     altName,
-    containerStyle = { width: '20', height: '20' },
+    containerStyle = { width: 20, height: 20 },
     imageStyle = { width: '100%', height: '100%' },
-    className = 'icon-xl mr-1 shrink-0 overflow-hidden rounded-full',
+    className = 'icon-md mr-1 shrink-0 overflow-hidden rounded-full',
     endpoint,
   }: {
     iconURL: string;
@@ -26,11 +26,12 @@ export const URLIcon = memo(
 
     const DefaultIcon: React.ElementType =
       endpoint && icons[endpoint] ? icons[endpoint]! : icons.unknown!;
+
     if (imageError || !iconURL) {
       return (
         <div className="relative" style={{ ...containerStyle, margin: '2px' }}>
           <div className={className}>
-            <DefaultIcon endpoint={endpoint} context="menu-item" />
+            <DefaultIcon endpoint={endpoint} context="menu-item" size={containerStyle.width} />
           </div>
           {imageError && iconURL && (
             <div
@@ -48,10 +49,14 @@ export const URLIcon = memo(
       <div className={className} style={containerStyle}>
         <img
           src={iconURL}
-          alt={altName ?? ''}
+          alt={altName ?? 'Icon'}
           style={imageStyle}
           className="object-cover"
           onError={handleImageError}
+          loading="lazy"
+          decoding="async"
+          width={Number(containerStyle.width)}
+          height={Number(containerStyle.height)}
         />
       </div>
     );

@@ -77,8 +77,9 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
                   autoSelect
                   render={combobox}
                   className={cn(
-                    'h-10 w-full rounded border-none bg-transparent px-2 text-base',
+                    'h-10 w-full rounded-lg border-none bg-transparent px-2 text-base',
                     'sm:h-8 sm:text-sm',
+                    'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-white',
                   )}
                 />
               </div>
