@@ -1,12 +1,13 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
+  TModelSpec,
   TAgentsMap,
   TAssistantsMap,
   TEndpointsConfig,
-  TModelSpec,
 } from 'librechat-data-provider';
+import type { useLocalize } from '~/hooks';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import { Endpoint, SelectedValues } from '~/common';
 
@@ -39,17 +40,13 @@ export function filterItems<
           return true;
         }
 
-        if (item.value === EModelEndpoint.agents && agentsMap && modelId in agentsMap) {
+        if (isAgentsEndpoint(item.value) && agentsMap && modelId in agentsMap) {
           const agentName = agentsMap[modelId]?.name;
           return typeof agentName === 'string' && agentName.toLowerCase().includes(searchTermLower);
         }
 
-        if (
-          (item.value === EModelEndpoint.assistants ||
-            item.value === EModelEndpoint.azureAssistants) &&
-          assistantsMap
-        ) {
-          const endpoint = item.value;
+        if (isAssistantsEndpoint(item.value) && assistantsMap) {
+          const endpoint = item.value ?? '';
           const assistant = assistantsMap[endpoint][modelId];
           if (assistant && typeof assistant.name === 'string') {
             return assistant.name.toLowerCase().includes(searchTermLower);
@@ -80,11 +77,10 @@ export function filterModels(
   return models.filter((modelId) => {
     let modelName = modelId;
 
-    if (endpoint.value === EModelEndpoint.agents && agentsMap && agentsMap[modelId]) {
+    if (isAgentsEndpoint(endpoint.value) && agentsMap && agentsMap[modelId]) {
       modelName = agentsMap[modelId].name || modelId;
     } else if (
-      (endpoint.value === EModelEndpoint.assistants ||
-        endpoint.value === EModelEndpoint.azureAssistants) &&
+      isAssistantsEndpoint(endpoint.value) &&
       assistantsMap &&
       assistantsMap[endpoint.value]
     ) {
@@ -160,3 +156,52 @@ export function getSelectedIcon({
 
   return null;
 }
+
+export const getDisplayValue = ({
+  localize,
+  mappedEndpoints,
+  selectedValues,
+  modelSpecs,
+}: {
+  localize: ReturnType<typeof useLocalize>;
+  selectedValues: SelectedValues;
+  mappedEndpoints: Endpoint[];
+  modelSpecs: TModelSpec[];
+}) => {
+  if (selectedValues.modelSpec) {
+    const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
+    return spec?.label || spec?.name || localize('com_ui_select_model');
+  }
+
+  if (selectedValues.model && selectedValues.endpoint) {
+    const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
+    if (!endpoint) {
+      return localize('com_ui_select_model');
+    }
+
+    if (
+      isAgentsEndpoint(endpoint.value) &&
+      endpoint.agentNames &&
+      endpoint.agentNames[selectedValues.model]
+    ) {
+      return endpoint.agentNames[selectedValues.model];
+    }
+
+    if (
+      isAssistantsEndpoint(endpoint.value) &&
+      endpoint.assistantNames &&
+      endpoint.assistantNames[selectedValues.model]
+    ) {
+      return endpoint.assistantNames[selectedValues.model];
+    }
+
+    return selectedValues.model;
+  }
+
+  if (selectedValues.endpoint) {
+    const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
+    return endpoint?.label || localize('com_ui_select_model');
+  }
+
+  return localize('com_ui_select_model');
+};

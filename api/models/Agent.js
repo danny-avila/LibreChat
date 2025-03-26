@@ -46,6 +46,10 @@ const loadAgent = async ({ req, agent_id }) => {
     id: agent_id,
   });
 
+  if (!agent) {
+    return null;
+  }
+
   if (agent.author.toString() === req.user.id) {
     return agent;
   }

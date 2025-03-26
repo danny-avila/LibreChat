@@ -1,9 +1,10 @@
-import React, { startTransition, createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import debounce from 'lodash/debounce';
+import React, { createContext, useContext, useState, useMemo } from 'react';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
-import { useEndpoints, useSelectorEffects, useKeyDialog, useLocalize } from '~/hooks';
+import { useEndpoints, useSelectorEffects, useKeyDialog } from '~/hooks';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { filterItems } from './utils';
@@ -22,7 +23,6 @@ type ModelSelectorContextType = {
   endpointsConfig: t.TEndpointsConfig;
 
   // Functions
-  getDisplayValue: () => string;
   endpointRequiresUserKey: (endpoint: string) => boolean;
   setSelectedValues: React.Dispatch<React.SetStateAction<SelectedValues>>;
   setSearchValue: (value: string) => void;
@@ -53,7 +53,6 @@ export function ModelSelectorProvider({
   modelSpecs,
   interfaceConfig,
 }: ModelSelectorProviderProps) {
-  const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
@@ -101,10 +100,13 @@ export function ModelSelectorProvider({
   }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap]);
 
   // Functions
-  const setSearchValue = (value: string) => {
-    startTransition(() => setSearchValueState(value));
-  };
-
+  const setDebouncedSearchValue = useMemo(
+    () =>
+      debounce((value: string) => {
+        setSearchValueState(value);
+      }, 200),
+    [],
+  );
   const setEndpointSearchValue = (endpoint: string, value: string) => {
     setEndpointSearchValues((prev) => ({
       ...prev,
@@ -113,10 +115,16 @@ export function ModelSelectorProvider({
   };
 
   const handleSelectSpec = (spec: t.TModelSpec) => {
+    let model = spec.preset.model ?? null;
     onSelectSpec?.(spec);
+    if (isAgentsEndpoint(spec.preset.endpoint)) {
+      model = spec.preset.agent_id ?? '';
+    } else if (isAssistantsEndpoint(spec.preset.endpoint)) {
+      model = spec.preset.assistant_id ?? '';
+    }
     setSelectedValues({
       endpoint: spec.preset.endpoint,
-      model: spec.preset.model ?? null,
+      model,
       modelSpec: spec.name,
     });
   };
@@ -154,46 +162,6 @@ export function ModelSelectorProvider({
     });
   };
 
-  const getDisplayValue = () => {
-    if (selectedValues.modelSpec) {
-      const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
-      return spec?.label || localize('com_endpoint_select_model');
-    }
-
-    if (selectedValues.model && selectedValues.endpoint) {
-      const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-      if (!endpoint) {
-        return localize('com_endpoint_select_model');
-      }
-
-      if (
-        endpoint.value === EModelEndpoint.agents &&
-        endpoint.agentNames &&
-        endpoint.agentNames[selectedValues.model]
-      ) {
-        return endpoint.agentNames[selectedValues.model];
-      }
-
-      if (
-        (endpoint.value === EModelEndpoint.assistants ||
-          endpoint.value === EModelEndpoint.azureAssistants) &&
-        endpoint.assistantNames &&
-        endpoint.assistantNames[selectedValues.model]
-      ) {
-        return endpoint.assistantNames[selectedValues.model];
-      }
-
-      return selectedValues.model;
-    }
-
-    if (selectedValues.endpoint) {
-      const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-      return endpoint?.label || localize('com_endpoint_select_model');
-    }
-
-    return localize('com_endpoint_select_model');
-  };
-
   const value = {
     // State
     searchValue,
@@ -208,14 +176,13 @@ export function ModelSelectorProvider({
     endpointsConfig,
 
     // Functions
-    setSearchValue,
-    getDisplayValue,
     handleSelectSpec,
     handleSelectModel,
     setSelectedValues,
     handleSelectEndpoint,
     setEndpointSearchValue,
     endpointRequiresUserKey,
+    setSearchValue: setDebouncedSearchValue,
     // Dialog
     ...keyProps,
   };

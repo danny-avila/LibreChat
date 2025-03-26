@@ -1,6 +1,6 @@
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { easings } from '@react-spring/web';
+import { useMemo, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
@@ -117,7 +117,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
                 textAlign="center"
                 animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
                 animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-                easing="easeOutCubic"
+                easing={easings.easeOutCubic}
                 threshold={0}
                 rootMargin="0px"
               />
@@ -131,7 +131,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
               animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-              easing="easeOutCubic"
+              easing={easings.easeOutCubic}
               threshold={0}
               rootMargin="0px"
             />
