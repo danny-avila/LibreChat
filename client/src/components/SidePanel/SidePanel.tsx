@@ -9,7 +9,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
 import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
-import Switcher from './Switcher';
+
 import Nav from './Nav';
 
 const defaultMinSize = 20;
@@ -163,27 +163,13 @@ const SidePanel = ({
           localStorage.setItem('react-resizable-panels:collapsed', 'true');
         }}
         className={cn(
-          'sidenav hide-scrollbar border-l border-border-light bg-background transition-opacity',
+          'sidenav hide-scrollbar border-l border-border-light bg-background py-1 transition-opacity',
           isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
           (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
             ? 'hidden min-w-0'
             : 'opacity-100',
         )}
       >
-        {interfaceConfig.modelSelect === true && (
-          <div
-            className={cn(
-              'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-background',
-              isCollapsed ? 'h-[52px]' : 'px-2',
-            )}
-          >
-            <Switcher
-              isCollapsed={isCollapsed}
-              endpointKeyProvided={keyProvided}
-              endpoint={endpoint}
-            />
-          </div>
-        )}
         <Nav
           resize={panelRef.current?.resize}
           isCollapsed={isCollapsed}

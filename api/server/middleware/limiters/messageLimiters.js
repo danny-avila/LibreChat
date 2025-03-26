@@ -1,6 +1,11 @@
+const Keyv = require('keyv');
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const denyRequest = require('~/server/middleware/denyRequest');
+const { isEnabled } = require('~/server/utils');
+const keyvRedis = require('~/cache/keyvRedis');
 const { logViolation } = require('~/cache');
+const { logger } = require('~/config');
 
 const {
   MESSAGE_IP_MAX = 40,
@@ -41,25 +46,49 @@ const createHandler = (ip = true) => {
 };
 
 /**
- * Message request rate limiter by IP
+ * Message request rate limiters
  */
-const messageIpLimiter = rateLimit({
+const ipLimiterOptions = {
   windowMs: ipWindowMs,
   max: ipMax,
   handler: createHandler(),
-});
+};
 
-/**
- * Message request rate limiter by userId
- */
-const messageUserLimiter = rateLimit({
+const userLimiterOptions = {
   windowMs: userWindowMs,
   max: userMax,
   handler: createHandler(false),
   keyGenerator: function (req) {
     return req.user?.id; // Use the user ID or NULL if not available
   },
-});
+};
+
+if (isEnabled(process.env.USE_REDIS)) {
+  logger.debug('Using Redis for message rate limiters.');
+  const keyv = new Keyv({ store: keyvRedis });
+  const client = keyv.opts.store.redis;
+  const sendCommand = (...args) => client.call(...args);
+  const ipStore = new RedisStore({
+    sendCommand,
+    prefix: 'message_ip_limiter:',
+  });
+  const userStore = new RedisStore({
+    sendCommand,
+    prefix: 'message_user_limiter:',
+  });
+  ipLimiterOptions.store = ipStore;
+  userLimiterOptions.store = userStore;
+}
+
+/**
+ * Message request rate limiter by IP
+ */
+const messageIpLimiter = rateLimit(ipLimiterOptions);
+
+/**
+ * Message request rate limiter by userId
+ */
+const messageUserLimiter = rateLimit(userLimiterOptions);
 
 module.exports = {
   messageIpLimiter,

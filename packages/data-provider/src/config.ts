@@ -51,6 +51,7 @@ export const excludedKeys = new Set([
   'tools',
   'model',
   'files',
+  'spec',
 ]);
 
 export enum SettingsViews {
@@ -501,6 +502,7 @@ export const intefaceSchema = z
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
+export type TBalanceConfig = z.infer<typeof balanceSchema>;
 
 export const turnstileOptionsSchema = z
   .object({
@@ -524,6 +526,7 @@ export type TStartupConfig = {
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
+  balance?: TBalanceConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
@@ -546,7 +549,6 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
-  checkBalance: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
@@ -568,6 +570,18 @@ export const ocrSchema = z.object({
   apiKey: z.string().optional().default('OCR_API_KEY'),
   baseURL: z.string().optional().default('OCR_BASEURL'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+});
+
+export const balanceSchema = z.object({
+  enabled: z.boolean().optional().default(false),
+  startBalance: z.number().optional().default(20000),
+  autoRefillEnabled: z.boolean().optional().default(false),
+  refillIntervalValue: z.number().optional().default(30),
+  refillIntervalUnit: z
+    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
+    .optional()
+    .default('days'),
+  refillAmount: z.number().optional().default(10000),
 });
 
 export const configSchema = z.object({
@@ -593,6 +607,7 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
+  balance: balanceSchema.optional(),
   speech: z
     .object({
       tts: ttsSchema.optional(),

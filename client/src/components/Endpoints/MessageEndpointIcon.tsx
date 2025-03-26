@@ -13,7 +13,7 @@ import {
   AzureMinimalIcon,
   CustomMinimalIcon,
 } from '~/components/svg';
-import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
+import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -186,7 +186,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
 
   let { icon, bg, name } =
     endpoint != null && endpoint && endpointIcons[endpoint]
-      ? endpointIcons[endpoint] ?? {}
+      ? (endpointIcons[endpoint] ?? {})
       : (endpointIcons.default as EndpointIcon);
 
   if (iconURL && endpointIcons[iconURL]) {

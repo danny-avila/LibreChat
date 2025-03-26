@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import type { IconMapProps } from '~/common';
-import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
+import { icons } from '~/hooks/Endpoint/Icons';
 
 interface ConvoIconURLProps {
   iconURL?: string;
@@ -39,12 +39,7 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   agentName,
   context,
 }) => {
-  const Icon: (
-    props: IconMapProps & {
-      context?: string;
-      iconURL?: string;
-    },
-  ) => React.JSX.Element = useMemo(() => icons[iconURL] ?? icons.unknown, [iconURL]);
+  const Icon = useMemo(() => icons[iconURL] ?? icons.unknown, [iconURL]);
   const isURL = useMemo(
     () => !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))),
     [iconURL],
@@ -63,15 +58,17 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
 
   return (
     <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-      <Icon
-        size={41}
-        context={context}
-        className="h-2/3 w-2/3"
-        agentName={agentName}
-        iconURL={endpointIconURL}
-        assistantName={assistantName}
-        avatar={assistantAvatar ?? agentAvatar}
-      />
+      {Icon && (
+        <Icon
+          size={41}
+          context={context}
+          className="h-2/3 w-2/3"
+          agentName={agentName}
+          iconURL={endpointIconURL}
+          assistantName={assistantName}
+          avatar={assistantAvatar ?? agentAvatar}
+        />
+      )}
     </div>
   );
 };
