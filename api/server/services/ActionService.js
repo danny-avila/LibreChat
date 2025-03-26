@@ -299,9 +299,8 @@ async function createActionTool({
       }
       return response.data;
     } catch (error) {
-      const logMessage = `API call to ${action.metadata.domain} failed`;
-      logAxiosError({ message: logMessage, error });
-      throw error;
+      const message = `API call to ${action.metadata.domain} failed:`;
+      return logAxiosError({ message, error });
     }
   };
 

@@ -194,8 +194,7 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
     };
   } catch (error) {
     const message = 'Error uploading document to Mistral OCR API';
-    logAxiosError({ error, message });
-    throw new Error(message);
+    throw new Error(logAxiosError({ error, message }));
   }
 };
 
