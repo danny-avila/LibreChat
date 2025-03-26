@@ -1,3 +1,7 @@
+'use client';
+
+import type React from 'react';
+
 import { X, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { ButtonHTMLAttributes } from 'react';
@@ -44,10 +48,12 @@ export default function Badge({
       onClick={handleClick}
       className={cn(
         'group relative inline-flex items-center gap-1.5 rounded-full px-4 py-1.5',
-        'border border-border-medium text-sm font-medium transition-shadow',
+        'border border-border-medium text-sm font-medium transition-shadow md:w-full',
+        'size-9 p-2 md:p-3',
         isActive
           ? 'bg-surface-active shadow-md'
           : 'bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md',
+        'active:scale-95 active:shadow-inner',
         isMoveable && 'cursor-move',
         className,
       )}
@@ -59,12 +65,12 @@ export default function Badge({
       transition={{ type: 'tween', duration: 0.1, ease: 'easeOut' }}
       {...props}
     >
-      {Icon && <Icon className="relative h-4 w-4" />}
+      {Icon && <Icon className={cn('relative h-5 w-5 md:h-4 md:w-4', !label && 'mx-auto')} />}
       <span className="relative hidden md:inline">{label}</span>
 
       {isEditing && !isDragging && (
         <motion.button
-          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface-secondary-alt text-text-primary"
+          className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-surface-secondary-alt text-text-primary shadow-sm md:h-5 md:w-5"
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.8 }}
