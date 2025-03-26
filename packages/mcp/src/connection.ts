@@ -320,9 +320,6 @@ export class MCPConnection extends EventEmitter {
 
     const originalSend = this.transport.send.bind(this.transport);
     this.transport.send = async (msg) => {
-      if ('result' in msg && !('method' in msg) && Object.keys(msg.result ?? {}).length === 0) {
-        throw new Error('Empty result');
-      }
       this.logger?.debug(`[MCP][${this.serverName}] Transport sending: ${JSON.stringify(msg)}`);
       return originalSend(msg);
     };
