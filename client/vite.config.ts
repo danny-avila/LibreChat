@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import compression from 'vite-plugin-compression';
+import { compression } from 'vite-plugin-compression2';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
@@ -81,13 +81,7 @@ export default defineConfig({
       },
     }),
     sourcemapExclude({ excludeNodeModules: true }),
-    compression({
-      verbose: true,
-      disable: false,
-      threshold: 10240, // compress files larger than 10KB
-      algorithm: 'gzip',
-      ext: '.gz',
-    }),
+    compression(),
   ],
   publicDir: './public',
   build: {
