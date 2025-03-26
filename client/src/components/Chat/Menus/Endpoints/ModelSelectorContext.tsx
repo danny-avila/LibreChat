@@ -161,16 +161,6 @@ export function ModelSelectorProvider({
     }
 
     if (selectedValues.model && selectedValues.endpoint) {
-      // Early return for agents without requiring mapped endpoints (which is empty when modelSelect is false)
-      if (selectedValues.endpoint === EModelEndpoint.agents) {
-        // Try to find the agent name from the agentsMap
-        const agentId = selectedValues.model;
-        const agent = agentsMap?.[agentId];
-        if (agent?.name) {
-          return agent.name;
-        }
-      }
-
       const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
       if (!endpoint) {
         return localize('com_endpoint_select_model');
