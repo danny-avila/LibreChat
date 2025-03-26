@@ -328,6 +328,27 @@ async function createActionTool({
 }
 
 /**
+ * Encrypts a sensitive value.
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function encryptSensitiveValue(value) {
+  // Encode API key to handle special characters like ":"
+  const encodedValue = encodeURIComponent(value);
+  return await encryptV2(encodedValue);
+}
+
+/**
+ * Decrypts a sensitive value.
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function decryptSensitiveValue(value) {
+  const decryptedValue = await decryptV2(value);
+  return decodeURIComponent(decryptedValue);
+}
+
+/**
  * Encrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to encrypt.
@@ -339,17 +360,19 @@ async function encryptMetadata(metadata) {
   // ServiceHttp
   if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
     if (metadata.api_key) {
-      encryptedMetadata.api_key = await encryptV2(metadata.api_key);
+      encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);
     }
   }
 
   // OAuth
   else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
     if (metadata.oauth_client_id) {
-      encryptedMetadata.oauth_client_id = await encryptV2(metadata.oauth_client_id);
+      encryptedMetadata.oauth_client_id = await encryptSensitiveValue(metadata.oauth_client_id);
     }
     if (metadata.oauth_client_secret) {
-      encryptedMetadata.oauth_client_secret = await encryptV2(metadata.oauth_client_secret);
+      encryptedMetadata.oauth_client_secret = await encryptSensitiveValue(
+        metadata.oauth_client_secret,
+      );
     }
   }
 
@@ -368,17 +391,19 @@ async function decryptMetadata(metadata) {
   // ServiceHttp
   if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
     if (metadata.api_key) {
-      decryptedMetadata.api_key = await decryptV2(metadata.api_key);
+      decryptedMetadata.api_key = await decryptSensitiveValue(metadata.api_key);
     }
   }
 
   // OAuth
   else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
     if (metadata.oauth_client_id) {
-      decryptedMetadata.oauth_client_id = await decryptV2(metadata.oauth_client_id);
+      decryptedMetadata.oauth_client_id = await decryptSensitiveValue(metadata.oauth_client_id);
     }
     if (metadata.oauth_client_secret) {
-      decryptedMetadata.oauth_client_secret = await decryptV2(metadata.oauth_client_secret);
+      decryptedMetadata.oauth_client_secret = await decryptSensitiveValue(
+        metadata.oauth_client_secret,
+      );
     }
   }
 
