@@ -4,7 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { Brain, Eye, Globe } from 'lucide-react';
+import { Brain, Eye, Globe, FlaskConical } from 'lucide-react';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -31,6 +31,11 @@ const CapabilityIcon = ({ type }: { type: string }) => {
       iconElement = <Globe className="h-4 w-4" />;
       color = 'hsl(208 56% 52%)';
       darkColor = 'hsl(208 56% 74%)';
+      break;
+    case 'experimental':
+      iconElement = <FlaskConical className="h-4 w-4" />;
+      color = 'hsl(25 95% 53%)';
+      darkColor = 'hsl(25 95% 73%)';
       break;
     default:
       return null;

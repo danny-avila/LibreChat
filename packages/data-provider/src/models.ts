@@ -8,7 +8,7 @@ import {
   authTypeSchema,
 } from './schemas';
 
-export type ModelCapabilityType = 'reasoning' | 'upload_image' | 'web_search';
+export type ModelCapabilityType = 'reasoning' | 'upload_image' | 'web_search' | 'experimental';
 
 export type TModelSpec = {
   name: string;
@@ -35,7 +35,7 @@ export const tModelSpecSchema = z.object({
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
-  iconCapabilities: z.array(z.enum(['reasoning', 'upload_image', 'web_search'])).optional(),
+  iconCapabilities: z.array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental'])).optional(),
 });
 
 export const specsConfigSchema = z.object({
