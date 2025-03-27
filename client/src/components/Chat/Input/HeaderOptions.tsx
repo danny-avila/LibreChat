@@ -2,17 +2,12 @@ import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { Root, Anchor } from '@radix-ui/react-popover';
-import {
-  EModelEndpoint,
-  isParamEndpoint,
-  isAgentsEndpoint,
-  tConvoUpdateSchema,
-} from 'librechat-data-provider';
+import { EModelEndpoint, isParamEndpoint, tConvoUpdateSchema } from 'librechat-data-provider';
+import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
+import { useSetIndexOptions, useMediaQuery, useLocalize } from '~/hooks';
 import { PluginStoreDialog, TooltipAnchor } from '~/components';
-import { ModelSelect } from '~/components/Input/ModelSelect';
-import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import OptionsPopover from './OptionsPopover';
 import PopoverButtons from './PopoverButtons';
@@ -26,6 +21,7 @@ export default function HeaderOptions({
   interfaceConfig?: Partial<TInterfaceConfig>;
 }) {
   const { data: endpointsConfig } = useGetEndpointsQuery();
+
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
@@ -35,6 +31,15 @@ export default function HeaderOptions({
   const { showPopover, conversation, setShowPopover } = useChatContext();
   const { setOption } = useSetIndexOptions();
   const { endpoint, conversationId } = conversation ?? {};
+  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
+  const userProvidesKey = useMemo(
+    () => !!(endpointsConfig?.[endpoint ?? '']?.userProvide ?? false),
+    [endpointsConfig, endpoint],
+  );
+  const keyProvided = useMemo(
+    () => (userProvidesKey ? !!(keyExpiry.expiresAt ?? '') : true),
+    [keyExpiry.expiresAt, userProvidesKey],
+  );
 
   const noSettings = useMemo<{ [key: string]: boolean }>(
     () => ({
@@ -71,14 +76,6 @@ export default function HeaderOptions({
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <div className="z-[61] flex w-full items-center justify-center gap-2">
-              {interfaceConfig?.modelSelect === true && !isAgentsEndpoint(endpoint) && (
-                <ModelSelect
-                  conversation={conversation}
-                  setOption={setOption}
-                  showAbove={false}
-                  popover={true}
-                />
-              )}
               {!noSettings[endpoint] &&
                 interfaceConfig?.parameters === true &&
                 paramEndpoint === false && (

@@ -34,8 +34,14 @@ const mistralModels = {
   'mistral-7b': 31990, // -10 from max
   'mistral-small': 31990, // -10 from max
   'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large': 131000,
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
+  'pixtral-large': 131000,
+  'mistral-saba': 32000,
+  codestral: 256000,
+  'ministral-8b': 131000,
+  'ministral-3b': 131000,
 };
 
 const cohereModels = {

@@ -2,6 +2,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
+  ErrorTypes,
   EModelEndpoint,
   anthropicSettings,
   getResponseSender,
@@ -147,12 +148,17 @@ class AnthropicClient extends BaseClient {
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
-    if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
-      throw new Error(
-        `maxPromptTokens + maxOutputTokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
-          this.maxPromptTokens + this.maxResponseTokens
-        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
-      );
+    const reservedTokens = this.maxPromptTokens + this.maxResponseTokens;
+    if (reservedTokens > this.maxContextTokens) {
+      const info = `Total Possible Tokens + Max Output Tokens must be less than or equal to Max Context Tokens: ${this.maxPromptTokens} (total possible output) + ${this.maxResponseTokens} (max output) = ${reservedTokens}/${this.maxContextTokens} (max context)`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(info);
+      throw new Error(errorMessage);
+    } else if (this.maxResponseTokens === this.maxContextTokens) {
+      const info = `Max Output Tokens must be less than Max Context Tokens: ${this.maxResponseTokens} (max output) = ${this.maxContextTokens} (max context)`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(info);
+      throw new Error(errorMessage);
     }
 
     this.sender =
