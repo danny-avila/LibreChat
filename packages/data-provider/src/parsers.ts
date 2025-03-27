@@ -375,6 +375,9 @@ export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
   let result = '';
 
   for (const part of contentParts) {
+    if (!part.type) {
+      continue;
+    }
     if (part.type === ContentTypes.TEXT) {
       const textValue = typeof part.text === 'string' ? part.text : part.text.value;
 
