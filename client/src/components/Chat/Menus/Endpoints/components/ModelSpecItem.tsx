@@ -13,16 +13,19 @@ interface ModelSpecItemProps {
 
 const CapabilityIcon = ({ type }: { type: string }) => {
   let iconElement;
-  let bgColor;
+  let color;
+  let darkColor;
   
   switch (type) {
     case 'reasoning':
       iconElement = <Brain className="h-4 w-4" />;
-      bgColor = 'hsl(263 58% 75%)';
+      color = 'hsl(263 58% 53%)';
+      darkColor = 'hsl(263 58% 75%)';
       break;
     case 'upload_image':
       iconElement = <Eye className="h-4 w-4" />;
-      bgColor = 'hsl(168 54% 52%)';
+      color = 'hsl(168 54% 52%)';
+      darkColor = 'hsl(168 54% 74%)';
       break;
     default:
       return null;
@@ -30,26 +33,14 @@ const CapabilityIcon = ({ type }: { type: string }) => {
   
   return (
     <div 
-      className="flex items-center justify-center"
+      className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-md text-[--color] dark:text-[--color-dark]"
       style={{
-        width: '24px',
-        height: '24px',
-        backgroundColor: bgColor,
-        opacity: 0.15,
-        borderRadius: 'calc(0.5rem - 2px)',
-        position: 'relative'
-      }}
+        '--color': color,
+        '--color-dark': darkColor,
+      } as React.CSSProperties}
     >
-      <div 
-        style={{ 
-          position: 'absolute',
-          display: 'flex',
-          color: bgColor,
-          opacity: 1
-        }}
-      >
-        {iconElement}
-      </div>
+      <div className="absolute inset-0 bg-current opacity-20 dark:opacity-15"></div>
+      {iconElement}
     </div>
   );
 };
@@ -80,7 +71,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           <div className="flex items-center justify-between w-full">
             <span className="truncate text-left">{spec.label}</span>
             {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
-              <div className="flex gap-1 flex-shrink-0">
+              <div className="flex gap-2 flex-shrink-0">
                 {spec.iconCapabilities.map((capability: string, index: number) => (
                   <CapabilityIcon key={index} type={capability} />
                 ))}
