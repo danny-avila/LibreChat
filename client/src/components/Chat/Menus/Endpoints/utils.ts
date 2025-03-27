@@ -12,7 +12,12 @@ import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import { Endpoint, SelectedValues } from '~/common';
 
 export function filterItems<
-  T extends { label: string; name?: string; value?: string; models?: string[] },
+  T extends {
+    label: string;
+    name?: string;
+    value?: string;
+    models?: Array<{ name: string; isGlobal?: boolean }>;
+  },
 >(
   items: T[],
   searchValue: string,
@@ -36,18 +41,18 @@ export function filterItems<
 
     if (item.models && item.models.length > 0) {
       return item.models.some((modelId) => {
-        if (modelId.toLowerCase().includes(searchTermLower)) {
+        if (modelId.name.toLowerCase().includes(searchTermLower)) {
           return true;
         }
 
-        if (isAgentsEndpoint(item.value) && agentsMap && modelId in agentsMap) {
-          const agentName = agentsMap[modelId]?.name;
+        if (isAgentsEndpoint(item.value) && agentsMap && modelId.name in agentsMap) {
+          const agentName = agentsMap[modelId.name]?.name;
           return typeof agentName === 'string' && agentName.toLowerCase().includes(searchTermLower);
         }
 
         if (isAssistantsEndpoint(item.value) && assistantsMap) {
           const endpoint = item.value ?? '';
-          const assistant = assistantsMap[endpoint][modelId];
+          const assistant = assistantsMap[endpoint][modelId.name];
           if (assistant && typeof assistant.name === 'string') {
             return assistant.name.toLowerCase().includes(searchTermLower);
           }

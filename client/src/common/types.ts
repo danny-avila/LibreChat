@@ -496,17 +496,6 @@ export interface ExtendedFile {
   metadata?: t.TFile['metadata'];
 }
 
-export interface ExtendedEndpoint {
-  value: EModelEndpoint;
-  label: string;
-  hasModels: boolean;
-  icon: JSX.Element | null;
-  models?: string[];
-  agentNames?: Record<string, string>;
-  assistantNames?: Record<string, string>;
-  modelIcons?: Record<string, string | undefined>;
-}
-
 export interface ModelItemProps {
   modelName: string;
   endpoint: EModelEndpoint;

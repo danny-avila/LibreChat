@@ -89,7 +89,13 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 
   if (endpoint.hasModels) {
     const filteredModels = searchValue
-      ? filterModels(endpoint, endpoint.models || [], searchValue, agentsMap, assistantsMap)
+      ? filterModels(
+        endpoint,
+        (endpoint.models || []).map((model) => model.name),
+        searchValue,
+        agentsMap,
+        assistantsMap,
+      )
       : null;
     const placeholder =
       isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
