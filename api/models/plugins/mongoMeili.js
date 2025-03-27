@@ -1,6 +1,7 @@
 const _ = require('lodash');
 const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
+const { parseTextParts, ContentTypes } = require('librechat-data-provider');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const logger = require('~/config/meiliLogger');
 
@@ -238,10 +239,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
       }
 
       if (object.content && Array.isArray(object.content)) {
-        object.text = object.content
-          .filter((item) => item.type === 'text' && item.text && item.text.value)
-          .map((item) => item.text.value)
-          .join(' ');
+        object.text = parseTextParts(object.content);
         delete object.content;
       }
 
