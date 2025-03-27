@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
+import remarkEmoji from 'remark-emoji';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
@@ -31,6 +32,7 @@ const MarkdownLite = memo(
             remarkPlugins={[
               /** @ts-ignore */
               supersub,
+              remarkEmoji,
               remarkGfm,
               [remarkMath, { singleDollarTextMath: true }],
             ]}
