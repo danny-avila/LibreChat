@@ -27,6 +27,7 @@ endpoints:
       disableHistory: true
       modelDisplayLabel: "Marginal Firma Agent"
       iconURL: "/assets/logo.svg"
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 
     # cohere
     # Model list: https://dashboard.cohere.com/playground/chat
