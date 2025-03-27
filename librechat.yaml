@@ -15,7 +15,7 @@ endpoints:
     - name: "Marginal Agent"
       apiKey: "${MARGINAL_API_KEY}"
       baseURL: "https://margial.app.n8n.cloud/webhook-test/c9ba4f9f-9bfd-4ab5-bb2d-54ec9631f63e"
-      directEndpoint: true
+      directEndpoint: false
       models:
         default:
           - "firma"
