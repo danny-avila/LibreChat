@@ -44,9 +44,7 @@ export default function Badge({
     }
 
     if (!isEditing && onToggle) {
-      if (typeof window !== 'undefined' && window.innerWidth >= 768) {
-        e.preventDefault();
-      }
+      e.preventDefault();
       e.stopPropagation();
       onToggle();
     }
