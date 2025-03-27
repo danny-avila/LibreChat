@@ -1,11 +1,11 @@
 import React from 'react';
-import { TModelSpec, TInterfaceConfig } from 'librechat-data-provider';
+import { TModelSpec, TStartupConfig } from 'librechat-data-provider';
 
 export interface Endpoint {
   value: string;
   label: string;
   hasModels: boolean;
-  models?: string[];
+  models?: Array<{ name: string; isGlobal?: boolean }>;
   icon: React.ReactNode;
   agentNames?: Record<string, string>;
   assistantNames?: Record<string, string>;
@@ -19,6 +19,6 @@ export interface SelectedValues {
 }
 
 export interface ModelSelectorProps {
-  interfaceConfig: TInterfaceConfig;
+  startupConfig: TStartupConfig | undefined;
   modelSpecs: TModelSpec[];
 }
