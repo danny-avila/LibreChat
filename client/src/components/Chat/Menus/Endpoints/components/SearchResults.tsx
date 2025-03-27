@@ -1,4 +1,5 @@
 import React, { Fragment } from 'react';
+import { EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
@@ -134,6 +135,8 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 </div>
                 {filteredModels.map((model) => {
                   const modelId = model.name;
+
+                  let isGlobal = false;
                   let modelName = modelId;
                   if (
                     isAgentsEndpoint(endpoint.value) &&
@@ -141,6 +144,8 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                     endpoint.agentNames[modelId]
                   ) {
                     modelName = endpoint.agentNames[modelId];
+                    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
+                    isGlobal = modelInfo?.isGlobal ?? false;
                   } else if (
                     isAssistantsEndpoint(endpoint.value) &&
                     endpoint.assistantNames &&
@@ -167,6 +172,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                         )}
                         <span>{modelName}</span>
                       </div>
+                      {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
                       {selectedEndpoint === endpoint.value && selectedModel === modelId && (
                         <svg
                           width="16"
@@ -174,7 +180,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                           viewBox="0 0 24 24"
                           fill="none"
                           xmlns="http://www.w3.org/2000/svg"
-                          className="ml-auto block"
+                          className="block"
                         >
                           <path
                             fillRule="evenodd"
