@@ -1,5 +1,5 @@
 import React, { Fragment } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -105,14 +105,13 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
               : endpoint.models.filter((modelId) => {
                 let modelName = modelId;
                 if (
-                  endpoint.value === EModelEndpoint.agents &&
+                  isAgentsEndpoint(endpoint.value) &&
                     endpoint.agentNames &&
                     endpoint.agentNames[modelId]
                 ) {
                   modelName = endpoint.agentNames[modelId];
                 } else if (
-                  (endpoint.value === EModelEndpoint.assistants ||
-                      endpoint.value === EModelEndpoint.azureAssistants) &&
+                  isAssistantsEndpoint(endpoint.value) &&
                     endpoint.assistantNames &&
                     endpoint.assistantNames[modelId]
                 ) {
@@ -138,14 +137,13 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 {filteredModels.map((modelId) => {
                   let modelName = modelId;
                   if (
-                    endpoint.value === EModelEndpoint.agents &&
+                    isAgentsEndpoint(endpoint.value) &&
                     endpoint.agentNames &&
                     endpoint.agentNames[modelId]
                   ) {
                     modelName = endpoint.agentNames[modelId];
                   } else if (
-                    (endpoint.value === EModelEndpoint.assistants ||
-                      endpoint.value === EModelEndpoint.azureAssistants) &&
+                    isAssistantsEndpoint(endpoint.value) &&
                     endpoint.assistantNames &&
                     endpoint.assistantNames[modelId]
                   ) {

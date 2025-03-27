@@ -1,5 +1,5 @@
 import React from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
@@ -16,18 +16,12 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
 
   // Use custom names if available
-  if (
-    endpoint &&
-    modelId &&
-    endpoint.value === EModelEndpoint.agents &&
-    endpoint.agentNames?.[modelId]
-  ) {
+  if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
     modelName = endpoint.agentNames[modelId];
   } else if (
     endpoint &&
     modelId &&
-    (endpoint.value === EModelEndpoint.assistants ||
-      endpoint.value === EModelEndpoint.azureAssistants) &&
+    isAssistantsEndpoint(endpoint.value) &&
     endpoint.assistantNames?.[modelId]
   ) {
     modelName = endpoint.assistantNames[modelId];
@@ -44,9 +38,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
             <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
           </div>
-        ) : (endpoint.value === EModelEndpoint.agents ||
-            endpoint.value === EModelEndpoint.assistants ||
-            endpoint.value === EModelEndpoint.azureAssistants) &&
+        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
           endpoint.icon ? (
             <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
               {endpoint.icon}

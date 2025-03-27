@@ -136,19 +136,40 @@ async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }
 }
 
 /**
+ * Extracts the S3 key from a full S3 URL.
+ *
+ * @param {string} s3Url - The full S3 URL
+ * @returns {string} The S3 key
+ */
+function extractKeyFromS3Url(s3Url) {
+  try {
+    // Parse the URL
+    const url = new URL(s3Url);
+    // Extract the path from the URL, removing the leading slash
+    let key = url.pathname.substring(1);
+
+    return key;
+  } catch (error) {
+    throw new Error(`Failed to extract key from S3 URL: ${error.message}`);
+  }
+}
+
+/**
  * Retrieves a readable stream for a file stored in S3.
  *
+ * @param {ServerRequest} req - Server request object.
  * @param {string} filePath - The S3 key of the file.
  * @returns {Promise<NodeJS.ReadableStream>}
  */
-async function getS3FileStream(filePath) {
-  const params = { Bucket: bucketName, Key: filePath };
+async function getS3FileStream(_req, filePath) {
   try {
+    const Key = extractKeyFromS3Url(filePath);
+    const params = { Bucket: bucketName, Key };
     const s3 = initializeS3();
     const data = await s3.send(new GetObjectCommand(params));
     return data.Body; // Returns a Node.js ReadableStream.
   } catch (error) {
-    logger.error('[getS3FileStream] Error retrieving S3 file stream:', error.message);
+    logger.error('[getS3FileStream] Error retrieving S3 file stream:', error);
     throw error;
   }
 }

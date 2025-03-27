@@ -24,6 +24,7 @@ import translationVi from './vi/translation.json';
 import translationNl from './nl/translation.json';
 import translationId from './id/translation.json';
 import translationHe from './he/translation.json';
+import translationHu from './hu/translation.json';
 import translationFi from './fi/translation.json';
 import translationZh_Hans from './zh-Hans/translation.json';
 import translationZh_Hant from './zh-Hant/translation.json';
@@ -54,6 +55,7 @@ export const resources = {
   nl: { translation: translationNl },
   id: { translation: translationId },
   he: { translation: translationHe },
+  hu: { translation: translationHu },
   fi: { translation: translationFi },
 } as const;
 

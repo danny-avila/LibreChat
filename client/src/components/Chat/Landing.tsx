@@ -1,6 +1,6 @@
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
+import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
@@ -19,6 +19,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+
+  const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
+  const [lineCount, setLineCount] = useState(1);
+  const [contentHeight, setContentHeight] = useState(0);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
@@ -81,13 +86,46 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     }
   }, [localize, startupConfig?.interface?.customWelcome]);
 
+  const handleLineCountChange = useCallback((count: number) => {
+    setTextHasMultipleLines(count > 1);
+    setLineCount(count);
+  }, []);
+
+  useEffect(() => {
+    if (contentRef.current) {
+      setContentHeight(contentRef.current.offsetHeight);
+    }
+  }, [lineCount, description]);
+
+  const getDynamicMargin = useMemo(() => {
+    let margin = 'mb-0';
+
+    if (lineCount > 2 || (description && description.length > 100)) {
+      margin = 'mb-10';
+    } else if (lineCount > 1 || (description && description.length > 0)) {
+      margin = 'mb-6';
+    } else if (textHasMultipleLines) {
+      margin = 'mb-4';
+    }
+
+    if (contentHeight > 200) {
+      margin = 'mb-16';
+    } else if (contentHeight > 150) {
+      margin = 'mb-12';
+    }
+
+    return margin;
+  }, [lineCount, description, textHasMultipleLines, contentHeight]);
+
   return (
     <div
-      className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
+      className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'} ${getDynamicMargin}`}
     >
-      <div className="flex flex-col items-center gap-0 p-2">
-        <div className="flex flex-col items-center justify-center gap-4 md:flex-row">
-          <div className="relative size-10 justify-center">
+      <div ref={contentRef} className="flex flex-col items-center gap-0 p-2">
+        <div
+          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-4`}
+        >
+          <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <ConvoIcon
               agentsMap={agentsMap}
               assistantMap={assistantMap}
@@ -117,9 +155,10 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
                 textAlign="center"
                 animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
                 animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-                easing="easeOutCubic"
+                easing={easings.easeOutCubic}
                 threshold={0}
                 rootMargin="0px"
+                onLineCountChange={handleLineCountChange}
               />
             </div>
           ) : (
@@ -131,9 +170,10 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
               animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-              easing="easeOutCubic"
+              easing={easings.easeOutCubic}
               threshold={0}
               rootMargin="0px"
+              onLineCountChange={handleLineCountChange}
             />
           )}
         </div>
