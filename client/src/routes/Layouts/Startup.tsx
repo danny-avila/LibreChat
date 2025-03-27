@@ -58,7 +58,11 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
 
   return (
     <AuthLayout
-      header={headerText ? localize(headerText) : localize(headerMap[location.pathname])}
+      header={
+        headerText
+          ? `${localize(headerText)}${startupConfig?.appTitle ? ` ${startupConfig.appTitle}` : ''}`
+          : localize(headerMap[location.pathname])
+      }
       isFetching={isFetching}
       startupConfig={startupConfig}
       startupConfigError={startupConfigError}
