@@ -97,7 +97,9 @@ async function saveMessage(req, params, metadata) {
         };
       } catch (findError) {
         // If the findOne also fails, log it but don't crash
-        logger.warn(`Could not retrieve existing message with ID ${params.messageId}: ${findError.message}`);
+        logger.warn(
+          `Could not retrieve existing message with ID ${params.messageId}: ${findError.message}`,
+        );
         return {
           ...params,
           messageId: params.messageId,
@@ -245,6 +247,8 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
+      rating: updatedMessage.rating,
+      ratingContent: updatedMessage.ratingContent,
     };
   } catch (err) {
     logger.error('Error updating message:', err);

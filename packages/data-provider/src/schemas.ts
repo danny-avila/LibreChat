@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import type { TFile } from './types/files';
+import { feedbackTags, TFeedbackContent, TFeedbackRating } from './feedback';
 
 export const isUUID = z.string().uuid();
 
@@ -466,11 +467,8 @@ export const tAgentOptionsSchema = z.object({
 });
 
 export type TMessageFeedback = {
-  rating: 'thumbsUp' | 'thumbsDown' | null;
-  ratingContent?: {
-    tags?: string[];
-    text?: string;
-  };
+  rating?: TFeedbackRating;
+  ratingContent?: TFeedbackContent;
 };
 
 export const tMessageSchema = z.object({
@@ -506,13 +504,14 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
-  rating: z.enum(['thumbsUp', 'thumbsDown']).nullable().optional(),
+  rating: z.enum(['thumbsUp', 'thumbsDown']).optional(),
   ratingContent: z
     .object({
-      tags: z.array(z.string()).optional(),
+      tags: z
+        .array(z.enum([...feedbackTags.thumbsUp, ...feedbackTags.thumbsDown] as const))
+        .optional(),
       text: z.string().optional(),
     })
-    .nullable()
     .optional(),
 });
 

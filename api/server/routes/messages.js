@@ -180,41 +180,45 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
     const { conversationId, messageId } = req.params;
     const { rating, ratingContent } = req.body;
 
-    // Update the message feedback.
-    const updatedMessage = await updateMessage(req, {
-      messageId,
-      rating,
-      ratingContent,
-    });
+    // Build update parameters including conversationId and messageId
+    const updateParams = { conversationId, messageId };
+
+    if (rating === undefined || rating === null) {
+      // Remove rating and ratingContent by setting them to null
+      updateParams.rating = null;
+      updateParams.ratingContent = null;
+    } else {
+      // Set rating
+      updateParams.rating = rating;
+
+      // Ensure ratingContent is properly structured
+      if (ratingContent) {
+        updateParams.ratingContent = {
+          tags: Array.isArray(ratingContent.tags) ? ratingContent.tags : [],
+          text: typeof ratingContent.text === 'string' ? ratingContent.text : '',
+        };
+      } else {
+        updateParams.ratingContent = null;
+      }
+    }
+
+    // Update the message using updateMessage to ensure consistency
+    const updatedMessage = await updateMessage(req, updateParams);
 
     if (!updatedMessage) {
       return res.status(400).json({ error: 'Failed to update feedback' });
     }
 
-    // Build the response ratingContent.
-    // Start with whatever the updateMessage function returned.
-    let responseRatingContent = updatedMessage.ratingContent || {};
-
-    // For thumbsDown, if no tag choices are present, merge the default choices.
-    if (rating === 'thumbsDown') {
-      if (ratingContent && ratingContent.tags && !responseRatingContent.tags) {
-        responseRatingContent.tags = ratingContent.tags;
-      }
-      if (ratingContent && ratingContent.text && !responseRatingContent.text) {
-        responseRatingContent.text = ratingContent.text;
-      }
-    }
-
-    // Return all the feedback details.
+    // Return all the feedback details, including rating and ratingContent
     return res.status(200).json({
       messageId: updatedMessage.messageId,
       conversationId: updatedMessage.conversationId,
-      rating: updatedMessage.rating || rating,
-      ratingContent: responseRatingContent,
+      rating: updatedMessage.rating,
+      ratingContent: updatedMessage.ratingContent,
     });
   } catch (error) {
     logger.error('Error updating message feedback:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '~/utils';
 import {
@@ -9,36 +9,86 @@ import {
   OGDialogTitle,
 } from '~/components';
 import { useLocalize } from '~/hooks';
-import { type TFeedbackTag } from 'librechat-data-provider';
+import type { TMessageFeedback, TFeedbackTag } from 'librechat-data-provider';
+import { feedbackTags } from 'librechat-data-provider';
 
-type FeedbackTagOptionsProps = {
-  tagChoices: readonly TFeedbackTag[];
-  onSelectTag: (tag: TFeedbackTag, text?: string) => void;
-};
+interface FeedbackTagOptionsProps {
+  feedback: TMessageFeedback;
+  onChange: (feedback: TMessageFeedback) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
 
-const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onSelectTag }) => {
+export default function FeedbackTagOptions({
+  feedback,
+  onChange,
+  open,
+  onOpenChange,
+}: FeedbackTagOptionsProps) {
   const localize = useLocalize();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedTag, setSelectedTag] = useState<TFeedbackTag | null>(null);
-  const [text, setText] = useState('');
+  const [localText, setLocalText] = useState('');
+  const [hasTextChanged, setHasTextChanged] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
+  const [selectedTag, setSelectedTag] = useState<TFeedbackTag | null>(
+    feedback.ratingContent?.tags?.[0] || null,
+  );
 
-  const inlineOptions = tagChoices.slice(0, 3);
-  const hasMore = tagChoices.length > 3;
+  // Determine available tags based on the rating
+  const tags = feedback.rating === 'thumbsDown' ? feedbackTags.thumbsDown : feedbackTags.thumbsUp;
+  const inlineOptions = tags.slice(0, 3);
+  const tagChoices = tags;
+  const hasMore = tags.length > inlineOptions.length;
 
-  const handleInlineTagClick = (tag: TFeedbackTag) => {
-    onSelectTag(localize(tag));
+  // Sync local text and selected tag with feedback when it changes
+  useEffect(() => {
+    setLocalText(feedback.ratingContent?.text ?? '');
+    setHasTextChanged(false);
+    if (feedback.ratingContent?.tags && feedback.ratingContent.tags.length > 0) {
+      setSelectedTag(feedback.ratingContent.tags[0]);
+    } else {
+      setSelectedTag(null);
+    }
+  }, [feedback.ratingContent?.text, feedback.ratingContent?.tags, open]);
+
+  // Update text state
+  const handleTextChange = (value: string) => {
+    setLocalText(value);
+    setHasTextChanged(true);
   };
 
+  // Handle inline tag click – update immediately and dismiss inline view
+  const handleInlineTagClick = (tag: TFeedbackTag) => {
+    onChange({
+      ...feedback,
+      ratingContent: {
+        tags: [tag],
+        text: localText,
+      },
+    });
+    setIsDismissed(true);
+  };
+
+  // Handle dialog submit – update with selected tag and text
   const handleSubmit = () => {
     if (selectedTag) {
-      onSelectTag(localize(selectedTag), text);
-      setIsDialogOpen(false);
+      onChange({
+        ...feedback,
+        ratingContent: {
+          tags: [selectedTag],
+          text: localText,
+        },
+      });
     }
+    onOpenChange(false);
   };
+
+  if (!feedback.rating) {
+    return null;
+  }
 
   return (
     <>
+      {/* Inline options – hidden once dismissed */}
       {!isDismissed && (
         <div className="relative mt-3 w-full">
           <div className="min-h-[96px] w-full">
@@ -71,9 +121,9 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                   <button
                     type="button"
                     onClick={() => {
-                      setIsDialogOpen(true);
+                      onOpenChange(true);
                       setSelectedTag(null);
-                      setText('');
+                      setLocalText('');
                     }}
                     className="border-token-border-light text-token-text-secondary hover:text-token-text-primary hover:bg-token-main-surface-secondary rounded-lg border px-3 py-1 text-sm"
                   >
@@ -87,7 +137,7 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
       )}
 
       {/* Dialog for additional feedback */}
-      <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <OGDialog open={open} onOpenChange={onOpenChange}>
         <OGDialogTrigger asChild>
           {/* Invisible trigger */}
           <span />
@@ -130,8 +180,8 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
                 type="text"
                 placeholder="Additional Feedback (Optional)"
                 className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring focus:ring-blue-200"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
+                value={localText}
+                onChange={(e) => handleTextChange(e.target.value)}
               />
             </div>
           </div>
@@ -151,6 +201,4 @@ const FeedbackTagOptions: React.FC<FeedbackTagOptionsProps> = ({ tagChoices, onS
       </OGDialog>
     </>
   );
-};
-
-export default FeedbackTagOptions;
+}

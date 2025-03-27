@@ -5,6 +5,8 @@ import {
   isAgentsEndpoint,
   TMessageFeedback,
   TUpdateFeedbackRequest,
+  TFeedbackRating,
+  TFeedbackContent,
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import {
@@ -52,7 +54,7 @@ export default function useMessageActions(props: TMessageActions) {
 
   const { text, content, messageId = null, isCreatedByUser } = message ?? {};
   const edit = useMemo(() => messageId === currentEditId, [messageId, currentEditId]);
-  const [rated, setRated] = useState<TMessageFeedback>({ rating: null });
+  const [rated, setRated] = useState<TMessageFeedback>({ rating: undefined });
 
   const enterEdit = useCallback(
     (cancel?: boolean) => setCurrentEditId && setCurrentEditId(cancel === true ? -1 : messageId),
@@ -123,19 +125,30 @@ export default function useMessageActions(props: TMessageActions) {
   );
 
   const handleFeedback = useCallback(
-    (rating: 'thumbsUp' | 'thumbsDown', extraPayload?: Partial<TUpdateFeedbackRequest>) => {
+    (rating: TFeedbackRating, content?: TFeedbackContent) => {
       if (!conversation?.conversationId || !message?.messageId || !feedbackMutation?.mutate) {
         console.error('Feedback mutation is not available.');
         return;
       }
-      feedbackMutation.mutate(
-        { rating, ...extraPayload },
-        {
-          onSuccess: (data) => {
-            setRated(data);
-          },
+      // Format the payload based on the direct content parameter
+      const formattedPayload: TUpdateFeedbackRequest = { rating };
+
+      if (content) {
+        formattedPayload.ratingContent = {
+          tags: Array.isArray(content.tags) ? content.tags : [],
+          text: typeof content.text === 'string' ? content.text : '',
+        };
+      }
+      feedbackMutation.mutate(formattedPayload, {
+        onSuccess: (data) => {
+          const convertedData: TMessageFeedback = {
+            rating: data.rating,
+            ratingContent: data.ratingContent as TFeedbackContent,
+          };
+
+          setRated(convertedData);
         },
-      );
+      });
     },
     [conversation?.conversationId, message?.messageId, feedbackMutation],
   );

@@ -533,7 +533,7 @@ export type TAcceptTermsResponse = {
 export type TBannerResponse = TBanner | null;
 
 export type TUpdateFeedbackRequest = {
-  rating: 'thumbsUp' | 'thumbsDown';
+  rating?: 'thumbsUp' | 'thumbsDown' | undefined;
   ratingContent?: {
     tags?: string[];
     text?: string;
@@ -543,7 +543,7 @@ export type TUpdateFeedbackRequest = {
 export type TUpdateFeedbackResponse = {
   messageId: string;
   conversationId: string;
-  rating: 'thumbsUp' | 'thumbsDown';
+  rating?: 'thumbsUp' | 'thumbsDown' | undefined;
   ratingContent?: {
     tags?: string[];
     text?: string;

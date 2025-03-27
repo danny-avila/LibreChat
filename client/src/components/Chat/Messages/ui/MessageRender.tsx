@@ -65,6 +65,7 @@ const MessageRender = memo(
     const fontSize = useRecoilValue(store.fontSize);
     const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
     const [showThankYou, setShowThankYou] = useState(false);
+    const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -212,61 +213,35 @@ const MessageRender = memo(
                   handleContinue={handleContinue}
                   latestMessage={latestMessage}
                   isLast={isLast}
+                  handleFeedback={handleFeedback}
+                  rated={rated}
                 />
               </SubRow>
             )}
+            {/*{!msg.isCreatedByUser && rated?.rating === 'thumbsDown' && isLatestMessage && (*/}
+            {/*  <SubRow classes="mt-3">*/}
+            {/*    {!feedbackSubmitted ? (*/}
+            {/*      <FeedbackTagOptions*/}
+            {/*        feedback={rated || { rating: 'thumbsDown', ratingContent: { tags: [], text: '' } }}*/}
+            {/*        onChange={(feedback) => {*/}
+            {/*          handleFeedback('thumbsDown', feedback.ratingContent);*/}
+            {/*          setFeedbackSubmitted(true);*/}
+            {/*          setShowThankYou(true);*/}
+            {/*          setTimeout(() => {*/}
+            {/*            setShowThankYou(false);*/}
+            {/*          }, 3000);*/}
+            {/*        }}*/}
+            {/*        open={feedbackDialogOpen}*/}
+            {/*        onOpenChange={setFeedbackDialogOpen}*/}
+            {/*      />*/}
+            {/*    ) : showThankYou ? (*/}
+            {/*      <div className="border-token-border-light inline-flex rounded-lg border p-4">*/}
+            {/*        <div className="text-sm">{localize('com_ui_feedback_thank_you')}</div>*/}
+            {/*      </div>*/}
+            {/*    ) : null}*/}
+            {/*  </SubRow>*/}
+            {/*)}*/}
           </div>
-          {hasNoChildren && (isSubmittingFamily === true || isSubmitting) ? (
-            <PlaceholderRow isCard={isCard} />
-          ) : (
-            <SubRow classes="text-xs">
-              <SiblingSwitch
-                siblingIdx={siblingIdx}
-                siblingCount={siblingCount}
-                setSiblingIdx={setSiblingIdx}
-              />
-              <HoverButtons
-                index={index}
-                isEditing={edit}
-                message={msg}
-                enterEdit={enterEdit}
-                isSubmitting={isSubmitting}
-                conversation={conversation ?? null}
-                regenerate={handleRegenerateMessage}
-                copyToClipboard={copyToClipboard}
-                handleContinue={handleContinue}
-                latestMessage={latestMessage}
-                isLast={isLast}
-                handleFeedback={handleFeedback}
-                rated={rated}
-              />
-            </SubRow>
-          )}
-          {!isCreatedByUser && rated?.rating === 'thumbsDown' && isLatestMessage && (
-            <SubRow classes="mt-3">
-              {!feedbackSubmitted ? (
-                <FeedbackTagOptions
-                  tagChoices={feedbackTags.thumbsDown}
-                  onSelectTag={(tag, text) => {
-                    const ratingContent = {
-                      tags: [tag],
-                      ...(text ? { text } : {}),
-                    };
-                    handleFeedback('thumbsDown', { ratingContent });
-                    setFeedbackSubmitted(true);
-                    setShowThankYou(true);
-                    setTimeout(() => {
-                      setShowThankYou(false);
-                    }, 3000);
-                  }}
-                />
-              ) : showThankYou ? (
-                <div className="border-token-border-light inline-flex rounded-lg border p-4">
-                  <div className="text-sm">{localize('com_ui_feedback_thank_you')}</div>
-                </div>
-              ) : null}
-            </SubRow>
-          )}
         </div>
       </div>
     );

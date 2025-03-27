@@ -1,9 +1,9 @@
-export type TFeedbackRating = 'thumbsUp' | 'thumbsDown' | null;
+export type TFeedbackRating = 'thumbsUp' | 'thumbsDown' | undefined;
 
-export interface TFeedbackContent {
-  tags: string[];
-  text?: string | null;
-}
+export type TFeedbackContent = {
+  tags?: TFeedbackTag[];
+  text?: string;
+};
 
 export const feedbackTags = {
   thumbsDown: [
