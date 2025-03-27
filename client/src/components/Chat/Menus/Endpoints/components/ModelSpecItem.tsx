@@ -4,7 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { Brain, Eye } from 'lucide-react';
+import { Brain, Eye, Globe } from 'lucide-react';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -26,6 +26,11 @@ const CapabilityIcon = ({ type }: { type: string }) => {
       iconElement = <Eye className="h-4 w-4" />;
       color = 'hsl(168 54% 52%)';
       darkColor = 'hsl(168 54% 74%)';
+      break;
+    case 'web_search':
+      iconElement = <Globe className="h-4 w-4" />;
+      color = 'hsl(208 56% 52%)';
+      darkColor = 'hsl(208 56% 74%)';
       break;
     default:
       return null;
@@ -68,7 +73,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           </div>
         )}
         <div className="flex min-w-0 flex-col gap-1 w-full">
-          <div className="flex items-center justify-between w-full">
+          <div className="flex items-center justify-between w-full gap-2">
             <span className="truncate text-left">{spec.label}</span>
             {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
               <div className="flex gap-2 flex-shrink-0">
