@@ -138,37 +138,33 @@ class BaseClient {
       url = this.options.reverseProxyUrl;
     }
   
-    logger.debug(`[Marginal Debug] 📡 Making request to: ${url}`);
+    console.log('\n🔍 [Marginal Debug] 🚀 Making request to:', url);
   
-    // Log request body (if JSON)
+    // Log request body
     try {
-      const parsedBody = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
-      logger.debug(`[Marginal Debug] 📨 Request body:`, parsedBody);
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+      console.log('📤 [Marginal Debug] Request body:', body);
     } catch (err) {
-      logger.warn(`[Marginal Debug] ❌ Could not parse request body:`, init.body);
+      console.log('❌ [Marginal Debug] Failed to parse request body:', init.body);
     }
   
-    // Make the request
     const response = await fetch(url, init);
+    console.log('📥 [Marginal Debug] Response status:', response.status);
   
-    logger.debug(`[Marginal Debug] 📥 Response status: ${response.status}`);
-  
-    // Try to parse and log the response body
+    // Attempt to parse response (even though response.body can only be consumed once)
     try {
-      const data = await response.clone().json(); // clone() so body can still be consumed if needed
-      logger.debug(`[Marginal Debug] 📦 Response body:`, data);
+      const json = await response.clone().json(); // use clone so it doesn't break downstream
+      console.log('📦 [Marginal Debug] Response JSON:', json);
   
-      // Optional: warn if expected key is missing
-      if (!data?.response && !data?.choices) {
-        logger.warn(`[Marginal Debug] ⚠️ Response missing expected 'response' or 'choices' key`);
+      if (!json?.response && !json?.choices) {
+        console.log('⚠️ [Marginal Debug] Missing expected "response" or "choices" field in response!');
       }
-  
-      return response;
     } catch (err) {
-      logger.warn(`[Marginal Debug] ❌ Could not parse JSON response`, err);
-      return response;
+      console.log('❌ [Marginal Debug] Failed to parse JSON response');
     }
-  }
+  
+    return response;
+  }  
 
   getBuildMessagesOptions() {
     throw new Error('Subclasses must implement getBuildMessagesOptions');
