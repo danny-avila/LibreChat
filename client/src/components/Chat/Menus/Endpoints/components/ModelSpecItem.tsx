@@ -4,11 +4,55 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
+import { Brain, Eye } from 'lucide-react';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
   isSelected: boolean;
 }
+
+const CapabilityIcon = ({ type }: { type: string }) => {
+  let iconElement;
+  let bgColor;
+  
+  switch (type) {
+    case 'reasoning':
+      iconElement = <Brain className="h-4 w-4" />;
+      bgColor = 'hsl(263 58% 75%)';
+      break;
+    case 'upload_image':
+      iconElement = <Eye className="h-4 w-4" />;
+      bgColor = 'hsl(168 54% 52%)';
+      break;
+    default:
+      return null;
+  }
+  
+  return (
+    <div 
+      className="flex items-center justify-center"
+      style={{
+        width: '24px',
+        height: '24px',
+        backgroundColor: bgColor,
+        opacity: 0.15,
+        borderRadius: 'calc(0.5rem - 2px)',
+        position: 'relative'
+      }}
+    >
+      <div 
+        style={{ 
+          position: 'absolute',
+          display: 'flex',
+          color: bgColor,
+          opacity: 1
+        }}
+      >
+        {iconElement}
+      </div>
+    </div>
+  );
+};
 
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
@@ -32,8 +76,17 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
             <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />
           </div>
         )}
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="truncate text-left">{spec.label}</span>
+        <div className="flex min-w-0 flex-col gap-1 w-full">
+          <div className="flex items-center justify-between w-full">
+            <span className="truncate text-left">{spec.label}</span>
+            {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
+              <div className="flex gap-1 flex-shrink-0">
+                {spec.iconCapabilities.map((capability: string, index: number) => (
+                  <CapabilityIcon key={index} type={capability} />
+                ))}
+              </div>
+            )}
+          </div>
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
