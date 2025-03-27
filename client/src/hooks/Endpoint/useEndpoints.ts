@@ -11,10 +11,10 @@ import type {
   Assistant,
   TEndpointsConfig,
   TAgentsMap,
-  TInterfaceConfig,
   TAssistantsMap,
+  TStartupConfig,
 } from 'librechat-data-provider';
-import type { ExtendedEndpoint } from '~/common';
+import type { Endpoint } from '~/common';
 import { mapEndpoints, getIconKey, getEndpointField } from '~/utils';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers';
@@ -25,16 +25,18 @@ export const useEndpoints = ({
   agentsMap,
   assistantsMap,
   endpointsConfig,
-  interfaceConfig,
+  startupConfig,
 }: {
   agentsMap?: TAgentsMap;
   assistantsMap?: TAssistantsMap;
   endpointsConfig: TEndpointsConfig;
-  interfaceConfig: TInterfaceConfig;
+  startupConfig: TStartupConfig | undefined;
 }) => {
   const modelsQuery = useGetModelsQuery();
   const { conversation } = useChatContext();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
+  const { instanceProjectId } = startupConfig ?? {};
+  const interfaceConfig = startupConfig?.interface ?? {};
 
   const { endpoint } = conversation ?? {};
 
@@ -84,7 +86,7 @@ export const useEndpoints = ({
     [endpointsConfig],
   );
 
-  const mappedEndpoints: ExtendedEndpoint[] = useMemo(() => {
+  const mappedEndpoints: Endpoint[] = useMemo(() => {
     return filteredEndpoints.map((ep) => {
       const endpointType = getEndpointField(endpointsConfig, ep, 'type');
       const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
@@ -98,7 +100,7 @@ export const useEndpoints = ({
           (modelsQuery.data?.[ep]?.length ?? 0) > 0);
 
       // Base result object with formatted default icon
-      const result: ExtendedEndpoint = {
+      const result: Endpoint = {
         value: ep,
         label: alternateName[ep] || ep,
         hasModels,
@@ -114,7 +116,11 @@ export const useEndpoints = ({
 
       // Handle agents case
       if (ep === EModelEndpoint.agents && agents.length > 0) {
-        result.models = agents.map((agent) => agent.id);
+        result.models = agents.map((agent) => ({
+          name: agent.id,
+          isGlobal:
+            (instanceProjectId != null && agent.projectIds?.includes(instanceProjectId)) ?? false,
+        }));
         result.agentNames = agents.reduce((acc, agent) => {
           acc[agent.id] = agent.name || '';
           return acc;
@@ -127,7 +133,10 @@ export const useEndpoints = ({
 
       // Handle assistants case
       else if (ep === EModelEndpoint.assistants && assistants.length > 0) {
-        result.models = assistants.map((assistant: { id: string }) => assistant.id);
+        result.models = assistants.map((assistant: { id: string }) => ({
+          name: assistant.id,
+          isGlobal: false,
+        }));
         result.assistantNames = assistants.reduce(
           (acc: Record<string, string>, assistant: Assistant) => {
             acc[assistant.id] = assistant.name || '';
@@ -143,7 +152,10 @@ export const useEndpoints = ({
           {},
         );
       } else if (ep === EModelEndpoint.azureAssistants && azureAssistants.length > 0) {
-        result.models = azureAssistants.map((assistant: { id: string }) => assistant.id);
+        result.models = azureAssistants.map((assistant: { id: string }) => ({
+          name: assistant.id,
+          isGlobal: false,
+        }));
         result.assistantNames = azureAssistants.reduce(
           (acc: Record<string, string>, assistant: Assistant) => {
             acc[assistant.id] = assistant.name || '';
@@ -166,7 +178,10 @@ export const useEndpoints = ({
         ep !== EModelEndpoint.assistants &&
         (modelsQuery.data?.[ep]?.length ?? 0) > 0
       ) {
-        result.models = modelsQuery.data?.[ep];
+        result.models = modelsQuery.data?.[ep]?.map((model) => ({
+          name: model,
+          isGlobal: false,
+        }));
       }
 
       return result;

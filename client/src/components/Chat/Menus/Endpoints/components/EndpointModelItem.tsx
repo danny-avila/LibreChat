@@ -1,8 +1,10 @@
 import React from 'react';
+import { EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { useGetStartupConfig } from '~/data-provider';
 
 interface EndpointModelItemProps {
   modelId: string | null;
@@ -12,12 +14,16 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
+  let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
 
   // Use custom names if available
   if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
     modelName = endpoint.agentNames[modelId];
+
+    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
+    isGlobal = modelInfo?.isGlobal ?? false;
   } else if (
     endpoint &&
     modelId &&
@@ -46,6 +52,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           ) : null}
         <span>{modelName}</span>
       </div>
+      {isGlobal && <EarthIcon className="ml-auto h-5 w-5 text-green-400" />}
       {isSelected && (
         <svg
           width="16"
@@ -53,7 +60,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           viewBox="0 0 24 24"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="ml-auto block"
+          className="block"
         >
           <path
             fillRule="evenodd"
@@ -69,11 +76,11 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
 
 export function renderEndpointModels(
   endpoint: Endpoint | null,
-  models: string[],
+  models: Array<{ name: string; isGlobal?: boolean }>,
   selectedModel: string | null,
   filteredModels?: string[],
 ) {
-  const modelsToRender = filteredModels || models;
+  const modelsToRender = filteredModels || models.map((model) => model.name);
 
   return modelsToRender.map(
     (modelId) =>
