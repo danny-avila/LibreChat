@@ -46,6 +46,7 @@ async function createRun({
   /** Resolves Mistral type strictness due to new OpenAI usage field */
   if (agent.endpoint?.toLowerCase().includes(KnownEndpoints.mistral)) {
     llmConfig.streamUsage = false;
+    llmConfig.usage = true;
   }
 
   /** @type {'reasoning_content' | 'reasoning'} */
