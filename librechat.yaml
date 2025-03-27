@@ -12,7 +12,7 @@ registration:
 endpoints:
   custom:
     # Marginal Agent Custom AI webhook endpoint
-    - name: "Marginal Agent"
+    - name: "MarginalAgent"
       apiKey: "${MARGINAL_API_KEY}"
       baseURL: "https://margial.app.n8n.cloud/webhook-test/c9ba4f9f-9bfd-4ab5-bb2d-54ec9631f63e"
       directEndpoint: true
@@ -26,6 +26,23 @@ endpoints:
       stream: false
       disableHistory: true
       modelDisplayLabel: "Marginal Firma Agent"
+      iconURL: "/assets/logo.svg"
+
+    # Marginal Agent Custom AI webhook endpoint
+    - name: "demon8n"
+      apiKey: "${MARGINAL_API_KEY}"
+      baseURL: "https://2464d1bd-f5cb-40ec-9144-919cf12f3858.mock.pstmn.io"
+      directEndpoint: true
+      models:
+        default:
+          - "firma"
+        fetch: false
+      titleConvo: true
+      summarize: false
+      forcePrompt: true
+      stream: false
+      disableHistory: true
+      modelDisplayLabel: "Demo N8N"
       iconURL: "/assets/logo.svg"
 
     # cohere
