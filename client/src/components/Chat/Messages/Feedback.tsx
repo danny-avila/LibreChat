@@ -27,26 +27,35 @@ export default function Feedback({
       : undefined,
   });
 
+  // Update parent and local state when feedback changes.
   const handleChange = (newFeedback: TMessageFeedback) => {
     setFeedback(newFeedback);
     handleFeedback(newFeedback.rating, newFeedback.ratingContent);
   };
 
+  // Toggling logic:
+  // - If the same rating is clicked, clear feedback (reset ratingContent to undefined) and do not open the dialog.
+  // - If a different rating is selected, update rating and (for thumbsDown) open the dialog for tag options.
   const handleRatingClick = (newRating: TFeedbackRating) => {
     if (newRating === feedback.rating) {
-      setIsOpen(true);
-      return;
+      // Reset feedback when clicking the active button.
+      handleFeedback(undefined, undefined);
+      handleChange({ rating: undefined, ratingContent: undefined });
+      setIsOpen(false);
+    } else {
+      handleChange({ rating: newRating, ratingContent: undefined });
+      if (newRating === 'thumbsDown') {
+        setIsOpen(true);
+      } else {
+        setIsOpen(false);
+      }
     }
-    handleChange({
-      rating: newRating,
-      ratingContent: undefined,
-    });
-    setIsOpen(true);
   };
 
   return (
     <>
       <FeedbackTagOptions
+        key={feedback.rating || 'none'}
         open={isOpen}
         onOpenChange={setIsOpen}
         feedback={feedback}

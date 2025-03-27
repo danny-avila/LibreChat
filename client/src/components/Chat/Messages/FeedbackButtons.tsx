@@ -1,5 +1,4 @@
 import React from 'react';
-// import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { ThumbUpIcon, ThumbDownIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -17,41 +16,63 @@ export default function FeedbackButtons({ isLast, rating, onFeedback }: Feedback
     cn(
       'hover-button rounded-lg p-1.5',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
-
       'hover:bg-gray-100 hover:text-gray-500',
       'data-[state=open]:active data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500',
-
       isActive ? 'text-gray-500 dark:text-gray-200' : 'dark:text-gray-400/70',
-
       'dark:hover:bg-gray-700 dark:hover:text-gray-200',
       'data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
       'disabled:dark:hover:text-gray-400',
-
       isLast
         ? ''
         : 'data-[state=open]:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100',
-
       'md:group-focus-within:visible md:group-hover:visible md:group-[.final-completion]:visible',
     );
 
-  return (
-    <>
+  // If a rating is active, only render that button.
+  if (rating === 'thumbsUp') {
+    return (
       <button
-        className={buttonClasses(rating === 'thumbsUp')}
+        className={buttonClasses(true)}
         onClick={() => onFeedback('thumbsUp')}
         type="button"
         title={localize('com_ui_feedback_positive')}
       >
-        <ThumbUpIcon size="19" bold={rating === 'thumbsUp'} />
+        <ThumbUpIcon size="19" bold={true} />
       </button>
-
+    );
+  }
+  if (rating === 'thumbsDown') {
+    return (
       <button
-        className={buttonClasses(rating === 'thumbsDown')}
+        className={buttonClasses(true)}
         onClick={() => onFeedback('thumbsDown')}
         type="button"
         title={localize('com_ui_feedback_negative')}
       >
-        <ThumbDownIcon size="19" bold={rating === 'thumbsDown'} />
+        <ThumbDownIcon size="19" bold={true} />
+      </button>
+    );
+  }
+
+  // When no rating is active, show both buttons.
+  return (
+    <>
+      <button
+        className={buttonClasses(false)}
+        onClick={() => onFeedback('thumbsUp')}
+        type="button"
+        title={localize('com_ui_feedback_positive')}
+      >
+        <ThumbUpIcon size="19" bold={false} />
+      </button>
+
+      <button
+        className={buttonClasses(false)}
+        onClick={() => onFeedback('thumbsDown')}
+        type="button"
+        title={localize('com_ui_feedback_negative')}
+      >
+        <ThumbDownIcon size="19" bold={false} />
       </button>
     </>
   );
