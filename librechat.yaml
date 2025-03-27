@@ -33,7 +33,7 @@ endpoints:
     - name: "demon8n"
       apiKey: "${MARGINAL_API_KEY}"
       baseURL: "https://2f268db7-d6b5-45cf-8323-43e63bd9d120.mock.pstmn.io"
-      directEndpoint: false
+      directEndpoint: true
       models:
         default:
           - "firma"
