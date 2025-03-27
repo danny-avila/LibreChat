@@ -45,13 +45,13 @@ export function useModelSelectorContext() {
 interface ModelSelectorProviderProps {
   children: React.ReactNode;
   modelSpecs: t.TModelSpec[];
-  interfaceConfig: t.TInterfaceConfig;
+  startupConfig: t.TStartupConfig | undefined;
 }
 
 export function ModelSelectorProvider({
   children,
   modelSpecs,
-  interfaceConfig,
+  startupConfig,
 }: ModelSelectorProviderProps) {
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
@@ -61,7 +61,7 @@ export function ModelSelectorProvider({
     agentsMap,
     assistantsMap,
     endpointsConfig,
-    interfaceConfig,
+    startupConfig,
   });
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
