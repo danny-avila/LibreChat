@@ -133,14 +133,41 @@ class BaseClient {
    */
   async fetch(_url, init) {
     let url = _url;
+  
     if (this.options.directEndpoint) {
       url = this.options.reverseProxyUrl;
     }
-    logger.debug(`Making request to ${url}`);
-    if (typeof Bun !== 'undefined') {
-      return await fetch(url, init);
+  
+    logger.debug(`[Marginal Debug] 📡 Making request to: ${url}`);
+  
+    // Log request body (if JSON)
+    try {
+      const parsedBody = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+      logger.debug(`[Marginal Debug] 📨 Request body:`, parsedBody);
+    } catch (err) {
+      logger.warn(`[Marginal Debug] ❌ Could not parse request body:`, init.body);
     }
-    return await fetch(url, init);
+  
+    // Make the request
+    const response = await fetch(url, init);
+  
+    logger.debug(`[Marginal Debug] 📥 Response status: ${response.status}`);
+  
+    // Try to parse and log the response body
+    try {
+      const data = await response.clone().json(); // clone() so body can still be consumed if needed
+      logger.debug(`[Marginal Debug] 📦 Response body:`, data);
+  
+      // Optional: warn if expected key is missing
+      if (!data?.response && !data?.choices) {
+        logger.warn(`[Marginal Debug] ⚠️ Response missing expected 'response' or 'choices' key`);
+      }
+  
+      return response;
+    } catch (err) {
+      logger.warn(`[Marginal Debug] ❌ Could not parse JSON response`, err);
+      return response;
+    }
   }
 
   getBuildMessagesOptions() {
