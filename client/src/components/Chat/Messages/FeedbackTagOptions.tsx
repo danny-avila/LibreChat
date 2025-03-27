@@ -11,6 +11,7 @@ import {
 import { useLocalize } from '~/hooks';
 import type { TMessageFeedback, TFeedbackTag } from 'librechat-data-provider';
 import { feedbackTags } from 'librechat-data-provider';
+import { useToastContext } from '~/Providers';
 
 interface FeedbackTagOptionsProps {
   feedback: TMessageFeedback;
@@ -26,6 +27,7 @@ export default function FeedbackTagOptions({
   onOpenChange,
 }: FeedbackTagOptionsProps) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const [localText, setLocalText] = useState('');
   const [hasTextChanged, setHasTextChanged] = useState(false);
   const [selectedTag, setSelectedTag] = useState<TFeedbackTag | null>(
@@ -42,7 +44,7 @@ export default function FeedbackTagOptions({
 
   const tagChoices = tags;
 
-  // Always sync local text and selected tag when feedback changes.
+  // Sync local text and selected tag when feedback changes.
   useEffect(() => {
     setLocalText(feedback.ratingContent?.text ?? '');
     if (feedback.ratingContent?.tags && feedback.ratingContent.tags.length > 0) {
@@ -58,7 +60,7 @@ export default function FeedbackTagOptions({
     setHasTextChanged(true);
   };
 
-  // When the dialog is submitted, update feedback.
+  // When the dialog is submitted, update feedback and show a toast.
   const handleSubmit = () => {
     if (selectedTag) {
       onChange({
@@ -70,6 +72,7 @@ export default function FeedbackTagOptions({
       });
     }
     onOpenChange(false);
+    showToast({ message: localize('com_ui_feedback_thank_you') });
   };
 
   // If no rating is set, render nothing.

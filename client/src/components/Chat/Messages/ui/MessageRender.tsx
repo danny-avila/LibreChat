@@ -1,8 +1,7 @@
-import React, { useState, useCallback, useMemo, memo } from 'react';
+import React, { useCallback, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { feedbackTags, type TMessage } from 'librechat-data-provider';
+import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
-import FeedbackTagOptions from '~/components/Chat/Messages/FeedbackTagOptions';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -11,7 +10,7 @@ import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
-import { useMessageActions, useLocalize } from '~/hooks';
+import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -60,12 +59,8 @@ const MessageRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
-    const localize = useLocalize();
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
-    const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-    const [showThankYou, setShowThankYou] = useState(false);
-    const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -218,29 +213,6 @@ const MessageRender = memo(
                 />
               </SubRow>
             )}
-            {/*{!msg.isCreatedByUser && rated?.rating === 'thumbsDown' && isLatestMessage && (*/}
-            {/*  <SubRow classes="mt-3">*/}
-            {/*    {!feedbackSubmitted ? (*/}
-            {/*      <FeedbackTagOptions*/}
-            {/*        feedback={rated || { rating: 'thumbsDown', ratingContent: { tags: [], text: '' } }}*/}
-            {/*        onChange={(feedback) => {*/}
-            {/*          handleFeedback('thumbsDown', feedback.ratingContent);*/}
-            {/*          setFeedbackSubmitted(true);*/}
-            {/*          setShowThankYou(true);*/}
-            {/*          setTimeout(() => {*/}
-            {/*            setShowThankYou(false);*/}
-            {/*          }, 3000);*/}
-            {/*        }}*/}
-            {/*        open={feedbackDialogOpen}*/}
-            {/*        onOpenChange={setFeedbackDialogOpen}*/}
-            {/*      />*/}
-            {/*    ) : showThankYou ? (*/}
-            {/*      <div className="border-token-border-light inline-flex rounded-lg border p-4">*/}
-            {/*        <div className="text-sm">{localize('com_ui_feedback_thank_you')}</div>*/}
-            {/*      </div>*/}
-            {/*    ) : null}*/}
-            {/*  </SubRow>*/}
-            {/*)}*/}
           </div>
         </div>
       </div>
