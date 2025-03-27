@@ -32,7 +32,7 @@ endpoints:
     # Marginal Agent Custom AI webhook endpoint
     - name: "demon8n"
       apiKey: "${MARGINAL_API_KEY}"
-      baseURL: "https://2464d1bd-f5cb-40ec-9144-919cf12f3858.mock.pstmn.io"
+      baseURL: "https://2f268db7-d6b5-45cf-8323-43e63bd9d120.mock.pstmn.io"
       directEndpoint: true
       models:
         default:
