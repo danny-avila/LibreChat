@@ -9,8 +9,6 @@ import ExportAndShareMenu from './ExportAndShareMenu';
 import { useMediaQuery, useHasAccess } from '~/hooks';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import AddMultiConvo from './AddMultiConvo';
-import { start } from 'repl';
-
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
