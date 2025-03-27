@@ -67,7 +67,10 @@ function useTextToSpeechExternal({
         return playPromise().catch(console.error);
       }
       console.error(error);
-      showToast({ message: localize('com_nav_audio_play_error', { 0: error.message }), status: 'error' });
+      showToast({
+        message: localize('com_nav_audio_play_error', { 0: error.message }),
+        status: 'error',
+      });
     });
 
     newAudio.onended = () => {
@@ -87,7 +90,7 @@ function useTextToSpeechExternal({
     setDownloadFile(false);
   };
 
-  const { mutate: processAudio } = useTextToSpeechMutation({
+  const { mutate: processAudio, isLoading } = useTextToSpeechMutation({
     onMutate: (variables) => {
       const inputText = (variables.get('input') ?? '') as string;
       if (inputText.length >= 4096) {
@@ -182,7 +185,7 @@ function useTextToSpeechExternal({
 
   useEffect(() => cancelPromiseSpeech, [cancelPromiseSpeech]);
 
-  const isLoading = useMemo(
+  const isFetching = useMemo(
     () => isLast && globalIsFetching && !globalIsPlaying,
     [globalIsFetching, globalIsPlaying, isLast],
   );
@@ -192,7 +195,7 @@ function useTextToSpeechExternal({
   return {
     generateSpeechExternal,
     cancelSpeech,
-    isLoading,
+    isLoading: isFetching || isLoading,
     audioRef,
     voices: voicesData,
   };
