@@ -1,6 +1,6 @@
 version: 1.2.1
 
-cache: true
+cache: false
 
 interface:
   customWelcome: "Velkommen til MChat"
