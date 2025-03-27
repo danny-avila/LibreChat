@@ -4,7 +4,6 @@ import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider'
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import { useGetStartupConfig } from '~/data-provider';
 
 interface EndpointModelItemProps {
   modelId: string | null;
