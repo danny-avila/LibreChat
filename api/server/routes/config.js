@@ -95,6 +95,8 @@ router.get('/', async function (req, res) {
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
       instanceProjectId: instanceProject._id.toString(),
+      customFavicon: process.env.CUSTOM_FAVICON_PATH || '/assets/favicon-16x16.png',
+      customLogo: process.env.CUSTOM_LOGO_PATH || '/assets/logo.png',
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
     };
