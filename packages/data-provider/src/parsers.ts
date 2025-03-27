@@ -387,6 +387,17 @@ export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
         result += ' ';
       }
       result += textValue;
+    } else if (part.type === ContentTypes.THINK) {
+      const textValue = typeof part.think === 'string' ? part.think : '';
+      if (
+        result.length > 0 &&
+        textValue.length > 0 &&
+        result[result.length - 1] !== ' ' &&
+        textValue[0] !== ' '
+      ) {
+        result += ' ';
+      }
+      result += textValue;
     }
   }
 
