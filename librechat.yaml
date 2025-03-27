@@ -27,7 +27,7 @@ endpoints:
       disableHistory: true
       modelDisplayLabel: "Marginal Firma Agent"
       iconURL: "/assets/logo.svg"
-      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
+
 
     # Marginal Agent Custom AI webhook endpoint
     - name: "demon8n"
@@ -45,6 +45,7 @@ endpoints:
       disableHistory: true
       modelDisplayLabel: "Demo N8N"
       iconURL: "/assets/logo.svg"
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 
     # cohere
     # Model list: https://dashboard.cohere.com/playground/chat
