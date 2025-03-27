@@ -20,13 +20,14 @@ endpoints:
         default:
           - "firma"
         fetch: false
-      titleConvo: true
+      titleConvo: false
       summarize: false
       forcePrompt: true
       stream: false
       disableHistory: true
       modelDisplayLabel: "Marginal Firma Agent"
       iconURL: "/assets/logo.svg"
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 
     # Marginal Agent Custom AI webhook endpoint
     - name: "demon8n"
