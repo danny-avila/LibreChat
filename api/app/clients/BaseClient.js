@@ -133,9 +133,9 @@ class BaseClient {
    */
   async fetch(_url, init) {
     let url = _url;
-    if (this.options.directEndpoint) {
+    /*if (this.options.directEndpoint) {
       url = this.options.reverseProxyUrl;
-    }
+    }*/
     logger.debug(`[BaseClient] Making request to ${url}`);
     logger.debug('[BaseClient] Request options:', init);
 
