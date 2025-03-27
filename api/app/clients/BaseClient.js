@@ -133,38 +133,30 @@ class BaseClient {
    */
   async fetch(_url, init) {
     let url = _url;
-  
     if (this.options.directEndpoint) {
       url = this.options.reverseProxyUrl;
     }
-  
-    console.log('\n🔍 [Marginal Debug] 🚀 Making request to:', url);
-  
-    // Log request body
-    try {
-      const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
-      console.log('📤 [Marginal Debug] Request body:', body);
-    } catch (err) {
-      console.log('❌ [Marginal Debug] Failed to parse request body:', init.body);
+    logger.debug(`[BaseClient] Making request to ${url}`);
+    logger.debug('[BaseClient] Request options:', init);
+
+    let response;
+    if (typeof Bun !== 'undefined') {
+      response = await fetch(url, init);
+    } else {
+      response = await fetch(url, init);
     }
-  
-    const response = await fetch(url, init);
-    console.log('📥 [Marginal Debug] Response status:', response.status);
-  
-    // Attempt to parse response (even though response.body can only be consumed once)
+
+    logger.debug('[BaseClient] Raw response status:', response.status);
     try {
-      const json = await response.clone().json(); // use clone so it doesn't break downstream
-      console.log('📦 [Marginal Debug] Response JSON:', json);
-  
-      if (!json?.response && !json?.choices) {
-        console.log('⚠️ [Marginal Debug] Missing expected "response" or "choices" field in response!');
-      }
-    } catch (err) {
-      console.log('❌ [Marginal Debug] Failed to parse JSON response');
+      const clone = response.clone();
+      const json = await clone.json();
+      logger.debug('[BaseClient] Response JSON:', json);
+    } catch (e) {
+      logger.warn('[BaseClient] Could not parse JSON from response');
     }
-  
+
     return response;
-  }  
+  }
 
   getBuildMessagesOptions() {
     throw new Error('Subclasses must implement getBuildMessagesOptions');
