@@ -48,13 +48,14 @@ const ContentRender = memo(
       copyToClipboard,
       setLatestMessage,
       regenerateMessage,
+      handleFeedback,
+      rated,
     } = useMessageActions({
       message: msg,
       currentEditId,
       isMultiMessage,
       setCurrentEditId,
     });
-
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
 
@@ -194,6 +195,8 @@ const ContentRender = memo(
                   handleContinue={handleContinue}
                   latestMessage={latestMessage}
                   isLast={isLast}
+                  handleFeedback={handleFeedback}
+                  rated={rated}
                 />
               </SubRow>
             )}

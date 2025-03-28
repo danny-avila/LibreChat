@@ -68,7 +68,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
+        className="mx-1 max-w-14 flex-1 rounded-xl border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
         type="button"
       >
         {children}
@@ -77,7 +77,11 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
         (hoverTitle != null && hoverTitle !== '') ||
         (hoverDescription != null && hoverDescription !== '')) && (
         <HoverCardPortal>
-          <HoverCardContent side="right" className="z-[999] w-80 dark:bg-gray-700" sideOffset={sideOffset}>
+          <HoverCardContent
+            side="right"
+            className="z-[999] w-80 dark:bg-gray-700"
+            sideOffset={sideOffset}
+          >
             <div className="space-y-2">
               <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
                 {hoverInfo && hoverInfo}
@@ -161,9 +165,21 @@ export default function Fork({
       <Popover.Trigger asChild>
         <button
           className={cn(
-            'hover-button active rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
-            'data-[state=open]:active focus:opacity-100 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500 data-[state=open]:dark:bg-gray-700  data-[state=open]:dark:text-gray-200',
-            !isLast ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100' : '',
+            'hover-button rounded-lg p-1.5',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+
+            'hover:bg-gray-100 hover:text-gray-500',
+            'data-[state=open]:active data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500',
+
+            'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+            'data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+            'disabled:dark:hover:text-gray-400',
+
+            isLast
+              ? ''
+              : 'data-[state=open]:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100',
+
+            'md:group-focus-within:visible md:group-hover:visible md:group-[.final-completion]:visible',
           )}
           onClick={(e) => {
             if (rememberGlobal) {
@@ -180,7 +196,7 @@ export default function Fork({
           type="button"
           title={localize('com_ui_fork')}
         >
-          <GitFork className="h-4 w-4 hover:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <GitFork size="19" />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -188,14 +204,14 @@ export default function Fork({
           <Popover.Content
             side="top"
             role="menu"
-            className="bg-token-surface-primary flex min-h-[120px] min-w-[215px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-700"
+            className="bg-token-surface-primary z-50 flex min-h-[120px] min-w-[215px] origin-[--radix-popover-content-transform-origin] flex-col gap-3 overflow-hidden rounded-xl bg-white p-2 px-3 shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:bg-gray-700"
             style={{ outline: 'none', pointerEvents: 'auto', boxSizing: 'border-box' }}
             tabIndex={-1}
             sideOffset={5}
             align="center"
           >
             <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
-              {localize(activeSetting )}
+              {localize(activeSetting)}
               <HoverCard openDelay={50}>
                 <HoverCardTrigger asChild>
                   <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50" />
