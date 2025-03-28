@@ -17,8 +17,8 @@ export class MCPManager {
   private connections: Map<string, MCPConnection> = new Map();
   /** User-specific connections initialized on demand */
   private userConnections: Map<string, Map<string, MCPConnection>> = new Map();
-  /** Timeout IDs for user connections */
-  private userConnectionTimeouts: Map<string, Map<string, NodeJS.Timeout>> = new Map();
+  /** Last activity timestamp for users (not per server) */
+  private userLastActivity: Map<string, number> = new Map();
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
   private processMCPEnv?: (obj: MCPOptions) => MCPOptions; // Store the processing function
@@ -41,6 +41,8 @@ export class MCPManager {
     if (!MCPManager.instance) {
       MCPManager.instance = new MCPManager(logger);
     }
+    // Check for idle connections when getInstance is called
+    MCPManager.instance.checkIdleConnections();
     return MCPManager.instance;
   }
 
@@ -148,17 +150,71 @@ export class MCPManager {
     }
   }
 
+  /** Check for and disconnect idle connections */
+  private checkIdleConnections(): void {
+    const now = Date.now();
+
+    // Iterate through all users to check for idle ones
+    for (const [userId, lastActivity] of this.userLastActivity.entries()) {
+      if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
+        this.logger.info(
+          `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
+        );
+        // Disconnect all user connections asynchronously (fire and forget)
+        this.disconnectUserConnections(userId).catch((err) =>
+          this.logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err),
+        );
+      }
+    }
+  }
+
+  /** Updates the last activity timestamp for a user */
+  private updateUserLastActivity(userId: string): void {
+    const now = Date.now();
+    this.userLastActivity.set(userId, now);
+    this.logger.debug(
+      `[MCP][User: ${userId}] Updated last activity timestamp: ${new Date(now).toISOString()}`,
+    );
+  }
+
   /** Gets or creates a connection for a specific user */
   public async getUserConnection(userId: string, serverName: string): Promise<MCPConnection> {
     const userServerMap = this.userConnections.get(userId);
     let connection = userServerMap?.get(serverName);
+    const now = Date.now();
 
-    if (connection?.isConnected()) {
-      this.logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing existing connection`);
-      return connection;
+    // Check if user is idle
+    const lastActivity = this.userLastActivity.get(userId);
+    if (lastActivity && now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
+      this.logger.info(
+        `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`,
+      );
+      // Disconnect all user connections
+      await this.disconnectUserConnections(userId).catch((err) =>
+        this.logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err),
+      );
+      connection = undefined; // Force creation of a new connection
+    } else if (connection) {
+      if (connection.isConnected()) {
+        this.logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+        // Update timestamp on reuse
+        this.updateUserLastActivity(userId);
+        return connection;
+      } else {
+        // Connection exists but is not connected, attempt to remove potentially stale entry
+        this.logger.warn(
+          `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
+        );
+        this.removeUserConnection(userId, serverName); // Clean up maps
+        connection = undefined;
+      }
     }
 
-    this.logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
+    // If no valid connection exists, create a new one
+    if (!connection) {
+      this.logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
+    }
+
     let config = this.mcpConfigs[serverName];
     if (!config) {
       throw new McpError(
@@ -192,7 +248,8 @@ export class MCPManager {
       }
       this.userConnections.get(userId)?.set(serverName, connection);
       this.logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
-      this.scheduleUserConnectionTimeout(userId, serverName);
+      // Update timestamp on creation
+      this.updateUserLastActivity(userId);
       return connection;
     } catch (error) {
       this.logger.error(
@@ -206,61 +263,30 @@ export class MCPManager {
           disconnectError,
         );
       });
-      this.removeUserConnection(userId, serverName); // Also clears timeout via disconnectUserConnection
+      // Ensure cleanup even if connection attempt fails
+      this.removeUserConnection(userId, serverName);
       throw error; // Re-throw the error to the caller
     }
   }
 
-  /** Clears the idle timeout for a specific user connection */
-  private clearUserConnectionTimeout(userId: string, serverName: string): void {
-    const timeoutId = this.userConnectionTimeouts.get(userId)?.get(serverName);
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      this.userConnectionTimeouts.get(userId)?.delete(serverName);
-      if (this.userConnectionTimeouts.get(userId)?.size === 0) {
-        this.userConnectionTimeouts.delete(userId);
-      }
-      this.logger.debug(`[MCP][User: ${userId}][${serverName}] Cleared idle timeout.`);
-    }
-  }
-
-  /** Schedules an idle timeout for a specific user connection */
-  private scheduleUserConnectionTimeout(userId: string, serverName: string): void {
-    this.clearUserConnectionTimeout(userId, serverName);
-
-    const timeoutId = setTimeout(async () => {
-      this.logger.info(
-        `[MCP][User: ${userId}][${serverName}] Idle timeout reached. Disconnecting...`,
-      );
-      await this.disconnectUserConnection(userId, serverName);
-    }, this.USER_CONNECTION_IDLE_TIMEOUT);
-
-    if (!this.userConnectionTimeouts.has(userId)) {
-      this.userConnectionTimeouts.set(userId, new Map());
-    }
-    this.userConnectionTimeouts.get(userId)?.set(serverName, timeoutId);
-    this.logger.debug(
-      `[MCP][User: ${userId}][${serverName}] Scheduled idle timeout (${
-        this.USER_CONNECTION_IDLE_TIMEOUT / 1000
-      }s).`,
-    );
-  }
-
-  /** Removes a specific user connection from the map */
+  /** Removes a specific user connection entry */
   private removeUserConnection(userId: string, serverName: string): void {
+    // Remove connection object
     const userMap = this.userConnections.get(userId);
     if (userMap) {
       userMap.delete(serverName);
       if (userMap.size === 0) {
         this.userConnections.delete(userId);
+        // Only remove user activity timestamp if all connections are gone
+        this.userLastActivity.delete(userId);
       }
-      this.logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
     }
+
+    this.logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
   }
 
   /** Disconnects and removes a specific user connection */
   public async disconnectUserConnection(userId: string, serverName: string): Promise<void> {
-    this.clearUserConnectionTimeout(userId, serverName);
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
     if (connection) {
@@ -286,6 +312,8 @@ export class MCPManager {
         }
       });
       await Promise.allSettled(disconnectPromises);
+      // Ensure user activity timestamp is removed
+      this.userLastActivity.delete(userId);
       this.logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
   }
@@ -363,7 +391,7 @@ export class MCPManager {
 
   /**
    * Calls a tool on an MCP server, using either a user-specific connection
-   * (if userId is provided) or an app-level connection. Resets the inactivity timer
+   * (if userId is provided) or an app-level connection. Updates the last activity timestamp
    * for user-specific connections upon successful call initiation.
    */
   async callTool({
@@ -380,7 +408,7 @@ export class MCPManager {
     options?: CallToolOptions;
   }): Promise<t.FormattedToolResponse> {
     let connection: MCPConnection | undefined;
-    const userId = options?.userId;
+    const { userId, ...callOptions } = options ?? {};
     const logPrefix = userId
       ? `[MCP][User: ${userId}][${serverName}]`
       : `[MCP][App][${serverName}]`;
@@ -389,8 +417,6 @@ export class MCPManager {
       if (userId) {
         // Get or create user-specific connection
         connection = await this.getUserConnection(userId, serverName);
-        // Reset idle timer on successful activity (tool call) for this user/server
-        this.scheduleUserConnectionTimeout(userId, serverName);
       } else {
         // Use app-level connection
         connection = this.connections.get(serverName);
@@ -410,10 +436,6 @@ export class MCPManager {
         );
       }
 
-      // Extract MCP-specific options, excluding userId
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { userId: _, ...mcpOptions } = options ?? {};
-
       const result = await connection.client.request(
         {
           method: 'tools/call',
@@ -425,9 +447,15 @@ export class MCPManager {
         CallToolResultSchema,
         {
           timeout: connection.timeout,
-          ...mcpOptions, // Pass remaining options
+          ...callOptions,
         },
       );
+
+      if (userId) {
+        this.updateUserLastActivity(userId);
+      }
+
+      this.checkIdleConnections();
       return formatToolContent(result, provider);
     } catch (error) {
       // Log with context and re-throw or handle as needed
@@ -455,8 +483,7 @@ export class MCPManager {
       this.disconnectUserConnections(userId),
     );
     await Promise.allSettled(userDisconnectPromises);
-    this.userConnectionTimeouts.forEach((serverMap) => serverMap.forEach(clearTimeout));
-    this.userConnectionTimeouts.clear();
+    this.userLastActivity.clear();
 
     // Disconnect all app-level connections
     const appDisconnectPromises = Array.from(this.connections.values()).map((connection) =>
@@ -483,16 +510,3 @@ export class MCPManager {
     }
   }
 }
-
-export async function dispose() {
-  console.log('\nReceived termination signal. Gracefully shutting down MCP Servers...');
-  try {
-    await MCPManager.destroyInstance();
-  } catch (error) {
-    console.error('Error during shutdown:', error);
-  }
-}
-
-process.on('exit', async () => {
-  await dispose();
-});
