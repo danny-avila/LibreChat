@@ -483,3 +483,16 @@ export class MCPManager {
     }
   }
 }
+
+export async function dispose() {
+  console.log('\nReceived termination signal. Gracefully shutting down MCP Servers...');
+  try {
+    await MCPManager.destroyInstance();
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+  }
+}
+
+process.on('exit', async () => {
+  await dispose();
+});
