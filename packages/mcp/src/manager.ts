@@ -93,7 +93,7 @@ export class MCPManager {
           }
         } catch (error) {
           this.logger.error(`[MCP][${serverName}] Initialization failed`, error);
-          // Don't throw here, allow other servers to initialize
+          throw error;
         }
       }),
     );
