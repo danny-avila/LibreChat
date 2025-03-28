@@ -5,11 +5,27 @@ import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 import { Brain, Eye, Globe, FlaskConical } from 'lucide-react';
+import { TooltipAnchor } from '~/components/ui/Tooltip';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
   isSelected: boolean;
 }
+
+const getCapabilityDescription = (type: string): string => {
+  switch (type) {
+    case 'reasoning':
+      return 'Has reasoning capabilities';
+    case 'upload_image':
+      return 'Supports image uploads';
+    case 'web_search':
+      return 'Uses web search to answer questions';
+    case 'experimental':
+      return 'Experimental model';
+    default:
+      return '';
+  }
+};
 
 const CapabilityIcon = ({ type }: { type: string }) => {
   let iconElement;
@@ -41,17 +57,25 @@ const CapabilityIcon = ({ type }: { type: string }) => {
       return null;
   }
   
+  const description = getCapabilityDescription(type);
+  
   return (
-    <div 
-      className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-md text-[--color] dark:text-[--color-dark]"
-      style={{
-        '--color': color,
-        '--color-dark': darkColor,
-      } as React.CSSProperties}
+    <TooltipAnchor
+      description={description}
+      side="top"
+      className="flex items-center justify-center"
     >
-      <div className="absolute inset-0 bg-current opacity-20 dark:opacity-15"></div>
-      {iconElement}
-    </div>
+      <div 
+        className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-md text-[--color] dark:text-[--color-dark]"
+        style={{
+          '--color': color,
+          '--color-dark': darkColor,
+        } as React.CSSProperties}
+      >
+        <div className="absolute inset-0 bg-current opacity-20 dark:opacity-15"></div>
+        {iconElement}
+      </div>
+    </TooltipAnchor>
   );
 };
 
