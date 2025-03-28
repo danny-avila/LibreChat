@@ -165,7 +165,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             <SplitText
               key={`split-text-${getGreeting()}${user?.name || ''}`}
               text={getGreeting() + (user?.name ? ', ' + user.name : '')}
-              className="text-4xl font-medium text-text-primary"
+              className="text-2xl font-medium text-text-primary sm:text-4xl"
               delay={50}
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
