@@ -226,10 +226,6 @@ class OpenAIClient extends BaseClient {
       logger.debug('Using Azure endpoint');
     }
 
-    if (this.useOpenRouter) {
-      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
-    }
-
     return this;
   }
 
