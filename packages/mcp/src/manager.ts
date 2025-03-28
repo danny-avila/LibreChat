@@ -19,7 +19,7 @@ export class MCPManager {
   private userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Timeout IDs for user connections */
   private userConnectionTimeouts: Map<string, Map<string, NodeJS.Timeout>> = new Map();
-  private readonly USER_CONNECTION_IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes (configurable)
+  private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
   private processMCPEnv?: (obj: MCPOptions) => MCPOptions; // Store the processing function
   private logger: Logger;
