@@ -46,23 +46,23 @@ locals {
 
 # ECR Repositories
 resource "aws_ecr_repository" "librechat_repo" {
-  name = "librechat-repo"
+  name = "librechat-repo-parser"
 }
 
 resource "aws_ecr_repository" "mongodb_repo" {
-  name = "mongodb-repo"
+  name = "mongodb-repo-parser"
 }
 
 resource "aws_ecr_repository" "meilisearch_repo" {
-  name = "meilisearch-repo"
+  name = "meilisearch-repo-parser"
 }
 
 resource "aws_ecr_repository" "vectordb_repo" {
-  name = "vectordb-repo"
+  name = "vectordb-repo-parser"
 }
 
 resource "aws_ecr_repository" "rag_api_repo" {
-  name = "rag-api-repo"
+  name = "rag-api-repo-parser"
 }
 
 # Docker image build and push
@@ -73,7 +73,7 @@ resource "null_resource" "docker_build_push" {
       docker buildx create --use
 
       # Build and push LibreChat
-      docker buildx build --platform linux/amd64 -t ${aws_ecr_repository.librechat_repo.repository_url}:${local.commit_hash} -f ${path.module}/../Dockerfile --push .
+      docker buildx build --platform linux/amd64 -t ${aws_ecr_repository.librechat_repo.repository_url}:${local.commit_hash} -f ${path.module}/../Dockerfile --push ..
 
       # Pull, tag, and push other images
       docker pull --platform linux/amd64 mongo:latest
@@ -94,11 +94,11 @@ resource "null_resource" "docker_build_push" {
       docker push ${aws_ecr_repository.rag_api_repo.repository_url}:latest
 
       # Verify pushes
-      aws ecr describe-images --repository-name librechat-repo --image-ids imageTag=${local.commit_hash}
-      aws ecr describe-images --repository-name mongodb-repo --image-ids imageTag=latest
-      aws ecr describe-images --repository-name meilisearch-repo --image-ids imageTag=latest
-      aws ecr describe-images --repository-name vectordb-repo --image-ids imageTag=latest
-      aws ecr describe-images --repository-name rag-api-repo --image-ids imageTag=latest
+      #aws ecr describe-images --repository-name librechat-repo-parser --image-ids imageTag=${local.commit_hash}
+      #aws ecr describe-images --repository-name mongodb-repo-parser --image-ids imageTag=latest
+      #aws ecr describe-images --repository-name meilisearch-repo-parser --image-ids imageTag=latest
+      #aws ecr describe-images --repository-name vectordb-repo-parser --image-ids imageTag=latest
+      #aws ecr describe-images --repository-name rag-api-repo-parser --image-ids imageTag=latest
     EOT
   }
 
@@ -110,12 +110,12 @@ resource "null_resource" "docker_build_push" {
 
 # ECS Cluster
 resource "aws_ecs_cluster" "librechat_cluster" {
-  name = "librechat-cluster"
+  name = "librechat-cluster-parser"
 }
 
 # EFS File System
 resource "aws_efs_file_system" "librechat_efs" {
-  creation_token = "librechat-efs"
+  creation_token = "librechat-efs-parser"
   encrypted      = true
 }
 
@@ -210,7 +210,7 @@ resource "aws_efs_access_point" "vectordb" {
 
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "librechat_logs" {
-  name              = "/ecs/librechat"
+  name              = "/ecs/librechat-parser"
   retention_in_days = 14
 }
 
@@ -219,8 +219,8 @@ resource "aws_ecs_task_definition" "librechat_task" {
   family                   = "librechat-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "1024"
-  memory                   = "2048"
+  cpu                      = "2048"
+  memory                   = "4096"
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -268,15 +268,22 @@ resource "aws_ecs_task_definition" "librechat_task" {
         }
       }
       dependsOn = [
-        {
-          containerName = "mongodb"
-          condition     = "HEALTHY"
-        },
+        #{
+        #  containerName = "mongodb"
+        #  condition     = "HEALTHY"
+        #},
         {
           containerName = "meilisearch"
           condition     = "HEALTHY"
         }
       ]
+      healthCheck = {
+  	command     = ["CMD-SHELL", "curl -f http://localhost:3080/health || exit 1"]
+  	interval    = 30
+  	timeout     = 5
+  	retries     = 3
+  	startPeriod = 60
+      }
     },
     {
       name  = "mongodb"
@@ -297,13 +304,13 @@ resource "aws_ecs_task_definition" "librechat_task" {
           awslogs-stream-prefix = "ecs"
         }
       }
-      healthCheck = {
-        command     = ["CMD-SHELL", "mongo --eval 'db.runCommand({ ping: 1 })'"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 30
-      }
+      #healthCheck = {
+      #  command     = ["CMD-SHELL", "exit 0"]
+      #  interval    = 30
+      #  timeout     = 5
+      #  retries     = 3
+      #  startPeriod = 30
+      #}
     },
     {
       name  = "meilisearch"
@@ -462,11 +469,13 @@ resource "aws_ecs_task_definition" "librechat_task" {
 
 # ECS Service
 resource "aws_ecs_service" "librechat_service" {
-  name            = "librechat-service"
+  name            = "parser-librechat-service"
   cluster         = aws_ecs_cluster.librechat_cluster.id
   task_definition = aws_ecs_task_definition.librechat_task.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+  #My addition
+  platform_version = "1.4.0"
 
   network_configuration {
     subnets          = data.aws_subnets.default.ids
@@ -494,7 +503,7 @@ resource "aws_ecs_service" "librechat_service" {
 
 # Application Load Balancer
 resource "aws_lb" "librechat_alb" {
-  name               = "librechat-alb"
+  name               = "librechat-alb-parser"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
@@ -517,7 +526,7 @@ resource "aws_lb_listener" "front_end" {
 
 # Target Group
 resource "aws_lb_target_group" "librechat_tg" {
-  name        = "librechat-tg"
+  name        = "librechat-tg-parser"
   port        = var.app_port
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
@@ -527,16 +536,23 @@ resource "aws_lb_target_group" "librechat_tg" {
     healthy_threshold   = "3"
     interval            = "30"
     protocol            = "HTTP"
-    matcher             = "200"
-    timeout             = "3"
-    path                = "/"
+    matcher             = "200-299"
+    timeout             = "15"
+    path                = "/health"
     unhealthy_threshold = "2"
   }
+  #health_check {
+  #  protocol            = "TCP"
+  #  healthy_threshold   = 2
+  #  unhealthy_threshold = 10
+  #  timeout             = 10
+  #  interval            = 30
+  #}
 }
 
 # Security Group for ALB
 resource "aws_security_group" "alb_sg" {
-  name        = "allow_https"
+  name        = "allow_https_parser"
   description = "Allow HTTPS inbound traffic"
   vpc_id      = data.aws_vpc.default.id
 
@@ -558,7 +574,7 @@ resource "aws_security_group" "alb_sg" {
 
 # Security Group for ECS Tasks
 resource "aws_security_group" "ecs_tasks_sg" {
-  name        = "ecs_tasks_sg"
+  name        = "ecs_tasks_sg_parser"
   description = "Allow inbound access from the ALB and EFS access"
   vpc_id      = data.aws_vpc.default.id
 
@@ -588,7 +604,7 @@ resource "aws_security_group" "ecs_tasks_sg" {
 
 # Security Group for EFS
 resource "aws_security_group" "efs_sg" {
-  name        = "efs_sg"
+  name        = "efs_sg_parser"
   description = "Allow EFS access from ECS tasks"
   vpc_id      = data.aws_vpc.default.id
 
@@ -610,7 +626,7 @@ resource "aws_security_group" "efs_sg" {
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "ecs_execution_role"
+  name = "ecs_execution_role_parser"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -643,7 +659,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_ecr_policy" {
 
 # IAM Role for ECS Task
 resource "aws_iam_role" "ecs_task_role" {
-  name = "ecs_task_role"
+  name = "ecs_task_role_parser"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -688,6 +704,92 @@ output "alb_dns_name" {
   description = "The DNS name of the Application Load Balancer"
 }
 
+#MY additions!!!!!!
+resource "aws_iam_role_policy" "efs_mount_policy_execution_role" {
+  name = "efs-mount-policy-execution-role"
+  role = aws_iam_role.ecs_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ]
+        Resource = aws_efs_file_system.librechat_efs.arn
+      }
+    ]
+  })
+}
+
+#Route 53 DNS configuration
+resource "aws_route53_zone" "main" {
+  name = "parserdigital.ai"
+}
+
+
+resource "aws_route53_record" "www" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = "www.parserdigital.ai"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.librechat_alb.dns_name
+    zone_id                = aws_lb.librechat_alb.zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "apex" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = "parserdigital.ai"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.librechat_alb.dns_name
+    zone_id                = aws_lb.librechat_alb.zone_id
+    evaluate_target_health = true
+  }
+}
+
+
+resource "aws_lb_listener" "front_end" {
+  load_balancer_arn = aws_lb.librechat_alb.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = var.acm_certificate_arn
+
+  default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Invalid hostname"
+      status_code  = "404"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "host_based_routing" {
+  listener_arn = aws_lb_listener.front_end.arn
+  priority     = 1
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.librechat_tg.arn
+  }
+
+  condition {
+    host_header {
+      values = ["www.parserdigital.ai", "parserdigital.ai"]
+    }
+  }
+}
+
+
 # Output for debugging
 output "env_vars" {
   value     = local.env_vars
@@ -700,4 +802,8 @@ output "rag_port" {
 
 output "commit_hash" {
   value = local.commit_hash
+}
+
+output "vpc_id" {
+  value = data.aws_vpc.default.id
 }
