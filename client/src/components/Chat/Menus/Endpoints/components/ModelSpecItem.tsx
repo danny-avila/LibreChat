@@ -112,7 +112,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       </div>
       
       {/* Wrapper for capability icons and selected checkmark, aligned to top */}
-      <div className="flex gap-2 flex-shrink-0" style={{ alignSelf: 'flex-start' }}>
+      <div className="flex gap-2 flex-shrink-0 py-2" style={{ alignSelf: 'flex-start', marginRight: isSelected ? '24px' : '0' }}>
         {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
           spec.iconCapabilities.map((capability: string, index: number) => (
             <CapabilityIcon key={index} type={capability} />
