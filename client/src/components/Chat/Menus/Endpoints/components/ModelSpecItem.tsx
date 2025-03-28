@@ -63,7 +63,7 @@ const CapabilityIcon = ({ type }: { type: string }) => {
     <TooltipAnchor
       description={description}
       side="top"
-      className="flex items-center justify-center"
+      className="cursor-pointer flex items-center justify-center"
     >
       <div 
         className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-md text-[--color] dark:text-[--color-dark]"
@@ -104,19 +104,22 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         <div className="flex min-w-0 flex-col gap-1 w-full">
           <div className="flex items-center justify-between w-full gap-2">
             <span className="truncate text-left">{spec.label}</span>
-            {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
-              <div className="flex gap-2 flex-shrink-0">
-                {spec.iconCapabilities.map((capability: string, index: number) => (
-                  <CapabilityIcon key={index} type={capability} />
-                ))}
-              </div>
-            )}
           </div>
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
         </div>
       </div>
+      
+      {/* Wrapper for capability icons and selected checkmark, aligned to top */}
+      <div className="flex gap-2 flex-shrink-0" style={{ alignSelf: 'flex-start' }}>
+        {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
+          spec.iconCapabilities.map((capability: string, index: number) => (
+            <CapabilityIcon key={index} type={capability} />
+          ))
+        )}
+      </div>
+      
       {isSelected && (
         <div className="flex-shrink-0 self-center">
           <svg
