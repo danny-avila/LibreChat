@@ -485,10 +485,7 @@ export class MCPManager {
     // Disconnect all app-level connections
     const appDisconnectPromises = Array.from(this.connections.values()).map((connection) =>
       connection.disconnect().catch((error) => {
-        this.logger.error(
-          `[MCP][App][${connection.serverName}] Error during disconnectAll:`,
-          error,
-        );
+        this.logger.error(`[MCP][${connection.serverName}] Error during disconnectAll:`, error);
       }),
     );
     await Promise.allSettled(appDisconnectPromises);
