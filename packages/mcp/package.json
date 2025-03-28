@@ -68,7 +68,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.8.0",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2"
