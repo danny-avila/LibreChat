@@ -18,7 +18,7 @@ export class MCPManager {
   /** User-specific connections initialized on demand */
   private userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   private mcpConfigs: t.MCPServers = {};
-  // private processMCPEnv?: (obj: MCPOptions) => MCPOptions;
+  private processMCPEnv?: (obj: MCPOptions) => MCPOptions; // Store the processing function
   private logger: Logger;
 
   private static getDefaultLogger(): Logger {
@@ -58,10 +58,6 @@ export class MCPManager {
         /** Process env for app-level connections */
         const config = processMCPEnv ? processMCPEnv(_config) : _config;
         const connection = new MCPConnection(serverName, config, this.logger);
-
-        connection.on('connectionChange', (state) => {
-          this.logger.info(`[MCP][${serverName}] Connection state: ${state}`);
-        });
 
         try {
           const connectionTimeout = new Promise<void>((_, reject) =>
@@ -170,22 +166,19 @@ export class MCPManager {
     }
 
     this.logger.info(`[MCP][${serverName}][User: ${userId}] Establishing new connection`);
-    const config = this.mcpConfigs[serverName];
+    let config = this.mcpConfigs[serverName];
     if (!config) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Configuration for server "${serverName}" not found.`,
       );
     }
-    // TODO: parse specific user config if needed
-    connection = new MCPConnection(serverName, config, this.logger);
-    connection.on('connectionChange', (state) => {
-      this.logger.info(`[MCP][${serverName}][User: ${userId}] Connection state: ${state}`);
-      // Optional: Handle cleanup if connection drops unexpectedly
-      if (state === 'disconnected' || state === 'error') {
-        this.removeUserConnection(userId, serverName);
-      }
-    });
+
+    if (this.processMCPEnv) {
+      config = this.processMCPEnv(config);
+    }
+
+    connection = new MCPConnection(serverName, config, this.logger, userId);
 
     try {
       const connectionTimeout = new Promise<void>((_, reject) =>
