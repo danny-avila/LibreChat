@@ -415,6 +415,7 @@ export class MCPManager {
 
     try {
       if (userId) {
+        this.updateUserLastActivity(userId);
         // Get or create user-specific connection
         connection = await this.getUserConnection(userId, serverName);
       } else {
@@ -450,11 +451,9 @@ export class MCPManager {
           ...callOptions,
         },
       );
-
       if (userId) {
         this.updateUserLastActivity(userId);
       }
-
       this.checkIdleConnections();
       return formatToolContent(result, provider);
     } catch (error) {
