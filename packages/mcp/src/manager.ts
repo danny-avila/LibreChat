@@ -68,7 +68,7 @@ export class MCPManager {
             setTimeout(() => reject(new Error('Connection timeout')), 30000),
           );
 
-          const connectionAttempt = this.initializeServer(connection, `[MCP][App][${serverName}]`);
+          const connectionAttempt = this.initializeServer(connection, `[MCP][${serverName}]`);
           await Promise.race([connectionAttempt, connectionTimeout]);
 
           if (connection.isConnected()) {
@@ -77,14 +77,14 @@ export class MCPManager {
 
             const serverCapabilities = connection.client.getServerCapabilities();
             this.logger.info(
-              `[MCP][App][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
+              `[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
             );
 
             if (serverCapabilities?.tools) {
               const tools = await connection.client.listTools();
               if (tools.tools.length) {
                 this.logger.info(
-                  `[MCP][App][${serverName}] Available tools: ${tools.tools
+                  `[MCP][${serverName}] Available tools: ${tools.tools
                     .map((tool) => tool.name)
                     .join(', ')}`,
                 );
@@ -92,7 +92,7 @@ export class MCPManager {
             }
           }
         } catch (error) {
-          this.logger.error(`[MCP][App][${serverName}] Initialization failed`, error);
+          this.logger.error(`[MCP][${serverName}] Initialization failed`, error);
           // Don't throw here, allow other servers to initialize
         }
       }),
@@ -114,9 +114,9 @@ export class MCPManager {
 
     entries.forEach(([serverName], index) => {
       if (initializedServers.has(index)) {
-        this.logger.info(`[MCP][App][${serverName}] ✓ Initialized`);
+        this.logger.info(`[MCP][${serverName}] ✓ Initialized`);
       } else {
-        this.logger.info(`[MCP][App][${serverName}] ✗ Failed`);
+        this.logger.info(`[MCP][${serverName}] ✗ Failed`);
       }
     });
 
@@ -337,7 +337,7 @@ export class MCPManager {
       try {
         if (connection.isConnected() !== true) {
           this.logger.warn(
-            `[MCP][App][${serverName}] Connection not established. Skipping tool mapping.`,
+            `[MCP][${serverName}] Connection not established. Skipping tool mapping.`,
           );
           continue;
         }
@@ -355,7 +355,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        this.logger.warn(`[MCP][App][${serverName}] Error fetching tools for mapping:`, error);
+        this.logger.warn(`[MCP][${serverName}] Error fetching tools for mapping:`, error);
       }
     }
   }
@@ -368,7 +368,7 @@ export class MCPManager {
       try {
         if (connection.isConnected() !== true) {
           this.logger.warn(
-            `[MCP][App][${serverName}] Connection not established. Skipping manifest loading.`,
+            `[MCP][${serverName}] Connection not established. Skipping manifest loading.`,
           );
           continue;
         }
@@ -384,7 +384,7 @@ export class MCPManager {
           });
         }
       } catch (error) {
-        this.logger.error(`[MCP][App][${serverName}] Error fetching tools for manifest:`, error);
+        this.logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
       }
     }
   }
@@ -409,9 +409,7 @@ export class MCPManager {
   }): Promise<t.FormattedToolResponse> {
     let connection: MCPConnection | undefined;
     const { userId, ...callOptions } = options ?? {};
-    const logPrefix = userId
-      ? `[MCP][User: ${userId}][${serverName}]`
-      : `[MCP][App][${serverName}]`;
+    const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
     try {
       if (userId) {
@@ -468,7 +466,7 @@ export class MCPManager {
   public async disconnectServer(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
     if (connection) {
-      this.logger.info(`[MCP][App][${serverName}] Disconnecting...`);
+      this.logger.info(`[MCP][${serverName}] Disconnecting...`);
       await connection.disconnect();
       this.connections.delete(serverName);
     }
