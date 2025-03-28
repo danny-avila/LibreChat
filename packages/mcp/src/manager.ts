@@ -21,7 +21,7 @@ export class MCPManager {
   private userLastActivity: Map<string, number> = new Map();
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
-  private processMCPEnv?: (obj: MCPOptions) => MCPOptions; // Store the processing function
+  private processMCPEnv?: (obj: MCPOptions, userId?: string) => MCPOptions; // Store the processing function
   private logger: Logger;
 
   private static getDefaultLogger(): Logger {
@@ -224,7 +224,7 @@ export class MCPManager {
     }
 
     if (this.processMCPEnv) {
-      config = this.processMCPEnv(config);
+      config = { ...(this.processMCPEnv(config, userId) ?? {}) };
     }
 
     connection = new MCPConnection(serverName, config, this.logger, userId);

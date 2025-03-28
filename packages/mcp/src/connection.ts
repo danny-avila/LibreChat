@@ -65,7 +65,7 @@ export class MCPConnection extends EventEmitter {
     this.client = new Client(
       {
         name: 'librechat-mcp-client',
-        version: '1.1.0',
+        version: '1.2.0',
       },
       {
         capabilities: {},
@@ -151,6 +151,7 @@ export class MCPConnection extends EventEmitter {
           const abortController = new AbortController();
           const transport = new SSEClientTransport(url, {
             requestInit: {
+              headers: options.headers,
               signal: abortController.signal,
             },
           });
