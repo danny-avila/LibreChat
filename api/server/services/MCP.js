@@ -71,11 +71,6 @@ async function createMCPTool({ req, toolKey, provider }) {
     } catch (error) {
       return `${toolName} MCP server tool call failed.`;
     }
-    /*
-     * TODO: Implement connection closing logic here or in a separate cleanup step
-     * E.g., after the agent run completes.
-     * await mcpManager.disconnectUserConnection(userId, serverName);
-     */
   };
 
   const toolInstance = tool(_call, {
