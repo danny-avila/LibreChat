@@ -77,7 +77,7 @@ export class MCPConnection extends EventEmitter {
 
   /** Helper to generate consistent log prefixes */
   private getLogPrefix(): string {
-    const userPart = this.userId ? `[User: ${this.userId}]` : '[App]';
+    const userPart = this.userId ? `[User: ${this.userId}]` : '';
     return `[MCP]${userPart}[${this.serverName}]`;
   }
 
