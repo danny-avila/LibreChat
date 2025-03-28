@@ -29,7 +29,7 @@ const useHasAccess = ({
       }
 
       if (isAuthenticated && user?.role != null && roles && roles[user.role]) {
-        return roles[user.role]?.[permissionType]?.[permission] === true;
+        return roles[user.role]?.permissions?.[permissionType]?.[permission] === true;
       }
       return false;
     },
