@@ -31,3 +31,17 @@ div[role='option'] {
 .flex.w-full.min-w-0.gap-2.px-1.py-1.items-start {
   align-items: center;
 }
+
+/* Add padding to chat box on mobile */
+@media screen and (max-width: 640px) {
+  .items-between.flex.gap-2.pb-2.flex-row {
+    padding-bottom: 1rem;
+  }
+}
+
+/* Override max-width for the menu on desktop screens */
+@media screen and (min-width: 640px) {
+  div[role='dialog'] {
+    max-width: 450px !important;
+  }
+}
