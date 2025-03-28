@@ -17,6 +17,9 @@ export class MCPManager {
   private connections: Map<string, MCPConnection> = new Map();
   /** User-specific connections initialized on demand */
   private userConnections: Map<string, Map<string, MCPConnection>> = new Map();
+  /** Timeout IDs for user connections */
+  private userConnectionTimeouts: Map<string, Map<string, NodeJS.Timeout>> = new Map();
+  private readonly USER_CONNECTION_IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes (configurable)
   private mcpConfigs: t.MCPServers = {};
   private processMCPEnv?: (obj: MCPOptions) => MCPOptions; // Store the processing function
   private logger: Logger;
@@ -47,8 +50,7 @@ export class MCPManager {
     processMCPEnv?: (obj: MCPOptions) => MCPOptions,
   ): Promise<void> {
     this.logger.info('[MCP] Initializing app-level servers');
-    // TODO: store `processMCPEnv` for user-specific connections
-    // this.processMCPEnv = processMCPEnv;
+    this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
 
     const entries = Object.entries(mcpServers);
@@ -56,7 +58,7 @@ export class MCPManager {
     const connectionResults = await Promise.allSettled(
       entries.map(async ([serverName, _config], i) => {
         /** Process env for app-level connections */
-        const config = processMCPEnv ? processMCPEnv(_config) : _config;
+        const config = this.processMCPEnv ? this.processMCPEnv(_config) : _config;
         const connection = new MCPConnection(serverName, config, this.logger);
 
         try {
@@ -64,7 +66,7 @@ export class MCPManager {
             setTimeout(() => reject(new Error('Connection timeout')), 30000),
           );
 
-          const connectionAttempt = this.initializeServer(connection, `App][${serverName}`);
+          const connectionAttempt = this.initializeServer(connection, `[MCP][App][${serverName}]`);
           await Promise.race([connectionAttempt, connectionTimeout]);
 
           if (connection.isConnected()) {
@@ -73,14 +75,14 @@ export class MCPManager {
 
             const serverCapabilities = connection.client.getServerCapabilities();
             this.logger.info(
-              `[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
+              `[MCP][App][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
             );
 
             if (serverCapabilities?.tools) {
               const tools = await connection.client.listTools();
               if (tools.tools.length) {
                 this.logger.info(
-                  `[MCP][${serverName}] Available tools: ${tools.tools
+                  `[MCP][App][${serverName}] Available tools: ${tools.tools
                     .map((tool) => tool.name)
                     .join(', ')}`,
                 );
@@ -88,7 +90,7 @@ export class MCPManager {
             }
           }
         } catch (error) {
-          this.logger.error(`[MCP][${serverName}] Initialization failed`, error);
+          this.logger.error(`[MCP][App][${serverName}] Initialization failed`, error);
           // Don't throw here, allow other servers to initialize
         }
       }),
@@ -110,9 +112,9 @@ export class MCPManager {
 
     entries.forEach(([serverName], index) => {
       if (initializedServers.has(index)) {
-        this.logger.info(`[MCP][${serverName}] ✓ Initialized`);
+        this.logger.info(`[MCP][App][${serverName}] ✓ Initialized`);
       } else {
-        this.logger.info(`[MCP][${serverName}] ✗ Failed`);
+        this.logger.info(`[MCP][App][${serverName}] ✗ Failed`);
       }
     });
 
@@ -132,24 +134,15 @@ export class MCPManager {
       try {
         await connection.connect();
         if (connection.isConnected()) {
-          this.logger.info(`${logPrefix} Connection established`);
           return;
         }
-        // If connect() resolves but isConnected() is false, treat as failure
         throw new Error('Connection attempt succeeded but status is not connected');
       } catch (error) {
         attempts++;
-        this.logger.warn(
-          `${logPrefix} Connection attempt ${attempts}/${maxAttempts} failed: ${
-            error instanceof Error ? error.message : error
-          }`,
-        );
-
         if (attempts === maxAttempts) {
           this.logger.error(`${logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
           throw error; // Re-throw the last error
         }
-
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
       }
     }
@@ -161,11 +154,11 @@ export class MCPManager {
     let connection = userServerMap?.get(serverName);
 
     if (connection?.isConnected()) {
-      this.logger.debug(`[MCP][${serverName}][User: ${userId}] Reusing existing connection`);
+      this.logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing existing connection`);
       return connection;
     }
 
-    this.logger.info(`[MCP][${serverName}][User: ${userId}] Establishing new connection`);
+    this.logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
     let config = this.mcpConfigs[serverName];
     if (!config) {
       throw new McpError(
@@ -184,10 +177,9 @@ export class MCPManager {
       const connectionTimeout = new Promise<void>((_, reject) =>
         setTimeout(() => reject(new Error('Connection timeout')), 30000),
       );
-      // Pass specific log prefix for user connection initialization
       const connectionAttempt = this.initializeServer(
         connection,
-        `[MCP][${serverName}][User: ${userId}]`,
+        `[MCP][User: ${userId}][${serverName}]`,
       );
       await Promise.race([connectionAttempt, connectionTimeout]);
 
@@ -199,23 +191,59 @@ export class MCPManager {
         this.userConnections.set(userId, new Map());
       }
       this.userConnections.get(userId)?.set(serverName, connection);
-      this.logger.info(`[MCP][${serverName}][User: ${userId}] Connection successfully established`);
+      this.logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
+      this.scheduleUserConnectionTimeout(userId, serverName);
       return connection;
     } catch (error) {
       this.logger.error(
-        `[MCP][${serverName}][User: ${userId}] Failed to establish connection`,
+        `[MCP][User: ${userId}][${serverName}] Failed to establish connection`,
         error,
       );
       // Ensure partial connection state is cleaned up if initialization fails
       await connection.disconnect().catch((disconnectError) => {
         this.logger.error(
-          `[MCP][${serverName}][User: ${userId}] Error during cleanup after failed connection`,
+          `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
           disconnectError,
         );
       });
-      this.removeUserConnection(userId, serverName);
+      this.removeUserConnection(userId, serverName); // Also clears timeout via disconnectUserConnection
       throw error; // Re-throw the error to the caller
     }
+  }
+
+  /** Clears the idle timeout for a specific user connection */
+  private clearUserConnectionTimeout(userId: string, serverName: string): void {
+    const timeoutId = this.userConnectionTimeouts.get(userId)?.get(serverName);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      this.userConnectionTimeouts.get(userId)?.delete(serverName);
+      if (this.userConnectionTimeouts.get(userId)?.size === 0) {
+        this.userConnectionTimeouts.delete(userId);
+      }
+      this.logger.debug(`[MCP][User: ${userId}][${serverName}] Cleared idle timeout.`);
+    }
+  }
+
+  /** Schedules an idle timeout for a specific user connection */
+  private scheduleUserConnectionTimeout(userId: string, serverName: string): void {
+    this.clearUserConnectionTimeout(userId, serverName);
+
+    const timeoutId = setTimeout(async () => {
+      this.logger.info(
+        `[MCP][User: ${userId}][${serverName}] Idle timeout reached. Disconnecting...`,
+      );
+      await this.disconnectUserConnection(userId, serverName);
+    }, this.USER_CONNECTION_IDLE_TIMEOUT);
+
+    if (!this.userConnectionTimeouts.has(userId)) {
+      this.userConnectionTimeouts.set(userId, new Map());
+    }
+    this.userConnectionTimeouts.get(userId)?.set(serverName, timeoutId);
+    this.logger.debug(
+      `[MCP][User: ${userId}][${serverName}] Scheduled idle timeout (${
+        this.USER_CONNECTION_IDLE_TIMEOUT / 1000
+      }s).`,
+    );
   }
 
   /** Removes a specific user connection from the map */
@@ -226,16 +254,17 @@ export class MCPManager {
       if (userMap.size === 0) {
         this.userConnections.delete(userId);
       }
-      this.logger.debug(`[MCP][${serverName}][User: ${userId}] Removed connection entry.`);
+      this.logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
     }
   }
 
   /** Disconnects and removes a specific user connection */
   public async disconnectUserConnection(userId: string, serverName: string): Promise<void> {
+    this.clearUserConnectionTimeout(userId, serverName);
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
     if (connection) {
-      this.logger.info(`[MCP][${serverName}][User: ${userId}] Disconnecting...`);
+      this.logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
       await connection.disconnect();
       this.removeUserConnection(userId, serverName);
     }
@@ -246,22 +275,18 @@ export class MCPManager {
     const userMap = this.userConnections.get(userId);
     if (userMap) {
       this.logger.info(`[MCP][User: ${userId}] Disconnecting all servers...`);
-      const disconnectPromises = Array.from(userMap.entries()).map(
-        async ([serverName, connection]) => {
-          try {
-            await connection.disconnect();
-            this.logger.debug(`[MCP][${serverName}][User: ${userId}] Disconnected.`);
-          } catch (error) {
-            this.logger.error(
-              `[MCP][${serverName}][User: ${userId}] Error during disconnection:`,
-              error,
-            );
-          }
-        },
-      );
-      await Promise.all(disconnectPromises);
-      this.userConnections.delete(userId);
-      this.logger.info(`[MCP][User: ${userId}] All connections disconnected and removed.`);
+      const disconnectPromises = Array.from(userMap.keys()).map(async (serverName) => {
+        try {
+          await this.disconnectUserConnection(userId, serverName);
+        } catch (error) {
+          this.logger.error(
+            `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
+            error,
+          );
+        }
+      });
+      await Promise.allSettled(disconnectPromises);
+      this.logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
   }
 
@@ -284,7 +309,7 @@ export class MCPManager {
       try {
         if (connection.isConnected() !== true) {
           this.logger.warn(
-            `[MCP][${serverName}] Connection not established. Skipping tool mapping.`,
+            `[MCP][App][${serverName}] Connection not established. Skipping tool mapping.`,
           );
           continue;
         }
@@ -302,7 +327,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        this.logger.warn(`[MCP][${serverName}] Error fetching tools for mapping:`, error);
+        this.logger.warn(`[MCP][App][${serverName}] Error fetching tools for mapping:`, error);
       }
     }
   }
@@ -315,7 +340,7 @@ export class MCPManager {
       try {
         if (connection.isConnected() !== true) {
           this.logger.warn(
-            `[MCP][${serverName}] Connection not established. Skipping manifest loading.`,
+            `[MCP][App][${serverName}] Connection not established. Skipping manifest loading.`,
           );
           continue;
         }
@@ -331,14 +356,15 @@ export class MCPManager {
           });
         }
       } catch (error) {
-        this.logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
+        this.logger.error(`[MCP][App][${serverName}] Error fetching tools for manifest:`, error);
       }
     }
   }
 
   /**
    * Calls a tool on an MCP server, using either a user-specific connection
-   * (if userId is provided) or an app-level connection.
+   * (if userId is provided) or an app-level connection. Resets the inactivity timer
+   * for user-specific connections upon successful call initiation.
    */
   async callTool({
     serverName,
@@ -355,19 +381,23 @@ export class MCPManager {
   }): Promise<t.FormattedToolResponse> {
     let connection: MCPConnection | undefined;
     const userId = options?.userId;
-    const logPrefix = userId ? `[User: ${userId}]` : '[App]';
+    const logPrefix = userId
+      ? `[MCP][User: ${userId}][${serverName}]`
+      : `[MCP][App][${serverName}]`;
 
     try {
       if (userId) {
         // Get or create user-specific connection
         connection = await this.getUserConnection(userId, serverName);
+        // Reset idle timer on successful activity (tool call) for this user/server
+        this.scheduleUserConnectionTimeout(userId, serverName);
       } else {
         // Use app-level connection
         connection = this.connections.get(serverName);
         if (!connection) {
           throw new McpError(
             ErrorCode.InvalidRequest,
-            `${logPrefix}[${serverName}] No app-level connection found. Cannot execute tool ${toolName}.`,
+            `${logPrefix} No app-level connection found. Cannot execute tool ${toolName}.`,
           );
         }
       }
@@ -376,7 +406,7 @@ export class MCPManager {
         // This might happen if getUserConnection failed silently or app connection dropped
         throw new McpError(
           ErrorCode.InternalError, // Use InternalError for connection issues
-          `${logPrefix}[${serverName}] Connection is not active. Cannot execute tool ${toolName}.`,
+          `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
         );
       }
 
@@ -389,7 +419,7 @@ export class MCPManager {
           method: 'tools/call',
           params: {
             name: toolName,
-            arguments: toolArguments, // Remove duplicate line
+            arguments: toolArguments,
           },
         },
         CallToolResultSchema,
@@ -401,7 +431,7 @@ export class MCPManager {
       return formatToolContent(result, provider);
     } catch (error) {
       // Log with context and re-throw or handle as needed
-      this.logger.error(`${logPrefix}[${serverName}][${toolName}] Tool call failed`, error);
+      this.logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     }
@@ -411,7 +441,7 @@ export class MCPManager {
   public async disconnectServer(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
     if (connection) {
-      this.logger.info(`[MCP][${serverName}] Disconnecting...`);
+      this.logger.info(`[MCP][App][${serverName}] Disconnecting...`);
       await connection.disconnect();
       this.connections.delete(serverName);
     }
@@ -421,17 +451,20 @@ export class MCPManager {
   public async disconnectAll(): Promise<void> {
     this.logger.info('[MCP] Disconnecting all app-level and user-level connections...');
 
-    // Disconnect all user connections first
     const userDisconnectPromises = Array.from(this.userConnections.keys()).map((userId) =>
       this.disconnectUserConnections(userId),
     );
-    await Promise.allSettled(userDisconnectPromises); // Use allSettled to ensure all attempts are made
-    this.userConnections.clear(); // Clear the map after attempting disconnections
+    await Promise.allSettled(userDisconnectPromises);
+    this.userConnectionTimeouts.forEach((serverMap) => serverMap.forEach(clearTimeout));
+    this.userConnectionTimeouts.clear();
 
     // Disconnect all app-level connections
     const appDisconnectPromises = Array.from(this.connections.values()).map((connection) =>
       connection.disconnect().catch((error) => {
-        this.logger.error(`[MCP][${connection.serverName}] Error during disconnectAll:`, error);
+        this.logger.error(
+          `[MCP][App][${connection.serverName}] Error during disconnectAll:`,
+          error,
+        );
       }),
     );
     await Promise.allSettled(appDisconnectPromises);
