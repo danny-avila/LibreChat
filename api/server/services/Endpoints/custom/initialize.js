@@ -117,6 +117,15 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     endpointTokenConfig,
   };
 
+  // Pass through thinking parameters from endpointOption if they exist
+  if (endpointOption.thinking !== undefined) {
+    customOptions.thinking = endpointOption.thinking;
+  }
+
+  if (endpointOption.thinkingBudget !== undefined) {
+    customOptions.thinkingBudget = endpointOption.thinkingBudget;
+  }
+
   /** @type {undefined | TBaseEndpoint} */
   const allConfig = req.app.locals.all;
   if (allConfig) {
