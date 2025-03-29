@@ -110,6 +110,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
         });
         const base64Data = await streamPromise;
         promises.push([file, base64Data]);
+        continue;
       } catch (error) {
         logger.error(
           `Error processing blob storage file stream for ${file.name} base64 payload:`,
