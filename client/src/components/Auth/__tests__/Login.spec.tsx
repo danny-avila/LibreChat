@@ -16,7 +16,7 @@ const mockStartupConfig = {
   isLoading: false,
   isError: false,
   data: {
-    socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+    socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
     discordLoginEnabled: true,
     facebookLoginEnabled: true,
     githubLoginEnabled: true,
@@ -24,6 +24,9 @@ const mockStartupConfig = {
     openidLoginEnabled: true,
     openidLabel: 'Test OpenID',
     openidImageUrl: 'http://test-server.com',
+    samlLoginEnabled: true,
+    samlLabel: 'Test SAML',
+    samlImageUrl: 'http://test-server.com',
     ldap: {
       enabled: false,
     },
@@ -142,6 +145,11 @@ test('renders login form', () => {
   expect(getByRole('link', { name: /Continue with Discord/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/discord',
+  );
+  expect(getByRole('link', { name: /Test SAML/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Test SAML/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/saml',
   );
 });
 
