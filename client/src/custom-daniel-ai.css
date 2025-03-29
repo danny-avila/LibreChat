@@ -6,15 +6,15 @@
 }
 
 /* Adjust footer padding */
-div[role='contentinfo'] {
+/* div[role='contentinfo'] {
   padding-top: 0.9rem !important;
   padding-bottom: 1rem !important;
-}
+} */
 
 /* Balance form padding */
-form.mx-auto.pl-2 {
+/* form.mx-auto.pl-2 {
   padding-right: 0.5rem;
-}
+} */
 
 /* Fix line breaks in model descriptions */
 .break-words.text-xs {
@@ -23,21 +23,21 @@ form.mx-auto.pl-2 {
 }
 
 /* Align selected model icon in modelSelect vertically */
-div[role='option'] {
+/* div[role='option'] {
   align-items: center;
-}
+} */
 
 /* Align model logo in modelSelect vertically */
-.flex.w-full.min-w-0.gap-2.px-1.py-1.items-start {
+/* .flex.w-full.min-w-0.gap-2.px-1.py-1.items-start {
   align-items: center;
-}
+} */
 
 /* Add padding to chat box on mobile */
-@media screen and (max-width: 640px) {
+/* @media screen and (max-width: 640px) {
   .items-between.flex.gap-2.pb-2.flex-row {
     padding-bottom: 1rem;
   }
-}
+} */
 
 /* Override max-width for the menu on desktop screens */
 @media screen and (min-width: 640px) {
