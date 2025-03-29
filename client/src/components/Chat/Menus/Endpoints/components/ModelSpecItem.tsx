@@ -108,7 +108,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           </div>
         )}
         <div className="flex min-w-0 flex-col gap-1">
-            <span className="truncate text-left">{spec.label}</span>
+          <span className="truncate text-left">{spec.label}</span>
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
