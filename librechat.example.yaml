@@ -265,7 +265,8 @@ endpoints:
       titleModel: 'openai/gpt-4o'
       # Recommended: Drop the stop parameter from the request as models use a variety of stop tokens.
       dropParams: ['stop']
-      modelDisplayLabel: 'RequestyAI'
+      modelDisplayLabel: 'Requesty'
+      iconURL: https://app.requesty.ai/_next/image?url=%2Ffavicon.ico&w=96&q=75
 
     # Portkey AI Example
     - name: "Portkey"
