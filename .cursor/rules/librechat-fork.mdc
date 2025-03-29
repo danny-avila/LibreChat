@@ -1,0 +1,17 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+Always remember that this is a forked repository and the upstream repo is actively maintained.
+## To minimize the risk of merge conflicts:
+- Make changes in a way that’s easy to maintain and merge.
+- Avoid modifying upstream fileolutely necessary.
+- Whenever possible, move custom code to separate files — for example, [custom-daniel-ai.css](mdc:client/src/custom-daniel-ai.css) or a similarly scoped file.
+- Leave inline comments explaining why the change was made and referencing any relevant upstream issue, if applicable.
+## When overriding behavior:
+- Keep the logic as isolated as possible.
+- Prefer extension over modification — e.g., wrapping components, overriding classes via higher specificity, or using CSS file for overriding if applicable.

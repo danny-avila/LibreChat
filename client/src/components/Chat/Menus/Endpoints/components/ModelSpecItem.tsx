@@ -107,13 +107,35 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
             <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />
           </div>
         )}
-        <div className="flex min-w-0 flex-col gap-1 w-full">
-          <div className="flex items-center justify-between w-full gap-2">
+        <div className="flex min-w-0 flex-col gap-1">
             <span className="truncate text-left">{spec.label}</span>
-          </div>
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
+          {/* <div className="flex items-center gap-2 mt-1">
+            <div 
+              className="flex items-center gap-1 px-2.5 py-0.75 bg-gradient-to-r from-blue-900/30 to-blue-800/20 rounded-full" 
+              style={{ border: '0.5px solid rgb(147, 197, 253)' }}
+            >
+              <span 
+                className="text-[10px] font-semibold" 
+                style={{ color: 'rgb(147, 197, 253)' }}
+              >
+                IN $0.15/1M
+              </span>
+            </div>
+            <div 
+              className="flex items-center gap-1 px-2.5 py-0.75 bg-gradient-to-r from-purple-900/30 to-purple-800/20 rounded-full" 
+              style={{ border: '0.5px solid rgb(216, 180, 254)' }}
+            >
+              <span 
+                className="text-[10px] font-semibold" 
+                style={{ color: 'rgb(216, 180, 254)' }}
+              >
+                OUT $0.60/1M
+              </span>
+            </div>
+          </div> */}
         </div>
       </div>
 
