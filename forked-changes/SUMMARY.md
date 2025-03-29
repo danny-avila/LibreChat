@@ -53,6 +53,7 @@ Example model configuration with pricing can be found in [example-config.yaml](.
 2. **Component Encapsulation**:
 
    - The `PriceBadge` component is defined in the utility file rather than as a separate component to reduce the number of files modified.
+   - Changed file extension from `.ts` to `.tsx` to support JSX syntax
 
 3. **No Description Processing**:
 
@@ -60,3 +61,9 @@ Example model configuration with pricing can be found in [example-config.yaml](.
 
 4. **Backward Compatibility**:
    - Pricing display is optional and won't affect existing models without pricing configuration.
+
+## Build Fixes
+
+- Changed the file extension from `pricingUtils.ts` to `pricingUtils.tsx` to properly support JSX syntax
+- This simpler solution avoids the need for complex React.createElement calls
+- Ensures proper compilation during the build process

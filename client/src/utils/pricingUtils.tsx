@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 
 /**
