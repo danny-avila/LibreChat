@@ -4,7 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { BrainCircuit, ImageUp, Globe, FlaskConical } from 'lucide-react';
+import { BrainCircuit, ImageUp, Globe, FlaskConical, Microscope } from 'lucide-react';
 import { TooltipAnchor } from '~/components/ui/Tooltip';
 
 interface ModelSpecItemProps {
@@ -22,6 +22,8 @@ const getCapabilityDescription = (type: string): string => {
       return 'Uses web search to answer questions';
     case 'experimental':
       return 'Experimental model';
+    case 'deep_research':
+      return 'Performs deep research and analysis';
     default:
       return '';
   }
@@ -52,6 +54,11 @@ const CapabilityIcon = ({ type }: { type: string }) => {
       iconElement = <FlaskConical className="h-4 w-4 text-emerald-300" />;
       bg = 'bg-gradient-to-br from-emerald-900/20 to-emerald-800/10';
       ring = 'ring-1 ring-inset ring-emerald-300/30';
+      break;
+    case 'deep_research':
+      iconElement = <Microscope className="h-4 w-4 text-purple-300" />;
+      bg = 'bg-gradient-to-br from-purple-900/20 to-purple-800/10';
+      ring = 'ring-1 ring-inset ring-purple-300/30';
       break;
     default:
       return null;
