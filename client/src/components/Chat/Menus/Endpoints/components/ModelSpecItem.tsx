@@ -36,27 +36,27 @@ const CapabilityIcon = ({ type }: { type: string }) => {
   
   switch (type) {
     case 'reasoning':
-      iconElement = <BrainCircuit className="h-4 w-4 text-pink-300" />;
+      iconElement = <BrainCircuit className="h-3.5 w-3.5 text-pink-300" />;
       bg = 'bg-gradient-to-br from-pink-900/20 to-pink-800/10';
       ring = 'ring-1 ring-inset ring-pink-300/30';
       break;
     case 'upload_image':
-      iconElement = <ImageUp className="h-4 w-4 text-cyan-300" />;
+      iconElement = <ImageUp className="h-3.5 w-3.5 text-cyan-300" />;
       bg = 'bg-gradient-to-br from-cyan-900/20 to-cyan-800/10';
       ring = 'ring-1 ring-inset ring-cyan-300/30';
       break;
     case 'web_search':
-      iconElement = <Globe className="h-4 w-4 text-white" />;
+      iconElement = <Globe className="h-3.5 w-3.5 text-white" />;
       bg = 'bg-gradient-to-br from-white/10 to-white/5';
       ring = 'ring-1 ring-inset ring-white/20';
       break;
     case 'experimental':
-      iconElement = <FlaskConical className="h-4 w-4 text-emerald-300" />;
+      iconElement = <FlaskConical className="h-3.5 w-3.5 text-emerald-300" />;
       bg = 'bg-gradient-to-br from-emerald-900/20 to-emerald-800/10';
       ring = 'ring-1 ring-inset ring-emerald-300/30';
       break;
     case 'deep_research':
-      iconElement = <Microscope className="h-4 w-4 text-purple-300" />;
+      iconElement = <Microscope className="h-3.5 w-3.5 text-purple-300" />;
       bg = 'bg-gradient-to-br from-purple-900/20 to-purple-800/10';
       ring = 'ring-1 ring-inset ring-purple-300/30';
       break;
@@ -74,7 +74,7 @@ const CapabilityIcon = ({ type }: { type: string }) => {
     >
       <div 
         className={cn(
-          'relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full backdrop-blur-sm bg-opacity-80',
+          'relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full backdrop-blur-sm bg-opacity-80',
           bg,
           ring
         )}
