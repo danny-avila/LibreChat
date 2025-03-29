@@ -17,15 +17,17 @@ import store from '~/store';
 export default function useSelectMention({
   presets,
   modelSpecs,
-  assistantMap,
+  assistantsMap,
   endpointsConfig,
   newConversation,
+  returnHandlers,
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
-  assistantMap?: TAssistantsMap;
+  assistantsMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
+  returnHandlers?: boolean;
 }) {
   const { conversation } = useChatContext();
   const getDefaultConversation = useDefaultConvo();
@@ -69,7 +71,7 @@ export default function useSelectMention({
         preset.assistant_id != null &&
         !(preset.model ?? '')
       ) {
-        preset.model = assistantMap?.[newEndpoint]?.[preset.assistant_id]?.model;
+        preset.model = assistantsMap?.[newEndpoint]?.[preset.assistant_id]?.model;
       }
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
@@ -80,6 +82,7 @@ export default function useSelectMention({
           /* target endpointType is necessary to avoid endpoint mixing */
           conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
           preset: template,
+          cleanOutput: true,
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
@@ -104,7 +107,7 @@ export default function useSelectMention({
       modularChat,
       newConversation,
       endpointsConfig,
-      assistantMap,
+      assistantsMap,
     ],
   );
 
@@ -112,6 +115,7 @@ export default function useSelectMention({
     model?: string;
     agent_id?: string;
     assistant_id?: string;
+    spec?: string | null;
   };
 
   const onSelectEndpoint = useCallback(
@@ -149,12 +153,21 @@ export default function useSelectMention({
         template.agent_id = agent_id;
       }
 
+      template.spec = null;
+      template.iconURL = null;
+      template.modelLabel = null;
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
         template.endpointType = newEndpointType;
 
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+          conversation: {
+            ...(conversation ?? {}),
+            spec: null,
+            iconURL: null,
+            modelLabel: null,
+            endpointType: template.endpointType,
+          },
           preset: template,
         });
 
@@ -165,7 +178,7 @@ export default function useSelectMention({
 
       newConversation({
         template: { ...(template as Partial<TConversation>) },
-        preset: { ...kwargs, endpoint: newEndpoint },
+        preset: { ...kwargs, spec: null, iconURL: null, modelLabel: null, endpoint: newEndpoint },
       });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
@@ -194,14 +207,20 @@ export default function useSelectMention({
         endpointsConfig,
       });
 
+      newPreset.spec = null;
+      newPreset.iconURL = newPreset.iconURL ?? null;
+      newPreset.modelLabel = newPreset.modelLabel ?? null;
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
-
+        template.spec = null;
+        template.iconURL = null;
+        template.modelLabel = null;
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
           conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
           preset: template,
+          cleanInput: true,
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
@@ -242,7 +261,7 @@ export default function useSelectMention({
       } else if (isAssistantsEndpoint(option.type)) {
         onSelectEndpoint(option.type, {
           assistant_id: key,
-          model: assistantMap?.[option.type]?.[key]?.model ?? '',
+          model: assistantsMap?.[option.type]?.[key]?.model ?? '',
         });
       } else if (isAgentsEndpoint(option.type)) {
         onSelectEndpoint(option.type, {
@@ -250,8 +269,15 @@ export default function useSelectMention({
         });
       }
     },
-    [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets, assistantMap],
+    [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets, assistantsMap],
   );
+
+  if (returnHandlers) {
+    return {
+      onSelectSpec,
+      onSelectEndpoint,
+    };
+  }
 
   return {
     onSelectMention,

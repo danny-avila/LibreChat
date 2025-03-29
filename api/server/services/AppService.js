@@ -9,15 +9,16 @@ const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = requir
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
-const { initializeS3 } = require('./Files/S3/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
+const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
+const { isEnabled } = require('~/server/utils');
 const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
@@ -29,7 +30,7 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   await initializeRoles();
-  /** @type {TCustomConfig}*/
+  /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
@@ -37,6 +38,11 @@ const AppService = async (app) => {
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const startBalance = process.env.START_BALANCE;
+  const balance = config.balance ?? {
+    enabled: isEnabled(process.env.CHECK_BALANCE),
+    startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
+  };
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;
@@ -52,7 +58,7 @@ const AppService = async (app) => {
     initializeS3();
   }
 
-  /** @type {Record<string, FunctionTool} */
+  /** @type {Record<string, FunctionTool>} */
   const availableTools = loadAndFormatTools({
     adminFilter: filteredTools,
     adminIncluded: includedTools,
@@ -79,6 +85,7 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    balance,
   };
 
   if (!Object.keys(config).length) {

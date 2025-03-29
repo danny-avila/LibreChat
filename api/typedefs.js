@@ -403,6 +403,12 @@
  * @memberof typedefs
  */
 
+/**
+ * @exports MessageContentImageUrl
+ * @typedef {import('librechat-data-provider').Agents.MessageContentImageUrl} MessageContentImageUrl
+ * @memberof typedefs
+ */
+
 /** Prompts */
 /**
  * @exports TPrompt
@@ -757,6 +763,11 @@
 /**
  * @exports MongooseSchema
  * @typedef {import('mongoose').Schema} MongooseSchema
+ * @memberof typedefs
+ */
+/**
+ * @exports MongoFile
+ * @typedef {import('@librechat/data-schemas').IMongoFile} MongoFile
  * @memberof typedefs
  */
 

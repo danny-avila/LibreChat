@@ -5,7 +5,7 @@ const { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } = requi
 
 const logDir = path.join(__dirname, '..', 'logs');
 
-const { NODE_ENV, DEBUG_LOGGING = true, DEBUG_CONSOLE = false, CONSOLE_JSON = false } = process.env;
+const { NODE_ENV, DEBUG_LOGGING = true, CONSOLE_JSON = false, DEBUG_CONSOLE = false } = process.env;
 
 const useConsoleJson =
   (typeof CONSOLE_JSON === 'string' && CONSOLE_JSON?.toLowerCase() === 'true') ||
@@ -14,6 +14,10 @@ const useConsoleJson =
 const useDebugConsole =
   (typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE?.toLowerCase() === 'true') ||
   DEBUG_CONSOLE === true;
+
+const useDebugLogging =
+  (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
+  DEBUG_LOGGING === true;
 
 const levels = {
   error: 0,
@@ -57,28 +61,9 @@ const transports = [
     maxFiles: '14d',
     format: fileFormat,
   }),
-  // new winston.transports.DailyRotateFile({
-  //   level: 'info',
-  //   filename: `${logDir}/info-%DATE%.log`,
-  //   datePattern: 'YYYY-MM-DD',
-  //   zippedArchive: true,
-  //   maxSize: '20m',
-  //   maxFiles: '14d',
-  // }),
 ];
 
-// if (NODE_ENV !== 'production') {
-//   transports.push(
-//     new winston.transports.Console({
-//       format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
-//     }),
-//   );
-// }
-
-if (
-  (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
-  DEBUG_LOGGING === true
-) {
+if (useDebugLogging) {
   transports.push(
     new winston.transports.DailyRotateFile({
       level: 'debug',
@@ -107,10 +92,16 @@ const consoleFormat = winston.format.combine(
   }),
 );
 
+// Determine console log level
+let consoleLogLevel = 'info';
+if (useDebugConsole) {
+  consoleLogLevel = 'debug';
+}
+
 if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
-      level: 'debug',
+      level: consoleLogLevel,
       format: useConsoleJson
         ? winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json())
         : winston.format.combine(fileFormat, debugTraverse),
@@ -119,14 +110,14 @@ if (useDebugConsole) {
 } else if (useConsoleJson) {
   transports.push(
     new winston.transports.Console({
-      level: 'info',
+      level: consoleLogLevel,
       format: winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json()),
     }),
   );
 } else {
   transports.push(
     new winston.transports.Console({
-      level: 'info',
+      level: consoleLogLevel,
       format: consoleFormat,
     }),
   );

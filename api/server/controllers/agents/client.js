@@ -471,6 +471,7 @@ class AgentClient extends BaseClient {
             err,
           );
         });
+        continue;
       }
       spendTokens(txMetadata, {
         promptTokens: usage.input_tokens,

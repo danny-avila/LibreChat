@@ -9,7 +9,7 @@ const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_KEY_PREFIX, RED
 
 let keyvRedis;
 const redis_prefix = REDIS_KEY_PREFIX || '';
-const redis_max_listeners = Number(REDIS_MAX_LISTENERS) || 10;
+const redis_max_listeners = Number(REDIS_MAX_LISTENERS) || 40;
 
 function mapURI(uri) {
   const regex =
@@ -77,10 +77,10 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
   keyvRedis.setMaxListeners(redis_max_listeners);
   logger.info(
-    '[Optional] Redis initialized. Note: Redis support is experimental. If you have issues, disable it. Cache needs to be flushed for values to refresh.',
+    '[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache to refresh values.',
   );
 } else {
-  logger.info('[Optional] Redis not initialized. Note: Redis support is experimental.');
+  logger.info('[Optional] Redis not initialized.');
 }
 
 module.exports = keyvRedis;

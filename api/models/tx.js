@@ -109,6 +109,7 @@ const tokenValues = Object.assign(
     'gemini-2.0-flash-lite': { prompt: 0.075, completion: 0.3 },
     'gemini-2.0-flash': { prompt: 0.1, completion: 0.7 },
     'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
+    'gemini-2.5': { prompt: 0, completion: 0 }, // Free for a period of time
     'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
     'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
     'gemini-1.5': { prompt: 2.5, completion: 10 },
@@ -122,6 +123,12 @@ const tokenValues = Object.assign(
     'grok-2-latest': { prompt: 2.0, completion: 10.0 },
     'grok-2': { prompt: 2.0, completion: 10.0 },
     'grok-beta': { prompt: 5.0, completion: 15.0 },
+    'mistral-large': { prompt: 2.0, completion: 6.0 },
+    'pixtral-large': { prompt: 2.0, completion: 6.0 },
+    'mistral-saba': { prompt: 0.2, completion: 0.6 },
+    codestral: { prompt: 0.3, completion: 0.9 },
+    'ministral-8b': { prompt: 0.1, completion: 0.1 },
+    'ministral-3b': { prompt: 0.04, completion: 0.04 },
   },
   bedrockValues,
 );

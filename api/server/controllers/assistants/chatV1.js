@@ -19,7 +19,7 @@ const {
   addThreadMetadata,
   saveAssistantMessage,
 } = require('~/server/services/Threads');
-const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { sendResponse, sendMessage, sleep, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
@@ -27,7 +27,7 @@ const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
 const { getTransactions } = require('~/models/Transaction');
-const checkBalance = require('~/models/checkBalance');
+const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
@@ -248,7 +248,8 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      if (!isEnabled(process.env.CHECK_BALANCE)) {
+      const balance = req.app?.locals?.balance;
+      if (!balance?.enabled) {
         return;
       }
       const transactions =

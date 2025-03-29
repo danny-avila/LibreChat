@@ -32,11 +32,12 @@ async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
     const response = await axios(options);
     return response;
   } catch (error) {
-    logAxiosError({
-      message: `Error downloading code environment file stream: ${error.message}`,
-      error,
-    });
-    throw new Error(`Error downloading file: ${error.message}`);
+    throw new Error(
+      logAxiosError({
+        message: `Error downloading code environment file stream: ${error.message}`,
+        error,
+      }),
+    );
   }
 }
 
@@ -89,11 +90,12 @@ async function uploadCodeEnvFile({ req, stream, filename, apiKey, entity_id = ''
 
     return `${fileIdentifier}?entity_id=${entity_id}`;
   } catch (error) {
-    logAxiosError({
-      message: `Error uploading code environment file: ${error.message}`,
-      error,
-    });
-    throw new Error(`Error uploading code environment file: ${error.message}`);
+    throw new Error(
+      logAxiosError({
+        message: `Error uploading code environment file: ${error.message}`,
+        error,
+      }),
+    );
   }
 }
 

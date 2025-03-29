@@ -13,7 +13,7 @@ const { logger, getMCPManager } = require('~/config');
  * Creates a general tool for an entire action set.
  *
  * @param {Object} params - The parameters for loading action sets.
- * @param {ServerRequest} params.req - The name of the tool.
+ * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
@@ -37,11 +37,30 @@ async function createMCPTool({ req, toolKey, provider }) {
   }
 
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
-  /** @type {(toolInput: Object | string) => Promise<unknown>} */
-  const _call = async (toolInput) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    logger.error(
+      `[MCP][${serverName}][${toolName}] User ID not found on request. Cannot create tool.`,
+    );
+    throw new Error(`User ID not found on request. Cannot create tool for ${toolKey}.`);
+  }
+
+  /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
+  const _call = async (toolArguments, config) => {
     try {
       const mcpManager = await getMCPManager();
-      const result = await mcpManager.callTool(serverName, toolName, provider, toolInput);
+      const result = await mcpManager.callTool({
+        serverName,
+        toolName,
+        provider,
+        toolArguments,
+        options: {
+          userId,
+          signal: config?.signal,
+        },
+      });
+
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
       }
@@ -50,7 +69,6 @@ async function createMCPTool({ req, toolKey, provider }) {
       }
       return result;
     } catch (error) {
-      logger.error(`${toolName} MCP server tool call failed`, error);
       return `${toolName} MCP server tool call failed.`;
     }
   };

@@ -30,7 +30,6 @@ export default function MultiMessage({
   useEffect(() => {
     // reset siblingIdx when the tree changes, mostly when a new message is submitting.
     setSiblingIdx(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
 
   useEffect(() => {
@@ -62,6 +61,7 @@ export default function MultiMessage({
       />
     );
   } else if (message.content) {
+    console.log('message.id with content', message.messageId);
     return (
       <MessageContent
         key={message.messageId}

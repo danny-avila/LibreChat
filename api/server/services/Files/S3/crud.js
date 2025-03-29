@@ -1,15 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const fetch = require('node-fetch');
-const { getBufferMetadata } = require('~/server/utils');
-const { initializeS3 } = require('./initialize');
-const { logger } = require('~/config');
 const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { initializeS3 } = require('./initialize');
+const { logger } = require('~/config');
 
 const bucketName = process.env.AWS_BUCKET_NAME;
-const s3 = initializeS3();
 const defaultBasePath = 'images';
 
 /**
@@ -32,6 +29,7 @@ async function saveBufferToS3({ userId, buffer, fileName, basePath = defaultBase
   const params = { Bucket: bucketName, Key: key, Body: buffer };
 
   try {
+    const s3 = initializeS3();
     await s3.send(new PutObjectCommand(params));
     return await getS3URL({ userId, fileName, basePath });
   } catch (error) {
@@ -54,6 +52,7 @@ async function getS3URL({ userId, fileName, basePath = defaultBasePath }) {
   const params = { Bucket: bucketName, Key: key };
 
   try {
+    const s3 = initializeS3();
     return await getSignedUrl(s3, new GetObjectCommand(params), { expiresIn: 86400 });
   } catch (error) {
     logger.error('[getS3URL] Error getting signed URL from S3:', error.message);
@@ -97,6 +96,7 @@ async function deleteFileFromS3({ userId, fileName, basePath = defaultBasePath }
   const params = { Bucket: bucketName, Key: key };
 
   try {
+    const s3 = initializeS3();
     await s3.send(new DeleteObjectCommand(params));
     logger.debug('[deleteFileFromS3] File deleted successfully from S3');
   } catch (error) {
@@ -136,18 +136,40 @@ async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }
 }
 
 /**
+ * Extracts the S3 key from a full S3 URL.
+ *
+ * @param {string} s3Url - The full S3 URL
+ * @returns {string} The S3 key
+ */
+function extractKeyFromS3Url(s3Url) {
+  try {
+    // Parse the URL
+    const url = new URL(s3Url);
+    // Extract the path from the URL, removing the leading slash
+    let key = url.pathname.substring(1);
+
+    return key;
+  } catch (error) {
+    throw new Error(`Failed to extract key from S3 URL: ${error.message}`);
+  }
+}
+
+/**
  * Retrieves a readable stream for a file stored in S3.
  *
+ * @param {ServerRequest} req - Server request object.
  * @param {string} filePath - The S3 key of the file.
  * @returns {Promise<NodeJS.ReadableStream>}
  */
-async function getS3FileStream(filePath) {
-  const params = { Bucket: bucketName, Key: filePath };
+async function getS3FileStream(_req, filePath) {
   try {
+    const Key = extractKeyFromS3Url(filePath);
+    const params = { Bucket: bucketName, Key };
+    const s3 = initializeS3();
     const data = await s3.send(new GetObjectCommand(params));
     return data.Body; // Returns a Node.js ReadableStream.
   } catch (error) {
-    logger.error('[getS3FileStream] Error retrieving S3 file stream:', error.message);
+    logger.error('[getS3FileStream] Error retrieving S3 file stream:', error);
     throw error;
   }
 }

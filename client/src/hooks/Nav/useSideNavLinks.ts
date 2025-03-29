@@ -70,13 +70,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (
-      hasAccessToAgents &&
-      hasAccessToCreateAgents &&
-      isAgentsEndpoint(endpoint) &&
-      agents &&
-      agents.disableBuilder !== true
-    ) {
+    if (hasAccessToAgents && hasAccessToCreateAgents && agents && agents.disableBuilder !== true) {
       links.push({
         title: 'com_sidepanel_agent_builder',
         label: '',
