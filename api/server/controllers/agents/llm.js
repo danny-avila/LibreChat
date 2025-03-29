@@ -76,6 +76,16 @@ function initializeLLM(options) {
     };
   }
 
+  if (options.useRequesty) {
+    configOptions.basePath = 'https://router.requesty.ai/v1';
+    configOptions.baseOptions = {
+      headers: {
+        'HTTP-Referer': 'https://librechat.ai',
+        'X-Title': 'LibreChat',
+      },
+    };
+  }
+
   if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
     configOptions.baseOptions = {
       headers: resolveHeaders({

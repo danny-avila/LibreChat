@@ -96,6 +96,20 @@ function getLLMConfig(apiKey, options = {}, endpoint = null) {
       },
       headers,
     );
+  } else if (
+    (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.requesty)) ||
+    (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.requesty))
+  ) {
+    useOpenRouter = true; // Reuse OpenRouter handling
+    llmConfig.include_reasoning = true;
+    configOptions.baseURL = reverseProxyUrl;
+    configOptions.defaultHeaders = Object.assign(
+      {
+        'HTTP-Referer': 'https://librechat.ai',
+        'X-Title': 'LibreChat',
+      },
+      headers,
+    );
   } else if (reverseProxyUrl) {
     configOptions.baseURL = reverseProxyUrl;
     if (headers) {

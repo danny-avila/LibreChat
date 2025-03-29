@@ -1,11 +1,11 @@
-import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { specsConfigSchema, TSpecsConfig } from './models';
+import { z } from 'zod';
 import { fileConfigSchema } from './file-config';
-import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { specsConfigSchema, TSpecsConfig } from './models';
+import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import type { TModelsConfig } from './types';
+import { FileSources } from './types/files';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -643,6 +643,7 @@ export enum KnownEndpoints {
   ollama = 'ollama',
   openrouter = 'openrouter',
   perplexity = 'perplexity',
+  requesty = 'requesty',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
@@ -651,6 +652,7 @@ export enum KnownEndpoints {
 
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
+  requesty = KnownEndpoints.requesty,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [

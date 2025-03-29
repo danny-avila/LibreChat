@@ -1,7 +1,7 @@
-import { memo } from 'react';
 import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
-import { CustomMinimalIcon } from '~/components/svg';
+import { memo } from 'react';
 import { IconContext } from '~/common';
+import { CustomMinimalIcon } from '~/components/svg';
 import { cn } from '~/utils';
 
 const knownEndpointAssets = {
@@ -17,6 +17,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.ollama]: '/assets/ollama.png',
   [KnownEndpoints.openrouter]: '/assets/openrouter.png',
   [KnownEndpoints.perplexity]: '/assets/perplexity.png',
+  [KnownEndpoints.requesty]: '/assets/requesty.png',
   [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: '/assets/together.png',
   [KnownEndpoints.unify]: '/assets/unify.webp',
