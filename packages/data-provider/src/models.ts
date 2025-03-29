@@ -22,7 +22,19 @@ export type TModelSpec = {
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
   iconCapabilities?: ModelCapabilityType[];
+  pricing?: {
+    inputPrice?: number;    // Input price per million tokens
+    outputPrice?: number;   // Output price per million tokens
+    showPricing?: boolean;  // Whether to show the pricing badges
+  };
 };
+
+// Define pricing schema for validation
+export const pricingSchema = z.object({
+  inputPrice: z.number().optional(),
+  outputPrice: z.number().optional(),
+  showPricing: z.boolean().optional(),
+});
 
 export const tModelSpecSchema = z.object({
   name: z.string(),
@@ -36,6 +48,7 @@ export const tModelSpecSchema = z.object({
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   iconCapabilities: z.array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental', 'deep_research'])).optional(),
+  pricing: pricingSchema.optional(),
 });
 
 export const specsConfigSchema = z.object({

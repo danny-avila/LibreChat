@@ -6,6 +6,7 @@ import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 import { BrainCircuit, ImageUp, Globe, FlaskConical, Microscope } from 'lucide-react';
 import { TooltipAnchor } from '~/components/ui/Tooltip';
+import { useModelPricing, PriceBadge } from '~/utils/pricingUtils';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -88,6 +89,10 @@ const CapabilityIcon = ({ type }: { type: string }) => {
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { showIconInMenu = true } = spec;
+  
+  // Get pricing information
+  const { inputPrice, outputPrice, showPricing } = useModelPricing(spec);
+  
   return (
     <MenuItem
       key={spec.name}
@@ -112,30 +117,16 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
-          {/* <div className="flex items-center gap-2 mt-1">
-            <div 
-              className="flex items-center gap-1 px-2.5 py-0.75 bg-gradient-to-r from-blue-900/30 to-blue-800/20 rounded-full" 
-              style={{ border: '0.5px solid rgb(147, 197, 253)' }}
-            >
-              <span 
-                className="text-[10px] font-semibold" 
-                style={{ color: 'rgb(147, 197, 253)' }}
-              >
-                IN $0.15/1M
-              </span>
+          {showPricing && (inputPrice !== null || outputPrice !== null) && (
+            <div className="flex items-center gap-2 mt-1">
+              {inputPrice !== null && (
+                <PriceBadge type="input" price={inputPrice} />
+              )}
+              {outputPrice !== null && (
+                <PriceBadge type="output" price={outputPrice} />
+              )}
             </div>
-            <div 
-              className="flex items-center gap-1 px-2.5 py-0.75 bg-gradient-to-r from-purple-900/30 to-purple-800/20 rounded-full" 
-              style={{ border: '0.5px solid rgb(216, 180, 254)' }}
-            >
-              <span 
-                className="text-[10px] font-semibold" 
-                style={{ color: 'rgb(216, 180, 254)' }}
-              >
-                OUT $0.60/1M
-              </span>
-            </div>
-          </div> */}
+          )}
         </div>
       </div>
 

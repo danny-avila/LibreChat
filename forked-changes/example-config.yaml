@@ -1,0 +1,90 @@
+# Example showing model pricing configuration
+version: 1.2.1
+
+# Enable model pricing display in the UI
+interface:
+  modelSelect: true
+
+# Model specs configuration with pricing
+modelSpecs:
+  enforce: false # Don't force these as the only available models
+  prioritize: true # Prioritize these specs over any auto-generated ones
+  list:
+    - name: 'gpt-4o'
+      label: 'GPT-4o'
+      preset:
+        model: 'gpt-4o'
+        endpoint: 'openAI'
+      description: "OpenAI's most capable vision and language model"
+      iconCapabilities: ['reasoning', 'web_search']
+      pricing:
+        inputPrice: 5.00 # $5.00 per million tokens (0.000005 per token)
+        outputPrice: 15.00 # $15.00 per million tokens (0.000015 per token)
+        showPricing: true # Show the pricing badges (this is default)
+
+    - name: 'gpt-4-turbo'
+      label: 'GPT-4 Turbo'
+      preset:
+        model: 'gpt-4-turbo'
+        endpoint: 'openAI'
+      description: "OpenAI's fast and powerful model"
+      iconCapabilities: ['reasoning']
+      pricing:
+        inputPrice: 10.00 # $10.00 per million tokens
+        outputPrice: 30.00 # $30.00 per million tokens
+
+    - name: 'gpt-3.5-turbo'
+      label: 'GPT-3.5 Turbo'
+      preset:
+        model: 'gpt-3.5-turbo'
+        endpoint: 'openAI'
+      description: "OpenAI's fast and efficient model"
+      # No pricing specified - will try to get from LiteLLM data
+
+    - name: 'claude-3-opus'
+      label: 'Claude 3 Opus'
+      preset:
+        model: 'claude-3-opus'
+        endpoint: 'anthropic'
+      description: "Anthropic's most powerful model"
+      pricing:
+        inputPrice: 15.00 # $15.00 per million tokens
+        outputPrice: 75.00 # $75.00 per million tokens
+
+    - name: 'claude-3-sonnet'
+      label: 'Claude 3 Sonnet'
+      preset:
+        model: 'claude-3-sonnet'
+        endpoint: 'anthropic'
+      description: "Anthropic's balanced model"
+      pricing:
+        inputPrice: 3.00 # $3.00 per million tokens
+        outputPrice: 15.00 # $15.00 per million tokens
+
+    - name: 'gemini-pro'
+      label: 'Gemini Pro'
+      preset:
+        model: 'gemini-pro'
+        endpoint: 'google'
+      description: "Google's advanced model"
+      # Disable pricing display for this model
+      pricing:
+        showPricing: false
+
+    - name: 'custom-model'
+      label: 'Internal Model'
+      preset:
+        model: 'custom-model'
+        endpoint: 'custom'
+      description: 'For internal use only'
+      # Custom pricing for an internal model
+      pricing:
+        inputPrice: 0.50 # $0.50 per million tokens
+        outputPrice: 1.00 # $1.00 per million tokens
+
+# Endpoints configuration
+endpoints:
+  openAI:
+    titleModel: 'gpt-3.5-turbo'
+  anthropic:
+    titleModel: 'claude-3-haiku'
