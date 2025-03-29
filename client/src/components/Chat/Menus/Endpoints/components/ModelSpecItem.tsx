@@ -4,7 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { Brain, Eye, Globe, FlaskConical } from 'lucide-react';
+import { BrainCircuit, ImageUp, Globe, FlaskConical } from 'lucide-react';
 import { TooltipAnchor } from '~/components/ui/Tooltip';
 
 interface ModelSpecItemProps {
@@ -29,29 +29,29 @@ const getCapabilityDescription = (type: string): string => {
 
 const CapabilityIcon = ({ type }: { type: string }) => {
   let iconElement;
-  let color;
-  let darkColor;
+  let bg;
+  let ring;
   
   switch (type) {
     case 'reasoning':
-      iconElement = <Brain className="h-4 w-4" />;
-      color = 'hsl(263 58% 53%)';
-      darkColor = 'hsl(263 58% 75%)';
+      iconElement = <BrainCircuit className="h-4 w-4 text-pink-300" />;
+      bg = 'bg-gradient-to-br from-pink-900/20 to-pink-800/10';
+      ring = 'ring-1 ring-inset ring-pink-300/30';
       break;
     case 'upload_image':
-      iconElement = <Eye className="h-4 w-4" />;
-      color = 'hsl(168 54% 52%)';
-      darkColor = 'hsl(168 54% 74%)';
+      iconElement = <ImageUp className="h-4 w-4 text-cyan-300" />;
+      bg = 'bg-gradient-to-br from-cyan-900/20 to-cyan-800/10';
+      ring = 'ring-1 ring-inset ring-cyan-300/30';
       break;
     case 'web_search':
-      iconElement = <Globe className="h-4 w-4" />;
-      color = 'hsl(208 56% 52%)';
-      darkColor = 'hsl(208 56% 74%)';
+      iconElement = <Globe className="h-4 w-4 text-white" />;
+      bg = 'bg-gradient-to-br from-white/10 to-white/5';
+      ring = 'ring-1 ring-inset ring-white/20';
       break;
     case 'experimental':
-      iconElement = <FlaskConical className="h-4 w-4" />;
-      color = 'hsl(25 95% 53%)';
-      darkColor = 'hsl(25 95% 73%)';
+      iconElement = <FlaskConical className="h-4 w-4 text-emerald-300" />;
+      bg = 'bg-gradient-to-br from-emerald-900/20 to-emerald-800/10';
+      ring = 'ring-1 ring-inset ring-emerald-300/30';
       break;
     default:
       return null;
@@ -66,13 +66,12 @@ const CapabilityIcon = ({ type }: { type: string }) => {
       className="cursor-pointer flex items-center justify-center"
     >
       <div 
-        className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-md text-[--color] dark:text-[--color-dark]"
-        style={{
-          '--color': color,
-          '--color-dark': darkColor,
-        } as React.CSSProperties}
+        className={cn(
+          'relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full backdrop-blur-sm bg-opacity-80',
+          bg,
+          ring
+        )}
       >
-        <div className="absolute inset-0 bg-current opacity-20 dark:opacity-15"></div>
         {iconElement}
       </div>
     </TooltipAnchor>
