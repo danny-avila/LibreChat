@@ -1380,6 +1380,17 @@ ${convo}
         delete modelOptions.reasoning_effort;
       }
 
+      if (this.useRequesty) {
+        modelOptions.include_reasoning = true;
+        reasoningKey = 'reasoning';
+      }
+      if (this.useRequesty && modelOptions.reasoning_effort != null) {
+        modelOptions.reasoning = {
+          effort: modelOptions.reasoning_effort,
+        };
+        delete modelOptions.reasoning_effort;
+      }
+
       this.streamHandler = new SplitStreamHandler({
         reasoningKey,
         accumulate: true,
