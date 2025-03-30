@@ -25,6 +25,7 @@ services:
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - GOOGLE_MODELS=${GOOGLE_MODELS}
     volumes:
       - type: bind
         source: ./librechat.yaml
