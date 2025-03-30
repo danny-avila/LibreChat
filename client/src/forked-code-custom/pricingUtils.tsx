@@ -150,14 +150,14 @@ export const PriceBadge = memo(({
   
   return (
     <div 
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-800 border border-gray-600"
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
     >
       {isInput ? (
-        <User size={12} className="text-gray-200" strokeWidth={2.5} />
+        <User size={12} className="text-text-primary" strokeWidth={2.5} />
       ) : (
-        <Server size={12} className="text-gray-200" strokeWidth={2.5} />
+        <Server size={12} className="text-text-primary" strokeWidth={2.5} />
       )}
-      <span className="text-[10px] font-medium text-white">
+      <span className="text-[10px] font-medium text-text-primary">
         ${formattedPrice}/1M
       </span>
     </div>
