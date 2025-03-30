@@ -852,6 +852,9 @@
   "com_ui_good_morning": "Good morning",
   "com_ui_good_afternoon": "Good afternoon",
   "com_ui_good_evening": "Good evening",
+  "com_endpoint_deprecated": "Deprecated",
+  "com_endpoint_deprecated_info": "This endpoint is deprecated and may be removed in future versions, please use the agent endpoint instead",
+  "com_endpoint_deprecated_info_a11y": "The plugin endpoint is deprecated and may be removed in future versions, please use the agent endpoint instead",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }
