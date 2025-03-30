@@ -64,6 +64,31 @@ export const findBestModelMatch = (
     }
   }
   
+  // Step 3: Try matching after removing custom suffixes (-reasoning, -high, -low)
+  const suffixRegex = /-(?:reasoning|high|low)$/;
+  if (suffixRegex.test(modelName)) {
+    const baseModelName = modelName.replace(suffixRegex, '');
+    
+    // Try exact match with base model name
+    if (pricingData[baseModelName]) {
+      console.log(`Model matched after removing suffix: '${modelName}' → '${baseModelName}'`);
+      const result = { model: baseModelName, data: pricingData[baseModelName] };
+      modelMatchCache[modelName] = result;
+      return result;
+    }
+    
+    // Try case-insensitive match with base model name
+    const lowercaseBaseModelName = baseModelName.toLowerCase();
+    for (const key in pricingData) {
+      if (key.toLowerCase() === lowercaseBaseModelName) {
+        console.log(`Model matched after removing suffix (case-insensitive): '${modelName}' → '${key}'`);
+        const result = { model: key, data: pricingData[key] };
+        modelMatchCache[modelName] = result;
+        return result;
+      }
+    }
+  }
+  
   // No match found
   console.log(`No match found for model: '${modelName}'`);
   modelMatchCache[modelName] = null;
