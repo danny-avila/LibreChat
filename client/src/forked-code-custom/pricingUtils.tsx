@@ -150,15 +150,15 @@ export const PriceBadge = memo(({
   
   return (
     <div 
-      className="flex items-center gap-1.5 px-2 py-0.5 mt-1 rounded-full bg-surface-chat border border-border-medium"
-      style={{ minWidth: "90px" }}
+      className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+      style={{ minWidth: "80px" }}
     >
       {isInput ? (
-        <User size={12} className="text-text-primary" strokeWidth={2.5} />
+        <User size={12} className="text-text-primary" strokeWidth={1.5} />
       ) : (
-        <Server size={12} className="text-text-primary" strokeWidth={2.5} />
+        <Server size={12} className="text-text-primary" strokeWidth={1.5} />
       )}
-      <span className="text-[10px] font-medium text-text-primary">
+      <span className="text-[10px] text-text-primary">
         ${formattedPrice}/1M
       </span>
     </div>
@@ -171,14 +171,14 @@ export const PriceBadge = memo(({
  */
 export const FreeBadge = memo(() => {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 mt-1 ">
       <div 
-        className="flex items-center gap-1.5 px-2 py-0.5 mt-1 rounded-full bg-surface-chat border border-border-medium"
-        style={{ minWidth: "90px" }}
+        className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        style={{ minWidth: "80px" }}
       >
-        <Gift size={12} className="text-text-primary" strokeWidth={2.5} />
-        <span className="text-[10px] font-medium text-text-primary">
-          Free
+        <Gift size={12} className="text-text-primary" strokeWidth={1.5} />
+        <span className="text-[10px] text-text-primary">
+          Currently free
         </span>
       </div>
     </div>
@@ -210,7 +210,7 @@ export const PricingBadges = memo(({
   }
   
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 mt-1">
       {inputPrice !== null && (
         <PriceBadge type="input" price={inputPrice} />
       )}
