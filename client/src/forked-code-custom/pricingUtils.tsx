@@ -1,6 +1,7 @@
 import { useEffect, useState, memo, useMemo } from 'react';
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
+import { User, Server } from 'lucide-react';
 
 /**
  * Pricing data cache from LiteLLM
@@ -142,28 +143,23 @@ export const PriceBadge = memo(({
   price: number;
 }) => {
   const isInput = type === 'input';
-  const bgGradient = isInput 
-    ? 'bg-gradient-to-r from-blue-900/30 to-blue-800/20' 
-    : 'bg-gradient-to-r from-purple-900/30 to-purple-800/20';
-  const borderColor = isInput ? 'rgb(147, 197, 253)' : 'rgb(216, 180, 254)';
-  const textColor = isInput ? 'rgb(147, 197, 253)' : 'rgb(216, 180, 254)';
-  const label = isInput ? 'IN' : 'OUT';
-  
-  const formattedPrice = price.toFixed(price >= 100 ? 0 : price >= 10 ? 1 : 2);
+  const formattedPrice = formatPrice(price);
   
   return (
     <div 
-      className="flex items-center gap-1 px-2.5 py-0.75 rounded-full" 
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full" 
       style={{ 
-        border: `0.5px solid ${borderColor}`,
-        background: bgGradient
+        border: '0.5px solid rgb(229, 231, 235)',
+        background: 'rgba(243, 244, 246, 0.2)'
       }}
     >
-      <span 
-        className="text-[10px] font-semibold" 
-        style={{ color: textColor }}
-      >
-        {label} ${formattedPrice}/1M
+      {isInput ? (
+        <User size={12} className="text-gray-500" strokeWidth={2.5} />
+      ) : (
+        <Server size={12} className="text-gray-500" strokeWidth={2.5} />
+      )}
+      <span className="text-[10px] font-medium text-gray-600">
+        ${formattedPrice}/1M
       </span>
     </div>
   );
@@ -186,7 +182,7 @@ export const PricingBadges = memo(({
   }
   
   return (
-    <div className="flex items-center gap-2 mt-1">
+    <div className="flex items-center gap-2">
       {inputPrice !== null && (
         <PriceBadge type="input" price={inputPrice} />
       )}
