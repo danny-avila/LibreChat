@@ -1,7 +1,7 @@
 import { useEffect, useState, memo, useMemo } from 'react';
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
-import { User, Server } from 'lucide-react';
+import { User, Server, Gift } from 'lucide-react';
 
 /**
  * Pricing data cache from LiteLLM
@@ -165,17 +165,42 @@ export const PriceBadge = memo(({
 });
 
 /**
+ * Free badge component for free models
+ * Memoized to prevent unnecessary re-renders
+ */
+export const FreeBadge = memo(() => {
+  return (
+    <div 
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+    >
+      <Gift size={12} className="text-text-primary" strokeWidth={2.5} />
+      <span className="text-[10px] font-medium text-text-primary">
+        Free
+      </span>
+    </div>
+  );
+});
+
+/**
  * Pre-memoized pricing badges component to keep ModelSpecItem clean
  */
 export const PricingBadges = memo(({ 
   inputPrice, 
   outputPrice, 
-  showPricing
+  showPricing,
+  isFree
 }: { 
   inputPrice: number | null; 
   outputPrice: number | null; 
   showPricing: boolean;
+  isFree?: boolean;
 }) => {
+  // Show Free badge if isFree is true, regardless of other pricing
+  if (isFree) {
+    return <FreeBadge />;
+  }
+  
+  // Otherwise show regular pricing badges if applicable
   if (!showPricing || (inputPrice === null && outputPrice === null)) {
     return null;
   }
@@ -219,6 +244,7 @@ export const useModelPricing = (spec: TModelSpec) => {
     inputPrice: number | null; 
     outputPrice: number | null;
     showPricing: boolean;
+    isFree?: boolean;
   }>({
     inputPrice: null,
     outputPrice: null,
@@ -233,12 +259,13 @@ export const useModelPricing = (spec: TModelSpec) => {
     const getPricing = async () => {
       // First check for manual pricing configuration
       if (spec.pricing) {
-        const { inputPrice, outputPrice, showPricing = true } = spec.pricing;
+        const { inputPrice, outputPrice, showPricing = true, isFree = false } = spec.pricing;
         if (isMounted) {
           setPrices({
             inputPrice: inputPrice ?? null,
             outputPrice: outputPrice ?? null,
-            showPricing
+            showPricing,
+            isFree
           });
           return;
         }
@@ -282,5 +309,10 @@ export const useModelPricing = (spec: TModelSpec) => {
   }, [spec, modelName]);
   
   // Memoize the returned object to prevent unnecessary re-renders
-  return useMemo(() => prices, [prices.inputPrice, prices.outputPrice, prices.showPricing]);
+  return useMemo(() => prices, [
+    prices.inputPrice, 
+    prices.outputPrice, 
+    prices.showPricing, 
+    prices.isFree
+  ]);
 }; 

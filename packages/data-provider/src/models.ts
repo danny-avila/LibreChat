@@ -26,6 +26,7 @@ export type TModelSpec = {
     inputPrice?: number;    // Input price per million tokens
     outputPrice?: number;   // Output price per million tokens
     showPricing?: boolean;  // Whether to show the pricing badges
+    isFree?: boolean;       // Whether the model is completely free to use
   };
 };
 
@@ -34,6 +35,7 @@ export const pricingSchema = z.object({
   inputPrice: z.number().optional(),
   outputPrice: z.number().optional(),
   showPricing: z.boolean().optional(),
+  isFree: z.boolean().optional(),
 });
 
 export const tModelSpecSchema = z.object({
