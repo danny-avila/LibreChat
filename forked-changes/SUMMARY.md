@@ -14,6 +14,7 @@ This fork adds support for displaying pricing information for models in the mode
 
    - Fallback to pricing data from LiteLLM when manual pricing is not specified
    - Caching mechanism for pricing data to reduce API calls
+   - Prioritized model name matching for accurate data retrieval
 
 3. **UI Components**:
    - Price badges for input and output pricing
@@ -31,6 +32,7 @@ This fork adds support for displaying pricing information for models in the mode
 - Created a `useModelPricing` hook to retrieve pricing data
 - Implemented the `PriceBadge` component for consistent display
 - Added utility for price formatting
+- Developed a multi-stage model name matching algorithm with exact match priority
 
 ### Model Selection UI
 
@@ -60,7 +62,18 @@ Example model configuration with pricing can be found in [example-config.yaml](.
    - Removed the description processing code that was in the PR to avoid modifying the description strings.
 
 4. **Backward Compatibility**:
+
    - Pricing display is optional and won't affect existing models without pricing configuration.
+
+5. **Prioritized Model Matching**:
+   - Implemented a clear 4-step matching algorithm:
+     1. Exact match (highest priority)
+     2. Case-insensitive exact match
+     3. Normalized exact match (after removing prefixes, standardizing versions)
+     4. Fuzzy matching as a last resort
+   - Enhanced similarity calculation with better scoring for exact word matches
+   - Added comprehensive version suffix detection (including date-based versions)
+   - Improved logging for match identification and debugging
 
 ## Build Fixes
 

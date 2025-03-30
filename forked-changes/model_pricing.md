@@ -56,12 +56,58 @@ When properly configured, pricing information appears as badges below the model 
 - Input costs appear as blue badges labeled "IN $X.XX/1M"
 - Output costs appear as purple badges labeled "OUT $X.XX/1M"
 
+## Prioritized Model Name Matching
+
+The system includes a multi-stage matching algorithm to link your models with pricing data from LiteLLM. It follows a clear priority order:
+
+### 1. Exact Match (Highest Priority)
+
+First, the system looks for an exact match between your model name and LiteLLM pricing data. This is always prioritized if found.
+
+### 2. Case-Insensitive Exact Match
+
+If no exact match is found, it tries a case-insensitive comparison to catch variations in capitalization.
+
+### 3. Normalized Exact Match
+
+If still no match, the system applies normalization to both names:
+
+- **Provider Prefix Removal**: Common provider prefixes are automatically removed, such as:
+
+  - `openai/`, `gemini/`, `perplexity/`, `anthropic/`, `bedrock/`, `cohere/`, etc.
+
+- **Standardizing Version Formats**: Converting version notations like `2.0` to `2-0`
+
+- **Removing Version Suffixes**: Automatically handles model version numbers and date-based suffixes:
+  - Common suffixes like `-latest`, `-preview`, `-high`, `-low`, `-reasoning`, `-turbo`, `-vision`
+  - Version date suffixes like `-0314`, `-2407`, `-2024-05-13`
+
+### 4. Fuzzy Matching (Last Resort)
+
+Only if no exact or normalized matches are found, the system uses a sophisticated similarity algorithm:
+
+- **Word-based Similarity**: Breaks names into segments for comparison
+- **Exact Word Matching**: Gives higher score to exact word matches
+- **Partial Word Matching**: Considers partial matches with proportional scoring
+- **Length and Position Scoring**: Adjusts scores based on relative length and match position
+
+Matches must exceed a similarity threshold (0.5) to be considered valid.
+
+## Match Logging
+
+The system logs each match type for debugging:
+
+- `Model exact match: 'modelName'`
+- `Model case-insensitive match: 'modelName' → 'matchedName'`
+- `Model normalized match: 'modelName' → 'matchedName'`
+- `Model fuzzy match: 'modelName' → 'matchedName' (score: 0.75)`
+
 ## Fallback Behavior
 
 The system follows this hierarchy to determine what pricing to display:
 
 1. If manual pricing is specified in the model spec, it uses those values
-2. If not, it tries to find the model in the LiteLLM pricing data
+2. If not, it tries to find the model in the LiteLLM pricing data using the prioritized matching algorithm
 3. If neither source provides pricing data, no pricing badges are shown
 
 ## Automatic Number Formatting
