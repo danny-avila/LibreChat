@@ -150,7 +150,8 @@ export const PriceBadge = memo(({
   
   return (
     <div 
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+      className="flex items-center gap-1.5 px-2 py-0.5 mt-1 rounded-full bg-surface-chat border border-border-medium"
+      style={{ minWidth: "90px" }}
     >
       {isInput ? (
         <User size={12} className="text-text-primary" strokeWidth={2.5} />
@@ -170,13 +171,16 @@ export const PriceBadge = memo(({
  */
 export const FreeBadge = memo(() => {
   return (
-    <div 
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-    >
-      <Gift size={12} className="text-text-primary" strokeWidth={2.5} />
-      <span className="text-[10px] font-medium text-text-primary">
-        Free
-      </span>
+    <div className="flex items-center gap-2">
+      <div 
+        className="flex items-center gap-1.5 px-2 py-0.5 mt-1 rounded-full bg-surface-chat border border-border-medium"
+        style={{ minWidth: "90px" }}
+      >
+        <Gift size={12} className="text-text-primary" strokeWidth={2.5} />
+        <span className="text-[10px] font-medium text-text-primary">
+          Free
+        </span>
+      </div>
     </div>
   );
 });
@@ -206,7 +210,7 @@ export const PricingBadges = memo(({
   }
   
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {inputPrice !== null && (
         <PriceBadge type="input" price={inputPrice} />
       )}
