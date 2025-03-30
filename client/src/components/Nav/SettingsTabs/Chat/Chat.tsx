@@ -3,6 +3,7 @@ import MaximizeChatSpace from './MaximizeChatSpace';
 import FontSizeSelector from './FontSizeSelector';
 import SendMessageKeyEnter from './EnterToSend';
 import CenterChatInput from './CenterChatInput';
+import SaveBadgesState from './SaveBadgesState';
 import ShowCodeSwitch from './ShowCodeSwitch';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
@@ -48,6 +49,9 @@ function Chat() {
       </div>
       <div className="pb-3">
         <ShowThinking />
+      </div>
+      <div className="pb-3">
+        <SaveBadgesState />
       </div>
     </div>
   );
