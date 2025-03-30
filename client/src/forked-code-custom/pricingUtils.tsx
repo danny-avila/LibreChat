@@ -143,22 +143,21 @@ export const PriceBadge = memo(({
   price: number;
 }) => {
   const isInput = type === 'input';
-  const formattedPrice = formatPrice(price);
+  
+  // Display the price value directly without further conversion
+  // since it's already per million tokens
+  const formattedPrice = price.toFixed(price >= 100 ? 0 : price >= 10 ? 1 : 2);
   
   return (
     <div 
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full" 
-      style={{ 
-        border: '0.5px solid rgb(229, 231, 235)',
-        background: 'rgba(243, 244, 246, 0.2)'
-      }}
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-800 border border-gray-600"
     >
       {isInput ? (
-        <User size={12} className="text-gray-500" strokeWidth={2.5} />
+        <User size={12} className="text-gray-200" strokeWidth={2.5} />
       ) : (
-        <Server size={12} className="text-gray-500" strokeWidth={2.5} />
+        <Server size={12} className="text-gray-200" strokeWidth={2.5} />
       )}
-      <span className="text-[10px] font-medium text-gray-600">
+      <span className="text-[10px] font-medium text-white">
         ${formattedPrice}/1M
       </span>
     </div>
