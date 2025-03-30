@@ -32,7 +32,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <div>{localize(localizationKey)}</div>
+        <div>{localize(localizationKey as any)}</div>
         {hoverCardText && <HoverCardSettings side="bottom" text={hoverCardText} />}
       </div>
       <Switch
