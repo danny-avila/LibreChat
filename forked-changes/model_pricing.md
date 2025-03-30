@@ -56,58 +56,36 @@ When properly configured, pricing information appears as badges below the model 
 - Input costs appear as blue badges labeled "IN $X.XX/1M"
 - Output costs appear as purple badges labeled "OUT $X.XX/1M"
 
-## Prioritized Model Name Matching
+## Simple Model Name Matching
 
-The system includes a multi-stage matching algorithm to link your models with pricing data from LiteLLM. It follows a clear priority order:
+The system uses a straightforward matching algorithm that preserves the exact model names as they appear in LiteLLM:
 
 ### 1. Exact Match (Highest Priority)
 
-First, the system looks for an exact match between your model name and LiteLLM pricing data. This is always prioritized if found.
+First, the system attempts to find an exact match between your model name and the LiteLLM pricing data.
 
-### 2. Case-Insensitive Exact Match
+### 2. Case-Insensitive Match
 
-If no exact match is found, it tries a case-insensitive comparison to catch variations in capitalization.
+If no exact match is found, it tries a case-insensitive match to handle capitalization differences.
 
-### 3. Normalized Exact Match
+This approach ensures that provider prefixes and version formats are preserved exactly as they appear in LiteLLM's pricing data.
 
-If still no match, the system applies normalization to both names:
+## Performance Optimization
 
-- **Provider Prefix Removal**: Common provider prefixes are automatically removed, such as:
+To improve performance, the system:
 
-  - `openai/`, `gemini/`, `perplexity/`, `anthropic/`, `bedrock/`, `cohere/`, etc.
+1. **Caches Pricing Data** at the application level, fetched once and reused across all components
+2. **Caches Model Matches** to avoid redundant lookups for the same model
+3. **Only Updates** when pricing data is refreshed (once every 24 hours)
 
-- **Standardizing Version Formats**: Converting version notations like `2.0` to `2-0`
-
-- **Removing Version Suffixes**: Automatically handles model version numbers and date-based suffixes:
-  - Common suffixes like `-latest`, `-preview`, `-high`, `-low`, `-reasoning`, `-turbo`, `-vision`
-  - Version date suffixes like `-0314`, `-2407`, `-2024-05-13`
-
-### 4. Fuzzy Matching (Last Resort)
-
-Only if no exact or normalized matches are found, the system uses a sophisticated similarity algorithm:
-
-- **Word-based Similarity**: Breaks names into segments for comparison
-- **Exact Word Matching**: Gives higher score to exact word matches
-- **Partial Word Matching**: Considers partial matches with proportional scoring
-- **Length and Position Scoring**: Adjusts scores based on relative length and match position
-
-Matches must exceed a similarity threshold (0.5) to be considered valid.
-
-## Match Logging
-
-The system logs each match type for debugging:
-
-- `Model exact match: 'modelName'`
-- `Model case-insensitive match: 'modelName' → 'matchedName'`
-- `Model normalized match: 'modelName' → 'matchedName'`
-- `Model fuzzy match: 'modelName' → 'matchedName' (score: 0.75)`
+This minimizes API calls and computational overhead, especially when opening the model selection menu multiple times.
 
 ## Fallback Behavior
 
 The system follows this hierarchy to determine what pricing to display:
 
 1. If manual pricing is specified in the model spec, it uses those values
-2. If not, it tries to find the model in the LiteLLM pricing data using the prioritized matching algorithm
+2. If not, it tries to find the model in the LiteLLM pricing data using the simple matching algorithm
 3. If neither source provides pricing data, no pricing badges are shown
 
 ## Automatic Number Formatting

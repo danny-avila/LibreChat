@@ -4,87 +4,13 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { BrainCircuit, ImageUp, Globe, FlaskConical, Microscope } from 'lucide-react';
-import { TooltipAnchor } from '~/components/ui/Tooltip';
-import { useModelPricing, PriceBadge } from '~/utils/pricingUtils';
+import { useModelPricing, PricingBadges } from '~/forked-code-custom/pricingUtils';
+import { CapabilityIcons } from '~/forked-code-custom/CapabilityIcons';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
   isSelected: boolean;
 }
-
-const getCapabilityDescription = (type: string): string => {
-  switch (type) {
-    case 'reasoning':
-      return 'Has reasoning capabilities';
-    case 'upload_image':
-      return 'Supports image uploads';
-    case 'web_search':
-      return 'Uses web search to answer questions';
-    case 'experimental':
-      return 'Experimental model';
-    case 'deep_research':
-      return 'Performs deep research and analysis';
-    default:
-      return '';
-  }
-};
-
-const CapabilityIcon = ({ type }: { type: string }) => {
-  let iconElement;
-  let bg;
-  let ring;
-  
-  switch (type) {
-    case 'reasoning':
-      iconElement = <BrainCircuit className="h-3.5 w-3.5 text-pink-300" />;
-      bg = 'bg-gradient-to-br from-pink-900/20 to-pink-800/10';
-      ring = 'ring-1 ring-inset ring-pink-300/30';
-      break;
-    case 'upload_image':
-      iconElement = <ImageUp className="h-3.5 w-3.5 text-cyan-300" />;
-      bg = 'bg-gradient-to-br from-cyan-900/20 to-cyan-800/10';
-      ring = 'ring-1 ring-inset ring-cyan-300/30';
-      break;
-    case 'web_search':
-      iconElement = <Globe className="h-3.5 w-3.5 text-white" />;
-      bg = 'bg-gradient-to-br from-white/10 to-white/5';
-      ring = 'ring-1 ring-inset ring-white/20';
-      break;
-    case 'experimental':
-      iconElement = <FlaskConical className="h-3.5 w-3.5 text-emerald-300" />;
-      bg = 'bg-gradient-to-br from-emerald-900/20 to-emerald-800/10';
-      ring = 'ring-1 ring-inset ring-emerald-300/30';
-      break;
-    case 'deep_research':
-      iconElement = <Microscope className="h-3.5 w-3.5 text-purple-300" />;
-      bg = 'bg-gradient-to-br from-purple-900/20 to-purple-800/10';
-      ring = 'ring-1 ring-inset ring-purple-300/30';
-      break;
-    default:
-      return null;
-  }
-  
-  const description = getCapabilityDescription(type);
-  
-  return (
-    <TooltipAnchor
-      description={description}
-      side="top"
-      className="cursor-pointer flex items-center justify-center"
-    >
-      <div 
-        className={cn(
-          'relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full backdrop-blur-sm bg-opacity-80',
-          bg,
-          ring
-        )}
-      >
-        {iconElement}
-      </div>
-    </TooltipAnchor>
-  );
-};
 
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
@@ -117,26 +43,17 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
-          {showPricing && (inputPrice !== null || outputPrice !== null) && (
-            <div className="flex items-center gap-2 mt-1">
-              {inputPrice !== null && (
-                <PriceBadge type="input" price={inputPrice} />
-              )}
-              {outputPrice !== null && (
-                <PriceBadge type="output" price={outputPrice} />
-              )}
-            </div>
-          )}
+          <PricingBadges 
+            inputPrice={inputPrice} 
+            outputPrice={outputPrice} 
+            showPricing={showPricing} 
+          />
         </div>
       </div>
 
       {/* Wrapper for capability icons and selected checkmark, aligned to top */}
       <div className="flex gap-2 flex-shrink-0 py-1" style={{ alignSelf: 'flex-start', marginRight: isSelected ? '0' : '24px' }}>
-        {spec.iconCapabilities && spec.iconCapabilities.length > 0 && (
-          spec.iconCapabilities.map((capability: string, index: number) => (
-            <CapabilityIcon key={index} type={capability} />
-          ))
-        )}
+        <CapabilityIcons capabilities={spec.iconCapabilities} />
       </div>
       
       {isSelected && (

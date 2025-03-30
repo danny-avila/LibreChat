@@ -13,8 +13,8 @@ This fork adds support for displaying pricing information for models in the mode
 2. **Automatic Pricing from LiteLLM**:
 
    - Fallback to pricing data from LiteLLM when manual pricing is not specified
-   - Caching mechanism for pricing data to reduce API calls
-   - Prioritized model name matching for accurate data retrieval
+   - Optimized caching mechanism for pricing data to reduce API calls
+   - Simple exact model name matching for accurate data retrieval
 
 3. **UI Components**:
    - Price badges for input and output pricing
@@ -32,7 +32,7 @@ This fork adds support for displaying pricing information for models in the mode
 - Created a `useModelPricing` hook to retrieve pricing data
 - Implemented the `PriceBadge` component for consistent display
 - Added utility for price formatting
-- Developed a multi-stage model name matching algorithm with exact match priority
+- Developed a simple model matching algorithm with efficient caching
 
 ### Model Selection UI
 
@@ -65,15 +65,18 @@ Example model configuration with pricing can be found in [example-config.yaml](.
 
    - Pricing display is optional and won't affect existing models without pricing configuration.
 
-5. **Prioritized Model Matching**:
-   - Implemented a clear 4-step matching algorithm:
-     1. Exact match (highest priority)
-     2. Case-insensitive exact match
-     3. Normalized exact match (after removing prefixes, standardizing versions)
-     4. Fuzzy matching as a last resort
-   - Enhanced similarity calculation with better scoring for exact word matches
-   - Added comprehensive version suffix detection (including date-based versions)
-   - Improved logging for match identification and debugging
+5. **Simple Model Name Matching**:
+
+   - Direct exact matches with LiteLLM model names
+   - Case-insensitive fallback matches
+   - Preserves original model formats (including dots in version numbers and provider prefixes)
+   - No normalization, standardization, or fuzzy matching that could lead to incorrect matches
+
+6. **Performance Optimization**:
+   - Global application-level caching of pricing data
+   - Model match results are cached to avoid redundant processing
+   - Single pricing data fetch shared across all components
+   - Automatic cache invalidation when new pricing data is loaded
 
 ## Build Fixes
 
