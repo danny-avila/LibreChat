@@ -19,8 +19,7 @@ fi
 if env | grep -q FAVICON_PNG_URL; then
     echo "Found FAVICON_PNG_URL, downloading favicon $FAVICON_PNG_URL to /tmp/favicon.png"
 
-    curl -L "$FAVICON_PNG_URL" -o /tmp/favicon.png
-
+    curl -sL "$FAVICON_PNG_URL" -o /tmp/favicon.png
 
     FAVICON_FILES="
         /app/client/dist/assets/favicon-16x16.png
