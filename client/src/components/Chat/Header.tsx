@@ -44,15 +44,22 @@ export default function Header() {
           {hasAccessToBookmarks === true && <BookmarkMenu />}
           {hasAccessToMultiConvo === true && <AddMultiConvo />}
           {isSmallScreen && (
-            <ExportAndShareMenu
-              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-            />
+            <>
+              <ExportAndShareMenu
+                isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+              />
+              <TemporaryChat />
+            </>
           )}
         </div>
         {!isSmallScreen && (
-          <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
+          <div className="flex items-center gap-2">
+            <ExportAndShareMenu
+              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+            />
+            <TemporaryChat />
+          </div>
         )}
-        <TemporaryChat />
       </div>
       {/* Empty div for spacing */}
       <div />

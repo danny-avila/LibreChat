@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { MessageCircleDashed } from 'lucide-react';
-import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
-import type { LucideIcon } from 'lucide-react';
-import { Badge, TooltipAnchor } from '~/components/ui';
+import { useRecoilState, useRecoilCallback } from 'recoil';
+import { TooltipAnchor } from '~/components/ui';
+import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -11,7 +11,7 @@ import store from '~/store';
 export function TemporaryChat() {
   const localize = useLocalize();
   const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
-  const isEditing = useRecoilValue(store.isEditingBadges);
+  const { conversation } = useChatContext();
 
   const temporaryBadge = {
     id: 'temporary',
@@ -28,6 +28,10 @@ export function TemporaryChat() {
     [isTemporary],
   );
 
+  if (Array.isArray(conversation?.messages) && conversation.messages.length >= 1) {
+    return null;
+  }
+
   return (
     <div className="relative flex flex-wrap items-center gap-2">
       <div className="badge-icon h-full">
@@ -37,15 +41,12 @@ export function TemporaryChat() {
             <motion.button
               onClick={handleBadgeToggle}
               className={cn(
-                'group relative inline-flex items-center gap-1.5 rounded-full px-4 py-1.5',
-                'border border-border-medium text-sm font-medium transition-shadow md:w-full',
-                'size-9 p-2 md:p-3',
+                'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-lg border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-tertiary',
                 isTemporary
                   ? 'bg-surface-active shadow-md'
-                  : 'bg-surface-transparent shadow-sm hover:bg-surface-hover hover:shadow-md',
+                  : 'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md',
                 'active:scale-95 active:shadow-inner',
               )}
-              whileTap={{ scale: 0.97 }}
               transition={{ type: 'tween', duration: 0.1, ease: 'easeOut' }}
             >
               {temporaryBadge.icon && (
