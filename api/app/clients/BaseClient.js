@@ -133,29 +133,14 @@ class BaseClient {
    */
   async fetch(_url, init) {
     let url = _url;
-    /*if (this.options.directEndpoint) {
+    if (this.options.directEndpoint) {
       url = this.options.reverseProxyUrl;
-    }*/
-    logger.debug(`[BaseClient] Making request to ${url}`);
-    logger.debug('[BaseClient] Request options:', init);
-
-    let response;
+    }
+    logger.debug(`Making request to ${url}`);
     if (typeof Bun !== 'undefined') {
-      response = await fetch(url, init);
-    } else {
-      response = await fetch(url, init);
+      return await fetch(url, init);
     }
-
-    logger.debug('[BaseClient] Raw response status:', response.status);
-    try {
-      const clone = response.clone();
-      const json = await clone.json();
-      logger.debug('[BaseClient] Response JSON:', json);
-    } catch (e) {
-      logger.warn('[BaseClient] Could not parse JSON from response');
-    }
-
-    return response;
+    return await fetch(url, init);
   }
 
   getBuildMessagesOptions() {
