@@ -29,11 +29,43 @@ const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
     </div>
   );
 });
+
 DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation };
+
+const MemoizedConvo = memo(
+  ({
+    conversation,
+    retainView,
+    toggleNav,
+    isLatestConvo,
+  }: {
+    conversation: TConversation;
+    retainView: () => void;
+    toggleNav: () => void;
+    isLatestConvo: boolean;
+  }) => {
+    return (
+      <Convo
+        conversation={conversation}
+        retainView={retainView}
+        toggleNav={toggleNav}
+        isLatestConvo={isLatestConvo}
+      />
+    );
+  },
+  (prevProps, nextProps) => {
+    return (
+      prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
+      prevProps.conversation.title === nextProps.conversation.title &&
+      prevProps.isLatestConvo === nextProps.isLatestConvo &&
+      prevProps.conversation.endpoint === nextProps.conversation.endpoint
+    );
+  },
+);
 
 const Conversations: FC<ConversationsProps> = ({
   conversations: rawConversations,
@@ -92,7 +124,7 @@ const Conversations: FC<ConversationsProps> = ({
               {item.type === 'header' ? (
                 <DateLabel groupName={item.groupName} />
               ) : (
-                <Convo
+                <MemoizedConvo
                   conversation={item.convo}
                   retainView={moveToTop}
                   toggleNav={toggleNav}

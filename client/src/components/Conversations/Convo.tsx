@@ -166,6 +166,27 @@ export default function Conversation({
     [title],
   );
 
+  const convoOptionsProps = useMemo(
+    () => ({
+      title,
+      retainView,
+      renameHandler: handleRename,
+      isActiveConvo,
+      conversationId,
+      isPopoverActive,
+      setIsPopoverActive,
+    }),
+    [
+      title,
+      retainView,
+      handleRename,
+      isActiveConvo,
+      conversationId,
+      isPopoverActive,
+      setIsPopoverActive,
+    ],
+  );
+
   return (
     <div
       className={cn(
@@ -257,17 +278,7 @@ export default function Conversation({
             : 'hidden group-focus-within:flex group-hover:flex',
         )}
       >
-        {!renaming && (
-          <ConvoOptions
-            title={title}
-            retainView={retainView}
-            renameHandler={handleRename}
-            isActiveConvo={isActiveConvo}
-            conversationId={conversationId}
-            isPopoverActive={isPopoverActive}
-            setIsPopoverActive={setIsPopoverActive}
-          />
-        )}
+        {!renaming && <ConvoOptions {...convoOptionsProps} />}
       </div>
     </div>
   );

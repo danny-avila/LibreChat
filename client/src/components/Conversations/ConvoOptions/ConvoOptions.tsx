@@ -1,22 +1,20 @@
-import { useState, useId, useRef, memo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Menu from '@ariakit/react/menu';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
 import type { MouseEvent } from 'react';
-import type * as t from '~/common';
 import {
   useDuplicateConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
 } from '~/data-provider';
-import { useLocalize, useNavigateToConvo } from '~/hooks';
-import useNewConvo from '~/hooks/useNewConvo';
+import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
 import { DropdownPopup, Spinner } from '~/components';
+import { NotificationSeverity } from '~/common';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
-import { NotificationSeverity } from '~/common';
 
 function ConvoOptions({
   conversationId,
@@ -104,68 +102,118 @@ function ConvoOptions({
     },
   });
 
-  const shareHandler = () => {
-    setShowShareDialog(true);
-  };
-
-  const deleteHandler = () => {
-    setShowDeleteDialog(true);
-  };
-
-  const duplicateHandler = () => {
-    duplicateConversation.mutate({
-      conversationId: conversationId ?? '',
-    });
-  };
-
   const isDuplicateLoading = duplicateConversation.isLoading;
   const isArchiveLoading = archiveConvoMutation.isLoading;
 
-  const dropdownItems: t.MenuItemProps[] = [
-    {
-      label: localize('com_ui_share'),
-      onClick: shareHandler,
-      icon: <Share2 className="icon-sm mr-2 text-text-primary" />,
-      show: startupConfig && startupConfig.sharedLinksEnabled,
-      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
-      hideOnClick: false,
-      ref: shareButtonRef,
-      render: (props) => <button {...props} />,
-    },
-    {
-      label: localize('com_ui_rename'),
-      onClick: renameHandler,
-      icon: <Pen className="icon-sm mr-2 text-text-primary" />,
-    },
-    {
-      label: localize('com_ui_duplicate'),
-      onClick: duplicateHandler,
-      hideOnClick: false,
-      icon: isDuplicateLoading ? (
-        <Spinner className="size-4" />
-      ) : (
-        <Copy className="icon-sm mr-2 text-text-primary" />
-      ),
-    },
-    {
-      label: localize('com_ui_archive'),
-      onClick: archiveHandler,
-      hideOnClick: false,
-      icon: isArchiveLoading ? (
-        <Spinner className="size-4" />
-      ) : (
-        <Archive className="icon-sm mr-2 text-text-primary" />
-      ),
-    },
-    {
-      label: localize('com_ui_delete'),
-      onClick: deleteHandler,
-      icon: <Trash className="icon-sm mr-2 text-text-primary" />,
-      hideOnClick: false,
-      ref: deleteButtonRef,
-      render: (props) => <button {...props} />,
-    },
-  ];
+  const handleShareClick = useCallback(() => {
+    setShowShareDialog(true);
+  }, []);
+
+  const handleDeleteClick = useCallback(() => {
+    setShowDeleteDialog(true);
+  }, []);
+
+  const handleArchiveClick = useCallback(async () => {
+    const convoId = conversationId ?? '';
+    if (!convoId) {
+      return;
+    }
+
+    archiveConvoMutation.mutate(
+      { conversationId: convoId, isArchived: true },
+      {
+        onSuccess: () => {
+          if (currentConvoId === convoId || currentConvoId === 'new') {
+            newConversation();
+            navigate('/c/new', { replace: true });
+          }
+          retainView();
+          setIsPopoverActive(false);
+        },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_archive_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [
+    conversationId,
+    currentConvoId,
+    archiveConvoMutation,
+    navigate,
+    newConversation,
+    retainView,
+    setIsPopoverActive,
+    showToast,
+    localize,
+  ]);
+
+  const handleDuplicateClick = useCallback(() => {
+    duplicateConversation.mutate({
+      conversationId: conversationId ?? '',
+    });
+  }, [conversationId, duplicateConversation]);
+
+  const dropdownItems = useMemo(
+    () => [
+      {
+        label: localize('com_ui_share'),
+        onClick: handleShareClick,
+        icon: <Share2 className="icon-sm mr-2 text-text-primary" />,
+        show: startupConfig && startupConfig.sharedLinksEnabled,
+        hideOnClick: false,
+        ref: shareButtonRef,
+        render: (props) => <button {...props} />,
+      },
+      {
+        label: localize('com_ui_rename'),
+        onClick: renameHandler,
+        icon: <Pen className="icon-sm mr-2 text-text-primary" />,
+      },
+      {
+        label: localize('com_ui_duplicate'),
+        onClick: handleDuplicateClick,
+        hideOnClick: false,
+        icon: isDuplicateLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <Copy className="icon-sm mr-2 text-text-primary" />
+        ),
+      },
+      {
+        label: localize('com_ui_archive'),
+        onClick: handleArchiveClick,
+        hideOnClick: false,
+        icon: isArchiveLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <Archive className="icon-sm mr-2 text-text-primary" />
+        ),
+      },
+      {
+        label: localize('com_ui_delete'),
+        onClick: handleDeleteClick,
+        icon: <Trash className="icon-sm mr-2 text-text-primary" />,
+        hideOnClick: false,
+        ref: deleteButtonRef,
+        render: (props) => <button {...props} />,
+      },
+    ],
+    [
+      localize,
+      handleShareClick,
+      startupConfig,
+      renameHandler,
+      handleDuplicateClick,
+      isDuplicateLoading,
+      handleArchiveClick,
+      isArchiveLoading,
+      handleDeleteClick,
+    ],
+  );
 
   const menuId = useId();
 
@@ -213,4 +261,11 @@ function ConvoOptions({
   );
 }
 
-export default memo(ConvoOptions);
+export default memo(ConvoOptions, (prevProps, nextProps) => {
+  return (
+    prevProps.conversationId === nextProps.conversationId &&
+    prevProps.title === nextProps.title &&
+    prevProps.isPopoverActive === nextProps.isPopoverActive &&
+    prevProps.isActiveConvo === nextProps.isActiveConvo
+  );
+});
