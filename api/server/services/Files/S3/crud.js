@@ -1,7 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
-const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+} = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { initializeS3 } = require('./initialize');
 const { logger } = require('~/config');
@@ -86,21 +91,51 @@ async function saveURLToS3({ userId, URL, fileName, basePath = defaultBasePath }
  * Deletes a file from S3.
  *
  * @param {Object} params
- * @param {string} params.userId - The user's unique identifier.
- * @param {string} params.fileName - The file name in S3.
- * @param {string} [params.basePath='images'] - The base path in the bucket.
+ * @param {ServerRequest} params.req
+ * @param {MongoFile} params.file - The file object to delete.
  * @returns {Promise<void>}
  */
-async function deleteFileFromS3({ userId, fileName, basePath = defaultBasePath }) {
-  const key = getS3Key(basePath, userId, fileName);
+async function deleteFileFromS3(req, file) {
+  const key = extractKeyFromS3Url(file.filepath);
   const params = { Bucket: bucketName, Key: key };
+  if (!key.includes(req.user.id)) {
+    const message = `[deleteFileFromS3] User ID mismatch: ${req.user.id} vs ${key}`;
+    logger.error(message);
+    throw new Error(message);
+  }
 
   try {
     const s3 = initializeS3();
-    await s3.send(new DeleteObjectCommand(params));
-    logger.debug('[deleteFileFromS3] File deleted successfully from S3');
+
+    try {
+      const headCommand = new HeadObjectCommand(params);
+      await s3.send(headCommand);
+      logger.debug('[deleteFileFromS3] File exists, proceeding with deletion');
+    } catch (headErr) {
+      if (headErr.name === 'NotFound') {
+        logger.warn(`[deleteFileFromS3] File does not exist: ${key}`);
+        return;
+      }
+    }
+
+    const deleteResult = await s3.send(new DeleteObjectCommand(params));
+    logger.debug('[deleteFileFromS3] Delete command response:', JSON.stringify(deleteResult));
+    try {
+      await s3.send(new HeadObjectCommand(params));
+      logger.error('[deleteFileFromS3] File still exists after deletion!');
+    } catch (verifyErr) {
+      if (verifyErr.name === 'NotFound') {
+        logger.debug(`[deleteFileFromS3] Verified file is deleted: ${key}`);
+      } else {
+        logger.error('[deleteFileFromS3] Error verifying deletion:', verifyErr);
+      }
+    }
+
+    logger.debug('[deleteFileFromS3] S3 File deletion completed');
   } catch (error) {
-    logger.error('[deleteFileFromS3] Error deleting file from S3:', error.message);
+    logger.error(`[deleteFileFromS3] Error deleting file from S3: ${error.message}`);
+    logger.error(error.stack);
+
     // If the file is not found, we can safely return.
     if (error.code === 'NoSuchKey') {
       return;
@@ -110,7 +145,7 @@ async function deleteFileFromS3({ userId, fileName, basePath = defaultBasePath }
 }
 
 /**
- * Uploads a local file to S3.
+ * Uploads a local file to S3 by streaming it directly without loading into memory.
  *
  * @param {Object} params
  * @param {import('express').Request} params.req - The Express request (must include user).
@@ -122,15 +157,36 @@ async function deleteFileFromS3({ userId, fileName, basePath = defaultBasePath }
 async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }) {
   try {
     const inputFilePath = file.path;
-    const inputBuffer = await fs.promises.readFile(inputFilePath);
-    const bytes = Buffer.byteLength(inputBuffer);
     const userId = req.user.id;
     const fileName = `${file_id}__${path.basename(inputFilePath)}`;
-    const fileURL = await saveBufferToS3({ userId, buffer: inputBuffer, fileName, basePath });
-    await fs.promises.unlink(inputFilePath);
+    const key = getS3Key(basePath, userId, fileName);
+
+    const stats = await fs.promises.stat(inputFilePath);
+    const bytes = stats.size;
+    const fileStream = fs.createReadStream(inputFilePath);
+
+    const s3 = initializeS3();
+    const uploadParams = {
+      Bucket: bucketName,
+      Key: key,
+      Body: fileStream,
+    };
+
+    await s3.send(new PutObjectCommand(uploadParams));
+    const fileURL = await getS3URL({ userId, fileName, basePath });
     return { filepath: fileURL, bytes };
   } catch (error) {
-    logger.error('[uploadFileToS3] Error uploading file to S3:', error.message);
+    logger.error('[uploadFileToS3] Error streaming file to S3:', error);
+    try {
+      if (file && file.path) {
+        await fs.promises.unlink(file.path);
+      }
+    } catch (unlinkError) {
+      logger.error(
+        '[uploadFileToS3] Error deleting temporary file, likely already deleted:',
+        unlinkError.message,
+      );
+    }
     throw error;
   }
 }
