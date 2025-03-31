@@ -15,7 +15,7 @@ variable "app_port" {
 variable "acm_certificate_arn" {
   description = "ARN of the existing ACM certificate"
   type        = string
-  default     = "arn:aws:acm:us-east-1:063353344768:certificate/e4345b66-7639-4c58-a6c6-eebd1575ae60"
+  default     = "arn:aws:acm:us-east-1:516744693062:certificate/2f0c0533-1775-4136-9cb1-eac32a3dacd2"
 }
 
 # Data sources
@@ -524,6 +524,25 @@ resource "aws_lb_listener" "front_end" {
   }
 }
 
+
+# resource "aws_lb_listener" "front_end" {
+#   load_balancer_arn = aws_lb.librechat_alb.arn
+#   port              = "443"
+#   protocol          = "HTTPS"
+#   ssl_policy        = "ELBSecurityPolicy-2016-08"
+#   certificate_arn   = var.acm_certificate_arn
+
+#   default_action {
+#     type = "fixed-response"
+#     fixed_response {
+#       content_type = "text/plain"
+#       message_body = "Invalid hostname"
+#       status_code  = "404"
+#     }
+#   }
+# }
+
+
 # Target Group
 resource "aws_lb_target_group" "librechat_tg" {
   name        = "librechat-tg-parser"
@@ -752,24 +771,6 @@ resource "aws_route53_record" "apex" {
     name                   = aws_lb.librechat_alb.dns_name
     zone_id                = aws_lb.librechat_alb.zone_id
     evaluate_target_health = true
-  }
-}
-
-
-resource "aws_lb_listener" "front_end" {
-  load_balancer_arn = aws_lb.librechat_alb.arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = var.acm_certificate_arn
-
-  default_action {
-    type = "fixed-response"
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "Invalid hostname"
-      status_code  = "404"
-    }
   }
 }
 
