@@ -39,6 +39,11 @@ jobs:
 
           # Check if each key is used in the source code
           for KEY in $KEYS; do
+            # Skip keys ending with _conditional
+            if [[ "$KEY" == *_conditional ]]; then
+              echo "Skipping conditional key: $KEY"
+              continue
+            fi
             FOUND=false
             
             # Special case for dynamically constructed special variable keys

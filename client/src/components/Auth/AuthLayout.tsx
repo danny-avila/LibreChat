@@ -77,7 +77,7 @@ function AuthLayout({
         <div className="mt-6 h-10 w-full bg-cover">
           <img
             src={startupConfig?.customLogo || '/assets/logo.svg'}
-            className="h-32 w-full object-contain"
+            className="h-24 w-full object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
         </div>
