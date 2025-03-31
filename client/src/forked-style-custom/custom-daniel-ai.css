@@ -45,3 +45,22 @@
     max-width: 450px !important;
   }
 }
+
+/*
+ * Target ONLY SVG images (based on src ending with .svg)
+ * with class 'object-cover' that are descendants of
+ * any element whose class attribute value starts with 'icon-'
+ * (e.g., icon-md, icon-xl, etc.)
+ */
+[class^='icon-'] img.object-cover[src$='.svg'] {
+  @apply brightness-0; /* Light mode: force to black */
+}
+
+/*
+ * Apply dark mode inversion using Tailwind's dark variant.
+ * The base brightness-0 is still needed.
+ * Applies ONLY to the SVGs selected above.
+ */
+.dark [class^='icon-'] img.object-cover[src$='.svg'] {
+  @apply brightness-0 invert; /* Dark mode: force to black, then invert to white */
+}

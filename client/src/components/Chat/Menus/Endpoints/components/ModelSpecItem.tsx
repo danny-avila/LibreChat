@@ -4,7 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { useModelPricing, PricingBadges } from '~/forked-code-custom/pricingUtils';
+import { useModelBadges, ModelBadges } from '~/forked-code-custom/modelBadges';
 import { CapabilityIcons } from '~/forked-code-custom/CapabilityIcons';
 
 interface ModelSpecItemProps {
@@ -16,8 +16,8 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { showIconInMenu = true } = spec;
   
-  // Get pricing information
-  const { inputPrice, outputPrice, showPricing, isFree, maxTokens } = useModelPricing(spec);
+  // Get badges information
+  const { inputPrice, outputPrice, showPricing, isFree, maxTokens, disabled } = useModelBadges(spec);
   
   return (
     <MenuItem
@@ -43,12 +43,13 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
-          <PricingBadges 
+          <ModelBadges 
             inputPrice={inputPrice} 
             outputPrice={outputPrice} 
             showPricing={showPricing}
             isFree={isFree}
             maxTokens={maxTokens}
+            disabled={disabled}
           />
         </div>
       </div>

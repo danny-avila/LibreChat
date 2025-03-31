@@ -22,17 +22,19 @@ export type TModelSpec = {
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
   iconCapabilities?: ModelCapabilityType[];
-  pricing?: {
-    inputPrice?: number;    // Input price per million tokens
-    outputPrice?: number;   // Output price per million tokens
-    showPricing?: boolean;  // Whether to show the pricing badges
-    isFree?: boolean;       // Whether the model is completely free to use
-    maxContextToken?: number; // Maximum context window size in tokens
+  badges?: {
+    disabled?: boolean;         // Disable all badges for this model
+    inputPrice?: number;        // Input price per million tokens
+    outputPrice?: number;       // Output price per million tokens
+    showPricing?: boolean;      // Whether to show the pricing badges
+    isFree?: boolean;           // Whether the model is completely free to use
+    maxContextToken?: number;   // Maximum context window size in tokens
   };
 };
 
-// Define pricing schema for validation
-export const pricingSchema = z.object({
+// Define badges schema for validation
+export const badgesSchema = z.object({
+  disabled: z.boolean().optional(),
   inputPrice: z.number().optional(),
   outputPrice: z.number().optional(),
   showPricing: z.boolean().optional(),
@@ -52,7 +54,7 @@ export const tModelSpecSchema = z.object({
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   iconCapabilities: z.array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental', 'deep_research'])).optional(),
-  pricing: pricingSchema.optional(),
+  badges: badgesSchema.optional(),
 });
 
 export const specsConfigSchema = z.object({

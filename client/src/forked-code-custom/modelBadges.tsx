@@ -169,7 +169,7 @@ export const PriceBadge = memo(({
       className="cursor-pointer"
     >
       <div 
-        className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
         style={{ minWidth: "76px" }}
       >
         {isInput ? (
@@ -191,16 +191,14 @@ export const PriceBadge = memo(({
  */
 export const FreeBadge = memo(() => {
   return (
-    <div className="flex items-center gap-2 mt-1 ">
-      <div 
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-        style={{ minWidth: "76px" }}
-      >
-        <Gift size={14} className="text-orange-400" strokeWidth={1.5} />
-        <span className="text-[10px] text-text-primary">
-          Currently free
-        </span>
-      </div>
+    <div 
+      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+      style={{ minWidth: "76px" }}
+    >
+      <Gift size={14} className="text-orange-400" strokeWidth={1.5} />
+      <span className="text-[10px] text-text-primary">
+        Currently free
+      </span>
     </div>
   );
 });
@@ -224,7 +222,7 @@ export const ContextBadge = memo(({
       className="cursor-pointer"
     >
       <div 
-        className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
         style={{ minWidth: "61px" }}
       >
         <Target size={12} className="text-text-primary" strokeWidth={1.5} />
@@ -237,37 +235,42 @@ export const ContextBadge = memo(({
 });
 
 /**
- * Pre-memoized pricing badges component to keep ModelSpecItem clean
+ * Pre-memoized badges component to keep ModelSpecItem clean
  */
-export const PricingBadges = memo(({ 
+export const ModelBadges = memo(({ 
   inputPrice, 
   outputPrice, 
   showPricing,
   isFree,
-  maxTokens
+  maxTokens,
+  disabled
 }: { 
   inputPrice: number | null; 
   outputPrice: number | null; 
   showPricing: boolean;
   isFree?: boolean;
   maxTokens?: number | null;
+  disabled?: boolean;
 }) => {
-  // Show Free badge if isFree is true, regardless of other pricing
-  if (isFree) {
-    return <FreeBadge />;
+  // If badges are explicitly disabled, show nothing
+  if (disabled) {
+    return null;
   }
   
-  // Don't show anything if no pricing and no token info
-  if (!showPricing && !maxTokens) {
+  // Don't show anything if no pricing info and no token info
+  if (!showPricing && !maxTokens && !isFree) {
     return null;
   }
   
   return (
     <div className="flex flex-wrap items-center gap-2 mt-1">
-      {showPricing && inputPrice !== null && (
+      {isFree && (
+        <FreeBadge />
+      )}
+      {showPricing && !isFree && inputPrice !== null && (
         <PriceBadge type="input" price={inputPrice} />
       )}
-      {showPricing && outputPrice !== null && (
+      {showPricing && !isFree && outputPrice !== null && (
         <PriceBadge type="output" price={outputPrice} />
       )}
       {maxTokens !== null && maxTokens !== undefined && (
@@ -296,21 +299,23 @@ export const initPricingData = async (): Promise<Record<string, any>> => {
 };
 
 /**
- * Hook to get model pricing data
- * First tries to use manual configuration, then falls back to LiteLLM data
+ * Hook to get model badges data
+ * Uses badges configuration or falls back to LiteLLM data
  */
-export const useModelPricing = (spec: TModelSpec) => {
-  const [prices, setPrices] = useState<{ 
+export const useModelBadges = (spec: TModelSpec) => {
+  const [badges, setBadges] = useState<{ 
     inputPrice: number | null; 
     outputPrice: number | null;
     showPricing: boolean;
     isFree?: boolean;
     maxTokens?: number | null;
+    disabled?: boolean;
   }>({
     inputPrice: null,
     outputPrice: null,
     showPricing: false,
-    maxTokens: null
+    maxTokens: null,
+    disabled: false
   });
   
   const modelName = spec.preset?.model || '';
@@ -318,23 +323,24 @@ export const useModelPricing = (spec: TModelSpec) => {
   useEffect(() => {
     let isMounted = true;
     
-    const getPricing = async () => {
-      // First check for manual pricing configuration
-      if (spec.pricing) {
-        const { inputPrice, outputPrice, showPricing = true, isFree = false, maxContextToken } = spec.pricing;
+    const getBadges = async () => {
+      // Check for badges configuration
+      if (spec.badges) {
+        const { inputPrice, outputPrice, showPricing = true, isFree = false, maxContextToken, disabled = false } = spec.badges;
         if (isMounted) {
-          setPrices({
+          setBadges({
             inputPrice: inputPrice ?? null,
             outputPrice: outputPrice ?? null,
             showPricing,
             isFree,
-            maxTokens: maxContextToken ?? null
+            maxTokens: maxContextToken ?? null,
+            disabled
           });
           return;
         }
       }
       
-      // If no manual pricing, try to get from LiteLLM
+      // If no manual configuration, try to get from LiteLLM
       if (modelName) {
         try {
           // Use already fetched data if available, otherwise initialize
@@ -358,29 +364,31 @@ export const useModelPricing = (spec: TModelSpec) => {
             // Get max tokens
             const maxTokens = modelData.max_input_tokens ?? null;
             
-            setPrices({
+            setBadges({
               inputPrice: inputCost,
               outputPrice: outputCost,
               showPricing: true,
-              maxTokens
+              maxTokens,
+              disabled: false
             });
           }
         } catch (error) {
-          console.error('Error fetching model pricing:', error);
+          console.error('Error fetching model badges:', error);
         }
       }
     };
     
-    getPricing();
+    getBadges();
     return () => { isMounted = false; };
   }, [spec, modelName]);
   
   // Memoize the returned object to prevent unnecessary re-renders
-  return useMemo(() => prices, [
-    prices.inputPrice, 
-    prices.outputPrice, 
-    prices.showPricing, 
-    prices.isFree,
-    prices.maxTokens
+  return useMemo(() => badges, [
+    badges.inputPrice, 
+    badges.outputPrice, 
+    badges.showPricing, 
+    badges.isFree,
+    badges.maxTokens,
+    badges.disabled
   ]);
 }; 
