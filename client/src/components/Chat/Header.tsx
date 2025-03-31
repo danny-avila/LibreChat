@@ -8,7 +8,9 @@ import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import { useMediaQuery, useHasAccess } from '~/hooks';
 import BookmarkMenu from './Menus/BookmarkMenu';
+import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
+
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
@@ -50,6 +52,7 @@ export default function Header() {
         {!isSmallScreen && (
           <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
         )}
+        <TemporaryChat />
       </div>
       {/* Empty div for spacing */}
       <div />

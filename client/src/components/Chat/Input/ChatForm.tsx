@@ -50,6 +50,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  const isTemporary = useRecoilValue(store.isTemporary);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
@@ -180,7 +181,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const baseClasses = useMemo(
     () =>
       cn(
-        'md:py-3.5 m-0 w-full resize-none py-[13px] bg-surface-chat placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/50 bg-transparent dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
         isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
         isMoreThanThreeRows ? 'pl-5' : 'px-5',
       ),
@@ -219,8 +220,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           <div
             onClick={handleContainerClick}
             className={cn(
-              'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border border-border-medium bg-surface-chat pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
+              'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
               isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
+              isTemporary
+                ? 'border-violet-800/60 bg-violet-950/10'
+                : 'border-border-light bg-surface-chat',
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
