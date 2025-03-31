@@ -37,6 +37,46 @@ const options = [
     label: 'com_ui_finance',
     value: 'finance',
   },
+  {
+    label: 'com_ui_branding',
+    value: 'branding',
+  },
+  {
+    label: 'com_ui_copywriting',
+    value: 'copywriting',
+  },
+  {
+    label: 'com_ui_email_marketing',
+    value: 'email_marketing',
+  },
+  {
+    label: 'com_ui_social_media',
+    value: 'social_media',
+  },
+  {
+    label: 'com_ui_content_strategy',
+    value: 'content_strategy',
+  },
+  {
+    label: 'com_ui_seo',
+    value: 'seo',
+  },
+  {
+    label: 'com_ui_ads',
+    value: 'ads',
+  },
+  {
+    label: 'com_ui_customer_research',
+    value: 'customer_research',
+  },
+  {
+    label: 'com_ui_product_marketing',
+    value: 'product_marketing',
+  },
+  {
+    label: 'com_ui_marketing_analytics',
+    value: 'marketing_analytics',
+  },
 ];
 
 module.exports = {
