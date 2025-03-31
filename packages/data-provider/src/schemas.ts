@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import type { TFile } from './types/files';
+import { feedbackTags, TFeedbackContent, TFeedbackRating } from './feedback';
 
 export const isUUID = z.string().uuid();
 
@@ -465,6 +466,11 @@ export const tAgentOptionsSchema = z.object({
   temperature: z.number().default(agentOptionSettings.temperature.default),
 });
 
+export type TMessageFeedback = {
+  rating?: TFeedbackRating;
+  ratingContent?: TFeedbackContent;
+};
+
 export const tMessageSchema = z.object({
   messageId: z.string(),
   endpoint: z.string().optional(),
@@ -498,6 +504,15 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  rating: z.enum(['thumbsUp', 'thumbsDown']).optional(),
+  ratingContent: z
+    .object({
+      tags: z
+        .array(z.enum([...feedbackTags.thumbsUp, ...feedbackTags.thumbsDown] as const))
+        .optional(),
+      text: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
