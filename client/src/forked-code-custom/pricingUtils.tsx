@@ -170,7 +170,7 @@ export const PriceBadge = memo(({
     >
       <div 
         className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-        style={{ minWidth: "72px" }}
+        style={{ minWidth: "76px" }}
       >
         {isInput ? (
           <User size={12} className="text-text-primary" strokeWidth={1.5} />
@@ -194,9 +194,9 @@ export const FreeBadge = memo(() => {
     <div className="flex items-center gap-2 mt-1 ">
       <div 
         className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-        style={{ minWidth: "72px" }}
+        style={{ minWidth: "76px" }}
       >
-        <Gift size={12} className="text-green-500" strokeWidth={1.5} />
+        <Gift size={14} className="text-orange-400" strokeWidth={1.5} />
         <span className="text-[10px] text-text-primary">
           Currently free
         </span>
@@ -225,7 +225,7 @@ export const ContextBadge = memo(({
     >
       <div 
         className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-        style={{ minWidth: "72px" }}
+        style={{ minWidth: "61px" }}
       >
         <Target size={12} className="text-text-primary" strokeWidth={1.5} />
         <span className="text-[10px] text-text-primary">
