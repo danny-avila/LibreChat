@@ -4,6 +4,7 @@ const {
   Tools,
   Constants,
   FileContext,
+  FileSources,
   SystemRoles,
   EToolResources,
   actionDelimiter,
@@ -17,9 +18,10 @@ const {
 } = require('~/models/Agent');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { updateAction, getActions } = require('~/models/Action');
-const { getProjectByName } = require('~/models/Project');
 const { updateAgentProjects } = require('~/models/Agent');
+const { getProjectByName } = require('~/models/Project');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -100,6 +102,14 @@ const getAgentHandler = async (req, res) => {
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (agent.avatar && agent.avatar?.source === FileSources.s3) {
+      const originalUrl = agent.avatar.filepath;
+      agent.avatar.filepath = await refreshS3Url(agent.avatar);
+      if (originalUrl !== agent.avatar.filepath) {
+        await updateAgent({ id }, { avatar: agent.avatar });
+      }
     }
 
     agent.author = agent.author.toString();

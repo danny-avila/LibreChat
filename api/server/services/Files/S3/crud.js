@@ -369,6 +369,53 @@ async function refreshS3FileUrls(files, batchUpdateFiles, bufferSeconds = 3600) 
   return files;
 }
 
+/**
+ * Refreshes a single S3 URL if it's expired or close to expiring
+ *
+ * @param {{ filepath: string, source: string }} fileObj - Simple file object containing filepath and source
+ * @param {number} [bufferSeconds=3600] - Buffer time in seconds to check for expiration
+ * @returns {Promise<string>} The refreshed URL or the original URL if no refresh needed
+ */
+async function refreshS3Url(fileObj, bufferSeconds = 3600) {
+  if (!fileObj || fileObj.source !== FileSources.s3 || !fileObj.filepath) {
+    return fileObj?.filepath || '';
+  }
+
+  if (!needsRefresh(fileObj.filepath, bufferSeconds)) {
+    return fileObj.filepath;
+  }
+
+  try {
+    const s3Key = extractKeyFromS3Url(fileObj.filepath);
+    if (!s3Key) {
+      logger.warn(`Unable to extract S3 key from URL: ${fileObj.filepath}`);
+      return fileObj.filepath;
+    }
+
+    const keyParts = s3Key.split('/');
+    if (keyParts.length < 3) {
+      logger.warn(`Invalid S3 key format: ${s3Key}`);
+      return fileObj.filepath;
+    }
+
+    const basePath = keyParts[0];
+    const userId = keyParts[1];
+    const fileName = keyParts.slice(2).join('/');
+
+    const newUrl = await getS3URL({
+      userId,
+      fileName,
+      basePath,
+    });
+
+    logger.debug(`Refreshed S3 URL for key: ${s3Key}`);
+    return newUrl;
+  } catch (error) {
+    logger.error(`Error refreshing S3 URL: ${error.message}`);
+    return fileObj.filepath;
+  }
+}
+
 module.exports = {
   saveBufferToS3,
   saveURLToS3,
@@ -377,4 +424,5 @@ module.exports = {
   uploadFileToS3,
   getS3FileStream,
   refreshS3FileUrls,
+  refreshS3Url,
 };
