@@ -492,7 +492,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
-
+  const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
@@ -532,7 +532,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       images,
       filename,
       filepath: ocrFileURL,
-    } = await handleFileUpload({ req, file, file_id, entity_id: agent_id });
+    } = await handleFileUpload({ req, file, file_id, entity_id: agent_id, basePath });
 
     const fileInfo = removeNullishValues({
       text,
@@ -582,6 +582,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     file,
     file_id,
     entity_id,
+    basePath,
   });
 
   let filepath = _filepath;
