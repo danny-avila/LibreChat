@@ -4,7 +4,7 @@
 set -o errexit
 
 # If GOOGLE_KEY_FILE_CONTENTS is set, write it to the file specified by GOOGLE_KEY_JSON_FILENAME
-if [ -n "$GOOGLE_KEY_FILE_CONTENTS" ]; then
+if env | grep --quiet GOOGLE_KEY_FILE_CONTENTS; then
     echo "Found GOOGLE_KEY_FILE_CONTENTS, writing to GOOGLE_KEY_JSON_FILENAME: $GOOGLE_KEY_JSON_FILENAME"
 
     # Create the parent directory if it doesn't exist
@@ -16,7 +16,7 @@ else
 fi
 
 # If FAVICON_PNG_URL is set, download the favicon and overwrite the existing files
-if [ -n "$FAVICON_PNG_URL" ]; then
+if env | grep --quiet FAVICON_PNG_URL; then
     echo "Found FAVICON_PNG_URL, downloading favicon $FAVICON_PNG_URL to /tmp/favicon.png"
 
     curl -L "$FAVICON_PNG_URL" -o /tmp/favicon.png
