@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const mime = require('mime');
+const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('~/config');
 const { getAzureContainerClient } = require('./initialize');
