@@ -22,18 +22,15 @@ if [ -n "$FAVICON_PNG_URL" ]; then
 
     curl -L "$FAVICON_PNG_URL" -o /tmp/favicon.png
 
-    # Create the parent directory if it doesn't exist
-    mkdir -p $(dirname "$FAVICON_PNG_URL")
 
-    FAVICON_FILES=(
-        "/app/client/dist/assets/favicon-16x16.png"
-        "/app/client/dist/assets/favicon-32x32.png"
-        "/app/client/dist/assets/apple-touch-icon-180x180.png"
-    )
+    FAVICON_FILES="
+        /app/client/dist/assets/favicon-16x16.png
+        /app/client/dist/assets/favicon-32x32.png
+        /app/client/dist/assets/apple-touch-icon-180x180.png
+    "
 
-    for FILE in "${FAVICON_FILES[@]}"; do
+    for FILE in $FAVICON_FILES; do
         echo "Overwriting ${BOLD}$FILE${RESET}"
         cp /tmp/favicon.png "$FILE"
     done
 fi
-
