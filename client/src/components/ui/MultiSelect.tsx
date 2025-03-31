@@ -11,25 +11,21 @@ import {
 import { cn } from '~/utils';
 
 interface MultiSelectProps<T extends string> {
-  // Required props
   items: T[];
   label?: string;
-
-  // Optional props with defaults
   placeholder?: string;
   defaultSelectedValues?: T[];
   onSelectedValuesChange?: (values: T[]) => void;
-
-  // Optional styling props
+  renderSelectedValues?: (values: T[], placeholder?: string) => React.ReactNode;
   className?: string;
+  itemClassName?: string;
   labelClassName?: string;
   selectClassName?: string;
   popoverClassName?: string;
-  itemClassName?: string;
+  selectItemsClassName?: string;
 }
 
-// Function to nicely format selected values
-function renderSelectedValues<T extends string>(values: T[], placeholder?: string) {
+function defaultRender<T extends string>(values: T[], placeholder?: string) {
   if (values.length === 0) {
     return placeholder || 'Select...';
   }
@@ -45,11 +41,13 @@ export default function MultiSelect<T extends string>({
   placeholder = 'Select...',
   defaultSelectedValues = [],
   onSelectedValuesChange,
+  renderSelectedValues = defaultRender,
   className,
+  itemClassName,
   labelClassName,
   selectClassName,
   popoverClassName,
-  itemClassName,
+  selectItemsClassName,
 }: MultiSelectProps<T>) {
   const [selectedValues, setSelectedValues] = React.useState<T[]>(defaultSelectedValues);
 
@@ -71,11 +69,10 @@ export default function MultiSelect<T extends string>({
         <Select
           className={cn(
             'flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm',
-            'bg-surface-tertiary text-text-primary hover:bg-surface-hover',
-            'shadow-sm hover:cursor-pointer',
+            'bg-surface-tertiary text-text-primary shadow-sm hover:cursor-pointer hover:bg-surface-hover',
             'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75',
-            'cursor-default',
             selectClassName,
+            selectedValues.length > 0 && selectItemsClassName != null && selectItemsClassName,
           )}
         >
           <span className="truncate">{renderSelectedValues(selectedValues, placeholder)}</span>
@@ -100,7 +97,7 @@ export default function MultiSelect<T extends string>({
               key={value}
               value={value}
               className={cn(
-                'flex cursor-default items-center gap-2 rounded-lg px-2 py-1.5',
+                'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
                 'scroll-m-1 outline-none transition-colors',
                 'hover:bg-black/[0.075] dark:hover:bg-white/10',
                 'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
