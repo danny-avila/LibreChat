@@ -16,3 +16,4 @@ Keeping track of custom features added to `e-gineering/LibreChat`.
     - `/app/client/dist/assets/favicon-32x32.png`
     - `/app/client/dist/assets/favicon-16x16.png`
     - `/app/client/dist/assets/apple-touch-icon-180x180.png`
+  - Should be a `.png` file since we're just overwriting the existing PNG files.
