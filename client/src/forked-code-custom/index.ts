@@ -1,4 +1,4 @@
-import { initPricingData } from './pricingUtils';
+import { initPricingData } from './modelBadges';
 
 /**
  * Initialize forked custom features
