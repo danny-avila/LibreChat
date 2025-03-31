@@ -160,6 +160,8 @@ export const CustomMenuItem = React.forwardRef<HTMLDivElement, CustomMenuItemPro
       ...props,
       className: cn(
         'flex cursor-default items-center gap-2 rounded-lg p-2 outline-none! scroll-m-1 scroll-mt-[calc(var(--combobox-height,0px)+var(--label-height,4px))] aria-disabled:opacity-25 data-[active-item]:bg-black/[0.075] data-[active-item]:text-black dark:data-[active-item]:bg-white/10 dark:data-[active-item]:text-white sm:py-1 sm:text-sm min-w-0 w-full',
+        'data-[active-item]:outline data-[active-item]:outline-1 data-[active-item]:outline-black data-[active-item]:-outline-offset-1',
+        'dark:data-[active-item]:outline-white',
         props.className,
       ),
     };
