@@ -1,0 +1,15 @@
+.bg-surface-primary-alt {
+    background-color: #e6f5fb; /* Light blue sidebar background */
+}
+
+.text-text-primary, .text-text-secondary, .text-black {
+    color: #1d2945;
+}
+
+.bg-green-600 {
+    background-color: #00b2e2;
+}
+
+.text-green-600 {
+    color: #00b2e2;
+}

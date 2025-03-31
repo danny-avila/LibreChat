@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { TStartupConfig } from 'librechat-data-provider';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
@@ -55,6 +56,19 @@ function AuthLayout({
     }
     return null;
   };
+
+  useEffect(() => {
+    if (startupConfig?.customCss) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = startupConfig.customCss;
+      document.head.appendChild(link);
+      // Cleanup to remove the link when the component unmounts or customCss changes
+      return () => {
+        document.head.removeChild(link);
+      };
+    }
+  }, [startupConfig?.customCss]); // Add startupConfig?.customCss to the dependency array
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
