@@ -23,6 +23,8 @@ interface MultiSelectProps<T extends string> {
   selectClassName?: string;
   popoverClassName?: string;
   selectItemsClassName?: string;
+  selectedValues: T[];
+  setSelectedValues: (values: T[]) => void;
 }
 
 function defaultRender<T extends string>(values: T[], placeholder?: string) {
@@ -48,8 +50,10 @@ export default function MultiSelect<T extends string>({
   selectClassName,
   popoverClassName,
   selectItemsClassName,
+  selectedValues = [],
+  setSelectedValues,
 }: MultiSelectProps<T>) {
-  const [selectedValues, setSelectedValues] = React.useState<T[]>(defaultSelectedValues);
+  // const [selectedValues, setSelectedValues] = React.useState<T[]>(defaultSelectedValues);
 
   const handleValueChange = (values: T[]) => {
     setSelectedValues(values);

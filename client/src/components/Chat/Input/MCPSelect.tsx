@@ -1,9 +1,17 @@
 import React from 'react';
+import { useRecoilState } from 'recoil';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
 import MultiSelect from '~/components/ui/MultiSelect';
+import { ephemeralAgentByConvoId } from '~/store';
+import { useChatContext } from '~/Providers';
 
 export function MCPSelect() {
+  const { conversation } = useChatContext();
+  const { conversationId = Constants.NEW_CONVO } = conversation ?? {};
+  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
+    ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
+  );
   const { data: mcpServers } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data) => {
       const serverNames = new Set<string>();
@@ -17,15 +25,20 @@ export function MCPSelect() {
     },
   });
 
-  const handleSelectedValuesChange = (values: string[]) => {
-    console.log('Selected MCP Servers:', values);
+  const setSelectedValues = (values: string[]) => {
+    setEphemeralAgent((prev) => ({
+      ...prev,
+      mcp: values,
+    }));
   };
 
   return (
     <MultiSelect
       items={mcpServers ?? []}
       placeholder="Select MCP Servers..."
-      onSelectedValuesChange={handleSelectedValuesChange}
+      defaultSelectedValues={ephemeralAgent?.mcp ?? []}
+      setSelectedValues={setSelectedValues}
+      selectedValues={ephemeralAgent?.mcp ?? []}
       popoverClassName="min-w-[200px]"
       className="badge-icon h-full min-w-[150px]"
       selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
