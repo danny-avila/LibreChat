@@ -64,3 +64,16 @@
 .dark [class^='icon-'] img.object-cover[src$='.svg'] {
   @apply brightness-0 invert; /* Dark mode: force to black, then invert to white */
 }
+
+/*
+ * Target the icon wrapper (e.g., div.icon-md, div.icon-xl) for ALL models
+ * ONLY when inside the listbox structure (identified by role="listbox"
+ * and role="option").
+ * Use !important to override the inline style attributes.
+ */
+div[role='listbox']
+  div[role='option']:has(img[alt='o3-mini'])
+  div.icon-md.shrink-0.overflow-hidden.rounded-full {
+  width: 24px !important;
+  height: 24px !important;
+}
