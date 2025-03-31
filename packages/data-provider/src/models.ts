@@ -27,6 +27,7 @@ export type TModelSpec = {
     outputPrice?: number;   // Output price per million tokens
     showPricing?: boolean;  // Whether to show the pricing badges
     isFree?: boolean;       // Whether the model is completely free to use
+    maxContextToken?: number; // Maximum context window size in tokens
   };
 };
 
@@ -36,6 +37,7 @@ export const pricingSchema = z.object({
   outputPrice: z.number().optional(),
   showPricing: z.boolean().optional(),
   isFree: z.boolean().optional(),
+  maxContextToken: z.number().optional(),
 });
 
 export const tModelSpecSchema = z.object({

@@ -17,7 +17,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { showIconInMenu = true } = spec;
   
   // Get pricing information
-  const { inputPrice, outputPrice, showPricing, isFree } = useModelPricing(spec);
+  const { inputPrice, outputPrice, showPricing, isFree, maxTokens } = useModelPricing(spec);
   
   return (
     <MenuItem
@@ -48,6 +48,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
             outputPrice={outputPrice} 
             showPricing={showPricing}
             isFree={isFree}
+            maxTokens={maxTokens}
           />
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState, memo, useMemo } from 'react';
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
-import { User, Server, Gift } from 'lucide-react';
+import { User, Server, Gift, Target } from 'lucide-react';
 
 /**
  * Pricing data cache from LiteLLM
@@ -29,6 +29,18 @@ export const formatPrice = (value: number): string => {
   } else {
     return perMillion.toFixed(2);
   }
+};
+
+/**
+ * Format token count for display (e.g. 128000 → 128K)
+ */
+export const formatTokenCount = (count: number): string => {
+  if (count >= 1000000) {
+    return `${(count / 1000000).toFixed(count >= 10000000 ? 0 : 1)}M`;
+  } else if (count >= 1000) {
+    return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}K`;
+  }
+  return count.toString();
 };
 
 /**
@@ -186,36 +198,65 @@ export const FreeBadge = memo(() => {
 });
 
 /**
+ * Context window badge component for displaying max tokens
+ * Memoized to prevent unnecessary re-renders
+ */
+export const ContextBadge = memo(({ 
+  tokens 
+}: { 
+  tokens: number;
+}) => {
+  const formattedTokens = formatTokenCount(tokens);
+  
+  return (
+    <div 
+      className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+      style={{ minWidth: "80px" }}
+    >
+      <Target size={12} className="text-text-primary" strokeWidth={1.5} />
+      <span className="text-[10px] text-text-primary">
+        {formattedTokens} tokens
+      </span>
+    </div>
+  );
+});
+
+/**
  * Pre-memoized pricing badges component to keep ModelSpecItem clean
  */
 export const PricingBadges = memo(({ 
   inputPrice, 
   outputPrice, 
   showPricing,
-  isFree
+  isFree,
+  maxTokens
 }: { 
   inputPrice: number | null; 
   outputPrice: number | null; 
   showPricing: boolean;
   isFree?: boolean;
+  maxTokens?: number | null;
 }) => {
   // Show Free badge if isFree is true, regardless of other pricing
   if (isFree) {
     return <FreeBadge />;
   }
   
-  // Otherwise show regular pricing badges if applicable
-  if (!showPricing || (inputPrice === null && outputPrice === null)) {
+  // Don't show anything if no pricing and no token info
+  if (!showPricing && !maxTokens) {
     return null;
   }
   
   return (
     <div className="flex flex-wrap items-center gap-2 mt-1">
-      {inputPrice !== null && (
+      {showPricing && inputPrice !== null && (
         <PriceBadge type="input" price={inputPrice} />
       )}
-      {outputPrice !== null && (
+      {showPricing && outputPrice !== null && (
         <PriceBadge type="output" price={outputPrice} />
+      )}
+      {maxTokens !== null && maxTokens !== undefined && (
+        <ContextBadge tokens={maxTokens} />
       )}
     </div>
   );
@@ -249,10 +290,12 @@ export const useModelPricing = (spec: TModelSpec) => {
     outputPrice: number | null;
     showPricing: boolean;
     isFree?: boolean;
+    maxTokens?: number | null;
   }>({
     inputPrice: null,
     outputPrice: null,
-    showPricing: false
+    showPricing: false,
+    maxTokens: null
   });
   
   const modelName = spec.preset?.model || '';
@@ -263,13 +306,14 @@ export const useModelPricing = (spec: TModelSpec) => {
     const getPricing = async () => {
       // First check for manual pricing configuration
       if (spec.pricing) {
-        const { inputPrice, outputPrice, showPricing = true, isFree = false } = spec.pricing;
+        const { inputPrice, outputPrice, showPricing = true, isFree = false, maxContextToken } = spec.pricing;
         if (isMounted) {
           setPrices({
             inputPrice: inputPrice ?? null,
             outputPrice: outputPrice ?? null,
             showPricing,
-            isFree
+            isFree,
+            maxTokens: maxContextToken ?? null
           });
           return;
         }
@@ -296,10 +340,14 @@ export const useModelPricing = (spec: TModelSpec) => {
               ? modelData.output_cost_per_token * 1000000 
               : null;
             
+            // Get max tokens
+            const maxTokens = modelData.max_input_tokens ?? null;
+            
             setPrices({
               inputPrice: inputCost,
               outputPrice: outputCost,
-              showPricing: true
+              showPricing: true,
+              maxTokens
             });
           }
         } catch (error) {
@@ -317,6 +365,7 @@ export const useModelPricing = (spec: TModelSpec) => {
     prices.inputPrice, 
     prices.outputPrice, 
     prices.showPricing, 
-    prices.isFree
+    prices.isFree,
+    prices.maxTokens
   ]);
 }; 
