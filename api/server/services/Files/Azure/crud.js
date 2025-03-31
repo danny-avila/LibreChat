@@ -6,6 +6,7 @@ const { logger } = require('~/config');
 const { getAzureContainerClient } = require('./initialize');
 
 const defaultBasePath = 'images';
+const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
 
 /**
  * Uploads a buffer to Azure Blob Storage.
@@ -29,10 +30,9 @@ async function saveBufferToAzure({
 }) {
   try {
     const containerClient = getAzureContainerClient(containerName);
+    const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
     // Create the container if it doesn't exist. This is done per operation.
-    await containerClient.createIfNotExists({
-      access: process.env.AZURE_STORAGE_PUBLIC_ACCESS ? 'blob' : undefined,
-    });
+    await containerClient.createIfNotExists({ access });
     const blobPath = `${basePath}/${userId}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     await blockBlobClient.uploadData(buffer);
@@ -97,25 +97,21 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
  * Deletes a blob from Azure Blob Storage.
  *
  * @param {Object} params
- * @param {string} params.fileName - The name of the file.
- * @param {string} [params.basePath='images'] - The base folder where the file is stored.
- * @param {string} params.userId - The user's id.
- * @param {string} [params.containerName] - The Azure Blob container name.
+ * @param {ServerRequest} params.req - The Express request object.
+ * @param {MongoFile} params.file - The file object.
  */
-async function deleteFileFromAzure({
-  fileName,
-  basePath = defaultBasePath,
-  userId,
-  containerName,
-}) {
+async function deleteFileFromAzure(req, file) {
   try {
-    const containerClient = getAzureContainerClient(containerName);
-    const blobPath = `${basePath}/${userId}/${fileName}`;
+    const containerClient = getAzureContainerClient(AZURE_CONTAINER_NAME);
+    const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];
+    if (!blobPath.includes(req.user.id)) {
+      throw new Error('User ID not found in blob path');
+    }
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     await blockBlobClient.delete();
     logger.debug('[deleteFileFromAzure] Blob deleted successfully from Azure Blob Storage');
   } catch (error) {
-    logger.error('[deleteFileFromAzure] Error deleting blob:', error.message);
+    logger.error('[deleteFileFromAzure] Error deleting blob:', error);
     if (error.statusCode === 404) {
       return;
     }
