@@ -52,7 +52,7 @@ const AppService = async (app) => {
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();
-  } else if (fileStrategy === FileSources.azure) {
+  } else if (fileStrategy === FileSources.azure_blob) {
     initializeAzureBlobService();
   } else if (fileStrategy === FileSources.s3) {
     initializeS3();
