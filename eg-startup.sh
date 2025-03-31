@@ -14,6 +14,8 @@ if [ -n "$GOOGLE_KEY_FILE_CONTENTS" ]; then
     mkdir -p $(dirname "$GOOGLE_KEY_JSON_FILENAME")
 
     echo "$GOOGLE_KEY_FILE_CONTENTS" > "$GOOGLE_KEY_JSON_FILENAME"
+else
+    echo "${BOLD}GOOGLE_KEY_FILE_CONTENTS${RESET} not set, skipping Google key setup"
 fi
 
 # If FAVICON_PNG_URL is set, download the favicon and overwrite the existing files
@@ -33,4 +35,6 @@ if [ -n "$FAVICON_PNG_URL" ]; then
         echo "Overwriting ${BOLD}$FILE${RESET}"
         cp /tmp/favicon.png "$FILE"
     done
+else
+    echo "${BOLD}FAVICON_PNG_URL${RESET} not set, skipping custom favicon setup"
 fi
