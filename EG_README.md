@@ -13,7 +13,7 @@ Keeping track of custom features added to `e-gineering/LibreChat`.
 - Custom favicon link
   - Environment variable: `FAVICON_PNG_URL`
   - (Optional) A URL to a custom favicon image that will be downloaded at runtime, to overwrite the 3 locations where the favicon is used in the Docker container:
-    - `/app/client/dist/assets/favicon-32x32.png`
     - `/app/client/dist/assets/favicon-16x16.png`
+    - `/app/client/dist/assets/favicon-32x32.png`
     - `/app/client/dist/assets/apple-touch-icon-180x180.png`
   - Should be a `.png` file since we're just overwriting the existing PNG files.
