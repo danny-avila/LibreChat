@@ -14,7 +14,6 @@ const defaultInterface = getConfigDefaults().interface;
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible } = useOutletContext<ContextType>();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -37,7 +36,7 @@ export default function Header() {
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-2 flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
-          {<ModelSelector startupConfig={startupConfig} modelSpecs={modelSpecs} />}
+          {<ModelSelector startupConfig={startupConfig} />}
           {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
           {hasAccessToBookmarks === true && <BookmarkMenu />}
           {hasAccessToMultiConvo === true && <AddMultiConvo />}

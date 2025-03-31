@@ -44,19 +44,15 @@ export function useModelSelectorContext() {
 
 interface ModelSelectorProviderProps {
   children: React.ReactNode;
-  modelSpecs: t.TModelSpec[];
   startupConfig: t.TStartupConfig | undefined;
 }
 
-export function ModelSelectorProvider({
-  children,
-  modelSpecs,
-  startupConfig,
-}: ModelSelectorProviderProps) {
+export function ModelSelectorProvider({ children, startupConfig }: ModelSelectorProviderProps) {
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation, newConversation } = useChatContext();
+  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agentsMap,
     assistantsMap,
