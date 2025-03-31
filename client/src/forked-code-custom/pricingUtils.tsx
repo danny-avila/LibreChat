@@ -2,6 +2,7 @@ import { useEffect, useState, memo, useMemo } from 'react';
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { User, Server, Gift, Target } from 'lucide-react';
+import { TooltipAnchor } from '../components/ui/Tooltip';
 
 /**
  * Pricing data cache from LiteLLM
@@ -159,21 +160,28 @@ export const PriceBadge = memo(({
   // Display the price value directly without further conversion
   // since it's already per million tokens
   const formattedPrice = price.toFixed(price >= 100 ? 0 : price >= 10 ? 1 : 2);
+  const tooltipText = `$${formattedPrice} per 1 million tokens`;
   
   return (
-    <div 
-      className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-      style={{ minWidth: "80px" }}
+    <TooltipAnchor 
+      description={tooltipText}
+      side="top"
+      className="cursor-pointer"
     >
-      {isInput ? (
-        <User size={12} className="text-text-primary" strokeWidth={1.5} />
-      ) : (
-        <Server size={12} className="text-text-primary" strokeWidth={1.5} />
-      )}
-      <span className="text-[10px] text-text-primary">
-        ${formattedPrice}/1M
-      </span>
-    </div>
+      <div 
+        className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        style={{ minWidth: "72px" }}
+      >
+        {isInput ? (
+          <User size={12} className="text-text-primary" strokeWidth={1.5} />
+        ) : (
+          <Server size={12} className="text-text-primary" strokeWidth={1.5} />
+        )}
+        <span className="text-[10px] text-text-primary">
+          ${formattedPrice}/1M
+        </span>
+      </div>
+    </TooltipAnchor>
   );
 });
 
@@ -186,9 +194,9 @@ export const FreeBadge = memo(() => {
     <div className="flex items-center gap-2 mt-1 ">
       <div 
         className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-        style={{ minWidth: "80px" }}
+        style={{ minWidth: "72px" }}
       >
-        <Gift size={12} className="text-text-primary" strokeWidth={1.5} />
+        <Gift size={12} className="text-green-500" strokeWidth={1.5} />
         <span className="text-[10px] text-text-primary">
           Currently free
         </span>
@@ -207,17 +215,24 @@ export const ContextBadge = memo(({
   tokens: number;
 }) => {
   const formattedTokens = formatTokenCount(tokens);
+  const tooltipText = "Max Context Tokens";
   
   return (
-    <div 
-      className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
-      style={{ minWidth: "80px" }}
+    <TooltipAnchor 
+      description={tooltipText}
+      side="top"
+      className="cursor-pointer"
     >
-      <Target size={12} className="text-text-primary" strokeWidth={1.5} />
-      <span className="text-[10px] text-text-primary">
-        {formattedTokens} tokens
-      </span>
-    </div>
+      <div 
+        className="flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        style={{ minWidth: "72px" }}
+      >
+        <Target size={12} className="text-text-primary" strokeWidth={1.5} />
+        <span className="text-[10px] text-text-primary">
+          {formattedTokens}
+        </span>
+      </div>
+    </TooltipAnchor>
   );
 });
 

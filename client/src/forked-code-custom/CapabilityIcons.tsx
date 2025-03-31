@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { BrainCircuit, ImageUp, Globe, FlaskConical, Microscope } from 'lucide-react';
+import { Brain, ImageUp, Globe, FlaskConical, Microscope } from 'lucide-react';
 import { TooltipAnchor } from '~/components/ui/Tooltip';
 import { cn } from '~/utils';
 
@@ -30,7 +30,7 @@ export const CapabilityIcon = memo(({ type }: { type: string }) => {
   
   switch (type) {
     case 'reasoning':
-      iconElement = <BrainCircuit className="h-3.5 w-3.5 text-pink-300" />;
+      iconElement = <Brain className="h-3.5 w-3.5 text-pink-300" />;
       bg = 'bg-gradient-to-br from-pink-900/20 to-pink-800/10';
       ring = 'ring-1 ring-inset ring-pink-300/30';
       break;
