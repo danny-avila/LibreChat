@@ -25,6 +25,10 @@ export function MCPSelect() {
     },
   });
 
+  if (!mcpServers || mcpServers.length === 0) {
+    return null;
+  }
+
   const setSelectedValues = (values: string[]) => {
     setEphemeralAgent((prev) => ({
       ...prev,

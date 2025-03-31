@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { useRef } from 'react';
 import {
   Select,
   SelectArrow,
@@ -53,6 +53,7 @@ export default function MultiSelect<T extends string>({
   selectedValues = [],
   setSelectedValues,
 }: MultiSelectProps<T>) {
+  const selectRef = useRef<HTMLButtonElement>(null);
   // const [selectedValues, setSelectedValues] = React.useState<T[]>(defaultSelectedValues);
 
   const handleValueChange = (values: T[]) => {
@@ -71,6 +72,7 @@ export default function MultiSelect<T extends string>({
           </SelectLabel>
         )}
         <Select
+          ref={selectRef}
           className={cn(
             'flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm',
             'bg-surface-tertiary text-text-primary shadow-sm hover:cursor-pointer hover:bg-surface-hover',
@@ -87,6 +89,7 @@ export default function MultiSelect<T extends string>({
           sameWidth
           modal
           unmountOnHide
+          finalFocus={selectRef}
           className={cn(
             'animate-popover z-50 flex max-h-[300px]',
             'flex-col overflow-auto overscroll-contain rounded-xl',
