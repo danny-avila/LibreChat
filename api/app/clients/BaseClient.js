@@ -691,17 +691,14 @@ class BaseClient {
 
     if (typeof completion === 'string') {
       responseMessage.text = addSpaceIfNeeded(generation) + completion;
-      logger.debug('[ncom]', finalText); // Optional
     } else if (
       Array.isArray(completion) &&
       isParamEndpoint(this.options.endpoint, this.options.endpointType)
     ) {
       responseMessage.text = '';
-      responseMessage.content = completion
-      logger.debug('[nresp]', finalText); // Optional
+      responseMessage.content = completion;
     } else if (Array.isArray(completion)) {
       responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
-      logger.debug('[naa]', finalText); // Optional
     }
 
     if (
