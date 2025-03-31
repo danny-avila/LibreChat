@@ -7,6 +7,7 @@ const {
   EModelEndpoint,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
@@ -24,8 +25,8 @@ async function fetchImageToBase64(url) {
     });
     return Buffer.from(response.data).toString('base64');
   } catch (error) {
-    logger.error('Error fetching image to convert to base64', error);
-    throw error;
+    const message = 'Error fetching image to convert to base64';
+    throw new Error(logAxiosError({ message, error }));
   }
 }
 
