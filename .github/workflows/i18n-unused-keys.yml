@@ -16,9 +16,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install jq
-        run: apt-get update && apt-get install -y jq
-
       - name: Find unused i18next keys
         id: find-unused
         run: |
@@ -36,8 +33,6 @@ jobs:
 
           # Extract all keys from the JSON file
           KEYS=$(jq -r 'keys[]' "$I18N_FILE")
-
-          echo "Keys found: $KEYS"
 
           # Track unused keys
           UNUSED_KEYS=()
