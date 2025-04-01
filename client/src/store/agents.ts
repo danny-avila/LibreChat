@@ -1,10 +1,8 @@
-import { atomFamily } from 'recoil';
-import { useRecoilCallback } from 'recoil';
 import { Constants } from 'librechat-data-provider';
+import { atomFamily, useRecoilCallback } from 'recoil';
+import type { TEphemeralAgent } from 'librechat-data-provider';
 import { logger } from '~/utils';
-export type TEphemeralAgent = {
-  mcp: string[];
-};
+
 export const ephemeralAgentByConvoId = atomFamily<TEphemeralAgent | null, string>({
   key: 'ephemeralAgentByConvoId',
   default: null,
@@ -84,4 +82,23 @@ export function useApplyNewAgentTemplate() {
   );
 
   return applyTemplate;
+}
+
+/**
+ * Creates a callback function to get the current ephemeral agent state
+ * for a specified conversation ID without subscribing the component.
+ * Returns a Loadable object synchronously.
+ */
+export function useGetEphemeralAgent() {
+  const getEphemeralAgent = useRecoilCallback(
+    ({ snapshot }) =>
+      (conversationId: string): TEphemeralAgent | null => {
+        logger.log('agents', `[useGetEphemeralAgent] Getting loadable for ID: ${conversationId}`);
+        const agentLoadable = snapshot.getLoadable(ephemeralAgentByConvoId(conversationId));
+        return agentLoadable.contents as TEphemeralAgent | null;
+      },
+    [],
+  );
+
+  return getEphemeralAgent;
 }
