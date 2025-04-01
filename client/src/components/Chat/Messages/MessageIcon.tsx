@@ -35,6 +35,7 @@ const MessageIcon = memo(
     }, [assistant, agent, assistantAvatar, agentAvatar]);
 
     const iconURL = iconData?.iconURL;
+
     const endpoint = useMemo(
       () => getIconEndpoint({ endpointsConfig, iconURL, endpoint: iconData?.endpoint }),
       [endpointsConfig, iconURL, iconData?.endpoint],

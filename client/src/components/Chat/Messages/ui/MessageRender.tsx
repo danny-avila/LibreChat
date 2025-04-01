@@ -75,13 +75,14 @@ const MessageRender = memo(
       () => ({
         endpoint: msg?.endpoint ?? conversation?.endpoint,
         model: msg?.model ?? conversation?.model,
-        iconURL: msg?.iconURL,
+        iconURL: msg?.iconURL ?? conversation?.iconURL,
         modelLabel: messageLabel,
         isCreatedByUser: msg?.isCreatedByUser,
       }),
       [
         messageLabel,
         conversation?.endpoint,
+        conversation?.iconURL,
         conversation?.model,
         msg?.model,
         msg?.iconURL,
