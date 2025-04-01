@@ -1,8 +1,8 @@
 import { EarthIcon } from 'lucide-react';
 import {
+  FileSources,
   alternateName,
   EModelEndpoint,
-  FileSources,
   EToolResources,
 } from 'librechat-data-provider';
 import type { Agent, TFile } from 'librechat-data-provider';

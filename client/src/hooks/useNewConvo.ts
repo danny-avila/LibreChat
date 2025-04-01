@@ -50,6 +50,7 @@ const useNewConvo = (index = 0) => {
   const assistantsListMap = useAssistantListMap();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const resetBadges = useResetChatBadges();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -198,7 +199,7 @@ const useNewConvo = (index = 0) => {
     } = {}) {
       pauseGlobalAudio();
       if (!saveBadgesState) {
-        useResetChatBadges();
+        resetBadges();
       }
 
       const templateConvoId = _template.conversationId ?? '';
@@ -278,6 +279,7 @@ const useNewConvo = (index = 0) => {
       files,
       setFiles,
       mutateAsync,
+      resetBadges,
     ],
   );
 
