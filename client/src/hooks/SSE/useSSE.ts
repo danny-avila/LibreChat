@@ -124,7 +124,7 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
-        clearDraft(submission.conversationId);
+        clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
@@ -190,7 +190,10 @@ export default function useSSE(
       const latestMessages = getMessages();
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
       return await abortConversation(
-        conversationId ?? userMessage.conversationId ?? submission.conversationId,
+        conversationId ??
+          userMessage.conversationId ??
+          submission.conversation?.conversationId ??
+          '',
         submission as EventSubmission,
         latestMessages,
       );
