@@ -7,36 +7,35 @@ const avatarCache: Record<string, string> = {};
 
 const useAvatar = (user: TUser | undefined) => {
   return useMemo(() => {
-    if (!user?.username) {
+    const { username, name } = user ?? {};
+    const seed = name || username;
+    if (!seed) {
       return '';
     }
 
-    if (user.avatar) {
+    if (user?.avatar && user?.avatar !== '') {
       return user.avatar;
     }
 
-    const { username } = user;
-
-    if (avatarCache[username]) {
-      return avatarCache[username];
+    if (avatarCache[seed]) {
+      return avatarCache[seed];
     }
 
     const avatar = createAvatar(initials, {
-      seed: username,
+      seed,
       fontFamily: ['Verdana'],
       fontSize: 36,
     });
 
     let avatarDataUri = '';
-    avatar
-      .toDataUri()
-      .then((dataUri) => {
-        avatarDataUri = dataUri;
-        avatarCache[username] = dataUri; // Store in cache
-      })
-      .catch((error) => {
-        console.error('Failed to generate avatar:', error);
-      });
+    try {
+      avatarDataUri = avatar.toDataUri();
+      if (avatarDataUri) {
+        avatarCache[seed] = avatarDataUri;
+      }
+    } catch (error) {
+      console.error('Failed to generate avatar:', error);
+    }
 
     return avatarDataUri;
   }, [user]);
