@@ -28,54 +28,43 @@ export const ephemeralAgentByConvoId = atomFamily<TEphemeralAgent | null, string
 export function useApplyNewAgentTemplate() {
   const applyTemplate = useRecoilCallback(
     ({ snapshot, set }) =>
-      async (targetConversationId: string) => {
-        logger.log(
-          'agents',
-          `Attempting to apply template from "${Constants.NEW_CONVO}" to "${targetConversationId}"`,
-        );
+      async (targetId: string, _sourceId: string | null = Constants.NEW_CONVO) => {
+        const sourceId = _sourceId || Constants.NEW_CONVO;
+        logger.log('agents', `Attempting to apply template from "${sourceId}" to "${targetId}"`);
 
-        if (targetConversationId === Constants.NEW_CONVO) {
-          logger.warn(
-            'agents',
-            `Attempted to apply template to itself ("${Constants.NEW_CONVO}"). Skipping.`,
-          );
+        if (targetId === sourceId) {
+          logger.warn('agents', `Attempted to apply template to itself ("${sourceId}"). Skipping.`);
           return;
         }
 
         try {
           // 1. Get the current agent state from the "new" conversation template using snapshot
           // getPromise reads the value without subscribing
-          const agentTemplate = await snapshot.getPromise(
-            ephemeralAgentByConvoId(Constants.NEW_CONVO),
-          );
+          const agentTemplate = await snapshot.getPromise(ephemeralAgentByConvoId(sourceId));
 
           // 2. Check if a template state actually exists
           if (agentTemplate) {
-            logger.log(
-              'agents',
-              `Applying agent template to "${targetConversationId}":`,
-              agentTemplate,
-            );
+            logger.log('agents', `Applying agent template to "${targetId}":`, agentTemplate);
             // 3. Set the state for the target conversation ID using the template value
-            set(ephemeralAgentByConvoId(targetConversationId), agentTemplate);
+            set(ephemeralAgentByConvoId(targetId), agentTemplate);
           } else {
             // 4. Handle the case where the "new" template has no agent state (is null)
             logger.warn(
               'agents',
-              `Agent template from "${Constants.NEW_CONVO}" is null or unset. Setting agent for "${targetConversationId}" to null.`,
+              `Agent template from "${sourceId}" is null or unset. Setting agent for "${targetId}" to null.`,
             );
             // Explicitly set to null (or a default empty state if preferred)
-            set(ephemeralAgentByConvoId(targetConversationId), null);
+            set(ephemeralAgentByConvoId(targetId), null);
             // Example: Or set to a default empty state:
-            // set(ephemeralAgentByConvoId(targetConversationId), { mcp: [] });
+            // set(ephemeralAgentByConvoId(targetId), { mcp: [] });
           }
         } catch (error) {
           logger.error(
             'agents',
-            `Error applying agent template from "${Constants.NEW_CONVO}" to "${targetConversationId}":`,
+            `Error applying agent template from "${sourceId}" to "${targetId}":`,
             error,
           );
-          set(ephemeralAgentByConvoId(targetConversationId), null);
+          set(ephemeralAgentByConvoId(targetId), null);
         }
       },
     [],

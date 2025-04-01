@@ -366,7 +366,7 @@ export default function useEventHandlers({
 
       let update = {} as TConversation;
       if (conversationId) {
-        applyAgentTemplate(conversationId);
+        applyAgentTemplate(conversationId, submission.conversation.conversationId);
       }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
