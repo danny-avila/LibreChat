@@ -237,6 +237,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
     maxRecursionLimit: z.number().optional(),
+    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
@@ -1102,6 +1103,10 @@ export enum ErrorTypes {
    * Google provider returned an error
    */
   GOOGLE_ERROR = 'google_error',
+  /**
+   * Invalid Agent Provider (excluded by Admin)
+   */
+  INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
 }
 
 /**
