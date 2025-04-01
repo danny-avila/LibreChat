@@ -7,6 +7,7 @@ const {
   EModelEndpoint,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
@@ -24,8 +25,8 @@ async function fetchImageToBase64(url) {
     });
     return Buffer.from(response.data).toString('base64');
   } catch (error) {
-    logger.error('Error fetching image to convert to base64', error);
-    throw error;
+    const message = 'Error fetching image to convert to base64';
+    throw new Error(logAxiosError({ message, error }));
   }
 }
 
@@ -37,7 +38,7 @@ const base64Only = new Set([
   EModelEndpoint.bedrock,
 ]);
 
-const blobStorageSources = new Set([FileSources.azure, FileSources.s3]);
+const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
 
 /**
  * Encodes and formats the given files.

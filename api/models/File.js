@@ -134,6 +134,28 @@ const deleteFiles = async (file_ids, user) => {
   return await File.deleteMany(deleteQuery);
 };
 
+/**
+ * Batch updates files with new signed URLs in MongoDB
+ *
+ * @param {MongoFile[]} updates - Array of updates in the format { file_id, filepath }
+ * @returns {Promise<void>}
+ */
+async function batchUpdateFiles(updates) {
+  if (!updates || updates.length === 0) {
+    return;
+  }
+
+  const bulkOperations = updates.map((update) => ({
+    updateOne: {
+      filter: { file_id: update.file_id },
+      update: { $set: { filepath: update.filepath } },
+    },
+  }));
+
+  const result = await File.bulkWrite(bulkOperations);
+  logger.info(`Updated ${result.modifiedCount} files with new S3 URLs`);
+}
+
 module.exports = {
   File,
   findFileById,
@@ -145,4 +167,5 @@ module.exports = {
   deleteFile,
   deleteFiles,
   deleteFileByFilter,
+  batchUpdateFiles,
 };
