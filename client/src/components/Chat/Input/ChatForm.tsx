@@ -1,7 +1,7 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
   useChatContext,
   useChatFormContext,
@@ -194,7 +194,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       className={cn(
         'mx-auto flex flex-row gap-3 transition-all duration-200 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
-        centerFormOnLanding ? 'sm:mb-28' : 'sm:mb-10',
+        centerFormOnLanding &&
+          (!conversation?.conversationId || conversation?.conversationId === Constants.NEW_CONVO)
+          ? 'sm:mb-28'
+          : 'sm:mb-10',
       )}
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
