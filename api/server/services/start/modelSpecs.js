@@ -21,7 +21,7 @@ function processModelSpecs(endpoints, _modelSpecs, interfaceConfig) {
 
   const customEndpoints = endpoints?.[EModelEndpoint.custom] ?? [];
 
-  if (interfaceConfig.modelSelect !== true && _modelSpecs.addedEndpoints.length > 0) {
+  if (interfaceConfig.modelSelect !== true && (_modelSpecs.addedEndpoints?.length ?? 0) > 0) {
     logger.warn(
       `To utilize \`addedEndpoints\`, which allows provider/model selections alongside model specs, set \`modelSelect: true\` in the interface configuration.
 
