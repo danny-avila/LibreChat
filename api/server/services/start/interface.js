@@ -18,12 +18,14 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   const { interface: interfaceConfig } = config ?? {};
   const { interface: defaults } = configDefaults;
   const hasModelSpecs = config?.modelSpecs?.list?.length > 0;
+  const includesEndpoints = config?.modelSpecs?.addedEndpoints?.length > 0;
 
   /** @type {TCustomConfig['interface']} */
   const loadedInterface = removeNullishValues({
     endpointsMenu:
       interfaceConfig?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
-    modelSelect: interfaceConfig?.modelSelect ?? (hasModelSpecs ? false : defaults.modelSelect),
+    modelSelect:
+      interfaceConfig?.modelSelect ?? (hasModelSpecs ? includesEndpoints : defaults.modelSelect),
     parameters: interfaceConfig?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
     presets: interfaceConfig?.presets ?? (hasModelSpecs ? false : defaults.presets),
     sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,

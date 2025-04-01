@@ -37,6 +37,10 @@ export const useEndpoints = ({
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
   const { instanceProjectId } = startupConfig ?? {};
   const interfaceConfig = startupConfig?.interface ?? {};
+  const includedEndpoints = useMemo(
+    () => new Set(startupConfig?.modelSpecs?.addedEndpoints ?? []),
+    [startupConfig?.modelSpecs?.addedEndpoints],
+  );
 
   const { endpoint } = conversation ?? {};
 
@@ -73,11 +77,14 @@ export const useEndpoints = ({
       if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
         continue;
       }
+      if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
+        continue;
+      }
       result.push(endpoints[i]);
     }
 
     return result;
-  }, [endpoints, hasAgentAccess]);
+  }, [endpoints, hasAgentAccess, includedEndpoints]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {

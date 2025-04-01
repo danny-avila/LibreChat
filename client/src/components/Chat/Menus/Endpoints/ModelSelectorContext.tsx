@@ -56,8 +56,8 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agentsMap,
     assistantsMap,
-    endpointsConfig,
     startupConfig,
+    endpointsConfig,
   });
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
