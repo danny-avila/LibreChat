@@ -142,6 +142,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     if (isAgentsEndpoint(endpoint.value)) {
       onSelectEndpoint?.(endpoint.value, {
         agent_id: model,
+        model: agentsMap?.[model]?.model ?? '',
       });
     } else if (isAssistantsEndpoint(endpoint.value)) {
       onSelectEndpoint?.(endpoint.value, {
@@ -153,7 +154,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     }
     setSelectedValues({
       endpoint: endpoint.value,
-      model: model,
+      model,
       modelSpec: '',
     });
   };
