@@ -8,7 +8,9 @@ import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import { useMediaQuery, useHasAccess } from '~/hooks';
 import BookmarkMenu from './Menus/BookmarkMenu';
+import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
+
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
@@ -42,13 +44,21 @@ export default function Header() {
           {hasAccessToBookmarks === true && <BookmarkMenu />}
           {hasAccessToMultiConvo === true && <AddMultiConvo />}
           {isSmallScreen && (
-            <ExportAndShareMenu
-              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-            />
+            <>
+              <ExportAndShareMenu
+                isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+              />
+              <TemporaryChat />
+            </>
           )}
         </div>
         {!isSmallScreen && (
-          <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
+          <div className="flex items-center gap-2">
+            <ExportAndShareMenu
+              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+            />
+            <TemporaryChat />
+          </div>
         )}
       </div>
       {/* Empty div for spacing */}
