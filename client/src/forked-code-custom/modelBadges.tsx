@@ -262,15 +262,19 @@ export const ModelBadges = memo(({
     return null;
   }
   
+  // Check if both input and output prices are 0 (free model)
+  const isZeroPriced = inputPrice === 0 && outputPrice === 0;
+  const shouldShowFree = isFree || isZeroPriced;
+  
   return (
     <div className="flex flex-wrap items-center gap-2 mt-1">
-      {isFree && (
+      {shouldShowFree && (
         <FreeBadge />
       )}
-      {showPricing && !isFree && inputPrice !== null && (
+      {showPricing && !shouldShowFree && inputPrice !== null && (
         <PriceBadge type="input" price={inputPrice} />
       )}
-      {showPricing && !isFree && outputPrice !== null && (
+      {showPricing && !shouldShowFree && outputPrice !== null && (
         <PriceBadge type="output" price={outputPrice} />
       )}
       {maxTokens !== null && maxTokens !== undefined && (
@@ -364,10 +368,14 @@ export const useModelBadges = (spec: TModelSpec) => {
             // Get max tokens
             const maxTokens = modelData.max_input_tokens ?? null;
             
+            // Check if both input and output costs are 0 (free model)
+            const isFreeModel = inputCost === 0 && outputCost === 0;
+            
             setBadges({
               inputPrice: inputCost,
               outputPrice: outputCost,
               showPricing: true,
+              isFree: isFreeModel,
               maxTokens,
               disabled: false
             });
