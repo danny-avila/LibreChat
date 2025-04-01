@@ -11,7 +11,7 @@ import store from '~/store';
 export function TemporaryChat() {
   const localize = useLocalize();
   const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
-  const { conversation } = useChatContext();
+  const { conversation, isSubmitting } = useChatContext();
 
   const temporaryBadge = {
     id: 'temporary',
@@ -28,7 +28,10 @@ export function TemporaryChat() {
     [isTemporary],
   );
 
-  if (Array.isArray(conversation?.messages) && conversation.messages.length >= 1) {
+  if (
+    (Array.isArray(conversation?.messages) && conversation.messages.length >= 1) ||
+    isSubmitting
+  ) {
     return null;
   }
 
