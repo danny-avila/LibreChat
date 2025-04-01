@@ -192,11 +192,12 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
-        'mx-auto flex flex-row gap-3 transition-all duration-200 sm:px-2',
+        'mx-auto flex flex-row gap-3 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         centerFormOnLanding &&
-          (!conversation?.conversationId || conversation?.conversationId === Constants.NEW_CONVO)
-          ? 'sm:mb-28'
+          (!conversation?.conversationId || conversation?.conversationId === Constants.NEW_CONVO) &&
+          !isSubmitting
+          ? 'transition-all duration-200 sm:mb-28'
           : 'sm:mb-10',
       )}
     >
