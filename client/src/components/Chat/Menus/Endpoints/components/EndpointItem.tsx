@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
-import { Spinner } from '~/components';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
+import { TooltipAnchor, Spinner } from '~/components';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -84,6 +84,18 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       >
         {endpoint.label}
       </span>
+      {/* TODO: remove this after deprecation */}
+      {endpoint.value === 'gptPlugins' && (
+        <TooltipAnchor
+          description={localize('com_endpoint_deprecated_info')}
+          aria-label={localize('com_endpoint_deprecated_info_a11y')}
+          render={
+            <span className="ml-2 rounded bg-amber-600/70 px-2 py-0.5 text-xs font-semibold text-white">
+              {localize('com_endpoint_deprecated')}
+            </span>
+          }
+        />
+      )}
     </div>
   );
 

@@ -1,3 +1,4 @@
+import { useRecoilCallback } from 'recoil';
 import { useRecoilValue } from 'recoil';
 import { MessageCircleDashed, Box } from 'lucide-react';
 import type { BadgeItem } from '~/common';
@@ -32,4 +33,15 @@ export default function useChatBadges(): BadgeItem[] {
     atom: cfg.atom,
     isAvailable: activeBadgeIds.has(cfg.id),
   }));
+}
+
+export function useResetChatBadges() {
+  return useRecoilCallback(
+    ({ reset }) =>
+      () => {
+        badgeConfig.forEach(({ atom }) => reset(atom));
+        reset(store.chatBadges);
+      },
+    [],
+  );
 }
