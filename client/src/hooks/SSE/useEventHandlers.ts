@@ -528,7 +528,8 @@ export default function useEventHandlers({
 
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
-      const conversationId = userMessage.conversationId ?? submission.conversationId ?? '';
+      const conversationId =
+        userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
