@@ -1,5 +1,6 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
+  Constants,
   ErrorTypes,
   EModelEndpoint,
   getResponseSender,
@@ -322,10 +323,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    endpoint: EModelEndpoint.agents,
     attachments: primaryConfig.attachments,
     maxContextTokens: primaryConfig.maxContextTokens,
     resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
+    endpoint:
+      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
+        ? primaryConfig.endpoint
+        : EModelEndpoint.agents,
   });
 
   return { client };

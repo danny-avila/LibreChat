@@ -1,3 +1,4 @@
+const { isAgentsEndpoint, Constants } = require('librechat-data-provider');
 const { loadAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
@@ -6,7 +7,8 @@ const buildOptions = (req, endpoint, parsedBody) => {
     parsedBody;
   const agentPromise = loadAgent({
     req,
-    agent_id,
+    agent_id: isAgentsEndpoint(endpoint) ? agent_id : Constants.EPHEMERAL_AGENT_ID,
+    endpoint,
   }).catch((error) => {
     logger.error(`[/agents/:${agent_id}] Error retrieving agent during build options step`, error);
     return undefined;

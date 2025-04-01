@@ -29,7 +29,7 @@ const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permission
  * @returns {void}
  */
 router.post(
-  '/',
+  '/:endpoint',
   // validateModel,
   checkAgentAccess,
   validateConvoAccess,

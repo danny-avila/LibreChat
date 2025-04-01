@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { SystemRoles } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
+  require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
@@ -39,9 +40,49 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @param {Object} params
  * @param {ServerRequest} params.req
  * @param {string} params.agent_id
+ * @param {string} params.endpoint
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadAgent = async ({ req, agent_id }) => {
+const loadEphemeralAgent = async ({ req, agent_id, endpoint }) => {
+  /** @type {Record<string, FunctionTool>} */
+  const availableTools = req.app.locals.availableTools;
+  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  /** @type {string[]} */
+  const tools = [];
+
+  for (const toolName of Object.keys(availableTools)) {
+    if (!toolName.includes(mcp_delimiter)) {
+      continue;
+    }
+    const mcpServer = toolName.split(mcp_delimiter)?.[1];
+    if (mcpServer && mcpServers.has(mcpServer)) {
+      tools.push(toolName);
+    }
+  }
+  return {
+    id: agent_id,
+    model: req.body.model,
+    provider: endpoint,
+    tools,
+  };
+};
+
+/**
+ * Load an agent based on the provided ID
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.endpoint
+ * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
+ */
+const loadAgent = async ({ req, agent_id, endpoint }) => {
+  if (!agent_id) {
+    return null;
+  }
+  if (agent_id === EPHEMERAL_AGENT_ID) {
+    return loadEphemeralAgent({ req, agent_id, endpoint });
+  }
   const agent = await getAgent({
     id: agent_id,
   });

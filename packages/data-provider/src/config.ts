@@ -1246,6 +1246,8 @@ export enum Constants {
   GLOBAL_PROJECT_NAME = 'instance',
   /** Delimiter for MCP tools */
   mcp_delimiter = '_mcp_',
+  /** Placeholder Agent ID for Ephemeral Agents */
+  EPHEMERAL_AGENT_ID = 'ephemeral',
 }
 
 export enum LocalStorageKeys {
