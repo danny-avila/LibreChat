@@ -11,13 +11,14 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
-import { MCPSelect } from './MCPSelect';
 import { Badge } from '~/components/ui';
+import MCPSelect from './MCPSelect';
 import store from '~/store';
 
 interface BadgeRowProps {
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
+  conversationId?: string | null;
   isInChat: boolean;
 }
 
@@ -127,7 +128,7 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
   }
 };
 
-export function BadgeRow({ onChange, onToggle, isInChat }: BadgeRowProps) {
+export function BadgeRow({ conversationId, onChange, onToggle, isInChat }: BadgeRowProps) {
   const [orderedBadges, setOrderedBadges] = useState<BadgeItem[]>([]);
   const [dragState, dispatch] = useReducer(dragReducer, {
     draggedBadge: null,
@@ -341,7 +342,7 @@ export function BadgeRow({ onChange, onToggle, isInChat }: BadgeRowProps) {
           />
         </div>
       )}
-      <MCPSelect />
+      <MCPSelect conversationId={conversationId} />
       {ghostBadge && (
         <div
           className="ghost-badge h-full"

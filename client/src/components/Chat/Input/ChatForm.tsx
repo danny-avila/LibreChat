@@ -289,6 +289,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 <AttachFileChat disableInputs={disableInputs} />
               </div>
               <BadgeRow
+                conversationId={conversation?.conversationId ?? Constants.NEW_CONVO}
                 onChange={(newBadges) => setBadges(newBadges)}
                 isInChat={
                   Array.isArray(conversation?.messages) && conversation.messages.length >= 1

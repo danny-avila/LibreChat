@@ -1,17 +1,13 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { useRecoilState } from 'recoil';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useChatContext } from '~/Providers';
 
-export function MCPSelect() {
-  const { conversation } = useChatContext();
-  const { conversationId = Constants.NEW_CONVO } = conversation ?? {};
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
-    ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
-  );
+function MCPSelect({ conversationId }: { conversationId?: string | null }) {
+  const key = conversationId ?? Constants.NEW_CONVO;
+  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const { data: mcpServers } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data) => {
       const serverNames = new Set<string>();
@@ -50,3 +46,5 @@ export function MCPSelect() {
     />
   );
 }
+
+export default memo(MCPSelect);
