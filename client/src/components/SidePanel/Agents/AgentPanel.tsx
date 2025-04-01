@@ -56,18 +56,24 @@ export default function AgentPanel({
   const { control, handleSubmit, reset } = methods;
   const agent_id = useWatch({ control, name: 'id' });
 
+  const allowedProviders = useMemo(
+    () => new Set(agentsConfig?.allowedProviders),
+    [agentsConfig?.allowedProviders],
+  );
+
   const providers = useMemo(
     () =>
       Object.keys(endpointsConfig ?? {})
         .filter(
           (key) =>
             !isAssistantsEndpoint(key) &&
+            (allowedProviders.size > 0 ? allowedProviders.has(key) : true) &&
             key !== EModelEndpoint.agents &&
             key !== EModelEndpoint.chatGPTBrowser &&
             key !== EModelEndpoint.gptPlugins,
         )
         .map((provider) => createProviderOption(provider)),
-    [endpointsConfig],
+    [endpointsConfig, allowedProviders],
   );
 
   /* Mutations */

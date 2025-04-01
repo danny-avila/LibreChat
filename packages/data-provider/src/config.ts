@@ -237,6 +237,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
     maxRecursionLimit: z.number().optional(),
+    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
@@ -1102,6 +1103,10 @@ export enum ErrorTypes {
    * Google provider returned an error
    */
   GOOGLE_ERROR = 'google_error',
+  /**
+   * Invalid Agent Provider (excluded by Admin)
+   */
+  INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
 }
 
 /**
@@ -1214,7 +1219,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.7',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.3',
+  CONFIG_VERSION = '1.2.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

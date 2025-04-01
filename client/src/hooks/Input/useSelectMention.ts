@@ -172,13 +172,19 @@ export default function useSelectMention({
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+        newConversation({
+          template: currentConvo,
+          preset: currentConvo,
+          keepLatestMessage: true,
+          keepAddedConvos: true,
+        });
         return;
       }
 
       newConversation({
         template: { ...(template as Partial<TConversation>) },
         preset: { ...kwargs, spec: null, iconURL: null, modelLabel: null, endpoint: newEndpoint },
+        keepAddedConvos: isNewModular,
       });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
@@ -233,7 +239,7 @@ export default function useSelectMention({
         return;
       }
 
-      newConversation({ preset: newPreset, keepAddedConvos: true });
+      newConversation({ preset: newPreset, keepAddedConvos: isModular });
     },
     [
       modularChat,
