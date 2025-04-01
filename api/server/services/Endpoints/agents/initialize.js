@@ -1,5 +1,6 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
+  ErrorTypes,
   EModelEndpoint,
   getResponseSender,
   AgentCapabilities,
@@ -117,6 +118,7 @@ function optionalChainWithEmptyCheck(...values) {
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
+ * @param {Set<string>} [params.allowedProviders]
  * @param {object} [params.endpointOption]
  * @param {boolean} [params.isInitialAgent]
  * @returns {Promise<Agent>}
@@ -126,8 +128,14 @@ const initializeAgentOptions = async ({
   res,
   agent,
   endpointOption,
+  allowedProviders,
   isInitialAgent = false,
 }) => {
+  if (allowedProviders.size > 0 && !allowedProviders.has(agent.provider)) {
+    throw new Error(
+      `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
+    );
+  }
   let currentFiles;
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
@@ -263,6 +271,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
+  /** @type {Set<string>} */
+  const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
   // Handle primary agent
   const primaryConfig = await initializeAgentOptions({
@@ -270,6 +280,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     res,
     agent: primaryAgent,
     endpointOption,
+    allowedProviders,
     isInitialAgent: true,
   });
 
@@ -285,6 +296,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         res,
         agent,
         endpointOption,
+        allowedProviders,
       });
       agentConfigs.set(agentId, config);
     }
