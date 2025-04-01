@@ -71,14 +71,16 @@ function ChatView({ index = 0 }: { index?: number }) {
               {!isLoading && <Header />}
 
               {isLandingPage ? (
-                <div className="flex flex-1 flex-col items-center justify-end sm:justify-center">
-                  {content}
-                  <div className="w-full max-w-3xl transition-all duration-200 xl:max-w-4xl">
-                    <ChatForm index={index} />
-                    <ConversationStarters />
-                    <Footer />
+                <>
+                  <div className="flex flex-1 flex-col items-center justify-end sm:justify-center">
+                    {content}
+                    <div className="w-full max-w-3xl transition-all duration-200 xl:max-w-4xl">
+                      <ChatForm index={index} />
+                      <ConversationStarters />
+                    </div>
                   </div>
-                </div>
+                  <Footer />
+                </>
               ) : (
                 <div className="flex h-full flex-col overflow-y-auto">
                   {content}
