@@ -371,7 +371,10 @@ export const parseCompactConvo = ({
   return convo;
 };
 
-export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
+export function parseTextParts(
+  contentParts: a.TMessageContentParts[],
+  skipReasoning: boolean = false,
+): string {
   let result = '';
 
   for (const part of contentParts) {
@@ -390,7 +393,7 @@ export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
         result += ' ';
       }
       result += textValue;
-    } else if (part.type === ContentTypes.THINK) {
+    } else if (part.type === ContentTypes.THINK && !skipReasoning) {
       const textValue = typeof part.think === 'string' ? part.think : '';
       if (
         result.length > 0 &&
