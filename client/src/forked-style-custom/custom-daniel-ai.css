@@ -39,9 +39,10 @@
   }
 } */
 
-/* Override max-width for the menu on desktop screens */
+/* Override max-width for the SPECIFIC menu dialog on desktop screens */
 @media screen and (min-width: 640px) {
-  div[role='dialog'] {
+  /* Only target divs with role='dialog' AND the data-dialog attribute */
+  div[role='dialog'][data-dialog] {
     max-width: 450px !important;
   }
 }
