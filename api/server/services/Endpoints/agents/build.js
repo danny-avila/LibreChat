@@ -9,6 +9,7 @@ const buildOptions = (req, endpoint, parsedBody) => {
     req,
     agent_id: isAgentsEndpoint(endpoint) ? agent_id : Constants.EPHEMERAL_AGENT_ID,
     endpoint,
+    model_parameters,
   }).catch((error) => {
     logger.error(`[/agents/:${agent_id}] Error retrieving agent during build options step`, error);
     return undefined;

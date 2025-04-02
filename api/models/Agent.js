@@ -41,9 +41,11 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @param {ServerRequest} params.req
  * @param {string} params.agent_id
  * @param {string} params.endpoint
- * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
+ * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
+ * @returns {Agent|null} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = async ({ req, agent_id, endpoint }) => {
+const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) => {
+  const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
   const availableTools = req.app.locals.availableTools;
   const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
@@ -59,10 +61,13 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint }) => {
       tools.push(toolName);
     }
   }
+  const instructions = req.body.promptPrefix;
   return {
     id: agent_id,
-    model: req.body.model,
+    instructions,
     provider: endpoint,
+    model_parameters,
+    model,
     tools,
   };
 };
@@ -74,14 +79,15 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint }) => {
  * @param {ServerRequest} params.req
  * @param {string} params.agent_id
  * @param {string} params.endpoint
+ * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadAgent = async ({ req, agent_id, endpoint }) => {
+const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   if (!agent_id) {
     return null;
   }
   if (agent_id === EPHEMERAL_AGENT_ID) {
-    return loadEphemeralAgent({ req, agent_id, endpoint });
+    return loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
   }
   const agent = await getAgent({
     id: agent_id,
