@@ -453,13 +453,33 @@ export class MCPManager {
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      return formatToolContent(result, provider);
+      // Checking if the response has correct length
+      const formatted = formatToolContent(result, provider);
+      if (!Array.isArray(formatted)) {
+        this.logger.warn(`${logPrefix}[${toolName}] Tool response not an array (type: ${typeof formatted}). Wrapping as [content, undefined].`);
+        return [formatted, undefined]; // Use undefined instead of null to match type
+      } else if (formatted.length !== 2) {
+        this.logger.warn(`${logPrefix}[${toolName}] Tool response array has ${formatted.length} elements instead of 2. Fixing format.`);
+        if (formatted.length === 0) {
+          return [`${toolName} returned no results`, undefined];
+        } else if (formatted.length === 1) {
+          return [formatted[0], undefined]; // Add undefined as second element
+        } else {
+          return [formatted[0], formatted[1]]; // Just keep first two elements
+        }
+      }
+      return formatted;
+      
     } catch (error) {
-      // Log with context and re-throw or handle as needed
       this.logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
-      // Rethrowing allows the caller (createMCPTool) to handle the final user message
-      throw error;
+      this.logger.warn(`${logPrefix}[${toolName}] Returning formatted error response as [string, undefined]`);
+      // Handle unknown error type properly
+      const errorMessage = error && typeof error === 'object' && 'message' in error 
+        ? error.message 
+        : 'unknown error';
+      return [`Error executing ${toolName}: ${errorMessage}`, undefined];
     }
+
   }
 
   /** Disconnects a specific app-level server */
