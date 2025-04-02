@@ -47,16 +47,20 @@
 }
 
 /*
- * Target SVG images with class 'object-cover' that are DIRECT children (>)
- * of any div that has the class 'rounded-full'.
- * This aims to be resilient to changes in sizing/layout utility classes.
+ * Target SVG images with class 'object-cover' when:
+ * 1. They are DIRECT children (>) of any div with 'rounded-full'.
+ * OR
+ * 2. They are descendants (space) of any div with 'rounded-full'.
+ *    (This covers cases where rounded-full is on the grandparent).
+ * We use the descendant selector (space) as the primary rule
+ * as it covers both cases, assuming no unwanted nested scenarios.
  */
-div.rounded-full > img.object-cover[src$='.svg'] {
+div.rounded-full img.object-cover[src$='.svg'] {
   @apply brightness-0; /* Light mode: force to black */
 }
 
 /* Apply dark mode inversion using Tailwind's dark variant */
-.dark div.rounded-full > img.object-cover[src$='.svg'] {
+.dark div.rounded-full img.object-cover[src$='.svg'] {
   @apply brightness-0 invert; /* Dark mode: force to black, then invert to white */
 }
 
