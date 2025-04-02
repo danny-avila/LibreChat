@@ -771,6 +771,11 @@
  * @typedef {import('@librechat/data-schemas').IMongoFile} MongoFile
  * @memberof typedefs
  */
+/**
+ * @exports IBalance
+ * @typedef {import('@librechat/data-schemas').IBalance} IBalance
+ * @memberof typedefs
+ */
 
 /**
  * @exports MongoUser
