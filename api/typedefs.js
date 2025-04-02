@@ -829,6 +829,12 @@
  */
 
 /**
+ * @exports TEndpointOption
+ * @typedef {import('librechat-data-provider').TEndpointOption} TEndpointOption
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAttachment
  * @typedef {import('librechat-data-provider').TAttachment} TAttachment
  * @memberof typedefs

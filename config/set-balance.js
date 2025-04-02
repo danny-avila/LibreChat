@@ -98,7 +98,7 @@ const Balance = require('~/models/Balance');
   }
 
   // Check the result
-  if (!result?.tokenCredits) {
+  if (result?.tokenCredits == null) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);

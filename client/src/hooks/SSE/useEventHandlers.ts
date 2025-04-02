@@ -598,7 +598,7 @@ export default function useEventHandlers({
       });
 
       setMessages([...messages, userMessage, errorResponse]);
-      if (receivedConvoId && paramId === 'new' && newConversation) {
+      if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
         newConversation({
           template: { conversationId: receivedConvoId },
           preset: tPresetSchema.parse(submission.conversation),

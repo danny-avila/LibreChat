@@ -286,10 +286,12 @@ export default [
     rules: {
       // i18n
       'i18next/no-literal-string': [
-        'error', {
+        'error',
+        {
           mode: 'jsx-text-only',
           'should-validate-template': true,
-        }],
+        },
+      ],
       //
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -299,8 +301,8 @@ export default [
       '@typescript-eslint/ban-ts-comment': 'off',
       // React
       'react/no-unknown-property': 'warn',
-      'react-hooks/rules-of-hooks': 'off',
-      'react-hooks/exhaustive-deps': 'off',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       // General
       'no-constant-binary-expression': 'off',
       'import/no-cycle': 'off',
