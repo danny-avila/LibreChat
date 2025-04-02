@@ -13,7 +13,7 @@ const secretDefaults = {
   JWT_REFRESH_SECRET: 'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418',
 };
 
-export const deprecatedVariables = [
+const deprecatedVariables = [
   {
     key: 'CHECK_BALANCE',
     description:
