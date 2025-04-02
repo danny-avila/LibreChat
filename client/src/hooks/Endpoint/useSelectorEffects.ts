@@ -61,7 +61,7 @@ export default function useSelectorEffects({
       }
       const assistant = assistantsMap?.[endpoint ?? '']?.[assistant_id];
       if (assistant !== undefined) {
-        setOption('model')('');
+        setOption('model')(assistant.model);
         setOption('assistant_id')(assistant_id);
       }
     }
