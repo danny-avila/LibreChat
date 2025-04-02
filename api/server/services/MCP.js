@@ -73,10 +73,9 @@ async function createMCPTool({ req, toolKey, provider }) {
         `[MCP][User: ${userId}][${serverName}] Error calling "${toolName}" MCP tool:`,
         error,
       );
-      return [
+      throw new Error(
         `"${toolKey}" tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
-        undefined,
-      ];
+      );
     }
   };
 
