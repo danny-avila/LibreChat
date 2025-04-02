@@ -304,6 +304,36 @@ function needsRefresh(signedUrl, bufferSeconds) {
 }
 
 /**
+ * Generates a new URL for an expired S3 URL
+ * @param {string} currentURL - The current file URL
+ * @returns {Promise<string | undefined>}
+ */
+async function getNewS3URL(currentURL) {
+  try {
+    const s3Key = extractKeyFromS3Url(currentURL);
+    if (!s3Key) {
+      return;
+    }
+    const keyParts = s3Key.split('/');
+    if (keyParts.length < 3) {
+      return;
+    }
+
+    const basePath = keyParts[0];
+    const userId = keyParts[1];
+    const fileName = keyParts.slice(2).join('/');
+
+    return await getS3URL({
+      userId,
+      fileName,
+      basePath,
+    });
+  } catch (error) {
+    logger.error('Error getting new S3 URL:', error);
+  }
+}
+
+/**
  * Refreshes S3 URLs for an array of files if they're expired or close to expiring
  *
  * @param {IMongoFile[]} files - Array of file documents
@@ -333,30 +363,15 @@ async function refreshS3FileUrls(files, batchUpdateFiles, bufferSeconds = 3600) 
       continue;
     }
     try {
-      const s3Key = extractKeyFromS3Url(file.filepath);
-      if (!s3Key) {
+      const newURL = await getNewS3URL(file.filepath);
+      if (!newURL) {
         continue;
       }
-      const keyParts = s3Key.split('/');
-      if (keyParts.length < 3) {
-        continue;
-      }
-
-      const basePath = keyParts[0];
-      const userId = keyParts[1];
-      const fileName = keyParts.slice(2).join('/');
-
-      const newUrl = await getS3URL({
-        userId,
-        fileName,
-        basePath,
-      });
-
       filesToUpdate.push({
         file_id: file.file_id,
-        filepath: newUrl,
+        filepath: newURL,
       });
-      files[i].filepath = newUrl;
+      files[i].filepath = newURL;
     } catch (error) {
       logger.error(`Error refreshing S3 URL for file ${file.file_id}:`, error);
     }
@@ -425,4 +440,6 @@ module.exports = {
   getS3FileStream,
   refreshS3FileUrls,
   refreshS3Url,
+  needsRefresh,
+  getNewS3URL,
 };
