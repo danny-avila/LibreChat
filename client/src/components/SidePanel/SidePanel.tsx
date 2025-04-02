@@ -91,6 +91,7 @@ const SidePanel = ({
     keyProvided,
     endpointType,
     interfaceConfig,
+    endpointsConfig,
   });
 
   const toggleNavVisible = useCallback(() => {

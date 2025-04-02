@@ -2,12 +2,13 @@ import { X, Link2, PlusCircle } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { ControllerRenderProps } from 'react-hook-form';
+import type { TMessage } from 'librechat-data-provider';
 import type { AgentForm, OptionWithIcon } from '~/common';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { HoverCard, HoverCardPortal, HoverCardContent, HoverCardTrigger } from '~/components/ui';
+import MessageIcon from '~/components/Share/MessageIcon';
 import { CircleHelpIcon } from '~/components/svg';
 import { useAgentsMapContext } from '~/Providers';
-import Icon from '~/components/Endpoints/Icon';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -37,11 +38,14 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
               label: agent?.name || '',
               value: agent?.id,
               icon: (
-                <Icon
-                  endpoint={EModelEndpoint.agents}
-                  agentName={agent?.name ?? ''}
-                  iconURL={agent?.avatar?.filepath}
-                  isCreatedByUser={false}
+                <MessageIcon
+                  message={
+                    {
+                      endpoint: EModelEndpoint.agents,
+                      isCreatedByUser: false,
+                    } as TMessage
+                  }
+                  agent={agent}
                 />
               ),
             }) as OptionWithIcon,
@@ -88,11 +92,14 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
         <div className="flex h-10 items-center justify-between rounded-md border border-border-medium bg-surface-primary-contrast px-3 py-2">
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-              <Icon
-                endpoint={EModelEndpoint.agents}
-                agentName={getAgentDetails(currentAgentId)?.name ?? ''}
-                iconURL={getAgentDetails(currentAgentId)?.avatar?.filepath}
-                isCreatedByUser={false}
+              <MessageIcon
+                message={
+                  {
+                    endpoint: EModelEndpoint.agents,
+                    isCreatedByUser: false,
+                  } as TMessage
+                }
+                agent={currentAgentId ? agentsMap[currentAgentId] : undefined}
               />
             </div>
             <div className="font-medium text-text-primary">
@@ -114,11 +121,14 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
                 items={selectableAgents}
                 displayValue={getAgentDetails(agentId)?.name ?? ''}
                 SelectIcon={
-                  <Icon
-                    endpoint={EModelEndpoint.agents}
-                    isCreatedByUser={false}
-                    agentName={getAgentDetails(agentId)?.name ?? ''}
-                    iconURL={getAgentDetails(agentId)?.avatar?.filepath}
+                  <MessageIcon
+                    message={
+                      {
+                        endpoint: EModelEndpoint.agents,
+                        isCreatedByUser: false,
+                      } as TMessage
+                    }
+                    agent={agentId ? agentsMap[agentId] : undefined}
                   />
                 }
                 className="flex-1 border-border-heavy"
