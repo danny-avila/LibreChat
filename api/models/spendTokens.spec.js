@@ -459,7 +459,7 @@ describe('spendTokens', () => {
 
   it('should handle multiple concurrent transactions correctly with a high balance', async () => {
     // Create a balance with a high amount
-    const initialBalance = 1000000;
+    const initialBalance = 10000000;
     await Balance.create({
       user: userId,
       tokenCredits: initialBalance,
@@ -470,8 +470,9 @@ describe('spendTokens', () => {
     const context = 'message';
     const model = 'gpt-4';
 
-    // Create 10 usage records to simulate multiple transactions
-    const collectedUsage = Array.from({ length: 10 }, (_, i) => ({
+    const amount = 50;
+    // Create `amount` of usage records to simulate multiple transactions
+    const collectedUsage = Array.from({ length: amount }, (_, i) => ({
       model,
       input_tokens: 100 + i * 10, // Increasing input tokens
       output_tokens: 50 + i * 5, // Increasing output tokens
