@@ -311,13 +311,14 @@ export const useModelBadges = (spec: TModelSpec) => {
     inputPrice: number | null; 
     outputPrice: number | null;
     showPricing: boolean;
-    isFree?: boolean;
-    maxTokens?: number | null;
-    disabled?: boolean;
+    isFree: boolean;
+    maxTokens: number | null;
+    disabled: boolean;
   }>({
     inputPrice: null,
     outputPrice: null,
-    showPricing: false,
+    showPricing: true,
+    isFree: false,
     maxTokens: null,
     disabled: false
   });
@@ -328,24 +329,36 @@ export const useModelBadges = (spec: TModelSpec) => {
     let isMounted = true;
     
     const getBadges = async () => {
-      // Check for badges configuration
+      // Initialize with default values
+      let badgeData = {
+        inputPrice: null as number | null,
+        outputPrice: null as number | null,
+        showPricing: true,
+        isFree: false,
+        maxTokens: null as number | null,
+        disabled: false
+      };
+      
+      // Check for badges configuration and apply available properties
       if (spec.badges) {
         const { inputPrice, outputPrice, showPricing = true, isFree = false, maxContextToken, disabled = false } = spec.badges;
-        if (isMounted) {
-          setBadges({
-            inputPrice: inputPrice ?? null,
-            outputPrice: outputPrice ?? null,
-            showPricing,
-            isFree,
-            maxTokens: maxContextToken ?? null,
-            disabled
-          });
-          return;
-        }
+        badgeData = {
+          ...badgeData,
+          inputPrice: inputPrice ?? badgeData.inputPrice,
+          outputPrice: outputPrice ?? badgeData.outputPrice,
+          showPricing,
+          isFree,
+          maxTokens: maxContextToken ?? badgeData.maxTokens,
+          disabled
+        };
       }
       
-      // If no manual configuration, try to get from LiteLLM
-      if (modelName) {
+      // If we have missing data and model name is provided, try to get from LiteLLM
+      const needsMoreData = !badgeData.disabled && 
+        modelName && 
+        (badgeData.maxTokens === null || badgeData.inputPrice === null || badgeData.outputPrice === null);
+        
+      if (needsMoreData) {
         try {
           // Use already fetched data if available, otherwise initialize
           const data = globalPricingData || await initPricingData();
@@ -356,33 +369,33 @@ export const useModelBadges = (spec: TModelSpec) => {
           if (modelMatch && isMounted) {
             const modelData = modelMatch.data;
             
-            // Calculate prices once
-            const inputCost = modelData.input_cost_per_token 
-              ? modelData.input_cost_per_token * 1000000 
-              : null;
+            // Only override values that weren't explicitly set in the badges config
+            if (badgeData.inputPrice === null && modelData.input_cost_per_token !== undefined) {
+              badgeData.inputPrice = modelData.input_cost_per_token * 1000000;
+            }
               
-            const outputCost = modelData.output_cost_per_token 
-              ? modelData.output_cost_per_token * 1000000 
-              : null;
+            if (badgeData.outputPrice === null && modelData.output_cost_per_token !== undefined) {
+              badgeData.outputPrice = modelData.output_cost_per_token * 1000000;
+            }
             
-            // Get max tokens
-            const maxTokens = modelData.max_input_tokens ?? null;
+            // Get max tokens if not already specified
+            if (badgeData.maxTokens === null && modelData.max_input_tokens !== undefined) {
+              badgeData.maxTokens = modelData.max_input_tokens;
+            }
             
             // Check if both input and output costs are 0 (free model)
-            const isFreeModel = inputCost === 0 && outputCost === 0;
-            
-            setBadges({
-              inputPrice: inputCost,
-              outputPrice: outputCost,
-              showPricing: true,
-              isFree: isFreeModel,
-              maxTokens,
-              disabled: false
-            });
+            // Only update isFree if it wasn't explicitly set
+            if (!spec.badges?.isFree && badgeData.inputPrice === 0 && badgeData.outputPrice === 0) {
+              badgeData.isFree = true;
+            }
           }
         } catch (error) {
           console.error('Error fetching model badges:', error);
         }
+      }
+      
+      if (isMounted) {
+        setBadges(badgeData);
       }
     };
     
