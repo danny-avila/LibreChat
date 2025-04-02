@@ -67,7 +67,27 @@ export const findBestModelMatch = (
     return result;
   }
   
-  // Step 2: Try case-insensitive exact match
+  // Step 2: Try with or without the "gemini/" prefix
+  const hasGeminiPrefix = modelName.startsWith('gemini/');
+  const withoutGeminiPrefix = hasGeminiPrefix ? modelName.substring(7) : modelName;
+  const withGeminiPrefix = hasGeminiPrefix ? modelName : `gemini/${modelName}`;
+  
+  // Check the variant without or with the prefix
+  if (hasGeminiPrefix && pricingData[withoutGeminiPrefix]) {
+    console.log(`Model matched without gemini/ prefix: '${modelName}' → '${withoutGeminiPrefix}'`);
+    const result = { model: withoutGeminiPrefix, data: pricingData[withoutGeminiPrefix] };
+    modelMatchCache[modelName] = result;
+    return result;
+  }
+  
+  if (!hasGeminiPrefix && pricingData[withGeminiPrefix]) {
+    console.log(`Model matched with gemini/ prefix: '${modelName}' → '${withGeminiPrefix}'`);
+    const result = { model: withGeminiPrefix, data: pricingData[withGeminiPrefix] };
+    modelMatchCache[modelName] = result;
+    return result;
+  }
+  
+  // Step 3: Try case-insensitive exact match
   const lowercaseModelName = modelName.toLowerCase();
   for (const key in pricingData) {
     if (key.toLowerCase() === lowercaseModelName) {
@@ -78,7 +98,21 @@ export const findBestModelMatch = (
     }
   }
   
-  // Step 3: Try matching after removing custom suffixes (-reasoning, -high, -low)
+  // Step 4: Try case-insensitive match with or without gemini/ prefix
+  const lowercaseWithoutPrefix = withoutGeminiPrefix.toLowerCase();
+  const lowercaseWithPrefix = withGeminiPrefix.toLowerCase();
+  
+  for (const key in pricingData) {
+    const lowercaseKey = key.toLowerCase();
+    if (lowercaseKey === lowercaseWithoutPrefix || lowercaseKey === lowercaseWithPrefix) {
+      console.log(`Model case-insensitive match with/without gemini/ prefix: '${modelName}' → '${key}'`);
+      const result = { model: key, data: pricingData[key] };
+      modelMatchCache[modelName] = result;
+      return result;
+    }
+  }
+  
+  // Step 5: Try matching after removing custom suffixes (-reasoning, -high, -low)
   const suffixRegex = /-(?:reasoning|high|low)$/;
   if (suffixRegex.test(modelName)) {
     const baseModelName = modelName.replace(suffixRegex, '');
@@ -91,11 +125,44 @@ export const findBestModelMatch = (
       return result;
     }
     
+    // Try with or without the "gemini/" prefix on the base model name
+    const baseHasGeminiPrefix = baseModelName.startsWith('gemini/');
+    const baseWithoutGeminiPrefix = baseHasGeminiPrefix ? baseModelName.substring(7) : baseModelName;
+    const baseWithGeminiPrefix = baseHasGeminiPrefix ? baseModelName : `gemini/${baseModelName}`;
+    
+    if (baseHasGeminiPrefix && pricingData[baseWithoutGeminiPrefix]) {
+      console.log(`Model matched after removing suffix and gemini/ prefix: '${modelName}' → '${baseWithoutGeminiPrefix}'`);
+      const result = { model: baseWithoutGeminiPrefix, data: pricingData[baseWithoutGeminiPrefix] };
+      modelMatchCache[modelName] = result;
+      return result;
+    }
+    
+    if (!baseHasGeminiPrefix && pricingData[baseWithGeminiPrefix]) {
+      console.log(`Model matched after removing suffix and adding gemini/ prefix: '${modelName}' → '${baseWithGeminiPrefix}'`);
+      const result = { model: baseWithGeminiPrefix, data: pricingData[baseWithGeminiPrefix] };
+      modelMatchCache[modelName] = result;
+      return result;
+    }
+    
     // Try case-insensitive match with base model name
     const lowercaseBaseModelName = baseModelName.toLowerCase();
     for (const key in pricingData) {
       if (key.toLowerCase() === lowercaseBaseModelName) {
         console.log(`Model matched after removing suffix (case-insensitive): '${modelName}' → '${key}'`);
+        const result = { model: key, data: pricingData[key] };
+        modelMatchCache[modelName] = result;
+        return result;
+      }
+    }
+    
+    // Try case-insensitive match with or without gemini/ prefix on base model name
+    const lowercaseBaseWithoutPrefix = baseWithoutGeminiPrefix.toLowerCase();
+    const lowercaseBaseWithPrefix = baseWithGeminiPrefix.toLowerCase();
+    
+    for (const key in pricingData) {
+      const lowercaseKey = key.toLowerCase();
+      if (lowercaseKey === lowercaseBaseWithoutPrefix || lowercaseKey === lowercaseBaseWithPrefix) {
+        console.log(`Model case-insensitive match after removing suffix with/without gemini/ prefix: '${modelName}' → '${key}'`);
         const result = { model: key, data: pricingData[key] };
         modelMatchCache[modelName] = result;
         return result;
