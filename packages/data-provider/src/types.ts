@@ -18,8 +18,8 @@ export type TMessages = TMessage[];
 
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
-  spec?: string;
-  iconURL?: string;
+  spec?: string | null;
+  iconURL?: string | null;
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
