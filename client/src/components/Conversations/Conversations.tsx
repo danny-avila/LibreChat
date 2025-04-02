@@ -2,8 +2,8 @@ import { useMemo, memo, type FC, useCallback } from 'react';
 import { throttle } from 'lodash';
 import { parseISO, isToday } from 'date-fns';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { useLocalize, TranslationKeys, useMediaQuery } from '~/hooks';
 import { TConversation } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys } from '~/hooks';
 import { groupConversationsByDate } from '~/utils';
 import { Spinner } from '~/components/svg';
 import Convo from './Convo';
@@ -24,7 +24,7 @@ const LoadingSpinner = memo(() => (
 const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
   const localize = useLocalize();
   return (
-    <div className="pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
+    <div className="mt-2 pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
       {localize(groupName as TranslationKeys) || groupName}
     </div>
   );
@@ -75,6 +75,9 @@ const Conversations: FC<ConversationsProps> = ({
   loadMoreConversations,
   isFetchingNextPage,
 }) => {
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const convoHeight = isSmallScreen ? 44 : 34;
+
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
     [rawConversations],
@@ -105,7 +108,7 @@ const Conversations: FC<ConversationsProps> = ({
     () =>
       new CellMeasurerCache({
         fixedWidth: true,
-        defaultHeight: 34,
+        defaultHeight: convoHeight,
         keyMapper: (index) => {
           const item = flattenedItems[index];
           return item.type === 'header' ? `header-${index}` : `convo-${item.convo.conversationId}`;
