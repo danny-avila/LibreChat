@@ -509,6 +509,7 @@
   "com_ui_attach_error_openai": "Cannot attach Assistant files to other endpoints",
   "com_ui_attach_error_size": "File size limit exceeded for endpoint:",
   "com_ui_attach_error_type": "Unsupported file type for endpoint:",
+  "com_ui_attach_remove": "Remove file",
   "com_ui_attach_warn_endpoint": "Non-Assistant files may be ignored without a compatible tool",
   "com_ui_attachment": "Attachment",
   "com_ui_auth_type": "Auth Type",
