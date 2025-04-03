@@ -23,18 +23,23 @@ if env | grep -q FAVICON_PATH; then
         favicon-16x16.png
         favicon-32x32.png
         apple-touch-icon-180x180.png
+        icon-192x192.png
+        maskable-icon.png
     "
 
     for FILE_NAME in $FAVICON_SOURCE_FILE_NAMES; do
-        echo "Downloading $FILE_NAME from $FAVICON_PATH to /tmp/$FILE_NAME"
+        echo "Downloading $FAVICON_PATH/$FILE_NAME to /tmp/$FILE_NAME"
         curl -sL "$FAVICON_PATH/$FILE_NAME" -o /tmp/$FILE_NAME
     done
 
-    # The places in the docker image where the favicons built by vite are put
+    # The places in the docker image where the favicons built by vite are put.
+    # These icons are defined in the vite.config.ts.
     FAVICON_DESTINATION_FILE_PATHS="
         /app/client/dist/assets/favicon-16x16.png
         /app/client/dist/assets/favicon-32x32.png
         /app/client/dist/assets/apple-touch-icon-180x180.png
+        /app/client/dist/assets/icon-192x192.png
+        /app/client/dist/assets/maskable-icon.png
     "
 
     for FILE_PATH in $FAVICON_DESTINATION_FILE_PATHS; do
