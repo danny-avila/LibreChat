@@ -39,6 +39,24 @@
   }
 } */
 
+/* Fix overscrolling issue - prevents scrolling beyond the viewport */
+html,
+body {
+  height: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: none; /* Prevents bounce effects on many browsers */
+  position: relative;
+  width: 100%;
+}
+
+/* Ensures the main content area has proper scrolling while parent is fixed */
+#root,
+#__next {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
 /* Override max-width for the SPECIFIC menu dialog on desktop screens */
 @media screen and (min-width: 640px) {
   /* Only target divs with role='dialog' AND the data-dialog attribute */
