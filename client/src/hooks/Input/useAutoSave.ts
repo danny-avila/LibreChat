@@ -1,6 +1,6 @@
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LocalStorageKeys, TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useChatFormContext } from '~/Providers';
@@ -52,7 +52,7 @@ export const useAutoSave = ({
     }
   };
 
-  const restoreFiles = useCallback(
+  const restoreFilesRaw = useCallback(
     (id: string) => {
       const filesDraft = JSON.parse(
         (localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`) ?? '') || '[]',
@@ -92,12 +92,38 @@ export const useAutoSave = ({
     [fileList, setFiles],
   );
 
-  const restoreText = useCallback(
+  const restoreTextRaw = useCallback(
     (id: string) => {
       const savedDraft = (localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) ?? '') || '';
       setValue('text', decodeBase64(savedDraft));
     },
     [setValue],
+  );
+
+  const restoreFilesRef = useRef(
+    debounce((id: string) => {
+      restoreFilesRaw(id);
+    }, 500),
+  );
+
+  const restoreTextRef = useRef(
+    debounce((id: string) => {
+      restoreTextRaw(id);
+    }, 500),
+  );
+
+  const restoreFiles = useCallback(
+    (id: string) => {
+      restoreFilesRef.current(id);
+    },
+    [restoreFilesRef],
+  );
+
+  const restoreText = useCallback(
+    (id: string) => {
+      restoreTextRef.current(id);
+    },
+    [restoreTextRef],
   );
 
   const saveText = useCallback(
@@ -150,6 +176,16 @@ export const useAutoSave = ({
     };
   }, [conversationId, saveDrafts, textAreaRef]);
 
+  // Clean up debounced functions on unmount
+  useEffect(() => {
+    const filesRefCurrent = restoreFilesRef.current;
+    const textRefCurrent = restoreTextRef.current;
+    return () => {
+      filesRefCurrent.cancel();
+      textRefCurrent.cancel();
+    };
+  }, []);
+
   useEffect(() => {
     // This useEffect is responsible for saving the current conversation's draft and
     // restoring the new conversation's draft when switching between conversations.
@@ -171,6 +207,7 @@ export const useAutoSave = ({
         saveText(currentConversationId);
       }
 
+      // Call the debounced restore functions
       restoreText(conversationId);
       restoreFiles(conversationId);
     } catch (e) {
