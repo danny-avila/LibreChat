@@ -15,22 +15,33 @@ else
     echo "GOOGLE_KEY_FILE_CONTENTS not set, skipping Google key setup"
 fi
 
-# If FAVICON_PNG_URL is set, download the favicon and overwrite the existing files
-if env | grep -q FAVICON_PNG_URL; then
-    echo "Found FAVICON_PNG_URL, downloading favicon $FAVICON_PNG_URL to /tmp/favicon.png"
+# If FAVICON_PATH is set, download the favicon and overwrite the existing files
+if env | grep -q FAVICON_PATH; then
+    echo "Found FAVICON_PATH set to: $FAVICON_PATH"
+    
+    FAVICON_SOURCE_FILE_NAMES="
+        favicon-16x16.png
+        favicon-32x32.png
+        apple-touch-icon-180x180.png
+    "
 
-    curl -sL "$FAVICON_PNG_URL" -o /tmp/favicon.png
+    for FILE_NAME in $FAVICON_SOURCE_FILE_NAMES; do
+        echo "Downloading $FILE_NAME from $FAVICON_PATH to /tmp/$FILE_NAME"
+        curl -sL "$FAVICON_PATH/$FILE_NAME" -o /tmp/$FILE_NAME
+    done
 
-    FAVICON_FILES="
+    # The places in the docker image where the favicons built by vite are put
+    FAVICON_DESTINATION_FILE_PATHS="
         /app/client/dist/assets/favicon-16x16.png
         /app/client/dist/assets/favicon-32x32.png
         /app/client/dist/assets/apple-touch-icon-180x180.png
     "
 
-    for FILE in $FAVICON_FILES; do
-        echo "Overwriting $FILE"
-        cp /tmp/favicon.png "$FILE"
+    for FILE_PATH in $FAVICON_DESTINATION_FILE_PATHS; do
+        FILE_NAME=$(basename "$FILE_PATH")
+        echo "Overwriting $FILE_PATH with /tmp/$FILE_NAME"
+        cp /tmp/$FILE_NAME "$FILE_PATH"
     done
 else
-    echo "FAVICON_PNG_URL not set, skipping custom favicon setup"
+    echo "FAVICON_PATH not set, skipping custom favicon setup"
 fi
