@@ -1,9 +1,10 @@
 import { useRecoilValue } from 'recoil';
 import { SettingsViews, TConversation } from 'librechat-data-provider';
-import { useGetModelsQuery, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TSettingsProps } from '~/common';
-import { getSettings } from './Settings';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { cn, getEndpointField } from '~/utils';
+import { getSettings } from './Settings';
 import store from '~/store';
 
 export default function Settings({

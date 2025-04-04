@@ -1,17 +1,14 @@
 const OpenAIClient = require('./OpenAIClient');
-const { CacheKeys, Time } = require('librechat-data-provider');
 const { CallbackManager } = require('@langchain/core/callbacks/manager');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { processFileURL } = require('~/server/services/Files/process');
 const { EModelEndpoint } = require('librechat-data-provider');
+const { checkBalance } = require('~/models/balanceMethods');
 const { formatLangChainMessages } = require('./prompts');
-const checkBalance = require('~/models/checkBalance');
-const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
-const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 class PluginsClient extends OpenAIClient {
@@ -256,17 +253,6 @@ class PluginsClient extends OpenAIClient {
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    if (responseMessage.text) {
-      const messageCache = getLogStores(CacheKeys.MESSAGES);
-      messageCache.set(
-        responseMessage.messageId,
-        {
-          text: responseMessage.text,
-          complete: true,
-        },
-        Time.FIVE_MINUTES,
-      );
-    }
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
   }
@@ -293,7 +279,6 @@ class PluginsClient extends OpenAIClient {
     logger.debug('[PluginsClient] sendMessage', { userMessageText: message, opts });
     const {
       user,
-      isEdited,
       conversationId,
       responseMessageId,
       saveOptions,
@@ -350,7 +335,8 @@ class PluginsClient extends OpenAIClient {
       }
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE)) {
+    const balance = this.options.req?.app?.locals?.balance;
+    if (balance?.enabled) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -372,7 +358,6 @@ class PluginsClient extends OpenAIClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
       promptTokens,

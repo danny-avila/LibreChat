@@ -5,7 +5,6 @@ import { GoogleSettings, PluginSettings } from './MultiView';
 import AssistantsSettings from './Assistants';
 import AnthropicSettings from './Anthropic';
 import BedrockSettings from './Bedrock';
-import BingAISettings from './BingAI';
 import OpenAISettings from './OpenAI';
 
 const settings: { [key: string]: FC<TModelSelectProps> | undefined } = {
@@ -15,7 +14,6 @@ const settings: { [key: string]: FC<TModelSelectProps> | undefined } = {
   [EModelEndpoint.openAI]: OpenAISettings,
   [EModelEndpoint.custom]: OpenAISettings,
   [EModelEndpoint.azureOpenAI]: OpenAISettings,
-  [EModelEndpoint.bingAI]: BingAISettings,
   [EModelEndpoint.anthropic]: AnthropicSettings,
   [EModelEndpoint.bedrock]: BedrockSettings,
 };

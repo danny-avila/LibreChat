@@ -1,7 +1,7 @@
 name: Feature Request
 description: File a feature request
-title: "Enhancement: "
-labels: ["enhancement"]
+title: "[Enhancement]: "
+labels: ["✨ enhancement"]
 body:
   - type: markdown
     attributes:

@@ -7,9 +7,27 @@ export type JsonSchemaType = {
   properties?: Record<string, JsonSchemaType>;
   required?: string[];
   description?: string;
+  additionalProperties?: boolean | JsonSchemaType;
 };
 
-export function convertJsonSchemaToZod(schema: JsonSchemaType): z.ZodType {
+function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
+  return (
+    jsonSchema != null &&
+    typeof jsonSchema === 'object' &&
+    jsonSchema.type === 'object' &&
+    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0)
+  );
+}
+
+export function convertJsonSchemaToZod(
+  schema: JsonSchemaType,
+  options: { allowEmptyObject?: boolean } = {},
+): z.ZodType | undefined {
+  const { allowEmptyObject = true } = options;
+  if (!allowEmptyObject && isEmptyObjectSchema(schema)) {
+    return undefined;
+  }
+
   let zodSchema: z.ZodType;
 
   // Handle primitive types
@@ -26,13 +44,16 @@ export function convertJsonSchemaToZod(schema: JsonSchemaType): z.ZodType {
     zodSchema = z.boolean();
   } else if (schema.type === 'array' && schema.items !== undefined) {
     const itemSchema = convertJsonSchemaToZod(schema.items);
-    zodSchema = z.array(itemSchema);
+    zodSchema = z.array(itemSchema as z.ZodType);
   } else if (schema.type === 'object') {
     const shape: Record<string, z.ZodType> = {};
     const properties = schema.properties ?? {};
 
     for (const [key, value] of Object.entries(properties)) {
       let fieldSchema = convertJsonSchemaToZod(value);
+      if (!fieldSchema) {
+        continue;
+      }
       if (value.description != null && value.description !== '') {
         fieldSchema = fieldSchema.describe(value.description);
       }
@@ -52,7 +73,20 @@ export function convertJsonSchemaToZod(schema: JsonSchemaType): z.ZodType {
     } else {
       objectSchema = objectSchema.partial();
     }
-    zodSchema = objectSchema;
+
+    // Handle additionalProperties for open-ended objects
+    if (schema.additionalProperties === true) {
+      // This allows any additional properties with any type
+      zodSchema = objectSchema.passthrough();
+    } else if (typeof schema.additionalProperties === 'object') {
+      // For specific additional property types
+      const additionalSchema = convertJsonSchemaToZod(
+        schema.additionalProperties as JsonSchemaType,
+      );
+      zodSchema = objectSchema.catchall(additionalSchema as z.ZodType);
+    } else {
+      zodSchema = objectSchema;
+    }
   } else {
     zodSchema = z.unknown();
   }

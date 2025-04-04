@@ -9,11 +9,12 @@ import {
   tQueryParamsSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import type { TPreset, TEndpointsConfig, TStartupConfig } from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
-import { getConvoSwitchLogic, removeUnavailableTools } from '~/utils';
+import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useChatFormContext } from '~/Providers';
+import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
 import store from '~/store';
 
 const parseQueryValue = (value: string) => {
@@ -76,6 +77,7 @@ export default function useQueryParams({
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
+  const { submitMessage } = useSubmitMessage();
 
   const queryClient = useQueryClient();
   const { conversation, newConversation } = useChatContext();
@@ -85,8 +87,20 @@ export default function useQueryParams({
       if (!_newPreset) {
         return;
       }
+      let newPreset = removeUnavailableTools(_newPreset, availableTools);
+      if (newPreset.spec != null && newPreset.spec !== '') {
+        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
+        const spec = modelSpecs.find((s) => s.name === newPreset.spec);
+        if (!spec) {
+          return;
+        }
+        const { preset } = spec;
+        preset.iconURL = getModelSpecIconURL(spec);
+        preset.spec = spec.name;
+        newPreset = preset;
+      }
 
-      const newPreset = removeUnavailableTools(_newPreset, availableTools);
       let newEndpoint = newPreset.endpoint ?? '';
       const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
 
@@ -120,14 +134,28 @@ export default function useQueryParams({
         endpointsConfig,
       });
 
+      let resetParams = {};
+      if (newPreset.spec == null) {
+        template.spec = null;
+        template.iconURL = null;
+        template.modelLabel = null;
+        resetParams = { spec: null, iconURL: null, modelLabel: null };
+        newPreset = { ...newPreset, ...resetParams };
+      }
+
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
 
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+          conversation: {
+            ...(conversation ?? {}),
+            endpointType: template.endpointType,
+            ...resetParams,
+          },
           preset: template,
+          cleanOutput: newPreset.spec != null && newPreset.spec !== '',
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
@@ -159,11 +187,15 @@ export default function useQueryParams({
         queryParams[key] = value;
       });
 
-      const decodedPrompt = queryParams.prompt || '';
+      // Support both 'prompt' and 'q' as query parameters, with 'prompt' taking precedence
+      const decodedPrompt = queryParams.prompt || queryParams.q || '';
+      const shouldAutoSubmit = queryParams.submit?.toLowerCase() === 'true';
       delete queryParams.prompt;
+      delete queryParams.q;
+      delete queryParams.submit;
       const validSettings = processValidSettings(queryParams);
 
-      return { decodedPrompt, validSettings };
+      return { decodedPrompt, validSettings, shouldAutoSubmit };
     };
 
     const intervalId = setInterval(() => {
@@ -180,7 +212,11 @@ export default function useQueryParams({
       if (!textAreaRef.current) {
         return;
       }
-      const { decodedPrompt, validSettings } = processQueryParams();
+      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      if (!startupConfig) {
+        return;
+      }
+      const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
       const currentText = methods.getValues('text');
 
       /** Clean up URL parameters after successful processing */
@@ -196,6 +232,15 @@ export default function useQueryParams({
         methods.setValue('text', decodedPrompt, { shouldValidate: true });
         textAreaRef.current.focus();
         textAreaRef.current.setSelectionRange(decodedPrompt.length, decodedPrompt.length);
+
+        // Auto-submit if the submit parameter is true
+        if (shouldAutoSubmit) {
+          methods.handleSubmit((data) => {
+            if (data.text?.trim()) {
+              submitMessage(data);
+            }
+          })();
+        }
       }
 
       if (Object.keys(validSettings).length > 0) {
@@ -208,5 +253,5 @@ export default function useQueryParams({
     return () => {
       clearInterval(intervalId);
     };
-  }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation]);
+  }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation, submitMessage]);
 }

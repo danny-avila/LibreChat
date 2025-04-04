@@ -1,8 +1,6 @@
-const throttle = require('lodash/throttle');
-const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
+const { getResponseSender, Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { getLogStores } = require('~/cache');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
@@ -57,33 +55,9 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: throttle(
-        ({ text: partialText }) => {
-          /*
-              const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
-          messageCache.set(responseMessageId, {
-            messageId: responseMessageId,
-            sender,
-            conversationId,
-            parentMessageId: overrideParentMessageId ?? userMessageId,
-            text: partialText,
-            model: client.modelOptions.model,
-            unfinished,
-            error: false,
-            user,
-          }, Time.FIVE_MINUTES);
-          */
+    const { onProgress: progressCallback, getPartialText } = createOnProgress();
 
-          messageCache.set(responseMessageId, partialText, Time.FIVE_MINUTES);
-        },
-        3000,
-        { trailing: false },
-      ),
-    });
-
-    getText = getPartialText;
+    getText = client.getStreamText != null ? client.getStreamText.bind(client) : getPartialText;
 
     const getAbortData = () => ({
       sender,
@@ -91,7 +65,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
-      text: getPartialText(),
+      text: getText(),
       userMessage,
       promptTokens,
     });
@@ -176,11 +150,13 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   } catch (error) {
     const partialText = getText && getText();
     handleAbortError(res, req, error, {
+      sender,
       partialText,
       conversationId,
-      sender,
       messageId: responseMessageId,
-      parentMessageId: userMessageId ?? parentMessageId,
+      parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
+    }).catch((err) => {
+      logger.error('[AskController] Error in `handleAbortError`', err);
     });
   }
 };

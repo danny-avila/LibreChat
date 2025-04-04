@@ -1,17 +1,19 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useRef, useEffect } from 'react';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
-import { useGetModelsQuery, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
   TPreset,
   TModelsConfig,
   TConversation,
   TEndpointsConfig,
+  EModelEndpoint,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AssistantListItem } from '~/common';
 import { getEndpointField, buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
 
@@ -32,7 +34,7 @@ const useGenerateConvo = ({
   const rootConvo = useRecoilValue(store.conversationByKeySelector(rootIndex));
 
   useEffect(() => {
-    if (rootConvo?.conversationId && setConversation) {
+    if (rootConvo?.conversationId != null && setConversation) {
       setConversation((prevState) => {
         if (!prevState) {
           return prevState;
@@ -85,11 +87,11 @@ const useGenerateConvo = ({
       }
 
       const isAssistantEndpoint = isAssistantsEndpoint(defaultEndpoint);
-      const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
+      const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint ?? ''] ?? [];
 
       if (
         conversation.assistant_id &&
-        !assistantsListMap[defaultEndpoint]?.[conversation.assistant_id]
+        !assistantsListMap[defaultEndpoint ?? '']?.[conversation.assistant_id]
       ) {
         conversation.assistant_id = undefined;
       }
@@ -101,7 +103,7 @@ const useGenerateConvo = ({
       }
 
       if (
-        conversation.assistant_id &&
+        conversation.assistant_id != null &&
         isAssistantEndpoint &&
         conversation.conversationId === 'new'
       ) {
@@ -109,19 +111,19 @@ const useGenerateConvo = ({
         conversation.model = assistant?.model;
       }
 
-      if (conversation.assistant_id && !isAssistantEndpoint) {
+      if (conversation.assistant_id != null && !isAssistantEndpoint) {
         conversation.assistant_id = undefined;
       }
 
-      const models = modelsConfig?.[defaultEndpoint] ?? [];
+      const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
       conversation = buildDefaultConvo({
         conversation,
         lastConversationSetup: preset as TConversation,
-        endpoint: defaultEndpoint,
+        endpoint: defaultEndpoint ?? ('' as EModelEndpoint),
         models,
       });
 
-      if (preset?.title) {
+      if (preset?.title != null && preset.title !== '') {
         conversation.title = preset.title;
       }
 

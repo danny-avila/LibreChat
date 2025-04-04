@@ -1,12 +1,11 @@
 import { useState, useId, useRef, memo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent } from 'react';
 import type * as t from '~/common';
+import { useDuplicateConversationMutation, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
-import { useDuplicateConversationMutation } from '~/data-provider';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
@@ -122,7 +121,7 @@ function ConvoOptions({
         setIsOpen={setIsPopoverActive}
         trigger={
           <Menu.MenuButton
-            id="conversation-menu-button"
+            id={`conversation-menu-${conversationId}`}
             aria-label={localize('com_nav_convo_menu_options')}
             className={cn(
               'z-30 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',

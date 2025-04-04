@@ -1,73 +1,17 @@
 const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
-const { conversationPreset } = require('./defaults');
-const convoSchema = mongoose.Schema(
-  {
-    conversationId: {
-      type: String,
-      unique: true,
-      required: true,
-      index: true,
-      meiliIndex: true,
-    },
-    title: {
-      type: String,
-      default: 'New Chat',
-      meiliIndex: true,
-    },
-    user: {
-      type: String,
-      index: true,
-    },
-    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
-    // google only
-    examples: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
-    agentOptions: {
-      type: mongoose.Schema.Types.Mixed,
-    },
-    ...conversationPreset,
-    agent_id: {
-      type: String,
-    },
-    // for bingAI only
-    bingConversationId: {
-      type: String,
-    },
-    jailbreakConversationId: {
-      type: String,
-    },
-    conversationSignature: {
-      type: String,
-    },
-    clientId: {
-      type: String,
-    },
-    invocationId: {
-      type: Number,
-    },
-    tags: {
-      type: [String],
-      default: [],
-      meiliIndex: true,
-    },
-    files: {
-      type: [String],
-    },
-  },
-  { timestamps: true },
-);
+
+const { convoSchema } = require('@librechat/data-schemas');
 
 if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   convoSchema.plugin(mongoMeili, {
     host: process.env.MEILI_HOST,
     apiKey: process.env.MEILI_MASTER_KEY,
-    indexName: 'convos', // Will get created automatically if it doesn't exist already
+    /** Note: Will get created automatically if it doesn't exist already */
+    indexName: 'convos',
     primaryKey: 'conversationId',
   });
 }
-
-convoSchema.index({ createdAt: 1, updatedAt: 1 });
-convoSchema.index({ conversationId: 1, user: 1 }, { unique: true });
 
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 

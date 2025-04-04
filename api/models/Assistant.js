@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const assistantSchema = require('./schema/assistant');
+const { assistantSchema } = require('@librechat/data-schemas');
 
 const Assistant = mongoose.model('assistant', assistantSchema);
 

@@ -1,9 +1,9 @@
 import React, { useMemo, memo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import { getEndpointField, getIconEndpoint, logger } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { useGetEndpointsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
 
 const MessageIcon = memo(

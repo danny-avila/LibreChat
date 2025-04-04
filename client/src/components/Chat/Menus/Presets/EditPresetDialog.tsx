@@ -2,7 +2,6 @@ import { useRecoilState } from 'recoil';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, isAgentsEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TModelsConfig, TEndpointsConfig } from 'librechat-data-provider';
 import {
   cn,
@@ -16,6 +15,7 @@ import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { EndpointSettings } from '~/components/Endpoints';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 

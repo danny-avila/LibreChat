@@ -49,8 +49,6 @@ export type UpdatePresetOptions = MutationOptions<types.TPreset, types.TPreset>;
 
 export type DeletePresetOptions = MutationOptions<PresetDeleteResponse, types.TPreset | undefined>;
 
-export type LogoutOptions = MutationOptions<unknown, undefined>;
-
 /* Assistant mutations */
 
 export type AssistantAvatarVariables = {
@@ -331,3 +329,10 @@ export type EditArtifactOptions = MutationOptions<
   unknown,
   Error
 >;
+
+export type TLogoutResponse = {
+  message: string;
+  redirect?: string;
+};
+
+export type LogoutOptions = MutationOptions<TLogoutResponse, undefined>;

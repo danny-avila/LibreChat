@@ -57,14 +57,42 @@ const findAllArtifacts = (message) => {
 
 const replaceArtifactContent = (originalText, artifact, original, updated) => {
   const artifactContent = artifact.text.substring(artifact.start, artifact.end);
-  const relativeIndex = artifactContent.indexOf(original);
+
+  // Find boundaries between ARTIFACT_START and ARTIFACT_END
+  const contentStart = artifactContent.indexOf('\n', artifactContent.indexOf(ARTIFACT_START)) + 1;
+  const contentEnd = artifactContent.lastIndexOf(ARTIFACT_END);
+
+  if (contentStart === -1 || contentEnd === -1) {
+    return null;
+  }
+
+  // Check if there are code blocks
+  const codeBlockStart = artifactContent.indexOf('```\n', contentStart);
+  const codeBlockEnd = artifactContent.lastIndexOf('\n```', contentEnd);
+
+  // Determine where to look for the original content
+  let searchStart, searchEnd;
+  if (codeBlockStart !== -1 && codeBlockEnd !== -1) {
+    // If code blocks exist, search between them
+    searchStart = codeBlockStart + 4; // after ```\n
+    searchEnd = codeBlockEnd;
+  } else {
+    // Otherwise search in the whole artifact content
+    searchStart = contentStart;
+    searchEnd = contentEnd;
+  }
+
+  const innerContent = artifactContent.substring(searchStart, searchEnd);
+  // Remove trailing newline from original for comparison
+  const originalTrimmed = original.replace(/\n$/, '');
+  const relativeIndex = innerContent.indexOf(originalTrimmed);
 
   if (relativeIndex === -1) {
     return null;
   }
 
-  const absoluteIndex = artifact.start + relativeIndex;
-  const endText = originalText.substring(absoluteIndex + original.length);
+  const absoluteIndex = artifact.start + searchStart + relativeIndex;
+  const endText = originalText.substring(absoluteIndex + originalTrimmed.length);
   const hasTrailingNewline = endText.startsWith('\n');
 
   const updatedText =

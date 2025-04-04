@@ -8,6 +8,78 @@ const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
+ * Maps MIME types to their corresponding file extensions for audio files.
+ * @type {Object}
+ */
+const MIME_TO_EXTENSION_MAP = {
+  // MP4 container formats
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  // Ogg formats
+  'audio/ogg': 'ogg',
+  'audio/vorbis': 'ogg',
+  'application/ogg': 'ogg',
+  // Wave formats
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  // MP3 formats
+  'audio/mp3': 'mp3',
+  'audio/mpeg': 'mp3',
+  'audio/mpeg3': 'mp3',
+  // WebM formats
+  'audio/webm': 'webm',
+  // Additional formats
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac',
+};
+
+/**
+ * Gets the file extension from the MIME type.
+ * @param {string} mimeType - The MIME type.
+ * @returns {string} The file extension.
+ */
+function getFileExtensionFromMime(mimeType) {
+  // Default fallback
+  if (!mimeType) {
+    return 'webm';
+  }
+
+  // Direct lookup (fastest)
+  const extension = MIME_TO_EXTENSION_MAP[mimeType];
+  if (extension) {
+    return extension;
+  }
+
+  // Try to extract subtype as fallback
+  const subtype = mimeType.split('/')[1]?.toLowerCase();
+
+  // If subtype matches a known extension
+  if (['mp3', 'mp4', 'ogg', 'wav', 'webm', 'm4a', 'flac'].includes(subtype)) {
+    return subtype === 'mp4' ? 'm4a' : subtype;
+  }
+
+  // Generic checks for partial matches
+  if (subtype?.includes('mp4') || subtype?.includes('m4a')) {
+    return 'm4a';
+  }
+  if (subtype?.includes('ogg')) {
+    return 'ogg';
+  }
+  if (subtype?.includes('wav')) {
+    return 'wav';
+  }
+  if (subtype?.includes('mp3') || subtype?.includes('mpeg')) {
+    return 'mp3';
+  }
+  if (subtype?.includes('webm')) {
+    return 'webm';
+  }
+
+  return 'webm'; // Default fallback
+}
+
+/**
  * Service class for handling Speech-to-Text (STT) operations.
  * @class
  */
@@ -170,8 +242,10 @@ class STTService {
       throw new Error('Invalid provider');
     }
 
+    const fileExtension = getFileExtensionFromMime(audioFile.mimetype);
+
     const audioReadStream = Readable.from(audioBuffer);
-    audioReadStream.path = 'audio.wav';
+    audioReadStream.path = `audio.${fileExtension}`;
 
     const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
 

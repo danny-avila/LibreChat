@@ -28,6 +28,7 @@ const BookmarkMenu: FC = () => {
   const conversationId = conversation?.conversationId ?? '';
   const updateConvoTags = useBookmarkSuccess(conversationId);
   const tags = conversation?.tags;
+  const isTemporary = conversation?.expiredAt != null;
 
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -139,6 +140,10 @@ const BookmarkMenu: FC = () => {
     return null;
   }
 
+  if (isTemporary) {
+    return null;
+  }
+
   const renderButtonContent = () => {
     if (mutation.isLoading) {
       return <Spinner aria-label="Spinner" />;
@@ -165,7 +170,7 @@ const BookmarkMenu: FC = () => {
                 id="bookmark-menu-button"
                 aria-label={localize('com_ui_bookmarks_add')}
                 className={cn(
-                  'mt-text-sm flex size-10 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
+                  'mt-text-sm flex size-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
                   isMenuOpen ? 'bg-surface-hover' : '',
                 )}
                 data-testid="bookmark-menu"

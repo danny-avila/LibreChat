@@ -1,57 +1,78 @@
 import React, { useMemo } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { LocalStorageKeys } from 'librechat-data-provider';
-import { useLocalize, useCategories } from '~/hooks';
-import { cn, createDropdownSetter } from '~/utils';
-import { SelectDropDown } from '~/components/ui';
+import { Dropdown } from '~/components/ui';
+import { useCategories } from '~/hooks';
 
-const CategorySelector = ({
-  currentCategory,
-  onValueChange,
-  className = '',
-  tabIndex,
-}: {
+interface CategorySelectorProps {
   currentCategory?: string;
   onValueChange?: (value: string) => void;
   className?: string;
-  tabIndex?: number;
+}
+
+const CategorySelector: React.FC<CategorySelectorProps> = ({
+  currentCategory,
+  onValueChange,
+  className = '',
 }) => {
-  const localize = useLocalize();
-  const { control, watch, setValue } = useFormContext();
+  const formContext = useFormContext();
   const { categories, emptyCategory } = useCategories();
 
-  const watchedCategory = watch('category');
+  const control = formContext.control;
+  const watch = formContext.watch;
+  const setValue = formContext.setValue;
+
+  const watchedCategory = watch ? watch('category') : currentCategory;
+
   const categoryOption = useMemo(
     () =>
-      categories.find((category) => category.value === (watchedCategory ?? currentCategory)) ??
-      emptyCategory,
+      (categories ?? []).find(
+        (category) => category.value === (watchedCategory ?? currentCategory),
+      ) ?? emptyCategory,
     [watchedCategory, categories, currentCategory, emptyCategory],
   );
 
-  return (
+  return formContext ? (
     <Controller
       name="category"
       control={control}
       render={() => (
-        <SelectDropDown
-          title="Category"
-          tabIndex={tabIndex}
-          value={categoryOption || ''}
-          setValue={createDropdownSetter((value: string) => {
+        <Dropdown
+          value={categoryOption.value ?? ''}
+          onChange={(value: string) => {
             setValue('category', value, { shouldDirty: false });
             localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
             onValueChange?.(value);
-          })}
-          availableValues={categories}
-          showAbove={false}
-          showLabel={false}
-          emptyTitle={true}
-          showOptionIcon={true}
-          searchPlaceholder={localize('com_ui_search_categories')}
-          className={cn('h-10 w-56 cursor-pointer', className)}
-          currentValueClass="text-md gap-2"
-          optionsListClass="text-sm max-h-72"
+          }}
+          aria-labelledby="category-selector-label"
+          ariaLabel="Prompt's category selector"
+          className={className}
+          options={categories || []}
+          renderValue={(option) => (
+            <div className="flex items-center space-x-2">
+              {option.icon != null && <span>{option.icon as React.ReactNode}</span>}
+              <span>{option.label}</span>
+            </div>
+          )}
         />
+      )}
+    />
+  ) : (
+    <Dropdown
+      value={currentCategory ?? ''}
+      onChange={(value: string) => {
+        localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
+        onValueChange?.(value);
+      }}
+      aria-labelledby="category-selector-label"
+      ariaLabel="Prompt's category selector"
+      className={className}
+      options={categories || []}
+      renderValue={(option) => (
+        <div className="flex items-center space-x-2">
+          {option.icon != null && <span>{option.icon as React.ReactNode}</span>}
+          <span>{option.label}</span>
+        </div>
       )}
     />
   );

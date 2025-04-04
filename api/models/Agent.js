@@ -9,7 +9,7 @@ const {
   removeAgentFromAllProjects,
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
-const agentSchema = require('./schema/agent');
+const { agentSchema } = require('@librechat/data-schemas');
 
 const Agent = mongoose.model('agent', agentSchema);
 
@@ -45,6 +45,10 @@ const loadAgent = async ({ req, agent_id }) => {
   const agent = await getAgent({
     id: agent_id,
   });
+
+  if (!agent) {
+    return null;
+  }
 
   if (agent.author.toString() === req.user.id) {
     return agent;
@@ -97,11 +101,22 @@ const updateAgent = async (searchParameter, updateData) => {
 const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
 
-  // build the update to push or create the file ids set
   const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
+
+  await Agent.updateOne(
+    {
+      id: agent_id,
+      [`${fileIdsPath}`]: { $exists: false },
+    },
+    {
+      $set: {
+        [`${fileIdsPath}`]: [],
+      },
+    },
+  );
+
   const updateData = { $addToSet: { [fileIdsPath]: file_id } };
 
-  // return the updated agent or throw if no agent matches
   const updatedAgent = await updateAgent(searchParameter, updateData);
   if (updatedAgent) {
     return updatedAgent;
@@ -111,16 +126,17 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
 };
 
 /**
- * Removes multiple resource files from an agent in a single update.
+ * Removes multiple resource files from an agent using atomic operations.
  * @param {object} params
  * @param {string} params.agent_id
  * @param {Array<{tool_resource: string, file_id: string}>} params.files
  * @returns {Promise<Agent>} The updated agent.
+ * @throws {Error} If the agent is not found or update fails.
  */
 const removeAgentResourceFiles = async ({ agent_id, files }) => {
   const searchParameter = { id: agent_id };
 
-  // associate each tool resource with the respective file ids array
+  // Group files to remove by resource
   const filesByResource = files.reduce((acc, { tool_resource, file_id }) => {
     if (!acc[tool_resource]) {
       acc[tool_resource] = [];
@@ -129,42 +145,35 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
     return acc;
   }, {});
 
-  // build the update aggregation pipeline wich removes file ids from tool resources array
-  // and eventually deletes empty tool resources
-  const updateData = [];
-  Object.entries(filesByResource).forEach(([resource, fileIds]) => {
-    const toolResourcePath = `tool_resources.${resource}`;
-    const fileIdsPath = `${toolResourcePath}.file_ids`;
-
-    // file ids removal stage
-    updateData.push({
-      $set: {
-        [fileIdsPath]: {
-          $filter: {
-            input: `$${fileIdsPath}`,
-            cond: { $not: [{ $in: ['$$this', fileIds] }] },
-          },
-        },
-      },
-    });
-
-    // empty tool resource deletion stage
-    updateData.push({
-      $set: {
-        [toolResourcePath]: {
-          $cond: [{ $eq: [`$${fileIdsPath}`, []] }, '$$REMOVE', `$${toolResourcePath}`],
-        },
-      },
-    });
-  });
-
-  // return the updated agent or throw if no agent matches
-  const updatedAgent = await updateAgent(searchParameter, updateData);
-  if (updatedAgent) {
-    return updatedAgent;
-  } else {
-    throw new Error('Agent not found for removing resource files');
+  // Step 1: Atomically remove file IDs using $pull
+  const pullOps = {};
+  const resourcesToCheck = new Set();
+  for (const [resource, fileIds] of Object.entries(filesByResource)) {
+    const fileIdsPath = `tool_resources.${resource}.file_ids`;
+    pullOps[fileIdsPath] = { $in: fileIds };
+    resourcesToCheck.add(resource);
   }
+
+  const updatePullData = { $pull: pullOps };
+  const agentAfterPull = await Agent.findOneAndUpdate(searchParameter, updatePullData, {
+    new: true,
+  }).lean();
+
+  if (!agentAfterPull) {
+    // Agent might have been deleted concurrently, or never existed.
+    // Check if it existed before trying to throw.
+    const agentExists = await getAgent(searchParameter);
+    if (!agentExists) {
+      throw new Error('Agent not found for removing resource files');
+    }
+    // If it existed but findOneAndUpdate returned null, something else went wrong.
+    throw new Error('Failed to update agent during file removal (pull step)');
+  }
+
+  // Return the agent state directly after the $pull operation.
+  // Skipping the $unset step for now to simplify and test core $pull atomicity.
+  // Empty arrays might remain, but the removal itself should be correct.
+  return agentAfterPull;
 };
 
 /**
@@ -290,6 +299,7 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
 };
 
 module.exports = {
+  Agent,
   getAgent,
   loadAgent,
   createAgent,

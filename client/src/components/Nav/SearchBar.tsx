@@ -31,7 +31,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const clearSearch = useCallback(() => {
     setPageNumber(1);
     if (location.pathname.includes('/search')) {
-      newConversation();
+      newConversation({ disableFocus: true });
     }
   }, [newConversation, setPageNumber, location.pathname]);
 

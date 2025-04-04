@@ -2,7 +2,6 @@ import React, { useEffect, useMemo } from 'react';
 import { Share2Icon } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TStartupConfig, AgentUpdateParams } from 'librechat-data-provider';
 import {
   Button,
@@ -13,7 +12,7 @@ import {
   OGDialogContent,
   OGDialogTrigger,
 } from '~/components/ui';
-import { useUpdateAgentMutation } from '~/data-provider';
+import { useUpdateAgentMutation, useGetStartupConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -138,7 +137,7 @@ export default function ShareAgent({
           )}
           aria-label={localize(
             'com_ui_share_var',
-            agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+            { 0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
           )}
           type="button"
         >
@@ -151,7 +150,7 @@ export default function ShareAgent({
         <OGDialogTitle>
           {localize(
             'com_ui_share_var',
-            agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+            { 0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
           )}
         </OGDialogTitle>
         <form

@@ -260,8 +260,61 @@ console.log(greeting);`;
       codeExample,
       'updated content',
     );
-    console.log(result);
     expect(result).toMatch(/id="2".*updated content/s);
     expect(result).toMatch(new RegExp(`${ARTIFACT_START}.*updated content.*${ARTIFACT_END}`, 's'));
+  });
+
+  test('should handle empty content in artifact without code blocks', () => {
+    const artifactText = `${ARTIFACT_START}\n\n${ARTIFACT_END}`;
+    const artifact = {
+      start: 0,
+      end: artifactText.length,
+      text: artifactText,
+      source: 'text',
+    };
+
+    const result = replaceArtifactContent(artifactText, artifact, '', 'new content');
+    expect(result).toBe(`${ARTIFACT_START}\nnew content\n${ARTIFACT_END}`);
+  });
+
+  test('should handle empty content in artifact with code blocks', () => {
+    const artifactText = createArtifactText({ content: '' });
+    const artifact = {
+      start: 0,
+      end: artifactText.length,
+      text: artifactText,
+      source: 'text',
+    };
+
+    const result = replaceArtifactContent(artifactText, artifact, '', 'new content');
+    expect(result).toMatch(/```\nnew content\n```/);
+  });
+
+  test('should handle content with trailing newline in code blocks', () => {
+    const contentWithNewline = 'console.log("test")\n';
+    const message = {
+      text: `Some prefix text\n${createArtifactText({
+        content: contentWithNewline,
+      })}\nSome suffix text`,
+    };
+
+    const artifacts = findAllArtifacts(message);
+    expect(artifacts).toHaveLength(1);
+
+    const result = replaceArtifactContent(
+      message.text,
+      artifacts[0],
+      contentWithNewline,
+      'updated content',
+    );
+
+    // Should update the content and preserve artifact structure
+    expect(result).toContain('```\nupdated content\n```');
+    // Should preserve surrounding text
+    expect(result).toMatch(/^Some prefix text\n/);
+    expect(result).toMatch(/\nSome suffix text$/);
+    // Should not have extra newlines
+    expect(result).not.toContain('\n\n```');
+    expect(result).not.toContain('```\n\n');
   });
 });

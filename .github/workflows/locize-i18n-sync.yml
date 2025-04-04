@@ -1,0 +1,72 @@
+name: Sync Locize Translations & Create Translation PR
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [locize/versionPublished]
+
+jobs:
+  sync-translations:
+    name: Sync Translation Keys with Locize
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install locize CLI
+        run: npm install -g locize-cli
+
+      # Sync translations (Push missing keys & remove deleted ones)
+      - name: Sync Locize with Repository
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          cd client/src/locales
+          locize sync --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en
+
+      # When triggered by repository_dispatch, skip sync step.
+      - name: Skip sync step on non-push events
+        if: ${{ github.event_name != 'push' }}
+        run: echo "Skipping sync as the event is not a push."
+
+  create-pull-request:
+    name: Create Translation PR on Version Published
+    runs-on: ubuntu-latest
+    needs: sync-translations
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # 1. Check out the repository.
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Download translation files from locize.
+      - name: Download Translations from locize
+        uses: locize/download@v1
+        with:
+          project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
+          path: "client/src/locales"
+
+      # 3. Create a Pull Request using built-in functionality.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "🌍 i18n: Update translation.json with latest translations"
+          base: main
+          branch: i18n/locize-translation-update
+          reviewers: danny-avila
+          title: "🌍 i18n: Update translation.json with latest translations"
+          body: |
+            **Description**:
+            - 🎯 **Objective**: Update `translation.json` with the latest translations from locize.
+            - 🔍 **Details**: This PR is automatically generated upon receiving a versionPublished event with version "latest". It reflects the newest translations provided by locize.
+            - ✅ **Status**: Ready for review.
+          labels: "🌍 i18n"

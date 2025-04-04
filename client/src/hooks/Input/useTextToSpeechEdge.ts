@@ -26,6 +26,7 @@ function useTextToSpeechEdge({
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const pendingBuffers = useRef<Uint8Array[]>([]);
   const { showToast } = useToastContext();
+  const initAttempts = useRef(0);
 
   const isBrowserSupported = useMemo(
     () => typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg'),
@@ -57,27 +58,34 @@ function useTextToSpeechEdge({
 
   const initializeTTS = useCallback(() => {
     if (!ttsRef.current) {
-      ttsRef.current = new MsEdgeTTS();
+      ttsRef.current = new MsEdgeTTS({
+        enableLogger: true,
+      });
     }
     const availableVoice: VoiceOption | undefined = voices.find((v) => v.value === voiceName);
 
     if (availableVoice) {
+      if (initAttempts.current > 3) {
+        return;
+      }
       ttsRef.current
-        .setMetadata(availableVoice.value, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+        .setMetadata(availableVoice.value, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {})
         .catch((error) => {
+          initAttempts.current += 1;
           console.error('Error initializing TTS:', error);
           showToast({
-            message: localize('com_nav_tts_init_error', (error as Error).message),
+            message: localize('com_nav_tts_init_error', { 0: (error as Error).message }),
             status: 'error',
           });
         });
     } else if (voices.length > 0) {
       ttsRef.current
-        .setMetadata(voices[0].value, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+        .setMetadata(voices[0].value, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {})
         .catch((error) => {
+          initAttempts.current += 1;
           console.error('Error initializing TTS:', error);
           showToast({
-            message: localize('com_nav_tts_init_error', (error as Error).message),
+            message: localize('com_nav_tts_init_error', { 0: (error as Error).message }),
             status: 'error',
           });
         });
@@ -147,7 +155,8 @@ function useTextToSpeechEdge({
           setIsSpeaking(true);
           pendingBuffers.current = [];
 
-          const readable = ttsRef.current.toStream(text);
+          const result = await ttsRef.current.toStream(text);
+          const readable = result.audioStream;
 
           readable.on('data', (chunk: Buffer) => {
             pendingBuffers.current.push(new Uint8Array(chunk));
@@ -168,7 +177,7 @@ function useTextToSpeechEdge({
         } catch (error) {
           console.error('Error generating speech:', error);
           showToast({
-            message: localize('com_nav_audio_play_error', (error as Error).message),
+            message: localize('com_nav_audio_play_error', { 0: (error as Error).message }),
             status: 'error',
           });
           setIsSpeaking(false);

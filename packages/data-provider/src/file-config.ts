@@ -149,6 +149,9 @@ export const codeTypeMapping: { [key: string]: string } = {
   ts: 'application/typescript',
   tar: 'application/x-tar',
   zip: 'application/zip',
+  yml: 'application/x-yaml',
+  yaml: 'application/x-yaml',
+  log: 'text/plain',
 };
 
 export const retrievalMimeTypes = [

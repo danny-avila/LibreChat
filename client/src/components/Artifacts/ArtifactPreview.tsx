@@ -7,6 +7,7 @@ import {
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { ArtifactFiles } from '~/common';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
+import { useGetStartupConfig } from '~/data-provider';
 import { useEditorContext } from '~/Providers';
 
 export const ArtifactPreview = memo(function ({
@@ -23,6 +24,8 @@ export const ArtifactPreview = memo(function ({
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
   const { currentCode } = useEditorContext();
+  const { data: config } = useGetStartupConfig();
+
   const artifactFiles = useMemo(() => {
     if (Object.keys(files).length === 0) {
       return files;
@@ -38,6 +41,17 @@ export const ArtifactPreview = memo(function ({
       },
     };
   }, [currentCode, files, fileKey]);
+
+  const options: typeof sharedOptions = useMemo(() => {
+    if (!config) {
+      return sharedOptions;
+    }
+    return {
+      ...sharedOptions,
+      bundlerURL: config.bundlerURL,
+    };
+  }, [config]);
+
   if (Object.keys(artifactFiles).length === 0) {
     return null;
   }
@@ -48,7 +62,7 @@ export const ArtifactPreview = memo(function ({
         ...artifactFiles,
         ...sharedFiles,
       }}
-      options={{ ...sharedOptions }}
+      options={options}
       {...sharedProps}
       template={template}
     >

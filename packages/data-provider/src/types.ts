@@ -18,6 +18,8 @@ export type TMessages = TMessage[];
 
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
+  spec?: string | null;
+  iconURL?: string | null;
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
@@ -44,6 +46,7 @@ export type TPayload = Partial<TMessage> &
     isContinued: boolean;
     conversationId: string | null;
     messages?: TMessages;
+    isTemporary: boolean;
   };
 
 export type TSubmission = {
@@ -53,9 +56,9 @@ export type TSubmission = {
   userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;
+  isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
-  conversationId?: string;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
@@ -80,6 +83,7 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
+// TODO `label` needs to be changed to the proper `TranslationKeys`
 export type TCategory = {
   id?: string;
   value: string;
@@ -97,6 +101,12 @@ export type TError = {
   };
 };
 
+export type TBackupCode = {
+  codeHash: string;
+  used: boolean;
+  usedAt: Date | null;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -106,6 +116,8 @@ export type TUser = {
   role: string;
   provider: string;
   plugins?: string[];
+  twoFactorEnabled?: boolean;
+  backupCodes?: TBackupCode[];
   createdAt: string;
   updatedAt: string;
 };
@@ -282,11 +294,61 @@ export type TRegisterUser = {
 export type TLoginUser = {
   email: string;
   password: string;
+  token?: string;
+  backupCode?: string;
 };
 
 export type TLoginResponse = {
-  token: string;
-  user: TUser;
+  token?: string;
+  user?: TUser;
+  twoFAPending?: boolean;
+  tempToken?: string;
+};
+
+export type TEnable2FAResponse = {
+  otpauthUrl: string;
+  backupCodes: string[];
+  message?: string;
+};
+
+export type TVerify2FARequest = {
+  token?: string;
+  backupCode?: string;
+};
+
+export type TVerify2FAResponse = {
+  message: string;
+};
+
+/**
+ * For verifying 2FA during login with a temporary token.
+ */
+export type TVerify2FATempRequest = {
+  tempToken: string;
+  token?: string;
+  backupCode?: string;
+};
+
+export type TVerify2FATempResponse = {
+  token?: string;
+  user?: TUser;
+  message?: string;
+};
+
+/**
+ * Response from disabling 2FA.
+ */
+export type TDisable2FAResponse = {
+  message: string;
+};
+
+/**
+ * Response from regenerating backup codes.
+ */
+export type TRegenerateBackupCodesResponse = {
+  message: string;
+  backupCodes: string[];
+  backupCodesHash: string[];
 };
 
 export type TRequestPasswordReset = {

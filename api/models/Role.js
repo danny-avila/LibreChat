@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const {
   CacheKeys,
   SystemRoles,
@@ -6,12 +7,16 @@ const {
   removeNullishValues,
   agentPermissionsSchema,
   promptPermissionsSchema,
+  runCodePermissionsSchema,
   bookmarkPermissionsSchema,
   multiConvoPermissionsSchema,
+  temporaryChatPermissionsSchema,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
-const Role = require('~/models/schema/roleSchema');
+const { roleSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
+
+const Role = mongoose.model('Role', roleSchema);
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
@@ -77,6 +82,8 @@ const permissionSchemas = {
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
   [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
+  [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
+  [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
 };
 
 /**
@@ -164,6 +171,7 @@ const initializeRoles = async function () {
   }
 };
 module.exports = {
+  Role,
   getRoleByName,
   initializeRoles,
   updateRoleByName,

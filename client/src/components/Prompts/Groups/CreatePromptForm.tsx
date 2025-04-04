@@ -126,7 +126,7 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <CategorySelector tabIndex={0} />
+            <CategorySelector />
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
@@ -166,7 +166,12 @@ const CreatePromptForm = ({
           />
           <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={0} />
           <div className="mt-4 flex justify-end">
-            <Button tabIndex={0} type="submit" disabled={!isDirty || isSubmitting || !isValid}>
+            <Button
+              aria-label={localize('com_ui_create_prompt')}
+              tabIndex={0}
+              type="submit"
+              disabled={!isDirty || isSubmitting || !isValid}
+            >
               {localize('com_ui_create_prompt')}
             </Button>
           </div>

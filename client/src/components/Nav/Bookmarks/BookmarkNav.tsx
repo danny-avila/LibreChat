@@ -35,9 +35,9 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
             <div className="h-7 w-7 flex-shrink-0">
               <div className="relative flex h-full items-center justify-center rounded-full border border-border-medium bg-surface-primary-alt text-text-primary">
                 {tags.length > 0 ? (
-                  <BookmarkFilledIcon className="h-4 w-4" />
+                  <BookmarkFilledIcon className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  <BookmarkIcon className="h-4 w-4" />
+                  <BookmarkIcon className="h-4 w-4" aria-hidden="true" />
                 )}
               </div>
             </div>

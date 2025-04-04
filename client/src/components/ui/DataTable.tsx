@@ -27,6 +27,7 @@ import {
 import { TrashIcon, Spinner } from '~/components/svg';
 import { useLocalize, useMediaQuery } from '~/hooks';
 import { cn } from '~/utils';
+import { LocalizeFunction } from '~/common';
 
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
@@ -177,7 +178,7 @@ const DeleteButton = memo(
     isDeleting: boolean;
     disabled: boolean;
     isSmallScreen: boolean;
-    localize: (key: string) => string;
+    localize:LocalizeFunction;
   }) => {
     if (!onDelete) {
       return null;

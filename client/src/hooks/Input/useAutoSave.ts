@@ -7,6 +7,32 @@ import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
 
+const clearDraft = debounce((id?: string | null) => {
+  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
+}, 2500);
+
+const encodeBase64 = (plainText: string): string => {
+  try {
+    const textBytes = new TextEncoder().encode(plainText);
+    return btoa(String.fromCharCode(...textBytes));
+  } catch (e) {
+    return '';
+  }
+};
+
+const decodeBase64 = (base64String: string): string => {
+  try {
+    const bytes = atob(base64String);
+    const uint8Array = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      uint8Array[i] = bytes.charCodeAt(i);
+    }
+    return new TextDecoder().decode(uint8Array);
+  } catch (e) {
+    return '';
+  }
+};
+
 export const useAutoSave = ({
   conversationId,
   textAreaRef,
@@ -14,7 +40,7 @@ export const useAutoSave = ({
   setFiles,
 }: {
   conversationId?: string | null;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
   setFiles: SetterOrUpdater<Map<string, ExtendedFile>>;
 }) => {
@@ -26,32 +52,10 @@ export const useAutoSave = ({
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
   const { data: fileList } = useGetFiles<TFile[]>();
 
-  const encodeBase64 = (plainText: string): string => {
-    try {
-      const textBytes = new TextEncoder().encode(plainText);
-      return btoa(String.fromCharCode(...textBytes));
-    } catch (e) {
-      return '';
-    }
-  };
-
-  const decodeBase64 = (base64String: string): string => {
-    try {
-      const bytes = atob(base64String);
-      const uint8Array = new Uint8Array(bytes.length);
-      for (let i = 0; i < bytes.length; i++) {
-        uint8Array[i] = bytes.charCodeAt(i);
-      }
-      return new TextDecoder().decode(uint8Array);
-    } catch (e) {
-      return '';
-    }
-  };
-
   const restoreFiles = useCallback(
     (id: string) => {
       const filesDraft = JSON.parse(
-        localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`) || '[]',
+        (localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`) ?? '') || '[]',
       ) as string[];
 
       if (filesDraft.length === 0) {
@@ -66,7 +70,10 @@ export const useAutoSave = ({
         const tempFileData = fileList?.find((f) => f.temp_file_id === fileId);
         const { fileToRecover, fileIdToRecover } = fileData
           ? { fileToRecover: fileData, fileIdToRecover: fileId }
-          : { fileToRecover: tempFileData, fileIdToRecover: tempFileData?.temp_file_id || fileId };
+          : {
+            fileToRecover: tempFileData,
+            fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
+          };
 
         if (fileToRecover) {
           setFiles((currentFiles) => {
@@ -87,7 +94,7 @@ export const useAutoSave = ({
 
   const restoreText = useCallback(
     (id: string) => {
-      const savedDraft = localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) || '';
+      const savedDraft = (localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) ?? '') || '';
       setValue('text', decodeBase64(savedDraft));
     },
     [setValue],
@@ -100,7 +107,7 @@ export const useAutoSave = ({
       }
       // Save the draft of the current conversation before switching
       if (textAreaRef.current.value === '') {
-        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+        clearDraft(id);
       } else {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${id}`,
@@ -115,22 +122,23 @@ export const useAutoSave = ({
     // This useEffect is responsible for setting up and cleaning up the auto-save functionality
     // for the text area input. It saves the text to localStorage with a debounce to prevent
     // excessive writes.
-    if (!saveDrafts || !conversationId) {
+    if (!saveDrafts || conversationId == null || conversationId === '') {
       return;
     }
 
-    const handleInput = debounce(() => {
-      if (textAreaRef.current && textAreaRef.current.value) {
+    const handleInput = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      if (value) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
-          encodeBase64(textAreaRef.current.value),
+          encodeBase64(value),
         );
       } else {
         localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
       }
-    }, 1000);
+    }, 750);
 
-    const textArea = textAreaRef.current;
+    const textArea = textAreaRef?.current;
     if (textArea) {
       textArea.addEventListener('input', handleInput);
     }
@@ -149,7 +157,7 @@ export const useAutoSave = ({
     // It handles both text and file drafts, ensuring that the user's input is preserved
     // across different conversations.
 
-    if (!saveDrafts || !conversationId) {
+    if (!saveDrafts || conversationId == null || conversationId === '') {
       return;
     }
     if (conversationId === currentConversationId) {
@@ -160,7 +168,7 @@ export const useAutoSave = ({
     setFiles(new Map());
 
     try {
-      if (currentConversationId) {
+      if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }
 
@@ -187,7 +195,12 @@ export const useAutoSave = ({
     // It ensures that the file drafts are kept up-to-date and can be restored
     // when the conversation is revisited.
 
-    if (!saveDrafts || !conversationId || currentConversationId !== conversationId) {
+    if (
+      !saveDrafts ||
+      conversationId == null ||
+      conversationId === '' ||
+      currentConversationId !== conversationId
+    ) {
       return;
     }
 
@@ -200,13 +213,4 @@ export const useAutoSave = ({
       );
     }
   }, [files, conversationId, saveDrafts, currentConversationId, fileIds]);
-
-  const clearDraft = useCallback(() => {
-    if (conversationId) {
-      localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-      localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-    }
-  }, [conversationId]);
-
-  return { clearDraft };
 };

@@ -1,5 +1,5 @@
 const { Run, Providers } = require('@librechat/agents');
-const { providerEndpointMap } = require('librechat-data-provider');
+const { providerEndpointMap, KnownEndpoints } = require('librechat-data-provider');
 
 /**
  * @typedef {import('@librechat/agents').t} t
@@ -7,6 +7,7 @@ const { providerEndpointMap } = require('librechat-data-provider');
  * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
  * @typedef {import('@librechat/agents').EventHandler} EventHandler
  * @typedef {import('@librechat/agents').GraphEvents} GraphEvents
+ * @typedef {import('@librechat/agents').LLMConfig} LLMConfig
  * @typedef {import('@librechat/agents').IState} IState
  */
 
@@ -32,6 +33,7 @@ async function createRun({
   streamUsage = true,
 }) {
   const provider = providerEndpointMap[agent.provider] ?? agent.provider;
+  /** @type {LLMConfig} */
   const llmConfig = Object.assign(
     {
       provider,
@@ -41,10 +43,26 @@ async function createRun({
     agent.model_parameters,
   );
 
+  /** Resolves Mistral type strictness due to new OpenAI usage field */
+  if (agent.endpoint?.toLowerCase().includes(KnownEndpoints.mistral)) {
+    llmConfig.streamUsage = false;
+    llmConfig.usage = true;
+  }
+
+  /** @type {'reasoning_content' | 'reasoning'} */
+  let reasoningKey;
+  if (
+    llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
+    (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    reasoningKey = 'reasoning';
+  }
+
   /** @type {StandardGraphConfig} */
   const graphConfig = {
     signal,
     llmConfig,
+    reasoningKey,
     tools: agent.tools,
     instructions: agent.instructions,
     additional_instructions: agent.additional_instructions,
@@ -52,7 +70,7 @@ async function createRun({
   };
 
   // TEMPORARY FOR TESTING
-  if (agent.provider === Providers.ANTHROPIC) {
+  if (agent.provider === Providers.ANTHROPIC || agent.provider === Providers.BEDROCK) {
     graphConfig.streamBuffer = 2000;
   }
 

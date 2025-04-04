@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { Outlet } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
   AgentsMapContext,
@@ -11,12 +10,11 @@ import {
 } from '~/Providers';
 import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
-import { useUserTermsQuery } from '~/data-provider';
+import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
 
 export default function Root() {
-  const navigate = useNavigate();
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
   const [navVisible, setNavVisible] = useState(() => {
@@ -45,10 +43,10 @@ export default function Root() {
     setShowTerms(false);
   };
 
+  // Pass the desired redirect parameter to logout
   const handleDeclineTerms = () => {
     setShowTerms(false);
-    logout();
-    navigate('/login');
+    logout('/login?redirect=false');
   };
 
   if (!isAuthenticated) {

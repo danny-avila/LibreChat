@@ -114,7 +114,6 @@ const EditMessage = ({
             ? {
               ...msg,
               text: data.text,
-              isEdited: true,
             }
             : msg,
         ),

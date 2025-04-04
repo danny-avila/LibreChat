@@ -1,7 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import { getPresetTitle, getEndpointField, getIconKey } from '~/utils';
@@ -9,8 +8,9 @@ import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { MenuSeparator, MenuItem } from '../UI';
-import { icons } from '../Endpoints/Icons';
+import { icons } from '~/hooks/Endpoint/Icons';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -39,7 +39,7 @@ const PresetItems: FC<{
     <>
       <div
         role="menuitem"
-        className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50  md:min-w-[240px]"
+        className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 md:min-w-[240px]"
         tabIndex={-1}
       >
         <div className="flex h-full grow items-center justify-end gap-2">

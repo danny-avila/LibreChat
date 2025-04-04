@@ -119,7 +119,6 @@ const standardDependencies = {
   '@radix-ui/react-switch': '^1.0.3',
   '@radix-ui/react-tabs': '^1.0.3',
   '@radix-ui/react-toast': '^1.1.5',
-  '@radix-ui/react-tooltip': '^1.0.6',
   '@radix-ui/react-slot': '^1.1.0',
   '@radix-ui/react-toggle': '^1.1.0',
   '@radix-ui/react-toggle-group': '^1.1.0',

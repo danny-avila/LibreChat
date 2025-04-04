@@ -6,13 +6,19 @@ import {
   useContext,
   useCallback,
   createContext,
+  useRef,
 } from 'react';
-import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState } from 'recoil';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
-import { useGetUserQuery, useRefreshTokenMutation } from 'librechat-data-provider/react-query';
-import type { TLoginResponse, TLoginUser } from 'librechat-data-provider';
-import { useLoginUserMutation, useLogoutUserMutation, useGetRole } from '~/data-provider';
+import type * as t from 'librechat-data-provider';
+import {
+  useGetRole,
+  useGetUserQuery,
+  useLoginUserMutation,
+  useLogoutUserMutation,
+  useRefreshTokenMutation,
+} from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -30,6 +36,8 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const logoutRedirectRef = useRef<string | undefined>(undefined);
+
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
     enabled: !!(isAuthenticated && (user?.role ?? '')),
   });
@@ -42,29 +50,52 @@ const AuthContextProvider = ({
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
-      if (user) {
-        setUser(user);
-      }
+      setUser(user);
       setToken(token);
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
-      if (redirect != null && redirect) {
-        navigate(redirect, { replace: true });
+      // Use a custom redirect if set
+      const finalRedirect = logoutRedirectRef.current || redirect;
+      // Clear the stored redirect
+      logoutRedirectRef.current = undefined;
+      if (finalRedirect == null) {
+        return;
+      }
+      if (finalRedirect.startsWith('http://') || finalRedirect.startsWith('https://')) {
+        window.location.href = finalRedirect;
+      } else {
+        navigate(finalRedirect, { replace: true });
       }
     },
     [navigate, setUser],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
-  const loginUser = useLoginUserMutation();
+  const loginUser = useLoginUserMutation({
+    onSuccess: (data: t.TLoginResponse) => {
+      const { user, token, twoFAPending, tempToken } = data;
+      if (twoFAPending) {
+        // Redirect to the two-factor authentication route.
+        navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
+        return;
+      }
+      setError(undefined);
+      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+    },
+    onError: (error: TResError | unknown) => {
+      const resError = error as TResError;
+      doSetError(resError.message);
+      navigate('/login', { replace: true });
+    },
+  });
   const logoutUser = useLogoutUserMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       setUserContext({
         token: undefined,
         isAuthenticated: false,
         user: undefined,
-        redirect: '/login',
+        redirect: data.redirect ?? '/login',
       });
     },
     onError: (error) => {
@@ -77,24 +108,22 @@ const AuthContextProvider = ({
       });
     },
   });
-
-  const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
-  const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
   const refreshToken = useRefreshTokenMutation();
 
-  const login = (data: TLoginUser) => {
-    loginUser.mutate(data, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setError(undefined);
-        setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
-      },
-      onError: (error: TResError | unknown) => {
-        const resError = error as TResError;
-        doSetError(resError.message);
-        navigate('/login', { replace: true });
-      },
-    });
+  const logout = useCallback(
+    (redirect?: string) => {
+      if (redirect) {
+        logoutRedirectRef.current = redirect;
+      }
+      logoutUser.mutate(undefined);
+    },
+    [logoutUser],
+  );
+
+  const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
+
+  const login = (data: t.TLoginUser) => {
+    loginUser.mutate(data);
   };
 
   const silentRefresh = useCallback(() => {
@@ -103,7 +132,7 @@ const AuthContextProvider = ({
       return;
     }
     refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse | undefined) => {
+      onSuccess: (data: t.TRefreshTokenResponse | undefined) => {
         const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
@@ -184,7 +213,7 @@ const AuthContextProvider = ({
       },
       isAuthenticated,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     [user, error, isAuthenticated, token, userRole, adminRole],
   );
 
@@ -201,4 +230,4 @@ const useAuthContext = () => {
   return context;
 };
 
-export { AuthContextProvider, useAuthContext };
+export { AuthContextProvider, useAuthContext, AuthContext };

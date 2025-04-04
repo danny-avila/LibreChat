@@ -133,11 +133,11 @@ export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
 
-export const login = (payload: t.TLoginUser) => {
+export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
 
-export const logout = () => {
+export const logout = (): Promise<m.TLogoutResponse> => {
   return request.post(endpoints.logout());
 };
 
@@ -773,4 +773,34 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
+}
+
+export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
+  return request.get(endpoints.enableTwoFactor());
+}
+
+export function verifyTwoFactor(
+  payload: t.TVerify2FARequest,
+): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.verifyTwoFactor(), payload);
+}
+
+export function confirmTwoFactor(
+  payload: t.TVerify2FARequest,
+): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.confirmTwoFactor(), payload);
+}
+
+export function disableTwoFactor(): Promise<t.TDisable2FAResponse> {
+  return request.post(endpoints.disableTwoFactor());
+}
+
+export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes());
+}
+
+export function verifyTwoFactorTemp(
+  payload: t.TVerify2FATempRequest,
+): Promise<t.TVerify2FATempResponse> {
+  return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }

@@ -1,14 +1,16 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
-  EModelEndpoint,
-  Constants,
   AuthType,
+  Constants,
+  EModelEndpoint,
+  bedrockInputParser,
+  bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { sleep } = require('~/server/utils');
 
-const getOptions = async ({ req, endpointOption }) => {
+const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -62,29 +64,9 @@ const getOptions = async ({ req, endpointOption }) => {
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: endpointOption.model,
+    model: overrideModel ?? endpointOption.model,
     region: BEDROCK_AWS_DEFAULT_REGION,
-    streaming: true,
-    streamUsage: true,
-    callbacks: [
-      {
-        handleLLMNewToken: async () => {
-          if (!streamRate) {
-            return;
-          }
-          await sleep(streamRate);
-        },
-      },
-    ],
   };
-
-  if (credentials) {
-    requestOptions.credentials = credentials;
-  }
-
-  if (BEDROCK_REVERSE_PROXY) {
-    requestOptions.endpointHost = BEDROCK_REVERSE_PROXY;
-  }
 
   const configOptions = {};
   if (PROXY) {
@@ -92,9 +74,34 @@ const getOptions = async ({ req, endpointOption }) => {
     configOptions.httpAgent = new HttpsProxyAgent(PROXY);
   }
 
+  const llmConfig = bedrockOutputParser(
+    bedrockInputParser.parse(
+      removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+    ),
+  );
+
+  if (credentials) {
+    llmConfig.credentials = credentials;
+  }
+
+  if (BEDROCK_REVERSE_PROXY) {
+    llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
+  }
+
+  llmConfig.callbacks = [
+    {
+      handleLLMNewToken: async () => {
+        if (!streamRate) {
+          return;
+        }
+        await sleep(streamRate);
+      },
+    },
+  ];
+
   return {
     /** @type {BedrockClientOptions} */
-    llmConfig: removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+    llmConfig,
     configOptions,
   };
 };

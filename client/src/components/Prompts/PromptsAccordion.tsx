@@ -9,11 +9,11 @@ export default function PromptsAccordion() {
   return (
     <div className="flex h-full w-full flex-col">
       <PromptSidePanel className="lg:w-full xl:w-full" {...groupsNav}>
-        <div className="flex w-full flex-row items-center justify-between px-2 pt-2">
+        <div className="flex w-full flex-row items-center justify-between pt-2">
           <ManagePrompts className="select-none" />
           <AutoSendPrompt className="text-xs dark:text-white" />
         </div>
-        <FilterPrompts setName={groupsNav.setName} className="items-center justify-center px-2" />
+        <FilterPrompts setName={groupsNav.setName} className="items-center justify-center" />
       </PromptSidePanel>
     </div>
   );

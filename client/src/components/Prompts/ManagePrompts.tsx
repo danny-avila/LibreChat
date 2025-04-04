@@ -14,10 +14,19 @@ export default function ManagePrompts({ className }: { className?: string }) {
     setPromptsCategory('');
   }, [setPromptsName, setPromptsCategory]);
 
-  const clickHandler = useCustomLink('/d/prompts', clickCallback);
+  const customLink = useCustomLink('/d/prompts', clickCallback);
+  const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
+    customLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
+  };
 
   return (
-    <Button variant="outline" className={cn(className, 'bg-transparent')} onClick={clickHandler}>
+    <Button
+      variant="outline"
+      className={cn(className, 'bg-transparent')}
+      onClick={clickHandler}
+      aria-label="Manage Prompts"
+      role="button"
+    >
       {localize('com_ui_manage')}
     </Button>
   );

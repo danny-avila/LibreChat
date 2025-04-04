@@ -5,6 +5,7 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -28,11 +29,13 @@ import type {
   SharedLinksResponse,
 } from 'librechat-data-provider';
 import { findPageForConversation } from '~/utils';
+import store from '~/store';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
 ): QueryObserverResult<TPreset[], unknown> => {
   return useQuery<TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
+    staleTime: 1000 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -115,6 +118,7 @@ export const useConversationsInfiniteQuery = (
   params?: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useInfiniteQuery<ConversationListResponse, unknown>(
     params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
@@ -135,6 +139,7 @@ export const useConversationsInfiniteQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };
@@ -156,7 +161,7 @@ export const useSharedLinksQuery = (
         sortBy,
         sortDirection,
       }),
-    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
     cacheTime: 30 * 60 * 1000, // 30 minutes
@@ -232,6 +237,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
       // select: (res) => {
       //   return res.data.sort((a, b) => a.created_at - b.created_at);
       // },
+      staleTime: 1000 * 5,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

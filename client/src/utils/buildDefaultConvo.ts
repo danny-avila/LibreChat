@@ -8,14 +8,14 @@ import type { TConversation } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 
 const buildDefaultConvo = ({
+  models,
   conversation,
   endpoint = null,
-  models,
   lastConversationSetup,
 }: {
-  conversation: TConversation;
-  endpoint: EModelEndpoint | null;
   models: string[];
+  conversation: TConversation;
+  endpoint?: EModelEndpoint | null;
   lastConversationSetup: TConversation | null;
 }): TConversation => {
   const { lastSelectedModel, lastSelectedTools } = getLocalStorageItems();
@@ -33,7 +33,7 @@ const buildDefaultConvo = ({
   const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
   const secondaryModel: string | null =
     endpoint === EModelEndpoint.gptPlugins
-      ? lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null
+      ? (lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null)
       : null;
 
   let possibleModels: string[], secondaryModels: string[];

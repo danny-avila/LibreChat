@@ -15,19 +15,6 @@ const searchConversation = async (conversationId) => {
     throw new Error('Error searching conversation');
   }
 };
-/**
- * Searches for a conversation by conversationId and returns associated file ids.
- * @param {string} conversationId - The conversation's ID.
- * @returns {Promise<string[] | null>}
- */
-const getConvoFiles = async (conversationId) => {
-  try {
-    return (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
-  } catch (error) {
-    logger.error('[getConvoFiles] Error getting conversation files', error);
-    throw new Error('Error getting conversation files');
-  }
-};
 
 /**
  * Retrieves a single conversation for a given user and conversation ID.
@@ -73,6 +60,20 @@ const deleteNullOrEmptyConversations = async () => {
   }
 };
 
+/**
+ * Searches for a conversation by conversationId and returns associated file ids.
+ * @param {string} conversationId - The conversation's ID.
+ * @returns {Promise<string[] | null>}
+ */
+const getConvoFiles = async (conversationId) => {
+  try {
+    return (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
+  } catch (error) {
+    logger.error('[getConvoFiles] Error getting conversation files', error);
+    throw new Error('Error getting conversation files');
+  }
+};
+
 module.exports = {
   Conversation,
   getConvoFiles,
@@ -96,10 +97,24 @@ module.exports = {
         update.conversationId = newConversationId;
       }
 
+      if (req.body.isTemporary) {
+        const expiredAt = new Date();
+        expiredAt.setDate(expiredAt.getDate() + 30);
+        update.expiredAt = expiredAt;
+      } else {
+        update.expiredAt = null;
+      }
+
+      /** @type {{ $set: Partial<TConversation>; $unset?: Record<keyof TConversation, number> }} */
+      const updateOperation = { $set: update };
+      if (metadata && metadata.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
+        updateOperation.$unset = metadata.unsetFields;
+      }
+
       /** Note: the resulting Model object is necessary for Meilisearch operations */
       const conversation = await Conversation.findOneAndUpdate(
         { conversationId, user: req.user.id },
-        update,
+        updateOperation,
         {
           new: true,
           upsert: true,
@@ -143,6 +158,9 @@ module.exports = {
     if (Array.isArray(tags) && tags.length > 0) {
       query.tags = { $in: tags };
     }
+
+    query.$and = [{ $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] }];
+
     try {
       const totalConvos = (await Conversation.countDocuments(query)) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
@@ -172,6 +190,7 @@ module.exports = {
           Conversation.findOne({
             user,
             conversationId: convo.conversationId,
+            $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
           }).lean(),
         ),
       );

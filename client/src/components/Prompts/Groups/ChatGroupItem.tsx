@@ -80,7 +80,7 @@ function ChatGroupItem({
                     e.stopPropagation();
                   }
                 }}
-                className="z-50 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-secondary focus:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                className="z-50 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-hover focus:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
               >
                 <MenuIcon className="icon-md text-text-secondary" aria-hidden="true" />
                 <span className="sr-only">Open actions menu for {group.name}</span>
@@ -89,7 +89,7 @@ function ChatGroupItem({
             <DropdownMenuContent
               id={`prompt-menu-${group._id}`}
               aria-label={`Available actions for ${group.name}`}
-              className="z-50 mt-2 w-36 rounded-lg"
+              className="z-50 w-fit rounded-xl"
               collisionPadding={2}
               align="end"
             >

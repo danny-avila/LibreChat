@@ -31,6 +31,20 @@
     ]
   },
   {
+    "name": "YouTube",
+    "pluginKey": "youtube",
+    "toolkit": true,
+    "description": "Get YouTube video information, retrieve comments, analyze transcripts and search for videos.",
+    "icon": "https://www.youtube.com/s/desktop/7449ebf7/img/favicon_144x144.png",
+    "authConfig": [
+      {
+        "authField": "YOUTUBE_API_KEY",
+        "label": "YouTube API Key",
+        "description": "Your YouTube Data API v3 key."
+      }
+    ]
+  },
+  {
     "name": "Wolfram",
     "pluginKey": "wolfram",
     "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",
@@ -148,6 +162,20 @@
         "authField": "OPENWEATHER_API_KEY",
         "label": "OpenWeather API Key",
         "description": "Sign up at <a href=\"https://home.openweathermap.org/users/sign_up\" target=\"_blank\">OpenWeather</a>, then get your key at <a href=\"https://home.openweathermap.org/api_keys\" target=\"_blank\">API keys</a>."
+      }
+    ]
+  },
+  {
+    "name": "Flux",
+    "pluginKey": "flux",
+    "description": "Generate images using text with the Flux API.",
+    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "isAuthRequired": "true",
+    "authConfig": [
+      {
+        "authField": "FLUX_API_KEY",
+        "label": "Your Flux API Key",
+        "description": "Provide your Flux API key from your user profile."
       }
     ]
   }

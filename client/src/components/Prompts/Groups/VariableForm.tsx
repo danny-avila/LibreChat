@@ -15,8 +15,8 @@ import {
   extractVariableInfo,
 } from '~/utils';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
+import { TextareaAutosize, InputCombobox, Button } from '~/components/ui';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { TextareaAutosize, InputCombobox } from '~/components/ui';
 
 type FieldType = 'text' | 'select';
 
@@ -169,7 +169,7 @@ export default function VariableForm({
                     return (
                       <InputCombobox
                         options={field.config.options || []}
-                        placeholder={localize('com_ui_enter_var', field.config.variable)}
+                        placeholder={localize('com_ui_enter_var', { 0: field.config.variable })}
                         className={cn(
                           defaultTextProps,
                           'rounded px-3 py-2 focus:bg-surface-tertiary',
@@ -192,7 +192,7 @@ export default function VariableForm({
                         defaultTextProps,
                         'rounded px-3 py-2 focus:bg-surface-tertiary',
                       )}
-                      placeholder={localize('com_ui_enter_var', field.config.variable)}
+                      placeholder={localize('com_ui_enter_var', { 0: field.config.variable })}
                       maxRows={8}
                     />
                   );
@@ -202,12 +202,9 @@ export default function VariableForm({
           ))}
         </div>
         <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn rounded bg-green-500 px-4 py-2 font-bold text-white transition-all hover:bg-green-600"
-          >
+          <Button type="submit" variant="submit">
             {localize('com_ui_submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
