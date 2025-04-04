@@ -645,7 +645,7 @@ export default function useEventHandlers({
           } else {
             cancelHandler(data, submission);
           }
-        } else if (response.status === 204) {
+        } else if (response.status === 204 || response.status === 200) {
           const responseMessage = {
             ...submission.initialResponse,
           };

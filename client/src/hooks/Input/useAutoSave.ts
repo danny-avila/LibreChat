@@ -11,6 +11,28 @@ const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
 }, 2500);
 
+const encodeBase64 = (plainText: string): string => {
+  try {
+    const textBytes = new TextEncoder().encode(plainText);
+    return btoa(String.fromCharCode(...textBytes));
+  } catch (e) {
+    return '';
+  }
+};
+
+const decodeBase64 = (base64String: string): string => {
+  try {
+    const bytes = atob(base64String);
+    const uint8Array = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      uint8Array[i] = bytes.charCodeAt(i);
+    }
+    return new TextDecoder().decode(uint8Array);
+  } catch (e) {
+    return '';
+  }
+};
+
 export const useAutoSave = ({
   conversationId,
   textAreaRef,
@@ -29,28 +51,6 @@ export const useAutoSave = ({
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
   const { data: fileList } = useGetFiles<TFile[]>();
-
-  const encodeBase64 = (plainText: string): string => {
-    try {
-      const textBytes = new TextEncoder().encode(plainText);
-      return btoa(String.fromCharCode(...textBytes));
-    } catch (e) {
-      return '';
-    }
-  };
-
-  const decodeBase64 = (base64String: string): string => {
-    try {
-      const bytes = atob(base64String);
-      const uint8Array = new Uint8Array(bytes.length);
-      for (let i = 0; i < bytes.length; i++) {
-        uint8Array[i] = bytes.charCodeAt(i);
-      }
-      return new TextDecoder().decode(uint8Array);
-    } catch (e) {
-      return '';
-    }
-  };
 
   const restoreFiles = useCallback(
     (id: string) => {
@@ -126,16 +126,17 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce(() => {
-      if (textAreaRef?.current && textAreaRef.current.value) {
+    const handleInput = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      if (value) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
-          encodeBase64(textAreaRef.current.value),
+          encodeBase64(value),
         );
       } else {
         localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
       }
-    }, 1000);
+    }, 750);
 
     const textArea = textAreaRef?.current;
     if (textArea) {

@@ -1,4 +1,3 @@
-/* eslint-disable jest/no-conditional-expect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // zod.spec.ts
 import { z } from 'zod';
@@ -465,6 +464,156 @@ describe('convertJsonSchemaToZod', () => {
           expect(preferencesShape.theme.description).toBe('UI theme preference');
         }
       }
+    });
+  });
+
+  describe('additionalProperties handling', () => {
+    it('should allow any additional properties when additionalProperties is true', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+        additionalProperties: true,
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      // Should accept the defined property
+      expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
+
+      // Should also accept additional properties of any type
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+      expect(zodSchema?.parse({ name: 'John', isActive: true })).toEqual({
+        name: 'John',
+        isActive: true,
+      });
+      expect(zodSchema?.parse({ name: 'John', tags: ['tag1', 'tag2'] })).toEqual({
+        name: 'John',
+        tags: ['tag1', 'tag2'],
+      });
+    });
+
+    it('should validate additional properties according to schema when additionalProperties is an object', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+        additionalProperties: { type: 'number' },
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      // Should accept the defined property
+      expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
+
+      // Should accept additional properties that match the additionalProperties schema
+      expect(zodSchema?.parse({ name: 'John', age: 30, score: 100 })).toEqual({
+        name: 'John',
+        age: 30,
+        score: 100,
+      });
+
+      // Should reject additional properties that don't match the additionalProperties schema
+      expect(() => zodSchema?.parse({ name: 'John', isActive: true })).toThrow();
+      expect(() => zodSchema?.parse({ name: 'John', tags: ['tag1', 'tag2'] })).toThrow();
+    });
+
+    it('should strip additional properties when additionalProperties is false or not specified', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          age: { type: 'number' },
+        },
+        additionalProperties: false,
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      // Should accept the defined properties
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+
+      // Current implementation strips additional properties when additionalProperties is false
+      const objWithExtra = { name: 'John', age: 30, isActive: true };
+      expect(zodSchema?.parse(objWithExtra)).toEqual({ name: 'John', age: 30 });
+
+      // Test with additionalProperties not specified (should behave the same)
+      const schemaWithoutAdditionalProps: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          age: { type: 'number' },
+        },
+      };
+      const zodSchemaWithoutAdditionalProps = convertJsonSchemaToZod(schemaWithoutAdditionalProps);
+
+      expect(zodSchemaWithoutAdditionalProps?.parse({ name: 'John', age: 30 })).toEqual({
+        name: 'John',
+        age: 30,
+      });
+
+      // Current implementation strips additional properties when additionalProperties is not specified
+      const objWithExtra2 = { name: 'John', age: 30, isActive: true };
+      expect(zodSchemaWithoutAdditionalProps?.parse(objWithExtra2)).toEqual({
+        name: 'John',
+        age: 30,
+      });
+    });
+
+    it('should handle complex nested objects with additionalProperties', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          user: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              profile: {
+                type: 'object',
+                properties: {
+                  bio: { type: 'string' },
+                },
+                additionalProperties: true,
+              },
+            },
+            additionalProperties: { type: 'string' },
+          },
+        },
+        additionalProperties: false,
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      const validData = {
+        user: {
+          name: 'John',
+          profile: {
+            bio: 'Developer',
+            location: 'New York', // Additional property allowed in profile
+            website: 'https://example.com', // Additional property allowed in profile
+          },
+          role: 'admin', // Additional property of type string allowed in user
+          level: 'senior', // Additional property of type string allowed in user
+        },
+      };
+
+      expect(zodSchema?.parse(validData)).toEqual(validData);
+
+      // Current implementation strips additional properties at the top level
+      // when additionalProperties is false
+      const dataWithExtraTopLevel = {
+        user: { name: 'John' },
+        extraField: 'not allowed', // This should be stripped
+      };
+      expect(zodSchema?.parse(dataWithExtraTopLevel)).toEqual({ user: { name: 'John' } });
+
+      // Should reject additional properties in user that don't match the string type
+      expect(() =>
+        zodSchema?.parse({
+          user: {
+            name: 'John',
+            age: 30, // Not a string
+          },
+        }),
+      ).toThrow();
     });
   });
 
