@@ -3,6 +3,7 @@ const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   setHeaders,
   handleAbort,
+  moderateText,
   // validateModel,
   generateCheckAccess,
   validateConvoAccess,
@@ -14,6 +15,7 @@ const addTitle = require('~/server/services/Endpoints/agents/title');
 
 const router = express.Router();
 
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
 const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
