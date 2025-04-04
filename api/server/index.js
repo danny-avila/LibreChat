@@ -21,6 +21,7 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const { initForkedCode } = require('./forked-code');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -112,6 +113,9 @@ const startServer = async () => {
   app.use('/api/bedrock', routes.bedrock);
 
   app.use('/api/tags', routes.tags);
+
+  // Initialize forked code routes and extensions
+  initForkedCode(app);
 
   app.use((req, res) => {
     res.set({
