@@ -7,6 +7,7 @@ import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import { cn } from '~/utils';
 import store from '~/store';
+import { ResponseCost } from '~/forked-code-custom';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -154,6 +155,7 @@ export default function HoverButtons({
         forkingSupported={forkingSupported}
         latestMessageId={latestMessage?.messageId}
       />
+      <ResponseCost message={message} conversation={conversation} isLast={isLast} />
       {continueSupported === true ? (
         <button
           className={cn(
