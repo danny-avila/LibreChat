@@ -12,6 +12,7 @@ import { icons } from '~/hooks/Endpoint/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { cn } from '~/utils';
 import store from '~/store';
+import logo from '/assets/maskable-icon.png';
 
 const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | null }) => {
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -107,7 +108,8 @@ export default function NewChat({
           )}
           aria-label={localize('com_ui_new_chat')}
         >
-          <NewChatButtonIcon conversation={conversation} />
+          {/* <NewChatButtonIcon conversation={conversation} /> */}
+          <img src={logo} alt="logo" className="w-8 h-8 rounded-lg"/>
           <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary">
             {localize('com_ui_new_chat')}
           </div>
