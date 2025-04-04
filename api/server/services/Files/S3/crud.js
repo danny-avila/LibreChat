@@ -16,6 +16,7 @@ const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
 
 let s3UrlExpirySeconds = 7 * 24 * 60 * 60;
+let s3RefreshExpiryMs = null;
 
 if (process.env.S3_URL_EXPIRY_SECONDS !== undefined) {
   const parsed = parseInt(process.env.S3_URL_EXPIRY_SECONDS, 10);
@@ -25,6 +26,19 @@ if (process.env.S3_URL_EXPIRY_SECONDS !== undefined) {
   } else {
     logger.warn(
       `[S3] Invalid S3_URL_EXPIRY_SECONDS value: "${process.env.S3_URL_EXPIRY_SECONDS}". Using 7-day expiry.`,
+    );
+  }
+}
+
+if (process.env.S3_REFRESH_EXPIRY_MS !== null && process.env.S3_REFRESH_EXPIRY_MS) {
+  const parsed = parseInt(process.env.S3_REFRESH_EXPIRY_MS, 10);
+
+  if (!isNaN(parsed) && parsed > 0) {
+    s3RefreshExpiryMs = parsed;
+    logger.info(`[S3] Using custom refresh expiry time: ${s3RefreshExpiryMs}ms`);
+  } else {
+    logger.warn(
+      `[S3] Invalid S3_REFRESH_EXPIRY_MS value: "${process.env.S3_REFRESH_EXPIRY_MS}". Using default refresh logic.`,
     );
   }
 }
@@ -293,8 +307,16 @@ function needsRefresh(signedUrl, bufferSeconds) {
 
     // Check if it's close to expiration
     const now = new Date();
-    const bufferTime = new Date(now.getTime() + bufferSeconds * 1000);
 
+    // If S3_REFRESH_EXPIRY_MS is set, use it to determine if URL is expired
+    if (s3RefreshExpiryMs !== null) {
+      const urlCreationTime = dateObj.getTime();
+      const urlAge = now.getTime() - urlCreationTime;
+      return urlAge >= s3RefreshExpiryMs;
+    }
+
+    // Otherwise use the default buffer-based logic
+    const bufferTime = new Date(now.getTime() + bufferSeconds * 1000);
     return expiresAtDate <= bufferTime;
   } catch (error) {
     logger.error('Error checking URL expiration:', error);

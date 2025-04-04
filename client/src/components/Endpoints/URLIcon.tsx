@@ -55,8 +55,8 @@ export const URLIcon = memo(
           onError={handleImageError}
           loading="lazy"
           decoding="async"
-          width={Number(containerStyle.width)}
-          height={Number(containerStyle.height)}
+          width={Number(containerStyle.width) || 20}
+          height={Number(containerStyle.height) || 20}
         />
       </div>
     );
