@@ -10,6 +10,7 @@ import type {
   TConversationTag,
   TBanner,
 } from './schemas';
+
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
@@ -532,3 +533,16 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+export type TRealtimeEphemeralTokenRequest = {
+  voice: string;
+};
+
+export type TRealtimeEphemeralTokenResponse = {
+  token: string;
+  url: string;
+};
+
+export type TWebsocketUrlResponse = {
+  url: string;
+};

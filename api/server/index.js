@@ -4,6 +4,7 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const { createServer } = require('http');
 const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
@@ -14,6 +15,8 @@ const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
+const { AudioSocketModule } = require('./services/Files/Audio/AudioSocketModule');
+const { SocketIOService } = require('./services/WebSocket/WebSocketServer');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
@@ -28,6 +31,9 @@ const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
+let socketIOService;
+let audioModule;
+
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
@@ -37,7 +43,21 @@ const startServer = async () => {
   await indexSync();
 
   const app = express();
+  const server = createServer(app);
+
   app.disable('x-powered-by');
+  app.use(
+    cors({
+      origin: true,
+      credentials: true,
+    }),
+  );
+
+  socketIOService = new SocketIOService(server);
+  audioModule = new AudioSocketModule(socketIOService);
+
+  logger.info('WebSocket server and Audio module initialized');
+
   await AppService(app);
 
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
@@ -110,6 +130,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/bedrock', routes.bedrock);
+  app.use('/api/websocket', routes.websocket);
 
   app.use('/api/tags', routes.tags);
 
@@ -127,7 +148,7 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, () => {
+  server.listen(port, host, () => {
     if (host == '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
@@ -135,10 +156,25 @@ const startServer = async () => {
     } else {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
+
+    logger.info(`Socket.IO endpoint: http://${host}:${port}`);
   });
 };
 
 startServer();
+
+process.on('SIGINT', () => {
+  logger.info('Shutting down server...');
+  if (audioModule) {
+    audioModule.cleanup();
+    logger.info('Audio module cleaned up');
+  }
+  if (socketIOService) {
+    socketIOService.shutdown();
+    logger.info('WebSocket server shut down');
+  }
+  process.exit(0);
+});
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {

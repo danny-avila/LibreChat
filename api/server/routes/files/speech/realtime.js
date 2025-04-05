@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 
-const { getCustomConfigSpeech } = require('~/server/services/Files/Audio');
+const { getRealtimeConfig } = require('~/server/services/Files/Audio');
 
 router.get('/', async (req, res) => {
-  await getCustomConfigSpeech(req, res);
+  await getRealtimeConfig(req, res);
 });
 
 module.exports = router;

@@ -171,7 +171,9 @@ export const textToSpeechManual = () => `${textToSpeech()}/manual`;
 
 export const textToSpeechVoices = () => `${textToSpeech()}/voices`;
 
-export const getCustomConfigSpeech = () => `${speech()}/config/get`;
+export const getCustomConfigSpeech = () => `${speech()}/config`;
+
+export const getRealtimeEphemeralToken = () => `${speech()}/realtime`;
 
 export const getPromptGroup = (_id: string) => `${prompts()}/groups/${_id}`;
 
@@ -245,3 +247,5 @@ export const confirmTwoFactor = () => '/api/auth/2fa/confirm';
 export const disableTwoFactor = () => '/api/auth/2fa/disable';
 export const regenerateBackupCodes = () => '/api/auth/2fa/backup/regenerate';
 export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
+
+export const websocket = () => '/api/websocket';

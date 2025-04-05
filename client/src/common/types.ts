@@ -56,6 +56,32 @@ export type BadgeItem = {
   isAvailable: boolean;
 };
 
+export interface RTCMessage {
+  type:
+    | 'audio-chunk'
+    | 'audio-received'
+    | 'transcription'
+    | 'llm-response'
+    | 'tts-chunk'
+    | 'call-ended'
+    | 'webrtc-answer'
+    | 'icecandidate';
+  payload?: RTCSessionDescriptionInit | RTCIceCandidateInit;
+}
+
+export type MessagePayload =
+  | RTCSessionDescriptionInit
+  | RTCIceCandidateInit
+  | { speaking: boolean };
+
+export enum CallState {
+  IDLE = 'idle',
+  CONNECTING = 'connecting',
+  ACTIVE = 'active',
+  ERROR = 'error',
+  ENDED = 'ended',
+}
+
 export type AssistantListItem = {
   id: string;
   name: string;
