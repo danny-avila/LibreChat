@@ -21,7 +21,7 @@ const useSpeechToTextExternal = (
   const [isListening, setIsListening] = useState(false);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
-  const [audioMimeType, setAudioMimeType] = useState<string>('audio/webm');
+  const [audioMimeType, setAudioMimeType] = useState<string>(() => getBestSupportedMimeType());
 
   const [minDecibels] = useRecoilState(store.decibelValue);
   const [autoSendText] = useRecoilState(store.autoSendText);
@@ -49,7 +49,7 @@ const useSpeechToTextExternal = (
     },
   });
 
-  const getBestSupportedMimeType = () => {
+  function getBestSupportedMimeType() {
     const types = [
       'audio/webm',
       'audio/webm;codecs=opus',
@@ -60,20 +60,22 @@ const useSpeechToTextExternal = (
     ];
 
     for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
         return type;
       }
     }
 
-    const ua = navigator.userAgent.toLowerCase();
-    if (ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1) {
-      return 'audio/mp4';
-    } else if (ua.indexOf('firefox') !== -1) {
-      return 'audio/ogg';
-    } else {
-      return 'audio/webm';
+    if (typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1) {
+        return 'audio/mp4';
+      } else if (ua.indexOf('firefox') !== -1) {
+        return 'audio/ogg';
+      }
     }
-  };
+
+    return 'audio/webm';
+  }
 
   const getFileExtension = (mimeType: string) => {
     if (mimeType.includes('mp4')) {
@@ -177,7 +179,7 @@ const useSpeechToTextExternal = (
         setAudioMimeType(bestMimeType);
 
         mediaRecorderRef.current = new MediaRecorder(audioStream.current, {
-          mimeType: bestMimeType,
+          mimeType: audioMimeType,
         });
         mediaRecorderRef.current.addEventListener('dataavailable', (event: BlobEvent) => {
           audioChunks.push(event.data);
@@ -266,7 +268,6 @@ const useSpeechToTextExternal = (
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-
   }, [isListening]);
 
   return {

@@ -13,7 +13,6 @@ const {
   actionDomainSeparator,
 } = require('librechat-data-provider');
 const { refreshAccessToken } = require('~/server/services/TokenService');
-const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
@@ -130,6 +129,7 @@ async function loadActionSets(searchParams) {
  * @param {string | undefined} [params.name] - The name of the tool.
  * @param {string | undefined} [params.description] - The description for the tool.
  * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
+ * @param {{ oauth_client_id?: string; oauth_client_secret?: string; }} params.encrypted - The encrypted values for the action.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createActionTool({
@@ -140,17 +140,8 @@ async function createActionTool({
   zodSchema,
   name,
   description,
+  encrypted,
 }) {
-  const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
-  if (!isDomainAllowed) {
-    return null;
-  }
-  const encrypted = {
-    oauth_client_id: action.metadata.oauth_client_id,
-    oauth_client_secret: action.metadata.oauth_client_secret,
-  };
-  action.metadata = await decryptMetadata(action.metadata);
-
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
     try {
@@ -308,9 +299,8 @@ async function createActionTool({
       }
       return response.data;
     } catch (error) {
-      const logMessage = `API call to ${action.metadata.domain} failed`;
-      logAxiosError({ message: logMessage, error });
-      throw error;
+      const message = `API call to ${action.metadata.domain} failed:`;
+      return logAxiosError({ message, error });
     }
   };
 
@@ -328,6 +318,27 @@ async function createActionTool({
 }
 
 /**
+ * Encrypts a sensitive value.
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function encryptSensitiveValue(value) {
+  // Encode API key to handle special characters like ":"
+  const encodedValue = encodeURIComponent(value);
+  return await encryptV2(encodedValue);
+}
+
+/**
+ * Decrypts a sensitive value.
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function decryptSensitiveValue(value) {
+  const decryptedValue = await decryptV2(value);
+  return decodeURIComponent(decryptedValue);
+}
+
+/**
  * Encrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to encrypt.
@@ -339,17 +350,19 @@ async function encryptMetadata(metadata) {
   // ServiceHttp
   if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
     if (metadata.api_key) {
-      encryptedMetadata.api_key = await encryptV2(metadata.api_key);
+      encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);
     }
   }
 
   // OAuth
   else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
     if (metadata.oauth_client_id) {
-      encryptedMetadata.oauth_client_id = await encryptV2(metadata.oauth_client_id);
+      encryptedMetadata.oauth_client_id = await encryptSensitiveValue(metadata.oauth_client_id);
     }
     if (metadata.oauth_client_secret) {
-      encryptedMetadata.oauth_client_secret = await encryptV2(metadata.oauth_client_secret);
+      encryptedMetadata.oauth_client_secret = await encryptSensitiveValue(
+        metadata.oauth_client_secret,
+      );
     }
   }
 
@@ -368,17 +381,19 @@ async function decryptMetadata(metadata) {
   // ServiceHttp
   if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
     if (metadata.api_key) {
-      decryptedMetadata.api_key = await decryptV2(metadata.api_key);
+      decryptedMetadata.api_key = await decryptSensitiveValue(metadata.api_key);
     }
   }
 
   // OAuth
   else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
     if (metadata.oauth_client_id) {
-      decryptedMetadata.oauth_client_id = await decryptV2(metadata.oauth_client_id);
+      decryptedMetadata.oauth_client_id = await decryptSensitiveValue(metadata.oauth_client_id);
     }
     if (metadata.oauth_client_secret) {
-      decryptedMetadata.oauth_client_secret = await decryptV2(metadata.oauth_client_secret);
+      decryptedMetadata.oauth_client_secret = await decryptSensitiveValue(
+        metadata.oauth_client_secret,
+      );
     }
   }
 

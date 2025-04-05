@@ -65,6 +65,7 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   url: z
     .string()
     .url()
@@ -92,9 +93,10 @@ export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
 /**
  * Recursively processes an object to replace environment variables in string values
  * @param {MCPOptions} obj - The object to process
+ * @param {string} [userId] - The user ID
  * @returns {MCPOptions} - The processed object with environment variables replaced
  */
-export function processMCPEnv(obj: MCPOptions): MCPOptions {
+export function processMCPEnv(obj: MCPOptions, userId?: string): MCPOptions {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -105,6 +107,16 @@ export function processMCPEnv(obj: MCPOptions): MCPOptions {
       processedEnv[key] = extractEnvVariable(value);
     }
     obj.env = processedEnv;
+  } else if ('headers' in obj && obj.headers) {
+    const processedHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(obj.headers)) {
+      if (value === '{{LIBRECHAT_USER_ID}}' && userId != null && userId) {
+        processedHeaders[key] = userId;
+        continue;
+      }
+      processedHeaders[key] = extractEnvVariable(value);
+    }
+    obj.headers = processedHeaders;
   }
 
   return obj;

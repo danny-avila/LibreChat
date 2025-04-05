@@ -2,7 +2,9 @@ const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const {
+  Time,
   isUUID,
+  CacheKeys,
   FileSources,
   EModelEndpoint,
   isAgentsEndpoint,
@@ -17,8 +19,10 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
+const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAgent } = require('~/models/Agent');
-const { getFiles } = require('~/models/File');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -26,6 +30,18 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const files = await getFiles({ user: req.user.id });
+    if (req.app.locals.fileStrategy === FileSources.s3) {
+      try {
+        const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+        const alreadyChecked = await cache.get(req.user.id);
+        if (!alreadyChecked) {
+          await refreshS3FileUrls(files, batchUpdateFiles);
+          await cache.set(req.user.id, true, Time.THIRTY_MINUTES);
+        }
+      } catch (error) {
+        logger.warn('[/files] Error refreshing S3 file URLs:', error);
+      }
+    }
     res.status(200).send(files);
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
