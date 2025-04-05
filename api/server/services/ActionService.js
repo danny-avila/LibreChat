@@ -198,17 +198,23 @@ async function createActionTool({
                     logger.debug('Sent OAuth login request to client', { action_id, identifier });
                     return true;
                   },
+                  config?.signal,
                 );
                 logger.debug('Waiting for OAuth Authorization response', { action_id, identifier });
-                const result = await flowManager.createFlow(identifier, 'oauth', {
-                  state: stateToken,
-                  userId: req.user.id,
-                  client_url: metadata.auth.client_url,
-                  redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
-                  /** Encrypted values */
-                  encrypted_oauth_client_id: encrypted.oauth_client_id,
-                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                });
+                const result = await flowManager.createFlow(
+                  identifier,
+                  'oauth',
+                  {
+                    state: stateToken,
+                    userId: req.user.id,
+                    client_url: metadata.auth.client_url,
+                    redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                    /** Encrypted values */
+                    encrypted_oauth_client_id: encrypted.oauth_client_id,
+                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                  },
+                  config?.signal,
+                );
                 logger.debug('Received OAuth Authorization response', { action_id, identifier });
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
@@ -264,6 +270,7 @@ async function createActionTool({
                   `${identifier}:refresh`,
                   'oauth_refresh',
                   refreshTokens,
+                  config?.signal,
                 );
                 metadata.oauth_access_token = refreshData.access_token;
                 if (refreshData.refresh_token) {
