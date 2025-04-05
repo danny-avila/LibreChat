@@ -63,9 +63,10 @@ describe('setupOpenId', () => {
       });
     });
 
+  // Updated tokenset: tokens now include a period to simulate a JWT
   const tokenset = {
-    id_token: 'fake_id_token',
-    access_token: 'fake_access_token',
+    id_token: 'header.payload.signature',
+    access_token: 'header.payload.signature',
   };
 
   const baseUserinfo = {
@@ -150,7 +151,7 @@ describe('setupOpenId', () => {
     // Arrange – remove username from userinfo
     const userinfo = { ...baseUserinfo };
     delete userinfo.username;
-    // Expect the username to be the given name (unchanged case)
+    // Expect the username to be the given name
     const expectUsername = userinfo.given_name;
 
     // Act
@@ -297,6 +298,5 @@ describe('setupOpenId', () => {
 
     // Assert – fetch should not be called and avatar should remain undefined or empty
     expect(fetch).not.toHaveBeenCalled();
-    // Depending on your implementation, user.avatar may be undefined or an empty string.
   });
 });
