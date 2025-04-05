@@ -195,12 +195,34 @@ export default function useStepHandler({
 
         // Store tool call IDs if present
         if (runStep.stepDetails.type === StepTypes.TOOL_CALLS) {
-          runStep.stepDetails.tool_calls.forEach((toolCall) => {
+          let updatedResponse = { ...response };
+          (runStep.stepDetails.tool_calls as Agents.ToolCall[]).forEach((toolCall) => {
             const toolCallId = toolCall.id ?? '';
             if ('id' in toolCall && toolCallId) {
               toolCallIdMap.current.set(runStep.id, toolCallId);
             }
+
+            const contentPart: Agents.MessageContentComplex = {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: {
+                name: toolCall.name ?? '',
+                args:
+                  (typeof toolCall.args === 'string'
+                    ? toolCall.args
+                    : JSON.stringify(toolCall.args)) ?? '',
+                id: toolCallId,
+              },
+            };
+
+            updatedResponse = updateContent(updatedResponse, runStep.index, contentPart);
           });
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const updatedMessages = messages.map((msg) =>
+            msg.messageId === runStep.runId ? updatedResponse : msg,
+          );
+
+          setMessages(updatedMessages);
         }
       } else if (event === 'on_agent_update') {
         const { agent_update } = data as Agents.AgentUpdate;
