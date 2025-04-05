@@ -2,7 +2,12 @@ const fetch = require('node-fetch');
 const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
+const {
+  Issuer,
+  Strategy: OpenIDStrategy,
+  custom,
+  AuthorizationParameters,
+} = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
@@ -61,10 +66,6 @@ async function downloadImage(url, accessToken) {
  *
  * @function getFullName
  * @param {Object} userinfo - The user information object from OpenID Connect
- * @param {string} [userinfo.given_name] - The user's first name
- * @param {string} [userinfo.family_name] - The user's last name
- * @param {string} [userinfo.username] - The user's username
- * @param {string} [userinfo.email] - The user's email address
  * @returns {string} The determined full name of the user
  */
 function getFullName(userinfo) {
@@ -180,7 +181,7 @@ function getUserRoles(tokenSet, userinfo, rolePath, tokenKind, roleSource) {
 }
 
 /**
- * Registers and configures the OpenID Connect strategy with Passport, enabling PKCE.
+ * Registers and configures the OpenID Connect strategy with Passport, enabling PKCE when toggled.
  *
  * @async
  * @function setupOpenId
@@ -198,13 +199,7 @@ async function setupOpenId() {
     // Discover issuer configuration
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     logger.info(`[openidStrategy] Discovered issuer: ${issuer.issuer}`);
-    /* Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
-      - id_token_signed_response_alg      // defaults to 'RS256'
-      - request_object_signing_alg        // defaults to 'RS256'
-      - userinfo_signed_response_alg      // not in v5
-      - introspection_signed_response_alg // not in v5
-      - authorization_signed_response_alg // not in v5
-    */
+
     /** @type {import('openid-client').ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
@@ -220,13 +215,19 @@ async function setupOpenId() {
 
     const client = new issuer.Client(clientMetadata);
 
-    // If you want a refresh token, add offline_access to scope, e.g. 'openid profile email offline_access'
+    // Determine whether to enable PKCE
+    const usePKCE = process.env.OPENID_USE_PKCE === 'true';
+
+    // Set up authorization parameters. Include code_challenge_method if PKCE is enabled.
     const openidScope = process.env.OPENID_SCOPE || 'openid profile email';
+    /** @type {import('openid-client').AuthorizationParameters} */
     const params = {
       scope: openidScope,
-      code_challenge_method: 'S256', // PKCE
       response_type: 'code',
     };
+    if (usePKCE) {
+      params.code_challenge_method = 'S256'; // Enable PKCE by specifying the code challenge method
+    }
 
     // Role-based config
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
@@ -234,9 +235,13 @@ async function setupOpenId() {
     const tokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND || 'id'; // 'id'|'access'
     const roleSource = process.env.OPENID_REQUIRED_ROLE_SOURCE || 'token'; // 'token'|'userinfo'
 
-    // Create the Passport strategy
+    // Create the Passport strategy using the new type-correct instantiation and toggle for PKCE
     const openidStrategy = new OpenIDStrategy(
-      { client, params },
+      {
+        client,
+        params,
+        usePKCE,
+      },
       async (tokenSet, userinfo, done) => {
         try {
           logger.info(`[openidStrategy] Verifying login for sub=${userinfo.sub}`);

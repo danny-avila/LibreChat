@@ -98,6 +98,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
+    delete process.env.OPENID_USE_PKCE;
 
     // By default, jwtDecode returns a token that includes the required role.
     jwtDecode.mockReturnValue({
@@ -392,5 +393,30 @@ describe('setupOpenId', () => {
       expect.objectContaining({ avatar: existingUser.avatar }),
     );
     expect(user.avatar).toBe(existingUser.avatar);
+  });
+
+  it('should pass usePKCE true and set code_challenge_method in params when OPENID_USE_PKCE is "true"', async () => {
+    process.env.OPENID_USE_PKCE = 'true';
+    await setupOpenId();
+    // Get the options from the last call of OpenIDStrategy
+    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
+    expect(callOptions.usePKCE).toBe(true);
+    expect(callOptions.params.code_challenge_method).toBe('S256');
+  });
+
+  it('should pass usePKCE false and not set code_challenge_method in params when OPENID_USE_PKCE is "false"', async () => {
+    process.env.OPENID_USE_PKCE = 'false';
+    await setupOpenId();
+    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
+    expect(callOptions.usePKCE).toBe(false);
+    expect(callOptions.params.code_challenge_method).toBeUndefined();
+  });
+
+  it('should default to usePKCE false when OPENID_USE_PKCE is not defined', async () => {
+    delete process.env.OPENID_USE_PKCE;
+    await setupOpenId();
+    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
+    expect(callOptions.usePKCE).toBe(false);
+    expect(callOptions.params.code_challenge_method).toBeUndefined();
   });
 });
