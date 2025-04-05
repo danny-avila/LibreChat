@@ -1,5 +1,24 @@
 import type { AssistantsEndpoint } from './schemas';
 
+// Testing this buildQuery function
+const buildQuery = (params: Record<string, unknown>): string => {
+  const query = Object.entries(params)
+    .filter(([, value]) => {
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return value !== undefined && value !== null && value !== '';
+    })
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.map((v) => `${key}=${encodeURIComponent(v)}`).join('&');
+      }
+      return `${key}=${encodeURIComponent(String(value))}`;
+    })
+    .join('&');
+  return query ? `?${query}` : '';
+};
+
 export const health = () => '/health';
 export const user = () => '/api/user';
 
@@ -43,10 +62,24 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}${
-    isArchived === true ? '&isArchived=true' : ''
-  }${tags?.map((tag) => `&tags=${tag}`).join('')}`;
+export const conversations = (
+  isArchived?: boolean,
+  sortBy?: 'title' | 'createdAt' | 'updatedAt',
+  sortDirection?: 'asc' | 'desc',
+  tags?: string[],
+  search?: string,
+  cursor?: string,
+) => {
+  const params = {
+    isArchived,
+    sortBy,
+    sortDirection,
+    tags,
+    search,
+    cursor,
+  };
+  return `${conversationsRoot}${buildQuery(params)}`;
+};
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -54,7 +87,9 @@ export const genTitle = () => `${conversationsRoot}/gen_title`;
 
 export const updateConversation = () => `${conversationsRoot}/update`;
 
-export const deleteConversation = () => `${conversationsRoot}/clear`;
+export const deleteConversation = () => `${conversationsRoot}`;
+
+export const deleteAllConversation = () => `${conversationsRoot}/all`;
 
 export const importConversation = () => `${conversationsRoot}/import`;
 
@@ -62,8 +97,8 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
-export const search = (q: string, pageNumber: string) =>
-  `/api/search?q=${q}&pageNumber=${pageNumber}`;
+export const search = (q: string, cursor?: string | null) =>
+  `/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
 
 export const searchEnabled = () => '/api/search/enable';
 
