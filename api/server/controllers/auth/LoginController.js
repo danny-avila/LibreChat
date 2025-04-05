@@ -1,8 +1,10 @@
 const { generate2FATempToken } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
+const { getUserAvatar } = require('~/server/services/UserService');
 const { logger } = require('~/config');
 
 const loginController = async (req, res) => {
+  const fileStrategy = req.app.locals.fileStrategy;
   try {
     if (!req.user) {
       return res.status(400).json({ message: 'Invalid credentials' });
@@ -15,6 +17,7 @@ const loginController = async (req, res) => {
 
     const { password: _p, totpSecret: _t, __v, ...user } = req.user;
     user.id = user._id.toString();
+    user.avatar = await getUserAvatar({ user: user,fileStrategy: fileStrategy });;
 
     const token = await setAuthTokens(req.user._id, res);
 

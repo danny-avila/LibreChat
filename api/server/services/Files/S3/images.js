@@ -89,24 +89,34 @@ async function prepareImageURLS3(req, file) {
 }
 
 /**
- * Processes a user's avatar image by uploading it to S3 and updating the user's avatar URL if required.
- *
- * @param {Object} params
- * @param {Buffer} params.buffer - Avatar image buffer.
- * @param {string} params.userId - User's unique identifier.
- * @param {string} params.manual - 'true' or 'false' flag for manual update.
- * @param {string} [params.basePath='images'] - Base path in the bucket.
- * @returns {Promise<string>} Signed URL of the uploaded avatar.
+ * Uploads a user's avatar to S3 bucket and returns the URL.
+ * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
+ * @param {object} params - The parameters object.
+ * @param {Buffer} params.buffer - The Buffer containing the avatar image.
+ * @param {string} params.userId - The user ID.
+ * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
+ * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
+ * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
  */
-async function processS3Avatar({ buffer, userId, manual, basePath = defaultBasePath }) {
+async function processS3Avatar({ buffer, userId, manual=false }) {
   try {
-    const downloadURL = await saveBufferToS3({ userId, buffer, fileName: 'avatar.png', basePath });
+    // Upload avatar to S3
+    let avatarName = 'avatar.png';
+    const downloadURL = await saveBufferToS3({
+      userId,
+      buffer,
+      fileName: avatarName,
+    });
+    const avatarUrl = `${avatarName}?manual=${manual}`;
+    // if it's manual update save into database and return download url for immediate display
     if (manual === 'true') {
-      await updateUser(userId, { avatar: downloadURL });
+      await updateUser(userId, { avatar: avatarUrl });
+      return downloadURL;
     }
-    return downloadURL;
+    // otherwise return avatarurl saved into database
+    return avatarUrl;
   } catch (error) {
-    logger.error('[processS3Avatar] Error processing S3 avatar:', error.message);
+    logger.error('Error uploading profile picture:', error);
     throw error;
   }
 }

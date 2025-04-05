@@ -12,7 +12,7 @@ const {
 } = require('~/models');
 const User = require('~/models/User');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
-const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
+const { updateUserPluginsService, deleteUserKey, getUserAvatar } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
@@ -22,23 +22,11 @@ const { Transaction } = require('~/models/Transaction');
 const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
+  const fileStrategy = req.app.locals.fileStrategy;
   /** @type {MongoUser} */
-  const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  let userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  userData.avatar = await getUserAvatar({ user: userData,fileStrategy: fileStrategy });
   delete userData.totpSecret;
-  if (req.app.locals.fileStrategy === FileSources.s3 && userData.avatar) {
-    const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
-    if (!avatarNeedsRefresh) {
-      return res.status(200).send(userData);
-    }
-    const originalAvatar = userData.avatar;
-    try {
-      userData.avatar = await getNewS3URL(userData.avatar);
-      await updateUser(userData.id, { avatar: userData.avatar });
-    } catch (error) {
-      userData.avatar = originalAvatar;
-      logger.error('Error getting new S3 URL for avatar:', error);
-    }
-  }
   res.status(200).send(userData);
 };
 

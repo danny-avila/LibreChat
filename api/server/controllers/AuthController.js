@@ -6,6 +6,7 @@ const {
   setAuthTokens,
   requestPasswordReset,
 } = require('~/server/services/AuthService');
+const { getUserAvatar } = require('~/server/services/UserService');
 const { findSession, getUserById, deleteAllUserSessions } = require('~/models');
 const { logger } = require('~/config');
 
@@ -55,17 +56,18 @@ const resetPasswordController = async (req, res) => {
 
 const refreshController = async (req, res) => {
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  const fileStrategy = req.app.locals.fileStrategy;
   if (!refreshToken) {
     return res.status(200).send('Refresh token not provided');
   }
 
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await getUserById(payload.id, '-password -__v -totpSecret');
+    let user = await getUserById(payload.id, '-password -__v -totpSecret');
     if (!user) {
       return res.status(401).redirect('/login');
     }
-
+    user.avatar = await getUserAvatar({ user: user,fileStrategy: fileStrategy });
     const userId = payload.id;
 
     if (process.env.NODE_ENV === 'CI') {
