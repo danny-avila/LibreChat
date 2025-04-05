@@ -69,9 +69,8 @@ class WebRTCConnection {
 
       const state = this.peerConnection.connectionState;
       logger.info(`Connection state changed to ${state}`);
-      this.state = state;
 
-      if (state === 'failed' || state === 'closed') {
+      if (state === 'failed' || state === 'closed' || state === 'disconnected') {
         this.cleanup();
       }
     };
@@ -148,8 +147,8 @@ class AudioHandler {
       rtcConnection.addIceCandidate(candidate);
     });
 
-    socket.on('vad-status', (status) => {
-      logger.debug(`VAD status from ${socket.id}: ${JSON.stringify(status)}`);
+    socket.on('vad-status', (speaking) => {
+      logger.debug(`VAD status from ${socket.id}: ${JSON.stringify(speaking)}`);
     });
 
     socket.on('disconnect', () => {

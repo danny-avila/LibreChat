@@ -18,11 +18,14 @@ class WebSocketManager extends EventEmitter {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private isConnected = false;
+  private isConnecting = false;
 
   connect(url: string) {
-    if (this.socket && this.socket.connected) {
+    if (this.isConnecting || (this.socket && this.socket.connected)) {
       return;
     }
+
+    this.isConnecting = true;
     this.socket = io(url, {
       transports: ['websocket'],
       reconnectionAttempts: this.MAX_RECONNECT_ATTEMPTS,
@@ -33,11 +36,13 @@ class WebSocketManager extends EventEmitter {
 
   private setupEventHandlers() {
     if (!this.socket) {
+      this.isConnecting = false;
       return;
     }
 
     this.socket.on('connect', () => {
       this.isConnected = true;
+      this.isConnecting = false;
       this.reconnectAttempts = 0;
       this.emit('connectionChange', true);
     });
@@ -51,6 +56,7 @@ class WebSocketManager extends EventEmitter {
       this.reconnectAttempts++;
       this.emit('connectionChange', false);
       if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+        this.isConnecting = false;
         this.emit('error', 'Failed to connect after maximum attempts');
         this.disconnect();
       }
@@ -80,6 +86,7 @@ class WebSocketManager extends EventEmitter {
       this.socket = null;
     }
     this.isConnected = false;
+    this.isConnecting = false;
   }
 
   sendMessage(type: string, payload?: MessagePayload) {
@@ -91,7 +98,7 @@ class WebSocketManager extends EventEmitter {
   }
 
   getConnectionState() {
-    return this.isConnected;
+    return { isConnected: this.isConnected, isConnecting: this.isConnecting };
   }
 }
 
@@ -103,8 +110,11 @@ const useWebSocket = () => {
   const eventHandlersRef = useRef<Record<string, EventHandler>>({});
 
   useEffect(() => {
-    if (wsConfig?.url && !webSocketManager.getConnectionState()) {
-      webSocketManager.connect(wsConfig.url);
+    if (wsConfig?.url) {
+      const state = webSocketManager.getConnectionState();
+      if (!state.isConnected && !state.isConnecting) {
+        webSocketManager.connect(wsConfig.url);
+      }
 
       const handleConnectionChange = (connected: boolean) => setIsConnected(connected);
       webSocketManager.on('connectionChange', handleConnectionChange);
