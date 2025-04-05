@@ -300,8 +300,6 @@ describe('setupOpenId', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  // --- Additional tests ---
-
   it('should fallback to userinfo roles if the id_token is invalid (missing a period)', async () => {
     // Arrange – simulate an invalid id_token and ensure userinfo.roles contains the required role
     const invalidTokenSet = { ...validTokenSet, id_token: 'invalidtoken' };
