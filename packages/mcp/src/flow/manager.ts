@@ -110,8 +110,9 @@ export class FlowStateManager<T = unknown> {
             clearInterval(intervalId);
             this.intervals.delete(intervalId);
             this.logger.warn(`[${flowKey}] Flow aborted`);
+            const message = `${type} flow aborted`;
             await this.keyv.delete(flowKey);
-            reject(new Error(`${type} flow aborted`));
+            reject(new Error(message));
             return;
           }
 
