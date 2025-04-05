@@ -61,7 +61,7 @@ export default function useDragHelpers() {
         canDrop: monitor.canDrop(),
       }),
     }),
-    [],
+    [handleFiles],
   );
 
   return {
