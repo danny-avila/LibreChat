@@ -61,6 +61,10 @@ async function downloadImage(url, accessToken) {
  *
  * @function getFullName
  * @param {Object} userinfo - The user information object from OpenID Connect
+ * @param {string} [userinfo.given_name] - The user's first name
+ * @param {string} [userinfo.family_name] - The user's last name
+ * @param {string} [userinfo.username] - The user's username
+ * @param {string} [userinfo.email] - The user's email address
  * @returns {string} The determined full name of the user
  */
 function getFullName(userinfo) {
@@ -121,58 +125,76 @@ function extractRolesFrom(obj, path) {
 }
 
 /**
- * Retrieves user roles from either a token or the userinfo, based on configuration.
+ * Retrieves user roles from either a token, the userinfo object, or both.
+ *
+ * Supports three strategies based on the roleSource:
+ * - 'token': Extract roles from the token (access or id token), fallback to userinfo if extraction fails.
+ * - 'userinfo': Extract roles solely from the userinfo object.
+ * - 'both': Extract roles from both token and userinfo and merge them.
+ *
+ * Also supports encrypted tokens by falling back to userinfo if the token is not JWT-decodable.
  *
  * @function getUserRoles
  * @param {import('openid-client').TokenSet} tokenSet
  * @param {Object} userinfo
  * @param {string} rolePath - Dot-notation path to where roles are stored
  * @param {'access'|'id'} tokenKind - Which token to parse for roles
- * @param {'token'|'userinfo'} roleSource - Whether to start with token or userinfo
+ * @param {'token'|'userinfo'|'both'} roleSource - Source of roles for extraction
  * @returns {string[]} Array of roles, possibly empty
  */
 function getUserRoles(tokenSet, userinfo, rolePath, tokenKind, roleSource) {
   if (!tokenSet) {
-    return [];
+    return extractRolesFrom(userinfo, rolePath);
   }
 
-  // If roles should come from userinfo first
   if (roleSource === 'userinfo') {
     const roles = extractRolesFrom(userinfo, rolePath);
     if (!roles.length) {
       logger.warn(`[openidStrategy] Key '${rolePath}' not found in userinfo.`);
     }
     return roles;
-  }
-
-  // Otherwise, try from the token
-  let tokenToDecode;
-  try {
-    tokenToDecode = tokenKind === 'access' ? tokenSet.access_token : tokenSet.id_token;
-    if (!tokenToDecode || !tokenToDecode.includes('.')) {
-      throw new Error('Token is not a valid JWT for decoding.');
+  } else if (roleSource === 'both') {
+    let tokenRoles = [];
+    try {
+      let tokenToDecode = tokenKind === 'access' ? tokenSet.access_token : tokenSet.id_token;
+      if (tokenToDecode && tokenToDecode.includes('.')) {
+        const tokenData = jwtDecode(tokenToDecode);
+        tokenRoles = extractRolesFrom(tokenData, rolePath);
+      } else {
+        logger.warn(
+          '[openidStrategy] Token is not a valid JWT for decoding, skipping token roles extraction.',
+        );
+      }
+    } catch (err) {
+      logger.error(`[openidStrategy] Failed to decode ${tokenKind} token: ${err}.`);
     }
-  } catch (err) {
-    logger.error(`[openidStrategy] ${err}. Falling back to userinfo for role extraction.`);
-    return extractRolesFrom(userinfo, rolePath);
+    const userinfoRoles = extractRolesFrom(userinfo, rolePath);
+    const combinedRoles = Array.from(new Set([...tokenRoles, ...userinfoRoles]));
+    if (!combinedRoles.length) {
+      logger.warn(`[openidStrategy] Key '${rolePath}' not found in both token and userinfo.`);
+    }
+    return combinedRoles;
+  } else {
+    // default 'token' strategy
+    try {
+      let tokenToDecode = tokenKind === 'access' ? tokenSet.access_token : tokenSet.id_token;
+      if (!tokenToDecode || !tokenToDecode.includes('.')) {
+        throw new Error('Token is not a valid JWT for decoding.');
+      }
+      const tokenData = jwtDecode(tokenToDecode);
+      const roles = extractRolesFrom(tokenData, rolePath);
+      if (!roles.length) {
+        logger.warn(
+          `[openidStrategy] Key '${rolePath}' not found in ${tokenKind} token. Falling back to userinfo.`,
+        );
+        return extractRolesFrom(userinfo, rolePath);
+      }
+      return roles;
+    } catch (err) {
+      logger.error(`[openidStrategy] ${err}. Falling back to userinfo for role extraction.`);
+      return extractRolesFrom(userinfo, rolePath);
+    }
   }
-
-  let tokenData;
-  try {
-    tokenData = jwtDecode(tokenToDecode);
-  } catch (err) {
-    logger.error(`[openidStrategy] Failed to decode ${tokenKind} token: ${err}. Using userinfo.`);
-    return extractRolesFrom(userinfo, rolePath);
-  }
-
-  const roles = extractRolesFrom(tokenData, rolePath);
-  if (!roles.length) {
-    logger.warn(
-      `[openidStrategy] Key '${rolePath}' not found in ${tokenKind} token. Falling back to userinfo.`,
-    );
-    return extractRolesFrom(userinfo, rolePath);
-  }
-  return roles;
 }
 
 /**
@@ -236,7 +258,7 @@ async function setupOpenId() {
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const rolePath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const tokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND || 'id'; // 'id'|'access'
-    const roleSource = process.env.OPENID_REQUIRED_ROLE_SOURCE || 'token'; // 'token'|'userinfo'
+    const roleSource = process.env.OPENID_REQUIRED_ROLE_SOURCE || 'both'; // 'token'|'userinfo'|'both'
 
     // Create the Passport strategy using the new type-correct instantiation and toggle for PKCE
     const openidStrategy = new OpenIDStrategy(

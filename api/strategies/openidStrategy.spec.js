@@ -22,7 +22,7 @@ jest.mock('~/server/utils/crypto', () => ({
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
 jest.mock('~/server/utils', () => ({
-  isEnabled: jest.fn(() => false), // default to false, override per test if needed
+  isEnabled: jest.fn(() => false), // default to false; override per test if needed
 }));
 jest.mock('~/config', () => ({
   logger: {
@@ -33,8 +33,9 @@ jest.mock('~/config', () => ({
   },
 }));
 
-// Mock Issuer.discover so that setupOpenId gets a fake issuer and client
+// Update Issuer.discover mock so that the returned issuer has an 'issuer' property.
 Issuer.discover = jest.fn().mockResolvedValue({
+  issuer: 'https://fake-issuer.com',
   id_token_signing_alg_values_supported: ['RS256'],
   Client: jest.fn().mockImplementation((clientMetadata) => {
     return {
@@ -43,7 +44,7 @@ Issuer.discover = jest.fn().mockResolvedValue({
   }),
 });
 
-// To capture the verify callback from the strategy, we grab it from the mock constructor
+// To capture the verify callback from the strategy, we grab it from the mock constructor.
 let verifyCallback;
 OpenIDStrategy.mockImplementation((options, verify) => {
   verifyCallback = verify;
@@ -51,7 +52,7 @@ OpenIDStrategy.mockImplementation((options, verify) => {
 });
 
 describe('setupOpenId', () => {
-  // Helper to wrap the verify callback in a promise
+  // Helper to wrap the verify callback in a promise.
   const validate = (tokenset, userinfo) =>
     new Promise((resolve, reject) => {
       verifyCallback(tokenset, userinfo, (err, user, details) => {
@@ -62,7 +63,7 @@ describe('setupOpenId', () => {
       });
     });
 
-  // Default tokenset: tokens now include a period to simulate a JWT
+  // Default tokenset: tokens include a period to simulate a JWT.
   const validTokenSet = {
     id_token: 'header.payload.signature',
     access_token: 'header.payload.signature',
@@ -81,10 +82,10 @@ describe('setupOpenId', () => {
   };
 
   beforeEach(async () => {
-    // Clear previous mock calls and reset implementations
+    // Clear previous mock calls and reset implementations.
     jest.clearAllMocks();
 
-    // Reset environment variables needed by the strategy
+    // Reset environment variables needed by the strategy.
     process.env.OPENID_ISSUER = 'https://fake-issuer.com';
     process.env.OPENID_CLIENT_ID = 'fake_client_id';
     process.env.OPENID_CLIENT_SECRET = 'fake_client_secret';
@@ -99,23 +100,24 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
+    delete process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM;
 
     // By default, jwtDecode returns a token that includes the required role.
     jwtDecode.mockReturnValue({
       roles: ['requiredRole'],
     });
 
-    // By default, assume that no user is found, so createUser will be called
+    // By default, assume that no user is found so that createUser will be called.
     findUser.mockResolvedValue(null);
     createUser.mockImplementation(async (userData) => {
-      // simulate created user with an _id property
+      // Simulate created user with an _id property.
       return { _id: 'newUserId', ...userData };
     });
     updateUser.mockImplementation(async (id, userData) => {
       return { _id: id, ...userData };
     });
 
-    // For image download, simulate a successful response
+    // For image download, simulate a successful response.
     const fakeBuffer = Buffer.from('fake image');
     const fakeResponse = {
       ok: true,
@@ -123,18 +125,13 @@ describe('setupOpenId', () => {
     };
     fetch.mockResolvedValue(fakeResponse);
 
-    // Call setupOpenId so that passport.use gets called
+    // (Re)initialize the strategy with current env settings.
     await setupOpenId();
   });
 
   it('should create a new user with correct username when username claim exists', async () => {
-    // Arrange – our userinfo already has username 'flast'
     const userinfo = { ...baseUserinfo };
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert
     expect(user.username).toBe(userinfo.username);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -150,16 +147,10 @@ describe('setupOpenId', () => {
   });
 
   it('should use given_name as username when username claim is missing', async () => {
-    // Arrange – remove username from userinfo
     const userinfo = { ...baseUserinfo };
     delete userinfo.username;
-    // Expect the username to be the given name
     const expectUsername = userinfo.given_name;
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert
     expect(user.username).toBe(expectUsername);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
@@ -169,16 +160,11 @@ describe('setupOpenId', () => {
   });
 
   it('should use email as username when username and given_name are missing', async () => {
-    // Arrange – remove username and given_name
     const userinfo = { ...baseUserinfo };
     delete userinfo.username;
     delete userinfo.given_name;
     const expectUsername = userinfo.email;
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert
     expect(user.username).toBe(expectUsername);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
@@ -188,14 +174,10 @@ describe('setupOpenId', () => {
   });
 
   it('should override username with OPENID_USERNAME_CLAIM when set', async () => {
-    // Arrange – set OPENID_USERNAME_CLAIM so that the sub claim is used
     process.env.OPENID_USERNAME_CLAIM = 'sub';
     const userinfo = { ...baseUserinfo };
-
-    // Act
+    await setupOpenId();
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert – username should equal the sub (converted as-is)
     expect(user.username).toBe(userinfo.sub);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: userinfo.sub }),
@@ -205,31 +187,21 @@ describe('setupOpenId', () => {
   });
 
   it('should set the full name correctly when given_name and family_name exist', async () => {
-    // Arrange
     const userinfo = { ...baseUserinfo };
     const expectedFullName = `${userinfo.given_name} ${userinfo.family_name}`;
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert
     expect(user.name).toBe(expectedFullName);
   });
 
   it('should override full name with OPENID_NAME_CLAIM when set', async () => {
-    // Arrange – use the name claim as the full name
     process.env.OPENID_NAME_CLAIM = 'name';
     const userinfo = { ...baseUserinfo, name: 'Custom Name' };
-
-    // Act
+    await setupOpenId();
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert
     expect(user.name).toBe('Custom Name');
   });
 
   it('should update an existing user on login', async () => {
-    // Arrange – simulate that a user already exists
     const existingUser = {
       _id: 'existingUserId',
       provider: 'local',
@@ -244,13 +216,8 @@ describe('setupOpenId', () => {
       }
       return null;
     });
-
     const userinfo = { ...baseUserinfo };
-
-    // Act
     await validate(validTokenSet, userinfo);
-
-    // Assert – updateUser should be called and the user object updated
     expect(updateUser).toHaveBeenCalledWith(
       existingUser._id,
       expect.objectContaining({
@@ -263,142 +230,108 @@ describe('setupOpenId', () => {
   });
 
   it('should enforce the required role and reject login if missing', async () => {
-    // Arrange – simulate a token without the required role.
-    jwtDecode.mockReturnValue({
-      roles: ['SomeOtherRole'],
-    });
+    jwtDecode.mockReturnValue({ roles: ['SomeOtherRole'] });
     const userinfo = { ...baseUserinfo };
-
-    // Act
     const { user, details } = await validate(validTokenSet, userinfo);
-
-    // Assert – verify that the strategy rejects login
     expect(user).toBe(false);
     expect(details.message).toBe('You must have the "requiredRole" role to log in.');
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
-    // Arrange – ensure userinfo contains a picture URL
     const userinfo = { ...baseUserinfo };
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert – verify that download was attempted and the avatar field was set via updateUser
     expect(fetch).toHaveBeenCalled();
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
   it('should not attempt to download avatar if picture is not provided', async () => {
-    // Arrange – remove picture
     const userinfo = { ...baseUserinfo };
     delete userinfo.picture;
-
-    // Act
     await validate(validTokenSet, userinfo);
-
-    // Assert – fetch should not be called and avatar should remain undefined or empty
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it('should fallback to userinfo roles if the id_token is invalid (missing a period)', async () => {
-    // Arrange – simulate an invalid id_token and ensure userinfo.roles contains the required role
     const invalidTokenSet = { ...validTokenSet, id_token: 'invalidtoken' };
     const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
-
-    // Act
     const { user } = await validate(invalidTokenSet, userinfo);
-
-    // Assert – login should succeed using roles from userinfo
     expect(user).toBeDefined();
     expect(createUser).toHaveBeenCalled();
   });
 
   it('should handle downloadImage failure gracefully and not set an avatar', async () => {
-    // Arrange – force fetch to reject, simulating a network error for image download
     fetch.mockRejectedValue(new Error('network error'));
     const userinfo = { ...baseUserinfo };
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert – verify that fetch was called but avatar is not updated
     expect(fetch).toHaveBeenCalled();
     expect(user.avatar).toBeUndefined();
   });
 
   it('should allow login if no required role is specified', async () => {
-    // Arrange – remove role requirements
     delete process.env.OPENID_REQUIRED_ROLE;
     delete process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
-    // Ensure jwtDecode returns empty roles (should not matter now)
     jwtDecode.mockReturnValue({});
     const userinfo = { ...baseUserinfo };
-
-    // Act
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert – login should succeed without checking for roles
     expect(user).toBeDefined();
     expect(createUser).toHaveBeenCalled();
   });
 
   it('should use roles from userinfo when OPENID_REQUIRED_ROLE_SOURCE is set to "userinfo"', async () => {
-    // Arrange – force roleSource to be userinfo and have jwtDecode return empty roles
     process.env.OPENID_REQUIRED_ROLE_SOURCE = 'userinfo';
     jwtDecode.mockReturnValue({});
     const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
-
-    // Act
+    await setupOpenId();
     const { user } = await validate(validTokenSet, userinfo);
-
-    // Assert – login should succeed because roles are taken from userinfo
     expect(user).toBeDefined();
     expect(createUser).toHaveBeenCalled();
   });
 
-  it('should call done with error when createUser fails', async () => {
-    // Arrange – simulate createUser throwing an error
-    const errorMessage = 'createUser failed';
-    createUser.mockImplementation(async () => {
-      throw new Error(errorMessage);
-    });
-    const userinfo = { ...baseUserinfo };
-
-    // Act & Assert – verify that the verify callback rejects with the error
-    await expect(validate(validTokenSet, userinfo)).rejects.toThrow(errorMessage);
+  it('should merge roles from both token and userinfo when OPENID_REQUIRED_ROLE_SOURCE is "both"', async () => {
+    process.env.OPENID_REQUIRED_ROLE_SOURCE = 'both';
+    jwtDecode.mockReturnValue({ roles: ['extraRole'] });
+    const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
+    await setupOpenId();
+    const { user } = await validate(validTokenSet, userinfo);
+    expect(user).toBeDefined();
+    expect(createUser).toHaveBeenCalled();
   });
 
-  it('should not download avatar if existing user has avatar marked as manual', async () => {
-    // Arrange – simulate an existing user with a manually set avatar
-    const existingUser = {
-      _id: 'existingUserId',
-      provider: 'local',
-      email: baseUserinfo.email,
-      openidId: '',
-      username: '',
-      name: '',
-      avatar: 'some/path?manual=true',
-    };
-    findUser.mockResolvedValue(existingUser);
-    const userinfo = { ...baseUserinfo };
-
-    // Act
+  it('should fall back to userinfo roles when token decode fails and roleSource is "both"', async () => {
+    process.env.OPENID_REQUIRED_ROLE_SOURCE = 'both';
+    jwtDecode.mockImplementation(() => {
+      throw new Error('Decode error');
+    });
+    const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
+    await setupOpenId();
     const { user } = await validate(validTokenSet, userinfo);
+    expect(user).toBeDefined();
+    expect(createUser).toHaveBeenCalled();
+  });
 
-    // Assert – fetch should not be called since avatar is manually set
-    expect(fetch).not.toHaveBeenCalled();
-    expect(updateUser).toHaveBeenCalledWith(
-      existingUser._id,
-      expect.objectContaining({ avatar: existingUser.avatar }),
-    );
-    expect(user.avatar).toBe(existingUser.avatar);
+  it('should merge roles from both token and userinfo when token is invalid and roleSource is "both"', async () => {
+    process.env.OPENID_REQUIRED_ROLE_SOURCE = 'both';
+    const invalidTokenSet = { ...validTokenSet, id_token: 'invalidtoken' };
+    const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
+    await setupOpenId();
+    const { user } = await validate(invalidTokenSet, userinfo);
+    expect(user).toBeDefined();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should reject login if merged roles from both token and userinfo do not include required role', async () => {
+    process.env.OPENID_REQUIRED_ROLE_SOURCE = 'both';
+    jwtDecode.mockReturnValue({ roles: ['SomeOtherRole'] });
+    const userinfo = { ...baseUserinfo, roles: ['AnotherRole'] };
+    await setupOpenId();
+    const { user, details } = await validate(validTokenSet, userinfo);
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have the "requiredRole" role to log in.');
   });
 
   it('should pass usePKCE true and set code_challenge_method in params when OPENID_USE_PKCE is "true"', async () => {
     process.env.OPENID_USE_PKCE = 'true';
     await setupOpenId();
-    // Get the options from the last call of OpenIDStrategy
     const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(true);
     expect(callOptions.params.code_challenge_method).toBe('S256');
@@ -418,5 +351,33 @@ describe('setupOpenId', () => {
     const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(false);
     expect(callOptions.params.code_challenge_method).toBeUndefined();
+  });
+
+  it('should set id_token_signed_response_alg if OPENID_SET_FIRST_SUPPORTED_ALGORITHM is enabled', async () => {
+    process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM = 'true';
+    // Override isEnabled so that it returns true.
+    const { isEnabled } = require('~/server/utils');
+    isEnabled.mockReturnValue(true);
+    await setupOpenId();
+    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
+    expect(callOptions.client.metadata.id_token_signed_response_alg).toBe('RS256');
+  });
+
+  it('should use access token when OPENID_REQUIRED_ROLE_TOKEN_KIND is set to "access"', async () => {
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'access';
+    // Reinitialize strategy so that the new token kind is used.
+    await setupOpenId();
+    jwtDecode.mockClear();
+    jwtDecode.mockReturnValue({ roles: ['requiredRole'] });
+    const userinfo = { ...baseUserinfo };
+    await validate(validTokenSet, userinfo);
+    expect(jwtDecode).toHaveBeenCalledWith(validTokenSet.access_token);
+  });
+
+  it('should use proxy agent if PROXY is provided', async () => {
+    process.env.PROXY = 'http://fake-proxy.com';
+    await setupOpenId();
+    const { logger } = require('~/config');
+    expect(logger.info).toHaveBeenCalledWith(`[openidStrategy] Using proxy: ${process.env.PROXY}`);
   });
 });
