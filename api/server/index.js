@@ -15,6 +15,7 @@ const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
+const { AudioSocketModule } = require('./services/Files/Audio/AudioSocketModule');
 const { SocketIOService } = require('./services/WebSocket/WebSocketServer');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
@@ -29,6 +30,9 @@ const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = pro
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
+
+let socketIOService;
+let audioModule;
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
@@ -49,7 +53,10 @@ const startServer = async () => {
     }),
   );
 
-  new SocketIOService(server);
+  socketIOService = new SocketIOService(server);
+  audioModule = new AudioSocketModule(socketIOService);
+
+  logger.info('WebSocket server and Audio module initialized');
 
   await AppService(app);
 
@@ -155,6 +162,19 @@ const startServer = async () => {
 };
 
 startServer();
+
+process.on('SIGINT', () => {
+  logger.info('Shutting down server...');
+  if (audioModule) {
+    audioModule.cleanup();
+    logger.info('Audio module cleaned up');
+  }
+  if (socketIOService) {
+    socketIOService.shutdown();
+    logger.info('WebSocket server shut down');
+  }
+  process.exit(0);
+});
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
