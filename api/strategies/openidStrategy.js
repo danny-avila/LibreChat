@@ -105,13 +105,73 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
+/**
+ * Extracts roles from an object using a dot-separated path.
+ *
+ * @param {object} obj
+ * @param {string} path
+ * @returns {Array}
+ */
+function extractRolesFrom(obj, path) {
+  const parts = path.split('.');
+  let current = obj;
+  for (const part of parts) {
+    if (!current || current[part] === undefined) {
+      return [];
+    }
+    current = current[part];
+  }
+  return Array.isArray(current) ? current : [];
+}
+
+/**
+ * Retrieves user roles based on configuration.
+ *
+ * @param {import('openid-client').TokenSet} tokenSet
+ * @param {object} userinfo
+ * @param {string} rolePath
+ * @param {string} tokenKind - 'access' or 'id'
+ * @param {string} roleSource - 'token' or 'userinfo'
+ * @returns {Array}
+ */
+function getUserRoles(tokenSet, userinfo, rolePath, tokenKind, roleSource) {
+  if (roleSource === 'userinfo') {
+    const roles = extractRolesFrom(userinfo, rolePath);
+    if (roles.length === 0) {
+      logger.error(`[openidStrategy] Key '${rolePath}' not found in userinfo!`);
+    }
+    return roles;
+  }
+
+  let tokenData = null;
+  try {
+    const token = tokenKind === 'access' ? tokenSet.access_token : tokenSet.id_token;
+    if (token && token.includes('.')) {
+      tokenData = jwtDecode(token);
+    } else {
+      throw new Error('Token is not in a decodable JWT format.');
+    }
+  } catch (error) {
+    logger.error(
+      `[openidStrategy] Error decoding ${tokenKind} token: ${error}. Falling back to userinfo for role extraction.`,
+    );
+  }
+
+  let roles = tokenData ? extractRolesFrom(tokenData, rolePath) : [];
+  if (roles.length === 0) {
+    logger.error(
+      `[openidStrategy] Key '${rolePath}' not found in ${tokenKind} token. Falling back to userinfo.`,
+    );
+    roles = extractRolesFrom(userinfo, rolePath);
+  }
+  return roles;
+}
+
 async function setupOpenId() {
   try {
     if (process.env.PROXY) {
       const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-      custom.setHttpOptionsDefaults({
-        agent: proxyAgent,
-      });
+      custom.setHttpOptionsDefaults({ agent: proxyAgent });
       logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
     }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
@@ -133,60 +193,38 @@ async function setupOpenId() {
         issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
     }
     const client = new issuer.Client(clientMetadata);
+
+    // Extract configuration values for role validation
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
-    const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
-    const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+    const rolePath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
+    const tokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+    const roleSource = process.env.OPENID_REQUIRED_ROLE_SOURCE || 'token';
+
     const openidLogin = new OpenIDStrategy(
-      {
-        client,
-        params: {
-          scope: process.env.OPENID_SCOPE,
-        },
-      },
-      async (tokenset, userinfo, done) => {
+      { client, params: { scope: process.env.OPENID_SCOPE } },
+      async (tokenSet, userinfo, done) => {
         try {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
-          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+          logger.debug('[openidStrategy] verify login tokenset and userinfo', {
+            tokenSet,
+            userinfo,
+          });
 
           let user = await findUser({ openidId: userinfo.sub });
-          logger.info(
-            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
-          );
-
           if (!user) {
             user = await findUser({ email: userinfo.email });
             logger.info(
-              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
-                userinfo.email
-              } for openidId: ${userinfo.sub}`,
+              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${userinfo.email} for openidId: ${userinfo.sub}`,
             );
+          } else {
+            logger.info(`[openidStrategy] user found with openidId: ${userinfo.sub}`);
           }
 
           const fullName = getFullName(userinfo);
 
-          if (requiredRole) {
-            let decodedToken = '';
-            if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
-            } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
-            }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
-
-            if (!found) {
-              logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
-              );
-            }
-
+          // Role-based authorization check
+          if (requiredRole && rolePath) {
+            const roles = getUserRoles(tokenSet, userinfo, rolePath, tokenKind, roleSource);
             if (!roles.includes(requiredRole)) {
               return done(null, false, {
                 message: `You must have the "${requiredRole}" role to log in.`,
@@ -231,7 +269,7 @@ async function setupOpenId() {
               fileName = userinfo.sub + '.png';
             }
 
-            const imageBuffer = await downloadImage(imageUrl, tokenset.access_token);
+            const imageBuffer = await downloadImage(imageUrl, tokenSet.access_token);
             if (imageBuffer) {
               const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
               const imagePath = await saveBuffer({
@@ -246,7 +284,7 @@ async function setupOpenId() {
           user = await updateUser(user._id, user);
 
           logger.info(
-            `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
+            `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username}`,
             {
               user: {
                 openidId: user.openidId,
