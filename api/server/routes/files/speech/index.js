@@ -4,6 +4,7 @@ const { createTTSLimiters, createSTTLimiters } = require('~/server/middleware');
 const stt = require('./stt');
 const tts = require('./tts');
 const customConfigSpeech = require('./customConfigSpeech');
+const realtime = require('./realtime');
 
 const router = express.Router();
 
@@ -13,5 +14,7 @@ router.use('/stt', sttIpLimiter, sttUserLimiter, stt);
 router.use('/tts', ttsIpLimiter, ttsUserLimiter, tts);
 
 router.use('/config', customConfigSpeech);
+
+router.use('/realtime', realtime);
 
 module.exports = router;

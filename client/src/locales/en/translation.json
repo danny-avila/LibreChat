@@ -442,6 +442,7 @@
   "com_nav_user_name_display": "Display username in messages",
   "com_nav_voice_select": "Voice",
   "com_nav_voices_fetch_error": "Could not retrieve voice options. Please check your internet connection.",
+  "com_nav_call": "Call",
   "com_show_agent_settings": "Show Agent Settings",
   "com_show_completion_settings": "Show Completion Settings",
   "com_show_examples": "Show Examples",

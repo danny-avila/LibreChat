@@ -46,6 +46,7 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  websocketUrl = 'websocketUrl',
 }
 
 export enum MutationKeys {
@@ -69,4 +70,5 @@ export enum MutationKeys {
   updateRole = 'updateRole',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
+  realtimeEphemeralToken = 'realtimeEphemeralToken',
 }

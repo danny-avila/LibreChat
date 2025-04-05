@@ -576,6 +576,12 @@ export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> 
   return request.get(endpoints.getCustomConfigSpeech());
 };
 
+export const getRealtimeEphemeralToken = (
+  data: t.TRealtimeEphemeralTokenRequest,
+): Promise<t.TRealtimeEphemeralTokenResponse> => {
+  return request.get(endpoints.getRealtimeEphemeralToken(), { params: data });
+};
+
 /* conversations */
 
 export function duplicateConversation(
@@ -803,4 +809,8 @@ export function verifyTwoFactorTemp(
   payload: t.TVerify2FATempRequest,
 ): Promise<t.TVerify2FATempResponse> {
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
+}
+
+export function getWebsocketUrl(): Promise<t.TWebsocketUrlResponse> {
+  return request.get(endpoints.websocket());
 }

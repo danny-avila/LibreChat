@@ -1,49 +1,104 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
+import { useSetRecoilState } from 'recoil';
+import type { TRealtimeEphemeralTokenResponse } from 'librechat-data-provider';
 import type { Control } from 'react-hook-form';
-import { TooltipAnchor } from '~/components/ui';
-import { SendIcon } from '~/components/svg';
+import { useRealtimeEphemeralTokenMutation } from '~/data-provider';
+import { TooltipAnchor, SendIcon, CallIcon } from '~/components';
+import { useToastContext } from '~/Providers/ToastContext';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 import { cn } from '~/utils';
 
-type SendButtonProps = {
+type ButtonProps = {
   disabled: boolean;
   control: Control<{ text: string }>;
 };
 
-const SubmitButton = React.memo(
-  forwardRef((props: { disabled: boolean }, ref: React.ForwardedRef<HTMLButtonElement>) => {
-    const localize = useLocalize();
+const ActionButton = forwardRef(
+  (
+    props: {
+      disabled: boolean;
+      icon: React.ReactNode;
+      tooltip: string;
+      testId: string;
+      onClick?: () => void;
+    },
+    ref: React.ForwardedRef<HTMLButtonElement>,
+  ) => {
     return (
       <TooltipAnchor
-        description={localize('com_nav_send_message')}
+        description={props.tooltip}
         render={
           <button
             ref={ref}
-            aria-label={localize('com_nav_send_message')}
-            id="send-button"
+            aria-label={props.tooltip}
+            id="action-button"
             disabled={props.disabled}
             className={cn(
-              'rounded-full bg-text-primary p-1.5 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
+              'rounded-full bg-text-primary p-1.5 text-text-primary outline-offset-4',
+              'transition-all duration-200',
+              'disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
             )}
-            data-testid="send-button"
+            data-testid={props.testId}
             type="submit"
+            onClick={props.onClick}
           >
             <span className="" data-state="closed">
-              <SendIcon size={24} />
+              {props.icon}
             </span>
           </button>
         }
       />
     );
-  }),
+  },
 );
 
-const SendButton = React.memo(
-  forwardRef((props: SendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
-    const data = useWatch({ control: props.control });
-    return <SubmitButton ref={ref} disabled={props.disabled || !data.text} />;
-  }),
-);
+const SendButton = forwardRef((props: ButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const { text = '' } = useWatch({ control: props.control });
+  const setCallOpen = useSetRecoilState(store.callDialogOpen(0));
+
+  // const { mutate: startCall, isLoading: isProcessing } = useRealtimeEphemeralTokenMutation({
+  //   onSuccess: async (data: TRealtimeEphemeralTokenResponse) => {
+  //     showToast({
+  //       message: 'IT WORKS!!',
+  //       status: 'success',
+  //     });
+  //   },
+  //   onError: (error: unknown) => {
+  //     showToast({
+  //       message: localize('com_nav_audio_process_error', (error as Error).message),
+  //       status: 'error',
+  //     });
+  //   },
+  // });
+
+  const handleClick = () => {
+    if (text.trim() === '') {
+      setCallOpen(true);
+      // startCall({ voice: 'verse' });
+    }
+  };
+
+  const buttonProps =
+    text.trim() !== ''
+      ? {
+        icon: <SendIcon size={24} />,
+        tooltip: localize('com_nav_send_message'),
+        testId: 'send-button',
+      }
+      : {
+        icon: <CallIcon size={24} />,
+        tooltip: localize('com_nav_call'),
+        testId: 'call-button',
+        onClick: handleClick,
+      };
+
+  return <ActionButton ref={ref} disabled={props.disabled} {...buttonProps} />;
+});
+
+SendButton.displayName = 'SendButton';
 
 export default SendButton;
