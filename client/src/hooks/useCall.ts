@@ -21,7 +21,12 @@ interface CallStatus {
   error: CallError | null;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
-  connectionQuality: 'good' | 'poor' | 'unknown';
+  connectionQuality: 'excellent' | 'good' | 'fair' | 'poor' | 'bad' | 'unknown';
+  connectionMetrics: {
+    rtt?: number;
+    packetsLost?: number;
+    jitter?: number;
+  };
   isUserSpeaking: boolean;
   remoteAISpeaking: boolean;
 }
@@ -33,6 +38,7 @@ const INITIAL_STATUS: CallStatus = {
   localStream: null,
   remoteStream: null,
   connectionQuality: 'unknown',
+  connectionMetrics: {},
   isUserSpeaking: false,
   remoteAISpeaking: false,
 };
@@ -133,18 +139,56 @@ const useCall = () => {
       }
 
       let totalRoundTripTime = 0;
+      let totalPacketsLost = 0;
+      let totalPackets = 0;
+      let totalJitter = 0;
       let samplesCount = 0;
+      let samplesJitterCount = 0;
 
       stats.forEach((report) => {
         if (report.type === 'candidate-pair' && report.currentRoundTripTime) {
           totalRoundTripTime += report.currentRoundTripTime;
           samplesCount++;
         }
+
+        if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+          if (report.packetsLost !== undefined && report.packetsReceived !== undefined) {
+            totalPacketsLost += report.packetsLost;
+            totalPackets += report.packetsReceived + report.packetsLost;
+          }
+
+          if (report.jitter !== undefined) {
+            totalJitter += report.jitter;
+            samplesJitterCount++;
+          }
+        }
       });
 
       const averageRTT = samplesCount > 0 ? totalRoundTripTime / samplesCount : 0;
+      const packetLossRate = totalPackets > 0 ? (totalPacketsLost / totalPackets) * 100 : 0;
+      const averageJitter = samplesJitterCount > 0 ? totalJitter / samplesJitterCount : 0;
+
+      let quality: CallStatus['connectionQuality'] = 'unknown';
+
+      if (averageRTT < 0.15 && packetLossRate < 0.5 && averageJitter < 0.015) {
+        quality = 'excellent';
+      } else if (averageRTT < 0.25 && packetLossRate < 2 && averageJitter < 0.025) {
+        quality = 'good';
+      } else if (averageRTT < 0.4 && packetLossRate < 5 && averageJitter < 0.04) {
+        quality = 'fair';
+      } else if (averageRTT < 0.6 && packetLossRate < 10 && averageJitter < 0.06) {
+        quality = 'poor';
+      } else if (averageRTT >= 0.6 || packetLossRate >= 10 || averageJitter >= 0.06) {
+        quality = 'bad';
+      }
+
       updateStatus({
-        connectionQuality: averageRTT < 0.3 ? 'good' : 'poor',
+        connectionQuality: quality,
+        connectionMetrics: {
+          rtt: averageRTT,
+          packetsLost: packetLossRate,
+          jitter: averageJitter,
+        },
       });
     }, 2000);
   }, [updateStatus]);

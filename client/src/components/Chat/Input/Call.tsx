@@ -9,6 +9,9 @@ import {
   Volume2,
   VolumeX,
   Activity,
+  ChevronDown,
+  ChevronUp,
+  Wifi,
 } from 'lucide-react';
 import { OGDialog, OGDialogContent, Button } from '~/components';
 import { useWebSocket, useCall } from '~/hooks';
@@ -26,6 +29,7 @@ export const Call: React.FC = () => {
     localStream,
     remoteStream,
     connectionQuality,
+    connectionMetrics,
     isMuted,
     toggleMute,
   } = useCall();
@@ -33,6 +37,7 @@ export const Call: React.FC = () => {
   const [open, setOpen] = useRecoilState(store.callDialogOpen(0));
   const [eventLog, setEventLog] = React.useState<string[]>([]);
   const [isAudioEnabled, setIsAudioEnabled] = React.useState(true);
+  const [showMetrics, setShowMetrics] = React.useState(false);
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
 
@@ -101,6 +106,38 @@ export const Call: React.FC = () => {
   const isActive = callState === CallState.ACTIVE;
   const isError = callState === CallState.ERROR;
 
+  const getQualityColor = (quality: string) => {
+    switch (quality) {
+      case 'excellent':
+        return 'bg-emerald-100 text-emerald-700';
+      case 'good':
+        return 'bg-green-100 text-green-700';
+      case 'fair':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'poor':
+        return 'bg-orange-100 text-orange-700';
+      case 'bad':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getQualityIcon = (quality: string) => {
+    switch (quality) {
+      case 'excellent':
+      case 'good':
+        return <Wifi size={16} />;
+      case 'fair':
+      case 'poor':
+        return <Wifi size={16} className="opacity-75" />;
+      case 'bad':
+        return <Wifi size={16} className="opacity-50" />;
+      default:
+        return <Activity size={16} />;
+    }
+  };
+
   // TESTS
 
   useEffect(() => {
@@ -152,17 +189,40 @@ export const Call: React.FC = () => {
 
             {isActive && (
               <div
-                className={`flex items-center gap-2 rounded-full px-4 py-2 ${
-                  (connectionQuality === 'good' && 'bg-green-100 text-green-700') ||
-                  (connectionQuality === 'poor' && 'bg-yellow-100 text-yellow-700') ||
-                  'bg-gray-100 text-gray-700'
-                }`}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 ${getQualityColor(connectionQuality)}`}
+                onClick={() => setShowMetrics(!showMetrics)}
+                style={{ cursor: 'pointer' }}
+                title="Click to show detailed metrics"
               >
-                <Activity size={16} />
+                {getQualityIcon(connectionQuality)}
                 <span className="text-sm font-medium capitalize">{connectionQuality} Quality</span>
+                {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </div>
             )}
           </div>
+
+          {/* Quality Metrics Panel */}
+          {isActive && showMetrics && (
+            <div className="w-full rounded-md bg-surface-secondary p-3 text-sm shadow-inner">
+              <h4 className="mb-2 font-medium">Connection Metrics</h4>
+              <ul className="space-y-1 text-text-secondary">
+                <li className="flex justify-between">
+                  <span>Round Trip Time:</span>
+                  <span className="font-mono">{(connectionMetrics.rtt * 1000).toFixed(1)} ms</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>Packet Loss:</span>
+                  <span className="font-mono">{connectionMetrics.packetsLost?.toFixed(2)}%</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>Jitter:</span>
+                  <span className="font-mono">
+                    {((connectionMetrics.jitter ?? 0) * 1000).toFixed(1)} ms
+                  </span>
+                </li>
+              </ul>
+            </div>
+          )}
 
           {/* Error Display */}
           {error && (
