@@ -125,9 +125,10 @@ export default function useStepHandler({
       const existingToolCall = existingContent?.tool_call;
       const toolCallArgs = (contentPart.tool_call.args as unknown as string | undefined) ?? '';
 
-      const args = finalUpdate
-        ? contentPart.tool_call.args
-        : (existingToolCall?.args ?? '') + toolCallArgs;
+      let args = finalUpdate ? contentPart.tool_call.args : (existingToolCall?.args ?? '');
+      if (!finalUpdate && typeof args === 'string' && args !== toolCallArgs) {
+        args += toolCallArgs;
+      }
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
@@ -206,10 +207,7 @@ export default function useStepHandler({
               type: ContentTypes.TOOL_CALL,
               tool_call: {
                 name: toolCall.name ?? '',
-                args:
-                  (typeof toolCall.args === 'string'
-                    ? toolCall.args
-                    : JSON.stringify(toolCall.args)) ?? '',
+                args: toolCall.args,
                 id: toolCallId,
               },
             };
