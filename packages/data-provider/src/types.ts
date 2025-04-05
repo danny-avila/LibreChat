@@ -10,7 +10,8 @@ import type {
   TConversationTag,
   TBanner,
 } from './schemas';
-import { string } from 'zod';
+
+export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
 

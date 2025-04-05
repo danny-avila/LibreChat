@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGetWebsocketUrlQuery } from 'librechat-data-provider/react-query';
+import { useGetWebsocketUrlQuery } from '~/data-provider';
 import type { MessagePayload } from '~/common';
 import { io, Socket } from 'socket.io-client';
 import { EventEmitter } from 'events';

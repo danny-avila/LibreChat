@@ -376,14 +376,3 @@ export const useGetCustomConfigSpeechQuery = (
     },
   );
 };
-
-export const useGetWebsocketUrlQuery = (
-  config?: UseQueryOptions<t.TWebsocketUrlResponse>,
-): QueryObserverResult<t.TWebsocketUrlResponse> => {
-  return useQuery<t.TWebsocketUrlResponse>([QueryKeys.websocketUrl], () => dataService.getWebsocketUrl(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};

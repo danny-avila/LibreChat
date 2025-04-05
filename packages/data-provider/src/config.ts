@@ -1234,6 +1234,10 @@ export enum RealtimeVoiceProviders {
    * Provider for OpenAI Realtime Voice API
    */
   OPENAI = 'openai',
+  /**
+   * Provider for Google Realtime Voice API
+   */
+  GOOGLE = 'google',
 }
 
 /** Enum for app-wide constants */
