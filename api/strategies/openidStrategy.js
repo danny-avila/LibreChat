@@ -195,6 +195,14 @@ async function setupOpenId() {
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     logger.info(`[openidStrategy] Discovered issuer: ${issuer.issuer}`);
 
+    /**
+     *  Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
+     *  - id_token_signed_response_alg      // defaults to 'RS256'
+     *  - request_object_signing_alg        // defaults to 'RS256'
+     *  - userinfo_signed_response_alg      // not in v5
+     *  - introspection_signed_response_alg // not in v5
+     *  - authorization_signed_response_alg // not in v5
+     */
     /** @type {import('openid-client').ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
