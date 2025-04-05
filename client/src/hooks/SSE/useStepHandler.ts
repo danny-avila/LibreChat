@@ -123,12 +123,14 @@ export default function useStepHandler({
     } else if (contentType === ContentTypes.TOOL_CALL && 'tool_call' in contentPart) {
       const existingContent = updatedContent[index] as Agents.ToolCallContent | undefined;
       const existingToolCall = existingContent?.tool_call;
-      const toolCallArgs = (contentPart.tool_call.args as unknown as string | undefined) ?? '';
-
-      let args = finalUpdate ? contentPart.tool_call.args : (existingToolCall?.args ?? '');
-      if (!finalUpdate && typeof args === 'string' && args !== toolCallArgs) {
-        args += toolCallArgs;
-      }
+      const toolCallArgs = (contentPart.tool_call as Agents.ToolCall).args;
+      /** When args are a valid object, they are likely already invoked */
+      const args =
+        finalUpdate ||
+        typeof existingToolCall?.args === 'object' ||
+        typeof toolCallArgs === 'object'
+          ? contentPart.tool_call.args
+          : (existingToolCall?.args ?? '') + (toolCallArgs ?? '');
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
