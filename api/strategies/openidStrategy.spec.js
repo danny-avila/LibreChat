@@ -10,7 +10,6 @@ jest.mock('openid-client');
 jest.mock('jsonwebtoken/decode');
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
-    // You can modify this mock as needed (here returning a dummy function)
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
 }));
@@ -30,6 +29,7 @@ jest.mock('~/config', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
@@ -56,15 +56,14 @@ describe('setupOpenId', () => {
     new Promise((resolve, reject) => {
       verifyCallback(tokenset, userinfo, (err, user, details) => {
         if (err) {
-          reject(err);
-        } else {
-          resolve({ user, details });
+          return reject(err);
         }
+        resolve({ user, details });
       });
     });
 
-  // Updated tokenset: tokens now include a period to simulate a JWT
-  const tokenset = {
+  // Default tokenset: tokens now include a period to simulate a JWT
+  const validTokenSet = {
     id_token: 'header.payload.signature',
     access_token: 'header.payload.signature',
   };
@@ -78,6 +77,7 @@ describe('setupOpenId', () => {
     name: 'My Full',
     username: 'flast',
     picture: 'https://example.com/avatar.png',
+    roles: ['requiredRole'],
   };
 
   beforeEach(async () => {
@@ -94,11 +94,12 @@ describe('setupOpenId', () => {
     process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
     process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
     process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+    process.env.OPENID_REQUIRED_ROLE_SOURCE = 'token';
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
 
-    // Default jwtDecode mock returns a token that includes the required role.
+    // By default, jwtDecode returns a token that includes the required role.
     jwtDecode.mockReturnValue({
       roles: ['requiredRole'],
     });
@@ -121,7 +122,7 @@ describe('setupOpenId', () => {
     };
     fetch.mockResolvedValue(fakeResponse);
 
-    // Finally, call the setup function so that passport.use gets called
+    // Call setupOpenId so that passport.use gets called
     await setupOpenId();
   });
 
@@ -130,7 +131,7 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert
     expect(user.username).toBe(userinfo.username);
@@ -155,7 +156,7 @@ describe('setupOpenId', () => {
     const expectUsername = userinfo.given_name;
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert
     expect(user.username).toBe(expectUsername);
@@ -174,7 +175,7 @@ describe('setupOpenId', () => {
     const expectUsername = userinfo.email;
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert
     expect(user.username).toBe(expectUsername);
@@ -191,7 +192,7 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert – username should equal the sub (converted as-is)
     expect(user.username).toBe(userinfo.sub);
@@ -208,7 +209,7 @@ describe('setupOpenId', () => {
     const expectedFullName = `${userinfo.given_name} ${userinfo.family_name}`;
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert
     expect(user.name).toBe(expectedFullName);
@@ -220,7 +221,7 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo, name: 'Custom Name' };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert
     expect(user.name).toBe('Custom Name');
@@ -246,7 +247,7 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo };
 
     // Act
-    await validate(tokenset, userinfo);
+    await validate(validTokenSet, userinfo);
 
     // Assert – updateUser should be called and the user object updated
     expect(updateUser).toHaveBeenCalledWith(
@@ -268,7 +269,7 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user, details } = await validate(tokenset, userinfo);
+    const { user, details } = await validate(validTokenSet, userinfo);
 
     // Assert – verify that the strategy rejects login
     expect(user).toBe(false);
@@ -280,11 +281,10 @@ describe('setupOpenId', () => {
     const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(validTokenSet, userinfo);
 
     // Assert – verify that download was attempted and the avatar field was set via updateUser
     expect(fetch).toHaveBeenCalled();
-    // Our mock getStrategyFunctions.saveBuffer returns '/fake/path/to/avatar.png'
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
@@ -294,9 +294,105 @@ describe('setupOpenId', () => {
     delete userinfo.picture;
 
     // Act
-    await validate(tokenset, userinfo);
+    await validate(validTokenSet, userinfo);
 
     // Assert – fetch should not be called and avatar should remain undefined or empty
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  // --- Additional tests ---
+
+  it('should fallback to userinfo roles if the id_token is invalid (missing a period)', async () => {
+    // Arrange – simulate an invalid id_token and ensure userinfo.roles contains the required role
+    const invalidTokenSet = { ...validTokenSet, id_token: 'invalidtoken' };
+    const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
+
+    // Act
+    const { user } = await validate(invalidTokenSet, userinfo);
+
+    // Assert – login should succeed using roles from userinfo
+    expect(user).toBeDefined();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should handle downloadImage failure gracefully and not set an avatar', async () => {
+    // Arrange – force fetch to reject, simulating a network error for image download
+    fetch.mockRejectedValue(new Error('network error'));
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(validTokenSet, userinfo);
+
+    // Assert – verify that fetch was called but avatar is not updated
+    expect(fetch).toHaveBeenCalled();
+    expect(user.avatar).toBeUndefined();
+  });
+
+  it('should allow login if no required role is specified', async () => {
+    // Arrange – remove role requirements
+    delete process.env.OPENID_REQUIRED_ROLE;
+    delete process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
+    // Ensure jwtDecode returns empty roles (should not matter now)
+    jwtDecode.mockReturnValue({});
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(validTokenSet, userinfo);
+
+    // Assert – login should succeed without checking for roles
+    expect(user).toBeDefined();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should use roles from userinfo when OPENID_REQUIRED_ROLE_SOURCE is set to "userinfo"', async () => {
+    // Arrange – force roleSource to be userinfo and have jwtDecode return empty roles
+    process.env.OPENID_REQUIRED_ROLE_SOURCE = 'userinfo';
+    jwtDecode.mockReturnValue({});
+    const userinfo = { ...baseUserinfo, roles: ['requiredRole'] };
+
+    // Act
+    const { user } = await validate(validTokenSet, userinfo);
+
+    // Assert – login should succeed because roles are taken from userinfo
+    expect(user).toBeDefined();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should call done with error when createUser fails', async () => {
+    // Arrange – simulate createUser throwing an error
+    const errorMessage = 'createUser failed';
+    createUser.mockImplementation(async () => {
+      throw new Error(errorMessage);
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act & Assert – verify that the verify callback rejects with the error
+    await expect(validate(validTokenSet, userinfo)).rejects.toThrow(errorMessage);
+  });
+
+  it('should not download avatar if existing user has avatar marked as manual', async () => {
+    // Arrange – simulate an existing user with a manually set avatar
+    const existingUser = {
+      _id: 'existingUserId',
+      provider: 'local',
+      email: baseUserinfo.email,
+      openidId: '',
+      username: '',
+      name: '',
+      avatar: 'some/path?manual=true',
+    };
+    findUser.mockResolvedValue(existingUser);
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(validTokenSet, userinfo);
+
+    // Assert – fetch should not be called since avatar is manually set
+    expect(fetch).not.toHaveBeenCalled();
+    expect(updateUser).toHaveBeenCalledWith(
+      existingUser._id,
+      expect.objectContaining({ avatar: existingUser.avatar }),
+    );
+    expect(user.avatar).toBe(existingUser.avatar);
   });
 });
