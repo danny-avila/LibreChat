@@ -191,7 +191,7 @@ async function createActionTool({
                 };
                 const flowManager = await getFlowStateManager(getLogStores);
                 await flowManager.createFlowWithHandler(
-                  `${identifier}:login`,
+                  `${identifier}:oauth_login:${config.metadata.agent_id}:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
                   async () => {
                     sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
