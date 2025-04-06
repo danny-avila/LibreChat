@@ -21,6 +21,7 @@ interface MultiSelectProps<T extends string> {
   itemClassName?: string;
   labelClassName?: string;
   selectClassName?: string;
+  selectIcon?: React.ReactNode;
   popoverClassName?: string;
   selectItemsClassName?: string;
   selectedValues: T[];
@@ -45,6 +46,7 @@ export default function MultiSelect<T extends string>({
   onSelectedValuesChange,
   renderSelectedValues = defaultRender,
   className,
+  selectIcon,
   itemClassName,
   labelClassName,
   selectClassName,
@@ -81,6 +83,7 @@ export default function MultiSelect<T extends string>({
             selectedValues.length > 0 && selectItemsClassName != null && selectItemsClassName,
           )}
         >
+          {selectIcon && selectIcon}
           <span className="truncate">{renderSelectedValues(selectedValues, placeholder)}</span>
           <SelectArrow className="ml-1 stroke-1 text-base opacity-75" />
         </Select>
