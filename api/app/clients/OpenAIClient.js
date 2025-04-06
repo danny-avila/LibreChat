@@ -32,6 +32,7 @@ const {
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { addSpaceIfNeeded, isEnabled, sleep } = require('~/server/utils');
+const { configureReasoning } = require('~/server/services/Endpoints/openAI/helpers');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
@@ -348,6 +349,8 @@ class OpenAIClient extends BaseClient {
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
       spec: this.options.spec,
+      thinking: this.options.thinking,
+      thinkingBudget: this.options.thinkingBudget,
       ...this.modelOptions,
     };
   }
@@ -680,8 +683,17 @@ class OpenAIClient extends BaseClient {
     const runManager = new RunManager({ req, res, debug, abortController: this.abortController });
     this.runManager = runManager;
 
-    const llm = createLLM({
+    const configuredModelOptions = configureReasoning(
       modelOptions,
+      {
+        thinking: this.options.thinking,
+        thinkingBudget: this.options.thinkingBudget,
+        context,
+      },
+    );
+
+    const llm = createLLM({
+      modelOptions: configuredModelOptions,
       configOptions,
       openAIApiKey: this.apiKey,
       azure: this.azure,
@@ -713,6 +725,15 @@ class OpenAIClient extends BaseClient {
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
     this.conversationId = conversationId;
+
+    // Save original context and set to 'title' for generation
+    const originalContext = this.options.context;
+    this.options.context = 'title';
+
+    // Restore after the function completes
+    const restoreContext = () => {
+      this.options.context = originalContext;
+    };
 
     if (this.options.attachments) {
       delete this.options.attachments;
@@ -845,6 +866,7 @@ ${convo}
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
         logger.debug('[OpenAIClient] Aborted title generation');
+        restoreContext();
         return;
       }
       logger.error(
@@ -856,6 +878,7 @@ ${convo}
     }
 
     logger.debug('[OpenAIClient] Convo Title: ' + title);
+    restoreContext();
     return title;
   }
 
@@ -1155,6 +1178,15 @@ ${convo}
       } else {
         modelOptions.prompt = payload;
       }
+
+      modelOptions = configureReasoning(
+        modelOptions,
+        {
+          thinking: this.options.thinking,
+          thinkingBudget: this.options.thinkingBudget,
+          context: this.options.context,
+        },
+      );
 
       const baseURL = extractBaseURL(this.completionsUrl);
       logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
