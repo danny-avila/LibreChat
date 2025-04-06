@@ -1283,6 +1283,8 @@ export enum LocalStorageKeys {
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
   /** Key for displaying analysis tool code input */
   SHOW_ANALYSIS_CODE = 'showAnalysisCode',
+  /** Last selected MCP values per conversation ID */
+  LAST_MCP_ = 'LAST_MCP_',
 }
 
 export enum ForkOptions {

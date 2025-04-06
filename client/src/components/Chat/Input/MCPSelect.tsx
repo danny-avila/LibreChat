@@ -1,7 +1,8 @@
 import React, { memo, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { useSetRecoilState } from 'recoil';
+import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
+import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
 import MCPIcon from '~/components/ui/MCPIcon';
@@ -10,7 +11,27 @@ import { useLocalize } from '~/hooks';
 function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
+  const setSelectedValues = useCallback(
+    (values: string[] | null | undefined) => {
+      if (!values) {
+        return;
+      }
+      if (!Array.isArray(values)) {
+        return;
+      }
+      setEphemeralAgent((prev) => ({
+        ...prev,
+        mcp: values,
+      }));
+    },
+    [setEphemeralAgent],
+  );
+  const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
+    `${LocalStorageKeys.LAST_MCP_}${key}`,
+    [] as string[],
+    setSelectedValues,
+  );
   const { data: mcpServers } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data) => {
       const serverNames = new Set<string>();
@@ -41,21 +62,14 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     return null;
   }
 
-  const setSelectedValues = (values: string[]) => {
-    setEphemeralAgent((prev) => ({
-      ...prev,
-      mcp: values,
-    }));
-  };
-
   return (
     <MultiSelect
       items={mcpServers ?? []}
-      placeholder={localize('com_ui_mcp_servers')}
-      defaultSelectedValues={ephemeralAgent?.mcp ?? []}
-      setSelectedValues={setSelectedValues}
+      selectedValues={mcpValues ?? []}
+      setSelectedValues={setMCPValues}
+      defaultSelectedValues={mcpValues ?? []}
       renderSelectedValues={renderSelectedValues}
-      selectedValues={ephemeralAgent?.mcp ?? []}
+      placeholder={localize('com_ui_mcp_servers')}
       popoverClassName="min-w-[200px]"
       className="badge-icon h-full min-w-[150px]"
       selectIcon={<MCPIcon className="icon-md text-text-primary" />}
