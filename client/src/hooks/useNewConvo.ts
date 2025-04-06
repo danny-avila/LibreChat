@@ -28,6 +28,7 @@ import {
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
+import { useResetChatBadges } from './useChatBadges';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
@@ -38,8 +39,8 @@ const useNewConvo = (index = 0) => {
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
-  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
   const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
@@ -49,6 +50,7 @@ const useNewConvo = (index = 0) => {
   const assistantsListMap = useAssistantListMap();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const resetBadges = useResetChatBadges();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -196,8 +198,8 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos?: boolean;
     } = {}) {
       pauseGlobalAudio();
-      if (isTemporary) {
-        setIsTemporary(false);
+      if (!saveBadgesState) {
+        resetBadges();
       }
 
       const templateConvoId = _template.conversationId ?? '';
@@ -219,11 +221,12 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const defaultModelSpec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
+      const defaultModelSpec = getDefaultModelSpec(startupConfig);
       if (
         !preset &&
         startupConfig &&
-        startupConfig.modelSpecs?.prioritize === true &&
+        (startupConfig.modelSpecs?.prioritize === true ||
+          (startupConfig.interface?.modelSelect ?? true) !== true) &&
         defaultModelSpec
       ) {
         preset = {
@@ -276,6 +279,7 @@ const useNewConvo = (index = 0) => {
       files,
       setFiles,
       mutateAsync,
+      resetBadges,
     ],
   );
 

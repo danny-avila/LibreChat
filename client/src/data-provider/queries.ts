@@ -35,6 +35,7 @@ export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
 ): QueryObserverResult<TPreset[], unknown> => {
   return useQuery<TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
+    staleTime: 1000 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -236,6 +237,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
       // select: (res) => {
       //   return res.data.sort((a, b) => a.created_at - b.created_at);
       // },
+      staleTime: 1000 * 5,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

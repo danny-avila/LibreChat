@@ -34,8 +34,14 @@ const mistralModels = {
   'mistral-7b': 31990, // -10 from max
   'mistral-small': 31990, // -10 from max
   'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large': 131000,
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
+  'pixtral-large': 131000,
+  'mistral-saba': 32000,
+  codestral: 256000,
+  'ministral-8b': 131000,
+  'ministral-3b': 131000,
 };
 
 const cohereModels = {
@@ -52,6 +58,7 @@ const googleModels = {
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,
+  'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,

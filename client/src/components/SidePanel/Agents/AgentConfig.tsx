@@ -6,9 +6,9 @@ import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useToastContext, useFileMapContext } from '~/Providers';
-import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
+import { icons } from '~/hooks/Endpoint/Icons';
 import { processAgentOption } from '~/utils';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
@@ -53,27 +53,27 @@ export default function AgentConfig({
   const agent_id = useWatch({ control, name: 'id' });
 
   const toolsEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.tools),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools) ?? false,
     [agentsConfig],
   );
   const actionsEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.actions),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions) ?? false,
     [agentsConfig],
   );
   const artifactsEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.artifacts) ?? false,
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.artifacts) ?? false,
     [agentsConfig],
   );
   const ocrEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.ocr) ?? false,
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.ocr) ?? false,
     [agentsConfig],
   );
   const fileSearchEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.file_search) ?? false,
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
     [agentsConfig],
   );
   const codeEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.execute_code) ?? false,
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
     [agentsConfig],
   );
 

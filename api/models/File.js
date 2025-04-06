@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { fileSchema } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 
 const File = mongoose.model('File', fileSchema);
 
@@ -24,6 +25,32 @@ const findFileById = async (file_id, options = {}) => {
 const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
   return await File.find(filter).select(selectFields).sort(sortOptions).lean();
+};
+
+/**
+ * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
+ * @param {string[]} fileIds - Array of file_id strings to search for
+ * @returns {Promise<Array<IMongoFile>>} Files that match the criteria
+ */
+const getToolFilesByIds = async (fileIds) => {
+  if (!fileIds || !fileIds.length) {
+    return [];
+  }
+
+  try {
+    const filter = {
+      file_id: { $in: fileIds },
+      $or: [{ embedded: true }, { 'metadata.fileIdentifier': { $exists: true } }],
+    };
+
+    const selectFields = { text: 0 };
+    const sortOptions = { updatedAt: -1 };
+
+    return await getFiles(filter, sortOptions, selectFields);
+  } catch (error) {
+    logger.error('[getToolFilesByIds] Error retrieving tool files:', error);
+    throw new Error('Error retrieving tool files');
+  }
 };
 
 /**
@@ -107,14 +134,38 @@ const deleteFiles = async (file_ids, user) => {
   return await File.deleteMany(deleteQuery);
 };
 
+/**
+ * Batch updates files with new signed URLs in MongoDB
+ *
+ * @param {MongoFile[]} updates - Array of updates in the format { file_id, filepath }
+ * @returns {Promise<void>}
+ */
+async function batchUpdateFiles(updates) {
+  if (!updates || updates.length === 0) {
+    return;
+  }
+
+  const bulkOperations = updates.map((update) => ({
+    updateOne: {
+      filter: { file_id: update.file_id },
+      update: { $set: { filepath: update.filepath } },
+    },
+  }));
+
+  const result = await File.bulkWrite(bulkOperations);
+  logger.info(`Updated ${result.modifiedCount} files with new S3 URLs`);
+}
+
 module.exports = {
   File,
   findFileById,
   getFiles,
+  getToolFilesByIds,
   createFile,
   updateFile,
   updateFileUsage,
   deleteFile,
   deleteFiles,
   deleteFileByFilter,
+  batchUpdateFiles,
 };

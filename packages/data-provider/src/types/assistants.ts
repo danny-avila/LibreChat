@@ -150,11 +150,12 @@ export type File = {
 
 /* Agent types */
 
-export type AgentParameterValue = number | null;
+export type AgentParameterValue = number | string | null;
 
 export type AgentModelParameters = {
   model?: string;
   temperature: AgentParameterValue;
+  maxContextTokens: AgentParameterValue;
   max_context_tokens: AgentParameterValue;
   max_output_tokens: AgentParameterValue;
   top_p: AgentParameterValue;
@@ -447,7 +448,7 @@ export type ContentPart = (
   PartMetadata;
 
 export type TMessageContentParts =
-  | { type: ContentTypes.ERROR; text: Text & PartMetadata }
+  | { type: ContentTypes.ERROR; text?: string | (Text & PartMetadata); error?: string }
   | { type: ContentTypes.THINK; think: string | (Text & PartMetadata) }
   | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
   | {

@@ -1,6 +1,6 @@
+import { useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
-import { Fragment, useState, memo } from 'react';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -17,13 +17,13 @@ function AccountSettings() {
   const { user, isAuthenticated, logout } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+    enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
   const avatarSrc = useAvatar(user);
-  const name = user?.avatar ?? user?.username ?? '';
+  const avatarSeed = user?.avatar || user?.name || user?.username || '';
 
   return (
     <Select.SelectProvider>
@@ -34,7 +34,7 @@ function AccountSettings() {
       >
         <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
           <div className="relative flex">
-            {name.length === 0 ? (
+            {avatarSeed.length === 0 ? (
               <div
                 style={{
                   backgroundColor: 'rgb(121, 137, 255)',
@@ -51,7 +51,7 @@ function AccountSettings() {
               <img
                 className="rounded-full"
                 src={(user?.avatar ?? '') || avatarSrc}
-                alt={`${name}'s avatar`}
+                alt={`${user?.name || user?.username || user?.email || ''}'s avatar`}
               />
             )}
           </div>
@@ -75,7 +75,7 @@ function AccountSettings() {
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
-        {startupConfig?.checkBalance === true &&
+        {startupConfig?.balance?.enabled === true &&
           balanceQuery.data != null &&
           !isNaN(parseFloat(balanceQuery.data)) && (
           <>

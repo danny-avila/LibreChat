@@ -12,6 +12,7 @@ import lang from './language';
 import settings from './settings';
 import misc from './misc';
 import isTemporary from './temporary';
+
 export default {
   ...artifacts,
   ...families,

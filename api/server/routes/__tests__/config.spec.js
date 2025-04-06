@@ -18,6 +18,7 @@ afterEach(() => {
   delete process.env.OPENID_ISSUER;
   delete process.env.OPENID_SESSION_SECRET;
   delete process.env.OPENID_BUTTON_LABEL;
+  delete process.env.OPENID_AUTO_REDIRECT;
   delete process.env.OPENID_AUTH_URL;
   delete process.env.GITHUB_CLIENT_ID;
   delete process.env.GITHUB_CLIENT_SECRET;

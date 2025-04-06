@@ -41,7 +41,7 @@ const banResponse = async (req, res) => {
  * @function
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
- * @param {Function} next - Next middleware function.
+ * @param {import('express').NextFunction} next - Next middleware function.
  *
  * @returns {Promise<function|Object>} - Returns a Promise which when resolved calls next middleware if user or source IP is not banned. Otherwise calls `banResponse()` and sets ban details in `banCache`.
  */

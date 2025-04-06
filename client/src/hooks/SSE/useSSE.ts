@@ -4,9 +4,11 @@ import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
 import {
   request,
+  Constants,
   /* @ts-ignore */
   createPayload,
   isAgentsEndpoint,
+  LocalStorageKeys,
   removeNullishValues,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -17,6 +19,16 @@ import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/d
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
+
+const clearDraft = (conversationId?: string | null) => {
+  if (conversationId) {
+    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
+    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
+  } else {
+    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
+    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
+  }
+};
 
 type ChatHelpers = Pick<
   EventHandlerParams,
@@ -76,7 +88,7 @@ export default function useSSE(
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+    enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
 
   useEffect(() => {
@@ -112,9 +124,10 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
+        clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
-        (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
+        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -177,7 +190,10 @@ export default function useSSE(
       const latestMessages = getMessages();
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
       return await abortConversation(
-        conversationId ?? userMessage.conversationId ?? submission.conversationId,
+        conversationId ??
+          userMessage.conversationId ??
+          submission.conversation?.conversationId ??
+          '',
         submission as EventSubmission,
         latestMessages,
       );
@@ -208,7 +224,7 @@ export default function useSSE(
       }
 
       console.log('error in server stream.');
-      (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
+      (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
       let data: TResData | undefined = undefined;
       try {
@@ -234,6 +250,5 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 }

@@ -18,6 +18,8 @@ export type TMessages = TMessage[];
 
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
+  spec?: string | null;
+  iconURL?: string | null;
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
@@ -57,7 +59,6 @@ export type TSubmission = {
   isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
-  conversationId?: string;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;

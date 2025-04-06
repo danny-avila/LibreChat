@@ -471,6 +471,7 @@ class AgentClient extends BaseClient {
             err,
           );
         });
+        continue;
       }
       spendTokens(txMetadata, {
         promptTokens: usage.input_tokens,
@@ -931,7 +932,14 @@ class AgentClient extends BaseClient {
     };
     let endpointConfig = this.options.req.app.locals[this.options.agent.endpoint];
     if (!endpointConfig) {
-      endpointConfig = await getCustomEndpointConfig(this.options.agent.endpoint);
+      try {
+        endpointConfig = await getCustomEndpointConfig(this.options.agent.endpoint);
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
+          err,
+        );
+      }
     }
     if (
       endpointConfig &&
