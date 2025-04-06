@@ -4,6 +4,7 @@ const {
   Constants,
   ErrorTypes,
   EModelEndpoint,
+  parseTextParts,
   anthropicSettings,
   getResponseSender,
   validateVisionModel,
@@ -696,15 +697,8 @@ class AnthropicClient extends BaseClient {
       if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
         msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
       } else if (msg.content != null) {
-        /** @type {import('@librechat/agents').MessageContentComplex} */
-        const newContent = [];
-        for (let part of msg.content) {
-          if (part.think != null) {
-            continue;
-          }
-          newContent.push(part);
-        }
-        msg.content = newContent;
+        msg.text = parseTextParts(msg.content, true);
+        delete msg.content;
       }
 
       return msg;
