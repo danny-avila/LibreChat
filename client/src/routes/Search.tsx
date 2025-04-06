@@ -1,14 +1,15 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { FetchNextPageOptions } from '@tanstack/react-query';
+import { useToastContext, useSearchContext, useFileMapContext } from '~/Providers';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
-import { useSearchContext, useFileMapContext } from '~/Providers';
 import { useNavScrolling, useLocalize } from '~/hooks';
 import { buildTree } from '~/utils';
 
 export default function Search() {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
+  const { showToast } = useToastContext();
   const { searchQuery, searchQueryRes } = useSearchContext();
 
   const { containerRef } = useNavScrolling({
@@ -20,10 +21,16 @@ export default function Search() {
     isFetchingNext: searchQueryRes?.isFetchingNextPage ?? false,
   });
 
+  useEffect(() => {
+    if (searchQueryRes?.error) {
+      showToast({ message: 'An error occurred during search', status: 'error' });
+    }
+  }, [searchQueryRes?.error]);
+
   const messages = useMemo(() => {
     const msgs = searchQueryRes?.data?.pages.flatMap((page) => page.messages) || [];
     const dataTree = buildTree({ messages: msgs, fileMap });
-    return dataTree?.length === 0 ? null : dataTree ?? null;
+    return dataTree?.length === 0 ? null : (dataTree ?? null);
   }, [fileMap, searchQueryRes?.data?.pages]);
 
   if (!searchQuery || !searchQueryRes?.data) {
@@ -33,8 +40,6 @@ export default function Search() {
   if (searchQueryRes.isInitialLoading) {
     return null;
   }
-
-  console.log('Search -> messages', searchQueryRes);
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
