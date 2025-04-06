@@ -1,5 +1,5 @@
 import { useMemo, memo, type FC, useCallback } from 'react';
-import { throttle } from 'lodash';
+import throttle from 'lodash/throttle';
 import { parseISO, isToday } from 'date-fns';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { useLocalize, TranslationKeys, useMediaQuery } from '~/hooks';
@@ -114,7 +114,7 @@ const Conversations: FC<ConversationsProps> = ({
           return item.type === 'header' ? `header-${index}` : `convo-${item.convo.conversationId}`;
         },
       }),
-    [flattenedItems],
+    [flattenedItems, convoHeight],
   );
 
   const rowRenderer = useCallback(
@@ -147,7 +147,6 @@ const Conversations: FC<ConversationsProps> = ({
     [cache],
   );
 
-  // Throttle the loadMoreConversations call so it's not triggered too frequently.
   const throttledLoadMore = useMemo(
     () => throttle(loadMoreConversations, 300),
     [loadMoreConversations],
@@ -155,7 +154,6 @@ const Conversations: FC<ConversationsProps> = ({
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
-      // Trigger early when user scrolls within 2 items of the end.
       if (stopIndex >= flattenedItems.length - 2) {
         throttledLoadMore();
       }

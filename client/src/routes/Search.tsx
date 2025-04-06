@@ -26,7 +26,7 @@ export default function Search() {
     if (searchQueryRes?.error) {
       showToast({ message: 'An error occurred during search', status: 'error' });
     }
-  }, [searchQueryRes?.error]);
+  }, [searchQueryRes?.error, showToast]);
 
   const messages = useMemo(() => {
     const msgs = searchQueryRes?.data?.pages.flatMap((page) => page.messages) || [];

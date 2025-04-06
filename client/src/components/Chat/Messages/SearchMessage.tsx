@@ -39,35 +39,35 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
   const { user } = useAuthContext();
   const localize = useLocalize();
 
-  if (!message) {
-    return null;
-  }
-
   const iconData: TMessageIcon = useMemo(
     () => ({
-      endpoint: message.endpoint,
-      model: message.model,
-      iconURL: message.iconURL ?? '',
-      isCreatedByUser: message.isCreatedByUser,
+      endpoint: message?.endpoint ?? '',
+      model: message?.model ?? '',
+      iconURL: message?.iconURL ?? '',
+      isCreatedByUser: message?.isCreatedByUser ?? false,
     }),
-    [message.endpoint, message.model, message.iconURL, message.isCreatedByUser],
+    [message?.endpoint, message?.model, message?.iconURL, message?.isCreatedByUser],
   );
 
   const messageLabel = useMemo(() => {
-    if (message.isCreatedByUser) {
+    if (message?.isCreatedByUser) {
       return UsernameDisplay
         ? (user?.name ?? '') || (user?.username ?? '')
         : localize('com_user_message');
     }
-    return message.sender ?? '';
+    return message?.sender ?? '';
   }, [
-    message.isCreatedByUser,
-    message.sender,
+    message?.isCreatedByUser,
+    message?.sender,
     UsernameDisplay,
     user?.name,
     user?.username,
     localize,
   ]);
+
+  if (!message) {
+    return null;
+  }
 
   return (
     <div className="text-token-text-primary w-full bg-transparent">
