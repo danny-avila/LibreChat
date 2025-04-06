@@ -56,16 +56,12 @@ router.get('/', async function (req, res) {
 
       if (result.convoMap[message.conversationId]) {
         const convo = result.convoMap[message.conversationId];
+
         activeMessages.push({
           ...message,
           title: convo.title,
           conversationId: message.conversationId,
-          cleanedConversationId: cleanUpPrimaryKeyValue(message.conversationId),
-          searchMetadata: {
-            matchScore: message._score,
-            highlightedContent: message._formatted?.text,
-            matchedTerms: message._matchesInfo,
-          },
+          model: convo.model,
         });
       }
     }
@@ -73,10 +69,18 @@ router.get('/', async function (req, res) {
     const activeConversations = [];
     for (const convId in result.convoMap) {
       const convo = result.convoMap[convId];
+
+      if (convo.isArchived) {
+        continue;
+      }
+
       activeConversations.push({
         title: convo.title,
         user: convo.user,
         conversationId: convo.conversationId,
+        endpoint: convo.endpoint,
+        endpointType: convo.endpointType,
+        model: convo.model,
       });
     }
 

@@ -4,6 +4,7 @@ import { useToastContext, useSearchContext, useFileMapContext } from '~/Provider
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
 import { useNavScrolling, useLocalize } from '~/hooks';
+import { Spinner } from '~/components';
 import { buildTree } from '~/utils';
 
 export default function Search() {
@@ -37,8 +38,17 @@ export default function Search() {
     return null;
   }
 
-  if (searchQueryRes.isInitialLoading) {
-    return null;
+  // TODO: update this
+  if (
+    searchQueryRes.isInitialLoading ||
+    searchQueryRes.isLoading ||
+    searchQueryRes.isFetchingNextPage
+  ) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Spinner className="h-72 w-72" />
+      </div>
+    );
   }
 
   return (

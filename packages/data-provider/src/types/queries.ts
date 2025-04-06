@@ -27,6 +27,7 @@ export type MinimalConversation = Pick<
 
 export type ConversationListResponse = {
   conversations: MinimalConversation[];
+  mwssages?: s.TMessage[];
   nextCursor: string | null;
 };
 
