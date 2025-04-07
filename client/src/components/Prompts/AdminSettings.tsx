@@ -80,10 +80,10 @@ const AdminSettings = () => {
   const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
 
   const defaultValues = useMemo(() => {
-    if (roles?.[selectedRole]) {
-      return roles[selectedRole][PermissionTypes.PROMPTS];
+    if (roles?.[selectedRole]?.permissions) {
+      return roles[selectedRole].permissions[PermissionTypes.PROMPTS];
     }
-    return roleDefaults[selectedRole][PermissionTypes.PROMPTS];
+    return roleDefaults[selectedRole].permissions[PermissionTypes.PROMPTS];
   }, [roles, selectedRole]);
 
   const {
@@ -99,10 +99,10 @@ const AdminSettings = () => {
   });
 
   useEffect(() => {
-    if (roles?.[selectedRole]?.[PermissionTypes.PROMPTS]) {
-      reset(roles[selectedRole][PermissionTypes.PROMPTS]);
+    if (roles?.[selectedRole]?.permissions?.[PermissionTypes.PROMPTS]) {
+      reset(roles[selectedRole].permissions[PermissionTypes.PROMPTS]);
     } else {
-      reset(roleDefaults[selectedRole][PermissionTypes.PROMPTS]);
+      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PROMPTS]);
     }
   }, [roles, selectedRole, reset]);
 
