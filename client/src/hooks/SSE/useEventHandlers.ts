@@ -31,11 +31,11 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
+import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
-import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
@@ -140,8 +140,9 @@ export default function useEventHandlers({
   resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
   const { announcePolite } = useLiveAnnouncer();
+  const applyAgentTemplate = useApplyNewAgentTemplate();
+  const setAbortScroll = useSetRecoilState(store.abortScroll);
 
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
@@ -364,6 +365,9 @@ export default function useEventHandlers({
       });
 
       let update = {} as TConversation;
+      if (conversationId) {
+        applyAgentTemplate(conversationId, submission.conversation.conversationId);
+      }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           let title = prevState?.title;

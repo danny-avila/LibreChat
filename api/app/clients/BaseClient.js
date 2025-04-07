@@ -676,7 +676,8 @@ class BaseClient {
       responseMessage.text = addSpaceIfNeeded(generation) + completion;
     } else if (
       Array.isArray(completion) &&
-      isParamEndpoint(this.options.endpoint, this.options.endpointType)
+      (this.clientName === EModelEndpoint.agents ||
+        isParamEndpoint(this.options.endpoint, this.options.endpointType))
     ) {
       responseMessage.text = '';
       responseMessage.content = completion;

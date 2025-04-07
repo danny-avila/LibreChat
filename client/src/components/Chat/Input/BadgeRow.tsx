@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useState,
   useRef,
   useEffect,
@@ -12,11 +13,14 @@ import type { LucideIcon } from 'lucide-react';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
+import MCPSelect from './MCPSelect';
 import store from '~/store';
 
 interface BadgeRowProps {
+  showMCPServers?: boolean;
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
+  conversationId?: string | null;
   isInChat: boolean;
 }
 
@@ -33,7 +37,8 @@ interface BadgeWrapperProps {
 const BadgeWrapper = React.memo(
   forwardRef<HTMLDivElement, BadgeWrapperProps>(
     ({ badge, isEditing, isInChat, onToggle, onDelete, onMouseDown, badgeRefs }, ref) => {
-      const isActive = badge.atom ? useRecoilValue(badge.atom) : false;
+      const atomBadge = useRecoilValue(badge.atom);
+      const isActive = badge.atom ? atomBadge : false;
 
       return (
         <div
@@ -126,7 +131,7 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
   }
 };
 
-export function BadgeRow({ onChange, onToggle, isInChat }: BadgeRowProps) {
+function BadgeRow({ showMCPServers, conversationId, onChange, onToggle, isInChat }: BadgeRowProps) {
   const [orderedBadges, setOrderedBadges] = useState<BadgeItem[]>([]);
   const [dragState, dispatch] = useReducer(dragReducer, {
     draggedBadge: null,
@@ -340,6 +345,7 @@ export function BadgeRow({ onChange, onToggle, isInChat }: BadgeRowProps) {
           />
         </div>
       )}
+      {showMCPServers === true && <MCPSelect conversationId={conversationId} />}
       {ghostBadge && (
         <div
           className="ghost-badge h-full"
@@ -367,3 +373,5 @@ export function BadgeRow({ onChange, onToggle, isInChat }: BadgeRowProps) {
     </div>
   );
 }
+
+export default memo(BadgeRow);
