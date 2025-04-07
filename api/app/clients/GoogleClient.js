@@ -198,7 +198,11 @@ class GoogleClient extends BaseClient {
    */
   checkVisionRequest(attachments) {
     /* Validation vision request */
-    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
+    this.defaultVisionModel =
+      this.options.visionModel ??
+      (!EXCLUDED_GENAI_MODELS.test(this.modelOptions.model)
+        ? this.modelOptions.model
+        : 'gemini-pro-vision');
     const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
     this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 

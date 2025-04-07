@@ -9,9 +9,9 @@ import React, {
 } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
+import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
-import { BadgeItem } from '~/common';
 import store from '~/store';
 
 interface BadgeRowProps {

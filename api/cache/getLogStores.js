@@ -49,6 +49,10 @@ const genTitle = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
   : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: Time.TWO_MINUTES });
 
+const s3ExpiryInterval = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.S3_EXPIRY_INTERVAL, ttl: Time.THIRTY_MINUTES });
+
 const modelQueries = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.MODEL_QUERIES });
@@ -89,6 +93,7 @@ const namespaces = {
   [CacheKeys.ABORT_KEYS]: abortKeys,
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,
   [CacheKeys.GEN_TITLE]: genTitle,
+  [CacheKeys.S3_EXPIRY_INTERVAL]: s3ExpiryInterval,
   [CacheKeys.MODEL_QUERIES]: modelQueries,
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,

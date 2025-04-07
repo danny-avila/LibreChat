@@ -459,7 +459,7 @@ describe('spendTokens', () => {
 
   it('should handle multiple concurrent transactions correctly with a high balance', async () => {
     // Create a balance with a high amount
-    const initialBalance = 1000000;
+    const initialBalance = 10000000;
     await Balance.create({
       user: userId,
       tokenCredits: initialBalance,
@@ -470,8 +470,9 @@ describe('spendTokens', () => {
     const context = 'message';
     const model = 'gpt-4';
 
-    // Create 10 usage records to simulate multiple transactions
-    const collectedUsage = Array.from({ length: 10 }, (_, i) => ({
+    const amount = 50;
+    // Create `amount` of usage records to simulate multiple transactions
+    const collectedUsage = Array.from({ length: amount }, (_, i) => ({
       model,
       input_tokens: 100 + i * 10, // Increasing input tokens
       output_tokens: 50 + i * 5, // Increasing output tokens
@@ -589,6 +590,80 @@ describe('spendTokens', () => {
     expect(finalBalance.tokenCredits).toBeLessThan(initialBalance);
     // 2. The total token value from transactions matches the actual spend
     expect(Math.abs(totalTokenValue)).toBeCloseTo(actualSpend, -3); // Allow for larger differences
+  });
+
+  // Add this new test case
+  it('should handle multiple concurrent balance increases correctly', async () => {
+    // Start with zero balance
+    const initialBalance = 0;
+    await Balance.create({
+      user: userId,
+      tokenCredits: initialBalance,
+    });
+
+    const numberOfRefills = 25;
+    const refillAmount = 1000;
+
+    const promises = [];
+    for (let i = 0; i < numberOfRefills; i++) {
+      promises.push(
+        Transaction.createAutoRefillTransaction({
+          user: userId,
+          tokenType: 'credits',
+          context: 'concurrent-refill-test',
+          rawAmount: refillAmount,
+        }),
+      );
+    }
+
+    // Wait for all refill transactions to complete
+    const results = await Promise.all(promises);
+
+    // Verify final balance
+    const finalBalance = await Balance.findOne({ user: userId });
+    expect(finalBalance).toBeDefined();
+
+    // The final balance should be the initial balance plus the sum of all refills
+    const expectedFinalBalance = initialBalance + numberOfRefills * refillAmount;
+
+    console.log('Initial balance (Increase Test):', initialBalance);
+    console.log(`Performed ${numberOfRefills} refills of ${refillAmount} each.`);
+    console.log('Expected final balance (Increase Test):', expectedFinalBalance);
+    console.log('Actual final balance (Increase Test):', finalBalance.tokenCredits);
+
+    // Use toBeCloseTo for safety, though toBe should work for integer math
+    expect(finalBalance.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
+
+    // Verify all transactions were created
+    const transactions = await Transaction.find({
+      user: userId,
+      context: 'concurrent-refill-test',
+    });
+
+    // We should have one transaction for each refill attempt
+    expect(transactions.length).toBe(numberOfRefills);
+
+    // Optional: Verify the sum of increments from the results matches the balance change
+    const totalIncrementReported = results.reduce((sum, result) => {
+      // Assuming createAutoRefillTransaction returns an object with the increment amount
+      // Adjust this based on the actual return structure.
+      // Let's assume it returns { balance: newBalance, transaction: { rawAmount: ... } }
+      // Or perhaps we check the transaction.rawAmount directly
+      return sum + (result?.transaction?.rawAmount || 0);
+    }, 0);
+    console.log('Total increment reported by results:', totalIncrementReported);
+    expect(totalIncrementReported).toBe(expectedFinalBalance - initialBalance);
+
+    // Optional: Check the sum of tokenValue from saved transactions
+    let totalTokenValueFromDb = 0;
+    transactions.forEach((tx) => {
+      // For refills, rawAmount is positive, and tokenValue might be calculated based on it
+      // Let's assume tokenValue directly reflects the increment for simplicity here
+      // If calculation is involved, adjust accordingly
+      totalTokenValueFromDb += tx.rawAmount; // Or tx.tokenValue if that holds the increment
+    });
+    console.log('Total rawAmount from DB transactions:', totalTokenValueFromDb);
+    expect(totalTokenValueFromDb).toBeCloseTo(expectedFinalBalance - initialBalance, 0);
   });
 
   it('should create structured transactions for both prompt and completion tokens', async () => {

@@ -528,7 +528,8 @@ export default function useEventHandlers({
 
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
-      const conversationId = userMessage.conversationId ?? submission.conversationId ?? '';
+      const conversationId =
+        userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
@@ -597,7 +598,7 @@ export default function useEventHandlers({
       });
 
       setMessages([...messages, userMessage, errorResponse]);
-      if (receivedConvoId && paramId === 'new' && newConversation) {
+      if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
         newConversation({
           template: { conversationId: receivedConvoId },
           preset: tPresetSchema.parse(submission.conversation),
@@ -644,7 +645,7 @@ export default function useEventHandlers({
           } else {
             cancelHandler(data, submission);
           }
-        } else if (response.status === 204) {
+        } else if (response.status === 204 || response.status === 200) {
           const responseMessage = {
             ...submission.initialResponse,
           };

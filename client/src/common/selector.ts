@@ -20,5 +20,4 @@ export interface SelectedValues {
 
 export interface ModelSelectorProps {
   startupConfig: TStartupConfig | undefined;
-  modelSpecs: TModelSpec[];
 }
