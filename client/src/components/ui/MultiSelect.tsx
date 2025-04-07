@@ -84,8 +84,10 @@ export default function MultiSelect<T extends string>({
           )}
         >
           {selectIcon && selectIcon}
-          <span className="truncate">{renderSelectedValues(selectedValues, placeholder)}</span>
-          <SelectArrow className="ml-1 stroke-1 text-base opacity-75" />
+          <span className="hidden truncate md:block">
+            {renderSelectedValues(selectedValues, placeholder)}
+          </span>
+          <SelectArrow className="ml-1 hidden stroke-1 text-base opacity-75 md:block" />
         </Select>
         <SelectPopover
           gutter={4}

@@ -74,7 +74,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
       className="badge-icon h-full min-w-[150px]"
       selectIcon={<MCPIcon className="icon-md text-text-primary" />}
       selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
-      selectClassName="group relative inline-flex items-center gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-shadow md:w-full size-9 p-2 md:p-3 bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
+      selectClassName="group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-shadow md:w-full size-9 p-2 md:p-3 bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
     />
   );
 }
