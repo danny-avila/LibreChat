@@ -34,6 +34,7 @@ export default function Settings({
     presence_penalty: presP,
     resendFiles,
     imageDetail,
+    seed,
   } = conversation ?? {};
   const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput({
     setOption,
@@ -64,6 +65,11 @@ export default function Settings({
     setOption,
     optionKey: 'presence_penalty',
     initialValue: presP,
+  });
+  const [setSeed, seedValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'seed',
+    initialValue: seed,
   });
 
   if (!conversation) {
