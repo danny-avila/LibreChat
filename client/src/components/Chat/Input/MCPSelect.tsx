@@ -1,5 +1,5 @@
 import React, { memo, useCallback } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
@@ -11,7 +11,7 @@ import { useLocalize } from '~/hooks';
 function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
-  const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
+  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const setSelectedValues = useCallback(
     (values: string[] | null | undefined) => {
       if (!values) {
@@ -29,7 +29,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   );
   const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
     `${LocalStorageKeys.LAST_MCP_}${key}`,
-    [] as string[],
+    ephemeralAgent?.mcp ?? [],
     setSelectedValues,
   );
   const { data: mcpServers } = useAvailableToolsQuery(EModelEndpoint.agents, {
