@@ -36,6 +36,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://template.run.claw.cloud/?referralCode=YLBAWPJ66PVQ&openapp=system-fastdeploy%3FtemplateName%3Dlibrechat">
+  <img src="https://raw.githubusercontent.com/ClawCloud/Run-Template/refs/heads/main/Run-on-ClawCloud.svg" alt="Run on ClawCloud" height="30">
+</a>
 </p>
 
 <p align="center">
