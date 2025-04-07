@@ -1,7 +1,9 @@
+import { AgentCapabilities, AuthType } from 'librechat-data-provider';
 import { KeyRoundIcon } from 'lucide-react';
-import { AuthType, AgentCapabilities } from 'librechat-data-provider';
-import { useFormContext, Controller, useWatch } from 'react-hook-form';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import type { AgentForm } from '~/common';
+import { ESide } from '~/common';
+import { CircleHelpIcon } from '~/components/svg';
 import {
   Checkbox,
   HoverCard,
@@ -9,10 +11,8 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
 } from '~/components/ui';
-import { useLocalize, useCodeApiKeyForm } from '~/hooks';
-import { CircleHelpIcon } from '~/components/svg';
+import { useCodeApiKeyForm, useLocalize } from '~/hooks';
 import ApiKeyDialog from './ApiKeyDialog';
-import { ESide } from '~/common';
 
 export default function Action({ authType = '', isToolAuthenticated = false }) {
   const localize = useLocalize();
@@ -64,7 +64,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
               />
             )}
           />
-          <button
+          {/* <button
             type="button"
             className="flex items-center space-x-2"
             onClick={() => {
@@ -78,7 +78,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             >
               {localize('com_ui_run_code')}
             </label>
-          </button>
+          </button> */}
           <div className="ml-2 flex gap-2">
             {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
               <button type="button" onClick={() => setIsDialogOpen(true)}>

@@ -1,5 +1,5 @@
-import React from 'react';
 import * as Select from '@ariakit/react/select';
+import React from 'react';
 import type { Option } from '~/common';
 import { cn } from '~/utils/';
 
@@ -70,7 +70,7 @@ const Dropdown: React.FC<DropdownProps> = ({
       <Select.Select
         store={selectProps}
         className={cn(
-          'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
+          'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-beigetertiary hover:dark:bg-darkbeige800 hover:text-accent-foreground focus:ring-ring-primary',
           iconOnly ? 'h-full w-10' : 'w-fit gap-2',
           className,
         )}

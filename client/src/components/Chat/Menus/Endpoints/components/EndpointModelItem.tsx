@@ -1,10 +1,15 @@
-import React from 'react';
-import { EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EarthIcon } from 'lucide-react';
 import type { Endpoint } from '~/common';
-import { useModelSelectorContext } from '../ModelSelectorContext';
+import ClaudeIcon from '~/components/svg/ClaudeIcon';
+import DeepseekColorIcon from '~/components/svg/DeepseekColorIcon';
+import GeminiIcon from '~/components/svg/GeminiIcon';
+import GPTIcon from '~/components/svg/GPTIcon';
+import GrokIcon from '~/components/svg/GrokIcon';
+import MetaIcon from '~/components/svg/MetaIcon';
+import PerplexityIcon from '~/components/svg/PerplexityIcon';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-
+import { useModelSelectorContext } from '../ModelSelectorContext';
 interface EndpointModelItemProps {
   modelId: string | null;
   endpoint: Endpoint;
@@ -39,17 +44,36 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
       className="flex h-8 w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 text-sm"
     >
       <div className="flex items-center gap-2">
-        {avatarUrl ? (
+        {modelId?.startsWith('deepseek/') ? (
           <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-            <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
+            <DeepseekColorIcon />
           </div>
-        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
-          endpoint.icon ? (
-            <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-              {endpoint.icon}
-            </div>
-          ) : null}
-        <span>{modelName}</span>
+        ) : modelId?.startsWith('x-ai/') ? (
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            <GrokIcon />
+          </div>
+        ) : modelId?.startsWith('openai/') ? (
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            <GPTIcon />
+          </div>
+        ) : modelId?.startsWith('anthropic/') ? (
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            <ClaudeIcon />
+          </div>
+        ) : modelId?.startsWith('perplexity/') ? (
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            <PerplexityIcon />
+          </div>
+        ) : modelId?.startsWith('meta-llama/') ? (
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            <MetaIcon />
+          </div>
+        ) : modelId?.startsWith('google/') ? (  
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            <GeminiIcon />
+          </div>
+        ) : null}
+        <span>{modelName?.toLowerCase().includes(':free') ? <strong><i>{modelName}</i></strong> : modelName}</span>
       </div>
       {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
       {isSelected && (
@@ -81,7 +105,36 @@ export function renderEndpointModels(
 ) {
   const modelsToRender = filteredModels || models.map((model) => model.name);
 
-  return modelsToRender.map(
+  const sortedModels = [...modelsToRender].sort((a, b) => {
+    // Get provider (text before "/") for each model
+    const aProvider = a.split('/')[0];
+    const bProvider = b.split('/')[0];
+
+    // Define provider order
+    const providerOrder = {
+      'anthropic': 1,
+      'openai': 2,
+      'x-ai': 3,
+      'deepseek': 4,
+      'perplexity': 5,
+      'meta-llama': 6,
+      'google': 7,
+    };
+
+    // Get provider order values, defaulting to 6 for any other provider
+    const aOrder = providerOrder[aProvider] || 6;
+    const bOrder = providerOrder[bProvider] || 6;
+
+    // First sort by provider order
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+
+    // Then sort by model name in descending order
+    return b.localeCompare(a);
+  });
+
+  return sortedModels.map(
     (modelId) =>
       endpoint && (
         <EndpointModelItem

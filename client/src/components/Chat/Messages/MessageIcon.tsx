@@ -1,10 +1,10 @@
-import React, { useMemo, memo } from 'react';
-import type { Assistant, Agent } from 'librechat-data-provider';
+import type { Agent, Assistant } from 'librechat-data-provider';
+import { memo, useMemo } from 'react';
 import type { TMessageIcon } from '~/common';
-import { getEndpointField, getIconEndpoint, logger } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { useGetEndpointsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
+import { useGetEndpointsQuery } from '~/data-provider';
+import { getEndpointField, getIconEndpoint, logger } from '~/utils';
 
 const MessageIcon = memo(
   ({
@@ -49,7 +49,7 @@ const MessageIcon = memo(
       return (
         <ConvoIconURL
           iconURL={iconURL}
-          modelLabel={iconData?.modelLabel}
+          modelLabel='BMO'
           context="message"
           assistantAvatar={assistantAvatar}
           agentAvatar={agentAvatar}
@@ -64,7 +64,7 @@ const MessageIcon = memo(
       <Icon
         isCreatedByUser={iconData?.isCreatedByUser ?? false}
         endpoint={endpoint}
-        iconURL={avatarURL || endpointIconURL}
+        iconURL="/assets/bmo-chat-icon-140x140.png"
         model={iconData?.model}
         assistantName={assistantName}
         agentName={agentName}

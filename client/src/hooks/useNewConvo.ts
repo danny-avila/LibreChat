@@ -1,38 +1,38 @@
-import { useCallback, useRef } from 'react';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { useNavigate } from 'react-router-dom';
-import {
-  Constants,
-  FileSources,
-  EModelEndpoint,
-  isParamEndpoint,
-  LocalStorageKeys,
-  isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
-  TPreset,
-  TSubmission,
-  TModelsConfig,
   TConversation,
   TEndpointsConfig,
+  TModelsConfig,
+  TPreset,
+  TSubmission,
 } from 'librechat-data-provider';
-import type { AssistantListItem } from '~/common';
 import {
-  getEndpointField,
+  Constants,
+  EModelEndpoint,
+  FileSources,
+  isAssistantsEndpoint,
+  isParamEndpoint,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useRecoilCallback, useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import type { AssistantListItem } from '~/common';
+import { mainTextareaId } from '~/common';
+import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import store from '~/store';
+import {
   buildDefaultConvo,
   getDefaultEndpoint,
   getDefaultModelSpec,
+  getEndpointField,
   getModelSpecIconURL,
+  logger,
   updateLastSelectedModel,
 } from '~/utils';
-import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
-import { useResetChatBadges } from './useChatBadges';
 import { usePauseGlobalAudio } from './Audio';
-import { mainTextareaId } from '~/common';
-import { logger } from '~/utils';
-import store from '~/store';
+import { useResetChatBadges } from './useChatBadges';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -160,7 +160,7 @@ const useNewConvo = (index = 0) => {
         }
 
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
-          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
+          const appTitle = 'Chat with BMO';
           if (appTitle) {
             document.title = appTitle;
           }

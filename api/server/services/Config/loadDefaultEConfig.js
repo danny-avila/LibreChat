@@ -8,22 +8,22 @@ const { config } = require('./EndpointService');
  * @returns {Promise<Object.<string, EndpointWithOrder>>} An object whose keys are endpoint names and values are objects that contain the endpoint configuration and an order.
  */
 async function loadDefaultEndpointsConfig(req) {
-  const { google, gptPlugins } = await loadAsyncEndpoints(req);
-  const { assistants, azureAssistants, azureOpenAI, chatGPTBrowser } = config;
+  // const { google, gptPlugins } = await loadAsyncEndpoints(req);
+  // const { assistants, azureAssistants, azureOpenAI, chatGPTBrowser } = config;
 
   const enabledEndpoints = getEnabledEndpoints();
 
   const endpointConfig = {
-    [EModelEndpoint.openAI]: config[EModelEndpoint.openAI],
+    // [EModelEndpoint.openAI]: config[EModelEndpoint.openAI],
     [EModelEndpoint.agents]: config[EModelEndpoint.agents],
-    [EModelEndpoint.assistants]: assistants,
-    [EModelEndpoint.azureAssistants]: azureAssistants,
-    [EModelEndpoint.azureOpenAI]: azureOpenAI,
-    [EModelEndpoint.google]: google,
-    [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
-    [EModelEndpoint.gptPlugins]: gptPlugins,
-    [EModelEndpoint.anthropic]: config[EModelEndpoint.anthropic],
-    [EModelEndpoint.bedrock]: config[EModelEndpoint.bedrock],
+    // [EModelEndpoint.assistants]: assistants,
+    // [EModelEndpoint.azureAssistants]: azureAssistants,
+    // [EModelEndpoint.azureOpenAI]: azureOpenAI,
+    // [EModelEndpoint.google]: google,
+    // [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
+    // [EModelEndpoint.gptPlugins]: gptPlugins,
+    // [EModelEndpoint.anthropic]: config[EModelEndpoint.anthropic],
+    // [EModelEndpoint.bedrock]: config[EModelEndpoint.bedrock],
   };
 
   const orderedAndFilteredEndpoints = enabledEndpoints.reduce((config, key, index) => {

@@ -52,8 +52,8 @@ export default function AgentFooter({
 
   return (
     <div className="mx-1 mb-1 flex w-full flex-col gap-2">
-      {activePanel !== Panel.advanced && <AdvancedButton setActivePanel={setActivePanel} />}
-      {user?.role === SystemRoles.ADMIN && <AdminSettings />}
+      {/* {activePanel !== Panel.advanced && <AdvancedButton setActivePanel={setActivePanel} />} */}
+      {/* {user?.role === SystemRoles.ADMIN && <AdminSettings />} */}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
         <DeleteButton
@@ -61,16 +61,6 @@ export default function AgentFooter({
           setCurrentAgentId={setCurrentAgentId}
           createMutation={createMutation}
         />
-        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
-          hasAccessToShareAgents && (
-          <ShareAgent
-            agent_id={agent_id}
-            agentName={agent?.name ?? ''}
-            projectIds={agent?.projectIds ?? []}
-            isCollaborative={agent?.isCollaborative}
-          />
-        )}
-        {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
         {/* Submit Button */}
         <button
           className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"

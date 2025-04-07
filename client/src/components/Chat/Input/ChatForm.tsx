@@ -23,7 +23,7 @@ import { TextareaAutosize } from '~/components';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
-import AudioRecorder from './AudioRecorder';
+// import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
@@ -44,7 +44,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
   const isSearching = useRecoilValue(store.isSearching);
-  const SpeechToText = useRecoilValue(store.speechToText);
+  // const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const chatDirection = useRecoilValue(store.chatDirection);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
@@ -305,7 +305,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 }
               />
               <div className="mx-auto flex" />
-              {SpeechToText && (
+              {/* {SpeechToText && (
                 <AudioRecorder
                   methods={methods}
                   ask={submitMessage}
@@ -313,7 +313,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   disabled={disableInputs}
                   isSubmitting={isSubmitting}
                 />
-              )}
+              )} */}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
                 {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />

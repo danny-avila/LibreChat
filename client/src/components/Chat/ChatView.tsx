@@ -1,22 +1,21 @@
+import type { TMessage } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import { memo, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import type { TMessage } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
 import type { ChatFormValues } from '~/common';
-import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
-import ConversationStarters from './Input/ConversationStarters';
-import MessagesView from './Messages/MessagesView';
 import { Spinner } from '~/components/svg';
-import Presentation from './Presentation';
-import ChatForm from './Input/ChatForm';
-import { buildTree } from '~/utils';
-import Landing from './Landing';
-import Header from './Header';
-import Footer from './Footer';
+import { useAddedResponse, useChatHelpers, useSSE } from '~/hooks';
+import { AddedChatContext, ChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import store from '~/store';
+import { buildTree } from '~/utils';
+import Header from './Header';
+import ChatForm from './Input/ChatForm';
+import ConversationStarters from './Input/ConversationStarters';
+import Landing from './Landing';
+import MessagesView from './Messages/MessagesView';
+import Presentation from './Presentation';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
@@ -81,14 +80,12 @@ function ChatView({ index = 0 }: { index?: number }) {
                       <ConversationStarters />
                     </div>
                   </div>
-                  <Footer />
                 </>
               ) : (
                 <div className="flex h-full flex-col overflow-y-auto">
                   {content}
                   <div className="w-full">
                     <ChatForm index={index} />
-                    <Footer />
                   </div>
                 </div>
               )}

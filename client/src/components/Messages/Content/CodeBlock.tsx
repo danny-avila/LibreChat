@@ -1,15 +1,14 @@
 import copy from 'copy-to-clipboard';
-import { InfoIcon } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { InfoIcon } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CodeBarProps } from '~/common';
 import LogContent from '~/components/Chat/Messages/Content/Parts/LogContent';
 import ResultSwitcher from '~/components/Messages/Content/ResultSwitcher';
-import { useToolCallsMapContext, useMessageContext } from '~/Providers';
-import RunCode from '~/components/Messages/Content/RunCode';
-import Clipboard from '~/components/svg/Clipboard';
 import CheckMark from '~/components/svg/CheckMark';
+import Clipboard from '~/components/svg/Clipboard';
 import useLocalize from '~/hooks/useLocalize';
+import { useMessageContext, useToolCallsMapContext } from '~/Providers';
 import cn from '~/utils/cn';
 
 type CodeBlockProps = Pick<
@@ -31,9 +30,6 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
           <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
         ) : (
           <div className="flex items-center justify-center gap-4">
-            {allowExecution === true && (
-              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
-            )}
             <button
               type="button"
               className={cn(

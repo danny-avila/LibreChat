@@ -9,13 +9,11 @@ import {
   SetConvoProvider,
 } from '~/Providers';
 import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
 
 export default function Root() {
-  const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
@@ -32,22 +30,6 @@ export default function Root() {
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
-
-  useEffect(() => {
-    if (termsData) {
-      setShowTerms(!termsData.termsAccepted);
-    }
-  }, [termsData]);
-
-  const handleAcceptTerms = () => {
-    setShowTerms(false);
-  };
-
-  // Pass the desired redirect parameter to logout
-  const handleDeclineTerms = () => {
-    setShowTerms(false);
-    logout('/login?redirect=false');
-  };
 
   if (!isAuthenticated) {
     return null;
@@ -70,16 +52,6 @@ export default function Root() {
                 </div>
               </div>
             </AgentsMapContext.Provider>
-            {config?.interface?.termsOfService?.modalAcceptance === true && (
-              <TermsAndConditionsModal
-                open={showTerms}
-                onOpenChange={setShowTerms}
-                onAccept={handleAcceptTerms}
-                onDecline={handleDeclineTerms}
-                title={config.interface.termsOfService.modalTitle}
-                modalContent={config.interface.termsOfService.modalContent}
-              />
-            )}
           </AssistantsMapContext.Provider>
         </FileMapContext.Provider>
       </SearchContext.Provider>

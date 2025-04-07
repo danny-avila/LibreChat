@@ -1,11 +1,11 @@
-import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { specsConfigSchema, TSpecsConfig } from './models';
+import { z } from 'zod';
 import { fileConfigSchema } from './file-config';
-import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { specsConfigSchema, TSpecsConfig } from './models';
+import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import type { TModelsConfig } from './types';
+import { FileSources } from './types/files';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -19,8 +19,8 @@ export const defaultRetrievalModels = [
   'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
   'gpt-4o-2024-08-06',
-  'gpt-4o-mini',
-  'gpt-4o-mini-2024-07-18',
+  // 'gpt-4o-mini',
+  // 'gpt-4o-mini-2024-07-18',
   'gpt-4-turbo-preview',
   'gpt-3.5-turbo-0125',
   'gpt-4-0125-preview',
@@ -533,12 +533,9 @@ export type TStartupConfig = {
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
   showBirthdayIcon: boolean;
-  helpAndFaqURL: string;
-  customFooter?: string;
   modelSpecs?: TSpecsConfig;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
-  analyticsGtmId?: string;
   instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
@@ -656,17 +653,17 @@ export enum FetchTokenConfig {
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
-  EModelEndpoint.openAI,
-  EModelEndpoint.assistants,
-  EModelEndpoint.azureAssistants,
-  EModelEndpoint.azureOpenAI,
-  EModelEndpoint.agents,
-  EModelEndpoint.chatGPTBrowser,
-  EModelEndpoint.gptPlugins,
-  EModelEndpoint.google,
-  EModelEndpoint.anthropic,
   EModelEndpoint.custom,
-  EModelEndpoint.bedrock,
+  EModelEndpoint.agents,
+  // EModelEndpoint.openAI,
+  // EModelEndpoint.assistants,
+  // EModelEndpoint.azureAssistants,
+  // EModelEndpoint.azureOpenAI,
+  // EModelEndpoint.chatGPTBrowser,
+  // EModelEndpoint.gptPlugins,
+  // EModelEndpoint.google,
+  // EModelEndpoint.anthropic,
+  // EModelEndpoint.bedrock,
 ];
 
 export const alternateName = {
@@ -687,7 +684,7 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
-  'gpt-4o-mini',
+  // 'gpt-4o-mini',
   'gpt-4o',
   'gpt-4.5-preview',
   'gpt-4.5-preview-2025-02-27',
@@ -800,7 +797,7 @@ const openAIModels = defaultModels[EModelEndpoint.openAI];
 export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
-  [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
+  [EModelEndpoint.assistants]: [],
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
@@ -852,7 +849,7 @@ export const visionModels = [
   'grok-vision',
   'grok-2-vision',
   'grok-3',
-  'gpt-4o-mini',
+  // 'gpt-4o-mini',
   'gpt-4o',
   'gpt-4-turbo',
   'gpt-4-vision',
@@ -904,7 +901,7 @@ export function validateVisionModel({
   return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
 }
 
-export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion', 'flux']);
+export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
 
 /**
  * Enum for collections using infinite queries
@@ -1338,7 +1335,7 @@ export enum SystemCategories {
 }
 
 export const providerEndpointMap = {
-  [EModelEndpoint.openAI]: EModelEndpoint.openAI,
+  // [EModelEndpoint.openAI]: EModelEndpoint.openAI,
   [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,

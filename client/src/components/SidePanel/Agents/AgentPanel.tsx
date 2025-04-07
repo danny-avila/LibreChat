@@ -37,6 +37,7 @@ export default function AgentPanel({
   agentsConfig,
   endpointsConfig,
 }: AgentPanelProps) {
+  console.log('agentpanel endpointsConfig', endpointsConfig)
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
@@ -142,8 +143,7 @@ export default function AgentPanel({
       } = data;
 
       const model = _model ?? '';
-      const provider =
-        (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+      const provider = "OpenRouter";
 
       if (agent_id) {
         update.mutate({
@@ -250,7 +250,7 @@ export default function AgentPanel({
                   ' ' +
                   localize('com_ui_agent')}
               </Button>
-              <Button
+              {/* <Button
                 variant="submit"
                 disabled={!agent_id || agentQuery.isInitialLoading}
                 onClick={(e) => {
@@ -260,7 +260,7 @@ export default function AgentPanel({
                 aria-label={localize('com_ui_select') + ' ' + localize('com_ui_agent')}
               >
                 {localize('com_ui_select')}
-              </Button>
+              </Button> */}
             </div>
           )}
         </div>

@@ -1,18 +1,17 @@
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
+import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 // import perfectionist from 'eslint-plugin-perfectionist';
-import reactHooks from 'eslint-plugin-react-hooks';
-import tsParser from '@typescript-eslint/parser';
-import importPlugin from 'eslint-plugin-import';
 import { FlatCompat } from '@eslint/eslintrc';
-import jsxA11Y from 'eslint-plugin-jsx-a11y';
-import i18next from 'eslint-plugin-i18next';
-import react from 'eslint-plugin-react';
-import jest from 'eslint-plugin-jest';
-import globals from 'globals';
 import js from '@eslint/js';
+import tsParser from '@typescript-eslint/parser';
+import i18next from 'eslint-plugin-i18next';
+import jest from 'eslint-plugin-jest';
+import jsxA11Y from 'eslint-plugin-jsx-a11y';
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
+import globals from 'globals';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,7 +56,7 @@ export default [
       react: fixupPluginRules(react),
       'react-hooks': fixupPluginRules(reactHooks),
       '@typescript-eslint': typescriptEslintEslintPlugin,
-      import: importPlugin,
+      // import: importPlugin,
       'jsx-a11y': fixupPluginRules(jsxA11Y),
       'import/parsers': tsParser,
       i18next,

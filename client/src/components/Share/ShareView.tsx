@@ -1,13 +1,12 @@
+import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { memo } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetSharedMessages } from 'librechat-data-provider/react-query';
-import { useLocalize, useDocumentTitle } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
-import { ShareContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
-import MessagesView from './MessagesView';
+import { useGetStartupConfig } from '~/data-provider';
+import { useDocumentTitle, useLocalize } from '~/hooks';
+import { ShareContext } from '~/Providers';
 import { buildTree } from '~/utils';
-import Footer from '../Chat/Footer';
+import MessagesView from './MessagesView';
 
 function SharedView() {
   const localize = useLocalize();
@@ -68,9 +67,6 @@ function SharedView() {
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">
           <div className="flex h-full flex-col text-text-primary" role="presentation">
             {content}
-            <div className="w-full border-t-0 pl-0 pt-2 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-              <Footer className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-gradient-to-t from-surface-secondary to-transparent px-2 pb-2 pt-8 text-xs text-text-secondary md:px-[60px]" />
-            </div>
           </div>
         </div>
       </main>

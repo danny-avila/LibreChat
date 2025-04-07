@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
 import type * as t from 'librechat-data-provider';
-import { getEndpointField, getIconKey, getEntity, getIconEndpoint } from '~/utils';
+import { useMemo } from 'react';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';
+import { getEndpointField, getEntity, getIconEndpoint, getIconKey } from '~/utils';
 
 export default function ConvoIcon({
   conversation,
@@ -53,7 +53,7 @@ export default function ConvoIcon({
       {iconURL && iconURL.includes('http') ? (
         <ConvoIconURL
           iconURL={iconURL}
-          modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
+          modelLabel='BMO'
           endpointIconURL={endpointIconURL}
           assistantAvatar={avatar}
           assistantName={name}

@@ -1,5 +1,5 @@
-import * as React from 'react';
 import * as Ariakit from '@ariakit/react';
+import * as React from 'react';
 import { cn } from '~/utils';
 
 export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
@@ -11,6 +11,7 @@ export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
   combobox?: Ariakit.ComboboxProps['render'];
   trigger?: Ariakit.MenuButtonProps['render'];
   defaultOpen?: boolean;
+  disableSearch?: boolean;
 }
 
 export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(function CustomMenu(
@@ -24,16 +25,17 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
     combobox,
     trigger,
     defaultOpen,
+    disableSearch,
     ...props
   },
   ref,
 ) {
   const parent = Ariakit.useMenuContext();
-  const searchable = searchValue != null || !!onSearch || !!combobox;
+  const searchable = !disableSearch && (searchValue != null || !!onSearch || !!combobox);
 
   const menuStore = Ariakit.useMenuStore({
     showTimeout: 100,
-    placement: parent ? 'right' : 'left',
+    placement: parent ? 'right' : 'bottom-start',
     defaultOpen: defaultOpen,
   });
 
@@ -43,17 +45,15 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
         ref={ref}
         {...props}
         className={cn(
+          'cursor-pointer hover:cursor-pointer',
           !parent &&
-            'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
-          menuStore.useState('open')
-            ? 'bg-surface-tertiary hover:bg-surface-tertiary'
-            : 'bg-surface-secondary hover:bg-surface-tertiary',
+            'bg-beige hover:bg-beige2 dark:bg-darkbeige dark:hover:bg-darkbeige800 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
           props.className,
         )}
         render={parent ? <CustomMenuItem render={trigger} /> : trigger}
       >
         <span className="flex-1">{label}</span>
-        <Ariakit.MenuButtonArrow className="stroke-1 text-base opacity-75" />
+        <Ariakit.MenuButtonArrow className="stroke-1 text-base opacity-75 cursor-pointer hover:cursor-pointer" />
       </Ariakit.MenuButton>
       <Ariakit.Menu
         open={menuStore.useState('open')}
@@ -67,6 +67,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
           'bg-surface-secondary px-3 py-2 text-sm text-text-primary shadow-lg',
           'max-w-[calc(100vw-4rem)] sm:max-h-[calc(65vh)] sm:max-w-[400px]',
           searchable && 'p-0',
+          disableSearch && 'p-1',
         )}
       >
         <SearchableContext.Provider value={searchable}>

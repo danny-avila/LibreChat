@@ -1,27 +1,25 @@
-import React, { memo, useMemo, useRef, useEffect } from 'react';
+import React, { memo, useEffect, useMemo, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { useRecoilValue } from 'recoil';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeKatex from 'rehype-katex';
+import remarkDirective from 'remark-directive';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
-import rehypeKatex from 'rehype-katex';
-import { useRecoilValue } from 'recoil';
-import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
-import remarkDirective from 'remark-directive';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { Pluggable } from 'unified';
 import {
-  useToastContext,
   ArtifactProvider,
   CodeBlockProvider,
   useCodeBlockContext,
+  useToastContext,
 } from '~/Providers';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
-import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
-import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
+import { handleDoubleClick, langSubset, preprocessLaTeX } from '~/utils';
 
 type TCodeProps = {
   inline?: boolean;
@@ -30,10 +28,6 @@ type TCodeProps = {
 };
 
 export const code: React.ElementType = memo(({ className, children }: TCodeProps) => {
-  const canRunCode = useHasAccess({
-    permissionType: PermissionTypes.RUN_CODE,
-    permission: Permissions.USE,
-  });
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
   const isMath = lang === 'math';
@@ -60,7 +54,7 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
         lang={lang ?? 'text'}
         codeChildren={children}
         blockIndex={blockIndex}
-        allowExecution={canRunCode}
+        allowExecution={false}
       />
     );
   }

@@ -26,12 +26,6 @@ export default function useSelectorEffects({
     assistant_id: selectedAssistantId = null,
     endpoint,
   } = conversation ?? {};
-  const assistants: t.Assistant[] = useMemo(() => {
-    if (!isAssistantsEndpoint(endpoint)) {
-      return [];
-    }
-    return Object.values(assistantsMap?.[endpoint ?? ''] ?? {}) as t.Assistant[];
-  }, [assistantsMap, endpoint]);
 
   useEffect(() => {
     if (!isAgentsEndpoint(endpoint as string)) {
@@ -50,22 +44,6 @@ export default function useSelectorEffects({
       }
     }
   }, [index, agents, selectedAgentId, agentsMap, endpoint, setOption]);
-  useEffect(() => {
-    if (!isAssistantsEndpoint(endpoint as string)) {
-      return;
-    }
-    if (selectedAssistantId == null && assistants.length > 0) {
-      let assistant_id = localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`);
-      if (assistant_id == null) {
-        assistant_id = assistants[0]?.id;
-      }
-      const assistant = assistantsMap?.[endpoint ?? '']?.[assistant_id];
-      if (assistant !== undefined) {
-        setOption('model')(assistant.model);
-        setOption('assistant_id')(assistant_id);
-      }
-    }
-  }, [index, assistants, selectedAssistantId, assistantsMap, endpoint, setOption]);
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -83,6 +61,7 @@ export default function useSelectorEffects({
     if (!conversation?.endpoint) {
       return;
     }
+    console.log('useSelectorEffects', conversation);
     if (
       conversation?.assistant_id ||
       conversation?.agent_id ||
@@ -91,21 +70,14 @@ export default function useSelectorEffects({
     ) {
       if (isAgentsEndpoint(conversation?.endpoint)) {
         debouncedSetSelectedValues({
-          endpoint: conversation.endpoint || '',
+          endpoint: conversation.endpoint || 'OpenRouter',
           model: conversation.agent_id ?? '',
-          modelSpec: conversation.spec || '',
-        });
-        return;
-      } else if (isAssistantsEndpoint(conversation?.endpoint)) {
-        debouncedSetSelectedValues({
-          endpoint: conversation.endpoint || '',
-          model: conversation.assistant_id || '',
           modelSpec: conversation.spec || '',
         });
         return;
       }
       debouncedSetSelectedValues({
-        endpoint: conversation.endpoint || '',
+        endpoint: conversation.endpoint || 'OpenRouter',
         model: conversation.model || '',
         modelSpec: conversation.spec || '',
       });

@@ -1,4 +1,4 @@
-import { memo, useMemo, ReactElement } from 'react';
+import { memo, useMemo, ReactElement, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
@@ -27,15 +27,63 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
     [messageId, latestMessage?.messageId],
   );
 
+  const [charCount, setCharCount] = useState(0);
+
+  useEffect(() => {
+    if (!isSubmitting || !showCursor || charCount >= text.length) {
+      return;
+    }
+
+    let animationFrameId: number;
+    const MIN_INCREMENT = 4;
+    const MAX_INCREMENT = 50;
+    const ANIMATION_DURATION_MS = 100; // Target duration for full text
+    const FRAME_RATE = 100; // Assuming 60fps
+
+    const calculateDynamicIncrement = () => {
+      // Calculate remaining characters
+      const remainingChars = text.length - charCount;
+      if (remainingChars <= 0) return 0;
+
+      // Calculate remaining frames based on target duration
+      const remainingFrames = Math.ceil((ANIMATION_DURATION_MS / 1000) * FRAME_RATE);
+      
+      // Calculate ideal increment to complete in target duration
+      const idealIncrement = Math.ceil(remainingChars / remainingFrames);
+      
+      // Clamp increment between min and max values
+      return Math.min(MAX_INCREMENT, Math.max(MIN_INCREMENT, idealIncrement));
+    };
+
+    const animate = () => {
+      if (charCount >= text.length) {
+        return;
+      }
+
+      const dynamicIncrement = calculateDynamicIncrement();
+      setCharCount(prev => Math.min(prev + dynamicIncrement, text.length));
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [isSubmitting, showCursor, text.length, charCount]);
+
+  const displayText = text.substring(0, charCount);
+
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
     } else if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return <MarkdownLite content={displayText} />;
     } else {
-      return <>{text}</>;
+      return <>{displayText}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, showCursorState, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, displayText, showCursorState, isLatestMessage]);
 
   return (
     <div

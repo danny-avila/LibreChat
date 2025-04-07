@@ -43,9 +43,9 @@ export default function AgentPanelSwitch() {
     agent_id: currentAgentId,
   };
 
-  if (activePanel === Panel.actions) {
-    return <ActionsPanel {...commonProps} />;
-  }
+  // if (activePanel === Panel.actions) {
+  //   return <ActionsPanel {...commonProps} />;
+  // }
 
   return (
     <AgentPanel {...commonProps} agentsConfig={agentsConfig} endpointsConfig={endpointsConfig} />

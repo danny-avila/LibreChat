@@ -1,14 +1,14 @@
-import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
-import throttle from 'lodash/throttle';
-import { useRecoilValue } from 'recoil';
 import { getConfigDefaults } from 'librechat-data-provider';
+import throttle from 'lodash/throttle';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
+import { useRecoilValue } from 'recoil';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { useGetStartupConfig } from '~/data-provider';
-import { normalizeLayout } from '~/utils';
 import { useMediaQuery } from '~/hooks';
-import SidePanel from './SidePanel';
 import store from '~/store';
+import { normalizeLayout } from '~/utils';
+import SidePanel from './SidePanel';
 
 interface SidePanelProps {
   defaultLayout?: number[] | undefined;
@@ -91,7 +91,7 @@ const SidePanelGroup = ({
       <ResizablePanelGroup
         direction="horizontal"
         onLayout={(sizes) => throttledSaveLayout(sizes)}
-        className="transition-width relative h-full w-full flex-1 overflow-auto bg-presentation"
+        className="transition-width relative h-full w-full flex-1 overflow-auto bg-beige dark:bg-darkbeige900"
       >
         <ResizablePanel
           defaultSize={currentLayout[0]}

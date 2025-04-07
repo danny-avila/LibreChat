@@ -927,12 +927,12 @@ pre {
   font-size: 0.875em;
   font-weight: 600;
 }
-.prose :where(code):not(:where([class~='not-prose'] *)):before {
+/* .prose :where(code):not(:where([class~='not-prose'] *)):before {
   content: '`';
 }
 .prose :where(code):not(:where([class~='not-prose'] *)):after {
   content: '`';
-}
+} */
 .prose :where(a code):not(:where([class~='not-prose'] *)) {
   color: inherit;
 }
@@ -2579,7 +2579,7 @@ html {
 .animate-popover {
   transform-origin: top;
   opacity: 0;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 75ms cubic-bezier(0.4, 0, 0.2, 1), transform 75ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: scale(0.95) translateY(-0.5rem);
 }
 
@@ -2591,7 +2591,7 @@ html {
 .animate-popover-left {
   transform-origin: left;
   opacity: 0;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 75ms cubic-bezier(0.4, 0, 0.2, 1), transform 75ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: scale(0.95) translateX(-0.5rem);
 }
 

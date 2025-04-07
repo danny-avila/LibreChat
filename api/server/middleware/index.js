@@ -14,7 +14,6 @@ const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
 const validateModel = require('./validateModel');
-const moderateText = require('./moderateText');
 const logHeaders = require('./logHeaders');
 const setHeaders = require('./setHeaders');
 const validate = require('./validate');
@@ -34,7 +33,6 @@ module.exports = {
   uaParser,
   setHeaders,
   logHeaders,
-  moderateText,
   validateModel,
   requireJwtAuth,
   checkInviteUser,

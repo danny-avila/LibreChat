@@ -1,9 +1,6 @@
+import type { TConversation, TPreset } from 'librechat-data-provider';
 import { useMemo } from 'react';
-import type { TConversation, TEndpointOption, TPreset } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
-import useGetSender from '~/hooks/Conversations/useGetSender';
-import { useGetEndpointsQuery } from '~/data-provider';
-import { EndpointIcon } from '~/components/Endpoints';
 import { getPresetTitle } from '~/utils';
 
 export default function AddedConvo({
@@ -13,32 +10,15 @@ export default function AddedConvo({
   addedConvo: TConversation | null;
   setAddedConvo: SetterOrUpdater<TConversation | null>;
 }) {
-  const getSender = useGetSender();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const title = useMemo(() => {
-    const sender = getSender(addedConvo as TEndpointOption);
-    const title = getPresetTitle(addedConvo as TPreset);
-    return `+ ${sender}: ${title}`;
-  }, [addedConvo, getSender]);
+  const title = useMemo(() => getPresetTitle(addedConvo as TPreset), [addedConvo]);
 
   if (!addedConvo) {
     return null;
   }
   return (
     <div className="flex items-start gap-4 py-2.5 pl-3 pr-1.5 text-sm">
-      <span className="mt-0 flex h-6 w-6 flex-shrink-0 items-center justify-center">
-        <div className="icon-md">
-          <EndpointIcon
-            conversation={addedConvo}
-            endpointsConfig={endpointsConfig}
-            containerClassName="shadow-stroke overflow-hidden rounded-full"
-            context="menu-item"
-            size={20}
-          />
-        </div>
-      </span>
       <span className="text-token-text-secondary line-clamp-3 flex-1 py-0.5 font-semibold">
-        {title}
+        Comparing to: <code className="font-bold">{title}</code>
       </span>
       <button
         className="text-token-text-secondary flex-shrink-0"

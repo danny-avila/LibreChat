@@ -21,14 +21,16 @@
 
 # ---------------------------------------------------
 
-# services:
+services:
 
-# # USE LIBRECHAT CONFIG FILE
-#   api:
-#     volumes:
-#     - type: bind
-#       source: ./librechat.yaml
-#       target: /app/librechat.yaml
+# USE LIBRECHAT CONFIG FILE
+  api:
+    volumes:
+    - type: bind
+      source: ./librechat.yaml
+      target: /app/librechat.yaml
+    ports:
+      - "3090:3090"
 
 # # LOCAL BUILD
 #   api:
@@ -172,3 +174,4 @@
 #      - POSTGRES_DB=postgres
 #    volumes:
 #      - ./postgres:/var/lib/postgresql/data
+

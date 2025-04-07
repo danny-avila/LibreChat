@@ -1,17 +1,17 @@
-import React, { useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps, TMessageIcon } from '~/common';
+import { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
+import type { TMessageIcon, TMessageProps } from '~/common';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useMessageHelpers, useLocalize } from '~/hooks';
+import { useLocalize, useMessageHelpers } from '~/hooks';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
 
-import MultiMessage from './MultiMessage';
-import HoverButtons from './HoverButtons';
-import SubRow from './SubRow';
-import { cn } from '~/utils';
 import store from '~/store';
+import { cn } from '~/utils';
+import HoverButtons from './HoverButtons';
+import MultiMessage from './MultiMessage';
+import SubRow from './SubRow';
 
 export default function Message(props: TMessageProps) {
   const localize = useLocalize();
@@ -56,7 +56,7 @@ export default function Message(props: TMessageProps) {
       endpoint: message?.endpoint ?? conversation?.endpoint,
       model: message?.model ?? conversation?.model,
       iconURL: message?.iconURL ?? conversation?.iconURL,
-      modelLabel: name,
+      modelLabel: 'BMO',
       isCreatedByUser: message?.isCreatedByUser,
     }),
     [
@@ -107,7 +107,7 @@ export default function Message(props: TMessageProps) {
               )}
             >
               <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
-                {name}
+                {isCreatedByUser ? name : 'BMO'}
               </h2>
               <div className="flex flex-col gap-1">
                 <div className="flex max-w-full flex-grow flex-col gap-0">

@@ -4,10 +4,10 @@ const router = express.Router();
 const {
   setHeaders,
   handleAbort,
-  moderateText,
   // validateModel,
   // validateEndpoint,
   buildEndpointOption,
+  moderateText,
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/bedrock');
 const AgentController = require('~/server/controllers/agents/request');

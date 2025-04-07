@@ -1,14 +1,14 @@
-import { useMemo } from 'react';
-import { SettingsIcon } from 'lucide-react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { SettingsIcon } from 'lucide-react';
+import { useMemo } from 'react';
 import type { Endpoint } from '~/common';
-import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
-import { useModelSelectorContext } from '../ModelSelectorContext';
-import { renderEndpointModels } from './EndpointModelItem';
-import { TooltipAnchor, Spinner } from '~/components';
-import { filterModels } from '../utils';
+import { Spinner } from '~/components';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
+import { useModelSelectorContext } from '../ModelSelectorContext';
+import { filterModels } from '../utils';
+import { renderEndpointModels } from './EndpointModelItem';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
@@ -53,6 +53,10 @@ const SettingsButton = ({
 };
 
 export function EndpointItem({ endpoint }: EndpointItemProps) {
+  if (['assistants', 'azureAssistants', 'openAI', 'anthropic', 'google', 'gptPlugins'].includes(endpoint.value)) {
+    return null;
+  }
+
   const localize = useLocalize();
   const {
     agentsMap,
@@ -71,31 +75,19 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 
   const renderIconLabel = () => (
     <div className="flex items-center gap-2">
-      {endpoint.icon && (
+      {/* {endpoint.icon && (
         <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
           {endpoint.icon}
         </div>
-      )}
+      )} */}
       <span
         className={cn(
           'truncate text-left',
           isUserProvided ? 'group-hover:w-24 group-focus:w-24' : '',
         )}
       >
-        {endpoint.label}
+        {endpoint.label === 'Agents' ? 'Custom Agents' : endpoint.label === 'OpenRouter' ? 'Models' : endpoint.label}
       </span>
-      {/* TODO: remove this after deprecation */}
-      {endpoint.value === 'gptPlugins' && (
-        <TooltipAnchor
-          description={localize('com_endpoint_deprecated_info')}
-          aria-label={localize('com_endpoint_deprecated_info_a11y')}
-          render={
-            <span className="ml-2 rounded bg-amber-600/70 px-2 py-0.5 text-xs font-semibold text-white">
-              {localize('com_endpoint_deprecated')}
-            </span>
-          }
-        />
-      )}
     </div>
   );
 
@@ -183,8 +175,12 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   }
 }
 
+// This function filters before render, so more removed here is faster
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
-  return mappedEndpoints.map((endpoint) => (
-    <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />
-  ));
+  console.log('mappedEndpoints', mappedEndpoints.map(endpoint => endpoint.models?.map(x => x.name).sort()));
+  return mappedEndpoints
+    .filter(endpoint => endpoint.value === 'agents' || endpoint.value === 'OpenRouter')
+    .map((endpoint) => {
+      return <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />;
+    });
 }

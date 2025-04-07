@@ -1,16 +1,16 @@
-import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo, memo } from 'react';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps, TMessageIcon } from '~/common';
+import { memo, useCallback, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
+import type { TMessageIcon, TMessageProps } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
-import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
-import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import { useMessageActions } from '~/hooks';
-import { cn, logger } from '~/utils';
 import store from '~/store';
+import { cn, logger } from '~/utils';
 
 type ContentRenderProps = {
   message?: TMessage;
@@ -154,7 +154,7 @@ const ContentRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>{msg.isCreatedByUser ? messageLabel : 'BMO'}</h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">

@@ -1,11 +1,10 @@
-import { useEffect } from 'react';
-import TagManager from 'react-gtm-module';
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import type { TPlugin, TStartupConfig, TUser } from 'librechat-data-provider';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TStartupConfig, TPlugin, TUser } from 'librechat-data-provider';
-import { mapPlugins, selectPlugins, processPlugins } from '~/utils';
+import { useEffect } from 'react';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import store from '~/store';
+import { mapPlugins, processPlugins, selectPlugins } from '~/utils';
 
 const pluginStore: TPlugin = {
   name: 'Plugin store',
@@ -38,7 +37,6 @@ export default function useAppStartup({
       return;
     }
     document.title = appTitle;
-    localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
   }, [startupConfig]);
 
   /** Set the default spec's preset as default */
@@ -102,13 +100,4 @@ export default function useAppStartup({
 
     setAvailableTools({ pluginStore, ...mapPlugins(tools) });
   }, [allPlugins, user, setAvailableTools]);
-
-  useEffect(() => {
-    if (startupConfig?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
-      const tagManagerArgs = {
-        gtmId: startupConfig.analyticsGtmId,
-      };
-      TagManager.initialize(tagManagerArgs);
-    }
-  }, [startupConfig?.analyticsGtmId]);
 }

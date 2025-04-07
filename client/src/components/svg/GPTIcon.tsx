@@ -1,7 +1,7 @@
 import { cn } from '~/utils/';
 
 export default function GPTIcon({
-  size = 25,
+  size = 18,
   className = '',
 }: {
   size?: number;

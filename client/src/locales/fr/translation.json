@@ -183,7 +183,7 @@
   "com_endpoint_instructions_assistants_placeholder": "Remplace les instructions de l'assistant. Cela est utile pour modifier le comportement au cas par cas.",
   "com_endpoint_max_output_tokens": "Nombre maximum de jetons en sortie",
   "com_endpoint_message": "Message",
-  "com_endpoint_message_new": "Message {{0}}",
+  "com_endpoint_message_new": "Chat with BMO",
   "com_endpoint_message_not_appendable": "Editer votre message ou regénerer.",
   "com_endpoint_my_preset": "Mon préréglage",
   "com_endpoint_no_presets": "Aucun préréglage pour l'instant, utilisez le bouton paramètres pour en créer un",

@@ -1,14 +1,14 @@
-import { RecoilRoot } from 'recoil';
-import { DndProvider } from 'react-dnd';
-import { RouterProvider } from 'react-router-dom';
 import * as RadixToast from '@radix-ui/react-toast';
-import { HTML5Backend } from 'react-dnd-html5-backend';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+import { RouterProvider } from 'react-router-dom';
+import { RecoilRoot } from 'recoil';
+import { LiveAnnouncer } from '~/a11y';
+import Toast from './components/ui/Toast';
 import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks';
 import { ToastProvider } from './Providers';
-import Toast from './components/ui/Toast';
-import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
 const App = () => {
@@ -49,7 +49,7 @@ const App = () => {
 export default () => (
   <ScreenshotProvider>
     <App />
-    <iframe
+    {/* <iframe
       src="/assets/silence.mp3"
       allow="autoplay"
       id="audio"
@@ -57,6 +57,6 @@ export default () => (
       style={{
         display: 'none',
       }}
-    />
+    /> */}
   </ScreenshotProvider>
 );

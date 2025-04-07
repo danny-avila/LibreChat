@@ -1,5 +1,5 @@
-import { Link } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
+import { Link } from 'lucide-react';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { findConversationInInfinite } from '~/utils';
 import { useSearchContext } from '~/Providers';
@@ -22,7 +22,7 @@ export default function SearchButtons({ message }: { message: TMessage }) {
       return;
     }
 
-    document.title = message.title ?? '';
+    document.title = `Chat: ${message.title}`;
     navigateWithLastTools(conversation, true, true);
   };
 

@@ -86,6 +86,8 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     setLatestMessage,
   });
 
+  console.log('useChatHelpers conversation', conversation);
+
   const continueGeneration = () => {
     if (!latestMessage) {
       console.error('Failed to regenerate the message: latestMessage not found.');

@@ -1,9 +1,8 @@
-import { PlusCircle } from 'lucide-react';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
-import { useChatContext, useAddedChatContext } from '~/Providers';
-import { TooltipAnchor } from '~/components';
+import { BookCopy } from 'lucide-react';
+import { useAddedChatContext, useChatContext } from '~/Providers';
 import { mainTextareaId } from '~/common';
+import { TooltipAnchor } from '~/components';
 import { useLocalize } from '~/hooks';
 
 function AddMultiConvo() {
@@ -28,10 +27,6 @@ function AddMultiConvo() {
     return null;
   }
 
-  if (isAssistantsEndpoint(conversation.endpoint)) {
-    return null;
-  }
-
   return (
     <TooltipAnchor
       id="add-multi-conversation-button"
@@ -41,9 +36,9 @@ function AddMultiConvo() {
       role="button"
       onClick={clickHandler}
       data-testid="parameters-button"
-      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary hover:dark:bg-darkbeige800"
     >
-      <PlusCircle size={16} aria-label="Plus Icon" />
+      <BookCopy size={16} aria-label="Plus Icon" />
     </TooltipAnchor>
   );
 }

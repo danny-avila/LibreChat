@@ -1,16 +1,22 @@
-import React from 'react';
-import { Bot } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
-  TModelSpec,
   TAgentsMap,
   TAssistantsMap,
   TEndpointsConfig,
+  TModelSpec,
 } from 'librechat-data-provider';
-import type { useLocalize } from '~/hooks';
-import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import React from 'react';
 import { Endpoint, SelectedValues } from '~/common';
+import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
+import ClaudeIcon from '~/components/svg/ClaudeIcon';
+import DeepSeekIcon from '~/components/svg/DeepseekColorIcon';
+import GPTIcon from '~/components/svg/GPTIcon';
+import GeminiIcon from '~/components/svg/GeminiIcon';
+import GrokIcon from '~/components/svg/GrokIcon';
+import MetaIcon from '~/components/svg/MetaIcon';
+import PerplexityIcon from '~/components/svg/PerplexityIcon';
 
+import type { useLocalize } from '~/hooks';
 export function filterItems<
   T extends {
     label: string;
@@ -128,30 +134,55 @@ export function getSelectedIcon({
 
   if (endpoint && model) {
     const selectedEndpoint = mappedEndpoints.find((e) => e.value === endpoint);
-    if (!selectedEndpoint) {
+    if (!selectedEndpoint) { 
       return null;
     }
 
-    if (selectedEndpoint.modelIcons?.[model]) {
-      const iconUrl = selectedEndpoint.modelIcons[model];
-      return React.createElement(
-        'div',
-        { className: 'h-5 w-5 overflow-hidden rounded-full' },
-        React.createElement('img', {
-          src: iconUrl,
-          alt: model,
-          className: 'h-full w-full object-cover',
-        }),
-      );
-    }
-
-    return (
-      selectedEndpoint.icon ||
-      React.createElement(Bot, {
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('anthropic')) {
+      return React.createElement(ClaudeIcon, {
         size: 20,
         className: 'icon-md shrink-0 text-text-primary',
-      })
-    );
+      });
+    }
+
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('openai')) {
+      return React.createElement(GPTIcon, {
+        size: 20,
+        className: 'icon-md shrink-0 text-text-primary',
+      });
+    }
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('gemini')) {
+      return React.createElement(GeminiIcon, {
+        size: 20,
+        className: 'icon-md shrink-0 text-text-primary',
+      });
+    }
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('deepseek')) {
+      return React.createElement(DeepSeekIcon, {
+        size: 20,
+        className: 'icon-md shrink-0 text-text-primary',
+      });
+    }
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('meta-llama')) {
+      return React.createElement(MetaIcon, {
+        size: 20,
+        className: 'icon-md shrink-0 text-text-primary',
+      });
+    }
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('perplexity')) {
+      return React.createElement(PerplexityIcon, {
+        size: 20,
+        className: 'icon-md shrink-0 text-text-primary',
+      });
+    } 
+    if (selectedEndpoint.value === 'OpenRouter' && model.includes('grok')) {
+      return React.createElement(GrokIcon, {
+        size: 20,
+        className: 'icon-md shrink-0 text-text-primary',
+      });
+    }
+
+    return null;
   }
 
   if (endpoint) {
@@ -190,14 +221,6 @@ export const getDisplayValue = ({
       endpoint.agentNames[selectedValues.model]
     ) {
       return endpoint.agentNames[selectedValues.model];
-    }
-
-    if (
-      isAssistantsEndpoint(endpoint.value) &&
-      endpoint.assistantNames &&
-      endpoint.assistantNames[selectedValues.model]
-    ) {
-      return endpoint.assistantNames[selectedValues.model];
     }
 
     return selectedValues.model;

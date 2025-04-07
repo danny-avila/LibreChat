@@ -1,18 +1,18 @@
-import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo, memo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import type { TMessageProps, TMessageIcon } from '~/common';
+import { memo, useCallback, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
+import type { TMessageIcon, TMessageProps } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
-import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
-import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { Plugin } from '~/components/Messages/Content';
+import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { MessageContext } from '~/Providers';
+import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
+import { Plugin } from '~/components/Messages/Content';
 import { useMessageActions } from '~/hooks';
-import { cn, logger } from '~/utils';
+import { MessageContext } from '~/Providers';
 import store from '~/store';
+import { cn, logger } from '~/utils';
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -75,8 +75,8 @@ const MessageRender = memo(
       () => ({
         endpoint: msg?.endpoint ?? conversation?.endpoint,
         model: msg?.model ?? conversation?.model,
-        iconURL: msg?.iconURL,
-        modelLabel: messageLabel,
+        iconURL: '/assets/bmo-128x128.png',
+        modelLabel: 'BMO',
         isCreatedByUser: msg?.isCreatedByUser,
       }),
       [
@@ -157,9 +157,9 @@ const MessageRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold -ml-1', fontSize)}>{msg.isCreatedByUser ? messageLabel : 'BMO'}</h2>
 
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 -ml-8">
             <div className="flex max-w-full flex-grow flex-col gap-0">
               <MessageContext.Provider
                 value={{

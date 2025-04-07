@@ -235,8 +235,9 @@ export default function AssistantPanel({
               />
             )}
           />
+          
           {/* Select Button */}
-          {assistant_id && (
+          {/* {assistant_id && (
             <button
               className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="button"
@@ -248,7 +249,7 @@ export default function AssistantPanel({
             >
               {localize('com_ui_select')}
             </button>
-          )}
+          )} */}
         </div>
         <div className="bg-surface-50 h-auto px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
@@ -278,13 +279,13 @@ export default function AssistantPanel({
                 />
               )}
             />
-            <Controller
+            {/* <Controller
               name="id"
               control={control}
               render={({ field }) => (
                 <p className="h-3 text-xs italic text-text-secondary">{field.value}</p>
               )}
-            />
+            /> */}
           </div>
           {/* Description */}
           <div className="mb-4">

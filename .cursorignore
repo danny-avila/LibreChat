@@ -1,0 +1,18 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+
+.git
+.github
+.vscode
+node_modules
+.husky
+charts/ 
+data-node
+logs
+meili_data_v*
+packages
+images
+uploads
+utils
+client/node_modules
+
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)

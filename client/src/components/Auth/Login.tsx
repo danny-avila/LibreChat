@@ -1,13 +1,13 @@
-import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
-import { ErrorMessage } from '~/components/Auth/ErrorMessage';
-import { getLoginError } from '~/utils';
-import { useLocalize } from '~/hooks';
-import LoginForm from './LoginForm';
-import SocialButton from '~/components/Auth/SocialButton';
 import { OpenIDIcon } from '~/components';
+import { ErrorMessage } from '~/components/Auth/ErrorMessage';
+import SocialButton from '~/components/Auth/SocialButton';
+import { useLocalize } from '~/hooks';
+import { useAuthContext } from '~/hooks/AuthContext';
+import { getLoginError } from '~/utils';
+import LoginForm from './LoginForm';
 
 function Login() {
   const localize = useLocalize();
@@ -90,7 +90,7 @@ function Login() {
           {localize('com_auth_no_account')}{' '}
           <a
             href="/register"
-            className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+            className="inline-flex p-1 text-sm font-medium text-darkbeige transition-colors hover:text-beige600 dark:text-beige100 dark:hover:text-beige800"
           >
             {localize('com_auth_sign_up')}
           </a>

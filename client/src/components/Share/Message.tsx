@@ -1,16 +1,16 @@
 import { useRecoilValue } from 'recoil';
 import type { TMessageProps } from '~/common';
-import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
+import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
-import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { Plugin } from '~/components/Messages/Content';
 import { MessageContext } from '~/Providers';
 // eslint-disable-next-line import/no-cycle
-import MultiMessage from './MultiMessage';
-import { cn } from '~/utils';
 import store from '~/store';
+import { cn } from '~/utils';
+import MultiMessage from './MultiMessage';
 
 import Icon from './MessageIcon';
 export default function Message(props: TMessageProps) {

@@ -1,14 +1,14 @@
-import { useState, useCallback, useMemo, memo } from 'react';
-import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
+import { useUserKeyQuery } from 'librechat-data-provider/react-query';
+import { memo, useCallback, useMemo, useState } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { ResizableHandleAlt, ResizablePanel } from '~/components/ui/Resizable';
-import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
-import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
-import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
-import { cn, getEndpointField } from '~/utils';
+import { ResizableHandleAlt, ResizablePanel } from '~/components/ui/Resizable';
+import { useGetEndpointsQuery } from '~/data-provider';
+import { useLocalStorage, useLocalize, useMediaQuery } from '~/hooks';
+import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useChatContext } from '~/Providers';
+import { cn, getEndpointField } from '~/utils';
 
 import Nav from './Nav';
 
@@ -160,7 +160,7 @@ const SidePanel = ({
           localStorage.setItem('react-resizable-panels:collapsed', 'true');
         }}
         className={cn(
-          'sidenav hide-scrollbar border-l border-border-light bg-background py-1 transition-opacity',
+          'sidenav hide-scrollbar border-l border-border-light bg-beigesecondary dark:bg-darkbeige py-1 transition-opacity',
           isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
           (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
             ? 'hidden min-w-0'
