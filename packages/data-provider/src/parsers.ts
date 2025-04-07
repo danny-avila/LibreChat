@@ -14,7 +14,6 @@ import {
   compactAgentsSchema,
   compactGoogleSchema,
   compactChatGPTSchema,
-  chatGPTBrowserSchema,
   compactPluginsSchema,
   compactAssistantSchema,
 } from './schemas';
@@ -26,19 +25,19 @@ type EndpointSchema =
   | typeof openAISchema
   | typeof googleSchema
   | typeof anthropicSchema
-  | typeof chatGPTBrowserSchema
   | typeof gptPluginsSchema
   | typeof assistantSchema
   | typeof compactAgentsSchema
   | typeof bedrockInputSchema;
 
-const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
+type EndpointSchemaKey = Exclude<EModelEndpoint, EModelEndpoint.chatGPTBrowser>;
+
+const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
@@ -167,8 +166,8 @@ export const parseConvo = ({
   conversation,
   possibleValues,
 }: {
-  endpoint: EModelEndpoint;
-  endpointType?: EModelEndpoint | null;
+  endpoint: EndpointSchemaKey;
+  endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
