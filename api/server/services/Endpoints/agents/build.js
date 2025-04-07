@@ -2,7 +2,7 @@ const { isAgentsEndpoint, Constants } = require('librechat-data-provider');
 const { loadAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
-const buildOptions = (req, endpoint, parsedBody) => {
+const buildOptions = (req, endpoint, parsedBody, endpointType) => {
   const { spec, iconURL, agent_id, instructions, maxContextTokens, ...model_parameters } =
     parsedBody;
   const agentPromise = loadAgent({
@@ -20,6 +20,7 @@ const buildOptions = (req, endpoint, parsedBody) => {
     iconURL,
     endpoint,
     agent_id,
+    endpointType,
     instructions,
     maxContextTokens,
     model_parameters,

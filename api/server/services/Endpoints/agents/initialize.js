@@ -324,6 +324,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
     attachments: primaryConfig.attachments,
+    endpointType: endpointOption.endpointType,
     maxContextTokens: primaryConfig.maxContextTokens,
     resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
     endpoint:
