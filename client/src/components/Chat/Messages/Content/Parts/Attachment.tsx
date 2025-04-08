@@ -1,6 +1,27 @@
+import { memo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
+import { useAttachmentLink } from './LogLink';
+
+const FileAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
+  const { handleDownload } = useAttachmentLink({
+    href: attachment.filepath,
+    filename: attachment.filename,
+  });
+  const extension = attachment.filename.split('.').pop();
+
+  return (
+    <FileContainer
+      file={attachment}
+      onClick={handleDownload}
+      overrideType={extension}
+      containerClassName="max-w-fit"
+      buttonClassName="hover:cursor-pointer hover:bg-surface-secondary active:bg-surface-secondary focus:bg-surface-secondary hover:border-border-heavy active:border-border-heavy"
+    />
+  );
+});
 
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
@@ -21,5 +42,5 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
       />
     );
   }
-  return null;
+  return <FileAttachment attachment={attachment} />;
 }

@@ -7,7 +7,7 @@ import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import { useProgress, useLocalize } from '~/hooks';
 import { CodeInProgress } from './CodeProgress';
 import Attachment from './Attachment';
-import LogContent from './LogContent';
+import Stdout from './Stdout';
 import store from '~/store';
 
 interface ParsedArgs {
@@ -99,15 +99,17 @@ export default function ExecuteCode({
                   color: 'white',
                 }}
               >
-                <pre className="shrink-0">
-                  <LogContent output={output} attachments={attachments} />
-                </pre>
+                <Stdout output={output} />
               </div>
             </div>
           )}
         </div>
       )}
-      {attachments?.map((attachment, index) => <Attachment attachment={attachment} key={index} />)}
+      <div className="mb-2 flex flex-wrap items-center gap-2.5">
+        {attachments?.map((attachment, index) => (
+          <Attachment attachment={attachment} key={index} />
+        ))}
+      </div>
     </>
   );
 }
