@@ -6,16 +6,14 @@ import './style.css';
 import './mobile.css';
 import './forked-style-custom/custom-daniel-ai.css';
 import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
-import forkedFeatures from './forked-code-custom';
-
-// Initialize forked custom features
-forkedFeatures.initialize();
+import { ForkedCustomizations } from './forked-code-custom';
 
 const container = document.getElementById('root');
 const root = createRoot(container);
 
 root.render(
   <ApiErrorBoundaryProvider>
+    <ForkedCustomizations />
     <App />
   </ApiErrorBoundaryProvider>,
 );
