@@ -1,15 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 .bg-surface-primary-alt {
     background-color: #e6f5fb; /* Light blue sidebar background */
+}
+
+.dark .bg-surface-primary-alt {
+    background-color: var(--surface-primary-alt);
 }
 
 .text-text-primary, .text-text-secondary, .text-black {
     color: #1d2945;
 }
 
-.bg-green-600 {
+.dark .text-text-primary, .dark .text-text-secondary {
+    color: var(--text-primary);
+}
+
+.bg-green-600, .dark .dark\:bg-green-600 {
     background-color: #00b2e2;
 }
 
-.text-green-600 {
+.text-green-600, .dark .dark\:text-green-400, 
+.dark .peer:focus~.dark\:peer-focus\:text-green-500,
+.peer:focus~.peer-focus\:text-green-600,
+.peer:focus~.peer-focus\:text-green-500 {
     color: #00b2e2;
+}
+
+.dark .dark\:hover\:text-green-300:hover {
+    color: #0090b7;
+}
+
+.hover\:bg-green-700:hover, .dark .dark\:hover\:bg-green-700:hover {
+    background-color: #0090b7;
+}
+
+.focus\:border-green-500:focus {
+    border-color: #00b2e2;
 }
