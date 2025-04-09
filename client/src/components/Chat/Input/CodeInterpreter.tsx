@@ -63,7 +63,6 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
         setIsDialogOpen(true);
         return;
       }
-
       setRunCode(isChecked);
     },
     [setRunCode, setIsDialogOpen, isAuthenticated],

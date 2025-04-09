@@ -289,7 +289,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 <AttachFileChat disableInputs={disableInputs} />
               </div>
               <BadgeRow
-                showMCPServers={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
+                showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
                 conversationId={conversation?.conversationId ?? Constants.NEW_CONVO}
                 onChange={setBadges}
                 isInChat={
