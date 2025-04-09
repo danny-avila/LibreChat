@@ -43,8 +43,11 @@ async function createRun({
     agent.model_parameters,
   );
 
-  /** Resolves Mistral type strictness due to new OpenAI usage field */
-  if (agent.endpoint?.toLowerCase().includes(KnownEndpoints.mistral)) {
+  /** Resolves issues with new OpenAI usage field */
+  if (
+    (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider) ||
+    agent.provider === Providers.XAI
+  ) {
     llmConfig.streamUsage = false;
     llmConfig.usage = true;
   }
