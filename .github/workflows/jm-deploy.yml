@@ -7,7 +7,7 @@ on:
       branch:
         description: 'Branch to build from'
         required: false
-        default: 'jm-production'
+        default: 'main'
         type: string
       tag:
         description: 'Docker image tag (default: latest)'
@@ -20,10 +20,10 @@ on:
         default: 'Dockerfile.multi'
         type: string
   
-  # Automatic build on push to jm-production
+  # Automatic build on push to main
   push:
     branches:
-      - jm-production
+      - main
 
 jobs:
   deploy-gh-runner-aci:
@@ -32,8 +32,8 @@ jobs:
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@v4
         with:
-          # Use the specified branch from manual input or jm-production for auto runs
-          ref: ${{ github.event.inputs.branch || 'jm-production' }}
+          # Use the specified branch from manual input or main for auto runs
+          ref: ${{ github.event.inputs.branch || 'main' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2

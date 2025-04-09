@@ -11,8 +11,8 @@ This fork is a personal project to add a few features to LibreChat and integrate
 [![Docker Build Only](https://img.shields.io/badge/Docker%20Build%20Only-Ready-blue)](https://github.com/jmaddington/LibreChat/actions/workflows/deploy-jm-build-only.yml)
 
 ## Branches
-`jm-production` - The main branch for this fork for production use. Stable-ish, but has been at least minimally tested.
-`main` - A clone of the upstream main branch.
+`main` - The main branch for this fork for production use. Stable-ish, but has been at least minimally tested.
+`main-upstream` - A clone of the upstream main branch.
 `tracking/YYYY/MM/DD-XX` - Tracking branches for specific merges from upstream, with date and sequence number.
 `new/feature/X` - Branches for new features, kept open until they are feature complete and merged.
 

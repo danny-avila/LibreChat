@@ -141,8 +141,5 @@
       "admin/",
       "packages/"
     ]
-  },
-  "dependencies": {
-    "kareem": "^2.6.3"
   }
 }

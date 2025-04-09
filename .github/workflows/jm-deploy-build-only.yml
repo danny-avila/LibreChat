@@ -1,38 +1,52 @@
-name: Docker Build Only (No Push)
+name: Docker Build Only (API Stage)
 
 on:
+  pull_request:
+      branches:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+          - release/*
+          - feat/*
+          - tmp/**
 
-    pull_request:
-        branches:
-            - main
-            - dev
-            - release/*
-            - feat/*
-            - jm-production
+  push:
+      branches:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+          - release/*
+          - feat/*
+          - tmp/**
 
-    push:
-        branches:
-            - main
-            - dev
-            - release/*
-            - feat/*
-            - jm-production
-
-    # Allow manual triggering with custom parameters
-    workflow_dispatch:
-        inputs:
-            branch:
-                description: 'Branch to build from'
-                required: true
-                default: 'jm-production'
-                type: string
-
-            dockerfile:
-                description: 'Dockerfile to use'
-                required: false
-                default: 'Dockerfile.multi'
-                type: string
-
+  # Allow manual triggering with custom parameters
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+      
+      ref:
+        description: 'Git ref to checkout (branch, tag, or SHA)'
+        required: false
+        default: ''
+        type: string
+        
+      dockerfile:
+        description: 'Dockerfile to use'
+        required: false
+        default: 'Dockerfile.multi'
+        type: string
+          
 jobs:
   build-docker-image:
     runs-on: ubuntu-latest
@@ -40,8 +54,8 @@ jobs:
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@v4
         with:
-          # Use the specified branch from manual input or jm-production for auto runs
-          ref: ${{ github.event.inputs.branch || 'jm-production' }}
+          # Use the specified branch from manual input or main for auto runs
+          ref: ${{ github.event.inputs.branch || 'main' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2

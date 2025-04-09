@@ -4,19 +4,20 @@ on:
   pull_request:
     branches:
       - main
+      - main-upstream
       - dev
-      - jm-production
       - release/**
       - 'tracking/**'
       - 'feature/**'
+      
   workflow_dispatch:
     # Allow manual triggering
 
   push:
     branches:
       - main
+      - main-upstream
       - dev
-      - jm-production
       - release/**
       - 'tracking/**'
       - 'feature/**'

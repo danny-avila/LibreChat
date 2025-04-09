@@ -3,8 +3,8 @@ on:
   pull_request:
     branches:
       - main
+      - main-upstream
       - dev
-      - jm-production
       - release/**
       - 'tracking/**'
       - 'feature/**'
@@ -12,8 +12,8 @@ on:
   push:
     branches:
       - main
+      - main-upstream
       - dev
-      - jm-production
       - release/**
       - 'tracking/**'
       - 'feature/**'

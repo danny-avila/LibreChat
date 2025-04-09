@@ -28,10 +28,6 @@ The **E2BCode Plugin** integrates the capabilities of the [E2B Code Interpreter]
 
 ### 1. Clone the Repository
 
-Clone the LibreChat fork at https://github.com/jmaddington/libreChat/ to access the E2BCode plugin.
-
-Not all branches have the E2BCode plugin. `jm-production` is a branch that has the plugin. Probably.
-
 
 ### 2. Set Environment Variables
 

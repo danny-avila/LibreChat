@@ -3,7 +3,7 @@ name: Sync with Upstream and Run CI
 on:
   # Run on a schedule (every hour)
   schedule:
-    - cron: '*/4 * * * *'
+    - cron: '0 7 * * *'
   
   # Allow manual triggering
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: main-upstream
           fetch-depth: 0
       
       - name: Add upstream remote
@@ -65,7 +65,7 @@ jobs:
           git commit -m "Keep specified workflow files after resetting to upstream main"
           
           # Push changes to origin (with force since we did a hard reset)
-          git push --force origin main
+          git push --force origin main-upstream
         
       # The workflows will be automatically triggered because we pushed to main
       # We don't need to explicitly trigger them
