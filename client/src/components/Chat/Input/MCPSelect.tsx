@@ -8,6 +8,20 @@ import { ephemeralAgentByConvoId } from '~/store';
 import MCPIcon from '~/components/ui/MCPIcon';
 import { useLocalize } from '~/hooks';
 
+const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
+  if (rawCurrentValue) {
+    try {
+      const currentValue = rawCurrentValue?.trim() ?? '';
+      if (currentValue.length > 2) {
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return Array.isArray(value) && value.length > 0;
+};
+
 function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
@@ -50,6 +64,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     `${LocalStorageKeys.LAST_MCP_}${key}`,
     mcpState,
     setSelectedValues,
+    storageCondition,
   );
 
   useEffect(() => {
