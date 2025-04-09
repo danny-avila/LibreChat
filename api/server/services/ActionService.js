@@ -189,7 +189,7 @@ async function createActionTool({
                     expires_at: Date.now() + Time.TWO_MINUTES,
                   },
                 };
-                const flowManager = await getFlowStateManager(getLogStores);
+                const flowManager = getFlowStateManager(getLogStores);
                 await flowManager.createFlowWithHandler(
                   `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
@@ -265,7 +265,7 @@ async function createActionTool({
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                   });
-                const flowManager = await getFlowStateManager(getLogStores);
+                const flowManager = getFlowStateManager(getLogStores);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',
