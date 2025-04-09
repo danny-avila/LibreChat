@@ -32,6 +32,7 @@ export function clearLocalStorage(skipFirst?: boolean) {
     }
     if (
       key.startsWith(LocalStorageKeys.LAST_MCP_) ||
+      key.startsWith(LocalStorageKeys.LAST_CODE_TOGGLE_) ||
       key.startsWith(LocalStorageKeys.ASST_ID_PREFIX) ||
       key.startsWith(LocalStorageKeys.AGENT_ID_PREFIX) ||
       key.startsWith(LocalStorageKeys.LAST_CONVO_SETUP) ||

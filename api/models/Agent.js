@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { agentSchema } = require('@librechat/data-schemas');
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles, Tools } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
@@ -51,16 +51,22 @@ const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) =
   const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
   /** @type {string[]} */
   const tools = [];
+  if (req.body.ephemeralAgent?.execute_code === true) {
+    tools.push(Tools.execute_code);
+  }
 
-  for (const toolName of Object.keys(availableTools)) {
-    if (!toolName.includes(mcp_delimiter)) {
-      continue;
-    }
-    const mcpServer = toolName.split(mcp_delimiter)?.[1];
-    if (mcpServer && mcpServers.has(mcpServer)) {
-      tools.push(toolName);
+  if (mcpServers.size > 0) {
+    for (const toolName of Object.keys(availableTools)) {
+      if (!toolName.includes(mcp_delimiter)) {
+        continue;
+      }
+      const mcpServer = toolName.split(mcp_delimiter)?.[1];
+      if (mcpServer && mcpServers.has(mcpServer)) {
+        tools.push(toolName);
+      }
     }
   }
+
   const instructions = req.body.promptPrefix;
   return {
     id: agent_id,
