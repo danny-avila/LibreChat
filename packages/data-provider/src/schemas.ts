@@ -90,7 +90,7 @@ export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | stri
 };
 
 export const isEphemeralAgent = (
-  endpoint: EModelEndpoint.agents | null | string,
+  endpoint?: EModelEndpoint.agents | null | string,
   ephemeralAgent?: TEphemeralAgent | null,
 ) => {
   if (!ephemeralAgent) {
