@@ -50,12 +50,14 @@ export default function useLocalStorage<T>(
   const setValueWrap = (value: T) => {
     try {
       setValue(value);
+      const storeLocal = () => {
+        localStorage.setItem(key, JSON.stringify(value));
+        window?.dispatchEvent(new StorageEvent('storage', { key }));
+      };
       if (!storageCondition) {
-        localStorage.setItem(key, JSON.stringify(value));
-        window?.dispatchEvent(new StorageEvent('storage', { key }));
+        storeLocal();
       } else if (storageCondition(value, localStorage.getItem(key))) {
-        localStorage.setItem(key, JSON.stringify(value));
-        window?.dispatchEvent(new StorageEvent('storage', { key }));
+        storeLocal();
       }
       globalSetState?.(value);
     } catch (e) {
