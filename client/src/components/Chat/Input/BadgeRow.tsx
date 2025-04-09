@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
+import CodeInterpreter from './CodeInterpreter';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
@@ -17,7 +18,7 @@ import MCPSelect from './MCPSelect';
 import store from '~/store';
 
 interface BadgeRowProps {
-  showMCPServers?: boolean;
+  showEphemeralBadges?: boolean;
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
   conversationId?: string | null;
@@ -131,7 +132,13 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
   }
 };
 
-function BadgeRow({ showMCPServers, conversationId, onChange, onToggle, isInChat }: BadgeRowProps) {
+function BadgeRow({
+  showEphemeralBadges,
+  conversationId,
+  onChange,
+  onToggle,
+  isInChat,
+}: BadgeRowProps) {
   const [orderedBadges, setOrderedBadges] = useState<BadgeItem[]>([]);
   const [dragState, dispatch] = useReducer(dragReducer, {
     draggedBadge: null,
@@ -146,7 +153,7 @@ function BadgeRow({ showMCPServers, conversationId, onChange, onToggle, isInChat
   const animationFrame = useRef<number | null>(null);
   const containerRectRef = useRef<DOMRect | null>(null);
 
-  const allBadges = useChatBadges() || [];
+  const allBadges = useChatBadges();
   const isEditing = useRecoilValue(store.isEditingBadges);
 
   const badges = useMemo(
@@ -345,7 +352,12 @@ function BadgeRow({ showMCPServers, conversationId, onChange, onToggle, isInChat
           />
         </div>
       )}
-      {showMCPServers === true && <MCPSelect conversationId={conversationId} />}
+      {showEphemeralBadges === true && (
+        <>
+          <CodeInterpreter conversationId={conversationId} />
+          <MCPSelect conversationId={conversationId} />
+        </>
+      )}
       {ghostBadge && (
         <div
           className="ghost-badge h-full"

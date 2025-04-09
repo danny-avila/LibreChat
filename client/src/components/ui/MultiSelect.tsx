@@ -66,7 +66,7 @@ export default function MultiSelect<T extends string>({
   };
 
   return (
-    <div className={cn('h-full', className)}>
+    <div className={className}>
       <SelectProvider value={selectedValues} setValue={handleValueChange}>
         {label && (
           <SelectLabel className={cn('mb-1 block text-sm text-text-primary', labelClassName)}>
@@ -82,9 +82,10 @@ export default function MultiSelect<T extends string>({
             selectClassName,
             selectedValues.length > 0 && selectItemsClassName != null && selectItemsClassName,
           )}
+          onChange={(e) => e.stopPropagation()}
         >
           {selectIcon && selectIcon}
-          <span className="hidden truncate md:block">
+          <span className="mr-auto hidden truncate md:block">
             {renderSelectedValues(selectedValues, placeholder)}
           </span>
           <SelectArrow className="ml-1 hidden stroke-1 text-base opacity-75 md:block" />

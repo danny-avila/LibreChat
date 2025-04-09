@@ -21,7 +21,7 @@ export default function useLocalStorage<T>(
       localStorage.setItem(key, JSON.stringify(defaultValue));
     }
 
-    const initialValue = item ? JSON.parse(item) : defaultValue;
+    const initialValue = item && item !== 'undefined' ? JSON.parse(item) : defaultValue;
     setValue(initialValue);
     if (globalSetState) {
       globalSetState(initialValue);

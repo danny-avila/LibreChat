@@ -19,20 +19,20 @@ export default function createPayload(submission: t.TSubmission) {
   };
 
   let server = EndpointURLs[endpointType ?? endpoint];
-  const isEphemeralAgent = (ephemeralAgent?.mcp?.length ?? 0) > 0 && !s.isAgentsEndpoint(endpoint);
+  const isEphemeral = s.isEphemeralAgent(endpoint, ephemeralAgent);
 
   if (isEdited && s.isAssistantsEndpoint(endpoint)) {
     server += '/modify';
   } else if (isEdited) {
     server = server.replace('/ask/', '/edit/');
-  } else if (isEphemeralAgent) {
+  } else if (isEphemeral) {
     server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
   }
 
   const payload: t.TPayload = {
     ...userMessage,
     ...endpointOption,
-    ephemeralAgent: isEphemeralAgent ? ephemeralAgent : undefined,
+    ephemeralAgent: isEphemeral ? ephemeralAgent : undefined,
     isContinued: !!(isEdited && isContinued),
     conversationId,
     isTemporary,

@@ -1,8 +1,9 @@
+import { useMemo } from 'react';
 import { useRecoilCallback } from 'recoil';
 import { useRecoilValue } from 'recoil';
 import { MessageCircleDashed, Box } from 'lucide-react';
 import type { BadgeItem } from '~/common';
-import { useLocalize } from '~/hooks';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import store from '~/store';
 
 interface ChatBadgeConfig {
@@ -25,15 +26,22 @@ const badgeConfig: ReadonlyArray<ChatBadgeConfig> = [
 export default function useChatBadges(): BadgeItem[] {
   const localize = useLocalize();
   const activeBadges = useRecoilValue(store.chatBadges) as Array<{ id: string }>;
-  const activeBadgeIds = new Set(activeBadges.map((badge) => badge.id));
-
-  return badgeConfig.map((cfg) => ({
-    id: cfg.id,
-    label: localize(cfg.label),
-    icon: cfg.icon,
-    atom: cfg.atom,
-    isAvailable: activeBadgeIds.has(cfg.id),
-  }));
+  const activeBadgeIds = useMemo(
+    () => new Set(activeBadges.map((badge) => badge.id)),
+    [activeBadges],
+  );
+  const allBadges = useMemo(() => {
+    return (
+      badgeConfig.map((cfg) => ({
+        id: cfg.id,
+        label: localize(cfg.label as TranslationKeys),
+        icon: cfg.icon,
+        atom: cfg.atom,
+        isAvailable: activeBadgeIds.has(cfg.id),
+      })) || []
+    );
+  }, [activeBadgeIds, localize]);
+  return allBadges;
 }
 
 export function useResetChatBadges() {

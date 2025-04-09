@@ -42,7 +42,8 @@ export type TEndpointOption = {
 };
 
 export type TEphemeralAgent = {
-  mcp: string[];
+  mcp?: string[];
+  execute_code?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &
