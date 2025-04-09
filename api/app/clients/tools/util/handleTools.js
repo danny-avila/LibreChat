@@ -18,6 +18,9 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  TimeAPI,
+  E2BCode,
+  WebNavigator,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -154,6 +157,9 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    WebNavigator: WebNavigator,
+    E2BCode: E2BCode,
+    time_api: TimeAPI,
   };
 
   const customConstructors = {

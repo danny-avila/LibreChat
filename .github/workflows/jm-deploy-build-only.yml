@@ -1,0 +1,61 @@
+name: Docker Build Only (No Push)
+
+on:
+
+    pull_request:
+        branches:
+            - main
+            - dev
+            - release/*
+            - feat/*
+            - jm-production
+
+    push:
+        branches:
+            - main
+            - dev
+            - release/*
+            - feat/*
+            - jm-production
+
+    # Allow manual triggering with custom parameters
+    workflow_dispatch:
+        inputs:
+            branch:
+                description: 'Branch to build from'
+                required: true
+                default: 'jm-production'
+                type: string
+
+            dockerfile:
+                description: 'Dockerfile to use'
+                required: false
+                default: 'Dockerfile.multi'
+                type: string
+
+jobs:
+  build-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+        with:
+          # Use the specified branch from manual input or jm-production for auto runs
+          ref: ${{ github.event.inputs.branch || 'jm-production' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image (without push)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          # Use specified Dockerfile or default
+          file: ${{ github.event.inputs.dockerfile || 'Dockerfile.multi' }}
+          push: false
+          # Add build cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Output built image to local Docker engine
+          load: true
+          tags: librechat:local-build
