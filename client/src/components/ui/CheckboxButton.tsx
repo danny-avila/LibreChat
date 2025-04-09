@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect } from 'react';
 import { Checkbox, useStoreState, useCheckboxStore } from '@ariakit/react';
 import { cn } from '~/utils';
 
@@ -7,11 +7,13 @@ export default function CheckboxButton({
   icon,
   setValue,
   className,
+  defaultChecked,
   isCheckedClassName,
 }: {
   label: string;
   className?: string;
   icon?: React.ReactNode;
+  defaultChecked?: boolean;
   isCheckedClassName?: string;
   setValue?: (isChecked: boolean) => void;
 }) {
@@ -24,11 +26,17 @@ export default function CheckboxButton({
     }
     setValue?.(!isChecked);
   };
+  useEffect(() => {
+    if (defaultChecked) {
+      checkbox.setValue(defaultChecked);
+    }
+  }, [defaultChecked, checkbox]);
 
   return (
     <Checkbox
       store={checkbox}
       onChange={onChange}
+      defaultChecked={defaultChecked}
       className={cn(
         // Base styling from MultiSelect's selectClassName
         'group relative inline-flex items-center justify-center gap-1.5',
