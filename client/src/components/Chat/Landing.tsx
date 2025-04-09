@@ -149,9 +149,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     >
       <div ref={contentRef} className="flex flex-col items-center gap-0 p-2">
         <div
-          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
+          className={`flex ${
+            startupConfig?.customLogo?.includes('/assets/themes/img') ? 'flex-col' : textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'
+          } items-center justify-center gap-2`}
         >
-          <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
+          <div className={`relative ${startupConfig?.customLogo?.includes('/assets/themes/img') ? 'size-32' : 'size-10'} justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <img
               src={startupConfig?.customLogo || '/assets/logo.svg'}
               alt="logo"
