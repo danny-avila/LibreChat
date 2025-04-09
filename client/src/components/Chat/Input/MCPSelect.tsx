@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback } from 'react';
+import React, { memo, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
@@ -10,6 +10,7 @@ import { useLocalize } from '~/hooks';
 
 function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
+  const hasSetFetched = useRef(false);
   const key = conversationId ?? Constants.NEW_CONVO;
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const mcpState = useMemo(() => {
@@ -35,7 +36,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     mcpState,
     setSelectedValues,
   );
-  const { data: mcpServers } = useAvailableToolsQuery(EModelEndpoint.agents, {
+  const { data: mcpServers, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data) => {
       const serverNames = new Set<string>();
       data.forEach((tool) => {
@@ -47,6 +48,20 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
       return [...serverNames];
     },
   });
+
+  useEffect(() => {
+    if (hasSetFetched.current) {
+      return;
+    }
+    if (!isFetched) {
+      return;
+    }
+    hasSetFetched.current = true;
+    if ((mcpServers?.length ?? 0) > 0) {
+      return;
+    }
+    setMCPValues([]);
+  }, [isFetched, setMCPValues, mcpServers?.length]);
 
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
