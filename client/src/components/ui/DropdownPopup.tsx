@@ -83,6 +83,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                 )}
                 {item.label}
                 {item.kbd != null && (
+                  // eslint-disable-next-line i18next/no-literal-string
                   <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-hover:inline group-focus:inline dark:text-white/50">
                     ⌘{item.kbd}
                   </kbd>
