@@ -17,6 +17,20 @@ import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { useVerifyAgentToolAuth } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 
+const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
+  if (rawCurrentValue) {
+    try {
+      const currentValue = rawCurrentValue?.trim() ?? '';
+      if (currentValue === 'true' && value === false) {
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return value !== undefined && value !== null && value !== '' && value !== false;
+};
+
 function CodeInterpreter({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
@@ -55,6 +69,7 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
     `${LocalStorageKeys.LAST_CODE_TOGGLE_}${key}`,
     isCodeToggleEnabled,
     setValue,
+    storageCondition,
   );
 
   const handleChange = useCallback(

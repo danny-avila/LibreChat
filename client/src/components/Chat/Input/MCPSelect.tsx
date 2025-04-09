@@ -8,14 +8,43 @@ import { ephemeralAgentByConvoId } from '~/store';
 import MCPIcon from '~/components/ui/MCPIcon';
 import { useLocalize } from '~/hooks';
 
+const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
+  if (rawCurrentValue) {
+    try {
+      const currentValue = rawCurrentValue?.trim() ?? '';
+      if (currentValue.length > 2) {
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return Array.isArray(value) && value.length > 0;
+};
+
 function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
-  const hasSetFetched = useRef(false);
   const key = conversationId ?? Constants.NEW_CONVO;
+  const hasSetFetched = useRef<string | null>(null);
+
+  const { data: mcpServerSet, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
+    select: (data) => {
+      const serverNames = new Set<string>();
+      data.forEach((tool) => {
+        if (tool.pluginKey.includes(Constants.mcp_delimiter)) {
+          const parts = tool.pluginKey.split(Constants.mcp_delimiter);
+          serverNames.add(parts[parts.length - 1]);
+        }
+      });
+      return serverNames;
+    },
+  });
+
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const mcpState = useMemo(() => {
     return ephemeralAgent?.mcp ?? [];
   }, [ephemeralAgent?.mcp]);
+
   const setSelectedValues = useCallback(
     (values: string[] | null | undefined) => {
       if (!values) {
@@ -35,33 +64,23 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     `${LocalStorageKeys.LAST_MCP_}${key}`,
     mcpState,
     setSelectedValues,
+    storageCondition,
   );
-  const { data: mcpServers, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    select: (data) => {
-      const serverNames = new Set<string>();
-      data.forEach((tool) => {
-        if (tool.pluginKey.includes(Constants.mcp_delimiter)) {
-          const parts = tool.pluginKey.split(Constants.mcp_delimiter);
-          serverNames.add(parts[parts.length - 1]);
-        }
-      });
-      return [...serverNames];
-    },
-  });
 
   useEffect(() => {
-    if (hasSetFetched.current) {
+    if (hasSetFetched.current === key) {
       return;
     }
     if (!isFetched) {
       return;
     }
-    hasSetFetched.current = true;
-    if ((mcpServers?.length ?? 0) > 0) {
+    hasSetFetched.current = key;
+    if ((mcpServerSet?.size ?? 0) > 0) {
+      setMCPValues(mcpValues.filter((mcp) => mcpServerSet?.has(mcp)));
       return;
     }
     setMCPValues([]);
-  }, [isFetched, setMCPValues, mcpServers?.length]);
+  }, [isFetched, setMCPValues, mcpServerSet, key, mcpValues]);
 
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
@@ -76,7 +95,11 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     [localize],
   );
 
-  if (!mcpServers || mcpServers.length === 0) {
+  const mcpServers = useMemo(() => {
+    return Array.from(mcpServerSet ?? []);
+  }, [mcpServerSet]);
+
+  if (!mcpServerSet || mcpServerSet.size === 0) {
     return null;
   }
 
