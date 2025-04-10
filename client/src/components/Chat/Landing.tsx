@@ -11,6 +11,22 @@ import { getIconEndpoint, getEntity } from '~/utils';
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
 
+function getTextSizeClass(text: string | undefined | null) {
+  if (!text) {
+    return 'text-xl sm:text-2xl';
+  }
+
+  if (text.length < 40) {
+    return 'text-2xl sm:text-3xl';
+  }
+
+  if (text.length < 70) {
+    return 'text-2xl sm:text-2xl';
+  }
+
+  return 'text-xl sm:text-md';
+}
+
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
@@ -155,7 +171,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               <SplitText
                 key={`split-text-${name}`}
                 text={name}
-                className="text-4xl font-medium text-text-primary"
+                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
                 delay={50}
                 textAlign="center"
                 animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
@@ -174,7 +190,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
                   ? getGreeting()
                   : getGreeting() + (user?.name ? ', ' + user.name : '')
               }
-              className="text-2xl font-medium text-text-primary sm:text-4xl"
+              className={`${getTextSizeClass(typeof startupConfig?.interface?.customWelcome === 'string' ? getGreeting() : getGreeting() + (user?.name ? ', ' + user.name : ''))} font-medium text-text-primary`}
               delay={50}
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
