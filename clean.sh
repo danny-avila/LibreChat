@@ -4,15 +4,11 @@ rm package-lock.json
 
 echo "Installing primary dependencies"
 
-npm install
+npm ci
 
 echo "Installing our fork-specific dependencies"
 cd api/
 npm install cheerio @e2b/code-interpreter better-sqlite3
-
-cd ..
-echo "Running ci"
-npm ci
 
 echo "Running frontend"
 npm run frontend
