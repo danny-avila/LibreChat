@@ -1,0 +1,75 @@
+name: Docker Build Only (API Stage)
+
+on:
+  pull_request:
+      branches:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+          - release/*
+          - feat/*
+          - tmp/**
+
+  push:
+      branches:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+          - release/*
+          - feat/*
+          - tmp/**
+
+  # Allow manual triggering with custom parameters
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+      
+      ref:
+        description: 'Git ref to checkout (branch, tag, or SHA)'
+        required: false
+        default: ''
+        type: string
+        
+      dockerfile:
+        description: 'Dockerfile to use'
+        required: false
+        default: 'Dockerfile.multi'
+        type: string
+          
+jobs:
+  build-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+        with:
+          # Use the specified branch from manual input or main for auto runs
+          ref: ${{ github.event.inputs.branch || 'main' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image (without push)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          # Use specified Dockerfile or default
+          file: ${{ github.event.inputs.dockerfile || 'Dockerfile.multi' }}
+          push: false
+          # Add build cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Output built image to local Docker engine
+          load: true
+          tags: librechat:local-build
