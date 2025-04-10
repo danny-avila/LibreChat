@@ -1,0 +1,63 @@
+# Dockerfile.custom
+# Based on LibreChat v0.7.7 with improved customization support
+
+# Base node image
+FROM node:20-alpine
+
+WORKDIR /app
+RUN apk --no-cache add curl
+
+# Copy package files
+COPY package*.json ./
+COPY packages/data-provider/package*.json ./packages/data-provider/
+COPY packages/mcp/package*.json ./packages/mcp/
+COPY packages/data-schemas/package*.json ./packages/data-schemas/
+COPY client/package*.json ./client/
+COPY api/package*.json ./api/
+
+# Install dependencies with increased timeouts for slow connections
+RUN npm config set fetch-retry-maxtimeout 1800000 && \
+    npm config set fetch-retries 10 && \
+    npm config set fetch-retry-mintimeout 60000 && \
+    npm config set fetch-timeout 600000 && \
+    npm install --no-audit --prefer-offline
+
+# Copy source code for main application components
+COPY api/ ./api/
+COPY client/ ./client/
+COPY config/ ./config/
+COPY packages/ ./packages/
+
+# Create necessary directories for custom files
+RUN mkdir -p ./custom/api \
+    ./custom/client \
+    ./custom/config \
+    ./custom/data
+
+# Copy custom files using shell's test command
+COPY [".", "."]
+RUN if [ -d "./custom/api" ]; then cp -r ./custom/api/* ./api/custom/ || true; fi && \
+    if [ -d "./custom/client" ]; then cp -r ./custom/client/* ./client/custom/ || true; fi && \
+    if [ -d "./custom/config" ]; then cp -r ./custom/config/* ./config/custom/ || true; fi
+
+# Create necessary app directories
+RUN mkdir -p ./client/custom ./api/custom ./config/custom ./custom/data
+
+# Build packages and client
+RUN npm run build:data-provider && \
+    npm run build:mcp && \
+    npm run build:data-schemas && \
+    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend && \
+    npm prune --production && \
+    npm cache clean --force
+
+# Create directories for the volumes to inherit the correct permissions
+RUN mkdir -p ./client/public/images ./api/logs
+
+# Expose port and set environment
+EXPOSE 3080
+ENV HOST=0.0.0.0
+
+# Command to run
+WORKDIR /app/api
+CMD ["node", "server/index.js"] 

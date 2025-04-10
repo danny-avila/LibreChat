@@ -1,0 +1,116 @@
+# Custom values for LibreChat Helm chart
+# This file contains the customizations needed to deploy our fork to Kubernetes
+
+replicaCount: 3
+
+image:
+  repository: registry.totalsoft.local/librechat-custom
+  tag: latest
+  pullPolicy: Always
+
+# Enable custom file storage using PVC
+persistence:
+  enabled: true
+  storageClass: "smb"  # Use your cluster's storage class
+  size: 10Gi
+  
+  # Mount points for custom data
+  customMounts:
+    - name: custom-data
+      mountPath: /app/custom/data
+      subPath: data
+    - name: custom-images
+      mountPath: /app/client/public/images
+      subPath: images
+    - name: custom-logs
+      mountPath: /app/api/logs
+      subPath: logs
+    - name: custom-uploads
+      mountPath: /app/uploads
+      subPath: uploads
+
+# Custom environment variables
+env:
+  - name: NODE_ENV
+    value: "production"
+  # Connection to existing MongoDB instance
+  - name: MONGO_URI
+    value: "mongodb://mongodb:ch%40r1sm%40@10.1.48.99:27017/LibreChat"
+  # Add your custom environment variables here
+  - name: CUSTOM_FEATURE_FLAG
+    value: "true"
+
+# Resources configuration
+resources:
+  limits:
+    cpu: 1
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Custom ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: librechat.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: librechat-tls
+      hosts:
+        - librechat.yourdomain.com
+
+# MongoDB configuration - DISABLED (using external MongoDB)
+mongodb:
+  enabled: false
+  # No other MongoDB settings needed since we're using an external instance
+
+# Vector database configuration
+vectordb:
+  enabled: true
+  image:
+    repository: ankane/pgvector
+    tag: latest
+  env:
+    POSTGRES_DB: "mydatabase"
+    POSTGRES_USER: "myuser"
+    POSTGRES_PASSWORD: "replace-with-secure-password"
+  persistence:
+    enabled: true
+    storageClass: "smb"
+    size: 5Gi
+
+# Search service configuration
+meilisearch:
+  enabled: true
+  environment:
+    MEILI_NO_ANALYTICS: "true"
+  masterKey: "replace-with-secure-key"
+  persistence:
+    enabled: true
+    storageClass: "smb"
+    size: 5Gi
+
+# RAG API configuration
+rag_api:
+  enabled: true
+  image:
+    repository: ghcr.io/danny-avila/librechat-rag-api-dev-lite
+    tag: latest
+  env:
+    DB_HOST: "vectordb" 
