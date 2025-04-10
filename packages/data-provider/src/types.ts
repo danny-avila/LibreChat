@@ -41,12 +41,18 @@ export type TEndpointOption = {
   overrideUserMessageId?: string;
 };
 
+export type TEphemeralAgent = {
+  mcp?: string[];
+  execute_code?: boolean;
+};
+
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
+    ephemeralAgent?: TEphemeralAgent | null;
   };
 
 export type TSubmission = {
@@ -63,6 +69,7 @@ export type TSubmission = {
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
   clientTimestamp?: string;
+  ephemeralAgent?: TEphemeralAgent | null;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };

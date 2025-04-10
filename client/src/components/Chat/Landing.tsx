@@ -52,7 +52,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   });
 
   const name = entity?.name ?? '';
-  const description = entity?.description ?? '';
+  const description = (entity?.description || conversation?.greeting) ?? '';
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -186,8 +186,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
-        {(isAgent || isAssistant) && description && (
-          <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+        {description && (
+          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
             {description}
           </div>
         )}

@@ -49,7 +49,7 @@ async function createMCPTool({ req, toolKey, provider }) {
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     try {
-      const mcpManager = await getMCPManager();
+      const mcpManager = getMCPManager();
       const result = await mcpManager.callTool({
         serverName,
         toolName,

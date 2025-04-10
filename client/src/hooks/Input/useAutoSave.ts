@@ -128,7 +128,7 @@ export const useAutoSave = ({
 
     const handleInput = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = e.target.value;
-      if (value) {
+      if (value && value.length > 1) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
           encodeBase64(value),

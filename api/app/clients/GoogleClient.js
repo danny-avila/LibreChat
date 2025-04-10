@@ -9,6 +9,7 @@ const {
   validateVisionModel,
   getResponseSender,
   endpointSettings,
+  parseTextParts,
   EModelEndpoint,
   ContentTypes,
   VisionModes,
@@ -772,6 +773,22 @@ class GoogleClient extends BaseClient {
    */
   getStreamUsage() {
     return this.usage;
+  }
+
+  getMessageMapMethod() {
+    /**
+     * @param {TMessage} msg
+     */
+    return (msg) => {
+      if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
+        msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
+      } else if (msg.content != null) {
+        msg.text = parseTextParts(msg.content, true);
+        delete msg.content;
+      }
+
+      return msg;
+    };
   }
 
   /**

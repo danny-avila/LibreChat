@@ -20,11 +20,9 @@ const {
 const {
   Constants,
   VisionModes,
-  openAISchema,
   ContentTypes,
   EModelEndpoint,
   KnownEndpoints,
-  anthropicSchema,
   isAgentsEndpoint,
   AgentCapabilities,
   bedrockInputSchema,
@@ -43,11 +41,18 @@ const { createRun } = require('./run');
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
 /** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
 
-const providerParsers = {
-  [EModelEndpoint.openAI]: openAISchema.parse,
-  [EModelEndpoint.azureOpenAI]: openAISchema.parse,
-  [EModelEndpoint.anthropic]: anthropicSchema.parse,
-  [EModelEndpoint.bedrock]: bedrockInputSchema.parse,
+/**
+ * @param {ServerRequest} req
+ * @param {Agent} agent
+ * @param {string} endpoint
+ */
+const payloadParser = ({ req, agent, endpoint }) => {
+  if (isAgentsEndpoint(endpoint)) {
+    return { model: undefined };
+  } else if (endpoint === EModelEndpoint.bedrock) {
+    return bedrockInputSchema.parse(agent.model_parameters);
+  }
+  return req.body.endpointOption.model_parameters;
 };
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
@@ -180,28 +185,19 @@ class AgentClient extends BaseClient {
   }
 
   getSaveOptions() {
-    const parseOptions = providerParsers[this.options.endpoint];
-    let runOptions =
-      this.options.endpoint === EModelEndpoint.agents
-        ? {
-          model: undefined,
-          // TODO:
-          // would need to be override settings; otherwise, model needs to be undefined
-          // model: this.override.model,
-          // instructions: this.override.instructions,
-          // additional_instructions: this.override.additional_instructions,
-        }
-        : {};
-
-    if (parseOptions) {
-      try {
-        runOptions = parseOptions(this.options.agent.model_parameters);
-      } catch (error) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
-          error,
-        );
-      }
+    // TODO:
+    // would need to be override settings; otherwise, model needs to be undefined
+    // model: this.override.model,
+    // instructions: this.override.instructions,
+    // additional_instructions: this.override.additional_instructions,
+    let runOptions = {};
+    try {
+      runOptions = payloadParser(this.options);
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
+        error,
+      );
     }
 
     return removeNullishValues(
