@@ -141,5 +141,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "librechat-mcp": "^1.2.0"
   }
 }
