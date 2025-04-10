@@ -1,7 +1,7 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import {
   useChatContext,
   useChatFormContext,
@@ -28,8 +28,8 @@ import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
-import { BadgeRow } from './BadgeRow';
 import EditBadges from './EditBadges';
+import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -289,7 +289,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 <AttachFileChat disableInputs={disableInputs} />
               </div>
               <BadgeRow
-                onChange={(newBadges) => setBadges(newBadges)}
+                showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
+                conversationId={conversation?.conversationId ?? Constants.NEW_CONVO}
+                onChange={setBadges}
                 isInChat={
                   Array.isArray(conversation?.messages) && conversation.messages.length >= 1
                 }

@@ -189,26 +189,32 @@ async function createActionTool({
                     expires_at: Date.now() + Time.TWO_MINUTES,
                   },
                 };
-                const flowManager = await getFlowStateManager(getLogStores);
+                const flowManager = getFlowStateManager(getLogStores);
                 await flowManager.createFlowWithHandler(
-                  `${identifier}:login`,
+                  `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
                   async () => {
                     sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
                     logger.debug('Sent OAuth login request to client', { action_id, identifier });
                     return true;
                   },
+                  config?.signal,
                 );
                 logger.debug('Waiting for OAuth Authorization response', { action_id, identifier });
-                const result = await flowManager.createFlow(identifier, 'oauth', {
-                  state: stateToken,
-                  userId: req.user.id,
-                  client_url: metadata.auth.client_url,
-                  redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
-                  /** Encrypted values */
-                  encrypted_oauth_client_id: encrypted.oauth_client_id,
-                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                });
+                const result = await flowManager.createFlow(
+                  identifier,
+                  'oauth',
+                  {
+                    state: stateToken,
+                    userId: req.user.id,
+                    client_url: metadata.auth.client_url,
+                    redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                    /** Encrypted values */
+                    encrypted_oauth_client_id: encrypted.oauth_client_id,
+                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                  },
+                  config?.signal,
+                );
                 logger.debug('Received OAuth Authorization response', { action_id, identifier });
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
@@ -259,11 +265,12 @@ async function createActionTool({
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                   });
-                const flowManager = await getFlowStateManager(getLogStores);
+                const flowManager = getFlowStateManager(getLogStores);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',
                   refreshTokens,
+                  config?.signal,
                 );
                 metadata.oauth_access_token = refreshData.access_token;
                 if (refreshData.refresh_token) {
