@@ -30,8 +30,6 @@ spec:
       serviceAccountName: {{ include "librechat.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      nodeSelector:
-        kubernetes.io/os: linux
       containers:
         - name: {{ .Chart.Name }}
           securityContext:

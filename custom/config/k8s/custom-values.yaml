@@ -66,14 +66,14 @@ ingress:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: librechat.douacreioane.local
+    - host: librechat.yourdomain.com
       paths:
         - path: /
           pathType: Prefix
   tls:
     - secretName: librechat-tls
       hosts:
-        - librechat.douacreioane.local
+        - librechat.yourdomain.com
 
 # MongoDB configuration - DISABLED (using external MongoDB)
 mongodb:
