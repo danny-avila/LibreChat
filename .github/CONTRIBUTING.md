@@ -34,10 +34,17 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 5. For frontend changes:
     - Install typescript globally: `npm i -g typescript`.
     - Compile typescript before and after changes to check for introduced errors: `cd client && tsc --noEmit`.
-6. Run tests locally:
+6. Run unit tests locally:
+    - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`
     - Backend unit tests: `npm run test:api`
     - Frontend unit tests: `npm run test:client`
-    - Integration tests: `npm run e2e` (requires playwright installed, `npx install playwright`)
+7. Run integration tests locally:
+    - Create `.env`: `cp .env.example .env`
+    - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance
+    - Run: `npx install playwright`, then `npx playwright install`
+    - Copy `config.local`: `cp e2e/config.local.example.ts e2e/config.local.ts`
+    - Copy `librechat.yaml`: `cp librechat.example.yaml librechat.yaml`
+    - Run: `npm run e2e`
 
 ## 2. Git Workflow
 
