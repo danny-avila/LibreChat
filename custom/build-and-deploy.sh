@@ -8,14 +8,14 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Configuration
 IMAGE_NAME=${1:-"librechat-custom"}
 IMAGE_TAG=${2:-"latest"}
-REGISTRY=${3:-"your-registry"}
+REGISTRY=${3:-"frkb"}
 NAMESPACE=${4:-"librechat"}
 HELM_RELEASE_NAME=${5:-"librechat"}
 MONGO_URI=${6:-""}
 
 # Path to important files
 DOCKERFILE="${PROJECT_ROOT}/Dockerfile.custom"
-CUSTOM_VALUES="${PROJECT_ROOT}/custom/config/k8s/custom-values.yaml"
+CUSTOM_VALUES="${PROJECT_ROOT}/custom/config/k8s/custom-values-dcc.yaml"
 HELM_CHART="${PROJECT_ROOT}/charts/librechat"
 
 echo "Building and deploying LibreChat custom image"
@@ -55,9 +55,9 @@ fi
 # Change to project root
 cd "$PROJECT_ROOT"
 
-# Build the Docker image using the custom Dockerfile
-echo "Building Docker image..."
-docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG -f "$DOCKERFILE" .
+# Build the Docker image using the custom Dockerfile, targeting linux/amd64
+echo "Building Docker image for linux/amd64..."
+docker buildx build --platform linux/amd64 -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG -f "$DOCKERFILE" . --load
 
 # Push the image to the registry
 echo "Pushing Docker image to registry..."

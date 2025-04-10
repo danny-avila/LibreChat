@@ -11,7 +11,7 @@ image:
 # Enable custom file storage using PVC
 persistence:
   enabled: true
-  storageClass: "smb"  # Use your cluster's storage class
+  storageClass: "managed-nfs-storage"  # Use your cluster's storage class
   size: 10Gi
   
   # Mount points for custom data
@@ -35,7 +35,7 @@ env:
     value: "production"
   # Connection to existing MongoDB instance
   - name: MONGO_URI
-    value: "mongodb://mongodb:ch%40r1sm%40@10.1.48.99:27017/LibreChat"
+    value: "mongodb://samongo:Ch_r1sm_M@172.24.1.197:27017/LibreChat"
   # Add your custom environment variables here
   - name: CUSTOM_FEATURE_FLAG
     value: "true"
@@ -92,7 +92,7 @@ vectordb:
     POSTGRES_PASSWORD: "replace-with-secure-password"
   persistence:
     enabled: true
-    storageClass: "smb"
+    storageClass: "managed-nfs-storage"
     size: 5Gi
 
 # Search service configuration
@@ -103,7 +103,7 @@ meilisearch:
   masterKey: "replace-with-secure-key"
   persistence:
     enabled: true
-    storageClass: "smb"
+    storageClass: "managed-nfs-storage"
     size: 5Gi
 
 # RAG API configuration

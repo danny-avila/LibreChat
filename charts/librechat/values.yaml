@@ -85,13 +85,13 @@ affinity: {}
 config:
   envSecrets:
     # Use this when using one k8s secret for multiply env secrets
-    # secretRef: librechat
+    secretRef: librechat
 
     # Use this when using one k8s secret for each env secret
-    secretKeyRef: []
-#      - name: CREDS_IV
-#        secretName: librechat
-#        secretKey: CREDS_IV
+    secretKeyRef: 
+      - name: MONGO_URI
+        secretName: mongodb-credentials
+        secretKey: MONGO_URI
 
   env:
     # Full list of possible values
@@ -110,3 +110,10 @@ config:
     DOMAIN_SERVER: ""
     ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
     SEARCH: false 
+    NODE_ENV: "production"
+    CREDS_KEY: "f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0"
+    CREDS_IV: "e2341419ec3dd3d19b13a1a87fafcbfb"
+    JWT_SECRET: "16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef"
+    JWT_REFRESH_SECRET: "eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418"
+
+ 
