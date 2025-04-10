@@ -49,7 +49,7 @@ async function createMCPTool({ req, toolKey, provider }) {
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     try {
-      const mcpManager = await getMCPManager();
+      const mcpManager = getMCPManager();
       const result = await mcpManager.callTool({
         serverName,
         toolName,
@@ -69,7 +69,13 @@ async function createMCPTool({ req, toolKey, provider }) {
       }
       return result;
     } catch (error) {
-      return `${toolName} MCP server tool call failed.`;
+      logger.error(
+        `[MCP][User: ${userId}][${serverName}] Error calling "${toolName}" MCP tool:`,
+        error,
+      );
+      throw new Error(
+        `"${toolKey}" tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
+      );
     }
   };
 

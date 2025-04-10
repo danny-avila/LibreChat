@@ -66,7 +66,7 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
           agentName={agentName}
           iconURL={endpointIconURL}
           assistantName={assistantName}
-          avatar={assistantAvatar ?? agentAvatar}
+          avatar={assistantAvatar || agentAvatar}
         />
       )}
     </div>

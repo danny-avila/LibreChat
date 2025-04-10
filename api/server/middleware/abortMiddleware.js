@@ -148,6 +148,13 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
   return { abortController, onStart };
 };
 
+/**
+ * @param {ServerResponse} res
+ * @param {ServerRequest} req
+ * @param {Error | unknown} error
+ * @param {Partial<TMessage> & { partialText?: string }} data
+ * @returns { Promise<void> }
+ */
 const handleAbortError = async (res, req, error, data) => {
   if (error?.message?.includes('base64')) {
     logger.error('[handleAbortError] Error in base64 encoding', {
@@ -178,16 +185,29 @@ const handleAbortError = async (res, req, error, data) => {
     errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
   }
 
+  /**
+   * @param {string} partialText
+   * @returns {Promise<void>}
+   */
   const respondWithError = async (partialText) => {
+    const endpointOption = req.body?.endpointOption;
     let options = {
       sender,
       messageId,
       conversationId,
       parentMessageId,
       text: errorText,
-      shouldSaveMessage: true,
       user: req.user.id,
+      shouldSaveMessage: true,
+      spec: endpointOption?.spec,
+      iconURL: endpointOption?.iconURL,
+      modelLabel: endpointOption?.modelLabel,
+      model: endpointOption?.modelOptions?.model || req.body?.model,
     };
+
+    if (req.body?.agent_id) {
+      options.agent_id = req.body.agent_id;
+    }
 
     if (partialText) {
       options = {

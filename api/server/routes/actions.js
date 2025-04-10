@@ -20,7 +20,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
   const { action_id } = req.params;
   const { code, state } = req.query;
 
-  const flowManager = await getFlowStateManager(getLogStores);
+  const flowManager = getFlowStateManager(getLogStores);
   let identifier = action_id;
   try {
     let decodedState;

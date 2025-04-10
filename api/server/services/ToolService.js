@@ -473,10 +473,10 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
   const _agentTools = agent.tools?.filter((tool) => {
-    if (tool === Tools.file_search && !checkCapability(AgentCapabilities.file_search)) {
-      return false;
-    } else if (tool === Tools.execute_code && !checkCapability(AgentCapabilities.execute_code)) {
-      return false;
+    if (tool === Tools.file_search) {
+      return checkCapability(AgentCapabilities.file_search);
+    } else if (tool === Tools.execute_code) {
+      return checkCapability(AgentCapabilities.execute_code);
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
