@@ -33,10 +33,12 @@ async function getEndpointsConfig(req) {
     };
   }
   if (mergedConfig[EModelEndpoint.agents] && req.app.locals?.[EModelEndpoint.agents]) {
-    const { disableBuilder, capabilities, ..._rest } = req.app.locals[EModelEndpoint.agents];
+    const { disableBuilder, capabilities, allowedProviders, ..._rest } =
+      req.app.locals[EModelEndpoint.agents];
 
     mergedConfig[EModelEndpoint.agents] = {
       ...mergedConfig[EModelEndpoint.agents],
+      allowedProviders,
       disableBuilder,
       capabilities,
     };

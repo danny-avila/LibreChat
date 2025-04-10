@@ -676,7 +676,8 @@ class BaseClient {
       responseMessage.text = addSpaceIfNeeded(generation) + completion;
     } else if (
       Array.isArray(completion) &&
-      isParamEndpoint(this.options.endpoint, this.options.endpointType)
+      (this.clientName === EModelEndpoint.agents ||
+        isParamEndpoint(this.options.endpoint, this.options.endpointType))
     ) {
       responseMessage.text = '';
       responseMessage.content = completion;
@@ -879,13 +880,14 @@ class BaseClient {
         : await getConvo(this.options.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
+    const exceptions = new Set(['spec', 'iconURL']);
     if (existingConvo != null) {
       this.fetchedConvo = true;
       for (const key in existingConvo) {
         if (!key) {
           continue;
         }
-        if (excludedKeys.has(key)) {
+        if (excludedKeys.has(key) && !exceptions.has(key)) {
           continue;
         }
 

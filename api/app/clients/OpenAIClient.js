@@ -6,6 +6,7 @@ const {
   Constants,
   ImageDetail,
   ContentTypes,
+  parseTextParts,
   EModelEndpoint,
   resolveHeaders,
   KnownEndpoints,
@@ -224,10 +225,6 @@ class OpenAIClient extends BaseClient {
 
     if (this.azureEndpoint && this.options.debug) {
       logger.debug('Using Azure endpoint');
-    }
-
-    if (this.useOpenRouter) {
-      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
     }
 
     return this;
@@ -1125,15 +1122,8 @@ ${convo}
       if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
         msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
       } else if (msg.content != null) {
-        /** @type {import('@librechat/agents').MessageContentComplex} */
-        const newContent = [];
-        for (let part of msg.content) {
-          if (part.think != null) {
-            continue;
-          }
-          newContent.push(part);
-        }
-        msg.content = newContent;
+        msg.text = parseTextParts(msg.content, true);
+        delete msg.content;
       }
 
       return msg;

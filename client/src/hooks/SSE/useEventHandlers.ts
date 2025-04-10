@@ -10,6 +10,7 @@ import {
   tPresetSchema,
   tMessageSchema,
   tConvoUpdateSchema,
+  ContentTypes,
 } from 'librechat-data-provider';
 import type {
   TMessage,
@@ -30,11 +31,11 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
+import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
-import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
@@ -58,6 +59,74 @@ export type EventHandlerParams = {
   resetLatestMessage?: Resetter;
 };
 
+const createErrorMessage = ({
+  errorMetadata,
+  getMessages,
+  submission,
+  error,
+}: {
+  getMessages: () => TMessage[] | undefined;
+  errorMetadata?: Partial<TMessage>;
+  submission: EventSubmission;
+  error?: Error | unknown;
+}) => {
+  const currentMessages = getMessages();
+  const latestMessage = currentMessages?.[currentMessages.length - 1];
+  let errorMessage: TMessage;
+  const text = submission.initialResponse.text.length > 45 ? submission.initialResponse.text : '';
+  const errorText =
+    (errorMetadata?.text || text || (error as Error | undefined)?.message) ??
+    'Error cancelling request';
+  const latestContent = latestMessage?.content ?? [];
+  let isValidContentPart = false;
+  if (latestContent.length > 0) {
+    const latestContentPart = latestContent[latestContent.length - 1];
+    const latestPartValue = latestContentPart?.[latestContentPart.type ?? ''];
+    isValidContentPart =
+      latestContentPart.type !== ContentTypes.TEXT ||
+      (latestContentPart.type === ContentTypes.TEXT && typeof latestPartValue === 'string')
+        ? true
+        : latestPartValue?.value !== '';
+  }
+  if (
+    latestMessage?.conversationId &&
+    latestMessage?.messageId &&
+    latestContent &&
+    isValidContentPart
+  ) {
+    const content = [...latestContent];
+    content.push({
+      type: ContentTypes.ERROR,
+      error: errorText,
+    });
+    errorMessage = {
+      ...latestMessage,
+      ...errorMetadata,
+      error: undefined,
+      text: '',
+      content,
+    };
+    if (
+      submission.userMessage.messageId &&
+      submission.userMessage.messageId !== errorMessage.parentMessageId
+    ) {
+      errorMessage.parentMessageId = submission.userMessage.messageId;
+    }
+    return errorMessage;
+  } else if (errorMetadata) {
+    return errorMetadata as TMessage;
+  } else {
+    errorMessage = {
+      ...submission,
+      ...submission.initialResponse,
+      text: errorText,
+      unfinished: !!text.length,
+      error: true,
+    };
+  }
+  return tMessageSchema.parse(errorMessage);
+};
+
 export default function useEventHandlers({
   genTitle,
   setMessages,
@@ -71,8 +140,9 @@ export default function useEventHandlers({
   resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
   const { announcePolite } = useLiveAnnouncer();
+  const applyAgentTemplate = useApplyNewAgentTemplate();
+  const setAbortScroll = useSetRecoilState(store.abortScroll);
 
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
@@ -295,6 +365,9 @@ export default function useEventHandlers({
       });
 
       let update = {} as TConversation;
+      if (conversationId) {
+        applyAgentTemplate(conversationId, submission.conversation.conversationId);
+      }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           let title = prevState?.title;
@@ -459,7 +532,8 @@ export default function useEventHandlers({
 
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
-      const conversationId = userMessage.conversationId ?? submission.conversationId ?? '';
+      const conversationId =
+        userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
@@ -479,10 +553,15 @@ export default function useEventHandlers({
 
       if (!data) {
         const convoId = conversationId || v4();
-        const errorResponse = parseErrorResponse({
+        const errorMetadata = parseErrorResponse({
           text: 'Error connecting to server, try refreshing the page.',
           ...submission,
           conversationId: convoId,
+        });
+        const errorResponse = createErrorMessage({
+          errorMetadata,
+          getMessages,
+          submission,
         });
         setMessages([...messages, userMessage, errorResponse]);
         if (newConversation) {
@@ -523,7 +602,7 @@ export default function useEventHandlers({
       });
 
       setMessages([...messages, userMessage, errorResponse]);
-      if (receivedConvoId && paramId === 'new' && newConversation) {
+      if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
         newConversation({
           template: { conversationId: receivedConvoId },
           preset: tPresetSchema.parse(submission.conversation),
@@ -570,7 +649,7 @@ export default function useEventHandlers({
           } else {
             cancelHandler(data, submission);
           }
-        } else if (response.status === 204) {
+        } else if (response.status === 204 || response.status === 200) {
           const responseMessage = {
             ...submission.initialResponse,
           };
@@ -593,21 +672,15 @@ export default function useEventHandlers({
       } catch (error) {
         console.error('Error cancelling request');
         console.error(error);
-        const convoId = conversationId || v4();
-        const text =
-          submission.initialResponse.text.length > 45 ? submission.initialResponse.text : '';
-        const errorMessage = {
-          ...submission,
-          ...submission.initialResponse,
-          text: (text || (error as Error | undefined)?.message) ?? 'Error cancelling request',
-          unfinished: !!text.length,
-          error: true,
-        };
-        const errorResponse = tMessageSchema.parse(errorMessage);
+        const errorResponse = createErrorMessage({
+          getMessages,
+          submission,
+          error,
+        });
         setMessages([...submission.messages, submission.userMessage, errorResponse]);
         if (newConversation) {
           newConversation({
-            template: { conversationId: convoId },
+            template: { conversationId: conversationId || errorResponse.conversationId || v4() },
             preset: tPresetSchema.parse(submission.conversation),
           });
         }

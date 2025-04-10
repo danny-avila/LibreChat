@@ -35,6 +35,7 @@ export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
 ): QueryObserverResult<TPreset[], unknown> => {
   return useQuery<TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
+    staleTime: 1000 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -190,9 +191,10 @@ export const useConversationTagsQuery = (
 /**
  * Hook for getting all available tools for Assistants
  */
-export const useAvailableToolsQuery = (
+export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
   endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
-): QueryObserverResult<TPlugin[]> => {
+  config?: UseQueryOptions<t.TPlugin[], unknown, TData>,
+): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
@@ -201,7 +203,7 @@ export const useAvailableToolsQuery = (
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version: string | number | undefined =
     endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<TPlugin[]>(
+  return useQuery<t.TPlugin[], unknown, TData>(
     [QueryKeys.tools],
     () => dataService.getAvailableTools(endpoint, version),
     {
@@ -209,6 +211,7 @@ export const useAvailableToolsQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       enabled,
+      ...config,
     },
   );
 };
@@ -236,6 +239,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
       // select: (res) => {
       //   return res.data.sort((a, b) => a.created_at - b.created_at);
       // },
+      staleTime: 1000 * 5,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

@@ -8,7 +8,7 @@ import {
   EModelEndpoint,
   Permissions,
 } from 'librechat-data-provider';
-import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
+import type { TConfig, TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -27,6 +27,7 @@ export default function useSideNavLinks({
   endpoint,
   endpointType,
   interfaceConfig,
+  endpointsConfig,
 }: {
   hidePanel: () => void;
   assistants?: TConfig | null;
@@ -35,6 +36,7 @@ export default function useSideNavLinks({
   endpoint?: EModelEndpoint | null;
   endpointType?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
+  endpointsConfig: TEndpointsConfig;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -71,9 +73,9 @@ export default function useSideNavLinks({
     }
 
     if (
+      endpointsConfig?.[EModelEndpoint.agents] &&
       hasAccessToAgents &&
       hasAccessToCreateAgents &&
-      isAgentsEndpoint(endpoint) &&
       agents &&
       agents.disableBuilder !== true
     ) {
@@ -139,6 +141,7 @@ export default function useSideNavLinks({
 
     return links;
   }, [
+    endpointsConfig?.[EModelEndpoint.agents],
     interfaceConfig.parameters,
     keyProvided,
     assistants,

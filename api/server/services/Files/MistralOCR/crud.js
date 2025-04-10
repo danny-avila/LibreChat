@@ -5,7 +5,7 @@ const FormData = require('form-data');
 const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { logger, createAxiosInstance } = require('~/config');
-const { logAxiosError } = require('~/utils');
+const { logAxiosError } = require('~/utils/axios');
 
 const axios = createAxiosInstance();
 
@@ -194,8 +194,7 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
     };
   } catch (error) {
     const message = 'Error uploading document to Mistral OCR API';
-    logAxiosError({ error, message });
-    throw new Error(message);
+    throw new Error(logAxiosError({ error, message }));
   }
 };
 
