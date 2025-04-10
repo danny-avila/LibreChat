@@ -132,9 +132,9 @@ export const ArtifactCodeEditor = memo(function ({
     }
     return {
       ...sharedOptions,
-      bundlerURL: config.bundlerURL,
+      bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
     };
-  }, [config]);
+  }, [config, template]);
 
   if (Object.keys(files).length === 0) {
     return null;
