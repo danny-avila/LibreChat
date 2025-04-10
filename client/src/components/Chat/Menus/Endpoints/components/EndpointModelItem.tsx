@@ -1,5 +1,6 @@
 import React from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EarthIcon } from 'lucide-react';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
@@ -12,22 +13,20 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
+  let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
 
   // Use custom names if available
-  if (
-    endpoint &&
-    modelId &&
-    endpoint.value === EModelEndpoint.agents &&
-    endpoint.agentNames?.[modelId]
-  ) {
+  if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
     modelName = endpoint.agentNames[modelId];
+
+    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
+    isGlobal = modelInfo?.isGlobal ?? false;
   } else if (
     endpoint &&
     modelId &&
-    (endpoint.value === EModelEndpoint.assistants ||
-      endpoint.value === EModelEndpoint.azureAssistants) &&
+    isAssistantsEndpoint(endpoint.value) &&
     endpoint.assistantNames?.[modelId]
   ) {
     modelName = endpoint.assistantNames[modelId];
@@ -44,9 +43,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
             <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
           </div>
-        ) : (endpoint.value === EModelEndpoint.agents ||
-            endpoint.value === EModelEndpoint.assistants ||
-            endpoint.value === EModelEndpoint.azureAssistants) &&
+        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
           endpoint.icon ? (
             <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
               {endpoint.icon}
@@ -54,6 +51,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           ) : null}
         <span>{modelName}</span>
       </div>
+      {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
       {isSelected && (
         <svg
           width="16"
@@ -61,7 +59,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           viewBox="0 0 24 24"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="ml-auto block"
+          className="block"
         >
           <path
             fillRule="evenodd"
@@ -77,11 +75,11 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
 
 export function renderEndpointModels(
   endpoint: Endpoint | null,
-  models: string[],
+  models: Array<{ name: string; isGlobal?: boolean }>,
   selectedModel: string | null,
   filteredModels?: string[],
 ) {
-  const modelsToRender = filteredModels || models;
+  const modelsToRender = filteredModels || models.map((model) => model.name);
 
   return modelsToRender.map(
     (modelId) =>

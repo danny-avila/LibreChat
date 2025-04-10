@@ -5,6 +5,10 @@ const { getMultiplier } = require('./tx');
 const { logger } = require('~/config');
 const Balance = require('./Balance');
 
+function isInvalidDate(date) {
+  return isNaN(date);
+}
+
 /**
  * Simple check method that calculates token cost and returns balance info.
  * The auto-refill logic has been moved to balanceMethods.js to prevent circular dependencies.
@@ -48,13 +52,12 @@ const checkBalanceRecord = async function ({
   // Only perform auto-refill if spending would bring the balance to 0 or below
   if (balance - tokenCost <= 0 && record.autoRefillEnabled && record.refillAmount > 0) {
     const lastRefillDate = new Date(record.lastRefill);
-    const nextRefillDate = addIntervalToDate(
-      lastRefillDate,
-      record.refillIntervalValue,
-      record.refillIntervalUnit,
-    );
     const now = new Date();
-    if (now >= nextRefillDate) {
+    if (
+      isInvalidDate(lastRefillDate) ||
+      now >=
+        addIntervalToDate(lastRefillDate, record.refillIntervalValue, record.refillIntervalUnit)
+    ) {
       try {
         /** @type {{ rate: number, user: string, balance: number, transaction: import('@librechat/data-schemas').ITransaction}} */
         const result = await Transaction.createAutoRefillTransaction({

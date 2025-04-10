@@ -12,6 +12,7 @@ interface SplitTextProps {
   rootMargin?: string;
   textAlign?: 'left' | 'right' | 'center' | 'justify' | 'start' | 'end';
   onLetterAnimationComplete?: () => void;
+  onLineCountChange?: (lineCount: number) => void;
 }
 
 const SplitText: React.FC<SplitTextProps> = ({
@@ -25,12 +26,31 @@ const SplitText: React.FC<SplitTextProps> = ({
   rootMargin = '-100px',
   textAlign = 'center',
   onLetterAnimationComplete,
+  onLineCountChange,
 }) => {
   const words = text.split(' ').map((word) => word.split(''));
   const letters = words.flat();
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   const animatedCount = useRef(0);
+
+  const springs = useSprings(
+    letters.length,
+    letters.map((_, i) => ({
+      from: animationFrom,
+      to: inView
+        ? async (next: (props: any) => Promise<void>) => {
+          await next(animationTo);
+          animatedCount.current += 1;
+          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+            onLetterAnimationComplete();
+          }
+        }
+        : animationFrom,
+      delay: i * delay,
+      config: { easing },
+    })),
+  );
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -52,23 +72,22 @@ const SplitText: React.FC<SplitTextProps> = ({
     return () => observer.disconnect();
   }, [threshold, rootMargin]);
 
-  const springs = useSprings(
-    letters.length,
-    letters.map((_, i) => ({
-      from: animationFrom,
-      to: inView
-        ? async (next: (props: any) => Promise<void>) => {
-          await next(animationTo);
-          animatedCount.current += 1;
-          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
-            onLetterAnimationComplete();
-          }
+  useEffect(() => {
+    if (ref.current && inView) {
+      const element = ref.current;
+      setTimeout(() => {
+        const lineHeight =
+          parseInt(getComputedStyle(element).lineHeight) ||
+          parseInt(getComputedStyle(element).fontSize) * 1.2;
+        const height = element.offsetHeight;
+        const lines = Math.round(height / lineHeight);
+
+        if (onLineCountChange) {
+          onLineCountChange(lines);
         }
-        : animationFrom,
-      delay: i * delay,
-      config: { easing },
-    })),
-  );
+      }, 100);
+    }
+  }, [inView, text, onLineCountChange]);
 
   return (
     <p
@@ -92,7 +111,9 @@ const SplitText: React.FC<SplitTextProps> = ({
               </animated.span>
             );
           })}
-          <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
+          {wordIndex < words.length - 1 && (
+            <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
+          )}
         </span>
       ))}
     </p>

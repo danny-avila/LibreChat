@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
-import { Spinner } from '~/components';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
+import { TooltipAnchor, Spinner } from '~/components';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -84,12 +84,30 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       >
         {endpoint.label}
       </span>
+      {/* TODO: remove this after deprecation */}
+      {endpoint.value === 'gptPlugins' && (
+        <TooltipAnchor
+          description={localize('com_endpoint_deprecated_info')}
+          aria-label={localize('com_endpoint_deprecated_info_a11y')}
+          render={
+            <span className="ml-2 rounded bg-amber-600/70 px-2 py-0.5 text-xs font-semibold text-white">
+              {localize('com_endpoint_deprecated')}
+            </span>
+          }
+        />
+      )}
     </div>
   );
 
   if (endpoint.hasModels) {
     const filteredModels = searchValue
-      ? filterModels(endpoint, endpoint.models || [], searchValue, agentsMap, assistantsMap)
+      ? filterModels(
+        endpoint,
+        (endpoint.models || []).map((model) => model.name),
+        searchValue,
+        agentsMap,
+        assistantsMap,
+      )
       : null;
     const placeholder =
       isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
@@ -116,17 +134,15 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
           </div>
         }
       >
-        {(endpoint.value === EModelEndpoint.assistants ||
-          endpoint.value === EModelEndpoint.azureAssistants) &&
-        endpoint.models === undefined ? (
-            <div className="flex items-center justify-center p-2">
-              <Spinner />
-            </div>
-          ) : filteredModels ? (
-            renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
-          ) : (
-            endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)
-          )}
+        {isAssistantsEndpoint(endpoint.value) && endpoint.models === undefined ? (
+          <div className="flex items-center justify-center p-2">
+            <Spinner />
+          </div>
+        ) : filteredModels ? (
+          renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
+        ) : (
+          endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)
+        )}
       </Menu>
     );
   } else {

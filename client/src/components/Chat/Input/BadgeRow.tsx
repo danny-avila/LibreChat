@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useState,
   useRef,
   useEffect,
@@ -9,19 +10,25 @@ import React, {
 } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
+import CodeInterpreter from './CodeInterpreter';
+import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
-import { BadgeItem } from '~/common';
+import MCPSelect from './MCPSelect';
 import store from '~/store';
 
 interface BadgeRowProps {
+  showEphemeralBadges?: boolean;
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
+  conversationId?: string | null;
+  isInChat: boolean;
 }
 
 interface BadgeWrapperProps {
   badge: BadgeItem;
   isEditing: boolean;
+  isInChat: boolean;
   onToggle: (badge: BadgeItem) => void;
   onDelete: (id: string) => void;
   onMouseDown: (e: React.MouseEvent, badge: BadgeItem, isActive: boolean) => void;
@@ -30,8 +37,9 @@ interface BadgeWrapperProps {
 
 const BadgeWrapper = React.memo(
   forwardRef<HTMLDivElement, BadgeWrapperProps>(
-    ({ badge, isEditing, onToggle, onDelete, onMouseDown, badgeRefs }, ref) => {
-      const isActive = badge.atom ? useRecoilValue(badge.atom) : false;
+    ({ badge, isEditing, isInChat, onToggle, onDelete, onMouseDown, badgeRefs }, ref) => {
+      const atomBadge = useRecoilValue(badge.atom);
+      const isActive = badge.atom ? atomBadge : false;
 
       return (
         <div
@@ -49,11 +57,13 @@ const BadgeWrapper = React.memo(
           className={isEditing ? 'ios-wiggle badge-icon h-full' : 'badge-icon h-full'}
         >
           <Badge
+            id={badge.id}
             icon={badge.icon as LucideIcon}
             label={badge.label}
             isActive={isActive}
             isEditing={isEditing}
             isAvailable={badge.isAvailable}
+            isInChat={isInChat}
             onToggle={() => onToggle(badge)}
             onBadgeAction={() => onDelete(badge.id)}
           />
@@ -64,6 +74,7 @@ const BadgeWrapper = React.memo(
   (prevProps, nextProps) =>
     prevProps.badge.id === nextProps.badge.id &&
     prevProps.isEditing === nextProps.isEditing &&
+    prevProps.isInChat === nextProps.isInChat &&
     prevProps.onToggle === nextProps.onToggle &&
     prevProps.onDelete === nextProps.onDelete &&
     prevProps.onMouseDown === nextProps.onMouseDown &&
@@ -121,7 +132,13 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
   }
 };
 
-export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
+function BadgeRow({
+  showEphemeralBadges,
+  conversationId,
+  onChange,
+  onToggle,
+  isInChat,
+}: BadgeRowProps) {
   const [orderedBadges, setOrderedBadges] = useState<BadgeItem[]>([]);
   const [dragState, dispatch] = useReducer(dragReducer, {
     draggedBadge: null,
@@ -136,7 +153,7 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
   const animationFrame = useRef<number | null>(null);
   const containerRectRef = useRef<DOMRect | null>(null);
 
-  const allBadges = useChatBadges() || [];
+  const allBadges = useChatBadges();
   const isEditing = useRecoilValue(store.isEditingBadges);
 
   const badges = useMemo(
@@ -301,17 +318,20 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
           {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
             <div className="badge-icon h-full">
               <Badge
+                id={ghostBadge.id}
                 icon={ghostBadge.icon as LucideIcon}
                 label={ghostBadge.label}
                 isActive={dragState.draggedBadgeActive}
                 isEditing={isEditing}
                 isAvailable={ghostBadge.isAvailable}
+                isInChat={isInChat}
               />
             </div>
           )}
           <BadgeWrapper
             badge={badge}
             isEditing={isEditing}
+            isInChat={isInChat}
             onToggle={handleBadgeToggle}
             onDelete={handleDelete}
             onMouseDown={handleMouseDown}
@@ -322,13 +342,21 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
       {dragState.draggedBadge && dragState.insertIndex === tempBadges.length && ghostBadge && (
         <div className="badge-icon h-full">
           <Badge
+            id={ghostBadge.id}
             icon={ghostBadge.icon as LucideIcon}
             label={ghostBadge.label}
             isActive={dragState.draggedBadgeActive}
             isEditing={isEditing}
             isAvailable={ghostBadge.isAvailable}
+            isInChat={isInChat}
           />
         </div>
+      )}
+      {showEphemeralBadges === true && (
+        <>
+          <CodeInterpreter conversationId={conversationId} />
+          <MCPSelect conversationId={conversationId} />
+        </>
       )}
       {ghostBadge && (
         <div
@@ -343,10 +371,12 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
           }}
         >
           <Badge
+            id={ghostBadge.id}
             icon={ghostBadge.icon as LucideIcon}
             label={ghostBadge.label}
             isActive={dragState.draggedBadgeActive}
             isAvailable={ghostBadge.isAvailable}
+            isInChat={isInChat}
             isEditing
             isDragging
           />
@@ -355,3 +385,5 @@ export function BadgeRow({ onChange, onToggle }: BadgeRowProps) {
     </div>
   );
 }
+
+export default memo(BadgeRow);

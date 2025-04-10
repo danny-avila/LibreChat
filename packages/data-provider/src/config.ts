@@ -237,6 +237,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
     maxRecursionLimit: z.number().optional(),
+    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
@@ -882,6 +883,8 @@ export const visionModels = [
   'gemini-exp',
   'gemini-1.5',
   'gemini-2.0',
+  'gemini-2.5',
+  'gemini-3',
   'moondream',
   'llama3.2-vision',
   'llama-3.2-11b-vision',
@@ -1025,6 +1028,10 @@ export enum CacheKeys {
    * Key for in-progress flow states.
    */
   FLOWS = 'flows',
+  /**
+   * Key for s3 check intervals per user
+   */
+  S3_EXPIRY_INTERVAL = 'S3_EXPIRY_INTERVAL',
 }
 
 /**
@@ -1117,6 +1124,10 @@ export enum ErrorTypes {
    * Google provider returned an error
    */
   GOOGLE_ERROR = 'google_error',
+  /**
+   * Invalid Agent Provider (excluded by Admin)
+   */
+  INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
 }
 
 /**
@@ -1229,7 +1240,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.7',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.3',
+  CONFIG_VERSION = '1.2.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1254,6 +1265,8 @@ export enum Constants {
   GLOBAL_PROJECT_NAME = 'instance',
   /** Delimiter for MCP tools */
   mcp_delimiter = '_mcp_',
+  /** Placeholder Agent ID for Ephemeral Agents */
+  EPHEMERAL_AGENT_ID = 'ephemeral',
 }
 
 export enum LocalStorageKeys {
@@ -1289,6 +1302,10 @@ export enum LocalStorageKeys {
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
   /** Key for displaying analysis tool code input */
   SHOW_ANALYSIS_CODE = 'showAnalysisCode',
+  /** Last selected MCP values per conversation ID */
+  LAST_MCP_ = 'LAST_MCP_',
+  /** Last checked toggle for Code Interpreter API per conversation ID */
+  LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
 }
 
 export enum ForkOptions {

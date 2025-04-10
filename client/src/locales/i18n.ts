@@ -8,6 +8,7 @@ import translationAr from './ar/translation.json';
 import translationDe from './de/translation.json';
 import translationEs from './es/translation.json';
 import translationEt from './et/translation.json';
+import translationFa from './fa/translation.json';
 import translationFr from './fr/translation.json';
 import translationIt from './it/translation.json';
 import translationPl from './pl/translation.json';
@@ -24,6 +25,7 @@ import translationVi from './vi/translation.json';
 import translationNl from './nl/translation.json';
 import translationId from './id/translation.json';
 import translationHe from './he/translation.json';
+import translationHu from './hu/translation.json';
 import translationFi from './fi/translation.json';
 import translationZh_Hans from './zh-Hans/translation.json';
 import translationZh_Hant from './zh-Hant/translation.json';
@@ -38,6 +40,7 @@ export const resources = {
   de: { translation: translationDe },
   es: { translation: translationEs },
   et: { translation: translationEt },
+  fa: { translation: translationFa },
   fr: { translation: translationFr },
   it: { translation: translationIt },
   pl: { translation: translationPl },
@@ -54,6 +57,7 @@ export const resources = {
   nl: { translation: translationNl },
   id: { translation: translationId },
   he: { translation: translationHe },
+  hu: { translation: translationHu },
   fi: { translation: translationFi },
 } as const;
 

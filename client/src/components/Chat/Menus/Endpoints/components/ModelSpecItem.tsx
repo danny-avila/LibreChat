@@ -18,8 +18,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       key={spec.name}
       onClick={() => handleSelectSpec(spec)}
       className={cn(
-        'flex w-full cursor-pointer justify-between rounded-lg px-2 text-sm',
-        spec.description ? 'items-start' : 'items-center',
+        'flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm',
       )}
     >
       <div
@@ -41,7 +40,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         </div>
       </div>
       {isSelected && (
-        <div className={cn('flex-shrink-0', spec.description ? 'pt-1' : '')}>
+        <div className="flex-shrink-0 self-center">
           <svg
             width="16"
             height="16"

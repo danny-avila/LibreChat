@@ -1,5 +1,6 @@
 import React, { Fragment } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EarthIcon } from 'lucide-react';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -20,8 +21,6 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
     handleSelectModel,
     handleSelectEndpoint,
     endpointsConfig,
-    agentsMap,
-    assistantsMap,
   } = useModelSelectorContext();
 
   const {
@@ -102,21 +101,20 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
             const lowerQuery = searchValue.toLowerCase();
             const filteredModels = endpoint.label.toLowerCase().includes(lowerQuery)
               ? endpoint.models
-              : endpoint.models.filter((modelId) => {
-                let modelName = modelId;
+              : endpoint.models.filter((model) => {
+                let modelName = model.name;
                 if (
-                  endpoint.value === EModelEndpoint.agents &&
+                  isAgentsEndpoint(endpoint.value) &&
                     endpoint.agentNames &&
-                    endpoint.agentNames[modelId]
+                    endpoint.agentNames[model.name]
                 ) {
-                  modelName = endpoint.agentNames[modelId];
+                  modelName = endpoint.agentNames[model.name];
                 } else if (
-                  (endpoint.value === EModelEndpoint.assistants ||
-                      endpoint.value === EModelEndpoint.azureAssistants) &&
+                  isAssistantsEndpoint(endpoint.value) &&
                     endpoint.assistantNames &&
-                    endpoint.assistantNames[modelId]
+                    endpoint.assistantNames[model.name]
                 ) {
-                  modelName = endpoint.assistantNames[modelId];
+                  modelName = endpoint.assistantNames[model.name];
                 }
                 return modelName.toLowerCase().includes(lowerQuery);
               });
@@ -135,17 +133,21 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   )}
                   {endpoint.label}
                 </div>
-                {filteredModels.map((modelId) => {
+                {filteredModels.map((model) => {
+                  const modelId = model.name;
+
+                  let isGlobal = false;
                   let modelName = modelId;
                   if (
-                    endpoint.value === EModelEndpoint.agents &&
+                    isAgentsEndpoint(endpoint.value) &&
                     endpoint.agentNames &&
                     endpoint.agentNames[modelId]
                   ) {
                     modelName = endpoint.agentNames[modelId];
+                    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
+                    isGlobal = modelInfo?.isGlobal ?? false;
                   } else if (
-                    (endpoint.value === EModelEndpoint.assistants ||
-                      endpoint.value === EModelEndpoint.azureAssistants) &&
+                    isAssistantsEndpoint(endpoint.value) &&
                     endpoint.assistantNames &&
                     endpoint.assistantNames[modelId]
                   ) {
@@ -170,6 +172,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                         )}
                         <span>{modelName}</span>
                       </div>
+                      {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
                       {selectedEndpoint === endpoint.value && selectedModel === modelId && (
                         <svg
                           width="16"
@@ -177,7 +180,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                           viewBox="0 0 24 24"
                           fill="none"
                           xmlns="http://www.w3.org/2000/svg"
-                          className="ml-auto block"
+                          className="block"
                         >
                           <path
                             fillRule="evenodd"

@@ -11,6 +11,13 @@ const { providerEndpointMap, KnownEndpoints } = require('librechat-data-provider
  * @typedef {import('@librechat/agents').IState} IState
  */
 
+const customProviders = new Set([
+  Providers.XAI,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+]);
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -42,6 +49,15 @@ async function createRun({
     },
     agent.model_parameters,
   );
+
+  /** Resolves issues with new OpenAI usage field */
+  if (
+    customProviders.has(agent.provider) ||
+    (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
+  ) {
+    llmConfig.streamUsage = false;
+    llmConfig.usage = true;
+  }
 
   /** @type {'reasoning_content' | 'reasoning'} */
   let reasoningKey;

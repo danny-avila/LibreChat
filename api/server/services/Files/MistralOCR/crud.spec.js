@@ -29,9 +29,6 @@ const mockAxios = {
 
 jest.mock('axios', () => mockAxios);
 jest.mock('fs');
-jest.mock('~/utils', () => ({
-  logAxiosError: jest.fn(),
-}));
 jest.mock('~/config', () => ({
   logger: {
     error: jest.fn(),
@@ -494,9 +491,6 @@ describe('MistralOCR Service', () => {
         }),
       ).rejects.toThrow('Error uploading document to Mistral OCR API');
       expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
-
-      const { logAxiosError } = require('~/utils');
-      expect(logAxiosError).toHaveBeenCalled();
     });
 
     it('should handle single page documents without page numbering', async () => {
