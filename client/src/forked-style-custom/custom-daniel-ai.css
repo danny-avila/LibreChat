@@ -93,3 +93,33 @@ div[role='listbox'] div[role='option'] [class^='icon-'].shrink-0.overflow-hidden
   width: 24px !important;
   height: 24px !important;
 }
+
+/* Hide the margin-bottom on the chat container on desktop screens */
+@media screen and (min-width: 640px) {
+  form.mx-auto.flex.flex-row.gap-3.sm\:px-2 {
+    margin-bottom: 0 !important;
+  }
+}
+
+
+/* full width on mobile of welcome elements */
+@media screen and (max-width: 640px) {
+  div.flex.h-full.transform-gpu.flex-col.items-center.justify-center.pb-16.transition-all.duration-200 {
+    width: 100%;
+  }
+}
+
+
+/* Align the welcome elements children to the left on desktop screens */
+@media screen and (min-width: 640px) {
+  div.flex.flex-col.items-center.gap-0.p-2 {
+    align-items: flex-start;
+  }
+}
+
+/* full width on mobile of welcome elements children */
+@media screen and (max-width: 640px) {
+  div.flex.flex-col.items-center.gap-0.p-2 {
+    width: 100%;
+  }
+}

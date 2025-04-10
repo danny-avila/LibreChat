@@ -4,8 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { useModelBadges, ModelBadges } from '~/forked-code-custom/modelBadges';
-import { CapabilityIcons } from '~/forked-code-custom/CapabilityIcons';
+import { useModelBadges, ModelBadges, CapabilityIcons } from '~/forked-code-custom';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -15,10 +14,11 @@ interface ModelSpecItemProps {
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { showIconInMenu = true } = spec;
-  
+
   // Get badges information
-  const { inputPrice, outputPrice, showPricing, isFree, maxTokens, disabled } = useModelBadges(spec);
-  
+  const { inputPrice, outputPrice, showPricing, isFree, maxTokens, disabled } =
+    useModelBadges(spec);
+
   return (
     <MenuItem
       key={spec.name}
@@ -43,9 +43,9 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
-          <ModelBadges 
-            inputPrice={inputPrice} 
-            outputPrice={outputPrice} 
+          <ModelBadges
+            inputPrice={inputPrice}
+            outputPrice={outputPrice}
             showPricing={showPricing}
             isFree={isFree}
             maxTokens={maxTokens}
@@ -55,10 +55,13 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       </div>
 
       {/* Wrapper for capability icons and selected checkmark, aligned to top */}
-      <div className="flex gap-2 flex-shrink-0 py-1" style={{ alignSelf: 'flex-start', marginRight: isSelected ? '0' : '24px' }}>
+      <div
+        className="flex flex-shrink-0 gap-2 py-1"
+        style={{ alignSelf: 'flex-start', marginRight: isSelected ? '0' : '24px' }}
+      >
         <CapabilityIcons capabilities={spec.iconCapabilities} />
       </div>
-      
+
       {isSelected && (
         <div className="flex-shrink-0 self-center">
           <svg

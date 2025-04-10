@@ -7,6 +7,7 @@ import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
+import { PromptSuggestions } from '~/forked-code-custom';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
@@ -119,6 +120,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       margin = 'mb-12';
     }
 
+    if (contentHeight > 334) {
+      margin = 'mb-28';
+      if (window.innerWidth < 640) {
+        margin = 'mb-0';
+      }
+    }
+
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
@@ -191,6 +199,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             {description}
           </div>
         )}
+        <PromptSuggestions />
       </div>
     </div>
   );

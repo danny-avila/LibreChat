@@ -3,6 +3,9 @@ import ResponseCost from './ResponseCost';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
+import { PromptSuggestions } from './PromptSuggestions';
+import { ModelBadges, useModelBadges } from './modelBadges';
+import { CapabilityIcons } from './CapabilityIcons';
 
 /**
  * Exports for forked customizations
@@ -17,6 +20,10 @@ export {
   ForkedCustomizations,
   KeyboardShortcuts,
   initModelData,
+  PromptSuggestions,
+  ModelBadges,
+  useModelBadges,
+  CapabilityIcons,
 };
 
 export default {
