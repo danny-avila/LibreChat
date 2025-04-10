@@ -290,55 +290,82 @@ html {
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
+  font-family: 'Noto Sans Thai Looped';
   font-style: normal;
   font-weight: 400;
-  src: url('$fonts/Inter-Regular.woff2') format('woff2');
+  src: url('$fonts/NotoSansThaiLooped-Regular.ttf') format('truetype');
   size-adjust: 94%;
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
-  font-style: italic;
-  font-weight: 400;
-  src: url('$fonts/Inter-Italic.woff2') format('woff2');
+  font-family: 'Noto Sans Thai Looped';
+  font-style: normal;
+  font-weight: 100;
+  src: url('$fonts/NotoSansThaiLooped-Thin.ttf') format('truetype');
   size-adjust: 94%;
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
+  font-family: 'Noto Sans Thai Looped';
+  font-style: normal;
+  font-weight: 200;
+  src: url('$fonts/NotoSansThaiLooped-ExtraLight.ttf') format('truetype');
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Noto Sans Thai Looped';
+  font-style: normal;
+  font-weight: 300;
+  src: url('$fonts/NotoSansThaiLooped-Light.ttf') format('truetype');
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Noto Sans Thai Looped';
   font-style: normal;
   font-weight: 500;
-  src: url('$fonts/Inter-SemiBold.woff2') format('woff2');
+  src: url('$fonts/NotoSansThaiLooped-Medium.ttf') format('truetype');
   size-adjust: 94%;
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
-  font-style: italic;
-  font-weight: 500;
-  src: url('$fonts/Inter-SemiBoldItalic.woff2') format('woff2');
-  size-adjust: 94%;
-}
-
-@font-face {
-  font-display: swap;
-  font-family: Inter;
+  font-family: 'Noto Sans Thai Looped';
   font-style: normal;
   font-weight: 600;
-  src: url('$fonts/Inter-Bold.woff2') format('woff2');
+  src: url('$fonts/NotoSansThaiLooped-SemiBold.ttf') format('truetype');
   size-adjust: 94%;
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
-  font-style: italic;
-  font-weight: 600;
-  src: url('$fonts/Inter-BoldItalic.woff2') format('woff2');
+  font-family: 'Noto Sans Thai Looped';
+  font-style: normal;
+  font-weight: 700;
+  src: url('$fonts/NotoSansThaiLooped-Bold.ttf') format('truetype');
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Noto Sans Thai Looped';
+  font-style: normal;
+  font-weight: 800;
+  src: url('$fonts/NotoSansThaiLooped-ExtraBold.ttf') format('truetype');
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Noto Sans Thai Looped';
+  font-style: normal;
+  font-weight: 900;
+  src: url('$fonts/NotoSansThaiLooped-Black.ttf') format('truetype');
   size-adjust: 94%;
 }
 
@@ -2678,4 +2705,16 @@ html {
 
 .badge-icon {
   transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.thai-text {
+  word-break: keep-all !important;
+  white-space: normal !important;
+  letter-spacing: 0 !important;
+}
+
+[lang="th"] .inline-block.transform.transition-opacity.will-change-transform {
+  display: inline-block !important;
+  transform: none !important; 
+  position: relative !important;
 }

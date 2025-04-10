@@ -7,8 +7,8 @@ module.exports = {
   darkMode: ['class'],
   theme: {
     fontFamily: {
-      sans: ['Inter', 'sans-serif'],
-      mono: ['Roboto Mono', 'monospace'],
+      sans: ['"Noto Sans Thai Looped"', 'sans-serif'],
+      mono: ['monospace'],
     },
     // fontFamily: {
     //   sans: ['Söhne', 'sans-serif'],

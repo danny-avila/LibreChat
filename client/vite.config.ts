@@ -12,6 +12,7 @@ export default defineConfig({
     host: 'localhost',
     port: 3090,
     strictPort: false,
+    allowedHosts: ['tugpt.fast.in.th'],
     proxy: {
       '/api': {
         target: 'http://localhost:3080',

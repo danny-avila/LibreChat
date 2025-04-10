@@ -34,7 +34,7 @@ const AppService = async (app) => {
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
-  const ocr = loadOCRConfig(config.ocr);
+  const ocr = {}; // ปิดการใช้งาน OCR โดยการตั้งค่าเป็นอ็อบเจกต์ว่าง
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;

@@ -15,6 +15,13 @@ interface SplitTextProps {
   onLineCountChange?: (lineCount: number) => void;
 }
 
+// ฟังก์ชันเพื่อตรวจสอบว่าเป็นตัวอักษรไทยหรือไม่
+const isThaiText = (text: string): boolean => {
+  // ดักจับตัวอักษรในช่วง Unicode ของภาษาไทย (0E00-0E7F)
+  const thaiPattern = /[\u0E00-\u0E7F]/;
+  return thaiPattern.test(text);
+};
+
 const SplitText: React.FC<SplitTextProps> = ({
   text = '',
   className = '',
@@ -28,8 +35,15 @@ const SplitText: React.FC<SplitTextProps> = ({
   onLetterAnimationComplete,
   onLineCountChange,
 }) => {
-  const words = text.split(' ').map((word) => word.split(''));
-  const letters = words.flat();
+  const isThai = isThaiText(text);
+  
+  // ถ้าเป็นข้อความภาษาไทย จะจัดการแบบคำ ไม่ใช่ตัวอักษร
+  const useWords = isThai;
+  
+  // แยกเป็นคำหรือตัวอักษรตามความเหมาะสม
+  const words = text.split(' ');
+  const letters = useWords ? words : words.map((word) => word.split('')).flat();
+  
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   const animatedCount = useRef(0);
@@ -89,6 +103,35 @@ const SplitText: React.FC<SplitTextProps> = ({
     }
   }, [inView, text, onLineCountChange]);
 
+  // ถ้าเป็นภาษาไทย ใช้ animation แบบคำ
+  if (isThai) {
+    return (
+      <p
+        ref={ref}
+        className={`split-parent inline overflow-hidden ${className}`}
+        style={{ textAlign, whiteSpace: 'normal', wordWrap: 'break-word' }}
+        lang="th"
+      >
+        {words.map((word, wordIndex) => {
+          const index = wordIndex;
+          return (
+            <animated.span
+              key={index}
+              style={springs[index] as unknown as React.CSSProperties}
+              className="inline-block transform transition-opacity will-change-transform thai-text"
+            >
+              {word}
+              {wordIndex < words.length - 1 && (
+                <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
+              )}
+            </animated.span>
+          );
+        })}
+      </p>
+    );
+  }
+
+  // ถ้าไม่ใช่ภาษาไทย ใช้โค้ดเดิม
   return (
     <p
       ref={ref}
@@ -97,7 +140,7 @@ const SplitText: React.FC<SplitTextProps> = ({
     >
       {words.map((word, wordIndex) => (
         <span key={wordIndex} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
-          {word.map((letter, letterIndex) => {
+          {word.split('').map((letter, letterIndex) => {
             const index =
               words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + letterIndex;
 
