@@ -11,17 +11,20 @@ export default function useLocalStorage<T>(
   key: string,
   defaultValue: T,
   globalSetState?: (value: T) => void,
+  storageCondition?: (value: T, rawCurrentValue?: string | null) => boolean,
 ): [T, (value: T) => void] {
   const [value, setValue] = useState(defaultValue);
 
   useEffect(() => {
     const item = localStorage.getItem(key);
 
-    if (!item) {
+    if (!item && !storageCondition) {
+      localStorage.setItem(key, JSON.stringify(defaultValue));
+    } else if (!item && storageCondition && storageCondition(defaultValue)) {
       localStorage.setItem(key, JSON.stringify(defaultValue));
     }
 
-    const initialValue = item ? JSON.parse(item) : defaultValue;
+    const initialValue = item && item !== 'undefined' ? JSON.parse(item) : defaultValue;
     setValue(initialValue);
     if (globalSetState) {
       globalSetState(initialValue);
@@ -47,9 +50,14 @@ export default function useLocalStorage<T>(
   const setValueWrap = (value: T) => {
     try {
       setValue(value);
-      localStorage.setItem(key, JSON.stringify(value));
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new StorageEvent('storage', { key }));
+      const storeLocal = () => {
+        localStorage.setItem(key, JSON.stringify(value));
+        window?.dispatchEvent(new StorageEvent('storage', { key }));
+      };
+      if (!storageCondition) {
+        storeLocal();
+      } else if (storageCondition(value, localStorage.getItem(key))) {
+        storeLocal();
       }
       globalSetState?.(value);
     } catch (e) {
