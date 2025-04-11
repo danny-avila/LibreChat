@@ -17,14 +17,14 @@ function getTextSizeClass(text: string | undefined | null) {
   }
 
   if (text.length < 40) {
-    return 'text-2xl sm:text-3xl';
+    return 'text-2xl sm:text-4xl';
   }
 
   if (text.length < 70) {
-    return 'text-2xl sm:text-2xl';
+    return 'text-xl sm:text-2xl';
   }
 
-  return 'text-xl sm:text-md';
+  return 'text-lg sm:text-md';
 }
 
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
@@ -138,6 +138,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
+  const greetingText =
+    typeof startupConfig?.interface?.customWelcome === 'string'
+      ? getGreeting()
+      : getGreeting() + (user?.name ? ', ' + user.name : '');
+
   return (
     <div
       className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'} ${getDynamicMargin}`}
@@ -184,13 +189,9 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              key={`split-text-${getGreeting()}${user?.name ? '-user' : ''}`}
-              text={
-                typeof startupConfig?.interface?.customWelcome === 'string'
-                  ? getGreeting()
-                  : getGreeting() + (user?.name ? ', ' + user.name : '')
-              }
-              className={`${getTextSizeClass(typeof startupConfig?.interface?.customWelcome === 'string' ? getGreeting() : getGreeting() + (user?.name ? ', ' + user.name : ''))} font-medium text-text-primary`}
+              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
+              text={greetingText}
+              className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
