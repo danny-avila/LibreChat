@@ -94,9 +94,9 @@ div[role='listbox'] div[role='option'] [class^='icon-'].shrink-0.overflow-hidden
   height: 24px !important;
 }
 
-/* Hide the margin-bottom on the chat container on desktop screens */
+/* Reset margin-bottom only for forms with specific class combinations on desktop screens */
 @media screen and (min-width: 640px) {
-  form.mx-auto.flex.flex-row.gap-3.sm\:px-2 {
+  form.mx-auto.flex.flex-row.gap-3.sm\:px-2.transition-all.duration-200.sm\:mb-28 {
     margin-bottom: 0 !important;
   }
 }
