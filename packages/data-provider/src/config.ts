@@ -559,6 +559,7 @@ export type TStartupConfig = {
   analyticsGtmId?: string;
   instanceProjectId: string;
   bundlerURL?: string;
+  staticBundlerURL?: string;
 };
 
 export enum OCRStrategy {
