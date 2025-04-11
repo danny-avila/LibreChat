@@ -1,4 +1,4 @@
-name: Build and Deploy LibreChat
+name: Build and Deploy Totalsoft LibreChat
 
 on:
   push:
