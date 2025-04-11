@@ -1,4 +1,4 @@
-name: Clean Up Docker Registry
+name: _TS Clean Up Docker Registry
 
 on:
   schedule:
@@ -43,7 +43,7 @@ jobs:
         echo "Looking for orphaned images in $REGISTRY_URL"
         
         # Login to registry
-        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --password-stdin
+        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --pass-stdin
         
         # List all repositories
         REPOS=$(regctl registry catalog $REGISTRY_URL)
