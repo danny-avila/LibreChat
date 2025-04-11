@@ -25,8 +25,8 @@ jobs:
     - name: Install dependencies
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-pip
+        apt-get update
+        apt-get install -y python3-pip
         pip3 install docker-registry-cli
         
     - name: Identify and delete orphaned images
