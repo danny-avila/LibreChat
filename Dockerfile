@@ -3,7 +3,9 @@
 # Base node image
 FROM node:20-alpine AS node
 
-RUN apk --no-cache add curl
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+RUN uv --version
 
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
