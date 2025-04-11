@@ -15,6 +15,7 @@ interface ConversationsProps {
   containerRef: React.RefObject<HTMLDivElement | List>;
   loadMoreConversations: () => void;
   isFetchingNextPage: boolean;
+  isSearchLoading: boolean;
 }
 
 const LoadingSpinner = memo(() => (
@@ -74,6 +75,7 @@ const Conversations: FC<ConversationsProps> = ({
   containerRef,
   loadMoreConversations,
   isFetchingNextPage,
+  isSearchLoading,
 }) => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
@@ -163,28 +165,35 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full flex-col pb-2 text-sm text-text-primary">
-      <div className="flex-1">
-        <AutoSizer>
-          {({ width, height }) => (
-            <List
-              ref={containerRef as React.RefObject<List>}
-              width={width}
-              height={height}
-              deferredMeasurementCache={cache}
-              rowCount={flattenedItems.length}
-              rowHeight={getRowHeight}
-              rowRenderer={rowRenderer}
-              overscanRowCount={10}
-              className="outline-none"
-              style={{ outline: 'none' }}
-              role="list"
-              aria-label="Conversations"
-              onRowsRendered={handleRowsRendered}
-            />
-          )}
-        </AutoSizer>
-      </div>
-      {isFetchingNextPage && (
+      {isSearchLoading ? (
+        <div className="flex flex-1 items-center justify-center">
+          <Spinner className="text-text-primary" />
+          <span className="ml-2 text-text-primary">Loading...</span>
+        </div>
+      ) : (
+        <div className="flex-1">
+          <AutoSizer>
+            {({ width, height }) => (
+              <List
+                ref={containerRef as React.RefObject<List>}
+                width={width}
+                height={height}
+                deferredMeasurementCache={cache}
+                rowCount={flattenedItems.length}
+                rowHeight={getRowHeight}
+                rowRenderer={rowRenderer}
+                overscanRowCount={10}
+                className="outline-none"
+                style={{ outline: 'none' }}
+                role="list"
+                aria-label="Conversations"
+                onRowsRendered={handleRowsRendered}
+              />
+            )}
+          </AutoSizer>
+        </div>
+      )}
+      {isFetchingNextPage && !isSearchLoading && (
         <div className="mt-2">
           <LoadingSpinner />
         </div>

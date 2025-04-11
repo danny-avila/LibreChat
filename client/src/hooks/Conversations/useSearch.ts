@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { UseInfiniteQueryResult } from '@tanstack/react-query';
@@ -7,7 +7,16 @@ import { useSearchInfiniteQuery, useGetSearchEnabledQuery } from '~/data-provide
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
-export default function useSearchMessages({ isAuthenticated }: { isAuthenticated: boolean }) {
+export interface UseSearchMessagesResult {
+  searchQuery: string;
+  searchQueryRes: UseInfiniteQueryResult<SearchConversationListResponse, unknown> | undefined;
+}
+
+export default function useSearchMessages({
+  isAuthenticated,
+}: {
+  isAuthenticated: boolean;
+}): UseSearchMessagesResult {
   const navigate = useNavigate();
   const location = useLocation();
   const { switchToConversation } = useNewConvo();
@@ -24,10 +33,19 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
   const searchQuery = useRecoilValue(store.searchQuery);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
 
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 350); // 350ms debounce
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
   const searchQueryRes = useSearchInfiniteQuery(
-    { nextCursor: null, search: searchQuery, pageSize: 20 },
-    { enabled: isAuthenticated && !!searchQuery.length },
+    { nextCursor: null, search: debouncedSearchQuery, pageSize: 20 },
+    { enabled: isAuthenticated && !!debouncedSearchQuery },
   ) as UseInfiniteQueryResult<SearchConversationListResponse, unknown> | undefined;
 
   useEffect(() => {
@@ -68,6 +86,14 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
       onSearchSuccess();
     }
   }, [searchQueryRes?.data, searchQueryRes?.isInitialLoading, onSearchSuccess]);
+
+  const setIsSearchTyping = useSetRecoilState(store.isSearchTyping);
+
+  useEffect(() => {
+    if (!searchQueryRes?.isLoading && !searchQueryRes?.isFetching) {
+      setIsSearchTyping(false);
+    }
+  }, [searchQueryRes?.isLoading, searchQueryRes?.isFetching, setIsSearchTyping]);
 
   return {
     searchQuery,

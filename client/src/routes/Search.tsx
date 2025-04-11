@@ -6,12 +6,15 @@ import SearchMessage from '~/components/Chat/Messages/SearchMessage';
 import { useNavScrolling, useLocalize } from '~/hooks';
 import { Spinner } from '~/components';
 import { buildTree } from '~/utils';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export default function Search() {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const { searchQuery, searchQueryRes } = useSearchContext();
+  const isSearchTyping = useRecoilValue(store.isSearchTyping);
 
   const { containerRef } = useNavScrolling({
     nextCursor: searchQueryRes?.data?.pages[searchQueryRes.data.pages.length - 1]?.nextCursor,
@@ -38,15 +41,10 @@ export default function Search() {
     return null;
   }
 
-  // TODO: update this
-  if (
-    searchQueryRes.isInitialLoading ||
-    searchQueryRes.isLoading ||
-    searchQueryRes.isFetchingNextPage
-  ) {
+  if (isSearchTyping || searchQueryRes.isInitialLoading || searchQueryRes.isLoading) {
     return (
       <div className="absolute inset-0 flex items-center justify-center">
-        <Spinner className="h-72 w-72" />
+        <Spinner className="text-text-primary" />
       </div>
     );
   }
@@ -60,7 +58,16 @@ export default function Search() {
           </div>
         </div>
       ) : (
-        messages.map((msg) => <SearchMessage key={msg.messageId} message={msg} />)
+        <>
+          {messages.map((msg) => (
+            <SearchMessage key={msg.messageId} message={msg} />
+          ))}
+          {searchQueryRes.isFetchingNextPage && (
+            <div className="flex justify-center py-4">
+              <Spinner className="text-text-primary" />
+            </div>
+          )}
+        </>
       )}
       <div className="absolute bottom-0 left-0 right-0 h-[5%] bg-gradient-to-t from-gray-50 to-transparent dark:from-gray-800" />
     </MinimalMessagesWrapper>

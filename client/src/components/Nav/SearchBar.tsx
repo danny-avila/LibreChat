@@ -26,6 +26,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const setIsSearching = useSetRecoilState(store.isSearching);
+  const setIsSearchTyping = useSetRecoilState(store.isSearchTyping);
 
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {
@@ -59,15 +60,22 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     [queryClient, clearConvoState, setSearchQuery],
   );
 
-  // TODO: make the debounce time configurable via yaml
-  const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
+  const debouncedSendRequest = useMemo(
+    () =>
+      debounce((value: string) => {
+        sendRequest(value);
+      }, 350),
+    [sendRequest, setIsSearchTyping],
+  );
 
-  const onChange = (e: React.FormEvent<HTMLInputElement>) => {
-    const { value } = e.target as HTMLInputElement;
+  const onChange = (e) => {
+    const value = e.target.value;
     setShowClearIcon(value.length > 0);
     setText(value);
+    setSearchQuery(value);
+    setIsSearchTyping(true);
+    // debounce only the API call
     debouncedSendRequest(value);
-    setIsSearching(true);
   };
 
   return (

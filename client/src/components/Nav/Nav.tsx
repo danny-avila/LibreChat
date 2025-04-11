@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type {
@@ -18,6 +18,7 @@ import {
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
 import { useSearchContext } from '~/Providers';
+import { Spinner } from '~/components';
 import NavToggle from './NavToggle';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
@@ -74,6 +75,7 @@ const Nav = memo(
     });
 
     const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
+    const isSearchTyping = useRecoilValue(store.isSearchTyping);
     const { searchQuery, searchQueryRes } = useSearchContext();
 
     const { data, fetchNextPage, isFetchingNextPage, refetch } = useConversationsInfiniteQuery(
@@ -99,7 +101,10 @@ const Nav = memo(
       return false;
     }, [searchQuery, searchQueryRes?.data, data?.pages]);
 
-    const { containerRef, moveToTop } = useNavScrolling<
+    const outerContainerRef = useRef<HTMLDivElement>(null);
+    const listRef = useRef<any>(null);
+
+    const { moveToTop } = useNavScrolling<
       ConversationListResponse | SearchConversationListResponse
     >({
       setShowLoading,
@@ -192,6 +197,12 @@ const Nav = memo(
       [isSearchEnabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
     );
 
+    const isSearchLoading =
+      !!searchQuery &&
+      (isSearchTyping ||
+        (searchQueryRes?.isLoading ?? false) ||
+        (searchQueryRes?.isFetching ?? false));
+
     return (
       <>
         <div
@@ -220,23 +231,21 @@ const Nav = memo(
                     aria-label={localize('com_ui_chat_history')}
                     className="flex h-full flex-col px-3 pb-3.5"
                   >
-                    <div className="flex flex-1 flex-col" ref={containerRef}>
+                    <div className="flex flex-1 flex-col" ref={outerContainerRef}>
                       <MemoNewChat
                         toggleNav={itemToggleNav}
                         isSmallScreen={isSmallScreen}
                         subHeaders={subHeaders}
                       />
-
-                      <div className="flex-1">
-                        <Conversations
-                          conversations={conversations}
-                          moveToTop={moveToTop}
-                          toggleNav={itemToggleNav}
-                          containerRef={containerRef}
-                          loadMoreConversations={loadMoreConversations}
-                          isFetchingNextPage={isFetchingNextPage || showLoading}
-                        />
-                      </div>
+                      <Conversations
+                        conversations={conversations}
+                        moveToTop={moveToTop}
+                        toggleNav={itemToggleNav}
+                        containerRef={listRef}
+                        loadMoreConversations={loadMoreConversations}
+                        isFetchingNextPage={isFetchingNextPage || showLoading}
+                        isSearchLoading={isSearchLoading}
+                      />
                     </div>
                     <Suspense fallback={null}>
                       <AccountSettings />
