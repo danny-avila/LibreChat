@@ -1,7 +1,7 @@
 # Custom values for LibreChat Helm chart
 # This file contains the customizations needed to deploy our fork to Kubernetes
 
-replicaCount: 3
+replicaCount: 1
 
 image:
   repository: registry.totalsoft.local/librechat-custom
