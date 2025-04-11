@@ -1,4 +1,4 @@
-name: Clean Up Docker Registry
+name: _TS Clean Up Docker Registry
 
 on:
   schedule:

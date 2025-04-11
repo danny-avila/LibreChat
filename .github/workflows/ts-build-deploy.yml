@@ -1,4 +1,4 @@
-name: Build and Deploy Totalsoft LibreChat
+name: _TS Build and Deploy
 
 on:
   workflow_dispatch:
