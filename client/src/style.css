@@ -715,8 +715,8 @@ pre {
 
 .premium-scroll-button:hover:not(:active) {
   transform: translateY(-1.5px) scale(1.02);
-  box-shadow: 
-    0 5px 10px rgba(0, 0, 0, 0.07), 
+  box-shadow:
+    0 5px 10px rgba(0, 0, 0, 0.07),
     0 7px 14px rgba(0, 0, 0, 0.1),
     0 0 0 1px rgba(255, 255, 255, 0.1);
 }
@@ -2558,7 +2558,7 @@ html {
   gap: 0.5rem;
   border-radius: 0.5rem;
   padding: 0.5rem;
-  outline: none !important;
+  /*outline: none !important;*/
 }
 
 .select-item[aria-disabled='true'] {
@@ -2568,6 +2568,15 @@ html {
 .select-item[data-active-item] {
   background-color: var(--surface-hover);
   color: var(--text-primary);
+  outline: visible;
+  outline: 1px solid black;
+  outline-offset: -1px;
+}
+
+.select-item[data-active-item]:where(.dark, .dark *) {
+  outline: visible;
+  outline: 1px solid white;
+  outline-offset: -1px;
 }
 
 .popover-ui[data-enter] {
@@ -2579,7 +2588,9 @@ html {
 .animate-popover {
   transform-origin: top;
   opacity: 0;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: scale(0.95) translateY(-0.5rem);
 }
 
@@ -2591,7 +2602,9 @@ html {
 .animate-popover-left {
   transform-origin: left;
   opacity: 0;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: scale(0.95) translateX(-0.5rem);
 }
 
