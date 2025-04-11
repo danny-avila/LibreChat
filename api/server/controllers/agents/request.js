@@ -24,11 +24,12 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let userMessageId;
   let responseMessageId;
   let userMessagePromise;
+  let getAbortData;
 
   const newConvo = !conversationId;
   const user = req.user.id;
 
-  const getReqData = (data = {}) => {
+  let getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
         userMessage = data[key];
@@ -51,7 +52,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     /** @type {{ client: TAgentClient }} */
     const { client } = await initializeClient({ req, res, endpointOption });
 
-    const getAbortData = () => {
+    getAbortData = () => {
       return {
         sender,
         userMessage,
@@ -163,6 +164,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     if (abortKey) {
       cleanupAbortController(abortKey);
     }
+    getReqData = null;
+    getAbortData = null;
   }
 };
 

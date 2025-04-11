@@ -124,9 +124,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
   const abortController = new AbortController();
   const { endpointOption } = req.body;
 
-  abortController.getAbortData = function () {
-    return getAbortData();
-  };
+  abortController.getAbortData = getAbortData;
 
   /**
    * @param {TMessage} userMessage
