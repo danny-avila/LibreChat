@@ -539,3 +539,13 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+export type TBalanceResponse = {
+  tokenCredits: number;
+  // Automatic refill settings
+  autoRefillEnabled: boolean;
+  refillIntervalValue?: number;
+  refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
+  lastRefill?: Date;
+  refillAmount?: number;
+};
