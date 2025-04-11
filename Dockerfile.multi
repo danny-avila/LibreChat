@@ -3,6 +3,10 @@
 
 # Base for all builds
 FROM node:20-alpine AS base-min
+# Install jemalloc
+RUN apk add --no-cache jemalloc
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 WORKDIR /app
 RUN apk --no-cache add curl
 RUN npm config set fetch-retry-maxtimeout 600000 && \
@@ -50,6 +54,9 @@ RUN npm run build
 
 # API setup (including client dist)
 FROM base-min AS api-build
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+RUN uv --version
 WORKDIR /app
 # Install only production deps
 RUN npm ci --omit=dev
