@@ -18,6 +18,7 @@ export interface IAction extends Document {
       client_url?: string;
       scope?: string;
       token_exchange_method: 'default_post' | 'basic_auth_header' | null;
+      oauth_flow: 'auth_code_flow' | 'client_cred_flow' | null;
     };
     domain: string;
     privacy_policy_url?: string;
@@ -38,6 +39,7 @@ const AuthSchema = new Schema(
     client_url: { type: String },
     scope: { type: String },
     token_exchange_method: { type: String, enum: ['default_post', 'basic_auth_header', null] },
+    oauth_flow: { type: String, enum: ['auth_code_flow', 'client_cred_flow', null] },
   },
   { _id: false },
 );
