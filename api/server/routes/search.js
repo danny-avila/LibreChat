@@ -35,6 +35,10 @@ router.get('/test', async function (req, res) {
 
 router.get('/enable', async function (req, res) {
   let result = false;
+  if (process.env.SEARCH.toLowerCase() === 'false') {
+    return res.send(false);
+  }
+
   try {
     const client = new MeiliSearch({
       host: process.env.MEILI_HOST,
