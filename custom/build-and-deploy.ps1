@@ -7,7 +7,9 @@ param (
     [string]$Registry = "registry.totalsoft.local",
     [string]$Namespace = "librechat",
     [string]$HelmReleaseName = "librechat",
-    [string]$MongoUri = ""
+    [string]$MongoUri = "",
+    [string]$RegistryUsername = "docker-registry",
+    [string]$RegistryPassword = "docker-registry"
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,7 +19,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = (Get-Item $ScriptDir).Parent.FullName
 
 # Path to important files
-$Dockerfile = Join-Path -Path $ProjectRoot -ChildPath "Dockerfile.custom"
+$Dockerfile = Join-Path -Path $ProjectRoot -ChildPath "Dockerfile.multi"
 $CustomValues = Join-Path -Path $ProjectRoot -ChildPath "custom\config\k8s\custom-values.yaml"
 $HelmChart = Join-Path -Path $ProjectRoot -ChildPath "charts\librechat"
 
@@ -34,6 +36,9 @@ if ($MongoUri) {
     Write-Host "Using custom MongoDB URI" -ForegroundColor Cyan
 } else {
     Write-Host "Using MongoDB URI from custom-values.yaml" -ForegroundColor Cyan
+}
+if ($RegistryUsername -and $RegistryPassword) {
+    Write-Host "Using provided registry credentials" -ForegroundColor Cyan
 }
 Write-Host "===============================================" -ForegroundColor Green
 
@@ -58,6 +63,14 @@ if (-not (Test-Path $HelmChart)) {
 # Change to project root
 Set-Location -Path $ProjectRoot
 
+# Login to Docker registry if credentials are provided
+if ($RegistryUsername -and $RegistryPassword) {
+    Write-Host "Logging in to Docker registry..." -ForegroundColor Cyan
+    $secPassword = ConvertTo-SecureString $RegistryPassword -AsPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential($RegistryUsername, $secPassword)
+    docker login $Registry -u $credential.UserName -p $credential.GetNetworkCredential().Password
+}
+
 # Build the Docker image using the custom Dockerfile
 Write-Host "Building Docker image..." -ForegroundColor Cyan
 docker build -t "$Registry/$ImageName`:$ImageTag" -f "$Dockerfile" .
@@ -70,6 +83,18 @@ docker push "$Registry/$ImageName`:$ImageTag"
 Write-Host "Creating namespace if it doesn't exist..." -ForegroundColor Cyan
 kubectl create namespace $Namespace --dry-run=client -o yaml | kubectl apply -f -
 
+# Create Docker registry secret if credentials are provided
+$RegistrySecretParam = ""
+if ($RegistryUsername -and $RegistryPassword) {
+    Write-Host "Creating Docker registry secret..." -ForegroundColor Cyan
+    $secretName = "regcred-$((Get-Date).ToString('yyyyMMdd'))"
+    $secretCmd = "kubectl create secret docker-registry $secretName --namespace $Namespace --docker-server=$Registry --docker-username=$RegistryUsername --docker-password=$RegistryPassword --dry-run=client -o yaml"
+    Invoke-Expression "$secretCmd | kubectl apply -f -"
+    
+    # Add the image pull secret to Helm
+    $RegistrySecretParam = "--set imagePullSecrets[0].name=$secretName"
+}
+
 # Create MongoDB credentials secret if a URI is provided
 $MongoParam = ""
 if ($MongoUri) {
@@ -77,8 +102,8 @@ if ($MongoUri) {
     $secretCmd = "kubectl create secret generic mongodb-credentials --namespace $Namespace --from-literal=connection-string=`"$MongoUri`" --dry-run=client -o yaml"
     Invoke-Expression "$secretCmd | kubectl apply -f -"
     
-    # Add the MongoDB URI secret reference to Helm
-    $MongoParam = "--set env[1].name=MONGO_URI,env[1].valueFrom.secretKeyRef.name=mongodb-credentials,env[1].valueFrom.secretKeyRef.key=connection-string"
+    # Updated to use the correct config.env structure instead of directly setting env variables
+    $MongoParam = "--set config.env.MONGO_URI=`"$MongoUri`""
 }
 
 # Deploy or upgrade using Helm
@@ -88,7 +113,12 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "--namespace $Namespace " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
-           "--set `"image.tag=$ImageTag`""
+           "--set `"image.tag=$ImageTag`" " + `
+           "--force"
+
+if ($RegistrySecretParam) {
+    $helmCmd = "$helmCmd $RegistrySecretParam"
+}
 
 if ($MongoParam) {
     $helmCmd = "$helmCmd $MongoParam"

@@ -24,6 +24,9 @@ RUN npm ci
 FROM base AS data-provider-build
 WORKDIR /app/packages/data-provider
 COPY packages/data-provider ./
+RUN npm install -g rimraf
+RUN npm install -g rollup
+RUN npm ci
 RUN npm run build
 
 # Build mcp package
@@ -31,6 +34,7 @@ FROM base AS mcp-build
 WORKDIR /app/packages/mcp
 COPY packages/mcp ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
+RUN npm ci
 RUN npm run build
 
 # Build data-schemas
@@ -38,6 +42,7 @@ FROM base AS data-schemas-build
 WORKDIR /app/packages/data-schemas
 COPY packages/data-schemas ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
+RUN npm ci
 RUN npm run build
 
 # Client build
@@ -46,6 +51,7 @@ WORKDIR /app/client
 COPY client ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 ENV NODE_OPTIONS="--max-old-space-size=2048"
+RUN npm ci
 RUN npm run build
 
 # API setup (including client dist)

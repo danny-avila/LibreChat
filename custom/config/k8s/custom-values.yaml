@@ -8,6 +8,11 @@ image:
   tag: latest
   pullPolicy: Always
 
+# Image pull secrets configuration
+# This will be populated from the command line, but you can also set it manually here
+imagePullSecrets: []
+# - name: regcred
+
 # Enable custom file storage using PVC
 persistence:
   enabled: true
@@ -29,16 +34,20 @@ persistence:
       mountPath: /app/uploads
       subPath: uploads
 
-# Custom environment variables
-env:
-  - name: NODE_ENV
-    value: "production"
-  # Connection to existing MongoDB instance
-  - name: MONGO_URI
-    value: "mongodb://mongodb:ch%40r1sm%40@10.1.48.99:27017/LibreChat"
-  # Add your custom environment variables here
-  - name: CUSTOM_FEATURE_FLAG
-    value: "true"
+# Environment variables structure moved under config.env as expected by the Helm chart
+config:
+  env:
+    NODE_ENV: "production"
+    # Connection to existing MongoDB instance
+    MONGO_URI: "mongodb://mongodb:ch%40r1sm%40@10.1.48.99:27017"
+    # Encryption keys for sensitive data
+    CREDS_KEY: "f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0"
+    CREDS_IV: "e2341419ec3dd3d19b13a1a87fafcbfb"
+    # JWT Authentication
+    JWT_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
+    JWT_REFRESH_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
+    # Session
+    SESSION_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
 
 # Resources configuration
 resources:
@@ -51,8 +60,8 @@ resources:
 
 # Autoscaling configuration
 autoscaling:
-  enabled: true
-  minReplicas: 2
+  enabled: false #error if set to true with the api version, needs to be fixed in the main branch
+  minReplicas: 1
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
@@ -113,4 +122,11 @@ rag_api:
     repository: ghcr.io/danny-avila/librechat-rag-api-dev-lite
     tag: latest
   env:
-    DB_HOST: "vectordb" 
+    DB_HOST: "vectordb"
+
+# Node selector configuration 
+nodeSelector:
+  kubernetes.io/os: linux
+  # Add any additional node selectors specific to your environment
+  # example:
+  # custom-label: value 
