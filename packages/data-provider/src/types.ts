@@ -127,6 +127,7 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   createdAt: string;
   updatedAt: string;
+  customOpenIdData?: Record<string, unknown>;
 };
 
 export type TGetConversationsResponse = {
