@@ -24,9 +24,10 @@ jobs:
       run: |
         $tag = "${{ github.event.inputs.imageTag }}"
         if ($tag -eq "latest" -or $tag -eq "") {
-          $tag = "v-${{ github.sha.substring(0, 7) }}"
+          $shortSha = "${{ github.sha }}".Substring(0, 7)
+          $tag = "v-$shortSha"
         }
-        echo "::set-output name=IMAGE_TAG::$tag"
+        echo "IMAGE_TAG=$tag" >> $env:GITHUB_OUTPUT
       
     - name: Run build and deploy script
       shell: pwsh
