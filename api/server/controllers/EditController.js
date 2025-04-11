@@ -108,7 +108,8 @@ const EditController = async (req, res, next, initializeClient) => {
       },
     });
 
-    const { conversation = {} } = await client.responsePromise;
+    const { conversation = {} } = await response.databasePromise;
+    delete response.databasePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 

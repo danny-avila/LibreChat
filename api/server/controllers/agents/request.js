@@ -1,5 +1,9 @@
 const { Constants } = require('librechat-data-provider');
-const { createAbortController, handleAbortError } = require('~/server/middleware');
+const {
+  createAbortController,
+  cleanupAbortController,
+  handleAbortError,
+} = require('~/server/middleware');
 const { sendMessage } = require('~/server/utils');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
@@ -14,6 +18,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   } = req.body;
 
   let sender;
+  let abortKey;
   let userMessage;
   let promptTokens;
   let userMessageId;
@@ -46,18 +51,25 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     /** @type {{ client: TAgentClient }} */
     const { client } = await initializeClient({ req, res, endpointOption });
 
-    const getAbortData = () => ({
-      sender,
-      userMessage,
-      promptTokens,
-      conversationId,
-      userMessagePromise,
-      messageId: responseMessageId,
-      content: client.getContentParts(),
-      parentMessageId: overrideParentMessageId ?? userMessageId,
-    });
+    const getAbortData = () => {
+      return {
+        sender,
+        userMessage,
+        promptTokens,
+        conversationId,
+        userMessagePromise,
+        messageId: responseMessageId,
+        content: client.getContentParts(),
+        parentMessageId: overrideParentMessageId ?? userMessageId,
+      };
+    };
 
-    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
+    const {
+      abortController,
+      onStart,
+      abortKey: _aK,
+    } = createAbortController(req, res, getAbortData, getReqData);
+    abortKey = _aK;
 
     res.on('close', () => {
       logger.debug('[AgentController] Request closed');
@@ -90,7 +102,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     let response = await client.sendMessage(text, messageOptions);
     response.endpoint = endpointOption.endpoint;
 
-    const { conversation = {} } = await client.responsePromise;
+    const { conversation = {} } = await response.databasePromise;
+    delete response.databasePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
@@ -146,6 +159,10 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     }).catch((err) => {
       logger.error('[api/server/controllers/agents/request] Error in `handleAbortError`', err);
     });
+  } finally {
+    if (abortKey) {
+      cleanupAbortController(abortKey);
+    }
   }
 };
 

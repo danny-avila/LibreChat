@@ -535,6 +535,10 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, abortController = null }) {
+    /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
+    let config;
+    /** @type {ReturnType<createRun>} */
+    let run;
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -632,8 +636,7 @@ class AgentClient extends BaseClient {
       /** @type {TCustomConfig['endpoints']['agents']} */
       const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
 
-      /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
-      const config = {
+      config = {
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
@@ -655,9 +658,7 @@ class AgentClient extends BaseClient {
         initialMessages = formatContentStrings(initialMessages);
       }
 
-      /** @type {ReturnType<createRun>} */
-      let run;
-      const countTokens = ((text) => this.getTokenCount(text)).bind(this);
+      const countTokens = (text) => Tokenizer.getTokenCount(text, this.getEncoding());
 
       /** @type {(message: BaseMessage) => number} */
       const tokenCounter = (message) => {
@@ -908,6 +909,8 @@ class AgentClient extends BaseClient {
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
+    } finally {
+      run = null;
     }
   }
 

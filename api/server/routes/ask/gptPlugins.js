@@ -196,7 +196,8 @@ router.post(
 
       logger.debug('[/ask/gptPlugins]', response);
 
-      const { conversation = {} } = await client.responsePromise;
+      const { conversation = {} } = await response.databasePromise;
+      delete response.databasePromise;
       conversation.title =
         conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 

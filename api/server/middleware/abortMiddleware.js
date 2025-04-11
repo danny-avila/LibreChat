@@ -8,6 +8,67 @@ const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
+function cleanupAbortController(abortKey) {
+  if (!abortControllers.has(abortKey)) {
+    return false;
+  }
+
+  const { abortController } = abortControllers.get(abortKey);
+
+  if (!abortController) {
+    abortControllers.delete(abortKey);
+    return true;
+  }
+
+  // 1. Check if this controller has any composed signals and clean them up
+  // We'll look for any signals created from this controller's signal
+  try {
+    // This creates a temporary composed signal to use for cleanup
+    const composedSignal = AbortSignal.any([abortController.signal]);
+
+    // Get all event types - in practice, AbortSignal typically only uses 'abort'
+    const eventTypes = ['abort'];
+
+    // First, execute a dummy listener removal to handle potential composed signals
+    // created in dependencies that we don't have direct references to
+    for (const eventType of eventTypes) {
+      // Create and immediately remove a dummy listener
+      // This helps break potential reference loops and force cleanup
+      const dummyHandler = () => {};
+      composedSignal.addEventListener(eventType, dummyHandler);
+      composedSignal.removeEventListener(eventType, dummyHandler);
+
+      // For extra thoroughness, we could try to use the DOM-like event listener removal
+      // for all possible existing listeners (might not work in all environments)
+      const listeners = composedSignal.listeners?.(eventType) || [];
+      for (const listener of listeners) {
+        composedSignal.removeEventListener(eventType, listener);
+      }
+    }
+  } catch (e) {
+    // If something goes wrong with the signal cleanup, log but continue
+    logger.debug(`Error cleaning up composed signals: ${e}`);
+  }
+
+  // 2. Abort the controller if not already aborted
+  if (!abortController.signal.aborted) {
+    abortController.abort();
+  }
+
+  // 3. Remove from registry
+  abortControllers.delete(abortKey);
+
+  // 4. Additional cleanup to help prevent leaks
+  if (abortController.getAbortData) {
+    abortController.getAbortData = null;
+  }
+  if (abortController.abortCompletion) {
+    abortController.abortCompletion = null;
+  }
+
+  return true;
+}
+
 async function abortMessage(req, res) {
   let { abortKey, endpoint } = req.body;
 
@@ -34,7 +95,7 @@ async function abortMessage(req, res) {
     `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
       JSON.stringify({ abortKey }),
   );
-  abortControllers.delete(abortKey);
+  cleanupAbortController(abortKey);
 
   if (res.headersSent && finalEvent) {
     return sendMessage(res, finalEvent);
@@ -59,6 +120,7 @@ const handleAbort = () => {
 };
 
 const createAbortController = (req, res, getAbortData, getReqData) => {
+  let abortKey;
   const abortController = new AbortController();
   const { endpointOption } = req.body;
 
@@ -73,7 +135,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
   const onStart = (userMessage, responseMessageId) => {
     sendMessage(res, { message: userMessage, created: true });
 
-    const abortKey = userMessage?.conversationId ?? req.user.id;
+    abortKey = userMessage?.conversationId ?? req.user.id;
     const prevRequest = abortControllers.get(abortKey);
     const { overrideUserMessageId } = req?.body ?? {};
 
@@ -83,7 +145,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       const addedAbortKey = `${abortKey}:${responseMessageId}`;
       abortControllers.set(addedAbortKey, { abortController, ...endpointOption });
       res.on('finish', function () {
-        abortControllers.delete(addedAbortKey);
+        cleanupAbortController(addedAbortKey);
       });
       return;
     }
@@ -91,7 +153,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     res.on('finish', function () {
-      abortControllers.delete(abortKey);
+      cleanupAbortController(abortKey);
     });
   };
 
@@ -145,7 +207,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     };
   };
 
-  return { abortController, onStart };
+  return { abortController, onStart, abortKey };
 };
 
 /**
@@ -218,13 +280,7 @@ const handleAbortError = async (res, req, error, data) => {
       };
     }
 
-    const callback = async () => {
-      if (abortControllers.has(conversationId)) {
-        const { abortController } = abortControllers.get(conversationId);
-        abortController.abort();
-        abortControllers.delete(conversationId);
-      }
-    };
+    const callback = async () => cleanupAbortController(conversationId);
 
     await sendError(req, res, options, callback);
   };
@@ -243,6 +299,7 @@ const handleAbortError = async (res, req, error, data) => {
 
 module.exports = {
   handleAbort,
-  createAbortController,
   handleAbortError,
+  createAbortController,
+  cleanupAbortController,
 };
