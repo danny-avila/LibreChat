@@ -3,7 +3,15 @@
 # Base node image
 FROM node:20-alpine AS node
 
-RUN apk --no-cache add curl
+# Install jemalloc
+RUN apk add --no-cache jemalloc
+
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+RUN uv --version
 
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
