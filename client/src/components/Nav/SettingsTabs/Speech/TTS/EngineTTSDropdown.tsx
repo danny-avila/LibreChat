@@ -33,6 +33,7 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
         sizeClasses="w-[180px]"
         anchor="bottom start"
         testId="EngineTTSDropdown"
+        className="rounded-xl"
       />
     </div>
   );
