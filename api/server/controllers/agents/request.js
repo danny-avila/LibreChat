@@ -43,8 +43,9 @@ function disposeClient(client) {
     // Clear StandardRun references if they exist
     if (client.run) {
       // Break circular references in run
-      if (client.run.tokenCounter) {
-        client.run.tokenCounter = null;
+      if (client.run.Graph) {
+        client.run.Graph.resetValues();
+        client.run.Graph = null;
       }
 
       // Clear any callback functions
@@ -173,6 +174,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     getReqData = null;
     userMessage = null;
     getAbortData = null;
+    endpointOption.agent = null;
     endpointOption = null;
     cleanupHandlers = null;
     userMessagePromise = null;

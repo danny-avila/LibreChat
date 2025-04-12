@@ -63,6 +63,13 @@ const noSystemModelRegex = [/\bo1\b/gi];
 // const { getFormattedMemories } = require('~/models/Memory');
 // const { getCurrentDateTime } = require('~/utils');
 
+function createTokenCounter(encoding) {
+  return (message) => {
+    const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
+    return getTokenCountForMessage(message, countTokens);
+  };
+}
+
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -640,6 +647,7 @@ class AgentClient extends BaseClient {
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
+          user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
         recursionLimit: agentsEConfig?.recursionLimit,
@@ -657,13 +665,6 @@ class AgentClient extends BaseClient {
       if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
         initialMessages = formatContentStrings(initialMessages);
       }
-
-      const countTokens = (text) => Tokenizer.getTokenCount(text, this.getEncoding());
-
-      /** @type {(message: BaseMessage) => number} */
-      const tokenCounter = (message) => {
-        return getTokenCountForMessage(message, countTokens);
-      };
 
       /**
        *
@@ -768,9 +769,10 @@ class AgentClient extends BaseClient {
           run.Graph.contentData = contentData;
         }
 
+        const encoding = this.getEncoding();
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
-          tokenCounter,
+          tokenCounter: createTokenCounter(encoding),
           indexTokenCountMap: currentIndexCountMap,
           maxContextTokens: agent.maxContextTokens,
           callbacks: {
@@ -810,6 +812,8 @@ class AgentClient extends BaseClient {
             break;
           }
         }
+        const encoding = this.getEncoding();
+        const tokenCounter = createTokenCounter(encoding);
         for (const [agentId, agent] of this.agentConfigs) {
           if (abortController.signal.aborted === true) {
             break;
