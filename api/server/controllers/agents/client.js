@@ -909,8 +909,6 @@ class AgentClient extends BaseClient {
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
-    } finally {
-      run = null;
     }
   }
 
@@ -920,7 +918,7 @@ class AgentClient extends BaseClient {
    * @param {string} params.text
    * @param {string} params.conversationId
    */
-  async titleConvo({ text }) {
+  async titleConvo({ text, abortController }) {
     if (!this.run) {
       throw new Error('Run not initialized');
     }
@@ -953,6 +951,7 @@ class AgentClient extends BaseClient {
         contentParts: this.contentParts,
         clientOptions,
         chainOptions: {
+          signal: abortController.signal,
           callbacks: [
             {
               handleLLMEnd,
@@ -978,7 +977,7 @@ class AgentClient extends BaseClient {
         };
       });
 
-      this.recordCollectedUsage({
+      await this.recordCollectedUsage({
         model: clientOptions.model,
         context: 'title',
         collectedUsage,
