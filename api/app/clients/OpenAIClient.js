@@ -1314,7 +1314,7 @@ ${convo}
       }
 
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
-        const dropParams = { ...this.options.dropParams };
+        const dropParams = [...this.options.dropParams];
         dropParams.forEach((param) => {
           delete modelOptions[param];
         });
