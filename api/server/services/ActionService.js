@@ -50,7 +50,7 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
       return null;
     }
 
-    const parsedDomain = await domainParser(req, domain, true);
+    const parsedDomain = await domainParser(domain, true);
 
     if (!parsedDomain) {
       return null;
@@ -66,12 +66,11 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
  *
  * Necessary due to `[a-zA-Z0-9_-]*` Regex Validation, limited to a 64-character maximum.
  *
- * @param {Express.Request} req - The Express Request object.
  * @param {string} domain - The domain name to encode/decode.
  * @param {boolean} inverse - False to decode from base64, true to encode to base64.
  * @returns {Promise<string>} Encoded or decoded domain string.
  */
-async function domainParser(req, domain, inverse = false) {
+async function domainParser(domain, inverse = false) {
   if (!domain) {
     return;
   }
