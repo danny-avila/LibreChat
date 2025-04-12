@@ -70,6 +70,31 @@ jobs:
           # Get all tags for this repository
           TAGS=$(regctl tag ls $REGISTRY_URL/$REPO)
           
+          # Create a list to exclude manifests referenced by multi-arch images
+          EXCLUDE_LIST=()
+          
+          # First, identify all manifests referenced by multi-arch images to exclude them from deletion
+          for TAG in $TAGS; do
+            echo "Checking tag $TAG for multi-arch manifests"
+            # Get the manifest for the tagged image
+            MANIFEST_INFO=$(regctl manifest get $REGISTRY_URL/$REPO:$TAG || echo "")
+            
+            # Check if it's a multi-arch image (manifest list)
+            if echo "$MANIFEST_INFO" | grep -q "MediaType:.*manifest.list"; then
+              echo "Found multi-arch image: $REGISTRY_URL/$REPO:$TAG"
+              # Get the list of referenced manifests (digests)
+              REFERENCED_MANIFESTS=$(regctl manifest get $REGISTRY_URL/$REPO:$TAG | grep "Digest:" | grep -v "Name:" | awk '{print $2}')
+              
+              # Add each referenced manifest to the exclusion list
+              for DIGEST in $REFERENCED_MANIFESTS; do
+                echo "Adding referenced manifest $DIGEST to exclusion list"
+                EXCLUDE_LIST+=("$DIGEST")
+              done
+            fi
+          done
+          
+          echo "Excluding ${#EXCLUDE_LIST[@]} manifests referenced by multi-arch images"
+          
           # Keep only the latest 5 tags for each repository
           if [ $(echo "$TAGS" | wc -l) -gt 5 ]; then
             # Sort tags by creation date (assuming version tags with dates or incremental numbers)
@@ -83,10 +108,35 @@ jobs:
             if [ "$DRY_RUN" = "false" ]; then
               for TAG in $TAGS_TO_DELETE; do
                 echo "Deleting $REGISTRY_URL/$REPO:$TAG"
-                regctl manifest delete $REGISTRY_URL/$REPO:$TAG
+                TAG_DIGEST=$(regctl digest $REGISTRY_URL/$REPO:$TAG)
+                
+                # Check if this digest is in our exclusion list
+                if [[ " ${EXCLUDE_LIST[@]} " =~ " $TAG_DIGEST " ]]; then
+                  echo "Skipping deletion of $TAG (digest $TAG_DIGEST) as it's referenced by a multi-arch image"
+                else
+                  regctl tag delete $REGISTRY_URL/$REPO:$TAG
+                fi
+              done
+              
+              # Now find and delete any unreferenced manifests
+              MANIFESTS=$(regctl manifest ls $REGISTRY_URL/$REPO)
+              for MANIFEST in $MANIFESTS; do
+                # Skip manifests in the exclusion list
+                if [[ " ${EXCLUDE_LIST[@]} " =~ " $MANIFEST " ]]; then
+                  echo "Skipping deletion of manifest $MANIFEST as it's referenced by a multi-arch image"
+                  continue
+                fi
+                
+                # Check if manifest has tags
+                MANIFEST_TAGS=$(regctl tag ls --referrer "$MANIFEST" $REGISTRY_URL/$REPO)
+                if [ -z "$MANIFEST_TAGS" ]; then
+                  echo "Deleting untagged manifest $MANIFEST"
+                  regctl manifest delete $REGISTRY_URL/$REPO@$MANIFEST
+                fi
               done
             else
               echo "[DRY RUN] Would delete these tags: $TAGS_TO_DELETE"
+              echo "[DRY RUN] Would also delete any unreferenced manifests not part of multi-arch images"
             fi
           else
             echo "Repository $REPO has 5 or fewer tags, skipping cleanup"
