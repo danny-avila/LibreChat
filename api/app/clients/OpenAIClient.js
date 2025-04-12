@@ -1359,14 +1359,30 @@ ${convo}
         delete modelOptions.reasoning_effort;
       }
 
+      const resRef = new WeakRef(this.options.res);
       this.streamHandler = new SplitStreamHandler({
         reasoningKey,
         accumulate: true,
         runId: this.responseMessageId,
         handlers: {
-          [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
-          [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
-          [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
+          [GraphEvents.ON_RUN_STEP]: (event) => {
+            const res = resRef.deref();
+            if (res) {
+              sendEvent(res, event);
+            }
+          },
+          [GraphEvents.ON_MESSAGE_DELTA]: (event) => {
+            const res = resRef.deref();
+            if (res) {
+              sendEvent(res, event);
+            }
+          },
+          [GraphEvents.ON_REASONING_DELTA]: (event) => {
+            const res = resRef.deref();
+            if (res) {
+              sendEvent(res, event);
+            }
+          },
         },
       });
 
