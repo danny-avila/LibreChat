@@ -869,7 +869,7 @@ class BaseClient {
     }
 
     const savedMessage = await saveMessage(
-      this.options.req,
+      this.options?.req,
       {
         ...message,
         endpoint: this.options.endpoint,
@@ -893,7 +893,7 @@ class BaseClient {
     const existingConvo =
       this.fetchedConvo === true
         ? null
-        : await getConvo(this.options.req?.user?.id, message.conversationId);
+        : await getConvo(this.options?.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
@@ -913,7 +913,7 @@ class BaseClient {
       }
     }
 
-    const conversation = await saveConvo(this.options.req, fieldsToKeep, {
+    const conversation = await saveConvo(this.options?.req, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
     });
