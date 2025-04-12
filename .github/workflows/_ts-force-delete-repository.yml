@@ -1,0 +1,98 @@
+name: _TS Force Delete Docker Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      repositoryName:
+        description: 'Repository name to delete'
+        required: true
+        type: string
+      dryRun:
+        description: 'Dry run (no actual deletion)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      confirmDelete:
+        description: 'Type CONFIRM to proceed with deletion'
+        required: true
+        type: string
+
+jobs:
+  delete-repository:
+    runs-on: self-hosted
+    if: github.event.inputs.confirmDelete == 'CONFIRM'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Install regctl
+      shell: bash
+      env:
+        SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+      run: |
+        # Download regctl (Docker registry client)
+        curl -L https://github.com/regclient/regclient/releases/latest/download/regctl-linux-amd64 -o regctl
+        chmod +x regctl
+        echo "$SUDO_PASSWORD" | sudo -S mv regctl /usr/local/bin/
+        
+    - name: Delete repository
+      shell: bash
+      env:
+        REGISTRY_URL: registry.totalsoft.local
+        REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+        REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        REPOSITORY_NAME: ${{ github.event.inputs.repositoryName }}
+        DRY_RUN: ${{ github.event.inputs.dryRun }}
+      run: |
+        echo "Preparing to delete repository: $REPOSITORY_NAME"
+        
+        # Login to registry
+        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --pass-stdin
+        
+        # Get all tags for this repository
+        TAGS=$(regctl tag ls $REGISTRY_URL/$REPOSITORY_NAME || echo "")
+        
+        if [ -z "$TAGS" ]; then
+          echo "Repository $REPOSITORY_NAME does not exist or has no tags"
+        else
+          echo "Found $(echo "$TAGS" | wc -w) tags in repository $REPOSITORY_NAME"
+          
+          if [ "$DRY_RUN" = "false" ]; then
+            # Delete all tags
+            for TAG in $TAGS; do
+              echo "Deleting tag: $REGISTRY_URL/$REPOSITORY_NAME:$TAG"
+              regctl tag delete $REGISTRY_URL/$REPOSITORY_NAME:$TAG
+            done
+            
+            # Delete all manifests
+            MANIFESTS=$(regctl manifest ls $REGISTRY_URL/$REPOSITORY_NAME || echo "")
+            for MANIFEST in $MANIFESTS; do
+              echo "Deleting manifest: $MANIFEST"
+              regctl manifest delete $REGISTRY_URL/$REPOSITORY_NAME@$MANIFEST
+            done
+            
+            echo "All tags and manifests deleted from repository: $REPOSITORY_NAME"
+          else
+            echo "[DRY RUN] Would delete these tags: $TAGS"
+            echo "[DRY RUN] Would delete all manifests in the repository"
+          fi
+        fi
+        
+    - name: Run garbage collection
+      shell: bash
+      env:
+        REGISTRY_POD: ${{ secrets.REGISTRY_POD_NAME }}
+        REGISTRY_NAMESPACE: ${{ secrets.REGISTRY_NAMESPACE }}
+        DRY_RUN: ${{ github.event.inputs.dryRun }}
+        SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+      run: |
+        if [ "$DRY_RUN" = "false" ]; then
+          echo "Running garbage collection to reclaim space"
+          echo "$SUDO_PASSWORD" | sudo -S kubectl -n $REGISTRY_NAMESPACE exec -it $REGISTRY_POD -- bin/registry garbage-collect /etc/docker/registry/config.yml --delete-untagged=true
+        else
+          echo "[DRY RUN] Would run garbage collection"
+        fi 
