@@ -68,7 +68,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     [sendRequest, setIsSearchTyping],
   );
 
-  const onChange = (e) => {
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setShowClearIcon(value.length > 0);
     setText(value);
