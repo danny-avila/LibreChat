@@ -28,17 +28,16 @@ export default function Conversation({
   toggleNav,
   isLatestConvo,
 }: ConversationProps) {
-  const { conversationId, title = '' } = conversation;
-
   const params = useParams();
-  const currentConvoId = params.conversationId;
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { navigateWithLastTools } = useNavigateToConvo();
-  const { showToast } = useToastContext();
-  const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const { conversationId, title = '' } = conversation;
 
   const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
@@ -113,7 +112,6 @@ export default function Conversation({
       document.title = title;
     }
 
-    navigateToConvo(conversation);
     navigateWithLastTools(
       conversation,
       !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,

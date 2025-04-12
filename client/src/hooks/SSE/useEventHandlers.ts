@@ -208,6 +208,7 @@ export default function useEventHandlers({
       const convoUpdate =
         (conversation as TConversation | null) ?? (submission.conversation as TConversation);
 
+      // update the messages
       if (isRegenerate) {
         const messagesUpdate = (
           [...messages, responseMessage] as Array<TMessage | undefined>
@@ -225,6 +226,7 @@ export default function useEventHandlers({
         removeConvoFromAllQueries(queryClient, submission.conversation.conversationId as string);
       }
 
+      // refresh title
       if (genTitle && isNewConvo && requestMessage.parentMessageId === Constants.NO_PARENT) {
         setTimeout(() => {
           genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
@@ -415,14 +417,17 @@ export default function useEventHandlers({
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
       const currentMessages = getMessages();
+      /* Early return if messages are empty; i.e., the user navigated away */
       if (!currentMessages || currentMessages.length === 0) {
         setIsSubmitting(false);
         return;
       }
 
+      /* a11y announcements */
       announcePolite({ message: 'end', isStatus: true });
       announcePolite({ message: getAllContentText(responseMessage) });
 
+      /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
       if (runMessages) {
         setMessages([...runMessages]);
       } else if (isRegenerate && responseMessage) {
@@ -436,6 +441,7 @@ export default function useEventHandlers({
         removeConvoFromAllQueries(queryClient, submissionConvo.conversationId as string);
       }
 
+      /* Refresh title */
       if (
         genTitle &&
         isNewConvo &&
@@ -598,6 +604,7 @@ export default function useEventHandlers({
           }),
         });
 
+        // Check if the response is JSON
         const contentType = response.headers.get('content-type');
         if (contentType != null && contentType.includes('application/json')) {
           const data = await response.json();

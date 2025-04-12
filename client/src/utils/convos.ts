@@ -137,7 +137,6 @@ export const groupConversationsByDate = (
   return Array.from(sortedGroups, ([key, value]) => [key, value]);
 };
 
-// CURSOR (InfiniteData) helpers
 export type ConversationCursorData = {
   conversations: TConversation[];
   nextCursor?: string | null;
@@ -210,7 +209,6 @@ export function addConversationToAllConversationsQueries(
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {
-      // You may want to check if convo already exists in this cache view
       if (
         !old ||
         old.pages[0].conversations.some((c) => c.conversationId === newConversation.conversationId)
@@ -277,7 +275,6 @@ export function updateConvoFieldsInfinite(
   }
 
   if (keepPosition) {
-    // Just patch the matching conversation in-place
     return {
       ...data,
       pages: data.pages.map((page, pi) =>
@@ -292,22 +289,19 @@ export function updateConvoFieldsInfinite(
       ),
     };
   } else {
-    // Patch, move to front of first page (common for "bumping" recently updated/modified)
     const patched = { ...found, ...updatedConversation, updatedAt: new Date().toISOString() };
-    // remove from all pages
     const pages = data.pages.map((page) => ({
       ...page,
       conversations: page.conversations.filter((c) => c.conversationId !== patched.conversationId),
     }));
-    // insert at top of first
+
     pages[0].conversations = [patched, ...pages[0].conversations];
-    // clean up empty pages
+
     const finalPages = pages.filter((page) => page.conversations.length > 0);
     return { ...data, pages: finalPages };
   }
 }
 
-// Other unchanged helpers
 export function storeEndpointSettings(conversation: TConversation | null) {
   if (!conversation) {
     return;
@@ -335,7 +329,6 @@ export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConver
       if (!oldData) {
         return oldData;
       }
-      // Don't insert dupes
       if (
         oldData.pages.some((p) =>
           p.conversations.some((c) => c.conversationId === newConvo.conversationId),
