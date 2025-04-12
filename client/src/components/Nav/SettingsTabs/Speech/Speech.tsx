@@ -20,12 +20,14 @@ import {
   EngineSTTDropdown,
   DecibelSelector,
 } from './STT';
+import { useOnClickOutside, useMediaQuery, useLocalize } from '~/hooks';
 import ConversationModeSwitch from './ConversationModeSwitch';
-import { useOnClickOutside, useMediaQuery } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
 function Speech() {
+  const localize = useLocalize();
+
   const [confirmClear, setConfirmClear] = useState(false);
   const { data } = useGetCustomConfigSpeechQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
@@ -158,7 +160,7 @@ function Speech() {
             style={{ userSelect: 'none' }}
           >
             <Lightbulb />
-            Simple
+            {localize('com_ui_simple')}
           </Tabs.Trigger>
           <Tabs.Trigger
             onClick={() => setAdvancedMode(true)}
@@ -171,7 +173,7 @@ function Speech() {
             style={{ userSelect: 'none' }}
           >
             <Cog />
-            Advanced
+            {localize('com_ui_advanced')}
           </Tabs.Trigger>
         </Tabs.List>
       </div>
