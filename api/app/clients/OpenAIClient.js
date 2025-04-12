@@ -43,6 +43,7 @@ const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const { createFetch } = require('./fetch');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -1245,7 +1246,10 @@ ${convo}
       let chatCompletion;
       /** @type {OpenAI} */
       const openai = new OpenAI({
-        fetch: this.fetch,
+        fetch: createFetch({
+          directEndpoint: this.options.directEndpoint,
+          reverseProxyUrl: this.options.reverseProxyUrl,
+        }),
         apiKey: this.apiKey,
         ...opts,
       });

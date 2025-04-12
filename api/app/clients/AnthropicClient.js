@@ -30,6 +30,7 @@ const Tokenizer = require('~/server/services/Tokenizer');
 const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
+const { createFetch } = require('./fetch');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -184,7 +185,10 @@ class AnthropicClient extends BaseClient {
   getClient(requestOptions) {
     /** @type {Anthropic.ClientOptions} */
     const options = {
-      fetch: this.fetch,
+      fetch: createFetch({
+        directEndpoint: this.options.directEndpoint,
+        reverseProxyUrl: this.options.reverseProxyUrl,
+      }),
       apiKey: this.apiKey,
     };
 
