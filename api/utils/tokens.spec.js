@@ -517,18 +517,30 @@ describe('Grok Model Tests - Tokens', () => {
       expect(getModelMaxTokens('grok-2-latest')).toBe(131072);
     });
 
+    test('should return correct tokens for Grok 3 series models', () => {
+      expect(getModelMaxTokens('grok-3')).toBe(131072);
+      expect(getModelMaxTokens('grok-3-fast')).toBe(131072);
+      expect(getModelMaxTokens('grok-3-mini')).toBe(131072);
+      expect(getModelMaxTokens('grok-3-mini-fast')).toBe(131072);
+    });
+
     test('should handle partial matches for Grok models with prefixes', () => {
       // Vision models should match before general models
-      expect(getModelMaxTokens('openai/grok-2-vision-1212')).toBe(32768);
-      expect(getModelMaxTokens('openai/grok-2-vision')).toBe(32768);
-      expect(getModelMaxTokens('openai/grok-2-vision-latest')).toBe(32768);
+      expect(getModelMaxTokens('xai/grok-2-vision-1212')).toBe(32768);
+      expect(getModelMaxTokens('xai/grok-2-vision')).toBe(32768);
+      expect(getModelMaxTokens('xai/grok-2-vision-latest')).toBe(32768);
       // Beta models
-      expect(getModelMaxTokens('openai/grok-vision-beta')).toBe(8192);
-      expect(getModelMaxTokens('openai/grok-beta')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-vision-beta')).toBe(8192);
+      expect(getModelMaxTokens('xai/grok-beta')).toBe(131072);
       // Text models
-      expect(getModelMaxTokens('openai/grok-2-1212')).toBe(131072);
-      expect(getModelMaxTokens('openai/grok-2')).toBe(131072);
-      expect(getModelMaxTokens('openai/grok-2-latest')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-2-1212')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-2')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-2-latest')).toBe(131072);
+      // Grok 3 models
+      expect(getModelMaxTokens('xai/grok-3')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-3-fast')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-3-mini')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-3-mini-fast')).toBe(131072);
     });
   });
 
@@ -545,20 +557,30 @@ describe('Grok Model Tests - Tokens', () => {
       expect(matchModelName('grok-2-1212')).toBe('grok-2-1212');
       expect(matchModelName('grok-2')).toBe('grok-2');
       expect(matchModelName('grok-2-latest')).toBe('grok-2-latest');
+      // Grok 3 models
+      expect(matchModelName('grok-3')).toBe('grok-3');
+      expect(matchModelName('grok-3-fast')).toBe('grok-3-fast');
+      expect(matchModelName('grok-3-mini')).toBe('grok-3-mini');
+      expect(matchModelName('grok-3-mini-fast')).toBe('grok-3-mini-fast');
     });
 
     test('should match Grok model variations with prefixes', () => {
       // Vision models should match before general models
-      expect(matchModelName('openai/grok-2-vision-1212')).toBe('grok-2-vision-1212');
-      expect(matchModelName('openai/grok-2-vision')).toBe('grok-2-vision');
-      expect(matchModelName('openai/grok-2-vision-latest')).toBe('grok-2-vision-latest');
+      expect(matchModelName('xai/grok-2-vision-1212')).toBe('grok-2-vision-1212');
+      expect(matchModelName('xai/grok-2-vision')).toBe('grok-2-vision');
+      expect(matchModelName('xai/grok-2-vision-latest')).toBe('grok-2-vision-latest');
       // Beta models
-      expect(matchModelName('openai/grok-vision-beta')).toBe('grok-vision-beta');
-      expect(matchModelName('openai/grok-beta')).toBe('grok-beta');
+      expect(matchModelName('xai/grok-vision-beta')).toBe('grok-vision-beta');
+      expect(matchModelName('xai/grok-beta')).toBe('grok-beta');
       // Text models
-      expect(matchModelName('openai/grok-2-1212')).toBe('grok-2-1212');
-      expect(matchModelName('openai/grok-2')).toBe('grok-2');
-      expect(matchModelName('openai/grok-2-latest')).toBe('grok-2-latest');
+      expect(matchModelName('xai/grok-2-1212')).toBe('grok-2-1212');
+      expect(matchModelName('xai/grok-2')).toBe('grok-2');
+      expect(matchModelName('xai/grok-2-latest')).toBe('grok-2-latest');
+      // Grok 3 models
+      expect(matchModelName('xai/grok-3')).toBe('grok-3');
+      expect(matchModelName('xai/grok-3-fast')).toBe('grok-3-fast');
+      expect(matchModelName('xai/grok-3-mini')).toBe('grok-3-mini');
+      expect(matchModelName('xai/grok-3-mini-fast')).toBe('grok-3-mini-fast');
     });
   });
 });

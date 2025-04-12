@@ -196,6 +196,7 @@ const bedrockModels = {
 };
 
 const xAIModels = {
+  grok: 131072,
   'grok-beta': 131072,
   'grok-vision-beta': 8192,
   'grok-2': 131072,
@@ -204,6 +205,10 @@ const xAIModels = {
   'grok-2-vision': 32768,
   'grok-2-vision-latest': 32768,
   'grok-2-vision-1212': 32768,
+  'grok-3': 131072,
+  'grok-3-fast': 131072,
+  'grok-3-mini': 131072,
+  'grok-3-mini-fast': 131072,
 };
 
 const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };

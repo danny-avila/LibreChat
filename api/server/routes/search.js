@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const express = require('express');
 const { MeiliSearch } = require('meilisearch');
 const { Conversation, getConvosQueried } = require('~/models/Conversation');

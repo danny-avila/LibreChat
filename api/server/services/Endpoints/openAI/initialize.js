@@ -7,8 +7,14 @@ const {
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { isEnabled, isUserProvided, sleep } = require('~/server/utils');
+const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { getAzureCredentials } = require('~/utils');
-const { OpenAIClient } = require('~/app');
+
+function createHandleNewToken(streamRate) {
+  async () => {
+    await sleep(streamRate);
+  };
+}
 
 const initializeClient = async ({
   req,
@@ -140,14 +146,13 @@ const initializeClient = async ({
     clientOptions = Object.assign({ modelOptions }, clientOptions);
     clientOptions.modelOptions.user = req.user.id;
     const options = getLLMConfig(apiKey, clientOptions);
-    if (!clientOptions.streamRate) {
+    const streamRate = clientOptions.streamRate;
+    if (!streamRate) {
       return options;
     }
     options.llmConfig.callbacks = [
       {
-        handleLLMNewToken: async () => {
-          await sleep(clientOptions.streamRate);
-        },
+        handleLLMNewToken: createHandleNewToken(streamRate),
       },
     ];
     return options;

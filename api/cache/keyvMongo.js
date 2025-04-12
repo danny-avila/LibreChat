@@ -1,4 +1,4 @@
-const KeyvMongo = require('@keyv/mongo');
+const { KeyvMongo } = require('@keyv/mongo');
 const { logger } = require('~/config');
 
 const { MONGO_URI } = process.env ?? {};
