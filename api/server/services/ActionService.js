@@ -121,7 +121,7 @@ async function loadActionSets(searchParams) {
  * Creates a general tool for an entire action set.
  *
  * @param {Object} params - The parameters for loading action sets.
- * @param {ServerRequest} params.req
+ * @param {string} params.userId
  * @param {ServerResponse} params.res
  * @param {Action} params.action - The action set. Necessary for decrypting authentication values.
  * @param {ActionRequest} params.requestBuilder - The ActionRequest builder class to execute the API call.
@@ -132,7 +132,7 @@ async function loadActionSets(searchParams) {
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createActionTool({
-  req,
+  userId,
   res,
   action,
   requestBuilder,
@@ -153,7 +153,7 @@ async function createActionTool({
         try {
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
             const action_id = action.action_id;
-            const identifier = `${req.user.id}:${action.action_id}`;
+            const identifier = `${userId}:${action.action_id}`;
             const requestLogin = async () => {
               const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
               if (!stepId) {
@@ -161,7 +161,7 @@ async function createActionTool({
               }
               const statePayload = {
                 nonce: nanoid(),
-                user: req.user.id,
+                user: userId,
                 action_id,
               };
 
@@ -205,7 +205,7 @@ async function createActionTool({
                   'oauth',
                   {
                     state: stateToken,
-                    userId: req.user.id,
+                    userId: userId,
                     client_url: metadata.auth.client_url,
                     redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
                     /** Encrypted values */
@@ -231,10 +231,10 @@ async function createActionTool({
             };
 
             const tokenPromises = [];
-            tokenPromises.push(findToken({ userId: req.user.id, type: 'oauth', identifier }));
+            tokenPromises.push(findToken({ userId, type: 'oauth', identifier }));
             tokenPromises.push(
               findToken({
-                userId: req.user.id,
+                userId,
                 type: 'oauth_refresh',
                 identifier: `${identifier}:refresh`,
               }),
@@ -257,9 +257,9 @@ async function createActionTool({
                 const refresh_token = await decryptV2(refreshTokenData.token);
                 const refreshTokens = async () =>
                   await refreshAccessToken({
+                    userId,
                     identifier,
                     refresh_token,
-                    userId: req.user.id,
                     client_url: metadata.auth.client_url,
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
