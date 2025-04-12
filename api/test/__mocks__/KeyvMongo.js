@@ -1,6 +1,3 @@
-const mockGet = jest.fn();
-const mockSet = jest.fn();
-
 jest.mock('@keyv/mongo', () => {
   const EventEmitter = require('events');
   class KeyvMongo extends EventEmitter {
@@ -20,11 +17,32 @@ jest.mock('@keyv/mongo', () => {
         ...url,
         ...options,
       };
+
+      // In-memory store for tests
+      this.store = new Map();
     }
 
-    get = mockGet;
-    set = mockSet;
+    async get(key) {
+      return this.store.get(key);
+    }
+
+    async set(key, value, ttl) {
+      this.store.set(key, value);
+      return true;
+    }
+
+    async delete(key) {
+      return this.store.delete(key);
+    }
+
+    async clear() {
+      this.store.clear();
+      return true;
+    }
   }
 
-  return KeyvMongo;
+  // Create a store factory function for the test suite
+  const store = () => new KeyvMongo();
+
+  return { KeyvMongo };
 });
