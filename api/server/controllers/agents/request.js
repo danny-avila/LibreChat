@@ -51,16 +51,17 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   try {
     /** @type {{ client: TAgentClient }} */
     const { client } = await initializeClient({ req, res, endpointOption });
-
+    const contentRef = new WeakRef(client.contentParts);
     getAbortData = () => {
+      const content = contentRef.deref();
       return {
         sender,
+        content,
         userMessage,
         promptTokens,
         conversationId,
         userMessagePromise,
         messageId: responseMessageId,
-        content: client.getContentParts(),
         parentMessageId: overrideParentMessageId ?? userMessageId,
       };
     };
