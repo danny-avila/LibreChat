@@ -78,8 +78,8 @@ describe('domainParser', () => {
   // Non-azure request
   it('does not return domain as is if not azure', async () => {
     const domain = `example.com${actionDomainSeparator}test${actionDomainSeparator}`;
-    const result1 = await domainParser(reqNoAzure, domain, false);
-    const result2 = await domainParser(reqNoAzure, domain, true);
+    const result1 = await domainParser(domain, false);
+    const result2 = await domainParser(domain, true);
     expect(result1).not.toEqual(domain);
     expect(result2).not.toEqual(domain);
   });
@@ -139,7 +139,6 @@ describe('domainParser', () => {
     globalCache[encodedDomain.substring(0, Constants.ENCODED_DOMAIN_LENGTH)] = encodedDomain; // Simulate caching
 
     const result = await domainParser(
-      req,
       encodedDomain.substring(0, Constants.ENCODED_DOMAIN_LENGTH),
       false,
     );
