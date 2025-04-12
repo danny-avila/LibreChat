@@ -11,8 +11,8 @@ const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
 const { isUserProvided, sleep } = require('~/server/utils');
+const OpenAIClient = require('~/app/clients/OpenAIClient');
 const getLogStores = require('~/cache/getLogStores');
-const { OpenAIClient } = require('~/app');
 
 const { PROXY } = process.env;
 

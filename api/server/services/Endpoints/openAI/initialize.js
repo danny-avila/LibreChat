@@ -7,8 +7,8 @@ const {
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { isEnabled, isUserProvided, sleep } = require('~/server/utils');
+const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { getAzureCredentials } = require('~/utils');
-const { OpenAIClient } = require('~/app');
 
 function createHandleNewToken(streamRate) {
   async () => {
