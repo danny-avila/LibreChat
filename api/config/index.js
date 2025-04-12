@@ -6,15 +6,19 @@ const logger = require('./winston');
 
 global.EventSource = EventSource;
 
+/** @type {MCPManager} */
 let mcpManager = null;
 let flowManager = null;
 
 /**
+ * @param {string} [userId] - Optional user ID, to avoid disconnecting the current user.
  * @returns {MCPManager}
  */
-function getMCPManager() {
+function getMCPManager(userId) {
   if (!mcpManager) {
     mcpManager = MCPManager.getInstance(logger);
+  } else {
+    mcpManager.checkIdleConnections(userId);
   }
   return mcpManager;
 }

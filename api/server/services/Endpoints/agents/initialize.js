@@ -159,14 +159,20 @@ const initializeAgentOptions = async ({
     currentFiles,
     agent.tool_resources,
   );
+
+  const provider = agent.provider;
   const { tools, toolContextMap } = await loadAgentTools({
     req,
     res,
-    agent,
+    agent: {
+      id: agent.id,
+      tools: agent.tools,
+      provider,
+      model: agent.model,
+    },
     tool_resources,
   });
 
-  const provider = agent.provider;
   agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {

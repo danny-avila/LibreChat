@@ -507,5 +507,27 @@ describe('Grok Model Tests - Pricing', () => {
       expect(getMultiplier({ model: 'grok-beta', tokenType: 'prompt' })).toBe(5.0);
       expect(getMultiplier({ model: 'grok-beta', tokenType: 'completion' })).toBe(15.0);
     });
+
+    test('should return correct prompt and completion rates for Grok 3 models', () => {
+      expect(getMultiplier({ model: 'grok-3', tokenType: 'prompt' })).toBe(3.0);
+      expect(getMultiplier({ model: 'grok-3', tokenType: 'completion' })).toBe(15.0);
+      expect(getMultiplier({ model: 'grok-3-fast', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'grok-3-fast', tokenType: 'completion' })).toBe(25.0);
+      expect(getMultiplier({ model: 'grok-3-mini', tokenType: 'prompt' })).toBe(0.3);
+      expect(getMultiplier({ model: 'grok-3-mini', tokenType: 'completion' })).toBe(0.5);
+      expect(getMultiplier({ model: 'grok-3-mini-fast', tokenType: 'prompt' })).toBe(0.4);
+      expect(getMultiplier({ model: 'grok-3-mini-fast', tokenType: 'completion' })).toBe(4.0);
+    });
+
+    test('should return correct prompt and completion rates for Grok 3 models with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'prompt' })).toBe(3.0);
+      expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'completion' })).toBe(15.0);
+      expect(getMultiplier({ model: 'xai/grok-3-fast', tokenType: 'prompt' })).toBe(5.0);
+      expect(getMultiplier({ model: 'xai/grok-3-fast', tokenType: 'completion' })).toBe(25.0);
+      expect(getMultiplier({ model: 'xai/grok-3-mini', tokenType: 'prompt' })).toBe(0.3);
+      expect(getMultiplier({ model: 'xai/grok-3-mini', tokenType: 'completion' })).toBe(0.5);
+      expect(getMultiplier({ model: 'xai/grok-3-mini-fast', tokenType: 'prompt' })).toBe(0.4);
+      expect(getMultiplier({ model: 'xai/grok-3-mini-fast', tokenType: 'completion' })).toBe(4.0);
+    });
   });
 });

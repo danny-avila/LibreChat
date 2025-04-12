@@ -151,11 +151,14 @@ export class MCPManager {
   }
 
   /** Check for and disconnect idle connections */
-  private checkIdleConnections(): void {
+  private checkIdleConnections(currentUserId?: string): void {
     const now = Date.now();
 
     // Iterate through all users to check for idle ones
     for (const [userId, lastActivity] of this.userLastActivity.entries()) {
+      if (currentUserId && currentUserId === userId) {
+        continue;
+      }
       if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
         this.logger.info(
           `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,

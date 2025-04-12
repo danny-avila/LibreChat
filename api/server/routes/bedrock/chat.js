@@ -14,7 +14,6 @@ const AgentController = require('~/server/controllers/agents/request');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 
 router.use(moderateText);
-router.post('/abort', handleAbort());
 
 /**
  * @route POST /
