@@ -1,4 +1,3 @@
-// AgentController.js
 const { Constants } = require('librechat-data-provider');
 const {
   createAbortController,
@@ -11,6 +10,73 @@ const { logger } = require('~/config');
 
 // WeakMap to hold temporary data associated with requests
 const requestDataMap = new WeakMap();
+
+// Add this only if your Node.js version supports it (Node.js 14+)
+const FinalizationRegistry = global.FinalizationRegistry || null;
+
+// Create a finalization registry to help clean up lingering references
+const clientRegistry = FinalizationRegistry
+  ? new FinalizationRegistry((heldValue) => {
+    try {
+      // This will run when the client is garbage collected
+      if (heldValue && heldValue.abortKey) {
+        cleanupAbortController(heldValue.abortKey);
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  })
+  : null;
+
+// Add the following function to the module (outside the main controller)
+function disposeClient(client) {
+  if (!client) {
+    return;
+  }
+
+  try {
+    // Clear tokenCounter references - this is critical from your profile
+    if (client.tokenCounter) {
+      client.tokenCounter = null;
+    }
+
+    // Clear StandardRun references if they exist
+    if (client.run) {
+      // Break circular references in run
+      if (client.run.tokenCounter) {
+        client.run.tokenCounter = null;
+      }
+
+      // Clear any callback functions
+      if (client.run.callbacks) {
+        client.run.callbacks = null;
+      }
+
+      client.run = null;
+    }
+
+    // Clear other common sources of retention
+    if (client.sendMessage) {
+      client.sendMessage = null;
+    }
+
+    // Clear collections
+    if (client.savedMessageIds) {
+      client.savedMessageIds.clear();
+      client.savedMessageIds = null;
+    }
+
+    // If client has a dispose method, call it
+    if (typeof client.dispose === 'function') {
+      client.dispose();
+    }
+
+    // Clear any options
+    client.options = null;
+  } catch (e) {
+    // Ignore errors during disposal
+  }
+}
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -30,6 +96,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let userMessagePromise;
   let getAbortData;
   let client = null;
+  // Initialize as an array
+  let cleanupHandlers = [];
 
   const newConvo = !conversationId;
   const user = req.user.id;
@@ -54,16 +122,61 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     }
   };
 
+  // Create a function to handle final cleanup
+  const performCleanup = () => {
+    // Make sure cleanupHandlers is an array before iterating
+    if (Array.isArray(cleanupHandlers)) {
+      // Execute all cleanup handlers
+      for (const handler of cleanupHandlers) {
+        try {
+          if (typeof handler === 'function') {
+            handler();
+          }
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+    }
+
+    // Clean up abort controller
+    if (abortKey) {
+      cleanupAbortController(abortKey);
+    }
+
+    // Dispose client properly
+    if (client) {
+      disposeClient(client);
+    }
+
+    // Clear all references
+    getReqData = null;
+    getAbortData = null;
+    client = null;
+    userMessage = null;
+    userMessagePromise = null;
+    cleanupHandlers = null;
+
+    // Clear request data map
+    if (requestDataMap.has(req)) {
+      requestDataMap.delete(req);
+    }
+  };
+
   try {
     /** @type {{ client: TAgentClient }} */
     const result = await initializeClient({ req, res, endpointOption });
     client = result.client;
 
+    // Register client with finalization registry if available
+    if (clientRegistry) {
+      clientRegistry.register(client, { abortKey }, client);
+    }
+
     // Store request data in WeakMap keyed by req object
     requestDataMap.set(req, { client, responseMessageId });
 
     // Use WeakRef to allow GC but still access content if it exists
-    const contentRef = new WeakRef(client.contentParts);
+    const contentRef = new WeakRef(client.contentParts || []);
 
     // Minimize closure scope - only capture small primitives and WeakRef
     getAbortData = () => {
@@ -72,7 +185,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
       return {
         sender,
-        content,
+        content: content || [],
         userMessage,
         promptTokens,
         conversationId,
@@ -107,17 +220,26 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     // Add with named handler so we can remove it later
     res.on('close', closeHandler);
 
-    // Clean up on finish
-    res.on('finish', () => {
+    // Add to cleanup handlers
+    cleanupHandlers.push(() => {
       try {
-        // Remove the close handler
         res.removeListener('close', closeHandler);
-        // Clean up request data
-        if (requestDataMap.has(req)) {
-          requestDataMap.delete(req);
-        }
       } catch (e) {
-        // Ignore cleanup errors
+        // Ignore
+      }
+    });
+
+    // Clean up on finish
+    const finishHandler = () => {
+      performCleanup();
+    };
+
+    res.on('finish', finishHandler);
+    cleanupHandlers.push(() => {
+      try {
+        res.removeListener('finish', finishHandler);
+      } catch (e) {
+        // Ignore
       }
     });
 
@@ -134,7 +256,25 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       },
     };
 
+    // Extract tokenCounter reference before sending message
+    // This helps break the link to StandardRun
+    const tokenCounterRef = client.tokenCounter;
+    client.tokenCounter = null;
+
+    // Restore it temporarily for the duration of the call
+    client.tokenCounter = tokenCounterRef;
     let response = await client.sendMessage(text, messageOptions);
+
+    // Clear it again immediately after
+    client.tokenCounter = null;
+
+    // Break references to Run if it exists
+    if (client.run) {
+      if (client.run.tokenCounter) {
+        client.run.tokenCounter = null;
+      }
+      client.run = null;
+    }
 
     // Extract what we need and immediately break reference
     const messageId = response.messageId;
@@ -196,19 +336,42 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
     // Add title if needed - extract minimal data
     if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
-      // Extract minimal data for title generation
-      const titleData = {
-        text,
-        response: { ...response },
-        clientProps: {
-          endpoint: client.options?.endpoint,
-          modelName: client.options?.modelOptions?.model,
-        },
+      // Don't wait for title generation, but start it async
+      // Use clientProps if possible to avoid keeping client reference
+      const clientProps = {
+        titleConvo: client?.options?.titleConvo,
+        endpoint: client?.options?.endpoint,
+        modelName: client?.options?.modelOptions?.model,
       };
 
-      // Break reference to client
-      addTitle(req, titleData);
+      // If titleConvo is a function, we need to pass the client
+      // But we'll make sure to clean it up properly afterward
+      if (typeof client?.titleConvo === 'function') {
+        // Start title generation asynchronously
+        addTitle(req, {
+          text,
+          response: { ...response },
+          client, // Have to pass client for now
+        }).finally(() => {
+          // Nullify client reference after title generation completes
+          client = null;
+        });
+      } else {
+        // Use clientProps approach if possible
+        addTitle(req, {
+          text,
+          response: { ...response },
+          clientProps,
+        });
+
+        // We can immediately nullify client since we're using props
+        client = null;
+      }
     }
+
+    // Force cleanup of client to break StandardRun references
+    disposeClient(client);
+    client = null;
   } catch (error) {
     // Handle error without capturing much scope
     handleAbortError(res, req, error, {
@@ -220,22 +383,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       logger.error('[api/server/controllers/agents/request] Error in `handleAbortError`', err);
     });
   } finally {
-    // Thorough cleanup
-    if (abortKey) {
-      cleanupAbortController(abortKey);
-    }
-
-    // Clear all references
-    getReqData = null;
-    getAbortData = null;
-    client = null;
-    userMessage = null;
-    userMessagePromise = null;
-
-    // Clean up request data
-    if (requestDataMap.has(req)) {
-      requestDataMap.delete(req);
-    }
+    // Ensure thorough cleanup happens
+    performCleanup();
   }
 };
 

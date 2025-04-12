@@ -121,18 +121,18 @@ const handleAbort = () => {
   };
 };
 
-const createAbortController = (req, res, getAbortDataFn, getReqData) => {
+const createAbortController = (req, res, getAbortData, getReqData) => {
   let abortKey;
   const abortController = new AbortController();
   const { endpointOption } = req.body;
 
+  // Store minimal data in WeakMap to avoid circular references
   abortDataMap.set(abortController, {
-    getAbortDataFn,
+    getAbortDataFn: getAbortData,
     userId: req.user.id,
     endpoint: endpointOption.endpoint,
     iconURL: endpointOption.iconURL,
-    modelOptions: endpointOption.modelOptions,
-    model_parameters: endpointOption.model_parameters,
+    model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
   });
 
   // Replace the direct function reference with a wrapper that uses WeakMap
@@ -143,7 +143,27 @@ const createAbortController = (req, res, getAbortDataFn, getReqData) => {
     }
 
     try {
-      return data.getAbortDataFn();
+      const result = data.getAbortDataFn();
+
+      // Create a copy without circular references
+      const cleanResult = { ...result };
+
+      // If userMessagePromise exists, break its reference to client
+      if (
+        cleanResult.userMessagePromise &&
+        typeof cleanResult.userMessagePromise.then === 'function'
+      ) {
+        // Create a new promise that fulfills with the same result but doesn't reference the original
+        const originalPromise = cleanResult.userMessagePromise;
+        cleanResult.userMessagePromise = new Promise((resolve, reject) => {
+          originalPromise.then(
+            (result) => resolve({ ...result }),
+            (error) => reject(error),
+          );
+        });
+      }
+
+      return cleanResult;
     } catch (err) {
       logger.error('[abortController.getAbortData] Error:', err);
       return {};
