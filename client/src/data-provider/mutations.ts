@@ -10,10 +10,9 @@ import type * as t from 'librechat-data-provider';
 import {
   logger,
   /* Conversations */
-  addConversation,
-  updateConvoFields,
-  updateConversation,
-  deleteConversation,
+  addConvoToAllQueries,
+  updateConvoInAllQueries,
+  removeConvoFromAllQueries,
 } from '~/utils';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
