@@ -47,10 +47,11 @@ function disposeClient(client) {
         client.run.Graph.resetValues();
         client.run.Graph = null;
       }
-
-      // Clear any callback functions
-      if (client.run.callbacks) {
-        client.run.callbacks = null;
+      if (client.run.handlerRegistry) {
+        client.run.handlerRegistry = null;
+      }
+      if (client.run.graphRunnable) {
+        client.run.graphRunnable = null;
       }
 
       client.run = null;
