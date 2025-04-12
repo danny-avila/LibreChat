@@ -29,14 +29,11 @@ function disposeClient(client) {
     return;
   }
   try {
-    if (client.tokenCounter) {
-      client.tokenCounter = null;
+    if (client.apiKey) {
+      client.apiKey = null;
     }
-    if (client.req) {
-      client.req = null;
-    }
-    if (client.res) {
-      client.res = null;
+    if (client.azure) {
+      client.azure = null;
     }
     if (client.sendMessage) {
       client.sendMessage = null;
@@ -53,6 +50,9 @@ function disposeClient(client) {
     if (client.abortController) {
       client.abortController = null;
     }
+    if (client.streamHandler) {
+      client.streamHandler = null;
+    }
     if (client.options) {
       client.options = null;
     }
@@ -68,7 +68,7 @@ function disposeClient(client) {
   }
 }
 
-let getReqData = (data = {}, context) => {
+function processReqData(data = {}, context) {
   let { userMessage, userMessagePromise, responseMessageId, promptTokens } = context;
   for (const key in data) {
     if (key === 'userMessage') {
@@ -82,7 +82,7 @@ let getReqData = (data = {}, context) => {
     }
   }
   return { userMessage, userMessagePromise, responseMessageId, promptTokens };
-};
+}
 
 const EditController = async (req, res, next, initializeClient) => {
   let {
@@ -127,7 +127,7 @@ const EditController = async (req, res, next, initializeClient) => {
   let reqDataContext = { userMessage, userMessagePromise, responseMessageId, promptTokens };
 
   const updateReqData = (data = {}) => {
-    reqDataContext = getReqData(data, reqDataContext);
+    reqDataContext = processReqData(data, reqDataContext);
     userMessage = reqDataContext.userMessage;
     userMessagePromise = reqDataContext.userMessagePromise;
     responseMessageId = reqDataContext.responseMessageId;
@@ -162,7 +162,6 @@ const EditController = async (req, res, next, initializeClient) => {
       client = null;
     }
 
-    getReqData = null;
     reqDataContext = null;
     userMessage = null;
     userMessagePromise = null;
