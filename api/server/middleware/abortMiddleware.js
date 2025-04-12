@@ -93,7 +93,7 @@ async function abortMessage(req, res) {
     return res.status(204).send({ message: 'Request not found' });
   }
 
-  const finalEvent = await abortController.abortCompletion();
+  const finalEvent = await abortController.abortCompletion?.();
   logger.debug(
     `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
       JSON.stringify({ abortKey }),
@@ -122,7 +122,6 @@ const handleAbort = () => {
 };
 
 const createAbortController = (req, res, getAbortData, getReqData) => {
-  let abortKey;
   const abortController = new AbortController();
   const { endpointOption } = req.body;
 
@@ -177,7 +176,8 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
   const onStart = (userMessage, responseMessageId) => {
     sendMessage(res, { message: userMessage, created: true });
 
-    abortKey = userMessage?.conversationId ?? req.user.id;
+    const abortKey = userMessage?.conversationId ?? req.user.id;
+    getReqData({ abortKey });
     const prevRequest = abortControllers.get(abortKey);
     const { overrideUserMessageId } = req?.body ?? {};
 
@@ -291,7 +291,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     };
   };
 
-  return { abortController, onStart, abortKey };
+  return { abortController, onStart };
 };
 
 /**

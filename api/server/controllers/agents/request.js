@@ -176,6 +176,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         promptTokens = data[key];
       } else if (key === 'sender') {
         sender = data[key];
+      } else if (key === 'abortKey') {
+        abortKey = data[key];
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
       }
@@ -260,12 +262,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       };
     };
 
-    const {
-      abortController,
-      onStart,
-      abortKey: _aK,
-    } = createAbortController(req, res, getAbortData, getReqData);
-    abortKey = _aK;
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     // Simple handler to avoid capturing scope
     const closeHandler = () => {
