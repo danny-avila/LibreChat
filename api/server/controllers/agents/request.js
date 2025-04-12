@@ -35,12 +35,39 @@ function disposeClient(client) {
   }
 
   try {
-    // Clear tokenCounter references - this is critical from your profile
-    if (client.tokenCounter) {
-      client.tokenCounter = null;
+    if (client.user) {
+      client.user = null;
     }
-
-    // Clear StandardRun references if they exist
+    if (client.conversationId) {
+      client.conversationId = null;
+    }
+    if (client.responseMessageId) {
+      client.responseMessageId = null;
+    }
+    if (client.clientName) {
+      client.clientName = null;
+    }
+    if (client.sender) {
+      client.sender = null;
+    }
+    if (client.model) {
+      client.model = null;
+    }
+    if (client.maxContextTokens) {
+      client.maxContextTokens = null;
+    }
+    if (client.contextStrategy) {
+      client.contextStrategy = null;
+    }
+    if (client.currentDateString) {
+      client.currentDateString = null;
+    }
+    if (client.inputTokensKey) {
+      client.inputTokensKey = null;
+    }
+    if (client.outputTokensKey) {
+      client.outputTokensKey = null;
+    }
     if (client.run) {
       // Break circular references in run
       if (client.run.Graph) {
@@ -94,6 +121,17 @@ function disposeClient(client) {
       client.dispose();
     }
 
+    if (client.options) {
+      if (client.options.req) {
+        client.options.req = null;
+      }
+      if (client.options.res) {
+        client.options.res = null;
+      }
+      if (client.options.attachments) {
+        client.options.attachments = null;
+      }
+    }
     client.options = null;
   } catch (e) {
     // Ignore errors during disposal
@@ -146,6 +184,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
   // Create a function to handle final cleanup
   const performCleanup = () => {
+    logger.debug('[AgentController] Performing cleanup');
     // Make sure cleanupHandlers is an array before iterating
     if (Array.isArray(cleanupHandlers)) {
       // Execute all cleanup handlers
@@ -162,6 +201,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
     // Clean up abort controller
     if (abortKey) {
+      logger.debug('[AgentController] Cleaning up abort controller');
       cleanupAbortController(abortKey);
     }
 
@@ -184,6 +224,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     if (requestDataMap.has(req)) {
       requestDataMap.delete(req);
     }
+    logger.debug('[AgentController] Cleanup completed');
   };
 
   try {
