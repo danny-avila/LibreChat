@@ -1,6 +1,6 @@
 import React from 'react';
-import { cn } from '~/utils';
 import type { MouseEvent } from 'react';
+import { cn } from '~/utils';
 
 interface ConvoLinkProps {
   conversationId: string | null;
