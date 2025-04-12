@@ -1,4 +1,5 @@
-const { logger } = require('~/config');
+const { GraphEvents } = require('@librechat/agents');
+const { logger, sendEvent } = require('~/config');
 
 /**
  * Makes a function to make HTTP request and logs the process.
@@ -27,6 +28,33 @@ function createFetch({ directEndpoint = false, reverseProxyUrl = '' }) {
   };
 }
 
+// Add this at the module level outside the class
+/**
+ * Creates event handlers for stream events that don't capture client references
+ * @param {Object} res - The response object to send events to
+ * @returns {Object} Object containing handler functions
+ */
+function createStreamEventHandlers(res) {
+  return {
+    [GraphEvents.ON_RUN_STEP]: (event) => {
+      if (res) {
+        sendEvent(res, event);
+      }
+    },
+    [GraphEvents.ON_MESSAGE_DELTA]: (event) => {
+      if (res) {
+        sendEvent(res, event);
+      }
+    },
+    [GraphEvents.ON_REASONING_DELTA]: (event) => {
+      if (res) {
+        sendEvent(res, event);
+      }
+    },
+  };
+}
+
 module.exports = {
   createFetch,
+  createStreamEventHandlers,
 };

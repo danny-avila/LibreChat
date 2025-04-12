@@ -1,7 +1,7 @@
 const OpenAI = require('openai');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
+const { SplitStreamHandler } = require('@librechat/agents');
 const {
   Constants,
   ImageDetail,
@@ -32,18 +32,18 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { createFetch, createStreamEventHandlers } = require('./generators');
 const { addSpaceIfNeeded, isEnabled, sleep } = require('~/server/utils');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
-const { logger, sendEvent } = require('~/config');
 const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
-const { createFetch } = require('./fetch');
+const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -1361,31 +1361,12 @@ ${convo}
         delete modelOptions.reasoning_effort;
       }
 
-      const resRef = new WeakRef(this.options.res);
+      const handlers = createStreamEventHandlers(this.options.res);
       this.streamHandler = new SplitStreamHandler({
         reasoningKey,
         accumulate: true,
         runId: this.responseMessageId,
-        handlers: {
-          [GraphEvents.ON_RUN_STEP]: (event) => {
-            const res = resRef.deref();
-            if (res) {
-              sendEvent(res, event);
-            }
-          },
-          [GraphEvents.ON_MESSAGE_DELTA]: (event) => {
-            const res = resRef.deref();
-            if (res) {
-              sendEvent(res, event);
-            }
-          },
-          [GraphEvents.ON_REASONING_DELTA]: (event) => {
-            const res = resRef.deref();
-            if (res) {
-              sendEvent(res, event);
-            }
-          },
-        },
+        handlers,
       });
 
       intermediateReply = this.streamHandler.tokens;
