@@ -54,7 +54,8 @@ jobs:
         echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --pass-stdin
         
         # Get all tags for this repository
-        TAGS=$(regctl tag ls $REGISTRY_URL/$REPOSITORY_NAME || echo "")
+        echo "Retrieving tags for $REGISTRY_URL/$REPOSITORY_NAME"
+        TAGS=$(regctl tag ls $REGISTRY_URL/$REPOSITORY_NAME 2>/dev/null || echo "")
         
         if [ -z "$TAGS" ]; then
           echo "Repository $REPOSITORY_NAME does not exist or has no tags"
@@ -65,20 +66,43 @@ jobs:
             # Delete all tags
             for TAG in $TAGS; do
               echo "Deleting tag: $REGISTRY_URL/$REPOSITORY_NAME:$TAG"
-              regctl tag delete $REGISTRY_URL/$REPOSITORY_NAME:$TAG
+              regctl tag delete $REGISTRY_URL/$REPOSITORY_NAME:$TAG || echo "Warning: Failed to delete tag $TAG, continuing..."
             done
             
-            # Delete all manifests
-            MANIFESTS=$(regctl manifest ls $REGISTRY_URL/$REPOSITORY_NAME || echo "")
-            for MANIFEST in $MANIFESTS; do
-              echo "Deleting manifest: $MANIFEST"
-              regctl manifest delete $REGISTRY_URL/$REPOSITORY_NAME@$MANIFEST
-            done
+            # Get and delete manifests with proper validation
+            echo "Retrieving manifests for $REGISTRY_URL/$REPOSITORY_NAME"
+            MANIFESTS=$(regctl manifest ls $REGISTRY_URL/$REPOSITORY_NAME 2>/dev/null || echo "")
             
-            echo "All tags and manifests deleted from repository: $REPOSITORY_NAME"
+            if [ -n "$MANIFESTS" ]; then
+              for MANIFEST in $MANIFESTS; do
+                # Validate that the manifest appears to be a proper SHA256 digest
+                if [[ $MANIFEST == sha256:* && ${#MANIFEST} -ge 64 ]]; then
+                  echo "Deleting manifest: $MANIFEST"
+                  regctl manifest delete $REGISTRY_URL/$REPOSITORY_NAME@$MANIFEST || echo "Warning: Failed to delete manifest $MANIFEST, continuing..."
+                else
+                  echo "Skipping invalid manifest format: $MANIFEST"
+                fi
+              done
+            else
+              echo "No manifests found or unable to retrieve manifests"
+            fi
+            
+            echo "Repository cleanup completed for: $REPOSITORY_NAME"
           else
             echo "[DRY RUN] Would delete these tags: $TAGS"
-            echo "[DRY RUN] Would delete all manifests in the repository"
+            MANIFESTS=$(regctl manifest ls $REGISTRY_URL/$REPOSITORY_NAME 2>/dev/null || echo "")
+            if [ -n "$MANIFESTS" ]; then
+              echo "[DRY RUN] Would delete these manifests:"
+              for MANIFEST in $MANIFESTS; do
+                if [[ $MANIFEST == sha256:* && ${#MANIFEST} -ge 64 ]]; then
+                  echo "  - $MANIFEST"
+                else
+                  echo "  - $MANIFEST (invalid format, would skip)"
+                fi
+              done
+            else
+              echo "[DRY RUN] No manifests found or unable to retrieve manifests"
+            fi
           fi
         fi
         
@@ -92,7 +116,7 @@ jobs:
       run: |
         if [ "$DRY_RUN" = "false" ]; then
           echo "Running garbage collection to reclaim space"
-          echo "$SUDO_PASSWORD" | sudo -S kubectl -n $REGISTRY_NAMESPACE exec -it $REGISTRY_POD -- bin/registry garbage-collect /etc/docker/registry/config.yml --delete-untagged=true
+          echo "$SUDO_PASSWORD" | sudo -S kubectl -n $REGISTRY_NAMESPACE exec -it $REGISTRY_POD -- bin/registry garbage-collect /etc/docker/registry/config.yml --delete-untagged=true || echo "Warning: Garbage collection failed, but workflow will continue"
         else
           echo "[DRY RUN] Would run garbage collection"
         fi 
