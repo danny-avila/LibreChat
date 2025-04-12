@@ -1,88 +1,18 @@
 const { getResponseSender } = require('librechat-data-provider');
 const {
+  handleAbortError,
   createAbortController,
   cleanupAbortController,
-  handleAbortError,
 } = require('~/server/middleware');
+const {
+  disposeClient,
+  processReqData,
+  clientRegistry,
+  requestDataMap,
+} = require('~/server/cleanup');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
-
-const requestDataMap = new WeakMap();
-const FinalizationRegistry = global.FinalizationRegistry || null;
-
-const clientRegistry = FinalizationRegistry
-  ? new FinalizationRegistry((heldValue) => {
-    try {
-      // This will run when the client is garbage collected
-      if (heldValue && heldValue.abortKey) {
-        cleanupAbortController(heldValue.abortKey);
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-  })
-  : null;
-
-function disposeClient(client) {
-  if (!client) {
-    return;
-  }
-  try {
-    if (client.apiKey) {
-      client.apiKey = null;
-    }
-    if (client.azure) {
-      client.azure = null;
-    }
-    if (client.sendMessage) {
-      client.sendMessage = null;
-    }
-    if (client.getBuildMessages) {
-      client.getBuildMessages = null;
-    }
-    if (client.getResponseSender) {
-      client.getResponseSender = null;
-    }
-    if (client.currentMessages) {
-      client.currentMessages = null;
-    }
-    if (client.abortController) {
-      client.abortController = null;
-    }
-    if (client.streamHandler) {
-      client.streamHandler = null;
-    }
-    if (client.options) {
-      client.options = null;
-    }
-    if (client.savedMessageIds) {
-      client.savedMessageIds.clear();
-      client.savedMessageIds = null;
-    }
-    if (typeof client.dispose === 'function') {
-      client.dispose();
-    }
-  } catch (e) {
-    // Ignore
-  }
-}
-
-function processReqData(data = {}, context) {
-  let { userMessage, userMessagePromise, responseMessageId, promptTokens } = context;
-  for (const key in data) {
-    if (key === 'userMessage') {
-      userMessage = data[key];
-    } else if (key === 'userMessagePromise') {
-      userMessagePromise = data[key];
-    } else if (key === 'responseMessageId') {
-      responseMessageId = data[key];
-    } else if (key === 'promptTokens') {
-      promptTokens = data[key];
-    }
-  }
-  return { userMessage, userMessagePromise, responseMessageId, promptTokens };
-}
 
 const EditController = async (req, res, next, initializeClient) => {
   let {
@@ -128,6 +58,7 @@ const EditController = async (req, res, next, initializeClient) => {
 
   const updateReqData = (data = {}) => {
     reqDataContext = processReqData(data, reqDataContext);
+    abortKey = reqDataContext.abortKey;
     userMessage = reqDataContext.userMessage;
     userMessagePromise = reqDataContext.userMessagePromise;
     responseMessageId = reqDataContext.responseMessageId;
@@ -153,6 +84,7 @@ const EditController = async (req, res, next, initializeClient) => {
     }
 
     if (abortKey) {
+      logger.debug('[AskController] Cleaning up abort controller');
       cleanupAbortController(abortKey);
       abortKey = null;
     }
@@ -207,12 +139,12 @@ const EditController = async (req, res, next, initializeClient) => {
       };
     };
 
-    const {
-      abortController,
-      onStart,
-      abortKey: _aK,
-    } = createAbortController(req, res, getAbortData, updateReqData);
-    abortKey = _aK;
+    const { onStart, abortController } = createAbortController(
+      req,
+      res,
+      getAbortData,
+      updateReqData,
+    );
 
     const closeHandler = () => {
       logger.debug('[EditController] Request closed');

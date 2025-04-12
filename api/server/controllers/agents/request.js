@@ -1,142 +1,13 @@
 const { Constants } = require('librechat-data-provider');
 const {
+  handleAbortError,
   createAbortController,
   cleanupAbortController,
-  handleAbortError,
 } = require('~/server/middleware');
+const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { sendMessage } = require('~/server/utils');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
-
-// WeakMap to hold temporary data associated with requests
-const requestDataMap = new WeakMap();
-
-// Add this only if your Node.js version supports it (Node.js 14+)
-const FinalizationRegistry = global.FinalizationRegistry || null;
-
-// Create a finalization registry to help clean up lingering references
-const clientRegistry = FinalizationRegistry
-  ? new FinalizationRegistry((heldValue) => {
-    try {
-      // This will run when the client is garbage collected
-      if (heldValue && heldValue.abortKey) {
-        cleanupAbortController(heldValue.abortKey);
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-  })
-  : null;
-
-// Add the following function to the module (outside the main controller)
-function disposeClient(client) {
-  if (!client) {
-    return;
-  }
-
-  try {
-    if (client.user) {
-      client.user = null;
-    }
-    if (client.conversationId) {
-      client.conversationId = null;
-    }
-    if (client.responseMessageId) {
-      client.responseMessageId = null;
-    }
-    if (client.clientName) {
-      client.clientName = null;
-    }
-    if (client.sender) {
-      client.sender = null;
-    }
-    if (client.model) {
-      client.model = null;
-    }
-    if (client.maxContextTokens) {
-      client.maxContextTokens = null;
-    }
-    if (client.contextStrategy) {
-      client.contextStrategy = null;
-    }
-    if (client.currentDateString) {
-      client.currentDateString = null;
-    }
-    if (client.inputTokensKey) {
-      client.inputTokensKey = null;
-    }
-    if (client.outputTokensKey) {
-      client.outputTokensKey = null;
-    }
-    if (client.run) {
-      // Break circular references in run
-      if (client.run.Graph) {
-        client.run.Graph.resetValues();
-        client.run.Graph = null;
-      }
-      if (client.run.handlerRegistry) {
-        client.run.handlerRegistry = null;
-      }
-      if (client.run.graphRunnable) {
-        client.run.graphRunnable = null;
-      }
-
-      client.run = null;
-    }
-
-    // Clear other common sources of retention
-    if (client.sendMessage) {
-      client.sendMessage = null;
-    }
-    if (client.savedMessageIds) {
-      client.savedMessageIds.clear();
-      client.savedMessageIds = null;
-    }
-    if (client.currentMessages) {
-      client.currentMessages = null;
-    }
-    if (client.contentParts) {
-      client.contentParts = null;
-    }
-    if (client.abortController) {
-      client.abortController = null;
-    }
-    if (client.collectedUsage) {
-      client.collectedUsage = null;
-    }
-    if (client.indexTokenCountMap) {
-      client.indexTokenCountMap = null;
-    }
-    if (client.agentConfigs) {
-      client.agentConfigs = null;
-    }
-    if (client.artifactPromises) {
-      client.artifactPromises = null;
-    }
-    if (client.usage) {
-      client.usage = null;
-    }
-
-    if (typeof client.dispose === 'function') {
-      client.dispose();
-    }
-
-    if (client.options) {
-      if (client.options.req) {
-        client.options.req = null;
-      }
-      if (client.options.res) {
-        client.options.res = null;
-      }
-      if (client.options.attachments) {
-        client.options.attachments = null;
-      }
-    }
-    client.options = null;
-  } catch (e) {
-    // Ignore errors during disposal
-  }
-}
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -301,13 +172,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       },
     };
 
-    // Extract tokenCounter reference before sending message
-    // This helps break the link to StandardRun
-    const tokenCounterRef = client.tokenCounter;
-    client.tokenCounter = null;
-
-    // Restore it temporarily for the duration of the call
-    client.tokenCounter = tokenCounterRef;
     let response = await client.sendMessage(text, messageOptions);
 
     // Extract what we need and immediately break reference
