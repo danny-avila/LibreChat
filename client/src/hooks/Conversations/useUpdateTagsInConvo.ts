@@ -3,7 +3,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { updateConvoFields } from '~/utils/convos';
+import { updateConvoFieldsInfinite } from '~/utils/convos';
 
 const useUpdateTagsInConvo = () => {
   const queryClient = useQueryClient();
@@ -28,7 +28,7 @@ const useUpdateTagsInConvo = () => {
       if (!convoData) {
         return convoData;
       }
-      return updateConvoFields(
+      return updateConvoFieldsInfinite(
         convoData,
         {
           conversationId: currentConvo.conversationId,

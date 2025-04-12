@@ -5,17 +5,15 @@ import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import { useNavigateToConvo, useMediaQuery, useLocalize } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
+import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
+import { ConvoOptions } from './ConvoOptions';
 import { useToastContext } from '~/Providers';
+import RenameForm from './RenameForm';
+import ConvoLink from './ConvoLink';
 import { cn } from '~/utils';
 import store from '~/store';
-
-// Component imports
-import ConvoLink from './ConvoLink';
-import RenameForm from './RenameForm';
-import { ConvoOptions } from './ConvoOptions';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 
 interface ConversationProps {
   conversation: TConversation;
@@ -115,6 +113,7 @@ export default function Conversation({
       document.title = title;
     }
 
+    navigateToConvo(conversation);
     navigateWithLastTools(
       conversation,
       !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,

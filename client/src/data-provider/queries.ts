@@ -5,9 +5,9 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
-import { useRecoilValue } from 'recoil';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  InfiniteData,
   UseInfiniteQueryOptions,
   QueryObserverResult,
   UseQueryOptions,
@@ -30,8 +30,6 @@ import type {
   SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
-import { findPageForConversation } from '~/utils';
-import store from '~/store';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -65,25 +63,23 @@ export const useGetConvoIdQuery = (
   config?: UseQueryOptions<t.TConversation>,
 ): QueryObserverResult<t.TConversation> => {
   const queryClient = useQueryClient();
+
   return useQuery<t.TConversation>(
     [QueryKeys.conversation, id],
     () => {
-      const defaultQuery = () => dataService.getConversationById(id);
-      const convosQuery = queryClient.getQueryData<t.ConversationData>([
-        QueryKeys.allConversations,
-      ]);
+      // Try to find in all fetched infinite pages
+      const convosQuery = queryClient.getQueryData<
+        InfiniteData<import('~/utils').ConversationCursorData>
+          >([QueryKeys.allConversations]);
+      const found = convosQuery?.pages
+        .flatMap((page) => page.conversations)
+        .find((c) => c.conversationId === id);
 
-      if (!convosQuery) {
-        return defaultQuery();
+      if (found) {
+        return found;
       }
-
-      const { pageIndex, index } = findPageForConversation(convosQuery, { conversationId: id });
-
-      if (pageIndex > -1 && index > -1) {
-        return convosQuery.pages[pageIndex].conversations[index];
-      }
-
-      return defaultQuery();
+      // Otherwise, fetch from API
+      return dataService.getConversationById(id);
     },
     {
       refetchOnWindowFocus: false,
