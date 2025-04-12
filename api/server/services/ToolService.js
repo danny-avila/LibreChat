@@ -334,7 +334,7 @@ async function processRequiredActions(client, requiredActions) {
         const domainMap = new Map();
 
         for (const action of actionSets) {
-          const domain = await domainParser(client.req, action.metadata.domain, true);
+          const domain = await domainParser(action.metadata.domain, true);
           domainMap.set(domain, action);
 
           // Check if domain is allowed
