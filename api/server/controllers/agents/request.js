@@ -59,11 +59,33 @@ function disposeClient(client) {
     if (client.sendMessage) {
       client.sendMessage = null;
     }
-
-    // Clear collections
     if (client.savedMessageIds) {
       client.savedMessageIds.clear();
       client.savedMessageIds = null;
+    }
+    if (client.currentMessages) {
+      client.currentMessages = null;
+    }
+    if (client.contentParts) {
+      client.contentParts = null;
+    }
+    if (client.abortController) {
+      client.abortController = null;
+    }
+    if (client.collectedUsage) {
+      client.collectedUsage = null;
+    }
+    if (client.indexTokenCountMap) {
+      client.indexTokenCountMap = null;
+    }
+    if (client.agentConfigs) {
+      client.agentConfigs = null;
+    }
+    if (client.artifactPromises) {
+      client.artifactPromises = null;
+    }
+    if (client.usage) {
+      client.usage = null;
     }
 
     // If client has a dispose method, call it
