@@ -19,10 +19,11 @@ const addTitle = async (req, { text, response, client }) => {
 
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${response.conversationId}`;
-
+  /** @type {NodeJS.Timeout} */
+  let timeoutId;
   try {
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Title generation timeout')), 25000);
+      timeoutId = setTimeout(() => reject(new Error('Title generation timeout')), 25000);
     }).catch((error) => {
       logger.error('Title error:', error);
     });
@@ -48,6 +49,9 @@ const addTitle = async (req, { text, response, client }) => {
     const title = await titlePromise;
     if (!abortController.signal.aborted) {
       abortController.abort();
+    }
+    if (timeoutId) {
+      clearTimeout(timeoutId);
     }
 
     await titleCache.set(key, title, 120000);
