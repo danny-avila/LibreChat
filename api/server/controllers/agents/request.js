@@ -31,7 +31,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let cleanupHandlers = [];
 
   const newConvo = !conversationId;
-  const user = req.user.id;
+  const userId = req.user.id;
 
   // Create handler to avoid capturing the entire parent scope
   let getReqData = (data = {}) => {
@@ -107,11 +107,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
     // Register client with finalization registry if available
     if (clientRegistry) {
-      clientRegistry.register(client, { abortKey }, client);
+      clientRegistry.register(client, { userId }, client);
     }
 
     // Store request data in WeakMap keyed by req object
-    requestDataMap.set(req, { client, responseMessageId });
+    requestDataMap.set(req, { client });
 
     // Use WeakRef to allow GC but still access content if it exists
     const contentRef = new WeakRef(client.contentParts || []);
@@ -160,7 +160,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     });
 
     const messageOptions = {
-      user,
+      user: userId,
       onStart,
       getReqData,
       conversationId,
@@ -219,7 +219,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
         await saveMessage(
           req,
-          { ...finalResponse, user },
+          { ...finalResponse, user: userId },
           { context: 'api/server/controllers/agents/request.js - response end' },
         );
       }

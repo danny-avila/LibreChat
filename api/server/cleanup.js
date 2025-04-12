@@ -1,4 +1,4 @@
-const { cleanupAbortController } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 // WeakMap to hold temporary data associated with requests
 const requestDataMap = new WeakMap();
@@ -10,8 +10,10 @@ const clientRegistry = FinalizationRegistry
   ? new FinalizationRegistry((heldValue) => {
     try {
       // This will run when the client is garbage collected
-      if (heldValue && heldValue.abortKey) {
-        cleanupAbortController(heldValue.abortKey);
+      if (heldValue && heldValue.userId) {
+        logger.debug(`[FinalizationRegistry] Cleaning up client for user ${heldValue.userId}`);
+      } else {
+        logger.debug('[FinalizationRegistry] Cleaning up client');
       }
     } catch (e) {
       // Ignore errors

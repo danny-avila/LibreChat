@@ -52,7 +52,7 @@ const EditController = async (req, res, next, initializeClient) => {
     modelDisplayLabel,
   });
   const userMessageId = parentMessageId;
-  const user = req.user.id;
+  const userId = req.user.id;
 
   let reqDataContext = { userMessage, userMessagePromise, responseMessageId, promptTokens };
 
@@ -113,7 +113,7 @@ const EditController = async (req, res, next, initializeClient) => {
     ({ client } = await initializeClient({ req, res, endpointOption }));
 
     if (clientRegistry && client) {
-      clientRegistry.register(client, { abortKey }, client);
+      clientRegistry.register(client, { userId }, client);
     }
 
     if (client) {
@@ -165,7 +165,7 @@ const EditController = async (req, res, next, initializeClient) => {
     });
 
     let response = await client.sendMessage(text, {
-      user,
+      user: userId,
       generation,
       isContinued,
       isEdited: true,
@@ -209,7 +209,7 @@ const EditController = async (req, res, next, initializeClient) => {
 
       await saveMessage(
         req,
-        { ...finalResponseMessage, user },
+        { ...finalResponseMessage, user: userId },
         { context: 'api/server/controllers/EditController.js - response end' },
       );
     }

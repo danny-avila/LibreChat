@@ -50,7 +50,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   });
   const initialConversationId = conversationId;
   const newConvo = !initialConversationId;
-  const user = req.user.id;
+  const userId = req.user.id;
 
   let reqDataContext = {
     userMessage,
@@ -118,7 +118,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   try {
     ({ client } = await initializeClient({ req, res, endpointOption }));
     if (clientRegistry && client) {
-      clientRegistry.register(client, { abortKey }, client);
+      clientRegistry.register(client, { userId }, client);
     }
 
     if (client) {
@@ -170,7 +170,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     });
 
     const messageOptions = {
-      user,
+      user: userId,
       parentMessageId,
       conversationId: reqDataContext.conversationId,
       overrideParentMessageId,
@@ -220,7 +220,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       if (client?.savedMessageIds && !client.savedMessageIds.has(response.messageId)) {
         await saveMessage(
           req,
-          { ...finalResponseMessage, user },
+          { ...finalResponseMessage, user: userId },
           { context: 'api/server/controllers/AskController.js - response end' },
         );
       }
