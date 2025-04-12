@@ -178,8 +178,7 @@ const EditController = async (req, res, next, initializeClient) => {
   };
 
   try {
-    const initResult = await initializeClient({ req, res, endpointOption });
-    client = initResult.client;
+    ({ client } = await initializeClient({ req, res, endpointOption }));
 
     if (clientRegistry && client) {
       clientRegistry.register(client, { abortKey }, client);
