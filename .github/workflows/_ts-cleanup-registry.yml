@@ -49,7 +49,7 @@ jobs:
         echo "Looking for orphaned images in $REGISTRY_URL"
         
         # Login to registry
-        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --password-stdin
+        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --pass-stdin
         
         # Determine which repositories to process
         if [ -n "$TARGET_REPOSITORIES" ]; then
