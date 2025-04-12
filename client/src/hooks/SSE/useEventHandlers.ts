@@ -624,6 +624,12 @@ export default function useEventHandlers({
         (submission.conversation as TConversation | null) ?? {};
       const endpoint = endpointType ?? _endpoint;
       if (!isAssistantsEndpoint(endpoint)) {
+        if (newConversation) {
+          newConversation({
+            template: { conversationId: conversationId || v4() },
+            preset: tPresetSchema.parse(submission.conversation),
+          });
+        }
         setIsSubmitting(false);
         return;
       }
