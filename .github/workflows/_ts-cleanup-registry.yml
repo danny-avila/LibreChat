@@ -13,6 +13,11 @@ on:
         options:
           - 'true'
           - 'false'
+      targetRepositories:
+        description: 'Comma-separated list of target repositories to clean up'
+        required: false
+        type: string
+        default: 'librechat-custom'
 
 jobs:
   cleanup:
@@ -39,18 +44,27 @@ jobs:
         REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
         REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         DRY_RUN: ${{ github.event.inputs.dryRun || 'true' }}
+        TARGET_REPOSITORIES: ${{ github.event.inputs.targetRepositories || secrets.TARGET_REPOSITORIES || 'librechat-custom' }}
       run: |
         echo "Looking for orphaned images in $REGISTRY_URL"
         
         # Login to registry
-        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --pass-stdin
+        echo "$REGISTRY_PASSWORD" | regctl registry login $REGISTRY_URL --user $REGISTRY_USERNAME --password-stdin
         
-        # List all repositories
-        REPOS=$(regctl registry catalog $REGISTRY_URL)
+        # Determine which repositories to process
+        if [ -n "$TARGET_REPOSITORIES" ]; then
+          # Use the specified repositories (comma-separated list)
+          IFS=',' read -ra REPOS <<< "$TARGET_REPOSITORIES"
+          echo "Processing specified repositories: ${REPOS[*]}"
+        else
+          # If somehow we got here with empty TARGET_REPOSITORIES, use librechat-custom as default
+          REPOS=("librechat-custom")
+          echo "Using default repository: librechat-custom"
+        fi
         
-        echo "Found repositories: $REPOS"
-        
-        for REPO in $REPOS; do
+        for REPO in "${REPOS[@]}"; do
+          # Trim whitespace
+          REPO=$(echo "$REPO" | xargs)
           echo "Processing repository: $REPO"
           
           # Get all tags for this repository
