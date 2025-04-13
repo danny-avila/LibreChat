@@ -53,18 +53,17 @@ export default function Conversation({
   }, [title]);
 
   const isActiveConvo = useMemo(() => {
-    if (currentConvoId === conversationId) {
-      return true;
-    }
-    if (isLatestConvo && currentConvoId === 'new' && activeConvos.includes('new')) {
-      return true;
+    if (conversationId === Constants.NEW_CONVO) {
+      return currentConvoId === Constants.NEW_CONVO;
     }
 
-    if (activeConvos.includes(conversationId)) {
-      return true;
+    if (currentConvoId !== Constants.NEW_CONVO) {
+      return currentConvoId === conversationId;
+    } else {
+      const latestConvo = activeConvos?.[0];
+      return latestConvo === conversationId;
     }
-    return false;
-  }, [currentConvoId, conversationId, isLatestConvo, activeConvos]);
+  }, [currentConvoId, conversationId, activeConvos]);
 
   const handleRename = () => {
     setIsPopoverActive(false);

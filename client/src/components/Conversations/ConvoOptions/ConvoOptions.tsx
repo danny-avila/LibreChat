@@ -232,6 +232,7 @@ function ConvoOptions({
                 ? 'opacity-100'
                 : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
             )}
+            onClick={(e) => e.stopPropagation()}
           >
             <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
           </Menu.MenuButton>
