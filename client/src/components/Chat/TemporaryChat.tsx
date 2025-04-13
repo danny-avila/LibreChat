@@ -43,6 +43,7 @@ export function TemporaryChat() {
           render={
             <motion.button
               onClick={handleBadgeToggle}
+              aria-label={localize(temporaryBadge.label)}
               className={cn(
                 'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-lg border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-tertiary',
                 isTemporary
