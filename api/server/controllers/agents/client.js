@@ -787,6 +787,8 @@ class AgentClient extends BaseClient {
             [Callback.TOOL_ERROR]: logToolError,
           },
         });
+
+        config.signal = null;
       };
 
       await runAgent(this.options.agent, initialMessages);
