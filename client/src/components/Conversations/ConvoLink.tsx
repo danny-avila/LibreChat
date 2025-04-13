@@ -1,12 +1,9 @@
 import React from 'react';
-import type { MouseEvent } from 'react';
 import { cn } from '~/utils';
 
 interface ConvoLinkProps {
-  conversationId: string | null;
   isActiveConvo: boolean;
   title: string | null;
-  onNavigate: (ctrlOrMetaKey: boolean) => void;
   onRename: () => void;
   isSmallScreen: boolean;
   localize: (key: any, options?: any) => string;
@@ -14,39 +11,22 @@ interface ConvoLinkProps {
 }
 
 const ConvoLink: React.FC<ConvoLinkProps> = ({
-  conversationId,
   isActiveConvo,
   title,
-  onNavigate,
   onRename,
   isSmallScreen,
   localize,
   children,
 }) => {
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    onNavigate(event.button === 0 && (event.ctrlKey || event.metaKey));
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter') {
-      onNavigate(false);
-    }
-  };
-
   return (
-    <a
-      href={`/c/${conversationId}`}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
+    <div
       className={cn(
-        'flex grow cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2',
+        'flex grow items-center gap-2 overflow-hidden rounded-lg px-2',
         isActiveConvo ? 'bg-surface-active-alt' : '',
       )}
       title={title ?? undefined}
       aria-current={isActiveConvo ? 'page' : undefined}
-      data-testid="convo-item"
-      tabIndex={0}
+      style={{ width: '100%' }}
     >
       {children}
       <div
@@ -74,7 +54,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
         )}
         aria-hidden="true"
       />
-    </a>
+    </div>
   );
 };
 

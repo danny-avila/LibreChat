@@ -139,6 +139,25 @@ export default function Conversation({
         isActiveConvo ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
       )}
       role="listitem"
+      tabIndex={0}
+      onClick={(e) => {
+        if (renaming) {
+          return;
+        }
+        if (e.button === 0) {
+          handleNavigation(e.ctrlKey || e.metaKey);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (renaming) {
+          return;
+        }
+        if (e.key === 'Enter') {
+          handleNavigation(false);
+        }
+      }}
+      style={{ cursor: renaming ? 'default' : 'pointer' }}
+      data-testid="convo-item"
     >
       {renaming ? (
         <RenameForm
@@ -150,10 +169,8 @@ export default function Conversation({
         />
       ) : (
         <ConvoLink
-          conversationId={conversationId}
           isActiveConvo={isActiveConvo}
           title={title}
-          onNavigate={handleNavigation}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
           localize={localize}
