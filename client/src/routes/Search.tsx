@@ -49,6 +49,8 @@ export default function Search() {
     );
   }
 
+  console.log('Search messages', messages);
+
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
       {(messages && messages.length == 0) || messages == null ? (

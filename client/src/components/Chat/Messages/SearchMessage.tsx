@@ -33,7 +33,7 @@ const MessageBody = ({ message, messageLabel, fontSize }) => (
   </div>
 );
 
-export default function Message({ message }: Pick<TMessageProps, 'message'>) {
+export default function SearchMessage({ message }: Pick<TMessageProps, 'message'>) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const fontSize = useRecoilValue(store.fontSize);
   const { user } = useAuthContext();

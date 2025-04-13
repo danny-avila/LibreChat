@@ -4,9 +4,9 @@ const { MeiliSearch } = require('meilisearch');
 const { Conversation, getConvosQueried } = require('~/models/Conversation');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
+const { Message, getMessage } = require('~/models/Message');
 const { reduceHits } = require('~/lib/utils/reduceHits');
 const { isEnabled } = require('~/server/utils');
-const { Message } = require('~/models/Message');
 const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
 
@@ -49,21 +49,21 @@ router.get('/', async function (req, res) {
     const activeMessages = [];
     for (let i = 0; i < messages.length; i++) {
       let message = messages[i];
-
       if (message.conversationId.includes('--')) {
         message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
       }
-
       if (result.convoMap[message.conversationId]) {
         const convo = result.convoMap[message.conversationId];
 
+        const dbMessage = await getMessage({ user, messageId: message.messageId });
         activeMessages.push({
           ...message,
           title: convo.title,
           conversationId: message.conversationId,
           model: convo.model,
-          createdAt: message.createdAt,
-          updatedAt: message.updatedAt,
+          isCreatedByUser: dbMessage?.isCreatedByUser,
+          endpoint: dbMessage?.endpoint,
+          iconURL: dbMessage?.iconURL,
         });
       }
     }
