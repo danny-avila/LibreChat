@@ -1,6 +1,6 @@
 const OpenAI = require('openai');
+const { ProxyAgent } = require('undici');
 const { OllamaClient } = require('./OllamaClient');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SplitStreamHandler } = require('@librechat/agents');
 const {
   Constants,
@@ -674,8 +674,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.options.proxy) {
-      configOptions.httpAgent = new HttpsProxyAgent(this.options.proxy);
-      configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
+      configOptions.httpAgent = new ProxyAgent(this.options.proxy);
     }
 
     const { req, res, debug } = this.options;
@@ -1173,7 +1172,7 @@ ${convo}
       }
 
       if (this.options.proxy) {
-        opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
+        opts.httpAgent = new ProxyAgent(this.options.proxy);
       }
 
       /** @type {TAzureConfig | undefined} */
