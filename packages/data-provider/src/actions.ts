@@ -224,7 +224,6 @@ class RequestExecutor {
       client_url,
       scope,
       token_exchange_method,
-      oauth_flow,
     } = metadata.auth;
 
     const {
