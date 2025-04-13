@@ -55,6 +55,9 @@ function disposeClient(client) {
     if (client.responseMessageId) {
       client.responseMessageId = null;
     }
+    if (client.message_file_map) {
+      client.message_file_map = null;
+    }
     if (client.clientName) {
       client.clientName = null;
     }
@@ -78,6 +81,147 @@ function disposeClient(client) {
     }
     if (client.outputTokensKey) {
       client.outputTokensKey = null;
+    }
+    if (client.skipSaveUserMessage !== undefined) {
+      client.skipSaveUserMessage = null;
+    }
+    if (client.visionMode) {
+      client.visionMode = null;
+    }
+    if (client.continued !== undefined) {
+      client.continued = null;
+    }
+    if (client.fetchedConvo !== undefined) {
+      client.fetchedConvo = null;
+    }
+    if (client.previous_summary) {
+      client.previous_summary = null;
+    }
+    if (client.metadata) {
+      client.metadata = null;
+    }
+    if (client.isVisionModel) {
+      client.isVisionModel = null;
+    }
+    if (client.isChatCompletion !== undefined) {
+      client.isChatCompletion = null;
+    }
+    if (client.contextHandlers) {
+      client.contextHandlers = null;
+    }
+    if (client.augmentedPrompt) {
+      client.augmentedPrompt = null;
+    }
+    if (client.systemMessage) {
+      client.systemMessage = null;
+    }
+    if (client.azureEndpoint) {
+      client.azureEndpoint = null;
+    }
+    if (client.langchainProxy) {
+      client.langchainProxy = null;
+    }
+    if (client.isOmni !== undefined) {
+      client.isOmni = null;
+    }
+    if (client.runManager) {
+      client.runManager = null;
+    }
+    // Properties specific to AnthropicClient
+    if (client.message_start) {
+      client.message_start = null;
+    }
+    if (client.message_delta) {
+      client.message_delta = null;
+    }
+    if (client.isClaude3 !== undefined) {
+      client.isClaude3 = null;
+    }
+    if (client.useMessages !== undefined) {
+      client.useMessages = null;
+    }
+    if (client.isLegacyOutput !== undefined) {
+      client.isLegacyOutput = null;
+    }
+    if (client.supportsCacheControl !== undefined) {
+      client.supportsCacheControl = null;
+    }
+    // Properties specific to GoogleClient
+    if (client.serviceKey) {
+      client.serviceKey = null;
+    }
+    if (client.project_id) {
+      client.project_id = null;
+    }
+    if (client.client_email) {
+      client.client_email = null;
+    }
+    if (client.private_key) {
+      client.private_key = null;
+    }
+    if (client.access_token) {
+      client.access_token = null;
+    }
+    if (client.reverseProxyUrl) {
+      client.reverseProxyUrl = null;
+    }
+    if (client.authHeader) {
+      client.authHeader = null;
+    }
+    if (client.isGenerativeModel !== undefined) {
+      client.isGenerativeModel = null;
+    }
+    // Properties specific to OpenAIClient
+    if (client.ChatGPTClient) {
+      client.ChatGPTClient = null;
+    }
+    if (client.completionsUrl) {
+      client.completionsUrl = null;
+    }
+    if (client.shouldSummarize !== undefined) {
+      client.shouldSummarize = null;
+    }
+    if (client.isOllama !== undefined) {
+      client.isOllama = null;
+    }
+    if (client.FORCE_PROMPT !== undefined) {
+      client.FORCE_PROMPT = null;
+    }
+    if (client.isChatGptModel !== undefined) {
+      client.isChatGptModel = null;
+    }
+    if (client.isUnofficialChatGptModel !== undefined) {
+      client.isUnofficialChatGptModel = null;
+    }
+    if (client.useOpenRouter !== undefined) {
+      client.useOpenRouter = null;
+    }
+    if (client.startToken) {
+      client.startToken = null;
+    }
+    if (client.endToken) {
+      client.endToken = null;
+    }
+    if (client.userLabel) {
+      client.userLabel = null;
+    }
+    if (client.chatGptLabel) {
+      client.chatGptLabel = null;
+    }
+    if (client.modelLabel) {
+      client.modelLabel = null;
+    }
+    if (client.modelOptions) {
+      client.modelOptions = null;
+    }
+    if (client.defaultVisionModel) {
+      client.defaultVisionModel = null;
+    }
+    if (client.maxPromptTokens) {
+      client.maxPromptTokens = null;
+    }
+    if (client.maxResponseTokens) {
+      client.maxResponseTokens = null;
     }
     if (client.run) {
       // Break circular references in run
