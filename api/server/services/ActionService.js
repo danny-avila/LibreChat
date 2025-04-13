@@ -74,7 +74,6 @@ async function domainParser(domain, inverse = false) {
   if (!domain) {
     return;
   }
-
   const domainsCache = getLogStores(CacheKeys.ENCODED_DOMAINS);
   const cachedDomain = await domainsCache.get(domain);
   if (inverse && cachedDomain) {
@@ -188,7 +187,8 @@ async function createActionTool({
                     expires_at: Date.now() + Time.TWO_MINUTES,
                   },
                 };
-                const flowManager = getFlowStateManager(getLogStores);
+                const flowsCache = getLogStores(CacheKeys.FLOWS);
+                const flowManager = getFlowStateManager(flowsCache);
                 await flowManager.createFlowWithHandler(
                   `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
@@ -264,7 +264,8 @@ async function createActionTool({
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                   });
-                const flowManager = getFlowStateManager(getLogStores);
+                const flowsCache = getLogStores(CacheKeys.FLOWS);
+                const flowManager = getFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',
