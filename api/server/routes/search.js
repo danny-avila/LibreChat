@@ -62,6 +62,8 @@ router.get('/', async function (req, res) {
           title: convo.title,
           conversationId: message.conversationId,
           model: convo.model,
+          createdAt: message.createdAt,
+          updatedAt: message.updatedAt,
         });
       }
     }
@@ -81,6 +83,8 @@ router.get('/', async function (req, res) {
         endpoint: convo.endpoint,
         endpointType: convo.endpointType,
         model: convo.model,
+        createdAt: convo.createdAt,
+        updatedAt: convo.updatedAt,
       });
     }
 
