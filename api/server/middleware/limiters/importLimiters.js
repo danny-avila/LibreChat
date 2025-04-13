@@ -1,10 +1,9 @@
-const Keyv = require('keyv');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const { ViolationTypes } = require('librechat-data-provider');
+const ioredisClient = require('~/cache/ioredisClient');
 const logViolation = require('~/cache/logViolation');
 const { isEnabled } = require('~/server/utils');
-const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
 
 const getEnvironmentVariables = () => {
@@ -67,11 +66,9 @@ const createImportLimiters = () => {
     },
   };
 
-  if (isEnabled(process.env.USE_REDIS)) {
+  if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
     logger.debug('Using Redis for import rate limiters.');
-    const keyv = new Keyv({ store: keyvRedis });
-    const client = keyv.opts.store.redis;
-    const sendCommand = (...args) => client.call(...args);
+    const sendCommand = (...args) => ioredisClient.call(...args);
     const ipStore = new RedisStore({
       sendCommand,
       prefix: 'import_ip_limiter:',
