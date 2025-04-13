@@ -1,4 +1,3 @@
-const { fetch } = require('undici');
 const { GraphEvents } = require('@librechat/agents');
 const { logger, sendEvent } = require('~/config');
 
@@ -16,15 +15,12 @@ function createFetch({ directEndpoint = false, reverseProxyUrl = '' }) {
    * @param {RequestInit} [init] - Optional init options for the request.
    * @returns {Promise<Response>} - A promise that resolves to the response of the fetch request.
    */
-  return async (_url, { agent, ...init }) => {
+  return async (_url, init) => {
     let url = _url;
     if (directEndpoint) {
       url = reverseProxyUrl;
     }
     logger.debug(`Making request to ${url}`);
-    if (agent != null) {
-      init.dispatcher = agent;
-    }
     if (typeof Bun !== 'undefined') {
       return await fetch(url, init);
     }

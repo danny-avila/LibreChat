@@ -1,5 +1,5 @@
-const { ProxyAgent } = require('undici');
 const Anthropic = require('@anthropic-ai/sdk');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
   ErrorTypes,
@@ -193,7 +193,7 @@ class AnthropicClient extends BaseClient {
     };
 
     if (this.options.proxy) {
-      options.httpAgent = new ProxyAgent(this.options.proxy);
+      options.httpAgent = new HttpsProxyAgent(this.options.proxy);
     }
 
     if (this.options.reverseProxyUrl) {
