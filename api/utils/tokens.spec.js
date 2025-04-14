@@ -112,7 +112,17 @@ describe('getModelMaxTokens', () => {
       maxTokensMap[EModelEndpoint.openAI]['gpt-4.5'],
     );
   });
-
+  
+  test('should return correct tokens for gpt-4.1 matches', () => {
+    expect(getModelMaxTokens('gpt-4.1')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4.1']);
+    expect(getModelMaxTokens('gpt-4.1-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1'],
+    );
+    expect(getModelMaxTokens('openai/gpt-4.1-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1'],
+    );
+  });
+  
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
