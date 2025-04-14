@@ -29,7 +29,6 @@ export enum STTEndpoints {
 
 export enum TTSEndpoints {
   browser = 'browser',
-  edge = 'edge',
   external = 'external',
 }
 
