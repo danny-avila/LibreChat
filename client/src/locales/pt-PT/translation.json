@@ -198,7 +198,7 @@
   "com_endpoint_openai_max_tokens": "Campo opcional `max_tokens`, representando o número máximo de tokens que podem ser gerados na conclusão do chat. O comprimento total dos tokens de entrada e dos tokens gerados é limitado pelo comprimento do contexto dos modelos. Você pode experimentar erros se esse número exceder o máximo de tokens de contexto.",
   "com_endpoint_openai_pres": "Número entre -2.0 e 2.0. Valores positivos penalizam novos tokens com base em sua presença no texto até agora, aumentando a probabilidade do modelo de falar sobre novos tópicos.",
   "com_endpoint_openai_prompt_prefix_placeholder": "Defina instruções personalizadas para incluir na Mensagem do Sistema. Padrão: nenhuma",
-  "com_endpoint_openai_reasoning_effort": "Apenas para modelos o1: Restringir o esforço de raciocínio. Isto poderá resultar em respostas mais rápidas e menos tokens usados na lógica da resposta.",
+  "com_endpoint_openai_reasoning_effort": "Apenas para modelos o1 e o3: Restringir o esforço de raciocínio. Isto poderá resultar em respostas mais rápidas e menos tokens usados na lógica da resposta.",
   "com_endpoint_openai_resend": "Reenviar todas as imagens anexadas anteriormente. Nota: isso pode aumentar significativamente o custo de tokens e você pode experimentar erros com muitos anexos de imagem.",
   "com_endpoint_openai_resend_files": "Reenviar todos os arquivos anexados anteriormente. Nota: isso aumentará o custo de tokens e você pode experimentar erros com muitos anexos.",
   "com_endpoint_openai_stop": "Até 4 sequências onde a API parará de gerar mais tokens.",

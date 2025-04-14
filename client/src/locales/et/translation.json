@@ -205,7 +205,7 @@
   "com_endpoint_openai_max_tokens": "Valikuline väli 'max_tokens', mis esindab vestluse lõpetamisel genereeritavate märkide maksimaalset arvu. Sisendmärkide ja genereeritud märkide kogupikkus on piiratud mudelite konteksti pikkusega. Kui see arv ületab maksimaalseid kontekstimärke, võivad tekkida vead.",
   "com_endpoint_openai_pres": "Arv vahemikus -2,0 kuni 2,0. Positiivsed väärtused karistavad uusi märke selle alusel, kas need esinevad senises tekstis, suurendades mudeli tõenäosust rääkida uutest teemadest.",
   "com_endpoint_openai_prompt_prefix_placeholder": "Määra kohandatud juhised süsteemiteatesse lisamiseks. Vaikimisi: puudub",
-  "com_endpoint_openai_reasoning_effort": "Ainult o1 mudelid: piirab põhjendusmudelite põhjendustegevust. Põhjendustegevuse vähendamine võib tuua kaasa kiiremad vastused ja vähem põhjendamiseks kasutatud märke vastuses.",
+  "com_endpoint_openai_reasoning_effort": "Ainult o1 ja o3 mudelid: piirab põhjendusmudelite põhjendustegevust. Põhjendustegevuse vähendamine võib tuua kaasa kiiremad vastused ja vähem põhjendamiseks kasutatud märke vastuses.",
   "com_endpoint_openai_resend": "Saada kõik varem lisatud pildid uuesti. Märkus: see võib märgikulusid oluliselt suurendada ja paljude pildimanustega võivad tekkida vead.",
   "com_endpoint_openai_resend_files": "Saada kõik varem lisatud failid uuesti. Märkus: see suurendab märgikulusid ja paljude manustega võivad tekkida vead.",
   "com_endpoint_openai_stop": "Kuni 4 järjestust, mille korral API lõpetab täiendavate märkide genereerimise.",

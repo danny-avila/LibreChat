@@ -195,7 +195,7 @@
   "com_endpoint_openai_max_tokens": "İsteğe bağlı `max_tokens` alanı, sohbet tamamlamalarında üretilebilecek maksimum token sayısını temsil eder. Giriş tokenlarının ve üretilen tokenların toplam uzunluğu, modellerin bağlam uzunluğu ile sınırlıdır. Bu sayının maksimum bağlam tokenlarını aşması durumunda hatalarla karşılaşabilirsiniz.",
   "com_endpoint_openai_pres": " -2.0 ile 2.0 arasında bir değer. Pozitif değerler, metinde daha önceki varlıklarına dayalı olarak yeni tokenları cezalandırır, bu da modelin yeni konular hakkında konuşma olasılığını artırır.",
   "com_endpoint_openai_prompt_prefix_placeholder": "Sistem Mesajına dahil edilecek özel talimatlar ayarlayın. Varsayılan: yok",
-  "com_endpoint_openai_reasoning_effort": "Sadece o1 modelleri: akıl yürütme modelleri için akıl yürütme çabasını kısıtlar. Akıl yürütme çabasını azaltmak, daha hızlı yanıtlara ve yanıtta akıl yürütmeye daha az token kullanılmasına neden olabilir.",
+  "com_endpoint_openai_reasoning_effort": "Sadece o1 ve o3 modelleri: akıl yürütme modelleri için akıl yürütme çabasını kısıtlar. Akıl yürütme çabasını azaltmak, daha hızlı yanıtlara ve yanıtta akıl yürütmeye daha az token kullanılmasına neden olabilir.",
   "com_endpoint_openai_resend": "Daha önce eklenmiş tüm görüntüleri yeniden gönderin. Not: Bu, token maliyetinizi önemli ölçüde artırabilir ve birden çok görüntü eklenmişse hatalarla karşılaşabilirsiniz.",
   "com_endpoint_openai_resend_files": "Daha önce eklenmiş tüm dosyaları yeniden gönderin. Not: Bu, token maliyetinizi artıracaktır ve birden çok eklenmiş dosya ile hatalarla karşılaşabilirsiniz.",
   "com_endpoint_openai_stop": "API'nin ek tokenlar üretmeyi durduracağı en fazla 4 sıra.",

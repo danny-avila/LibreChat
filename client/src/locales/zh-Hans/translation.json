@@ -205,7 +205,7 @@
   "com_endpoint_openai_max_tokens": "可选的 'max_tokens' 字段，表示在聊天补全中可生成的最大词元数量。输入词元和生成词元的总长度受模型上下文长度的限制。如果该数值超过最大上下文词元数，您可能会遇到错误。",
   "com_endpoint_openai_pres": "值介于 -2.0 到 2.0 之间。正值将惩罚当前已经使用的词元，从而增加讨论新话题的可能性。",
   "com_endpoint_openai_prompt_prefix_placeholder": "在系统消息中添加自定义指令，默认为空",
-  "com_endpoint_openai_reasoning_effort": "仅 o1 模型：限制推理模型的推理工作量。减少推理工作可加快回复速度，减少回复中用于推理的标记。",
+  "com_endpoint_openai_reasoning_effort": "仅 o1 和 o3 模型：限制推理模型的推理工作量。减少推理工作可加快回复速度，减少回复中用于推理的标记。",
   "com_endpoint_openai_resend": "重新发送所有先前附加的图像。注意：这会显着增加词元成本，并且可能会遇到很多关于图像附件的错误。",
   "com_endpoint_openai_resend_files": "重新发送所有先前附加的文件。注意：这会显着增加词元成本，并且可能会遇到很多关于图像附件的错误。",
   "com_endpoint_openai_stop": "最多 4 个序列，API 将停止生成更多词元。",
