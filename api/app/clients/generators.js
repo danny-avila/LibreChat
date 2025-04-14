@@ -1,3 +1,4 @@
+const fetch = require('node-fetch');
 const { GraphEvents } = require('@librechat/agents');
 const { logger, sendEvent } = require('~/config');
 

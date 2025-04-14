@@ -1,7 +1,6 @@
-const OpenAI = require('openai');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SplitStreamHandler } = require('@librechat/agents');
+const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
 const {
   Constants,
   ImageDetail,
