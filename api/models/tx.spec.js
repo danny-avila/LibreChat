@@ -60,6 +60,30 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4.5-0125')).toBe('gpt-4.5');
   });
 
+  it('should return "gpt-4.1" for model type of "gpt-4.1"', () => {
+    expect(getValueKey('gpt-4.1-preview')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-2024-08-06')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-2024-08-06-0718')).toBe('gpt-4.1');
+    expect(getValueKey('openai/gpt-4.1')).toBe('gpt-4.1');
+    expect(getValueKey('openai/gpt-4.1-2024-08-06')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-turbo')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-0125')).toBe('gpt-4.1');
+  });
+
+  it('should return "gpt-4.1-mini" for model type of "gpt-4.1-mini"', () => {
+    expect(getValueKey('gpt-4.1-mini-preview')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-2024-08-06')).toBe('gpt-4.1-mini');
+    expect(getValueKey('openai/gpt-4.1-mini')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-0125')).toBe('gpt-4.1-mini');
+  });
+
+  it('should return "gpt-4.1-nano" for model type of "gpt-4.1-nano"', () => {
+    expect(getValueKey('gpt-4.1-nano-preview')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-2024-08-06')).toBe('gpt-4.1-nano');
+    expect(getValueKey('openai/gpt-4.1-nano')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-0125')).toBe('gpt-4.1-nano');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
     expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
@@ -182,6 +206,52 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
       tokenValues['gpt-4-1106'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4.1', () => {
+    const valueKey = getValueKey('gpt-4.1-2024-08-06');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4.1'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-4.1-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-4.1', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4.1-mini', () => {
+    const valueKey = getValueKey('gpt-4.1-mini-2024-08-06');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-mini'].prompt,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-mini'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-4.1-mini-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-mini'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-4.1-mini', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-mini'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4.1-nano', () => {
+    const valueKey = getValueKey('gpt-4.1-nano-2024-08-06');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-nano'].prompt,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-nano'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-4.1-nano-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-nano'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-4.1-nano', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-nano'].completion,
     );
   });
 
