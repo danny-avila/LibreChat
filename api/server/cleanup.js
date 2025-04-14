@@ -238,6 +238,9 @@ function disposeClient(client) {
         client.run.Graph.streamBuffer = null;
         client.run.Graph.clientOptions = null;
         client.run.Graph.graphState = null;
+        if (client.run.Graph.boundModel?.client) {
+          client.run.Graph.boundModel.client = null;
+        }
         client.run.Graph.boundModel = null;
         client.run.Graph.systemMessage = null;
         client.run.Graph.reasoningKey = null;

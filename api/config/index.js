@@ -24,12 +24,12 @@ function getMCPManager(userId) {
 }
 
 /**
- * @param {(key: string) => Keyv} getLogStores
+ * @param {Keyv} flowsCache
  * @returns {FlowStateManager}
  */
-function getFlowStateManager(getLogStores) {
+function getFlowStateManager(flowsCache) {
   if (!flowManager) {
-    flowManager = new FlowStateManager(getLogStores(CacheKeys.FLOWS), {
+    flowManager = new FlowStateManager(flowsCache, {
       ttl: Time.ONE_MINUTE * 3,
       logger,
     });
