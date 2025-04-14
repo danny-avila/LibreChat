@@ -60,6 +60,33 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4.5-0125')).toBe('gpt-4.5');
   });
 
+  it('should return "gpt-4.1" for model type of "gpt-4.1"', () => {
+    expect(getValueKey('gpt-4.1-2025-04-14')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-2025-04-14-0718')).toBe('gpt-4.1');
+    expect(getValueKey('openai/gpt-4.1')).toBe('gpt-4.1');
+    expect(getValueKey('openai/gpt-4.1-2025-04-14')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-turbo')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-0414')).toBe('gpt-4.1');
+  });
+
+  it('should return "gpt-4.1-mini" for model type of "gpt-4.1-mini"', () => {
+    expect(getValueKey('gpt-4.1-mini-2025-04-14')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-2025-04-14-0718')).toBe('gpt-4.1-mini');
+    expect(getValueKey('openai/gpt-4.1-mini')).toBe('gpt-4.1-mini');
+    expect(getValueKey('openai/gpt-4.1-mini-2025-04-14')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-turbo')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-0414')).toBe('gpt-4.1-mini');
+  });
+  
+  it('should return "gpt-4.1-nano" for model type of "gpt-4.1-nano"', () => {
+    expect(getValueKey('gpt-4.1-nano-2025-04-14')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-2025-04-14-0718')).toBe('gpt-4.1-nano');
+    expect(getValueKey('openai/gpt-4.1-nano')).toBe('gpt-4.1-nano');
+    expect(getValueKey('openai/gpt-4.1-nano-2025-04-14')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-turbo')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-0414')).toBe('gpt-4.1-nano');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
     expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
