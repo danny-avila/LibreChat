@@ -46,8 +46,7 @@ router.get('/enable', async function (req, res) {
     });
 
     const { status } = await client.health();
-    result = status === 'available' && !!process.env.SEARCH;
-    return res.send(result);
+    return res.send(status === 'available');
   } catch (error) {
     return res.send(false);
   }
