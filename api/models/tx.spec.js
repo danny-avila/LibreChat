@@ -60,6 +60,30 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4.5-0125')).toBe('gpt-4.5');
   });
 
+  it('should return "gpt-4.1" for model type of "gpt-4.1"', () => {
+    expect(getValueKey('gpt-4.1-preview')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-2024-08-06')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-2024-08-06-0718')).toBe('gpt-4.1');
+    expect(getValueKey('openai/gpt-4.1')).toBe('gpt-4.1');
+    expect(getValueKey('openai/gpt-4.1-2024-08-06')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-turbo')).toBe('gpt-4.1');
+    expect(getValueKey('gpt-4.1-0125')).toBe('gpt-4.1');
+  });
+
+  it('should return "gpt-4.1-mini" for model type of "gpt-4.1-mini"', () => {
+    expect(getValueKey('gpt-4.1-mini-preview')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-2024-08-06')).toBe('gpt-4.1-mini');
+    expect(getValueKey('openai/gpt-4.1-mini')).toBe('gpt-4.1-mini');
+    expect(getValueKey('gpt-4.1-mini-0125')).toBe('gpt-4.1-mini');
+  });
+
+  it('should return "gpt-4.1-nano" for model type of "gpt-4.1-nano"', () => {
+    expect(getValueKey('gpt-4.1-nano-preview')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-2024-08-06')).toBe('gpt-4.1-nano');
+    expect(getValueKey('openai/gpt-4.1-nano')).toBe('gpt-4.1-nano');
+    expect(getValueKey('gpt-4.1-nano-0125')).toBe('gpt-4.1-nano');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
     expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
@@ -182,6 +206,52 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
       tokenValues['gpt-4-1106'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4.1', () => {
+    const valueKey = getValueKey('gpt-4.1-2024-08-06');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4.1'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-4.1-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-4.1', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4.1-mini', () => {
+    const valueKey = getValueKey('gpt-4.1-mini-2024-08-06');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-mini'].prompt,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-mini'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-4.1-mini-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-mini'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-4.1-mini', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-mini'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-4.1-nano', () => {
+    const valueKey = getValueKey('gpt-4.1-nano-2024-08-06');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-nano'].prompt,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-nano'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-4.1-nano-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4.1-nano'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-4.1-nano', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4.1-nano'].completion,
     );
   });
 
@@ -348,9 +418,11 @@ describe('getCacheMultiplier', () => {
 
   it('should derive the valueKey from the model if not provided', () => {
     expect(getCacheMultiplier({ cacheType: 'write', model: 'claude-3-5-sonnet-20240620' })).toBe(
-      3.75,
+      cacheTokenValues['claude-3-5-sonnet'].write,
     );
-    expect(getCacheMultiplier({ cacheType: 'read', model: 'claude-3-haiku-20240307' })).toBe(0.03);
+    expect(getCacheMultiplier({ cacheType: 'read', model: 'claude-3-haiku-20240307' })).toBe(
+      cacheTokenValues['claude-3-haiku'].read,
+    );
   });
 
   it('should return null if only model or cacheType is missing', () => {
@@ -371,10 +443,10 @@ describe('getCacheMultiplier', () => {
     };
     expect(
       getCacheMultiplier({ model: 'custom-model', cacheType: 'write', endpointTokenConfig }),
-    ).toBe(5);
+    ).toBe(endpointTokenConfig['custom-model'].write);
     expect(
       getCacheMultiplier({ model: 'custom-model', cacheType: 'read', endpointTokenConfig }),
-    ).toBe(1);
+    ).toBe(endpointTokenConfig['custom-model'].read);
   });
 
   it('should return null if model is not found in endpointTokenConfig', () => {
@@ -395,13 +467,13 @@ describe('getCacheMultiplier', () => {
         model: 'bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0',
         cacheType: 'write',
       }),
-    ).toBe(3.75);
+    ).toBe(cacheTokenValues['claude-3-5-sonnet'].write);
     expect(
       getCacheMultiplier({
         model: 'bedrock/anthropic.claude-3-haiku-20240307-v1:0',
         cacheType: 'read',
       }),
-    ).toBe(0.03);
+    ).toBe(cacheTokenValues['claude-3-haiku'].read);
   });
 });
 
@@ -488,46 +560,92 @@ describe('Grok Model Tests - Pricing', () => {
     test('should return correct prompt and completion rates for Grok vision models', () => {
       const models = ['grok-2-vision-1212', 'grok-2-vision', 'grok-2-vision-latest'];
       models.forEach((model) => {
-        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
-        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+          tokenValues['grok-2-vision'].prompt,
+        );
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+          tokenValues['grok-2-vision'].completion,
+        );
       });
     });
 
     test('should return correct prompt and completion rates for Grok text models', () => {
       const models = ['grok-2-1212', 'grok-2', 'grok-2-latest'];
       models.forEach((model) => {
-        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(2.0);
-        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(10.0);
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues['grok-2'].prompt);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+          tokenValues['grok-2'].completion,
+        );
       });
     });
 
     test('should return correct prompt and completion rates for Grok beta models', () => {
-      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'prompt' })).toBe(5.0);
-      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'completion' })).toBe(15.0);
-      expect(getMultiplier({ model: 'grok-beta', tokenType: 'prompt' })).toBe(5.0);
-      expect(getMultiplier({ model: 'grok-beta', tokenType: 'completion' })).toBe(15.0);
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-vision-beta'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-vision-beta', tokenType: 'completion' })).toBe(
+        tokenValues['grok-vision-beta'].completion,
+      );
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-beta'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-beta', tokenType: 'completion' })).toBe(
+        tokenValues['grok-beta'].completion,
+      );
     });
 
     test('should return correct prompt and completion rates for Grok 3 models', () => {
-      expect(getMultiplier({ model: 'grok-3', tokenType: 'prompt' })).toBe(3.0);
-      expect(getMultiplier({ model: 'grok-3', tokenType: 'completion' })).toBe(15.0);
-      expect(getMultiplier({ model: 'grok-3-fast', tokenType: 'prompt' })).toBe(5.0);
-      expect(getMultiplier({ model: 'grok-3-fast', tokenType: 'completion' })).toBe(25.0);
-      expect(getMultiplier({ model: 'grok-3-mini', tokenType: 'prompt' })).toBe(0.3);
-      expect(getMultiplier({ model: 'grok-3-mini', tokenType: 'completion' })).toBe(0.5);
-      expect(getMultiplier({ model: 'grok-3-mini-fast', tokenType: 'prompt' })).toBe(0.4);
-      expect(getMultiplier({ model: 'grok-3-mini-fast', tokenType: 'completion' })).toBe(4.0);
+      expect(getMultiplier({ model: 'grok-3', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-3', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3'].completion,
+      );
+      expect(getMultiplier({ model: 'grok-3-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-3-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3-fast'].completion,
+      );
+      expect(getMultiplier({ model: 'grok-3-mini', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3-mini'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-3-mini', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3-mini'].completion,
+      );
+      expect(getMultiplier({ model: 'grok-3-mini-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3-mini-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-3-mini-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3-mini-fast'].completion,
+      );
     });
 
     test('should return correct prompt and completion rates for Grok 3 models with prefixes', () => {
-      expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'prompt' })).toBe(3.0);
-      expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'completion' })).toBe(15.0);
-      expect(getMultiplier({ model: 'xai/grok-3-fast', tokenType: 'prompt' })).toBe(5.0);
-      expect(getMultiplier({ model: 'xai/grok-3-fast', tokenType: 'completion' })).toBe(25.0);
-      expect(getMultiplier({ model: 'xai/grok-3-mini', tokenType: 'prompt' })).toBe(0.3);
-      expect(getMultiplier({ model: 'xai/grok-3-mini', tokenType: 'completion' })).toBe(0.5);
-      expect(getMultiplier({ model: 'xai/grok-3-mini-fast', tokenType: 'prompt' })).toBe(0.4);
-      expect(getMultiplier({ model: 'xai/grok-3-mini-fast', tokenType: 'completion' })).toBe(4.0);
+      expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3'].completion,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3-fast'].completion,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3-mini', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3-mini'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3-mini', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3-mini'].completion,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3-mini-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-3-mini-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-3-mini-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-3-mini-fast'].completion,
+      );
     });
   });
 });
