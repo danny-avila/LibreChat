@@ -42,7 +42,6 @@
     "@azure/storage-blob": "^12.26.0",
     "@google/generative-ai": "^0.23.0",
     "@googleapis/youtube": "^20.0.0",
-    "@keyv/mongo": "^3.0.1",
     "@keyv/redis": "^4.3.3",
     "@langchain/community": "^0.3.39",
     "@langchain/core": "^0.3.43",
