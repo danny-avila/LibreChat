@@ -291,7 +291,7 @@ class RequestExecutor {
     const url = createURL(this.config.domain, this.path);
     const headers: Record<string, string> = {
       ...this.authHeaders,
-      'Content-Type': this.config.contentType || 'application/json',
+      ...(this.config.contentType ? { 'Content-Type': this.config.contentType } : {}),
     };
     const method = this.config.method.toLowerCase();
     const axios = _axios.create();
