@@ -8,7 +8,7 @@ import {
   EModelEndpoint,
   Permissions,
 } from 'librechat-data-provider';
-import type { TConfig, TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
+import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
