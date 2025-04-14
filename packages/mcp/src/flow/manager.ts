@@ -1,4 +1,5 @@
-import Keyv from 'keyv';
+import { Keyv } from 'keyv';
+import type { StoredDataNoRaw } from 'keyv';
 import type { Logger } from 'winston';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
@@ -202,7 +203,7 @@ export class FlowStateManager<T = unknown> {
   /**
    * Gets current flow state
    */
-  async getFlowState(flowId: string, type: string): Promise<FlowState<T> | null> {
+  async getFlowState(flowId: string, type: string): Promise<StoredDataNoRaw<FlowState<T>> | null> {
     const flowKey = this.getFlowKey(flowId, type);
     return this.keyv.get(flowKey);
   }
