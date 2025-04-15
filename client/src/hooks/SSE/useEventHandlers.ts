@@ -125,6 +125,37 @@ const createErrorMessage = ({
   return tMessageSchema.parse(errorMessage);
 };
 
+export const getConvoTitle = ({
+  parentId,
+  queryClient,
+  currentTitle,
+  conversationId,
+}: {
+  parentId?: string | null;
+  queryClient: ReturnType<typeof useQueryClient>;
+  currentTitle?: string | null;
+  conversationId?: string | null;
+}): string | null | undefined => {
+  if (
+    parentId !== Constants.NO_PARENT &&
+    (currentTitle?.toLowerCase().includes('new chat') ?? false)
+  ) {
+    const currentConvo = queryClient.getQueryData<TConversation>([
+      QueryKeys.conversation,
+      conversationId,
+    ]);
+    if (currentConvo?.title) {
+      return currentConvo.title;
+    }
+    const convos = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
+      QueryKeys.allConversations,
+    ]);
+    const cachedConvo = findConversationInInfinite(convos, conversationId ?? '');
+    return cachedConvo?.title ?? currentConvo?.title ?? null;
+  }
+  return currentTitle;
+};
+
 export default function useEventHandlers({
   genTitle,
   setMessages,
@@ -268,18 +299,13 @@ export default function useEventHandlers({
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          let title = prevState?.title;
           const parentId = requestMessage.parentMessageId;
-          if (
-            parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase().includes('new chat') ?? false)
-          ) {
-            const convos = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
-              QueryKeys.allConversations,
-            ]);
-            const cachedConvo = findConversationInInfinite(convos, conversationId ?? '');
-            title = cachedConvo?.title;
-          }
+          const title = getConvoTitle({
+            parentId,
+            queryClient,
+            conversationId,
+            currentTitle: prevState?.title,
+          });
           update = tConvoUpdateSchema.parse({
             ...prevState,
             conversationId,
@@ -350,18 +376,13 @@ export default function useEventHandlers({
       }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          let title = prevState?.title;
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
-          if (
-            parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase().includes('new chat') ?? false)
-          ) {
-            const convos = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
-              QueryKeys.allConversations,
-            ]);
-            const cachedConvo = findConversationInInfinite(convos, conversationId ?? '');
-            title = cachedConvo?.title;
-          }
+          const title = getConvoTitle({
+            parentId,
+            queryClient,
+            conversationId,
+            currentTitle: prevState?.title,
+          });
           update = tConvoUpdateSchema.parse({
             ...prevState,
             conversationId,
@@ -467,6 +488,10 @@ export default function useEventHandlers({
           if (prevState?.model != null && prevState.model !== submissionConvo.model) {
             update.model = prevState.model;
           }
+          queryClient.setQueryData(
+            [QueryKeys.conversation, conversation.conversationId],
+            update as TConversation,
+          );
           return update;
         });
       }

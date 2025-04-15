@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   request,
   Constants,
@@ -22,8 +23,8 @@ import type {
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import useEventHandlers, { getConvoTitle } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useEventHandlers from './useEventHandlers';
 import store from '~/store';
 
 const clearDraft = (conversationId?: string | null) => {
@@ -52,6 +53,7 @@ export default function useSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
+  const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
@@ -109,13 +111,24 @@ export default function useSSE(
      * Helps clear text immediately on submission instead of
      * restoring draft, which gets deleted on generation end
      * */
+    const parentId = submission?.isRegenerate
+      ? userMessage.overrideParentMessageId
+      : userMessage.parentMessageId;
     setConversation?.((prev: TConversation | null) => {
       if (!prev) {
         return null;
       }
+      const title =
+        getConvoTitle({
+          parentId,
+          queryClient,
+          currentTitle: prev?.title,
+          conversationId: prev?.conversationId,
+        }) ?? '';
       return {
         ...prev,
-        conversationId: 'PENDING',
+        title,
+        conversationId: Constants.PENDING_CONVO as string,
       };
     });
     let { payload } = payloadData;
