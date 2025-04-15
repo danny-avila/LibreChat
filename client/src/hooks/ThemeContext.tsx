@@ -58,7 +58,7 @@ export const ThemeProvider = ({ initialTheme, children }) => {
     if (fontSize == null) {
       setFontSize('text-base');
       applyFontSize('text-base');
-      localStorage.setItem('fontSize', 'text-base');
+      localStorage.setItem('fontSize', JSON.stringify('text-base'));
       return;
     }
     applyFontSize(JSON.parse(fontSize));
