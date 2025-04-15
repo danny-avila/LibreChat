@@ -68,22 +68,20 @@ const Nav = memo(
       permission: Permissions.USE,
     });
 
-    const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-    const isSearchTyping = useRecoilValue(store.isSearchTyping);
-    const searchQuery = useRecoilValue(store.searchQuery);
+    const searchState = useRecoilValue(store.searchState);
 
-    const { data, fetchNextPage, isFetchingNextPage, refetch } = useConversationsInfiniteQuery(
-      {
-        isArchived: false,
-        tags: tags.length === 0 ? undefined : tags,
-        search: searchQuery || undefined,
-      },
-      {
-        enabled: isAuthenticated,
-        staleTime: 30000,
-        cacheTime: 300000,
-      },
-    );
+    const { data, fetchNextPage, isFetchingNextPage, isLoading, refetch } =
+      useConversationsInfiniteQuery(
+        {
+          tags: tags.length === 0 ? undefined : tags,
+          search: searchState.debouncedQuery || undefined,
+        },
+        {
+          enabled: isAuthenticated,
+          staleTime: 30000,
+          cacheTime: 300000,
+        },
+      );
 
     const computedHasNextPage = useMemo(() => {
       if (data?.pages && data.pages.length > 0) {
@@ -156,7 +154,7 @@ const Nav = memo(
     const subHeaders = useMemo(
       () => (
         <>
-          {isSearchEnabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+          {searchState.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
           {hasAccessToBookmarks && (
             <>
               <div className="mt-1.5" />
@@ -167,12 +165,8 @@ const Nav = memo(
           )}
         </>
       ),
-      [isSearchEnabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
+      [searchState.enabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
     );
-
-    const isSearchLoading =
-      !!searchQuery &&
-      (isSearchTyping || (data?.isLoading ?? false) || (data?.isFetching ?? false));
 
     return (
       <>
@@ -214,8 +208,7 @@ const Nav = memo(
                         toggleNav={itemToggleNav}
                         containerRef={listRef}
                         loadMoreConversations={loadMoreConversations}
-                        isFetchingNextPage={isFetchingNextPage || showLoading}
-                        isSearchLoading={isSearchLoading}
+                        isLoading={isFetchingNextPage || showLoading || isLoading}
                       />
                     </div>
                     <Suspense fallback={null}>

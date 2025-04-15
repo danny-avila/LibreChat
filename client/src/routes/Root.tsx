@@ -5,10 +5,9 @@ import {
   AgentsMapContext,
   AssistantsMapContext,
   FileMapContext,
-  SearchContext,
   SetConvoProvider,
 } from '~/Providers';
-import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
+import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap } from '~/hooks';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
@@ -26,7 +25,6 @@ export default function Root() {
   const assistantsMap = useAssistantsMap({ isAuthenticated });
   const agentsMap = useAgentsMap({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
-  const search = useSearch({ isAuthenticated });
 
   const { data: config } = useGetStartupConfig();
   const { data: termsData } = useUserTermsQuery({
@@ -55,34 +53,32 @@ export default function Root() {
 
   return (
     <SetConvoProvider>
-      <SearchContext.Provider value={search}>
-        <FileMapContext.Provider value={fileMap}>
-          <AssistantsMapContext.Provider value={assistantsMap}>
-            <AgentsMapContext.Provider value={agentsMap}>
-              <Banner onHeightChange={setBannerHeight} />
-              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
-                <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
-                  <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-                    <MobileNav setNavVisible={setNavVisible} />
-                    <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
-                  </div>
+      <FileMapContext.Provider value={fileMap}>
+        <AssistantsMapContext.Provider value={assistantsMap}>
+          <AgentsMapContext.Provider value={agentsMap}>
+            <Banner onHeightChange={setBannerHeight} />
+            <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
+              <div className="relative z-0 flex h-full w-full overflow-hidden">
+                <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+                <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+                  <MobileNav setNavVisible={setNavVisible} />
+                  <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
                 </div>
               </div>
-            </AgentsMapContext.Provider>
-            {config?.interface?.termsOfService?.modalAcceptance === true && (
-              <TermsAndConditionsModal
-                open={showTerms}
-                onOpenChange={setShowTerms}
-                onAccept={handleAcceptTerms}
-                onDecline={handleDeclineTerms}
-                title={config.interface.termsOfService.modalTitle}
-                modalContent={config.interface.termsOfService.modalContent}
-              />
-            )}
-          </AssistantsMapContext.Provider>
-        </FileMapContext.Provider>
-      </SearchContext.Provider>
+            </div>
+          </AgentsMapContext.Provider>
+          {config?.interface?.termsOfService?.modalAcceptance === true && (
+            <TermsAndConditionsModal
+              open={showTerms}
+              onOpenChange={setShowTerms}
+              onAccept={handleAcceptTerms}
+              onDecline={handleDeclineTerms}
+              title={config.interface.termsOfService.modalTitle}
+              modalContent={config.interface.termsOfService.modalContent}
+            />
+          )}
+        </AssistantsMapContext.Provider>
+      </FileMapContext.Provider>
     </SetConvoProvider>
   );
 }

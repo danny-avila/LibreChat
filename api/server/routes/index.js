@@ -10,7 +10,6 @@ const balance = require('./balance');
 const plugins = require('./plugins');
 const bedrock = require('./bedrock');
 const actions = require('./actions');
-const search = require('./search');
 const models = require('./models');
 const convos = require('./convos');
 const config = require('./config');
@@ -41,7 +40,6 @@ module.exports = {
   agents,
   bedrock,
   convos,
-  search,
   prompts,
   config,
   models,

@@ -2,11 +2,9 @@ import { Link } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { findConversationInInfinite } from '~/utils';
-import { useSearchContext } from '~/Providers';
 
 export default function SearchButtons({ message }: { message: TMessage }) {
   const localize = useLocalize();
-  const { searchQueryRes } = useSearchContext();
   const { navigateWithLastTools } = useNavigateToConvo();
   const conversationId = message.conversationId ?? '';
 
@@ -17,7 +15,7 @@ export default function SearchButtons({ message }: { message: TMessage }) {
   const clickHandler = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
-    const conversation = findConversationInInfinite(searchQueryRes?.data, conversationId);
+    const conversation = findConversationInInfinite(conversationId);
     if (!conversation) {
       return;
     }

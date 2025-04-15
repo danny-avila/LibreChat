@@ -3,7 +3,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { SearchConversationListResponse } from 'librechat-data-provider';
 import type { UseInfiniteQueryResult } from '@tanstack/react-query';
-import { useSearchInfiniteQuery, useGetSearchEnabledQuery } from '~/data-provider';
+import { useGetSearchEnabledQuery } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
@@ -43,10 +43,12 @@ export default function useSearchMessages({
   }, [searchQuery]);
 
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
-  const searchQueryRes = useSearchInfiniteQuery(
-    { nextCursor: null, search: debouncedSearchQuery, pageSize: 20 },
-    { enabled: isAuthenticated && !!debouncedSearchQuery },
-  ) as UseInfiniteQueryResult<SearchConversationListResponse, unknown> | undefined;
+  // const searchQueryRes = useSearchInfiniteQuery(
+  //   { nextCursor: null, search: debouncedSearchQuery, pageSize: 20 },
+  //   { enabled: isAuthenticated && !!debouncedSearchQuery },
+  // ) as UseInfiniteQueryResult<SearchConversationListResponse, unknown> | undefined;
+
+  const searchQueryRes = 'test';
 
   useEffect(() => {
     if (searchQuery && searchQuery.length > 0) {

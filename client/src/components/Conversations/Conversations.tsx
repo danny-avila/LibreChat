@@ -14,13 +14,19 @@ interface ConversationsProps {
   toggleNav: () => void;
   containerRef: React.RefObject<HTMLDivElement | List>;
   loadMoreConversations: () => void;
-  isFetchingNextPage: boolean;
-  isSearchLoading: boolean;
+  isLoading: boolean;
 }
 
-const LoadingSpinner = memo(() => (
-  <Spinner className="m-1 mx-auto mb-4 h-4 w-4 text-text-primary" />
-));
+const LoadingSpinner = memo(() => {
+  const localize = useLocalize();
+
+  return (
+    <div className="mx-auto mt-2 flex items-center justify-center gap-2">
+      <Spinner className="h-4 w-4 text-text-primary" />
+      <span className="animate-pulse text-text-primary">{localize('com_ui_loading')}</span>
+    </div>
+  );
+});
 
 const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
   const localize = useLocalize();
@@ -35,7 +41,8 @@ DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'header'; groupName: string }
-  | { type: 'convo'; convo: TConversation };
+  | { type: 'convo'; convo: TConversation }
+  | { type: 'loading' };
 
 const MemoizedConvo = memo(
   ({
@@ -74,9 +81,9 @@ const Conversations: FC<ConversationsProps> = ({
   toggleNav,
   containerRef,
   loadMoreConversations,
-  isFetchingNextPage,
-  isSearchLoading,
+  isLoading,
 }) => {
+  const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
 
@@ -103,8 +110,12 @@ const Conversations: FC<ConversationsProps> = ({
       items.push({ type: 'header', groupName });
       items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
     });
+    // Add a special loading item at the end if loading
+    if (isLoading) {
+      items.push({ type: 'loading' } as any);
+    }
     return items;
-  }, [groupedConversations]);
+  }, [groupedConversations, isLoading]);
 
   const cache = useMemo(
     () =>
@@ -113,7 +124,16 @@ const Conversations: FC<ConversationsProps> = ({
         defaultHeight: convoHeight,
         keyMapper: (index) => {
           const item = flattenedItems[index];
-          return item.type === 'header' ? `header-${index}` : `convo-${item.convo.conversationId}`;
+          if (item.type === 'header') {
+            return `header-${index}`;
+          }
+          if (item.type === 'convo') {
+            return `convo-${item.convo.conversationId}`;
+          }
+          if (item.type === 'loading') {
+            return `loading-${index}`;
+          }
+          return `unknown-${index}`;
         },
       }),
     [flattenedItems, convoHeight],
@@ -122,20 +142,31 @@ const Conversations: FC<ConversationsProps> = ({
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
+      if (item.type === 'loading') {
+        return (
+          <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
+            {({ registerChild }) => (
+              <div ref={registerChild} style={style}>
+                <LoadingSpinner />
+              </div>
+            )}
+          </CellMeasurer>
+        );
+      }
       return (
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
             <div ref={registerChild} style={style}>
               {item.type === 'header' ? (
                 <DateLabel groupName={item.groupName} />
-              ) : (
+              ) : item.type === 'convo' ? (
                 <MemoizedConvo
                   conversation={item.convo}
                   retainView={moveToTop}
                   toggleNav={toggleNav}
                   isLatestConvo={item.convo.conversationId === firstTodayConvoId}
                 />
-              )}
+              ) : null}
             </div>
           )}
         </CellMeasurer>
@@ -156,7 +187,7 @@ const Conversations: FC<ConversationsProps> = ({
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
-      if (stopIndex >= flattenedItems.length - 2) {
+      if (stopIndex >= flattenedItems.length - 8) {
         throttledLoadMore();
       }
     },
@@ -165,39 +196,27 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full flex-col pb-2 text-sm text-text-primary">
-      {isSearchLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Spinner className="text-text-primary" />
-          <span className="ml-2 text-text-primary">Loading...</span>
-        </div>
-      ) : (
-        <div className="flex-1">
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={containerRef as React.RefObject<List>}
-                width={width}
-                height={height}
-                deferredMeasurementCache={cache}
-                rowCount={flattenedItems.length}
-                rowHeight={getRowHeight}
-                rowRenderer={rowRenderer}
-                overscanRowCount={10}
-                className="outline-none"
-                style={{ outline: 'none' }}
-                role="list"
-                aria-label="Conversations"
-                onRowsRendered={handleRowsRendered}
-              />
-            )}
-          </AutoSizer>
-        </div>
-      )}
-      {isFetchingNextPage && !isSearchLoading && (
-        <div className="mt-2">
-          <LoadingSpinner />
-        </div>
-      )}
+      <div className="flex-1">
+        <AutoSizer>
+          {({ width, height }) => (
+            <List
+              ref={containerRef as React.RefObject<List>}
+              width={width}
+              height={height}
+              deferredMeasurementCache={cache}
+              rowCount={flattenedItems.length}
+              rowHeight={getRowHeight}
+              rowRenderer={rowRenderer}
+              overscanRowCount={10}
+              className="outline-none"
+              style={{ outline: 'none' }}
+              role="list"
+              aria-label="Conversations"
+              onRowsRendered={handleRowsRendered}
+            />
+          )}
+        </AutoSizer>
+      </div>
     </div>
   );
 };

@@ -23,10 +23,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const [showClearIcon, setShowClearIcon] = useState(false);
 
   const { newConversation } = useNewConvo();
-  const clearConvoState = store.useClearConvoState();
-  const setSearchQuery = useSetRecoilState(store.searchQuery);
-  const setIsSearching = useSetRecoilState(store.isSearching);
-  const setIsSearchTyping = useSetRecoilState(store.isSearchTyping);
+  const setSearchState = useSetRecoilState(store.searchState);
 
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {
@@ -36,10 +33,15 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
-    setSearchQuery('');
-    clearSearch();
     setText('');
-  }, [setSearchQuery, clearSearch]);
+    setSearchState((prev) => ({
+      ...prev,
+      query: '',
+      debouncedQuery: '',
+      isTyping: false,
+    }));
+    clearSearch();
+  }, [setSearchState, clearSearch]);
 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const { value } = e.target as HTMLInputElement;
@@ -50,32 +52,33 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const sendRequest = useCallback(
     (value: string) => {
-      setSearchQuery(value);
       if (!value) {
         return;
       }
       queryClient.invalidateQueries([QueryKeys.messages]);
-      clearConvoState();
     },
-    [queryClient, clearConvoState, setSearchQuery],
+    [queryClient],
   );
 
-  const debouncedSendRequest = useMemo(
+  const debouncedSetDebouncedQuery = useMemo(
     () =>
       debounce((value: string) => {
+        setSearchState((prev) => ({ ...prev, debouncedQuery: value }));
         sendRequest(value);
       }, 350),
-    [sendRequest],
+    [setSearchState, sendRequest],
   );
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setShowClearIcon(value.length > 0);
     setText(value);
-    setSearchQuery(value);
-    setIsSearchTyping(true);
-    // debounce only the API call
-    debouncedSendRequest(value);
+    setSearchState((prev) => ({
+      ...prev,
+      query: value,
+      isTyping: true,
+    }));
+    debouncedSetDebouncedQuery(value);
   };
 
   return (
@@ -98,8 +101,8 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         aria-label={localize('com_nav_search_placeholder')}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
-        onFocus={() => setIsSearching(true)}
-        onBlur={() => setIsSearching(true)}
+        onFocus={() => setSearchState((prev) => ({ ...prev, isTyping: true }))}
+        onBlur={() => setSearchState((prev) => ({ ...prev, isTyping: false }))}
         autoComplete="off"
         dir="auto"
       />
