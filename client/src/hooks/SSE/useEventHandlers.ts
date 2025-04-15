@@ -462,7 +462,7 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           const update = {
             ...prevState,
-            ...conversation,
+            ...(conversation as TConversation),
           };
           if (prevState?.model != null && prevState.model !== submissionConvo.model) {
             update.model = prevState.model;
@@ -580,7 +580,25 @@ export default function useEventHandlers({
       const { endpoint: _endpoint, endpointType } =
         (submission.conversation as TConversation | null) ?? {};
       const endpoint = endpointType ?? _endpoint;
-      if (!isAssistantsEndpoint(endpoint)) {
+      if (
+        !isAssistantsEndpoint(endpoint) &&
+        messages?.[messages.length - 1] != null &&
+        messages[messages.length - 2] != null
+      ) {
+        const requestMessage = messages[messages.length - 2];
+        const responseMessage = messages[messages.length - 1];
+        finalHandler(
+          {
+            conversation: {
+              conversationId,
+            },
+            requestMessage,
+            responseMessage,
+          },
+          submission,
+        );
+        return;
+      } else if (!isAssistantsEndpoint(endpoint)) {
         if (newConversation) {
           newConversation({
             template: { conversationId: conversationId || v4() },
