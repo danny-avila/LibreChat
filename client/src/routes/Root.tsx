@@ -7,9 +7,15 @@ import {
   FileMapContext,
   SetConvoProvider,
 } from '~/Providers';
-import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap } from '~/hooks';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import {
+  useAuthContext,
+  useAssistantsMap,
+  useAgentsMap,
+  useFileMap,
+  useSearchEnabled,
+} from '~/hooks';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
 
@@ -31,6 +37,8 @@ export default function Root() {
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
 
+  useSearchEnabled(isAuthenticated);
+
   useEffect(() => {
     if (termsData) {
       setShowTerms(!termsData.termsAccepted);
@@ -41,7 +49,6 @@ export default function Root() {
     setShowTerms(false);
   };
 
-  // Pass the desired redirect parameter to logout
   const handleDeclineTerms = () => {
     setShowTerms(false);
     logout('/login?redirect=false');
