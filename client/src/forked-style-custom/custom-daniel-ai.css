@@ -1,9 +1,14 @@
 /* Daniel AI Custom Styles */
 
 /* Hide the model icons in the sidebar */
-[data-testid='convo-item'] > div:first-of-type {
+
+[data-testid='convo-icon'] {
   display: none !important;
 }
+
+/* [data-testid='convo-item'] > div:first-of-type {
+  display: none !important;
+} */
 
 /* Adjust footer padding */
 /* div[role='contentinfo'] {
