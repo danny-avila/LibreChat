@@ -108,8 +108,8 @@ async function abortMessage(req, res) {
   res.send(JSON.stringify(finalEvent));
 }
 
-const handleAbort = () => {
-  return async (req, res) => {
+const handleAbort = function () {
+  return async function (req, res) {
     try {
       if (isEnabled(process.env.LIMIT_CONCURRENT_MESSAGES)) {
         await clearPendingReq({ userId: req.user.id });
