@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type {
-  TConversation,
-  ConversationListResponse,
-  SearchConversationListResponse,
-} from 'librechat-data-provider';
+import type { TConversation, ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
@@ -17,8 +13,6 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import { useSearchContext } from '~/Providers';
-import { Spinner } from '~/components';
 import NavToggle from './NavToggle';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
@@ -76,12 +70,13 @@ const Nav = memo(
 
     const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
     const isSearchTyping = useRecoilValue(store.isSearchTyping);
-    const { searchQuery, searchQueryRes } = useSearchContext();
+    const searchQuery = useRecoilValue(store.searchQuery);
 
     const { data, fetchNextPage, isFetchingNextPage, refetch } = useConversationsInfiniteQuery(
       {
         isArchived: false,
         tags: tags.length === 0 ? undefined : tags,
+        search: searchQuery || undefined,
       },
       {
         enabled: isAuthenticated,
@@ -91,54 +86,32 @@ const Nav = memo(
     );
 
     const computedHasNextPage = useMemo(() => {
-      if (searchQuery && searchQueryRes?.data) {
-        const pages = searchQueryRes.data.pages;
-        return pages[pages.length - 1]?.nextCursor !== null;
-      } else if (data?.pages && data.pages.length > 0) {
+      if (data?.pages && data.pages.length > 0) {
         const lastPage: ConversationListResponse = data.pages[data.pages.length - 1];
         return lastPage.nextCursor !== null;
       }
       return false;
-    }, [searchQuery, searchQueryRes?.data, data?.pages]);
+    }, [data?.pages]);
 
     const outerContainerRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<any>(null);
 
-    const { moveToTop } = useNavScrolling<
-      ConversationListResponse | SearchConversationListResponse
-    >({
+    const { moveToTop } = useNavScrolling<ConversationListResponse>({
       setShowLoading,
       fetchNextPage: async (options?) => {
         if (computedHasNextPage) {
-          if (searchQuery && searchQueryRes) {
-            const pages = searchQueryRes.data?.pages;
-            if (pages && pages.length > 0 && pages[pages.length - 1]?.nextCursor !== null) {
-              return searchQueryRes.fetchNextPage(options);
-            }
-          } else {
-            return fetchNextPage(options);
-          }
+          return fetchNextPage(options);
         }
         return Promise.resolve(
-          {} as InfiniteQueryObserverResult<
-            SearchConversationListResponse | ConversationListResponse,
-            unknown
-          >,
+          {} as InfiniteQueryObserverResult<ConversationListResponse, unknown>,
         );
       },
-      isFetchingNext: searchQuery
-        ? (searchQueryRes?.isFetchingNextPage ?? false)
-        : isFetchingNextPage,
+      isFetchingNext: isFetchingNextPage,
     });
 
     const conversations = useMemo(() => {
-      if (searchQuery && searchQueryRes?.data) {
-        return searchQueryRes.data.pages.flatMap(
-          (page) => page.conversations ?? [],
-        ) as TConversation[];
-      }
       return data ? data.pages.flatMap((page) => page.conversations) : [];
-    }, [data, searchQuery, searchQueryRes?.data]);
+    }, [data]);
 
     const toggleNavVisible = useCallback(() => {
       setNavVisible((prev: boolean) => {
@@ -199,9 +172,7 @@ const Nav = memo(
 
     const isSearchLoading =
       !!searchQuery &&
-      (isSearchTyping ||
-        (searchQueryRes?.isLoading ?? false) ||
-        (searchQueryRes?.isFetching ?? false));
+      (isSearchTyping || (data?.isLoading ?? false) || (data?.isFetching ?? false));
 
     return (
       <>

@@ -1,6 +1,7 @@
 const express = require('express');
 const { ContentTypes } = require('librechat-data-provider');
 const {
+  Message,
   saveConvo,
   saveMessage,
   getMessage,
@@ -10,8 +11,15 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { countTokens } = require('~/server/utils');
+const { countTokens, isEnabled } = require('~/server/utils');
+const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
+const { Keyv } = require('keyv');
+
+const expiration = 60 * 1000;
+const cache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'search', ttl: expiration });
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -182,6 +190,62 @@ router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res
     res.status(204).send();
   } catch (error) {
     logger.error('Error deleting message:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/search', async (req, res) => {
+  try {
+    const user = req.user.id ?? '';
+    const { q = '', cursor = 'start', limit = 25 } = req.query;
+    const key = `${user}:messagesearch:${q}:${cursor}`;
+    const cached = await cache.get(key);
+    if (cached) {
+      logger.debug('[/messages/search] cache hit: ' + key);
+      return res.status(200).json(cached);
+    }
+    const messageResults = await Message.meiliSearch(q, undefined, true);
+    let messages = messageResults.hits || [];
+
+    let cursorCreatedAt = null;
+    let cursorMessageId = null;
+    if (cursor !== 'start') {
+      const [createdAt, messageId] = cursor.split('|');
+      cursorCreatedAt = createdAt;
+      cursorMessageId = messageId;
+      messages = messages.filter((m) => {
+        if (m.createdAt < cursorCreatedAt) {
+          return true;
+        }
+        if (m.createdAt === cursorCreatedAt && m.messageId < cursorMessageId) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    messages.sort((a, b) => {
+      if (b.createdAt !== a.createdAt) {
+        return b.createdAt.localeCompare(a.createdAt);
+      }
+      return b.messageId.localeCompare(a.messageId);
+    });
+
+    const paginatedMessages = messages.slice(0, limit);
+    let nextCursor = null;
+    if (paginatedMessages.length === limit && paginatedMessages[limit - 1]) {
+      const last = paginatedMessages[limit - 1];
+      nextCursor = `${last.createdAt}|${last.messageId}`;
+    }
+
+    const response = {
+      messages: paginatedMessages,
+      nextCursor,
+    };
+    await cache.set(key, response, expiration);
+    res.status(200).json(response);
+  } catch (error) {
+    logger.error('Error searching messages:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

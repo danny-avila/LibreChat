@@ -65,7 +65,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       debounce((value: string) => {
         sendRequest(value);
       }, 350),
-    [sendRequest, setIsSearchTyping],
+    [sendRequest],
   );
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {

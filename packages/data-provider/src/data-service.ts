@@ -609,13 +609,9 @@ export const listConversations = (
   const search = params?.search || '';
   const cursor = params?.cursor;
 
-  if (search !== '' && isArchived === false) {
-    return request.get(endpoints.search(search, cursor));
-  } else {
-    return request.get(
-      endpoints.conversations(isArchived, sortBy, sortDirection, tags, search, cursor),
-    );
-  }
+  return request.get(
+    endpoints.conversations(isArchived, sortBy, sortDirection, tags, search, cursor),
+  );
 };
 
 export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
