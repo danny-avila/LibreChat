@@ -35,7 +35,7 @@ jobs:
         MONGO_URI: ${{ secrets.MONGO_URI }}
       run: |
         ./custom/build-and-deploy.ps1 `
-          -ImageName "librechat-custom" `
+          -ImageName "ts-librechat" `
           -ImageTag "${{ steps.set-tag.outputs.IMAGE_TAG }}" `
           -Registry "registry.totalsoft.local" `
           -Namespace "librechat" `
