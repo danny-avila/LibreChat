@@ -29,20 +29,6 @@ volumeMounts:
 
 # Environment variables structure moved under config.env as expected by the Helm chart
 config:
-  endpoints:
-      azureOpenAI:
-        titleModel: "gpt-4o"
-        plugins: true
-        assistants: false
-        groups:
-        - group: "${AZURE_OPENAI_INSTANCE}"
-          apiKey: "${AZURE_OPENAI_API_KEY}"
-          instanceName: "${AZURE_OPENAI_INSTANCE}"
-          version: "2025-01-01-preview"
-          models:
-            gpt-4o:
-              deploymentName: gpt-4o
-  
   env:
     NODE_ENV: "production"
     # Connection to existing MongoDB instance
