@@ -32,12 +32,13 @@ router.get('/', async (req, res) => {
       cursor = null,
       sortBy = 'createdAt',
       sortDirection = 'desc',
-      pageSize = parseInt(pageSize, 10) || 10,
+      pageSize: pageSizeRaw,
       conversationId,
       messageId,
       search,
       ...rest
     } = req.query;
+    const pageSize = parseInt(pageSizeRaw, 10) || 10;
     const key = `${user}:messages:${conversationId ?? ''}:${messageId ?? ''}:${cursor ?? ''}:${sortBy}:${sortDirection}:${search ?? ''}:${JSON.stringify(rest)}`;
     const cached = await cache.get(key);
     if (cached) {
@@ -72,18 +73,31 @@ router.get('/', async (req, res) => {
       }
       response = { messages, nextCursor };
     } else if (search) {
-      // Search messages using MeiliSearch with pagination and sorting
-      const meiliParams = {
-        sort: [`${sortBy}:${sortDirection}`],
-        limit: pageSize + 1,
-        ...(cursor
-          ? { filter: `${sortBy} ${sortDirection === 'asc' ? '>' : '<'} ${JSON.stringify(cursor)}` }
-          : {}),
-      };
-      const messageResults = await Message.meiliSearch(search, meiliParams, true);
+      const messageResults = await Message.meiliSearch(search, undefined, true);
       let messages = messageResults.hits || [];
-      // Add conversation title to each message
-      const titlePromises = messages.map(async (msg) => {
+
+      messages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      let pagedMessages = messages;
+      let nextCursor = null;
+      if (cursor) {
+        const cursorIndex = messages.findIndex((msg) => msg[sortBy] == cursor);
+        pagedMessages =
+          cursorIndex >= 0
+            ? messages.slice(cursorIndex + 1, cursorIndex + 1 + pageSize)
+            : messages.slice(0, pageSize);
+      } else {
+        pagedMessages = messages.slice(0, pageSize);
+      }
+      if (
+        pagedMessages.length &&
+        messages.length >
+          (cursor ? messages.findIndex((msg) => msg[sortBy] == cursor) + 1 + pageSize : pageSize)
+      ) {
+        nextCursor = pagedMessages[pagedMessages.length - 1][sortBy];
+      }
+
+      const titlePromises = pagedMessages.map(async (msg) => {
         let title = null;
         if (msg.conversationId) {
           try {
@@ -94,17 +108,9 @@ router.get('/', async (req, res) => {
         }
         return { ...msg, title };
       });
-      messages = await Promise.all(titlePromises);
-      let nextCursor = null;
-      if (messages.length > pageSize) {
-        const last = messages.pop();
-        nextCursor = last[sortBy];
-      }
-      response = { messages, nextCursor };
-    } else {
-      return res
-        .status(400)
-        .json({ error: 'Unsupported query. Provide conversationId, messageId, or search.' });
+      pagedMessages = await Promise.all(titlePromises);
+
+      response = { messages: pagedMessages, nextCursor };
     }
 
     await cache.set(key, response, expiration);

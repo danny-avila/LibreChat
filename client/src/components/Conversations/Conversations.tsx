@@ -83,7 +83,6 @@ const Conversations: FC<ConversationsProps> = ({
   loadMoreConversations,
   isLoading,
 }) => {
-  const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
 
@@ -110,7 +109,7 @@ const Conversations: FC<ConversationsProps> = ({
       items.push({ type: 'header', groupName });
       items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
     });
-    // Add a special loading item at the end if loading
+
     if (isLoading) {
       items.push({ type: 'loading' } as any);
     }

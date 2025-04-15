@@ -2,20 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
-  AgentsMapContext,
-  AssistantsMapContext,
-  FileMapContext,
-  SetConvoProvider,
-} from '~/Providers';
-import {
   useAuthContext,
   useAssistantsMap,
   useAgentsMap,
   useFileMap,
   useSearchEnabled,
 } from '~/hooks';
-import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import {
+  AgentsMapContext,
+  AssistantsMapContext,
+  FileMapContext,
+  SetConvoProvider,
+} from '~/Providers';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { Banner } from '~/components/Banners';
 

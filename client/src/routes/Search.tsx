@@ -1,37 +1,51 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
+import { useToastContext, useFileMapContext } from '~/Providers';
 import { useMessagesInfiniteQuery } from '~/data-provider';
-import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components';
+import { buildTree } from '~/utils';
 import store from '~/store';
 
 export default function Search() {
   const localize = useLocalize();
+  const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const { isAuthenticated } = useAuthContext();
   const search = useRecoilValue(store.search);
   const searchQuery = search.debouncedQuery;
 
-  const { containerRef } = useNavScrolling({
-    nextCursor: undefined,
-    setShowLoading: () => ({}),
-    fetchNextPage: undefined,
-    isFetchingNext: false,
-  });
-
-  const { data: searchMessages, isLoading } = useMessagesInfiniteQuery(
+  const {
+    data: searchMessages,
+    isLoading,
+    fetchNextPage,
+    isFetchingNextPage,
+    hasNextPage,
+  } = useMessagesInfiniteQuery(
     {
       search: searchQuery || undefined,
     },
     {
-      enabled: isAuthenticated,
+      enabled: isAuthenticated && !!searchQuery,
       staleTime: 30000,
       cacheTime: 300000,
     },
   );
+
+  const { containerRef } = useNavScrolling({
+    nextCursor: undefined,
+    setShowLoading: () => ({}),
+    fetchNextPage: fetchNextPage,
+    isFetchingNext: false,
+  });
+
+  const messages = useMemo(() => {
+    const msgs = searchMessages?.pages.flatMap((page) => page.messages) || [];
+    const dataTree = buildTree({ messages: msgs, fileMap });
+    return dataTree?.length === 0 ? null : (dataTree ?? null);
+  }, [fileMap, searchMessages?.pages]);
 
   useEffect(() => {
     if (!searchMessages && searchQuery) {
@@ -53,23 +67,24 @@ export default function Search() {
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
-      {!searchMessages ||
-      !searchMessages.pages ||
-      searchMessages.pages.flatMap((page) => page.messages).length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
-              {localize('com_ui_nothing_found')}
-            </div>
+      {(messages && messages.length === 0) || messages == null ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+            {localize('com_ui_nothing_found')}
           </div>
-        ) : (
-          <>
-            {searchMessages.pages
-              .flatMap((page) => page.messages)
-              .map((msg) => (
-                <SearchMessage key={msg.messageId} message={msg} />
-              ))}
-          </>
-        )}
+        </div>
+      ) : (
+        <>
+          {messages.map((msg) => (
+            <SearchMessage key={msg.messageId} message={msg} />
+          ))}
+          {isFetchingNextPage && (
+            <div className="flex justify-center py-4">
+              <Spinner className="text-text-primary" />
+            </div>
+          )}
+        </>
+      )}
       <div className="absolute bottom-0 left-0 right-0 h-[5%] bg-gradient-to-t from-gray-50 to-transparent dark:from-gray-800" />
     </MinimalMessagesWrapper>
   );
