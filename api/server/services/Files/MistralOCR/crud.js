@@ -109,6 +109,19 @@ function extractVariableName(str) {
   return match ? match[1] : null;
 }
 
+/**
+ * Uploads a file to the Mistral OCR API and processes the OCR result.
+ *
+ * @param {Object} params - The params object.
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
+ *                                     have a `type` property that tells us the file type
+ * @param {string} params.file_id - The file ID.
+ * @param {string} [params.entity_id] - The entity ID, not used here but passed for consistency.
+ * @returns {Promise<{ filepath: string, bytes: number }>} - The result object containing the processed `text` and `images` (not currently used),
+ *                       along with the `filename` and `bytes` properties.
+ */
 const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
   try {
     /** @type {TCustomConfig['ocr']} */
