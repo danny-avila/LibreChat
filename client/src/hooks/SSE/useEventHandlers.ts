@@ -488,10 +488,13 @@ export default function useEventHandlers({
           if (prevState?.model != null && prevState.model !== submissionConvo.model) {
             update.model = prevState.model;
           }
-          queryClient.setQueryData(
-            [QueryKeys.conversation, conversation.conversationId],
-            update as TConversation,
-          );
+          const cachedConvo = queryClient.getQueryData<TConversation>([
+            QueryKeys.conversation,
+            conversation.conversationId,
+          ]);
+          if (!cachedConvo) {
+            queryClient.setQueryData([QueryKeys.conversation, conversation.conversationId], update);
+          }
           return update;
         });
       }
