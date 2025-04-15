@@ -540,7 +540,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       file_id,
       temp_file_id,
       user: req.user.id,
-      type: file.mimetype,
+      type: 'text/plain',
       filepath: ocrFileURL,
       source: FileSources.text,
       filename: filename ?? file.originalname,
