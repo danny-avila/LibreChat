@@ -1,5 +1,8 @@
 # Custom values for LibreChat Helm chart
 # This file contains the customizations needed to deploy our fork to Kubernetes
+# 
+# To deploy with certificates from custom/cert folder:
+# helm upgrade --install librechat ./charts/librechat -f custom/config/k8s/custom-values.yaml --include-dir custom
 
 replicaCount: 1
 
@@ -12,6 +15,20 @@ image:
 # This will be populated from the command line, but you can also set it manually here
 imagePullSecrets: []
 # - name: regcred
+
+# TLS certificate secret configuration
+tlsSecret:
+  enabled: true
+  name: "totalsoft-wildcard-tls"
+  # Path to certificate files (relative to the chart directory)
+  certFile: "../../custom/cert/wildcard-totalsoft.crt"
+  keyFile: "../../custom/cert/wildcard-totalsoft.key"
+  # Alternative: Base64-encoded certificate and key data
+  # You can generate these values with:
+  # cat wildcard-totalsoft.crt | base64 -w 0
+  # cat wildcard-totalsoft.key | base64 -w 0
+  # cert: "" # Add your base64-encoded certificate here
+  # key: "" # Add your base64-encoded private key here
 
 # Enable custom file storage using PVC
 persistence:
@@ -73,16 +90,15 @@ ingress:
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: librechat.yourdomain.com
+    - host: librechat.totalsoft.local
       paths:
         - path: /
           pathType: Prefix
   tls:
-    - secretName: librechat-tls
+    - secretName: totalsoft-wildcard-tls
       hosts:
-        - librechat.yourdomain.com
+        - librechat.totalsoft.local
 
 # MongoDB configuration - DISABLED (using external MongoDB)
 mongodb:

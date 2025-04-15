@@ -114,6 +114,7 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
            "--set `"image.tag=$ImageTag`" " + `
+           "--include-dir custom " + `
            "--force"
 
 if ($RegistrySecretParam) {
