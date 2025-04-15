@@ -118,21 +118,17 @@ export default function useSSE(
       if (!prev) {
         return null;
       }
-      const prevConvoId = prev?.conversationId;
       const title =
         getConvoTitle({
           parentId,
           queryClient,
           currentTitle: prev?.title,
-          conversationId: prevConvoId,
+          conversationId: prev?.conversationId,
         }) ?? '';
       return {
         ...prev,
         title,
-        conversationId:
-          !prevConvoId || prevConvoId === Constants.NEW_CONVO
-            ? (Constants.PENDING_CONVO as string)
-            : prevConvoId,
+        conversationId: prev?.conversationId,
       };
     });
     let { payload } = payloadData;
