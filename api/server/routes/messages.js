@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
       search,
       ...rest
     } = req.query;
-    const pageSize = parseInt(pageSizeRaw, 10) || 10;
+    const pageSize = parseInt(pageSizeRaw, 10) || 25;
     const key = `${user}:messages:${conversationId ?? ''}:${messageId ?? ''}:${cursor ?? ''}:${sortBy}:${sortDirection}:${search ?? ''}:${JSON.stringify(rest)}`;
     const cached = await cache.get(key);
     if (cached) {

@@ -68,7 +68,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       debounce((value: string) => {
         setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
         sendRequest(value);
-      }, 350),
+      }, 500),
     [setSearchState, sendRequest],
   );
 
