@@ -857,6 +857,7 @@ export const visionModels = [
   'gpt-4-turbo',
   'gpt-4-vision',
   'o1',
+  'gpt-4.1',
   'gpt-4.5',
   'llava',
   'llava-13b',

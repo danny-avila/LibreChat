@@ -11,6 +11,7 @@ import {
   tMessageSchema,
   tConvoUpdateSchema,
   ContentTypes,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TMessage,
@@ -622,6 +623,17 @@ export default function useEventHandlers({
       const { endpoint: _endpoint, endpointType } =
         (submission.conversation as TConversation | null) ?? {};
       const endpoint = endpointType ?? _endpoint;
+      if (!isAssistantsEndpoint(endpoint)) {
+        if (newConversation) {
+          newConversation({
+            template: { conversationId: conversationId || v4() },
+            preset: tPresetSchema.parse(submission.conversation),
+          });
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
       try {
         const response = await fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
           method: 'POST',

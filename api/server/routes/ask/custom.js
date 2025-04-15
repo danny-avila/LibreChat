@@ -3,7 +3,6 @@ const AskController = require('~/server/controllers/AskController');
 const { initializeClient } = require('~/server/services/Endpoints/custom');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
 const {
-  handleAbort,
   setHeaders,
   validateModel,
   validateEndpoint,
@@ -11,8 +10,6 @@ const {
 } = require('~/server/middleware');
 
 const router = express.Router();
-
-router.post('/abort', handleAbort());
 
 router.post(
   '/',

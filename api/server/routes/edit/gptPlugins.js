@@ -2,7 +2,6 @@ const express = require('express');
 const { getResponseSender } = require('librechat-data-provider');
 const {
   setHeaders,
-  handleAbort,
   moderateText,
   validateModel,
   handleAbortError,
@@ -19,7 +18,6 @@ const { logger } = require('~/config');
 const router = express.Router();
 
 router.use(moderateText);
-router.post('/abort', handleAbort());
 
 router.post(
   '/',
@@ -173,7 +171,8 @@ router.post(
 
       logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
 
-      const { conversation = {} } = await client.responsePromise;
+      const { conversation = {} } = await response.databasePromise;
+      delete response.databasePromise;
       conversation.title =
         conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
