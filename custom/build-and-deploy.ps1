@@ -93,7 +93,7 @@ if ($RegistryUsername -and $RegistryPassword) {
 $CertFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalsoft.crt"
 $KeyFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalsoft.key"
 
-if (Test-Path $CertFile -and Test-Path $KeyFile) {
+if ((Test-Path $CertFile) -and (Test-Path $KeyFile)) {
     Write-Host "Creating TLS secret for ingress..." -ForegroundColor Cyan
     $tlsSecretName = "totalsoft-wildcard-tls"
     $secretCmd = "kubectl create secret tls $tlsSecretName --namespace $Namespace --cert=`"$CertFile`" --key=`"$KeyFile`" --dry-run=client -o yaml"
