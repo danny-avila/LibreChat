@@ -1469,6 +1469,11 @@ ${convo}
           });
       }
 
+      if (openai.abortHandler && abortController.signal) {
+        abortController.signal.removeEventListener('abort', openai.abortHandler);
+        openai.abortHandler = undefined;
+      }
+
       if (!chatCompletion && UnexpectedRoleError) {
         throw new Error(
           'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
