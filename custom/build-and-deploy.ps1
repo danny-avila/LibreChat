@@ -7,7 +7,6 @@ param (
     [string]$Registry = "registry.totalsoft.local",
     [string]$Namespace = "librechat",
     [string]$HelmReleaseName = "librechat",
-    [string]$MongoUri = "",
     [string]$RegistryUsername = "docker-registry",
     [string]$RegistryPassword = "docker-registry"
 )
@@ -32,11 +31,6 @@ Write-Host "Project root: $ProjectRoot"
 Write-Host "Dockerfile: $Dockerfile"
 Write-Host "Values file: $CustomValues"
 Write-Host "Helm chart: $HelmChart"
-if ($MongoUri) {
-    Write-Host "Using custom MongoDB URI" -ForegroundColor Cyan
-} else {
-    Write-Host "Using MongoDB URI from custom-values.yaml" -ForegroundColor Cyan
-}
 if ($RegistryUsername -and $RegistryPassword) {
     Write-Host "Using provided registry credentials" -ForegroundColor Cyan
 }
@@ -95,15 +89,20 @@ if ($RegistryUsername -and $RegistryPassword) {
     $RegistrySecretParam = "--set imagePullSecrets[0].name=$secretName"
 }
 
-# Create MongoDB credentials secret if a URI is provided
-$MongoParam = ""
-if ($MongoUri) {
-    Write-Host "Creating MongoDB credentials secret..." -ForegroundColor Cyan
-    $secretCmd = "kubectl create secret generic mongodb-credentials --namespace $Namespace --from-literal=connection-string=`"$MongoUri`" --dry-run=client -o yaml"
+# Create TLS secret directly with kubectl
+$CertFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalsoft.crt"
+$KeyFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalsoft.key"
+
+if (Test-Path $CertFile -and Test-Path $KeyFile) {
+    Write-Host "Creating TLS secret for ingress..." -ForegroundColor Cyan
+    $tlsSecretName = "totalsoft-wildcard-tls"
+    $secretCmd = "kubectl create secret tls $tlsSecretName --namespace $Namespace --cert=`"$CertFile`" --key=`"$KeyFile`" --dry-run=client -o yaml"
     Invoke-Expression "$secretCmd | kubectl apply -f -"
-    
-    # Updated to use the correct config.env structure instead of directly setting env variables
-    $MongoParam = "--set config.env.MONGO_URI=`"$MongoUri`""
+    Write-Host "TLS secret '$tlsSecretName' created successfully" -ForegroundColor Green
+}
+else {
+    Write-Host "TLS certificate files not found at $CertFile and $KeyFile" -ForegroundColor Yellow
+    Write-Host "Continuing without TLS configuration" -ForegroundColor Yellow
 }
 
 # Deploy or upgrade using Helm
@@ -114,15 +113,10 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
            "--set `"image.tag=$ImageTag`" " + `
-           "--include-dir custom " + `
            "--force"
 
 if ($RegistrySecretParam) {
     $helmCmd = "$helmCmd $RegistrySecretParam"
-}
-
-if ($MongoParam) {
-    $helmCmd = "$helmCmd $MongoParam"
 }
 
 Invoke-Expression $helmCmd
