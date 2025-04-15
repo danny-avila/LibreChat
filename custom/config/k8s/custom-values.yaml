@@ -36,6 +36,19 @@ persistence:
 
 # Environment variables structure moved under config.env as expected by the Helm chart
 config:
+  endpoints:
+      azureOpenAI:
+        titleModel: "gpt-4o"
+        plugins: true
+        assistants: false
+        groups:
+        - group: "${AZURE_OPENAI_INSTANCE}"
+          apiKey: "${AZURE_OPENAI_API_KEY}"
+          instanceName: "${AZURE_OPENAI_INSTANCE}"
+          version: "2025-01-01-preview"
+          models:
+            gpt-4o:
+              deploymentName: gpt-4o
   env:
     NODE_ENV: "production"
     # Connection to existing MongoDB instance
@@ -48,7 +61,9 @@ config:
     JWT_REFRESH_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
     # Session
     SESSION_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
-
+    ENDPOINTS: "azureOpenAI"
+    AZURE_OPENAI_API_KEY: "61018720ef2f4fb28df8c352dacb3aeb"
+    AZURE_OPENAI_INSTANCE: "rg-ch-openai-techagent"
 # Resources configuration
 resources:
   limits:
