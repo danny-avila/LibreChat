@@ -169,20 +169,33 @@ export const ContextBadge = memo(({
  * Pre-memoized badges component to keep ModelSpecItem clean
  */
 export const ModelBadges = memo(({
-  inputPrice,
-  outputPrice,
-  showPricing,
-  isFree,
-  maxTokens,
-  disabled,
+  spec,
+  inputPrice: passedInputPrice,
+  outputPrice: passedOutputPrice,
+  showPricing: passedShowPricing,
+  isFree: passedIsFree,
+  maxTokens: passedMaxTokens,
+  disabled: passedDisabled,
 }: {
-  inputPrice: number | null;
-  outputPrice: number | null;
-  showPricing: boolean;
+  spec?: TModelSpec;
+  inputPrice?: number | null;
+  outputPrice?: number | null;
+  showPricing?: boolean;
   isFree?: boolean;
   maxTokens?: number | null;
   disabled?: boolean;
 }) => {
+  // Always call the hook, never conditionally
+  const hookData = useModelBadges(spec ?? {} as TModelSpec);
+
+  // Use passed props if available, otherwise use hook data
+  const inputPrice = passedInputPrice ?? hookData?.inputPrice ?? null;
+  const outputPrice = passedOutputPrice ?? hookData?.outputPrice ?? null;
+  const showPricing = passedShowPricing ?? hookData?.showPricing ?? true;
+  const isFree = passedIsFree ?? hookData?.isFree ?? false;
+  const maxTokens = passedMaxTokens ?? hookData?.maxTokens ?? null;
+  const disabled = passedDisabled ?? hookData?.disabled ?? false;
+
   // If badges are explicitly disabled, show nothing
   if (disabled) {
     return null;
@@ -254,9 +267,15 @@ export const useModelBadges = (spec: TModelSpec) => {
     disabled: false,
   });
 
-  const modelName = spec.preset?.model || '';
+  // If spec is invalid or empty, return default values
+  const modelName = spec?.preset?.model || '';
 
   useEffect(() => {
+    // If spec is invalid, return early
+    if (!spec || !spec?.name) {
+      return;
+    }
+
     let isMounted = true;
 
     const getBadges = async () => {

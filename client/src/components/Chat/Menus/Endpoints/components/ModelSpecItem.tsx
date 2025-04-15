@@ -4,7 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { useModelBadges, ModelBadges, CapabilityIcons } from '~/forked-code-custom';
+import { ModelBadges, CapabilityIcons } from '~/forked-code-custom';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -14,10 +14,6 @@ interface ModelSpecItemProps {
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { showIconInMenu = true } = spec;
-
-  // Get badges information
-  const { inputPrice, outputPrice, showPricing, isFree, maxTokens, disabled } =
-    useModelBadges(spec);
 
   return (
     <MenuItem
@@ -43,14 +39,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
-          <ModelBadges
-            inputPrice={inputPrice}
-            outputPrice={outputPrice}
-            showPricing={showPricing}
-            isFree={isFree}
-            maxTokens={maxTokens}
-            disabled={disabled}
-          />
+          <ModelBadges spec={spec} />
         </div>
       </div>
 

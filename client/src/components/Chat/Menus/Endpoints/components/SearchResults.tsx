@@ -7,6 +7,7 @@ import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
+import { CapabilityIcons, ModelBadges } from '~/forked-code-custom';
 
 interface SearchResultsProps {
   results: (TModelSpec | Endpoint)[] | null;
@@ -71,7 +72,17 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   {spec.description && (
                     <span className="break-words text-xs font-normal">{spec.description}</span>
                   )}
+                  <ModelBadges
+                    spec={spec}
+                  />
                 </div>
+              </div>
+              {/* Wrapper for capability icons and selected checkmark, aligned to top */}
+              <div
+                className="flex flex-shrink-0 gap-2 py-1"
+                style={{ alignSelf: 'flex-start', marginRight: selectedSpec === spec.name ? '0' : '24px' }}
+              >
+                <CapabilityIcons capabilities={spec.iconCapabilities} />
               </div>
               {selectedSpec === spec.name && (
                 <div className={cn('flex-shrink-0', spec.description ? 'pt-1' : '')}>
@@ -254,3 +265,4 @@ export function renderSearchResults(
     />
   );
 }
+
