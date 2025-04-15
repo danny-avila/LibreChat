@@ -4,7 +4,7 @@ import type {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import { initialModelsConfig } from '../config';
+import { Constants, initialModelsConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
@@ -70,6 +70,10 @@ export const useGetSharedLinkQuery = (
     [QueryKeys.sharedLinks, conversationId],
     () => dataService.getSharedLink(conversationId),
     {
+      enabled:
+        !!conversationId &&
+        conversationId !== Constants.NEW_CONVO &&
+        conversationId !== Constants.PENDING_CONVO,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

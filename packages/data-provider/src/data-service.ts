@@ -31,7 +31,10 @@ export function deleteUser(): Promise<s.TPreset> {
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
-  if (conversationId === 'new') {
+  if (
+    conversationId === config.Constants.NEW_CONVO ||
+    conversationId === config.Constants.PENDING_CONVO
+  ) {
     return Promise.resolve([]);
   }
   return request.get(endpoints.messages(conversationId));
