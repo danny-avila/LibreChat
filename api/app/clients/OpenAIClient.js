@@ -1,7 +1,6 @@
-const OpenAI = require('openai');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SplitStreamHandler, GraphEvents } = require('@librechat/agents');
+const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
 const {
   Constants,
   ImageDetail,
@@ -32,17 +31,18 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { createFetch, createStreamEventHandlers } = require('./generators');
 const { addSpaceIfNeeded, isEnabled, sleep } = require('~/server/utils');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
-const { logger, sendEvent } = require('~/config');
 const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -609,7 +609,7 @@ class OpenAIClient extends BaseClient {
         return result.trim();
       }
 
-      logger.debug('[OpenAIClient] sendCompletion: result', result);
+      logger.debug('[OpenAIClient] sendCompletion: result', { ...result });
 
       if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
@@ -818,7 +818,7 @@ ${convo}
 
         const completionTokens = this.getTokenCount(title);
 
-        this.recordTokenUsage({ promptTokens, completionTokens, context: 'title' });
+        await this.recordTokenUsage({ promptTokens, completionTokens, context: 'title' });
       } catch (e) {
         logger.error(
           '[OpenAIClient] There was an issue generating the title with the completion method',
@@ -1245,7 +1245,10 @@ ${convo}
       let chatCompletion;
       /** @type {OpenAI} */
       const openai = new OpenAI({
-        fetch: this.fetch,
+        fetch: createFetch({
+          directEndpoint: this.options.directEndpoint,
+          reverseProxyUrl: this.options.reverseProxyUrl,
+        }),
         apiKey: this.apiKey,
         ...opts,
       });
@@ -1275,12 +1278,13 @@ ${convo}
       }
 
       if (this.options.addParams && typeof this.options.addParams === 'object') {
+        const addParams = { ...this.options.addParams };
         modelOptions = {
           ...modelOptions,
-          ...this.options.addParams,
+          ...addParams,
         };
         logger.debug('[OpenAIClient] chatCompletion: added params', {
-          addParams: this.options.addParams,
+          addParams: addParams,
           modelOptions,
         });
       }
@@ -1309,11 +1313,12 @@ ${convo}
       }
 
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
-        this.options.dropParams.forEach((param) => {
+        const dropParams = [...this.options.dropParams];
+        dropParams.forEach((param) => {
           delete modelOptions[param];
         });
         logger.debug('[OpenAIClient] chatCompletion: dropped params', {
-          dropParams: this.options.dropParams,
+          dropParams: dropParams,
           modelOptions,
         });
       }
@@ -1355,15 +1360,12 @@ ${convo}
         delete modelOptions.reasoning_effort;
       }
 
+      const handlers = createStreamEventHandlers(this.options.res);
       this.streamHandler = new SplitStreamHandler({
         reasoningKey,
         accumulate: true,
         runId: this.responseMessageId,
-        handlers: {
-          [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
-          [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
-          [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
-        },
+        handlers,
       });
 
       intermediateReply = this.streamHandler.tokens;

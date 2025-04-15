@@ -1,14 +1,12 @@
 const fs = require('fs');
-const ioredis = require('ioredis');
-const KeyvRedis = require('@keyv/redis').default;
+const Redis = require('ioredis');
 const { isEnabled } = require('~/server/utils');
 const logger = require('~/config/winston');
 
-const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_KEY_PREFIX, REDIS_MAX_LISTENERS } =
-  process.env;
+const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_MAX_LISTENERS } = process.env;
 
-let keyvRedis;
-const redis_prefix = REDIS_KEY_PREFIX || '';
+/** @type {import('ioredis').Redis | import('ioredis').Cluster} */
+let ioredisClient;
 const redis_max_listeners = Number(REDIS_MAX_LISTENERS) || 40;
 
 function mapURI(uri) {
@@ -50,11 +48,6 @@ function mapURI(uri) {
 
 if (REDIS_URI && isEnabled(USE_REDIS)) {
   let redisOptions = null;
-  /** @type {import('@keyv/redis').KeyvRedisOptions} */
-  let keyvOpts = {
-    useRedisSets: false,
-    keyPrefix: redis_prefix,
-  };
 
   if (REDIS_CA) {
     const ca = fs.readFileSync(REDIS_CA);
@@ -70,30 +63,30 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
         port: value.port,
       };
     });
-    const cluster = new ioredis.Cluster(hosts, { redisOptions });
-    keyvRedis = new KeyvRedis(cluster, keyvOpts);
+    ioredisClient = new Redis.Cluster(hosts, { redisOptions });
   } else {
-    keyvRedis = new KeyvRedis(REDIS_URI, keyvOpts);
+    ioredisClient = new Redis(REDIS_URI, redisOptions);
   }
-  keyvRedis.on('ready', () => {
-    logger.info('KeyvRedis connection ready');
+
+  ioredisClient.on('ready', () => {
+    logger.info('IoRedis connection ready');
   });
-  keyvRedis.on('reconnecting', () => {
-    logger.info('KeyvRedis connection reconnecting');
+  ioredisClient.on('reconnecting', () => {
+    logger.info('IoRedis connection reconnecting');
   });
-  keyvRedis.on('end', () => {
-    logger.info('KeyvRedis connection ended');
+  ioredisClient.on('end', () => {
+    logger.info('IoRedis connection ended');
   });
-  keyvRedis.on('close', () => {
-    logger.info('KeyvRedis connection closed');
+  ioredisClient.on('close', () => {
+    logger.info('IoRedis connection closed');
   });
-  keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
-  keyvRedis.setMaxListeners(redis_max_listeners);
+  ioredisClient.on('error', (err) => logger.error('IoRedis connection error:', err));
+  ioredisClient.setMaxListeners(redis_max_listeners);
   logger.info(
-    '[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache to refresh values.',
+    '[Optional] IoRedis initialized for rate limiters. If you have issues, disable Redis or restart the server.',
   );
 } else {
-  logger.info('[Optional] Redis not initialized.');
+  logger.info('[Optional] IoRedis not initialized for rate limiters.');
 }
 
-module.exports = keyvRedis;
+module.exports = ioredisClient;

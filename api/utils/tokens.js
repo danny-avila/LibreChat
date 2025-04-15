@@ -14,6 +14,9 @@ const openAIModels = {
   'gpt-4-1106': 127500, // -500 from max
   'gpt-4-0125': 127500, // -500 from max
   'gpt-4.5': 127500, // -500 from max
+  'gpt-4.1': 1047576,
+  'gpt-4.1-mini': 1047576,
+  'gpt-4.1-nano': 1047576,
   'gpt-4o': 127500, // -500 from max
   'gpt-4o-mini': 127500, // -500 from max
   'gpt-4o-2024-05-13': 127500, // -500 from max
@@ -196,6 +199,7 @@ const bedrockModels = {
 };
 
 const xAIModels = {
+  grok: 131072,
   'grok-beta': 131072,
   'grok-vision-beta': 8192,
   'grok-2': 131072,
@@ -204,6 +208,10 @@ const xAIModels = {
   'grok-2-vision': 32768,
   'grok-2-vision-latest': 32768,
   'grok-2-vision-1212': 32768,
+  'grok-3': 131072,
+  'grok-3-fast': 131072,
+  'grok-3-mini': 131072,
+  'grok-3-mini-fast': 131072,
 };
 
 const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };

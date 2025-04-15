@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
 const { ViolationTypes } = require('librechat-data-provider');
 const { isEnabled, removePorts } = require('~/server/utils');

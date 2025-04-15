@@ -9,7 +9,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { SplitStreamHandler: _Handler, GraphEvents } = require('@librechat/agents');
+const { SplitStreamHandler: _Handler } = require('@librechat/agents');
 const {
   truncateText,
   formatMessage,
@@ -26,10 +26,11 @@ const {
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { createFetch, createStreamEventHandlers } = require('./generators');
 const Tokenizer = require('~/server/services/Tokenizer');
-const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -184,7 +185,10 @@ class AnthropicClient extends BaseClient {
   getClient(requestOptions) {
     /** @type {Anthropic.ClientOptions} */
     const options = {
-      fetch: this.fetch,
+      fetch: createFetch({
+        directEndpoint: this.options.directEndpoint,
+        reverseProxyUrl: this.options.reverseProxyUrl,
+      }),
       apiKey: this.apiKey,
     };
 
@@ -795,14 +799,11 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
+    const handlers = createStreamEventHandlers(this.options.res);
     this.streamHandler = new SplitStreamHandler({
       accumulate: true,
       runId: this.responseMessageId,
-      handlers: {
-        [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
-        [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
-        [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
-      },
+      handlers,
     });
 
     let intermediateReply = this.streamHandler.tokens;
