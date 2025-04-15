@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import { LockIcon, UnlockIcon } from 'lucide-react';
+// import { motion } from 'framer-motion';
+// import { LockIcon, UnlockIcon } from 'lucide-react';
 import { Label, Button } from '~/components';
 import { useLocalize } from '~/hooks';
 

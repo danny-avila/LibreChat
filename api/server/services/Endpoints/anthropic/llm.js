@@ -1,6 +1,6 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { anthropicSettings, removeNullishValues } = require('librechat-data-provider');
-const { checkPromptCacheSupport, getClaudeHeaders } = require('./helpers');
+const { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } = require('./helpers');
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
@@ -49,13 +49,14 @@ function getLLMConfig(apiKey, options = {}) {
     clientOptions: {},
   };
 
+  requestOptions = configureReasoning(requestOptions, systemOptions);
+
   if (!/claude-3[-.]7/.test(mergedOptions.model)) {
-    if (mergedOptions.topP !== undefined) {
-      requestOptions.topP = mergedOptions.topP;
-    }
-    if (mergedOptions.topK !== undefined) {
-      requestOptions.topK = mergedOptions.topK;
-    }
+    requestOptions.topP = mergedOptions.topP;
+    requestOptions.topK = mergedOptions.topK;
+  } else if (requestOptions.thinking == null) {
+    requestOptions.topP = mergedOptions.topP;
+    requestOptions.topK = mergedOptions.topK;
   }
 
   const supportsCacheControl =

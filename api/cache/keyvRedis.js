@@ -1,6 +1,6 @@
 const fs = require('fs');
 const ioredis = require('ioredis');
-const KeyvRedis = require('@keyv/redis');
+const KeyvRedis = require('@keyv/redis').default;
 const { isEnabled } = require('~/server/utils');
 const logger = require('~/config/winston');
 
@@ -9,7 +9,7 @@ const { REDIS_URI, USE_REDIS, USE_REDIS_CLUSTER, REDIS_CA, REDIS_KEY_PREFIX, RED
 
 let keyvRedis;
 const redis_prefix = REDIS_KEY_PREFIX || '';
-const redis_max_listeners = Number(REDIS_MAX_LISTENERS) || 10;
+const redis_max_listeners = Number(REDIS_MAX_LISTENERS) || 40;
 
 function mapURI(uri) {
   const regex =
@@ -50,6 +50,7 @@ function mapURI(uri) {
 
 if (REDIS_URI && isEnabled(USE_REDIS)) {
   let redisOptions = null;
+  /** @type {import('@keyv/redis').KeyvRedisOptions} */
   let keyvOpts = {
     useRedisSets: false,
     keyPrefix: redis_prefix,
@@ -74,13 +75,25 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   } else {
     keyvRedis = new KeyvRedis(REDIS_URI, keyvOpts);
   }
+  keyvRedis.on('ready', () => {
+    logger.info('KeyvRedis connection ready');
+  });
+  keyvRedis.on('reconnecting', () => {
+    logger.info('KeyvRedis connection reconnecting');
+  });
+  keyvRedis.on('end', () => {
+    logger.info('KeyvRedis connection ended');
+  });
+  keyvRedis.on('close', () => {
+    logger.info('KeyvRedis connection closed');
+  });
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
   keyvRedis.setMaxListeners(redis_max_listeners);
   logger.info(
-    '[Optional] Redis initialized. Note: Redis support is experimental. If you have issues, disable it. Cache needs to be flushed for values to refresh.',
+    '[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache to refresh values.',
   );
 } else {
-  logger.info('[Optional] Redis not initialized. Note: Redis support is experimental.');
+  logger.info('[Optional] Redis not initialized.');
 }
 
 module.exports = keyvRedis;

@@ -5,6 +5,7 @@ import type { OptionWithIcon, ExtendedFile } from './types';
 export type TAgentOption = OptionWithIcon &
   Agent & {
     knowledge_files?: Array<[string, ExtendedFile]>;
+    context_files?: Array<[string, ExtendedFile]>;
     code_files?: Array<[string, ExtendedFile]>;
   };
 
@@ -27,4 +28,5 @@ export type AgentForm = {
   provider?: AgentProvider | OptionWithIcon;
   agent_ids?: string[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
+  recursion_limit?: number;
 } & TAgentCapabilities;

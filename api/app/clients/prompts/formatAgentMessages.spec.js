@@ -325,4 +325,37 @@ describe('formatAgentMessages', () => {
     );
     expect(result[0].content).not.toContain('Analyzing the problem...');
   });
+
+  it('should exclude ERROR type content parts', () => {
+    const payload = [
+      {
+        role: 'assistant',
+        content: [
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Hello there' },
+          {
+            type: ContentTypes.ERROR,
+            [ContentTypes.ERROR]:
+              'An error occurred while processing the request: Something went wrong',
+          },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Final answer' },
+        ],
+      },
+    ];
+
+    const result = formatAgentMessages(payload);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBeInstanceOf(AIMessage);
+    expect(result[0].content).toEqual([
+      { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Hello there' },
+      { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Final answer' },
+    ]);
+
+    // Make sure no error content exists in the result
+    const hasErrorContent = result[0].content.some(
+      (item) =>
+        item.type === ContentTypes.ERROR || JSON.stringify(item).includes('An error occurred'),
+    );
+    expect(hasErrorContent).toBe(false);
+  });
 });

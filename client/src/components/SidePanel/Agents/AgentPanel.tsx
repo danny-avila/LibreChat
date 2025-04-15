@@ -19,8 +19,10 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
+import AdvancedPanel from './Advanced/AdvancedPanel';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
+import AgentFooter from './AgentFooter';
 import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
@@ -54,18 +56,24 @@ export default function AgentPanel({
   const { control, handleSubmit, reset } = methods;
   const agent_id = useWatch({ control, name: 'id' });
 
+  const allowedProviders = useMemo(
+    () => new Set(agentsConfig?.allowedProviders),
+    [agentsConfig?.allowedProviders],
+  );
+
   const providers = useMemo(
     () =>
       Object.keys(endpointsConfig ?? {})
         .filter(
           (key) =>
             !isAssistantsEndpoint(key) &&
+            (allowedProviders.size > 0 ? allowedProviders.has(key) : true) &&
             key !== EModelEndpoint.agents &&
             key !== EModelEndpoint.chatGPTBrowser &&
             key !== EModelEndpoint.gptPlugins,
         )
         .map((provider) => createProviderOption(provider)),
-    [endpointsConfig],
+    [endpointsConfig, allowedProviders],
   );
 
   /* Mutations */
@@ -130,6 +138,7 @@ export default function AgentPanel({
         agent_ids,
         end_after_tools,
         hide_sequential_outputs,
+        recursion_limit,
       } = data;
 
       const model = _model ?? '';
@@ -151,6 +160,7 @@ export default function AgentPanel({
             agent_ids,
             end_after_tools,
             hide_sequential_outputs,
+            recursion_limit,
           },
         });
         return;
@@ -175,6 +185,7 @@ export default function AgentPanel({
         agent_ids,
         end_after_tools,
         hide_sequential_outputs,
+        recursion_limit,
       });
     },
     [agent_id, create, update, showToast, localize],
@@ -276,9 +287,22 @@ export default function AgentPanel({
           <AgentConfig
             actions={actions}
             setAction={setAction}
+            createMutation={create}
             agentsConfig={agentsConfig}
             setActivePanel={setActivePanel}
             endpointsConfig={endpointsConfig}
+            setCurrentAgentId={setCurrentAgentId}
+          />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
+          <AdvancedPanel setActivePanel={setActivePanel} agentsConfig={agentsConfig} />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && (
+          <AgentFooter
+            createMutation={create}
+            updateMutation={update}
+            activePanel={activePanel}
+            setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}
           />
         )}

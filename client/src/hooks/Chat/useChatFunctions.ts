@@ -15,15 +15,16 @@ import type {
   TConversation,
   TEndpointOption,
   TEndpointsConfig,
+  EndpointSchemaKey,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import store, { useGetEphemeralAgent } from '~/store';
 import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
-import store from '~/store';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -64,6 +65,7 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
+  const getEphemeralAgent = useGetEphemeralAgent();
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const includeShadcnui = useRecoilValue(store.includeShadcnui);
   const customPromptMode = useRecoilValue(store.customPromptMode);
@@ -118,6 +120,7 @@ export default function useChatFunctions({
       return;
     }
 
+    const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
@@ -158,8 +161,8 @@ export default function useChatFunctions({
 
     // set the endpoint option
     const convo = parseCompactConvo({
-      endpoint,
-      endpointType,
+      endpoint: endpoint as EndpointSchemaKey,
+      endpointType: endpointType as EndpointSchemaKey,
       conversation: conversation ?? {},
     });
 
@@ -297,6 +300,7 @@ export default function useChatFunctions({
       isRegenerate,
       initialResponse,
       isTemporary,
+      ephemeralAgent,
     };
 
     if (isRegenerate) {

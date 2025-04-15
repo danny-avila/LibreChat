@@ -39,6 +39,9 @@ jobs:
       - name: Install MCP Package
         run: npm run build:mcp
 
+      - name: Install Data Schemas Package
+        run: npm run build:data-schemas
+
       - name: Create empty auth.json file
         run: |
           mkdir -p api/data
@@ -62,3 +65,6 @@ jobs:
 
       - name: Run librechat-data-provider unit tests
         run: cd packages/data-provider && npm run test:ci
+
+      - name: Run librechat-mcp unit tests
+        run: cd packages/mcp && npm run test:ci

@@ -8,11 +8,11 @@ interface LogLinkProps {
   children: React.ReactNode;
 }
 
-const LogLink: React.FC<LogLinkProps> = ({ href, filename, children }) => {
+export const useAttachmentLink = ({ href, filename }: Pick<LogLinkProps, 'href' | 'filename'>) => {
   const { showToast } = useToastContext();
   const { refetch: downloadFile } = useCodeOutputDownload(href);
 
-  const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     event.preventDefault();
     try {
       const stream = await downloadFile();
@@ -36,6 +36,11 @@ const LogLink: React.FC<LogLinkProps> = ({ href, filename, children }) => {
     }
   };
 
+  return { handleDownload };
+};
+
+const LogLink: React.FC<LogLinkProps> = ({ href, filename, children }) => {
+  const { handleDownload } = useAttachmentLink({ href, filename });
   return (
     <a
       href={href}

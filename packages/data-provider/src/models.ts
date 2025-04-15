@@ -38,6 +38,7 @@ export const specsConfigSchema = z.object({
   enforce: z.boolean().default(false),
   prioritize: z.boolean().default(true),
   list: z.array(tModelSpecSchema).min(1),
+  addedEndpoints: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
 });
 
 export type TSpecsConfig = z.infer<typeof specsConfigSchema>;

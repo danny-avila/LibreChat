@@ -63,8 +63,9 @@ export const useUploadFileMutation = (
 
           const update = {};
           const prevResources = agent.tool_resources ?? {};
-          const prevResource: t.ExecuteCodeResource | t.AgentFileSearchResource = agent
-            .tool_resources?.[tool_resource] ?? {
+          const prevResource: t.ExecuteCodeResource | t.AgentFileResource = agent.tool_resources?.[
+            tool_resource
+          ] ?? {
             file_ids: [],
           };
           if (!prevResource.file_ids) {

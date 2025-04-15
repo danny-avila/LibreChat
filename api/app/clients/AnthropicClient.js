@@ -2,12 +2,14 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
+  ErrorTypes,
   EModelEndpoint,
+  parseTextParts,
   anthropicSettings,
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { SplitStreamHandler: _Handler, GraphEvents } = require('@librechat/agents');
+const { SplitStreamHandler: _Handler } = require('@librechat/agents');
 const {
   truncateText,
   formatMessage,
@@ -24,10 +26,11 @@ const {
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { createFetch, createStreamEventHandlers } = require('./generators');
 const Tokenizer = require('~/server/services/Tokenizer');
-const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -147,12 +150,17 @@ class AnthropicClient extends BaseClient {
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
-    if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
-      throw new Error(
-        `maxPromptTokens + maxOutputTokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
-          this.maxPromptTokens + this.maxResponseTokens
-        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
-      );
+    const reservedTokens = this.maxPromptTokens + this.maxResponseTokens;
+    if (reservedTokens > this.maxContextTokens) {
+      const info = `Total Possible Tokens + Max Output Tokens must be less than or equal to Max Context Tokens: ${this.maxPromptTokens} (total possible output) + ${this.maxResponseTokens} (max output) = ${reservedTokens}/${this.maxContextTokens} (max context)`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(info);
+      throw new Error(errorMessage);
+    } else if (this.maxResponseTokens === this.maxContextTokens) {
+      const info = `Max Output Tokens must be less than Max Context Tokens: ${this.maxResponseTokens} (max output) = ${this.maxContextTokens} (max context)`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(info);
+      throw new Error(errorMessage);
     }
 
     this.sender =
@@ -177,7 +185,10 @@ class AnthropicClient extends BaseClient {
   getClient(requestOptions) {
     /** @type {Anthropic.ClientOptions} */
     const options = {
-      fetch: this.fetch,
+      fetch: createFetch({
+        directEndpoint: this.options.directEndpoint,
+        reverseProxyUrl: this.options.reverseProxyUrl,
+      }),
       apiKey: this.apiKey,
     };
 
@@ -689,6 +700,9 @@ class AnthropicClient extends BaseClient {
     return (msg) => {
       if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
         msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
+      } else if (msg.content != null) {
+        msg.text = parseTextParts(msg.content, true);
+        delete msg.content;
       }
 
       return msg;
@@ -746,15 +760,6 @@ class AnthropicClient extends BaseClient {
       metadata,
     };
 
-    if (!/claude-3[-.]7/.test(model)) {
-      if (top_p !== undefined) {
-        requestOptions.top_p = top_p;
-      }
-      if (top_k !== undefined) {
-        requestOptions.top_k = top_k;
-      }
-    }
-
     if (this.useMessages) {
       requestOptions.messages = payload;
       requestOptions.max_tokens =
@@ -768,6 +773,14 @@ class AnthropicClient extends BaseClient {
       thinking: this.options.thinking,
       thinkingBudget: this.options.thinkingBudget,
     });
+
+    if (!/claude-3[-.]7/.test(model)) {
+      requestOptions.top_p = top_p;
+      requestOptions.top_k = top_k;
+    } else if (requestOptions.thinking == null) {
+      requestOptions.topP = top_p;
+      requestOptions.topK = top_k;
+    }
 
     if (this.systemMessage && this.supportsCacheControl === true) {
       requestOptions.system = [
@@ -786,14 +799,11 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
+    const handlers = createStreamEventHandlers(this.options.res);
     this.streamHandler = new SplitStreamHandler({
       accumulate: true,
       runId: this.responseMessageId,
-      handlers: {
-        [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
-        [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
-        [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
-      },
+      handlers,
     });
 
     let intermediateReply = this.streamHandler.tokens;

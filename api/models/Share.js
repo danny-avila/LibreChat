@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { Constants } = require('librechat-data-provider');
 const { Conversation } = require('~/models/Conversation');
-const SharedLink = require('./schema/shareSchema');
+const { shareSchema } = require('@librechat/data-schemas');
+const SharedLink = mongoose.model('SharedLink', shareSchema);
 const { getMessages } = require('./Message');
 const logger = require('~/config/winston');
 

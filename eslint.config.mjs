@@ -220,9 +220,6 @@ export default [
       'jsx-a11y/interactive-supports-focus': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       'jsx-a11y/img-redundant-alt': 'off',
-      'jsx-a11y/media-has-caption': 'off',
-      'jsx-a11y/no-autofocus': 'off',
-      'jsx-a11y/alt-text': 'off',
     },
   },
   {
@@ -289,10 +286,12 @@ export default [
     rules: {
       // i18n
       'i18next/no-literal-string': [
-        'error', {
+        'error',
+        {
           mode: 'jsx-text-only',
           'should-validate-template': true,
-        }],
+        },
+      ],
       //
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -302,8 +301,8 @@ export default [
       '@typescript-eslint/ban-ts-comment': 'off',
       // React
       'react/no-unknown-property': 'warn',
-      'react-hooks/rules-of-hooks': 'off',
-      'react-hooks/exhaustive-deps': 'off',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       // General
       'no-constant-binary-expression': 'off',
       'import/no-cycle': 'off',
@@ -366,6 +365,18 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './packages/mcp/tsconfig.spec.json',
+      },
+    },
+  },
+  {
+    // **New Data-schemas configuration block**
+    files: ['./packages/data-schemas/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: {
+        project: './packages/data-schemas/tsconfig.json',
       },
     },
   },

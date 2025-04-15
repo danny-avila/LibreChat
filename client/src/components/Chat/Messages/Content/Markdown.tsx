@@ -166,15 +166,12 @@ export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
-const cursor = ' ';
-
 type TContentProps = {
   content: string;
-  showCursor?: boolean;
   isLatestMessage: boolean;
 };
 
-const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
+const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -240,7 +237,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
             }
           }
         >
-          {isLatestMessage && (showCursor ?? false) ? currentContent + cursor : currentContent}
+          {currentContent}
         </ReactMarkdown>
       </CodeBlockProvider>
     </ArtifactProvider>
