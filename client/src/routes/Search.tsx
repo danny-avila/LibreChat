@@ -20,6 +20,7 @@ export default function Search() {
   const {
     data: searchMessages,
     isLoading,
+    isError,
     fetchNextPage,
     isFetchingNextPage,
     hasNextPage,
@@ -35,10 +36,10 @@ export default function Search() {
   );
 
   const { containerRef } = useNavScrolling({
-    nextCursor: undefined,
+    nextCursor: searchMessages?.pages[searchMessages.pages.length - 1]?.nextCursor,
     setShowLoading: () => ({}),
     fetchNextPage: fetchNextPage,
-    isFetchingNext: false,
+    isFetchingNext: isFetchingNextPage,
   });
 
   const messages = useMemo(() => {
@@ -48,10 +49,10 @@ export default function Search() {
   }, [fileMap, searchMessages?.pages]);
 
   useEffect(() => {
-    if (!searchMessages && searchQuery) {
+    if (isError && searchQuery) {
       showToast({ message: 'An error occurred during search', status: 'error' });
     }
-  }, [searchMessages, searchQuery, showToast]);
+  }, [isError, searchQuery, showToast]);
 
   if (!searchQuery) {
     return null;

@@ -1,10 +1,10 @@
+import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import { useLocation } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -17,6 +17,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const localize = useLocalize();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { isSmallScreen } = props;
 
   const [text, setText] = useState('');
@@ -28,8 +29,9 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {
       newConversation({ disableFocus: true });
+      navigate('/c/new', { replace: true });
     }
-  }, [newConversation, location.pathname]);
+  }, [newConversation, location.pathname, navigate]);
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
@@ -79,6 +81,11 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       isTyping: true,
     }));
     debouncedSetDebouncedQuery(value);
+    if (value.length > 0 && location.pathname !== '/search') {
+      navigate('/search', { replace: true });
+    } else if (value.length === 0 && location.pathname === '/search') {
+      navigate('/c/new', { replace: true });
+    }
   };
 
   return (
