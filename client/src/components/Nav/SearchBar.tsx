@@ -1,7 +1,7 @@
-import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
+import { forwardRef, useState, useCallback, useMemo, useEffect, Ref } from 'react';
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const { newConversation } = useNewConvo();
   const setSearchState = useSetRecoilState(store.search);
+  const search = useRecoilValue(store.search);
 
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {
@@ -65,7 +66,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const debouncedSetDebouncedQuery = useMemo(
     () =>
       debounce((value: string) => {
-        setSearchState((prev) => ({ ...prev, debouncedQuery: value }));
+        setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
         sendRequest(value);
       }, 350),
     [setSearchState, sendRequest],
@@ -88,6 +89,14 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     }
   };
 
+  // Automatically set isTyping to false when loading is done and debouncedQuery matches query
+  // (prevents stuck loading state if input is still focused)
+  useEffect(() => {
+    if (search.isTyping && !search.isSearching && search.debouncedQuery === search.query) {
+      setSearchState((prev) => ({ ...prev, isTyping: false }));
+    }
+  }, [search.isTyping, search.isSearching, search.debouncedQuery, search.query, setSearchState]);
+
   return (
     <div
       ref={ref}
@@ -108,8 +117,8 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         aria-label={localize('com_nav_search_placeholder')}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
-        onFocus={() => setSearchState((prev) => ({ ...prev, isTyping: true }))}
-        onBlur={() => setSearchState((prev) => ({ ...prev, isTyping: false }))}
+        onFocus={() => setSearchState((prev) => ({ ...prev, isSearching: true }))}
+        onBlur={() => setSearchState((prev) => ({ ...prev, isSearching: false }))}
         autoComplete="off"
         dir="auto"
       />

@@ -54,16 +54,18 @@ export default function Search() {
     }
   }, [isError, searchQuery, showToast]);
 
-  if (!searchQuery) {
-    return null;
-  }
+  const isSearchLoading = search.isTyping || isLoading || isFetchingNextPage;
 
-  if (isLoading) {
+  if (isSearchLoading) {
     return (
       <div className="absolute inset-0 flex items-center justify-center">
         <Spinner className="text-text-primary" />
       </div>
     );
+  }
+
+  if (!searchQuery) {
+    return null;
   }
 
   return (

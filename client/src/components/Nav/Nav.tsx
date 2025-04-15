@@ -70,7 +70,7 @@ const Nav = memo(
 
     const search = useRecoilValue(store.search);
 
-    const { data, fetchNextPage, isFetchingNextPage, isLoading, refetch } =
+    const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, refetch } =
       useConversationsInfiniteQuery(
         {
           tags: tags.length === 0 ? undefined : tags,
@@ -168,6 +168,20 @@ const Nav = memo(
       [search.enabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
     );
 
+    const [isSearchLoading, setIsSearchLoading] = useState(
+      !!search.query && (search.isTyping || isLoading || isFetching),
+    );
+
+    useEffect(() => {
+      if (search.isTyping) {
+        setIsSearchLoading(true);
+      } else if (!isLoading && !isFetching) {
+        setIsSearchLoading(false);
+      } else if (!!search.query && (isLoading || isFetching)) {
+        setIsSearchLoading(true);
+      }
+    }, [search.query, search.isTyping, isLoading, isFetching]);
+
     return (
       <>
         <div
@@ -209,6 +223,7 @@ const Nav = memo(
                         containerRef={listRef}
                         loadMoreConversations={loadMoreConversations}
                         isLoading={isFetchingNextPage || showLoading || isLoading}
+                        isSearchLoading={isSearchLoading}
                       />
                     </div>
                     <Suspense fallback={null}>
