@@ -13,26 +13,19 @@ image:
 imagePullSecrets: []
 # - name: regcred
 
-# Enable custom file storage using PVC
+# Disable persistence as it's not being used currently
 persistence:
-  enabled: true
-  storageClass: "smb"  # Use your cluster's storage class
-  size: 10Gi
-  
-  # Mount points for custom data
-  customMounts:
-    - name: custom-data
-      mountPath: /app/custom/data
-      subPath: data
-    - name: custom-images
-      mountPath: /app/client/public/images
-      subPath: images
-    - name: custom-logs
-      mountPath: /app/api/logs
-      subPath: logs
-    - name: custom-uploads
-      mountPath: /app/uploads
-      subPath: uploads
+  enabled: false
+
+volumes:
+  - name: librechat-config
+    configMap:
+      name: librechat-config
+
+volumeMounts:
+  - name: librechat-config
+    mountPath: /app/librechat.yaml
+    subPath: librechat.yaml
 
 # Environment variables structure moved under config.env as expected by the Helm chart
 config:
@@ -49,6 +42,7 @@ config:
           models:
             gpt-4o:
               deploymentName: gpt-4o
+  
   env:
     NODE_ENV: "production"
     # Connection to existing MongoDB instance
@@ -62,8 +56,10 @@ config:
     # Session
     SESSION_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
     ENDPOINTS: "azureOpenAI"
+    # API keys (will be moved to secrets in a future phase)
     AZURE_OPENAI_API_KEY: "61018720ef2f4fb28df8c352dacb3aeb"
     AZURE_OPENAI_INSTANCE: "rg-ch-openai-techagent"
+    
 # Resources configuration
 resources:
   limits:
@@ -103,40 +99,17 @@ mongodb:
   enabled: false
   # No other MongoDB settings needed since we're using an external instance
 
-# Vector database configuration
+# Vector database configuration - Disabled since no persistence is being used
 vectordb:
-  enabled: true
-  image:
-    repository: ankane/pgvector
-    tag: latest
-  env:
-    POSTGRES_DB: "mydatabase"
-    POSTGRES_USER: "myuser"
-    POSTGRES_PASSWORD: "replace-with-secure-password"
-  persistence:
-    enabled: true
-    storageClass: "smb"
-    size: 5Gi
+  enabled: false
 
-# Search service configuration
+# Search service configuration - Disabled since no persistence is being used
 meilisearch:
-  enabled: true
-  environment:
-    MEILI_NO_ANALYTICS: "true"
-  masterKey: "replace-with-secure-key"
-  persistence:
-    enabled: true
-    storageClass: "smb"
-    size: 5Gi
+  enabled: false
 
-# RAG API configuration
+# RAG API configuration - Disabled since vectordb is disabled
 rag_api:
-  enabled: true
-  image:
-    repository: ghcr.io/danny-avila/librechat-rag-api-dev-lite
-    tag: latest
-  env:
-    DB_HOST: "vectordb"
+  enabled: false
 
 # Node selector configuration 
 nodeSelector:
