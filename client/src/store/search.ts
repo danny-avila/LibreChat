@@ -8,8 +8,8 @@ export type SearchState = {
   isTyping: boolean;
 };
 
-const searchState = atom<SearchState>({
-  key: 'searchState',
+export const search = atom<SearchState>({
+  key: 'search',
   default: {
     enabled: null,
     query: '',
@@ -20,5 +20,5 @@ const searchState = atom<SearchState>({
 });
 
 export default {
-  searchState,
+  search,
 };

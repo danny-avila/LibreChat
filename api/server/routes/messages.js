@@ -28,8 +28,17 @@ router.use(requireJwtAuth);
 router.get('/', async (req, res) => {
   try {
     const user = req.user.id ?? '';
-    const { conversationId, messageId, ...rest } = req.query;
-    const key = `${user}:messages:${conversationId ?? ''}:${messageId ?? ''}:${JSON.stringify(rest)}`;
+    const {
+      cursor = null,
+      sortBy = 'createdAt',
+      sortDirection = 'desc',
+      pageSize = parseInt(pageSize, 10) || 10,
+      conversationId,
+      messageId,
+      search,
+      ...rest
+    } = req.query;
+    const key = `${user}:messages:${conversationId ?? ''}:${messageId ?? ''}:${cursor ?? ''}:${sortBy}:${sortDirection}:${search ?? ''}:${JSON.stringify(rest)}`;
     const cached = await cache.get(key);
     if (cached) {
       logger.debug('[/messages] cache hit: ' + key);
@@ -37,17 +46,41 @@ router.get('/', async (req, res) => {
     }
 
     let response;
+    const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
+      ? sortBy
+      : 'createdAt';
+    const sortOrder = sortDirection === 'asc' ? 1 : -1;
+
     if (conversationId && messageId) {
       // Fetch a single message
       const message = await Message.findOne({ conversationId, messageId, user }).lean();
-      response = { messages: message ? [message] : [] };
+      response = { messages: message ? [message] : [], nextCursor: null };
     } else if (conversationId) {
-      // Fetch all messages for a conversation
-      const messages = await Message.find({ conversationId, user }).sort({ createdAt: 1 }).lean();
-      response = { messages };
-    } else if (rest.search) {
-      // Search messages using MeiliSearch
-      const messageResults = await Message.meiliSearch(rest.search, undefined, true);
+      // Fetch all messages for a conversation with sorting and cursor
+      const filter = { conversationId, user };
+      if (cursor) {
+        filter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
+      }
+      const messages = await Message.find(filter)
+        .sort({ [sortField]: sortOrder })
+        .limit(pageSize + 1)
+        .lean();
+      let nextCursor = null;
+      if (messages.length > pageSize) {
+        const last = messages.pop();
+        nextCursor = last[sortField];
+      }
+      response = { messages, nextCursor };
+    } else if (search) {
+      // Search messages using MeiliSearch with pagination and sorting
+      const meiliParams = {
+        sort: [`${sortBy}:${sortDirection}`],
+        limit: pageSize + 1,
+        ...(cursor
+          ? { filter: `${sortBy} ${sortDirection === 'asc' ? '>' : '<'} ${JSON.stringify(cursor)}` }
+          : {}),
+      };
+      const messageResults = await Message.meiliSearch(search, meiliParams, true);
       let messages = messageResults.hits || [];
       // Add conversation title to each message
       const titlePromises = messages.map(async (msg) => {
@@ -62,11 +95,16 @@ router.get('/', async (req, res) => {
         return { ...msg, title };
       });
       messages = await Promise.all(titlePromises);
-      response = { messages };
+      let nextCursor = null;
+      if (messages.length > pageSize) {
+        const last = messages.pop();
+        nextCursor = last[sortBy];
+      }
+      response = { messages, nextCursor };
     } else {
-      // Fallback: fetch all messages for user (not recommended for large datasets)
-      const messages = await Message.find({ user }).sort({ createdAt: 1 }).lean();
-      response = { messages };
+      return res
+        .status(400)
+        .json({ error: 'Unsupported query. Provide conversationId, messageId, or search.' });
     }
 
     await cache.set(key, response, expiration);

@@ -23,7 +23,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const [showClearIcon, setShowClearIcon] = useState(false);
 
   const { newConversation } = useNewConvo();
-  const setSearchState = useSetRecoilState(store.searchState);
+  const setSearchState = useSetRecoilState(store.search);
 
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {

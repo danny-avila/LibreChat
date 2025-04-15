@@ -68,13 +68,13 @@ const Nav = memo(
       permission: Permissions.USE,
     });
 
-    const searchState = useRecoilValue(store.searchState);
+    const search = useRecoilValue(store.search);
 
     const { data, fetchNextPage, isFetchingNextPage, isLoading, refetch } =
       useConversationsInfiniteQuery(
         {
           tags: tags.length === 0 ? undefined : tags,
-          search: searchState.debouncedQuery || undefined,
+          search: search.debouncedQuery || undefined,
         },
         {
           enabled: isAuthenticated,
@@ -154,7 +154,7 @@ const Nav = memo(
     const subHeaders = useMemo(
       () => (
         <>
-          {searchState.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
           {hasAccessToBookmarks && (
             <>
               <div className="mt-1.5" />
@@ -165,7 +165,7 @@ const Nav = memo(
           )}
         </>
       ),
-      [searchState.enabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
+      [search.enabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
     );
 
     return (

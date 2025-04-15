@@ -12,8 +12,8 @@ export default function Search() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { isAuthenticated } = useAuthContext();
-  const isSearchTyping = useRecoilValue(store.isSearchTyping);
-  const searchQuery = useRecoilValue(store.searchQuery);
+  const search = useRecoilValue(store.search);
+  const searchQuery = search.debouncedQuery;
 
   const { containerRef } = useNavScrolling({
     nextCursor: undefined,

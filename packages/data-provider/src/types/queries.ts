@@ -41,6 +41,7 @@ export type MessagesListParams = {
   cursor?: string | null;
   sortBy?: 'endpoint' | 'createdAt' | 'updatedAt';
   sortDirection?: 'asc' | 'desc';
+  pageSize?: number;
   conversationId?: string;
   messageId?: string;
   search?: string;
