@@ -4,7 +4,7 @@ import type {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import { initialModelsConfig } from '../config';
+import { Constants, initialModelsConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
@@ -70,6 +70,10 @@ export const useGetSharedLinkQuery = (
     [QueryKeys.sharedLinks, conversationId],
     () => dataService.getSharedLink(conversationId),
     {
+      enabled:
+        !!conversationId &&
+        conversationId !== Constants.NEW_CONVO &&
+        conversationId !== Constants.PENDING_CONVO,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
@@ -240,23 +244,6 @@ export const useDeletePresetMutation = (): UseMutationResult<
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
   });
-};
-
-export const useSearchQuery = (
-  searchQuery: string,
-  pageNumber: string,
-  config?: UseQueryOptions<t.TSearchResults>,
-): QueryObserverResult<t.TSearchResults> => {
-  return useQuery<t.TSearchResults>(
-    [QueryKeys.searchResults, pageNumber, searchQuery],
-    () => dataService.searchConversations(searchQuery, pageNumber),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
 };
 
 export const useUpdateTokenCountMutation = (): UseMutationResult<

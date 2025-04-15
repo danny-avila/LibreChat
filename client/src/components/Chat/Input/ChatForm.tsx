@@ -85,8 +85,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     () => conversation?.endpointType ?? conversation?.endpoint,
     [conversation?.endpointType, conversation?.endpoint],
   );
+  const conversationId = useMemo(
+    () => conversation?.conversationId ?? Constants.NEW_CONVO,
+    [conversation?.conversationId],
+  );
 
-  const isRTL = useMemo(() => chatDirection === 'rtl', [chatDirection.toLowerCase()]);
+  const isRTL = useMemo(
+    () => (chatDirection != null ? chatDirection?.toLowerCase() === 'rtl' : false),
+    [chatDirection],
+  );
   const invalidAssistant = useMemo(
     () =>
       isAssistantsEndpoint(endpoint) &&
@@ -110,10 +117,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   }, [isCollapsed]);
 
   useAutoSave({
-    conversationId: conversation?.conversationId,
-    textAreaRef,
     files,
     setFiles,
+    textAreaRef,
+    conversationId,
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
@@ -166,7 +173,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const handleSaveBadges = useCallback(() => {
     setIsEditingBadges(false);
     setBackupBadges([]);
-  }, []);
+  }, [setIsEditingBadges, setBackupBadges]);
 
   const handleCancelBadges = useCallback(() => {
     if (backupBadges.length > 0) {
@@ -174,7 +181,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     }
     setIsEditingBadges(false);
     setBackupBadges([]);
-  }, [backupBadges, setBadges]);
+  }, [backupBadges, setBadges, setIsEditingBadges]);
 
   const isMoreThanThreeRows = visualRowCount > 3;
 
@@ -195,8 +202,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         'mx-auto flex flex-row gap-3 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         centerFormOnLanding &&
-          (!conversation?.conversationId || conversation?.conversationId === Constants.NEW_CONVO) &&
-          !isSubmitting
+          (conversationId == null || conversationId === Constants.NEW_CONVO) &&
+          !isSubmitting &&
+          conversation?.messages?.length === 0
           ? 'transition-all duration-200 sm:mb-28'
           : 'sm:mb-10',
       )}
@@ -290,7 +298,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               </div>
               <BadgeRow
                 showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
-                conversationId={conversation?.conversationId ?? Constants.NEW_CONVO}
+                conversationId={conversationId}
                 onChange={setBadges}
                 isInChat={
                   Array.isArray(conversation?.messages) && conversation.messages.length >= 1

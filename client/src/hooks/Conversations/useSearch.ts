@@ -1,16 +1,24 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { UseInfiniteQueryResult } from '@tanstack/react-query';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import type { SearchConversationListResponse } from 'librechat-data-provider';
 import { useSearchInfiniteQuery, useGetSearchEnabledQuery } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
-export default function useSearchMessages({ isAuthenticated }: { isAuthenticated: boolean }) {
+export interface UseSearchMessagesResult {
+  searchQuery: string;
+  searchQueryRes: UseInfiniteQueryResult<SearchConversationListResponse, unknown> | undefined;
+}
+
+export default function useSearchMessages({
+  isAuthenticated,
+}: {
+  isAuthenticated: boolean;
+}): UseSearchMessagesResult {
   const navigate = useNavigate();
   const location = useLocation();
-  const [pageNumber, setPageNumber] = useState(1);
   const { switchToConversation } = useNewConvo();
   const searchPlaceholderConversation = useCallback(() => {
     switchToConversation({
@@ -25,11 +33,20 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
   const searchQuery = useRecoilValue(store.searchQuery);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
 
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 350); // 350ms debounce
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery, isArchived: false },
-    { enabled: isAuthenticated && !!searchQuery.length },
-  ) as UseInfiniteQueryResult<ConversationListResponse, unknown> | undefined;
+    { nextCursor: null, search: debouncedSearchQuery, pageSize: 20 },
+    { enabled: isAuthenticated && !!debouncedSearchQuery },
+  ) as UseInfiniteQueryResult<SearchConversationListResponse, unknown> | undefined;
 
   useEffect(() => {
     if (searchQuery && searchQuery.length > 0) {
@@ -64,16 +81,22 @@ export default function useSearchMessages({ isAuthenticated }: { isAuthenticated
   );
 
   useEffect(() => {
-    //we use isInitialLoading here instead of isLoading because query is disabled by default
+    // we use isInitialLoading here instead of isLoading because query is disabled by default
     if (searchQueryRes?.data) {
       onSearchSuccess();
     }
   }, [searchQueryRes?.data, searchQueryRes?.isInitialLoading, onSearchSuccess]);
 
+  const setIsSearchTyping = useSetRecoilState(store.isSearchTyping);
+
+  useEffect(() => {
+    if (!searchQueryRes?.isLoading && !searchQueryRes?.isFetching) {
+      setIsSearchTyping(false);
+    }
+  }, [searchQueryRes?.isLoading, searchQueryRes?.isFetching, setIsSearchTyping]);
+
   return {
-    pageNumber,
     searchQuery,
-    setPageNumber,
     searchQueryRes,
   };
 }

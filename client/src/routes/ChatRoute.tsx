@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -37,6 +37,11 @@ export default function ChatRoute() {
 
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
+
+  // Reset the guard flag whenever conversationId changes
+  useEffect(() => {
+    hasSetConversation.current = false;
+  }, [conversationId]);
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -122,6 +127,7 @@ export default function ChatRoute() {
     endpointsQuery.data,
     modelsQuery.data,
     assistantListMap,
+    conversationId,
   ]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {

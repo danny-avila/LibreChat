@@ -29,6 +29,7 @@ export function BrowserVoiceDropdown() {
         onChange={handleVoiceChange}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         testId="BrowserVoiceDropdown"
+        className="rounded-xl"
       />
     </div>
   );
@@ -57,6 +58,7 @@ export function ExternalVoiceDropdown() {
         onChange={handleVoiceChange}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         testId="ExternalVoiceDropdown"
+        className="rounded-xl"
       />
     </div>
   );
