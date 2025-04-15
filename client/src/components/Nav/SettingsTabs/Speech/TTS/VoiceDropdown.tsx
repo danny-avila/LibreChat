@@ -1,14 +1,9 @@
 import { useRecoilValue } from 'recoil';
-import {
-  EdgeVoiceDropdown,
-  BrowserVoiceDropdown,
-  ExternalVoiceDropdown,
-} from '~/components/Audio/Voices';
+import { BrowserVoiceDropdown, ExternalVoiceDropdown } from '~/components/Audio/Voices';
 import store from '~/store';
 import { TTSEndpoints } from '~/common';
 
 const voiceDropdownComponentsMap = {
-  [TTSEndpoints.edge]: EdgeVoiceDropdown,
   [TTSEndpoints.browser]: BrowserVoiceDropdown,
   [TTSEndpoints.external]: ExternalVoiceDropdown,
 };

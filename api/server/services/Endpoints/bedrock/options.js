@@ -8,7 +8,7 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { sleep } = require('~/server/utils');
+const { createHandleLLMNewToken } = require('~/app/clients/generators');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
@@ -90,12 +90,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   llmConfig.callbacks = [
     {
-      handleLLMNewToken: async () => {
-        if (!streamRate) {
-          return;
-        }
-        await sleep(streamRate);
-      },
+      handleLLMNewToken: createHandleLLMNewToken(streamRate),
     },
   ];
 
