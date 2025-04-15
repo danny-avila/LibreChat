@@ -12,7 +12,13 @@ import {
   removeNullishValues,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { EventSubmission, TMessage, TPayload, TSubmission } from 'librechat-data-provider';
+import type {
+  EventSubmission,
+  TConversation,
+  TMessage,
+  TPayload,
+  TSubmission,
+} from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -99,6 +105,19 @@ export default function useSSE(
     let { userMessage } = submission;
 
     const payloadData = createPayload(submission);
+    /**
+     * Helps clear text immediately on submission instead of
+     * restoring draft, which gets deleted on generation end
+     * */
+    setConversation?.((prev: TConversation | null) => {
+      if (!prev) {
+        return null;
+      }
+      return {
+        ...prev,
+        conversationId: 'PENDING',
+      };
+    });
     let { payload } = payloadData;
     if (isAssistantsEndpoint(payload.endpoint) || isAgentsEndpoint(payload.endpoint)) {
       payload = removeNullishValues(payload) as TPayload;
@@ -250,5 +269,6 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 }
