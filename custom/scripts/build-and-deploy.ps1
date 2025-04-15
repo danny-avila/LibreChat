@@ -108,7 +108,7 @@ else {
 # Create ConfigMap for librechat.yaml configuration
 Write-Host "Creating LibreChat configuration ConfigMap..." -ForegroundColor Cyan
 $LibreChatConfigPath = Join-Path -Path $ProjectRoot -ChildPath "custom\config\k8s\configmaps\librechat.totalsoft.yaml"
-kubectl create configmap librechat-config --from-file="$LibreChatConfigPath" -n $Namespace --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap librechat-config --from-file=librechat.yaml="$LibreChatConfigPath" -n $Namespace --dry-run=client -o yaml | kubectl apply -f -
 
 # Deploy or upgrade using Helm
 Write-Host "Deploying to Kubernetes using Helm..." -ForegroundColor Cyan
