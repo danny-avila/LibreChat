@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 
 # Get the script directory and project root
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = (Get-Item $ScriptDir).Parent.FullName
+$ProjectRoot = (Get-Item $ScriptDir).Parent.Parent.FullName
 
 # Path to important files
 $Dockerfile = Join-Path -Path $ProjectRoot -ChildPath "Dockerfile.multi"

@@ -3,7 +3,7 @@ set -e
 
 # Get the absolute path to the script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Configuration
 IMAGE_NAME=${1:-"librechat-custom"}
@@ -79,6 +79,24 @@ if [ -n "$MONGO_URI" ]; then
   MONGO_PARAM="--set env[1].name=MONGO_URI,env[1].valueFrom.secretKeyRef.name=mongodb-credentials,env[1].valueFrom.secretKeyRef.key=connection-string"
 else
   MONGO_PARAM=""
+fi
+
+# Create TLS secret directly with kubectl
+CERT_FILE="${PROJECT_ROOT}/custom/cert/wildcard-totalsoft.crt"
+KEY_FILE="${PROJECT_ROOT}/custom/cert/wildcard-totalsoft.key"
+
+if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+  echo "Creating TLS secret for ingress..."
+  TLS_SECRET_NAME="totalsoft-wildcard-tls"
+  kubectl create secret tls $TLS_SECRET_NAME \
+    --namespace $NAMESPACE \
+    --cert="$CERT_FILE" \
+    --key="$KEY_FILE" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "TLS secret '$TLS_SECRET_NAME' created successfully"
+else
+  echo "TLS certificate files not found at $CERT_FILE and $KEY_FILE"
+  echo "Continuing without TLS configuration"
 fi
 
 # Deploy or upgrade using Helm
