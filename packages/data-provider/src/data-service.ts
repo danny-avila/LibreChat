@@ -31,7 +31,10 @@ export function deleteUser(): Promise<s.TPreset> {
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
-  if (conversationId === 'new') {
+  if (
+    conversationId === config.Constants.NEW_CONVO ||
+    conversationId === config.Constants.PENDING_CONVO
+  ) {
     return Promise.resolve([]);
   }
   return request.get(endpoints.messages(conversationId));
@@ -589,46 +592,34 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  //todo: this should be a DELETE request
-  return request.post(endpoints.deleteConversation(), { arg: payload });
+  return request.deleteWithOptions(endpoints.deleteConversation(), { data: { arg: payload } });
 }
 
 export function clearAllConversations(): Promise<unknown> {
-  return request.post(endpoints.deleteConversation(), { arg: {} });
+  return request.delete(endpoints.deleteAllConversation());
 }
 
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  // Assuming params has a pageNumber property
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const isArchived = params?.isArchived ?? false; // Default to false if not provided
-  const tags = params?.tags || []; // Default to an empty array if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
-};
+  const isArchived = params?.isArchived ?? false;
+  const sortBy = params?.sortBy;
+  const sortDirection = params?.sortDirection;
+  const tags = params?.tags || [];
+  const search = params?.search || '';
+  const cursor = params?.cursor;
 
-export const listConversationsByQuery = (
-  params?: q.ConversationListParams & { searchQuery?: string },
-): Promise<q.ConversationListResponse> => {
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const searchQuery = params?.searchQuery ?? ''; // If no search query is provided, default to an empty string
-  // Update the endpoint to handle a search query
-  if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, pageNumber));
+  if (search !== '' && isArchived === false) {
+    return request.get(endpoints.search(search, cursor));
   } else {
-    return request.get(endpoints.conversations(pageNumber));
+    return request.get(
+      endpoints.conversations(isArchived, sortBy, sortDirection, tags, search, cursor),
+    );
   }
 };
 
-export const searchConversations = async (
-  q: string,
-  pageNumber: string,
-): Promise<t.TSearchResults> => {
-  return request.get(endpoints.search(q, pageNumber));
-};
-
-export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(pageNumber));
+export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
+  return request.get(endpoints.conversations(undefined, undefined, undefined, [], '', cursor));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {
@@ -779,15 +770,11 @@ export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
   return request.get(endpoints.enableTwoFactor());
 }
 
-export function verifyTwoFactor(
-  payload: t.TVerify2FARequest,
-): Promise<t.TVerify2FAResponse> {
+export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
   return request.post(endpoints.verifyTwoFactor(), payload);
 }
 
-export function confirmTwoFactor(
-  payload: t.TVerify2FARequest,
-): Promise<t.TVerify2FAResponse> {
+export function confirmTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
   return request.post(endpoints.confirmTwoFactor(), payload);
 }
 
