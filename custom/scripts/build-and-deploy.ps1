@@ -8,7 +8,9 @@ param (
     [string]$Namespace = "librechat",
     [string]$HelmReleaseName = "librechat",
     [string]$RegistryUsername = "docker-registry",
-    [string]$RegistryPassword = "docker-registry"
+    [string]$RegistryPassword = "docker-registry",
+    [hashtable]$Secrets = @{},
+    [string]$SecretsPrefix = "SECRET_"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +18,9 @@ $ErrorActionPreference = "Stop"
 # Get the script directory and project root
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = (Get-Item $ScriptDir).Parent.Parent.FullName
+
+$UtilsPath = Join-Path -Path $ScriptDir -ChildPath "utils\ps-utils.ps1"
+. $UtilsPath
 
 # Path to important files
 $Dockerfile = Join-Path -Path $ProjectRoot -ChildPath "Dockerfile.multi"
@@ -89,6 +94,50 @@ if ($RegistryUsername -and $RegistryPassword) {
     $RegistrySecretParam = "--set imagePullSecrets[0].name=$secretName"
 }
 
+# Create application secrets dynamically
+Write-Host "Creating LibreChat application secrets..." -ForegroundColor Cyan
+$secretValues = @{}
+
+# Method 1: Collect secrets from parameters passed directly to the script
+if ($Secrets.Count -gt 0) {
+    foreach ($key in $Secrets.Keys) {
+        if ($Secrets[$key]) {
+            $secretValues[$key] = $Secrets[$key]
+        }
+    }
+}
+
+# Method 2: Collect secrets from environment variables with the specified prefix
+$envSecrets = Get-ChildItem env: | Where-Object { $_.Name.StartsWith($SecretsPrefix) }
+foreach ($envSecret in $envSecrets) {
+    $secretKey = $envSecret.Name.Substring($SecretsPrefix.Length)
+    $secretValues[$secretKey] = $envSecret.Value
+}
+
+# Create the Kubernetes secret if we have any values
+if ($secretValues.Count -gt 0) {
+    $appSecretName = "librechat-secrets"
+    $secretYaml = "apiVersion: v1`nkind: Secret`nmetadata:`n  name: $appSecretName`n  namespace: $Namespace`ntype: Opaque`ndata:`n"
+    
+    foreach ($key in $secretValues.Keys) {
+        $value = $secretValues[$key]
+        
+        # Only encode if not already Base64 encoded
+        if (-not (Test-IsBase64 $value)) {
+            $encodedValue = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($value))
+        }
+        else {
+            $encodedValue = $value
+            Write-Host "Value for $key is already Base64 encoded" -ForegroundColor Yellow
+        }
+        
+        $secretYaml += "  $key`: $encodedValue`n"
+    }
+    
+    $secretYaml | kubectl apply -f -
+    Write-Host "Created '$appSecretName' with $($secretValues.Count) values" -ForegroundColor Green
+}
+
 # Create TLS secret directly with kubectl
 $CertFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalsoft.crt"
 $KeyFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalsoft.key"
@@ -118,6 +167,7 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
            "--set `"image.tag=$ImageTag`" " + `
+           "--set `"envFrom[0].secretRef.name=librechat-secrets`" " + `
            "--force"
 
 if ($RegistrySecretParam) {

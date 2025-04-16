@@ -32,6 +32,13 @@ jobs:
       env:
         REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
         REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        SECRET_MONGO_URI: ${{ secrets.MONGO_URI }}
+        SECRET_CREDS_KEY: ${{ secrets.CREDS_KEY }}
+        SECRET_CREDS_IV: ${{ secrets.CREDS_IV }}
+        SECRET_JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        SECRET_JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+        SECRET_SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+        SECRET_AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       run: |
         ./custom/scripts/build-and-deploy.ps1 `
           -ImageName "ts-librechat" `
@@ -40,4 +47,5 @@ jobs:
           -Namespace "librechat" `
           -HelmReleaseName "librechat" `
           -RegistryUsername "$env:REGISTRY_USERNAME" `
-          -RegistryPassword "$env:REGISTRY_PASSWORD" 
+          -RegistryPassword "$env:REGISTRY_PASSWORD" `
+          -SecretsPrefix "SECRET_"
