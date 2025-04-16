@@ -272,7 +272,6 @@ export default function ArchivedChatsTable({
         isFetchingNextPage={isFetchingNextPage}
         isLoading={isLoading}
         showCheckboxes={false}
-        manualSorting={true} // Ensures server-side sorting
       />
 
       <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>

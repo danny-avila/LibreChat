@@ -331,7 +331,6 @@ export default function DataTable<TData, TValue>({
       const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
       await onDelete(itemsToDelete);
       setRowSelection({});
-      // await fetchNextPage?.({ pageParam: lastPage?.nextCursor });
     } finally {
       setIsDeleting(false);
     }
