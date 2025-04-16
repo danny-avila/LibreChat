@@ -5,18 +5,23 @@ const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
+  manifestToolMap,
   // Basic Tools
   GoogleSearchAPI,
   // Structured Tools
   DALLE3,
+  FluxAPI,
+  OpenWeather,
   StructuredSD,
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
+  createYouTubeTools,
   TavilySearchResults,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { createMCPTool } = require('~/server/services/MCP');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
@@ -86,45 +91,6 @@ const validateTools = async (user, tools = []) => {
   }
 };
 
-const loadAuthValues = async ({ userId, authFields, throwError = true }) => {
-  let authValues = {};
-
-  /**
-   * Finds the first non-empty value for the given authentication field, supporting alternate fields.
-   * @param {string[]} fields Array of strings representing the authentication fields. Supports alternate fields delimited by "||".
-   * @returns {Promise<{ authField: string, authValue: string} | null>} An object containing the authentication field and value, or null if not found.
-   */
-  const findAuthValue = async (fields) => {
-    for (const field of fields) {
-      let value = process.env[field];
-      if (value) {
-        return { authField: field, authValue: value };
-      }
-      try {
-        value = await getUserPluginAuthValue(userId, field, throwError);
-      } catch (err) {
-        if (field === fields[fields.length - 1] && !value) {
-          throw err;
-        }
-      }
-      if (value) {
-        return { authField: field, authValue: value };
-      }
-    }
-    return null;
-  };
-
-  for (let authField of authFields) {
-    const fields = authField.split('||');
-    const result = await findAuthValue(fields);
-    if (result) {
-      authValues[result.authField] = result.authValue;
-    }
-  }
-
-  return authValues;
-};
-
 /** @typedef {typeof import('@langchain/core/tools').Tool} ToolConstructor */
 /** @typedef {import('@langchain/core/tools').Tool} Tool */
 
@@ -146,10 +112,18 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
 };
 
 /**
+ * @param {string} toolKey
+ * @returns {Array<string>}
+ */
+const getAuthFields = (toolKey) => {
+  return manifestToolMap[toolKey]?.authConfig.map((auth) => auth.authField) ?? [];
+};
+
+/**
  *
  * @param {object} object
  * @param {string} object.user
- * @param {Agent} [object.agent]
+ * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
  * @param {string} [object.model]
  * @param {EModelEndpoint} [object.endpoint]
  * @param {LoadToolOptions} [object.options]
@@ -171,8 +145,10 @@ const loadTools = async ({
   returnMap = false,
 }) => {
   const toolConstructors = {
+    flux: FluxAPI,
     calculator: Calculator,
     google: GoogleSearchAPI,
+    open_weather: OpenWeather,
     wolfram: StructuredWolfram,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
@@ -182,15 +158,22 @@ const loadTools = async ({
 
   const customConstructors = {
     serpapi: async () => {
-      let apiKey = process.env.SERPAPI_API_KEY;
+      const authFields = getAuthFields('serpapi');
+      let envVar = authFields[0] ?? '';
+      let apiKey = process.env[envVar];
       if (!apiKey) {
-        apiKey = await getUserPluginAuthValue(user, 'SERPAPI_API_KEY');
+        apiKey = await getUserPluginAuthValue(user, envVar);
       }
       return new SerpAPI(apiKey, {
         location: 'Austin,Texas,United States',
         hl: 'en',
         gl: 'us',
       });
+    },
+    youtube: async () => {
+      const authFields = getAuthFields('youtube');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      return createYouTubeTools(authValues);
     },
   };
 
@@ -211,20 +194,11 @@ const loadTools = async ({
   };
 
   const toolOptions = {
-    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
+    flux: imageGenOptions,
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
+    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };
-
-  const toolAuthFields = {};
-
-  availableTools.forEach((tool) => {
-    if (customConstructors[tool.pluginKey]) {
-      return;
-    }
-
-    toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
-  });
 
   const toolContextMap = {};
   const remainingTools = [];
@@ -280,7 +254,7 @@ const loadTools = async ({
       const options = toolOptions[tool] || {};
       const toolInstance = loadToolWithAuth(
         user,
-        toolAuthFields[tool],
+        getAuthFields(tool),
         toolConstructors[tool],
         options,
       );
@@ -336,7 +310,6 @@ const loadTools = async ({
 
 module.exports = {
   loadToolWithAuth,
-  loadAuthValues,
   validateTools,
   loadTools,
 };

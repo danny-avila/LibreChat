@@ -51,7 +51,7 @@ test.describe('Key suite', () => {
 
   test('Test Setting and Revoking Keys from Settings', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
-    const endpoint = 'bingAI';
+    const endpoint = 'openAI';
 
     const newTopicButton = page.getByTestId('new-conversation-menu');
     await newTopicButton.click();

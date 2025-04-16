@@ -54,11 +54,11 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
         latestText.current &&
         convoId !== latestText.current.split(Constants.COMMON_DIVIDER)[2])
     ) {
-      logger.log('[useMessageProcess] Setting latest message: ', logInfo);
+      logger.log('latest_message', '[useMessageProcess] Setting latest message; logInfo:', logInfo);
       latestText.current = textKey;
       setLatestMessage({ ...message });
     } else {
-      logger.log('No change in latest message', logInfo);
+      logger.log('latest_message', 'No change in latest message; logInfo', logInfo);
     }
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 

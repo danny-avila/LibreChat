@@ -4,13 +4,17 @@ import { visit } from 'unist-util-visit';
 import { useSetRecoilState } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
+import { useMessageContext, useArtifactContext } from '~/Providers';
 import { artifactsState } from '~/store/artifacts';
+import { logger, extractContent } from '~/utils';
 import ArtifactButton from './ArtifactButton';
-import { logger } from '~/utils';
 
 export const artifactPlugin: Pluggable = () => {
   return (tree) => {
     visit(tree, ['textDirective', 'leafDirective', 'containerDirective'], (node) => {
+      if (node.name !== 'artifact') {
+        return;
+      }
       node.data = {
         hName: node.name,
         hProperties: node.attributes,
@@ -21,21 +25,6 @@ export const artifactPlugin: Pluggable = () => {
   };
 };
 
-const extractContent = (
-  children: React.ReactNode | { props: { children: React.ReactNode } } | string,
-): string => {
-  if (typeof children === 'string') {
-    return children;
-  }
-  if (React.isValidElement(children)) {
-    return extractContent((children.props as { children?: React.ReactNode }).children);
-  }
-  if (Array.isArray(children)) {
-    return children.map(extractContent).join('');
-  }
-  return '';
-};
-
 export function Artifact({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   node,
@@ -44,6 +33,10 @@ export function Artifact({
   children: React.ReactNode | { props: { children: React.ReactNode } };
   node: unknown;
 }) {
+  const { messageId } = useMessageContext();
+  const { getNextIndex, resetCounter } = useArtifactContext();
+  const artifactIndex = useRef(getNextIndex(false)).current;
+
   const setArtifacts = useSetRecoilState(artifactsState);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
 
@@ -57,14 +50,12 @@ export function Artifact({
     const content = extractContent(props.children);
     logger.log('artifacts', 'updateArtifact: content.length', content.length);
 
-    if (!content || content.trim() === '') {
-      return;
-    }
-
     const title = props.title ?? 'Untitled Artifact';
     const type = props.type ?? 'unknown';
     const identifier = props.identifier ?? 'no-identifier';
-    const artifactKey = `${identifier}_${type}_${title}`.replace(/\s+/g, '_').toLowerCase();
+    const artifactKey = `${identifier}_${type}_${title}_${messageId}`
+      .replace(/\s+/g, '_')
+      .toLowerCase();
 
     throttledUpdateRef.current(() => {
       const now = Date.now();
@@ -75,6 +66,8 @@ export function Artifact({
         title,
         type,
         content,
+        messageId,
+        index: artifactIndex,
         lastUpdateTime: now,
       };
 
@@ -94,11 +87,20 @@ export function Artifact({
 
       setArtifact(currentArtifact);
     });
-  }, [props.type, props.title, setArtifacts, props.children, props.identifier]);
+  }, [
+    props.type,
+    props.title,
+    setArtifacts,
+    props.children,
+    props.identifier,
+    messageId,
+    artifactIndex,
+  ]);
 
   useEffect(() => {
+    resetCounter();
     updateArtifact();
-  }, [updateArtifact]);
+  }, [updateArtifact, resetCounter]);
 
   return <ArtifactButton artifact={artifact} />;
 }

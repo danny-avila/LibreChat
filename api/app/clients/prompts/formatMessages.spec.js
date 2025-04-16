@@ -60,7 +60,6 @@ describe('formatMessage', () => {
         error: false,
         finish_reason: null,
         isCreatedByUser: true,
-        isEdited: false,
         model: null,
         parentMessageId: Constants.NO_PARENT,
         sender: 'User',

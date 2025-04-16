@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import { Label, Button, OGDialog, OGDialogTrigger, Spinner } from '~/components';
-import { useConversation, useConversations, useLocalize } from '~/hooks';
+import { useLocalize, useNewConvo } from '~/hooks';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { clearAllConversationStorage } from '~/utils';
 
 export const ClearChats = () => {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
-  const { newConversation } = useConversation();
-  const { refreshConversations } = useConversations();
+  const { newConversation } = useNewConvo();
   const clearConvosMutation = useClearConversationsMutation();
 
   const clearConvos = () => {
@@ -16,8 +16,8 @@ export const ClearChats = () => {
       {},
       {
         onSuccess: () => {
+          clearAllConversationStorage();
           newConversation();
-          refreshConversations();
         },
       },
     );

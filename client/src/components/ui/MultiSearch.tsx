@@ -1,10 +1,9 @@
 import { Search, X } from 'lucide-react';
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-// This is a generic that can be added to Menu and Select components
-
+/** This is a generic that can be added to Menu and Select components */
 export default function MultiSearch({
   value,
   onChange,
@@ -17,35 +16,57 @@ export default function MultiSearch({
   className?: string;
 }) {
   const localize = useLocalize();
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => onChange(e.target.value),
     [onChange],
   );
 
+  const clearSearch = () => {
+    onChange('');
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
+
   return (
     <div
       className={cn(
-        'group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20',
+        'focus:to-surface-primary/50 group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-surface-tertiary-alt from-65% to-transparent px-3 py-2 text-text-primary transition-colors duration-300 focus:bg-gradient-to-b focus:from-surface-primary',
         className,
       )}
     >
-      <Search className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
+      <Search
+        className="h-4 w-4 text-text-secondary-alt transition-colors duration-300"
+        aria-hidden={'true'}
+      />
       <input
+        ref={inputRef}
         type="text"
         value={value ?? ''}
         onChange={onChangeHandler}
         placeholder={placeholder ?? localize('com_ui_select_search_model')}
-        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
+        aria-label="Search Model"
+        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-ring-primary"
       />
-      <div className="relative flex h-5 w-5 items-center justify-end text-gray-500">
+      <button
+        className={cn(
+          'relative flex h-5 w-5 items-center justify-end rounded-md text-text-secondary-alt',
+          value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'hidden',
+        )}
+        aria-label={'Clear search'}
+        onClick={clearSearch}
+        tabIndex={0}
+      >
         <X
+          aria-hidden={'true'}
           className={cn(
-            'text-gray-500 dark:text-gray-300',
+            'text-text-secondary-alt',
             value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'opacity-0',
           )}
-          onClick={() => onChange('')}
         />
-      </div>
+      </button>
     </div>
   );
 }

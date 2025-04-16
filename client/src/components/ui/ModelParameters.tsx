@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize } from '~/hooks';
 import { Minus, Plus } from 'lucide-react';
 
 interface ModelParametersProps {
@@ -33,7 +33,7 @@ const ModelParameters: React.FC<ModelParametersProps> = ({
   const rangeRef = useRef<HTMLInputElement>(null);
 
   const id = `model-parameter-${ariaLabel.toLowerCase().replace(/\s+/g, '-')}`;
-  const displayLabel = label.startsWith('com_') ? localize(label) : label;
+  const displayLabel = label.startsWith('com_') ? localize(label as TranslationKeys) : label;
 
   const getDecimalPlaces = (num: number) => {
     const match = ('' + num).match(/(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);

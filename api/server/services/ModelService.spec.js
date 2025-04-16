@@ -161,22 +161,6 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(expect.arrayContaining(['openai-model', 'openai-model-2']));
   });
 
-  it('attempts to use OPENROUTER_API_KEY if set', async () => {
-    process.env.OPENROUTER_API_KEY = 'test-router-key';
-    const expectedModels = ['model-router-1', 'model-router-2'];
-
-    axios.get.mockResolvedValue({
-      data: {
-        data: expectedModels.map((id) => ({ id })),
-      },
-    });
-
-    const models = await getOpenAIModels({ user: 'user456' });
-
-    expect(models).toEqual(expect.arrayContaining(expectedModels));
-    expect(axios.get).toHaveBeenCalled();
-  });
-
   it('utilizes proxy configuration when PROXY is set', async () => {
     axios.get.mockResolvedValue({
       data: {
@@ -368,15 +352,15 @@ describe('splitAndTrim', () => {
 });
 
 describe('getAnthropicModels', () => {
-  it('returns default models when ANTHROPIC_MODELS is not set', () => {
+  it('returns default models when ANTHROPIC_MODELS is not set', async () => {
     delete process.env.ANTHROPIC_MODELS;
-    const models = getAnthropicModels();
+    const models = await getAnthropicModels();
     expect(models).toEqual(defaultModels[EModelEndpoint.anthropic]);
   });
 
-  it('returns models from ANTHROPIC_MODELS when set', () => {
+  it('returns models from ANTHROPIC_MODELS when set', async () => {
     process.env.ANTHROPIC_MODELS = 'claude-1, claude-2 ';
-    const models = getAnthropicModels();
+    const models = await getAnthropicModels();
     expect(models).toEqual(['claude-1', 'claude-2']);
   });
 });

@@ -1,27 +1,38 @@
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 type SearchBarProps = {
-  clearSearch: () => void;
   isSmallScreen?: boolean;
 };
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
-  const { clearSearch, isSmallScreen } = props;
+  const localize = useLocalize();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const { isSmallScreen } = props;
+
+  const [text, setText] = useState('');
+  const [showClearIcon, setShowClearIcon] = useState(false);
+
+  const { newConversation } = useNewConvo();
   const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
-  const [showClearIcon, setShowClearIcon] = useState(false);
-  const [text, setText] = useState('');
   const setIsSearching = useSetRecoilState(store.isSearching);
-  const localize = useLocalize();
+  const setIsSearchTyping = useSetRecoilState(store.isSearchTyping);
+
+  const clearSearch = useCallback(() => {
+    if (location.pathname.includes('/search')) {
+      newConversation({ disableFocus: true });
+    }
+  }, [newConversation, location.pathname]);
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
@@ -49,15 +60,22 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     [queryClient, clearConvoState, setSearchQuery],
   );
 
-  // TODO: make the debounce time configurable via yaml
-  const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
+  const debouncedSendRequest = useMemo(
+    () =>
+      debounce((value: string) => {
+        sendRequest(value);
+      }, 350),
+    [sendRequest, setIsSearchTyping],
+  );
 
-  const onChange = (e: React.FormEvent<HTMLInputElement>) => {
-    const { value } = e.target as HTMLInputElement;
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
     setShowClearIcon(value.length > 0);
     setText(value);
+    setSearchQuery(value);
+    setIsSearchTyping(true);
+    // debounce only the API call
     debouncedSendRequest(value);
-    setIsSearching(true);
   };
 
   return (
@@ -68,9 +86,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         isSmallScreen === true ? 'mb-2 h-14 rounded-2xl' : '',
       )}
     >
-      {
-        <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
-      }
+      <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
       <input
         type="text"
         className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"

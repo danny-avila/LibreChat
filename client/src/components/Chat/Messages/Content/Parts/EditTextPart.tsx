@@ -119,7 +119,6 @@ const EditTextPart = ({
           ? {
             ...msg,
             content: updatedContent,
-            isEdited: true,
           }
           : msg,
       ),

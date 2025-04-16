@@ -20,8 +20,6 @@ const PresetsMenu: FC = () => {
     exportPreset,
   } = usePresets();
   const { preset } = useChatContext();
-
-  const presets = presetsQuery.data || [];
   return (
     <Root>
       <Trigger asChild>
@@ -32,7 +30,7 @@ const PresetsMenu: FC = () => {
           tabIndex={0}
           role="button"
           data-testid="presets-button"
-          className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+          className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
         >
           <BookCopy size={16} aria-label="Preset Icon" />
         </TooltipAnchor>
@@ -54,7 +52,7 @@ const PresetsMenu: FC = () => {
             className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white md:min-w-[400px]"
           >
             <PresetItems
-              presets={presets}
+              presets={presetsQuery.data}
               onSetDefaultPreset={onSetDefaultPreset}
               onSelectPreset={onSelectPreset}
               onChangePreset={onChangePreset}

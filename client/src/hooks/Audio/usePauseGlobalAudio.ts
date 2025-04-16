@@ -6,12 +6,13 @@ import store from '~/store';
 function usePauseGlobalAudio(index = 0) {
   /* Global Audio Variables */
   const setAudioRunId = useSetRecoilState(store.audioRunFamily(index));
+  const setActiveRunId = useSetRecoilState(store.activeRunFamily(index));
   const setGlobalIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
   const setIsGlobalAudioFetching = useSetRecoilState(store.globalAudioFetchingFamily(index));
   const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
 
   const pauseGlobalAudio = useCallback(() => {
-    if (globalAudioURL) {
+    if (globalAudioURL != null && globalAudioURL !== '') {
       const globalAudio = document.getElementById(globalAudioId);
       if (globalAudio) {
         console.log('Pausing global audio', globalAudioURL);
@@ -21,14 +22,16 @@ function usePauseGlobalAudio(index = 0) {
       URL.revokeObjectURL(globalAudioURL);
       setIsGlobalAudioFetching(false);
       setGlobalAudioURL(null);
+      setActiveRunId(null);
       setAudioRunId(null);
     }
   }, [
+    setAudioRunId,
+    setActiveRunId,
     globalAudioURL,
     setGlobalAudioURL,
     setGlobalIsPlaying,
     setIsGlobalAudioFetching,
-    setAudioRunId,
   ]);
 
   return { pauseGlobalAudio };

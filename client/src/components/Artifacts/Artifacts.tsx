@@ -2,18 +2,22 @@ import { useRef, useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
-import { SandpackPreviewRef } from '@codesandbox/sandpack-react';
+import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
-import { CodeMarkdown, CopyCodeButton } from './Code';
-import { getFileExtension } from '~/utils/artifacts';
-import { ArtifactPreview } from './ArtifactPreview';
-import { cn } from '~/utils';
+import DownloadArtifact from './DownloadArtifact';
+import { useEditorContext } from '~/Providers';
+import useLocalize from '~/hooks/useLocalize';
+import ArtifactTabs from './ArtifactTabs';
+import { CopyCodeButton } from './Code';
 import store from '~/store';
 
 export default function Artifacts() {
+  const localize = useLocalize();
+  const { isMutating } = useEditorContext();
+  const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisible);
 
   useEffect(() => {
@@ -23,9 +27,9 @@ export default function Artifacts() {
   const {
     activeTab,
     isMermaid,
-    isSubmitting,
     setActiveTab,
     currentIndex,
+    isSubmitting,
     cycleArtifact,
     currentArtifact,
     orderedArtifactIds,
@@ -47,10 +51,10 @@ export default function Artifacts() {
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
       {/* Main Parent */}
-      <div className="flex h-full w-full items-center justify-center py-2">
+      <div className="flex h-full w-full items-center justify-center">
         {/* Main Container */}
         <div
-          className={`flex h-[97%] w-[97%] flex-col overflow-hidden rounded-xl border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
+          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
             isVisible
               ? 'translate-x-0 scale-100 opacity-100'
               : 'translate-x-full scale-95 opacity-0'
@@ -95,18 +99,23 @@ export default function Artifacts() {
                   />
                 </button>
               )}
+              {activeTab !== 'preview' && isMutating && (
+                <RefreshCw size={16} className="mr-2 animate-spin text-text-secondary" />
+              )}
+              {/* Tabs */}
               <Tabs.List className="mr-2 inline-flex h-7 rounded-full border border-border-medium bg-surface-tertiary">
                 <Tabs.Trigger
                   value="preview"
+                  disabled={isMutating}
                   className="border-0.5 flex items-center gap-1 rounded-full border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium text-text-secondary data-[state=active]:border-border-light data-[state=active]:bg-surface-primary-alt data-[state=active]:text-text-primary"
                 >
-                  Preview
+                  {localize('com_ui_preview')}
                 </Tabs.Trigger>
                 <Tabs.Trigger
                   value="code"
                   className="border-0.5 flex items-center gap-1 rounded-full border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium text-text-secondary data-[state=active]:border-border-light data-[state=active]:bg-surface-primary-alt data-[state=active]:text-text-primary"
                 >
-                  Code
+                  {localize('com_ui_code')}
                 </Tabs.Trigger>
               </Tabs.List>
               <button
@@ -129,26 +138,13 @@ export default function Artifacts() {
             </div>
           </div>
           {/* Content */}
-          <Tabs.Content
-            value="code"
-            className={cn('flex-grow overflow-x-auto overflow-y-scroll bg-gray-900 p-4')}
-          >
-            <CodeMarkdown
-              content={`\`\`\`${getFileExtension(currentArtifact.type)}\n${
-                currentArtifact.content ?? ''
-              }\`\`\``}
-              isSubmitting={isSubmitting}
-            />
-          </Tabs.Content>
-          <Tabs.Content
-            value="preview"
-            className={cn('flex-grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
-          >
-            <ArtifactPreview
-              artifact={currentArtifact}
-              previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
-            />
-          </Tabs.Content>
+          <ArtifactTabs
+            isMermaid={isMermaid}
+            artifact={currentArtifact}
+            isSubmitting={isSubmitting}
+            editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
+            previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+          />
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
             <div className="flex items-center">
@@ -178,20 +174,10 @@ export default function Artifacts() {
                 </svg>
               </button>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <CopyCodeButton content={currentArtifact.content ?? ''} />
               {/* Download Button */}
-              {/* <button className="mr-2 text-text-secondary">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z" />
-                </svg>
-              </button> */}
+              <DownloadArtifact artifact={currentArtifact} />
               {/* Publish button */}
               {/* <button className="border-0.5 min-w-[4rem] whitespace-nowrap rounded-md border-border-medium bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-surface-active from-50% to-surface-active px-3 py-1 text-xs font-medium text-text-primary transition-colors hover:bg-surface-active hover:text-text-primary active:scale-[0.985] active:bg-surface-active">
                 Publish

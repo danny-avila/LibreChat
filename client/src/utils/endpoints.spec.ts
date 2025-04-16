@@ -26,10 +26,6 @@ describe('getEndpointField', () => {
     expect(getEndpointField(mockEndpointsConfig, undefined, 'type')).toBeUndefined();
   });
 
-  it('returns undefined if the endpoint does not exist in endpointsConfig', () => {
-    expect(getEndpointField(mockEndpointsConfig, EModelEndpoint.bingAI, 'type')).toBeUndefined();
-  });
-
   it('returns the correct value for a valid endpoint and property', () => {
     expect(getEndpointField(mockEndpointsConfig, EModelEndpoint.openAI, 'order')).toEqual(0);
     expect(getEndpointField(mockEndpointsConfig, EModelEndpoint.google, 'iconURL')).toEqual(

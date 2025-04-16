@@ -31,7 +31,10 @@ export function deleteUser(): Promise<s.TPreset> {
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
-  if (conversationId === 'new') {
+  if (
+    conversationId === config.Constants.NEW_CONVO ||
+    conversationId === config.Constants.PENDING_CONVO
+  ) {
     return Promise.resolve([]);
   }
   return request.get(endpoints.messages(conversationId));
@@ -41,27 +44,29 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
   return request.get(endpoints.shareMessages(shareId));
 }
 
-export const listSharedLinks = (
-  params?: q.SharedLinkListParams,
+export const listSharedLinks = async (
+  params: q.SharedLinksListParams,
 ): Promise<q.SharedLinksResponse> => {
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const isPublic = params?.isPublic ?? true; // Default to true if not provided
-  return request.get(endpoints.getSharedLinks(pageNumber, isPublic));
+  const { pageSize, isPublic, sortBy, sortDirection, search, cursor } = params;
+
+  return request.get(
+    endpoints.getSharedLinks(pageSize, isPublic, sortBy, sortDirection, search, cursor),
+  );
 };
 
-export function getSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
-  return request.get(endpoints.shareMessages(shareId));
+export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetResponse> {
+  return request.get(endpoints.getSharedLink(conversationId));
 }
 
-export function createSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink, payload);
+export function createSharedLink(conversationId: string): Promise<t.TSharedLinkResponse> {
+  return request.post(endpoints.createSharedLink(conversationId));
 }
 
-export function updateSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink, payload);
+export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink(shareId));
 }
 
-export function deleteSharedLink(shareId: string): Promise<t.TDeleteSharedLinkResponse> {
+export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
   return request.delete(endpoints.shareMessages(shareId));
 }
 
@@ -73,6 +78,13 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
 
   return request.put(endpoints.messages(conversationId, messageId), { text });
 }
+
+export const editArtifact = async ({
+  messageId,
+  ...params
+}: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
+  return request.post(`/api/messages/artifact/${messageId}`, params);
+};
 
 export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
   const { conversationId, messageId, index, text } = payload;
@@ -124,11 +136,11 @@ export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
 
-export const login = (payload: t.TLoginUser) => {
+export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
 
-export const logout = () => {
+export const logout = (): Promise<m.TLogoutResponse> => {
   return request.post(endpoints.logout());
 };
 
@@ -173,7 +185,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<t.TStartupConfig> => {
+export const getStartupConfig = (): Promise<config.TStartupConfig> => {
   return request.get(endpoints.config());
 };
 
@@ -580,46 +592,34 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  //todo: this should be a DELETE request
-  return request.post(endpoints.deleteConversation(), { arg: payload });
+  return request.deleteWithOptions(endpoints.deleteConversation(), { data: { arg: payload } });
 }
 
 export function clearAllConversations(): Promise<unknown> {
-  return request.post(endpoints.deleteConversation(), { arg: {} });
+  return request.delete(endpoints.deleteAllConversation());
 }
 
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  // Assuming params has a pageNumber property
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const isArchived = params?.isArchived ?? false; // Default to false if not provided
-  const tags = params?.tags || []; // Default to an empty array if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
-};
+  const isArchived = params?.isArchived ?? false;
+  const sortBy = params?.sortBy;
+  const sortDirection = params?.sortDirection;
+  const tags = params?.tags || [];
+  const search = params?.search || '';
+  const cursor = params?.cursor;
 
-export const listConversationsByQuery = (
-  params?: q.ConversationListParams & { searchQuery?: string },
-): Promise<q.ConversationListResponse> => {
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const searchQuery = params?.searchQuery ?? ''; // If no search query is provided, default to an empty string
-  // Update the endpoint to handle a search query
-  if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, pageNumber));
+  if (search !== '' && isArchived === false) {
+    return request.get(endpoints.search(search, cursor));
   } else {
-    return request.get(endpoints.conversations(pageNumber));
+    return request.get(
+      endpoints.conversations(isArchived, sortBy, sortDirection, tags, search, cursor),
+    );
   }
 };
 
-export const searchConversations = async (
-  q: string,
-  pageNumber: string,
-): Promise<t.TSearchResults> => {
-  return request.get(endpoints.search(q, pageNumber));
-};
-
-export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(pageNumber));
+export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
+  return request.get(endpoints.conversations(undefined, undefined, undefined, [], '', cursor));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {
@@ -764,4 +764,30 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
+}
+
+export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
+  return request.get(endpoints.enableTwoFactor());
+}
+
+export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.verifyTwoFactor(), payload);
+}
+
+export function confirmTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
+  return request.post(endpoints.confirmTwoFactor(), payload);
+}
+
+export function disableTwoFactor(): Promise<t.TDisable2FAResponse> {
+  return request.post(endpoints.disableTwoFactor());
+}
+
+export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes());
+}
+
+export function verifyTwoFactorTemp(
+  payload: t.TVerify2FATempRequest,
+): Promise<t.TVerify2FATempResponse> {
+  return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }

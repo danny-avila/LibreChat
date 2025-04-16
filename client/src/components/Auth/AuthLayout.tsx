@@ -1,4 +1,4 @@
-import { useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize } from '~/hooks';
 import { BlinkAnimation } from './BlinkAnimation';
 import { TStartupConfig } from 'librechat-data-provider';
 import SocialLoginRender from './SocialLoginRender';
@@ -33,7 +33,7 @@ function AuthLayout({
   startupConfig: TStartupConfig | null | undefined;
   startupConfigError: unknown | null | undefined;
   pathname: string;
-  error: string | null;
+  error: TranslationKeys | null;
 }) {
   const localize = useLocalize();
 
@@ -65,7 +65,7 @@ function AuthLayout({
           <img
             src="/assets/logo.svg"
             className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', startupConfig?.appTitle ?? 'LibreChat')}
+            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
         </div>
       </BlinkAnimation>
@@ -85,7 +85,8 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          {(pathname.includes('login') || pathname.includes('register')) && (
+          {!pathname.includes('2fa') &&
+            (pathname.includes('login') || pathname.includes('register')) && (
             <SocialLoginRender startupConfig={startupConfig} />
           )}
         </div>

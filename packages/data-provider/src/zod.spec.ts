@@ -1,4 +1,3 @@
-/* eslint-disable jest/no-conditional-expect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // zod.spec.ts
 import { z } from 'zod';
@@ -13,8 +12,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse('test')).toBe('test');
-      expect(() => zodSchema.parse(123)).toThrow();
+      expect(zodSchema?.parse('test')).toBe('test');
+      expect(() => zodSchema?.parse(123)).toThrow();
     });
 
     it('should convert string enum schema', () => {
@@ -24,8 +23,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse('foo')).toBe('foo');
-      expect(() => zodSchema.parse('invalid')).toThrow();
+      expect(zodSchema?.parse('foo')).toBe('foo');
+      expect(() => zodSchema?.parse('invalid')).toThrow();
     });
 
     it('should convert number schema', () => {
@@ -34,8 +33,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse(123)).toBe(123);
-      expect(() => zodSchema.parse('123')).toThrow();
+      expect(zodSchema?.parse(123)).toBe(123);
+      expect(() => zodSchema?.parse('123')).toThrow();
     });
 
     it('should convert boolean schema', () => {
@@ -44,8 +43,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse(true)).toBe(true);
-      expect(() => zodSchema.parse('true')).toThrow();
+      expect(zodSchema?.parse(true)).toBe(true);
+      expect(() => zodSchema?.parse('true')).toThrow();
     });
   });
 
@@ -57,8 +56,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse(['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
-      expect(() => zodSchema.parse(['a', 123, 'c'])).toThrow();
+      expect(zodSchema?.parse(['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
+      expect(() => zodSchema?.parse(['a', 123, 'c'])).toThrow();
     });
 
     it('should convert array of numbers schema', () => {
@@ -68,8 +67,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse([1, 2, 3])).toEqual([1, 2, 3]);
-      expect(() => zodSchema.parse([1, '2', 3])).toThrow();
+      expect(zodSchema?.parse([1, 2, 3])).toEqual([1, 2, 3]);
+      expect(() => zodSchema?.parse([1, '2', 3])).toThrow();
     });
   });
 
@@ -84,8 +83,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
-      expect(() => zodSchema.parse({ name: 123, age: 30 })).toThrow();
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+      expect(() => zodSchema?.parse({ name: 123, age: 30 })).toThrow();
     });
 
     it('should handle required fields', () => {
@@ -99,8 +98,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse({ name: 'John' })).toEqual({ name: 'John' });
-      expect(() => zodSchema.parse({})).toThrow();
+      expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
+      expect(() => zodSchema?.parse({})).toThrow();
     });
 
     it('should handle nested objects', () => {
@@ -120,10 +119,10 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse({ user: { name: 'John', age: 30 } })).toEqual({
+      expect(zodSchema?.parse({ user: { name: 'John', age: 30 } })).toEqual({
         user: { name: 'John', age: 30 },
       });
-      expect(() => zodSchema.parse({ user: { age: 30 } })).toThrow();
+      expect(() => zodSchema?.parse({ user: { age: 30 } })).toThrow();
     });
 
     it('should handle objects with arrays', () => {
@@ -138,8 +137,8 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse({ names: ['John', 'Jane'] })).toEqual({ names: ['John', 'Jane'] });
-      expect(() => zodSchema.parse({ names: ['John', 123] })).toThrow();
+      expect(zodSchema?.parse({ names: ['John', 'Jane'] })).toEqual({ names: ['John', 'Jane'] });
+      expect(() => zodSchema?.parse({ names: ['John', 123] })).toThrow();
     });
   });
 
@@ -151,7 +150,7 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse({})).toEqual({});
+      expect(zodSchema?.parse({})).toEqual({});
     });
 
     it('should handle unknown types as unknown', () => {
@@ -160,8 +159,8 @@ describe('convertJsonSchemaToZod', () => {
       } as unknown as JsonSchemaType;
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse('anything')).toBe('anything');
-      expect(zodSchema.parse(123)).toBe(123);
+      expect(zodSchema?.parse('anything')).toBe('anything');
+      expect(zodSchema?.parse(123)).toBe(123);
     });
 
     it('should handle empty enum arrays as regular strings', () => {
@@ -171,7 +170,7 @@ describe('convertJsonSchemaToZod', () => {
       };
       const zodSchema = convertJsonSchemaToZod(schema);
 
-      expect(zodSchema.parse('test')).toBe('test');
+      expect(zodSchema?.parse('test')).toBe('test');
     });
   });
 
@@ -223,6 +222,9 @@ describe('convertJsonSchemaToZod', () => {
           ],
         },
       };
+      if (zodSchema == null) {
+        throw new Error('Zod schema is null');
+      }
 
       expect(zodSchema.parse(validData)).toEqual(validData);
       expect(() =>
@@ -253,7 +255,7 @@ describe('convertJsonSchemaToZod', () => {
         },
       };
       const zodSchema = convertJsonSchemaToZod(schema);
-      expect(zodSchema.description).toBe('A test schema description');
+      expect(zodSchema?.description).toBe('A test schema description');
     });
 
     it('should preserve field descriptions', () => {
@@ -309,7 +311,7 @@ describe('convertJsonSchemaToZod', () => {
 
       // Type assertions for better type safety
       const shape = zodSchema instanceof z.ZodObject ? zodSchema.shape : {};
-      expect(zodSchema.description).toBe('User record');
+      expect(zodSchema?.description).toBe('User record');
 
       if ('user' in shape) {
         expect(shape.user.description).toBe('User details');
@@ -436,7 +438,7 @@ describe('convertJsonSchemaToZod', () => {
       const zodSchema = convertJsonSchemaToZod(schema);
 
       // Test top-level description
-      expect(zodSchema.description).toBe('User profile configuration');
+      expect(zodSchema?.description).toBe('User profile configuration');
 
       const shape = zodSchema instanceof z.ZodObject ? zodSchema.shape : {};
 
@@ -462,6 +464,212 @@ describe('convertJsonSchemaToZod', () => {
           expect(preferencesShape.theme.description).toBe('UI theme preference');
         }
       }
+    });
+  });
+
+  describe('additionalProperties handling', () => {
+    it('should allow any additional properties when additionalProperties is true', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+        additionalProperties: true,
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      // Should accept the defined property
+      expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
+
+      // Should also accept additional properties of any type
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+      expect(zodSchema?.parse({ name: 'John', isActive: true })).toEqual({
+        name: 'John',
+        isActive: true,
+      });
+      expect(zodSchema?.parse({ name: 'John', tags: ['tag1', 'tag2'] })).toEqual({
+        name: 'John',
+        tags: ['tag1', 'tag2'],
+      });
+    });
+
+    it('should validate additional properties according to schema when additionalProperties is an object', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+        additionalProperties: { type: 'number' },
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      // Should accept the defined property
+      expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
+
+      // Should accept additional properties that match the additionalProperties schema
+      expect(zodSchema?.parse({ name: 'John', age: 30, score: 100 })).toEqual({
+        name: 'John',
+        age: 30,
+        score: 100,
+      });
+
+      // Should reject additional properties that don't match the additionalProperties schema
+      expect(() => zodSchema?.parse({ name: 'John', isActive: true })).toThrow();
+      expect(() => zodSchema?.parse({ name: 'John', tags: ['tag1', 'tag2'] })).toThrow();
+    });
+
+    it('should strip additional properties when additionalProperties is false or not specified', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          age: { type: 'number' },
+        },
+        additionalProperties: false,
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      // Should accept the defined properties
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+
+      // Current implementation strips additional properties when additionalProperties is false
+      const objWithExtra = { name: 'John', age: 30, isActive: true };
+      expect(zodSchema?.parse(objWithExtra)).toEqual({ name: 'John', age: 30 });
+
+      // Test with additionalProperties not specified (should behave the same)
+      const schemaWithoutAdditionalProps: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          age: { type: 'number' },
+        },
+      };
+      const zodSchemaWithoutAdditionalProps = convertJsonSchemaToZod(schemaWithoutAdditionalProps);
+
+      expect(zodSchemaWithoutAdditionalProps?.parse({ name: 'John', age: 30 })).toEqual({
+        name: 'John',
+        age: 30,
+      });
+
+      // Current implementation strips additional properties when additionalProperties is not specified
+      const objWithExtra2 = { name: 'John', age: 30, isActive: true };
+      expect(zodSchemaWithoutAdditionalProps?.parse(objWithExtra2)).toEqual({
+        name: 'John',
+        age: 30,
+      });
+    });
+
+    it('should handle complex nested objects with additionalProperties', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          user: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              profile: {
+                type: 'object',
+                properties: {
+                  bio: { type: 'string' },
+                },
+                additionalProperties: true,
+              },
+            },
+            additionalProperties: { type: 'string' },
+          },
+        },
+        additionalProperties: false,
+      };
+      const zodSchema = convertJsonSchemaToZod(schema);
+
+      const validData = {
+        user: {
+          name: 'John',
+          profile: {
+            bio: 'Developer',
+            location: 'New York', // Additional property allowed in profile
+            website: 'https://example.com', // Additional property allowed in profile
+          },
+          role: 'admin', // Additional property of type string allowed in user
+          level: 'senior', // Additional property of type string allowed in user
+        },
+      };
+
+      expect(zodSchema?.parse(validData)).toEqual(validData);
+
+      // Current implementation strips additional properties at the top level
+      // when additionalProperties is false
+      const dataWithExtraTopLevel = {
+        user: { name: 'John' },
+        extraField: 'not allowed', // This should be stripped
+      };
+      expect(zodSchema?.parse(dataWithExtraTopLevel)).toEqual({ user: { name: 'John' } });
+
+      // Should reject additional properties in user that don't match the string type
+      expect(() =>
+        zodSchema?.parse({
+          user: {
+            name: 'John',
+            age: 30, // Not a string
+          },
+        }),
+      ).toThrow();
+    });
+  });
+
+  describe('empty object handling', () => {
+    it('should return undefined for empty object schemas when allowEmptyObject is false', () => {
+      const emptyObjectSchemas = [
+        { type: 'object' as const },
+        { type: 'object' as const, properties: {} },
+      ];
+
+      emptyObjectSchemas.forEach((schema) => {
+        expect(convertJsonSchemaToZod(schema, { allowEmptyObject: false })).toBeUndefined();
+      });
+    });
+
+    it('should return zod schema for empty object schemas when allowEmptyObject is true', () => {
+      const emptyObjectSchemas = [
+        { type: 'object' as const },
+        { type: 'object' as const, properties: {} },
+      ];
+
+      emptyObjectSchemas.forEach((schema) => {
+        const result = convertJsonSchemaToZod(schema, { allowEmptyObject: true });
+        expect(result).toBeDefined();
+        expect(result instanceof z.ZodObject).toBeTruthy();
+      });
+    });
+
+    it('should return zod schema for empty object schemas by default', () => {
+      const emptyObjectSchemas = [
+        { type: 'object' as const },
+        { type: 'object' as const, properties: {} },
+      ];
+
+      emptyObjectSchemas.forEach((schema) => {
+        const result = convertJsonSchemaToZod(schema);
+        expect(result).toBeDefined();
+        expect(result instanceof z.ZodObject).toBeTruthy();
+      });
+    });
+
+    it('should still convert non-empty object schemas regardless of allowEmptyObject setting', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+      };
+
+      const resultWithFlag = convertJsonSchemaToZod(schema, { allowEmptyObject: false });
+      const resultWithoutFlag = convertJsonSchemaToZod(schema);
+
+      expect(resultWithFlag).toBeDefined();
+      expect(resultWithoutFlag).toBeDefined();
+      expect(resultWithFlag instanceof z.ZodObject).toBeTruthy();
+      expect(resultWithoutFlag instanceof z.ZodObject).toBeTruthy();
     });
   });
 });

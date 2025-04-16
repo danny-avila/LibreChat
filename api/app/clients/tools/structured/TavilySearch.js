@@ -1,20 +1,12 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { getEnvironmentVariable } = require('@langchain/core/utils/env');
+const { getApiKey } = require('./credentials');
 
 function createTavilySearchTool(fields = {}) {
   const envVar = 'TAVILY_API_KEY';
   const override = fields.override ?? false;
   const apiKey = fields.apiKey ?? getApiKey(envVar, override);
   const kwargs = fields?.kwargs ?? {};
-
-  function getApiKey(envVar, override) {
-    const key = getEnvironmentVariable(envVar);
-    if (!key && !override) {
-      throw new Error(`Missing ${envVar} environment variable.`);
-    }
-    return key;
-  }
 
   return tool(
     async (input) => {

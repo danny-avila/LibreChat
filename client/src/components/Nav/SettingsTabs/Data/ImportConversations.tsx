@@ -2,9 +2,9 @@ import { useState, useRef } from 'react';
 import { Import } from 'lucide-react';
 import type { TError } from 'librechat-data-provider';
 import { useUploadConversationsMutation } from '~/data-provider';
-import { useLocalize, useConversations } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 function ImportConversations() {
@@ -15,11 +15,9 @@ function ImportConversations() {
   const [, setErrors] = useState<string[]>([]);
   const [allowImport, setAllowImport] = useState(true);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { refreshConversations } = useConversations();
 
   const uploadFile = useUploadConversationsMutation({
     onSuccess: () => {
-      refreshConversations();
       showToast({ message: localize('com_ui_import_conversation_success') });
       setAllowImport(true);
     },
@@ -29,7 +27,7 @@ function ImportConversations() {
       setError(
         (error as TError).response?.data?.message ?? 'An error occurred while uploading the file.',
       );
-      if (error?.toString().includes('Unsupported import type')) {
+      if (error?.toString().includes('Unsupported import type') === true) {
         showToast({
           message: localize('com_ui_import_conversation_file_type_error'),
           status: 'error',
@@ -84,7 +82,7 @@ function ImportConversations() {
         onClick={handleImportClick}
         onKeyDown={handleKeyDown}
         disabled={!allowImport}
-        aria-label={localize('com_ui_import_conversation')}
+        aria-label={localize('com_ui_import')}
         className="btn btn-neutral relative"
       >
         {allowImport ? (
@@ -92,7 +90,7 @@ function ImportConversations() {
         ) : (
           <Spinner className="mr-1 w-4" />
         )}
-        <span>{localize('com_ui_import_conversation')}</span>
+        <span>{localize('com_ui_import')}</span>
       </button>
       <input
         ref={fileInputRef}
