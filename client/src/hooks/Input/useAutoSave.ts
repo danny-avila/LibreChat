@@ -36,8 +36,8 @@ const decodeBase64 = (base64String: string): string => {
 export const useAutoSave = ({
   conversationId,
   textAreaRef,
-  files,
   setFiles,
+  files,
 }: {
   conversationId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
@@ -106,7 +106,7 @@ export const useAutoSave = ({
         return;
       }
       // Save the draft of the current conversation before switching
-      if (textAreaRef.current.value === '') {
+      if (textAreaRef.current.value === '' || textAreaRef.current.value.length === 1) {
         clearDraft(id);
       } else {
         localStorage.setItem(
@@ -126,8 +126,7 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value;
+    const handleInput = debounce((value: string) => {
       if (value && value.length > 1) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
@@ -138,14 +137,19 @@ export const useAutoSave = ({
       }
     }, 750);
 
+    const eventListener = (e: Event) => {
+      const target = e.target as HTMLTextAreaElement;
+      handleInput(target.value);
+    };
+
     const textArea = textAreaRef?.current;
     if (textArea) {
-      textArea.addEventListener('input', handleInput);
+      textArea.addEventListener('input', eventListener);
     }
 
     return () => {
       if (textArea) {
-        textArea.removeEventListener('input', handleInput);
+        textArea.removeEventListener('input', eventListener);
       }
       handleInput.cancel();
     };

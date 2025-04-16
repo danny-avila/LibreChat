@@ -1,7 +1,13 @@
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, EModelEndpoint, LocalStorageKeys, Constants } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  Constants,
+  dataService,
+  EModelEndpoint,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
 import store from '~/store';
@@ -14,6 +20,21 @@ const useNavigateToConvo = (index = 0) => {
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
 
+  const fetchFreshData = async (conversationId?: string | null) => {
+    if (!conversationId) {
+      return;
+    }
+    try {
+      const data = await queryClient.fetchQuery([QueryKeys.conversation, conversationId], () =>
+        dataService.getConversationById(conversationId),
+      );
+      logger.log('conversation', 'Fetched fresh conversation data', data);
+      setConversation(data);
+    } catch (error) {
+      console.error('Error fetching conversation data on navigation', error);
+    }
+  };
+
   const navigateToConvo = (
     conversation?: TConversation | null,
     _resetLatestMessage = true,
@@ -23,6 +44,7 @@ const useNavigateToConvo = (index = 0) => {
       logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
+    logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
     setSubmission(null);
     if (_resetLatestMessage) {
@@ -60,6 +82,10 @@ const useNavigateToConvo = (index = 0) => {
     clearAllConversations(true);
     setConversation(convo);
     navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
+    if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
+      queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
+      fetchFreshData(convo.conversationId);
+    }
   };
 
   const navigateWithLastTools = (

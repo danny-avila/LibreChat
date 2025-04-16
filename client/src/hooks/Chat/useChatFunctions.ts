@@ -15,6 +15,7 @@ import type {
   TConversation,
   TEndpointOption,
   TEndpointsConfig,
+  EndpointSchemaKey,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
@@ -160,8 +161,8 @@ export default function useChatFunctions({
 
     // set the endpoint option
     const convo = parseCompactConvo({
-      endpoint,
-      endpointType,
+      endpoint: endpoint as EndpointSchemaKey,
+      endpointType: endpointType as EndpointSchemaKey,
       conversation: conversation ?? {},
     });
 
