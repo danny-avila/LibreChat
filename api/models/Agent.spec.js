@@ -33,6 +33,50 @@ describe('Agent Resource File Operations', () => {
     return agent;
   };
 
+  test('should add tool_resource to tools if missing', async () => {
+    const agent = await createBasicAgent();
+    const fileId = uuidv4();
+    const toolResource = 'file_search';
+
+    const updatedAgent = await addAgentResourceFile({
+      agent_id: agent.id,
+      tool_resource: toolResource,
+      file_id: fileId,
+    });
+
+    expect(updatedAgent.tools).toContain(toolResource);
+    expect(Array.isArray(updatedAgent.tools)).toBe(true);
+    // Should not duplicate
+    const count = updatedAgent.tools.filter((t) => t === toolResource).length;
+    expect(count).toBe(1);
+  });
+
+  test('should not duplicate tool_resource in tools if already present', async () => {
+    const agent = await createBasicAgent();
+    const fileId1 = uuidv4();
+    const fileId2 = uuidv4();
+    const toolResource = 'file_search';
+
+    // First add
+    await addAgentResourceFile({
+      agent_id: agent.id,
+      tool_resource: toolResource,
+      file_id: fileId1,
+    });
+
+    // Second add (should not duplicate)
+    const updatedAgent = await addAgentResourceFile({
+      agent_id: agent.id,
+      tool_resource: toolResource,
+      file_id: fileId2,
+    });
+
+    expect(updatedAgent.tools).toContain(toolResource);
+    expect(Array.isArray(updatedAgent.tools)).toBe(true);
+    const count = updatedAgent.tools.filter((t) => t === toolResource).length;
+    expect(count).toBe(1);
+  });
+
   test('should handle concurrent file additions', async () => {
     const agent = await createBasicAgent();
     const fileIds = Array.from({ length: 10 }, () => uuidv4());
