@@ -50,35 +50,6 @@ function ConvoOptions({
 
   const archiveConvoMutation = useArchiveConvoMutation();
 
-  const archiveHandler = async () => {
-    const convoId = conversationId ?? '';
-
-    if (!convoId) {
-      return;
-    }
-
-    archiveConvoMutation.mutate(
-      { conversationId: convoId, isArchived: true },
-      {
-        onSuccess: () => {
-          if (currentConvoId === convoId || currentConvoId === 'new') {
-            newConversation();
-            navigate('/c/new', { replace: true });
-          }
-          retainView();
-          setIsPopoverActive(false);
-        },
-        onError: () => {
-          showToast({
-            message: localize('com_ui_archive_error'),
-            severity: NotificationSeverity.ERROR,
-            showIcon: true,
-          });
-        },
-      },
-    );
-  };
-
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
       navigateToConvo(data.conversation);
@@ -220,6 +191,10 @@ function ConvoOptions({
   return (
     <>
       <DropdownPopup
+        portal={true}
+        mountByState={true}
+        unmountOnHide={true}
+        preserveTabOrder={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
@@ -227,12 +202,19 @@ function ConvoOptions({
             id={`conversation-menu-${conversationId}`}
             aria-label={localize('com_nav_convo_menu_options')}
             className={cn(
-              'z-30 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-              isActiveConvo === true
+              'z-30 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
+              isActiveConvo === true || isPopoverActive
                 ? 'opacity-100'
                 : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
             )}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: MouseEvent<HTMLButtonElement>) => {
+              e.stopPropagation();
+            }}
+            onKeyDown={(e: React.KeyboardEvent<HTMLButtonElement>) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation();
+              }
+            }}
           >
             <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
           </Menu.MenuButton>
