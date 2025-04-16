@@ -23,7 +23,7 @@ const useNavigateToConvo = (index = 0) => {
   const fetchFreshData = async (conversationId?: string | null) => {
     if (!conversationId) {
       return;
-    } // or handle as needed
+    }
     try {
       const data = await queryClient.fetchQuery([QueryKeys.conversation, conversationId], () =>
         dataService.getConversationById(conversationId),
