@@ -33,6 +33,7 @@ const { addCacheControl, createContextHandlers } = require('~/app/clients/prompt
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 const { logger, sendEvent } = require('~/config');
@@ -931,14 +932,16 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    const endpoint = this.options.agent.endpoint;
+    const { req, res } = this.options;
     /** @type {import('@librechat/agents').ClientOptions} */
-    const clientOptions = {
+    let clientOptions = {
       maxTokens: 75,
     };
-    let endpointConfig = this.options.req.app.locals[this.options.agent.endpoint];
+    let endpointConfig = req.app.locals[endpoint];
     if (!endpointConfig) {
       try {
-        endpointConfig = await getCustomEndpointConfig(this.options.agent.endpoint);
+        endpointConfig = await getCustomEndpointConfig(endpoint);
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
@@ -952,6 +955,28 @@ class AgentClient extends BaseClient {
       endpointConfig.titleModel !== Constants.CURRENT_MODEL
     ) {
       clientOptions.model = endpointConfig.titleModel;
+    }
+    if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      clientOptions.model &&
+      this.options.agent.model_parameters.model !== clientOptions.model
+    ) {
+      clientOptions =
+        (
+          await initOpenAI({
+            req,
+            res,
+            optionsOnly: true,
+            overrideModel: clientOptions.model,
+            overrideEndpoint: endpoint,
+            endpointOption: {
+              model_parameters: clientOptions,
+            },
+          })
+        )?.llmConfig ?? clientOptions;
+    }
+    if (/\b(o1|o3)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      delete clientOptions.maxTokens;
     }
     try {
       const titleResult = await this.run.generateTitle({

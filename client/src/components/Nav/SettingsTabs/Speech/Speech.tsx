@@ -136,6 +136,14 @@ function Speech() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
+  // Reset engineTTS if it is set to a removed/invalid value (e.g., 'edge')
+  useEffect(() => {
+    const validEngines = ['browser', 'external'];
+    if (!validEngines.includes(engineTTS)) {
+      setEngineTTS('browser');
+    }
+  }, [engineTTS, setEngineTTS]);
+
   logger.log({ sttExternal, ttsExternal });
 
   const contentRef = useRef(null);
