@@ -18,6 +18,3 @@ function Test-IsBase64 {
         return $false
     }
 }
-
-# Export the functions
-Export-ModuleMember -Function Test-IsBase64 
