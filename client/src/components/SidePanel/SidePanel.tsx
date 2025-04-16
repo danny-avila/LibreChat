@@ -144,7 +144,7 @@ const SidePanel = ({
           }
         },
       },
-    ]
+    ],
     endpointsConfig,
   });
 
