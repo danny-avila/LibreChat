@@ -11,7 +11,7 @@ import {
 } from 'librechat-data-provider';
 import type { TPreset, TEndpointsConfig, TStartupConfig } from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
-import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
+import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools, logger } from '~/utils';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
@@ -159,6 +159,7 @@ export default function useQueryParams({
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
+        logger.log('conversation', 'Switching conversation from query params', currentConvo);
         newConversation({
           template: currentConvo,
           preset: newPreset,

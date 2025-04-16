@@ -12,5 +12,9 @@ export default function VoiceDropdown() {
   const engineTTS = useRecoilValue<string>(store.engineTTS);
   const VoiceDropdownComponent = voiceDropdownComponentsMap[engineTTS];
 
+  if (!VoiceDropdownComponent) {
+    return null;
+  }
+
   return <VoiceDropdownComponent />;
 }
