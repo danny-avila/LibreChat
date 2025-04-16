@@ -31,6 +31,7 @@ import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
+import { logger } from '~/utils';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
@@ -151,6 +152,7 @@ const useNewConvo = (index = 0) => {
         if (!(keepAddedConvos ?? false)) {
           clearAllConversations(true);
         }
+        logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!(keepLatestMessage ?? false)) {
