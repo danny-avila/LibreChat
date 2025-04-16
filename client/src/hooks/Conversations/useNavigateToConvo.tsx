@@ -1,7 +1,13 @@
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, EModelEndpoint, LocalStorageKeys, Constants } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  EModelEndpoint,
+  LocalStorageKeys,
+  Constants,
+  dataService,
+} from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
 import store from '~/store';
@@ -13,6 +19,21 @@ const useNavigateToConvo = (index = 0) => {
   const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
+
+  const fetchFreshData = async (conversationId?: string | null) => {
+    if (!conversationId) {
+      return;
+    } // or handle as needed
+    try {
+      const data = await queryClient.fetchQuery([QueryKeys.conversation, conversationId], () =>
+        dataService.getConversationById(conversationId),
+      );
+      logger.log('conversation', 'Fetched fresh conversation data', data);
+      setConversation(data);
+    } catch (error) {
+      console.error('Error fetching conversation data on navigation', error);
+    }
+  };
 
   const navigateToConvo = (
     conversation?: TConversation | null,
@@ -61,6 +82,10 @@ const useNavigateToConvo = (index = 0) => {
     clearAllConversations(true);
     setConversation(convo);
     navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
+    if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
+      queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
+      fetchFreshData(convo.conversationId);
+    }
   };
 
   const navigateWithLastTools = (
