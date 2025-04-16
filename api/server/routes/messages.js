@@ -10,17 +10,10 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { countTokens, isEnabled } = require('~/server/utils');
 const { getConvoTitle } = require('~/models/Conversation');
+const { countTokens } = require('~/server/utils');
 const { Message } = require('~/models/Message');
-const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
-const { Keyv } = require('keyv');
-
-const expiration = 60 * 1000;
-const cache = isEnabled(process.env.USE_REDIS)
-  ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'search', ttl: expiration });
 
 const router = express.Router();
 router.use(requireJwtAuth);

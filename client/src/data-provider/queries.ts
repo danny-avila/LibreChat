@@ -29,6 +29,7 @@ import type {
   SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
+import type { ConversationCursorData } from '~/utils/convos';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -67,9 +68,9 @@ export const useGetConvoIdQuery = (
     [QueryKeys.conversation, id],
     () => {
       // Try to find in all fetched infinite pages
-      const convosQuery = queryClient.getQueryData<
-        InfiniteData<import('~/utils').ConversationCursorData>
-          >([QueryKeys.allConversations]);
+      const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
+        QueryKeys.allConversations,
+      ]);
       const found = convosQuery?.pages
         .flatMap((page) => page.conversations)
         .find((c) => c.conversationId === id);
