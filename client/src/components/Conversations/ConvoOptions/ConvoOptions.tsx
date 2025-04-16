@@ -222,20 +222,28 @@ function ConvoOptions({
       <DropdownPopup
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
+        portal={true}
+        mountByState={true}
+        preserveTabOrder={true}
         trigger={
           <Menu.MenuButton
-            id={`conversation-menu-${conversationId}`}
-            aria-label={localize('com_nav_convo_menu_options')}
-            className={cn(
-              'z-30 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-              isActiveConvo === true
-                ? 'opacity-100'
-                : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
-          </Menu.MenuButton>
+            render={
+              <button
+                type="button"
+                id={`conversation-menu-${conversationId}`}
+                aria-label={localize('com_nav_convo_menu_options')}
+                className={cn(
+                  'z-30 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+                  isActiveConvo === true
+                    ? 'opacity-100'
+                    : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
+                )}
+                onClick={(e: MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+              >
+                <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
+              </button>
+            }
+          />
         }
         items={dropdownItems}
         menuId={menuId}
