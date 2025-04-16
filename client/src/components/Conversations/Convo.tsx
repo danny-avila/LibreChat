@@ -182,7 +182,17 @@ export default function Conversation({
           />
         </ConvoLink>
       )}
-      <div className="mr-2 flex">{!renaming && <ConvoOptions {...convoOptionsProps} />}</div>
+      <div
+        className={cn(
+          'mr-2 flex origin-left',
+          isPopoverActive || isActiveConvo
+            ? 'pointer-events-auto max-w-7 scale-x-100 opacity-100'
+            : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-7 group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-7 group-hover:scale-x-100 group-hover:opacity-100',
+        )}
+        aria-hidden={!(isPopoverActive || isActiveConvo)}
+      >
+        {!renaming && <ConvoOptions {...convoOptionsProps} />}
+      </div>
     </div>
   );
 }
