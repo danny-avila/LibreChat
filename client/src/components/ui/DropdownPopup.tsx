@@ -21,6 +21,8 @@ interface DropdownProps {
   focusLoop?: boolean;
   menuId: string;
   mountByState?: boolean;
+  unmountOnHide?: boolean;
+  finalFocus?: React.RefObject<HTMLElement>;
 }
 
 type MenuProps = Omit<
@@ -54,28 +56,32 @@ const DropdownPopup: React.FC<DropdownProps> = ({
 };
 
 const Menu: React.FC<MenuProps> = ({
-  keyPrefix,
   items,
   menuId,
-  modal,
-  gutter = 8,
-  sameWidth,
+  keyPrefix,
   className,
   iconClassName,
   itemClassName,
+  modal,
   portal,
+  sameWidth,
+  gutter = 8,
+  finalFocus,
+  unmountOnHide,
   preserveTabOrder,
 }) => {
   const menu = Ariakit.useMenuContext();
   return (
     <Ariakit.Menu
       id={menuId}
-      className={cn('popover-ui z-50', className)}
-      gutter={gutter}
       modal={modal}
-      sameWidth={sameWidth}
+      gutter={gutter}
       portal={portal}
+      sameWidth={sameWidth}
+      finalFocus={finalFocus}
+      unmountOnHide={unmountOnHide}
       preserveTabOrder={preserveTabOrder}
+      className={cn('popover-ui z-50', className)}
     >
       {items
         .filter((item) => item.show !== false)

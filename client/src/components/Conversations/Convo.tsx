@@ -182,16 +182,7 @@ export default function Conversation({
           />
         </ConvoLink>
       )}
-      <div
-        className={cn(
-          'mr-2',
-          isPopoverActive || isActiveConvo
-            ? 'flex'
-            : 'hidden group-focus-within:flex group-hover:flex',
-        )}
-      >
-        {!renaming && <ConvoOptions {...convoOptionsProps} />}
-      </div>
+      <div className="mr-2 flex">{!renaming && <ConvoOptions {...convoOptionsProps} />}</div>
     </div>
   );
 }
