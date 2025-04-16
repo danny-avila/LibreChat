@@ -10,7 +10,7 @@ import {
   useGetStartupConfig,
 } from '~/data-provider';
 import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
+import { getDefaultModelSpec, getModelSpecIconURL, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -63,7 +63,7 @@ export default function ChatRoute() {
 
     if (conversationId === Constants.NEW_CONVO && endpointsQuery.data && modelsQuery.data) {
       const spec = getDefaultModelSpec(startupConfig);
-
+      logger.log('conversation', 'ChatRoute, new convo effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
@@ -80,6 +80,7 @@ export default function ChatRoute() {
 
       hasSetConversation.current = true;
     } else if (initialConvoQuery.data && endpointsQuery.data && modelsQuery.data) {
+      logger.log('conversation', 'ChatRoute initialConvoQuery', initialConvoQuery.data);
       newConversation({
         template: initialConvoQuery.data,
         /* this is necessary to load all existing settings */
@@ -94,6 +95,7 @@ export default function ChatRoute() {
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
       const spec = getDefaultModelSpec(startupConfig);
+      logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
@@ -112,6 +114,7 @@ export default function ChatRoute() {
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
+      logger.log('conversation', 'ChatRoute convo, assistants effect', initialConvoQuery.data);
       newConversation({
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,

@@ -23,6 +23,7 @@ const useNavigateToConvo = (index = 0) => {
       logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
+    logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
     setSubmission(null);
     if (_resetLatestMessage) {
