@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -38,11 +38,6 @@ export default function ChatRoute() {
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
 
-  // Reset the guard flag whenever conversationId changes
-  useEffect(() => {
-    hasSetConversation.current = false;
-  }, [conversationId]);
-
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
     refetchOnMount: 'always',
@@ -53,6 +48,9 @@ export default function ChatRoute() {
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
 
+  /** This effect is mainly for the first conversation state change on first load of the page.
+   *  Adjusting this may have unintended consequences on the conversation state.
+   */
   useEffect(() => {
     const shouldSetConvo =
       (startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial) ?? false;
@@ -130,7 +128,6 @@ export default function ChatRoute() {
     endpointsQuery.data,
     modelsQuery.data,
     assistantListMap,
-    conversationId,
   ]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
