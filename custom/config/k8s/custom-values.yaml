@@ -32,7 +32,7 @@ config:
   env:
     NODE_ENV: "production"
     # Connection to existing MongoDB instance
-    MONGO_URI: "mongodb://mongodb:ch%40r1sm%40@10.1.48.99:27017"
+    MONGO_URI: "f"
     # Encryption keys for sensitive data
     CREDS_KEY: "f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0"
     CREDS_IV: "e2341419ec3dd3d19b13a1a87fafcbfb"
@@ -43,8 +43,8 @@ config:
     SESSION_SECRET: "09d57da76cb0e2870e1db59e564a71e3e8b956fdbd2907874a62ff58516868558f5f0fb18285690cede8b7705e3d7274650a6a"
     ENDPOINTS: "azureOpenAI"
     # API keys (will be moved to secrets in a future phase)
-    AZURE_OPENAI_API_KEY: "61018720ef2f4fb28df8c352dacb3aeb"
-    AZURE_OPENAI_INSTANCE: "rg-ch-openai-techagent"
+    AZURE_OPENAI_API_KEY: "z"
+    AZURE_OPENAI_INSTANCE: "r"
     
 # Resources configuration
 resources:
