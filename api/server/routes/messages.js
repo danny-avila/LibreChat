@@ -39,12 +39,6 @@ router.get('/', async (req, res) => {
       ...rest
     } = req.query;
     const pageSize = parseInt(pageSizeRaw, 10) || 25;
-    const key = `${user}:messages:${conversationId ?? ''}:${messageId ?? ''}:${cursor ?? ''}:${sortBy}:${sortDirection}:${search ?? ''}:${JSON.stringify(rest)}`;
-    const cached = await cache.get(key);
-    if (cached) {
-      logger.debug('[/messages] cache hit: ' + key);
-      return res.status(200).json(cached);
-    }
 
     let response;
     const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
@@ -113,7 +107,6 @@ router.get('/', async (req, res) => {
       response = { messages: pagedMessages, nextCursor };
     }
 
-    await cache.set(key, response, expiration);
     res.status(200).json(response);
   } catch (error) {
     logger.error('Error fetching messages:', error);
