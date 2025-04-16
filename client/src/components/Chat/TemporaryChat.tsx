@@ -37,33 +37,28 @@ export function TemporaryChat() {
 
   return (
     <div className="relative flex flex-wrap items-center gap-2">
-      <div className="badge-icon h-full">
-        <TooltipAnchor
-          description={localize(temporaryBadge.label)}
-          render={
-            <motion.button
-              onClick={handleBadgeToggle}
-              className={cn(
-                'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-lg border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-tertiary',
-                isTemporary
-                  ? 'bg-surface-active shadow-md'
-                  : 'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md',
-                'active:scale-95 active:shadow-inner',
-              )}
-              transition={{ type: 'tween', duration: 0.1, ease: 'easeOut' }}
-            >
-              {temporaryBadge.icon && (
-                <temporaryBadge.icon
-                  className={cn(
-                    'relative h-5 w-5 md:h-4 md:w-4',
-                    !temporaryBadge.label && 'mx-auto',
-                  )}
-                />
-              )}
-            </motion.button>
-          }
-        />
-      </div>
+      <TooltipAnchor
+        description={localize(temporaryBadge.label)}
+        render={
+          <button
+            onClick={handleBadgeToggle}
+              aria-label={localize(temporaryBadge.label)}
+            className={cn(
+              'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-tertiary',
+              isTemporary
+                ? 'bg-surface-active shadow-md'
+                : 'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md',
+              'active:shadow-inner',
+            )}
+          >
+            {temporaryBadge.icon && (
+              <temporaryBadge.icon
+                className={cn('relative h-5 w-5 md:h-4 md:w-4', !temporaryBadge.label && 'mx-auto')}
+              />
+            )}
+          </button>
+        }
+      />
     </div>
   );
 }
