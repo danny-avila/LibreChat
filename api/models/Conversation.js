@@ -211,6 +211,46 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
+  getConvosQueried: async (user, convoIds, cursor = null, limit = 25) => {
+    try {
+      if (!convoIds?.length) {
+        return { conversations: [], nextCursor: null, convoMap: {} };
+      }
+
+      const conversationIds = convoIds.map((convo) => convo.conversationId);
+
+      const results = await Conversation.find({
+        user,
+        conversationId: { $in: conversationIds },
+        $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
+      }).lean();
+
+      results.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+      let filtered = results;
+      if (cursor && cursor !== 'start') {
+        const cursorDate = new Date(cursor);
+        filtered = results.filter((convo) => new Date(convo.updatedAt) < cursorDate);
+      }
+
+      const limited = filtered.slice(0, limit + 1);
+      let nextCursor = null;
+      if (limited.length > limit) {
+        const lastConvo = limited.pop();
+        nextCursor = lastConvo.updatedAt.toISOString();
+      }
+
+      const convoMap = {};
+      limited.forEach((convo) => {
+        convoMap[convo.conversationId] = convo;
+      });
+
+      return { conversations: limited, nextCursor, convoMap };
+    } catch (error) {
+      logger.error('[getConvosQueried] Error getting conversations', error);
+      return { message: 'Error fetching conversations' };
+    }
+  },
   getConvo,
   /* chore: this method is not properly error handled */
   getConvoTitle: async (user, conversationId) => {

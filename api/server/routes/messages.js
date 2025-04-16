@@ -10,7 +10,8 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { getConvoTitle } = require('~/models/Conversation');
+const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
+const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
 const { Message } = require('~/models/Message');
 const { logger } = require('~/config');
@@ -29,7 +30,6 @@ router.get('/', async (req, res) => {
       conversationId,
       messageId,
       search,
-      ...rest
     } = req.query;
     const pageSize = parseInt(pageSizeRaw, 10) || 25;
 
@@ -40,12 +40,10 @@ router.get('/', async (req, res) => {
     const sortOrder = sortDirection === 'asc' ? 1 : -1;
 
     if (conversationId && messageId) {
-      // Fetch a single message
-      const message = await Message.findOne({ conversationId, messageId, user }).lean();
+      const message = await Message.findOne({ conversationId, messageId, user: user }).lean();
       response = { messages: message ? [message] : [], nextCursor: null };
     } else if (conversationId) {
-      // Fetch all messages for a conversation with sorting and cursor
-      const filter = { conversationId, user };
+      const filter = { conversationId, user: user };
       if (cursor) {
         filter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
       }
@@ -53,51 +51,40 @@ router.get('/', async (req, res) => {
         .sort({ [sortField]: sortOrder })
         .limit(pageSize + 1)
         .lean();
-      let nextCursor = null;
-      if (messages.length > pageSize) {
-        const last = messages.pop();
-        nextCursor = last[sortField];
-      }
+      const nextCursor = messages.length > pageSize ? messages.pop()[sortField] : null;
       response = { messages, nextCursor };
     } else if (search) {
-      const messageResults = await Message.meiliSearch(search, undefined, true);
-      let messages = messageResults.hits || [];
+      const searchResults = await Message.meiliSearch(search, undefined, true);
 
-      messages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const messages = searchResults.hits || [];
 
-      let pagedMessages = messages;
-      let nextCursor = null;
-      if (cursor) {
-        const cursorIndex = messages.findIndex((msg) => msg[sortBy] == cursor);
-        pagedMessages =
-          cursorIndex >= 0
-            ? messages.slice(cursorIndex + 1, cursorIndex + 1 + pageSize)
-            : messages.slice(0, pageSize);
-      } else {
-        pagedMessages = messages.slice(0, pageSize);
-      }
-      if (
-        pagedMessages.length &&
-        messages.length >
-          (cursor ? messages.findIndex((msg) => msg[sortBy] == cursor) + 1 + pageSize : pageSize)
-      ) {
-        nextCursor = pagedMessages[pagedMessages.length - 1][sortBy];
-      }
+      const result = await getConvosQueried(req.user.id, messages, cursor);
 
-      const titlePromises = pagedMessages.map(async (msg) => {
-        let title = null;
-        if (msg.conversationId) {
-          try {
-            title = await getConvoTitle(user, msg.conversationId);
-          } catch (e) {
-            logger.error('Error fetching conversation title:', e);
-          }
+      const activeMessages = [];
+      for (let i = 0; i < messages.length; i++) {
+        let message = messages[i];
+        if (message.conversationId.includes('--')) {
+          message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
         }
-        return { ...msg, title };
-      });
-      pagedMessages = await Promise.all(titlePromises);
+        if (result.convoMap[message.conversationId]) {
+          const convo = result.convoMap[message.conversationId];
 
-      response = { messages: pagedMessages, nextCursor };
+          const dbMessage = await getMessage({ user, messageId: message.messageId });
+          activeMessages.push({
+            ...message,
+            title: convo.title,
+            conversationId: message.conversationId,
+            model: convo.model,
+            isCreatedByUser: dbMessage?.isCreatedByUser,
+            endpoint: dbMessage?.endpoint,
+            iconURL: dbMessage?.iconURL,
+          });
+        }
+      }
+
+      response = { messages: activeMessages, nextCursor: null };
+    } else {
+      response = { messages: [], nextCursor: null };
     }
 
     res.status(200).json(response);
