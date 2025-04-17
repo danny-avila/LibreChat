@@ -14,13 +14,20 @@ interface ConversationsProps {
   toggleNav: () => void;
   containerRef: React.RefObject<HTMLDivElement | List>;
   loadMoreConversations: () => void;
-  isFetchingNextPage: boolean;
+  isLoading: boolean;
   isSearchLoading: boolean;
 }
 
-const LoadingSpinner = memo(() => (
-  <Spinner className="m-1 mx-auto mb-4 h-4 w-4 text-text-primary" />
-));
+const LoadingSpinner = memo(() => {
+  const localize = useLocalize();
+
+  return (
+    <div className="mx-auto mt-2 flex items-center justify-center gap-2">
+      <Spinner className="h-4 w-4 text-text-primary" />
+      <span className="animate-pulse text-text-primary">{localize('com_ui_loading')}</span>
+    </div>
+  );
+});
 
 const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
   const localize = useLocalize();
@@ -35,7 +42,8 @@ DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'header'; groupName: string }
-  | { type: 'convo'; convo: TConversation };
+  | { type: 'convo'; convo: TConversation }
+  | { type: 'loading' };
 
 const MemoizedConvo = memo(
   ({
@@ -74,7 +82,7 @@ const Conversations: FC<ConversationsProps> = ({
   toggleNav,
   containerRef,
   loadMoreConversations,
-  isFetchingNextPage,
+  isLoading,
   isSearchLoading,
 }) => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -103,8 +111,12 @@ const Conversations: FC<ConversationsProps> = ({
       items.push({ type: 'header', groupName });
       items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
     });
+
+    if (isLoading) {
+      items.push({ type: 'loading' } as any);
+    }
     return items;
-  }, [groupedConversations]);
+  }, [groupedConversations, isLoading]);
 
   const cache = useMemo(
     () =>
@@ -113,7 +125,16 @@ const Conversations: FC<ConversationsProps> = ({
         defaultHeight: convoHeight,
         keyMapper: (index) => {
           const item = flattenedItems[index];
-          return item.type === 'header' ? `header-${index}` : `convo-${item.convo.conversationId}`;
+          if (item.type === 'header') {
+            return `header-${index}`;
+          }
+          if (item.type === 'convo') {
+            return `convo-${item.convo.conversationId}`;
+          }
+          if (item.type === 'loading') {
+            return `loading-${index}`;
+          }
+          return `unknown-${index}`;
         },
       }),
     [flattenedItems, convoHeight],
@@ -122,20 +143,31 @@ const Conversations: FC<ConversationsProps> = ({
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
+      if (item.type === 'loading') {
+        return (
+          <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
+            {({ registerChild }) => (
+              <div ref={registerChild} style={style}>
+                <LoadingSpinner />
+              </div>
+            )}
+          </CellMeasurer>
+        );
+      }
       return (
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
             <div ref={registerChild} style={style}>
               {item.type === 'header' ? (
                 <DateLabel groupName={item.groupName} />
-              ) : (
+              ) : item.type === 'convo' ? (
                 <MemoizedConvo
                   conversation={item.convo}
                   retainView={moveToTop}
                   toggleNav={toggleNav}
                   isLatestConvo={item.convo.conversationId === firstTodayConvoId}
                 />
-              )}
+              ) : null}
             </div>
           )}
         </CellMeasurer>
@@ -156,7 +188,7 @@ const Conversations: FC<ConversationsProps> = ({
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
-      if (stopIndex >= flattenedItems.length - 2) {
+      if (stopIndex >= flattenedItems.length - 8) {
         throttledLoadMore();
       }
     },
@@ -191,11 +223,6 @@ const Conversations: FC<ConversationsProps> = ({
               />
             )}
           </AutoSizer>
-        </div>
-      )}
-      {isFetchingNextPage && !isSearchLoading && (
-        <div className="mt-2">
-          <LoadingSpinner />
         </div>
       )}
     </div>

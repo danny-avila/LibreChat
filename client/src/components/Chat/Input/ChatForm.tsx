@@ -43,7 +43,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
-  const isSearching = useRecoilValue(store.isSearching);
+  const search = useRecoilValue(store.search);
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const chatDirection = useRecoilValue(store.chatDirection);
@@ -121,6 +121,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     setFiles,
     textAreaRef,
     conversationId,
+    isSubmitting: isSubmitting || isSubmittingAdded,
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
@@ -151,10 +152,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const textValue = useWatch({ control: methods.control, name: 'text' });
 
   useEffect(() => {
-    if (!isSearching && textAreaRef.current && !disableInputs) {
+    if (!search.isSearching && textAreaRef.current && !disableInputs) {
       textAreaRef.current.focus();
     }
-  }, [isSearching, disableInputs]);
+  }, [search.isSearching, disableInputs]);
 
   useEffect(() => {
     if (textAreaRef.current) {

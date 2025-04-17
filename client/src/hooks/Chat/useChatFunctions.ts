@@ -90,7 +90,7 @@ export default function useChatFunctions({
     {
       editedText = null,
       editedMessageId = null,
-      resubmitFiles = false,
+      isResubmission = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -202,7 +202,7 @@ export default function useChatFunctions({
     };
 
     const reuseFiles =
-      (isRegenerate || resubmitFiles) && parentMessage?.files && parentMessage.files.length > 0;
+      (isRegenerate || isResubmission) && parentMessage?.files && parentMessage.files.length > 0;
     if (setFiles && reuseFiles === true) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
@@ -298,6 +298,7 @@ export default function useChatFunctions({
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
+      isResubmission,
       initialResponse,
       isTemporary,
       ephemeralAgent,

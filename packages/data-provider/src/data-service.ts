@@ -30,16 +30,6 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
-export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
-  if (
-    conversationId === config.Constants.NEW_CONVO ||
-    conversationId === config.Constants.PENDING_CONVO
-  ) {
-    return Promise.resolve([]);
-  }
-  return request.get(endpoints.messages(conversationId));
-}
-
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
@@ -68,31 +58,6 @@ export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
   return request.delete(endpoints.shareMessages(shareId));
-}
-
-export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
-  const { conversationId, messageId, text } = payload;
-  if (!conversationId) {
-    throw new Error('conversationId is required');
-  }
-
-  return request.put(endpoints.messages(conversationId, messageId), { text });
-}
-
-export const editArtifact = async ({
-  messageId,
-  ...params
-}: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
-  return request.post(`/api/messages/artifact/${messageId}`, params);
-};
-
-export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
-  const { conversationId, messageId, index, text } = payload;
-  if (!conversationId) {
-    throw new Error('conversationId is required');
-  }
-
-  return request.put(endpoints.messages(conversationId, messageId), { text, index });
 }
 
 export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
@@ -602,24 +567,11 @@ export function clearAllConversations(): Promise<unknown> {
 export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
-  const isArchived = params?.isArchived ?? false;
-  const sortBy = params?.sortBy;
-  const sortDirection = params?.sortDirection;
-  const tags = params?.tags || [];
-  const search = params?.search || '';
-  const cursor = params?.cursor;
-
-  if (search !== '' && isArchived === false) {
-    return request.get(endpoints.search(search, cursor));
-  } else {
-    return request.get(
-      endpoints.conversations(isArchived, sortBy, sortDirection, tags, search, cursor),
-    );
-  }
+  return request.get(endpoints.conversations(params ?? {}));
 };
 
 export function getConversations(cursor: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(undefined, undefined, undefined, [], '', cursor));
+  return request.get(endpoints.conversations({ cursor }));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {
@@ -640,6 +592,45 @@ export function archiveConversation(
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.post(endpoints.genTitle(), payload);
+}
+
+export const listMessages = (params?: q.MessagesListParams): Promise<q.MessagesListResponse> => {
+  return request.get(endpoints.messages(params ?? {}));
+};
+
+export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
+  const { conversationId, messageId, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages({ conversationId, messageId }), { text });
+}
+
+export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
+  const { conversationId, messageId, index, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages({ conversationId, messageId }), { text, index });
+}
+
+export const editArtifact = async ({
+  messageId,
+  ...params
+}: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
+  return request.post(`/api/messages/artifact/${messageId}`, params);
+};
+
+export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
+  if (
+    conversationId === config.Constants.NEW_CONVO ||
+    conversationId === config.Constants.PENDING_CONVO
+  ) {
+    return Promise.resolve([]);
+  }
+  return request.get(endpoints.messages({ conversationId }));
 }
 
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {

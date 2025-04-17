@@ -1,14 +1,11 @@
 const { Keyv } = require('keyv');
 const express = require('express');
 const { MeiliSearch } = require('meilisearch');
-const { Conversation, getConvosQueried } = require('~/models/Conversation');
+const { Conversation } = require('~/models/Conversation');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
-const { Message, getMessage } = require('~/models/Message');
-const { reduceHits } = require('~/lib/utils/reduceHits');
+const { Message } = require('~/models/Message');
 const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -23,88 +20,6 @@ router.get('/sync', async function (req, res) {
   await Message.syncWithMeili();
   await Conversation.syncWithMeili();
   res.send('synced');
-});
-
-router.get('/', async function (req, res) {
-  try {
-    const user = req.user.id ?? '';
-    const { q, cursor = 'start' } = req.query;
-    const key = `${user}:search:${q}:${cursor}`;
-    const cached = await cache.get(key);
-    if (cached) {
-      logger.debug('[/search] cache hit: ' + key);
-      return res.status(200).send(cached);
-    }
-
-    const [messageResults, titleResults] = await Promise.all([
-      Message.meiliSearch(q, undefined, true),
-      Conversation.meiliSearch(q),
-    ]);
-    const messages = messageResults.hits;
-    const titles = titleResults.hits;
-
-    const sortedHits = reduceHits(messages, titles);
-    const result = await getConvosQueried(user, sortedHits, cursor);
-
-    const activeMessages = [];
-    for (let i = 0; i < messages.length; i++) {
-      let message = messages[i];
-      if (message.conversationId.includes('--')) {
-        message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
-      }
-      if (result.convoMap[message.conversationId]) {
-        const convo = result.convoMap[message.conversationId];
-
-        const dbMessage = await getMessage({ user, messageId: message.messageId });
-        activeMessages.push({
-          ...message,
-          title: convo.title,
-          conversationId: message.conversationId,
-          model: convo.model,
-          isCreatedByUser: dbMessage?.isCreatedByUser,
-          endpoint: dbMessage?.endpoint,
-          iconURL: dbMessage?.iconURL,
-        });
-      }
-    }
-
-    const activeConversations = [];
-    for (const convId in result.convoMap) {
-      const convo = result.convoMap[convId];
-
-      if (convo.isArchived) {
-        continue;
-      }
-
-      activeConversations.push({
-        title: convo.title,
-        user: convo.user,
-        conversationId: convo.conversationId,
-        endpoint: convo.endpoint,
-        endpointType: convo.endpointType,
-        model: convo.model,
-        createdAt: convo.createdAt,
-        updatedAt: convo.updatedAt,
-      });
-    }
-
-    if (result.cache) {
-      result.cache.messages = activeMessages;
-      result.cache.conversations = activeConversations;
-      cache.set(key, result.cache, expiration);
-    }
-
-    const response = {
-      nextCursor: result.nextCursor ?? null,
-      messages: activeMessages,
-      conversations: activeConversations,
-    };
-
-    res.status(200).send(response);
-  } catch (error) {
-    logger.error('[/search] Error while searching messages & conversations', error);
-    res.status(500).send({ message: 'Error searching' });
-  }
 });
 
 router.get('/test', async function (req, res) {
