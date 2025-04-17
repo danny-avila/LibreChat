@@ -32,7 +32,7 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
         options={endpointOptions}
         sizeClasses="w-[180px]"
         testId="EngineTTSDropdown"
-        className="z-50 rounded-xl"
+        className="z-50"
       />
     </div>
   );
