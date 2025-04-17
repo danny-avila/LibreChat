@@ -30,40 +30,23 @@ jobs:
     - name: Run build and deploy script
       shell: pwsh
       run: |
-        $secretNames = @(
-          "MONGO_URI",
-          "CREDS_KEY", 
-          "CREDS_IV", 
-          "JWT_SECRET", 
-          "JWT_REFRESH_SECRET", 
-          "SESSION_SECRET", 
-          "AZURE_OPENAI_API_KEY",
-          "EMAIL_PASSWORD",
-          "REGISTRY_USERNAME",
-          "REGISTRY_PASSWORD"
-        )
-
-        $variableNames = @(
-          "EMAIL_FROM",
-          "EMAIL_FROM_NAME",
-          "EMAIL_USERNAME"
-        )
-
-        $secretsHashtable = @{}
-        $envVarsHashtable = @{}
-
-        foreach ($name in $secretNames) {
-          $secretValue = "${{ secrets[format('{0}', name)] }}"
-          if ($secretValue -and $secretValue -ne "") {
-            $secretsHashtable[$name] = $secretValue
-          }
+        $secretsHashtable = @{
+          "MONGO_URI" = "${{ secrets.MONGO_URI }}"
+          "CREDS_KEY" = "${{ secrets.CREDS_KEY }}"
+          "CREDS_IV" = "${{ secrets.CREDS_IV }}"
+          "JWT_SECRET" = "${{ secrets.JWT_SECRET }}"
+          "JWT_REFRESH_SECRET" = "${{ secrets.JWT_REFRESH_SECRET }}"
+          "SESSION_SECRET" = "${{ secrets.SESSION_SECRET }}"
+          "AZURE_OPENAI_API_KEY" = "${{ secrets.AZURE_OPENAI_API_KEY }}"
+          "EMAIL_PASSWORD" = "${{ secrets.EMAIL_PASSWORD }}"
+          "REGISTRY_USERNAME" = "${{ secrets.REGISTRY_USERNAME }}"
+          "REGISTRY_PASSWORD" = "${{ secrets.REGISTRY_PASSWORD }}"
         }
 
-        foreach ($name in $variableNames) {
-          $varValue = "${{ vars[format('{0}', name)] }}"
-          if ($varValue -and $varValue -ne "") {
-            $envVarsHashtable[$name] = $varValue
-          }
+        $envVarsHashtable = @{
+          "EMAIL_FROM" = "${{ vars.EMAIL_FROM }}"
+          "EMAIL_FROM_NAME" = "${{ vars.EMAIL_FROM_NAME }}"
+          "EMAIL_USERNAME" = "${{ vars.EMAIL_USERNAME }}"
         }
 
         ./custom/scripts/build-and-deploy.ps1 `
