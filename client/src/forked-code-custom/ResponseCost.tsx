@@ -1,8 +1,8 @@
-import { memo, useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import type { TMessage, TConversation, TModelSpec } from 'librechat-data-provider';
+import { memo, useEffect, useState, useRef, useCallback } from 'react';
+import type { TMessage, TConversation } from 'librechat-data-provider';
 import { TooltipAnchor } from '../components/ui/Tooltip';
 import { DollarSign } from 'lucide-react';
-import { fetchModelInfo } from './litellmInfoAdapter';
+import { fetchLiteLLMModelInfo } from './litellmInfoAdapter';
 import { cn } from '../utils';
 
 // Extend TMessage type to include token properties
@@ -103,7 +103,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
         setTokenInfo({ totalTokens });
 
         // Get pricing data from LiteLLM for THIS MESSAGE'S model
-        const modelInfoMap = await fetchModelInfo();
+        const modelInfoMap = await fetchLiteLLMModelInfo();
 
         // Direct lookup by model name
         const modelInfo = modelInfoMap[messageModel];

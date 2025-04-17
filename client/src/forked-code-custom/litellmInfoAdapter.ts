@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import type { TModelSpec } from 'librechat-data-provider';
 
 // Type definitions for LiteLLM API response
 export interface LiteLLMResponse {
@@ -75,16 +76,31 @@ export interface LiteLLMModelInfo {
   supported_openai_params?: string[];
 }
 
+/**
+ * Model pricing and capability information returned by our hooks
+ */
+export interface ModelPricingInfo {
+  inputPrice: number | null;
+  outputPrice: number | null;
+  showPricing: boolean;
+  isFree: boolean;
+  maxTokens: number | null;
+  disabled: boolean;
+}
+
 // Cache mechanism
 let modelInfoCache: Record<string, LiteLLMModelInfo> | null = null;
 let lastFetchTime = 0;
 const CACHE_DURATION = 60 * 60 * 1000; // Cache for 1 hour
 
+// Singleton promise for initialization
+let globalLiteLLMDataPromise: Promise<Record<string, LiteLLMModelInfo>> | null = null;
+
 /**
  * Fetch model information from our secure server-side proxy
  * and transform it into a more usable format for the model badges
  */
-export const fetchModelInfo = async (): Promise<Record<string, LiteLLMModelInfo>> => {
+export const fetchLiteLLMModelInfo = async (): Promise<Record<string, LiteLLMModelInfo>> => {
   const now = Date.now();
 
   // Use cached data if available and fresh
@@ -130,62 +146,131 @@ export const fetchModelInfo = async (): Promise<Record<string, LiteLLMModelInfo>
 };
 
 /**
- * Hook to get model information
+ * Initialize LiteLLM model data once at the application level
+ * Returns a promise that resolves when data is loaded
  */
-export const useModelInfo = (modelName: string) => {
-  const [modelInfo, setModelInfo] = useState<LiteLLMModelInfo | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<Error | null>(null);
+export const initLiteLLMModelData = async (): Promise<Record<string, LiteLLMModelInfo>> => {
+  if (!globalLiteLLMDataPromise) {
+    globalLiteLLMDataPromise = fetchLiteLLMModelInfo().then(data => {
+      modelInfoCache = data;
+      return data;
+    }).catch(err => {
+      console.warn('Failed to initialize LiteLLM model data:', err);
+      return {};
+    });
+  }
+  return globalLiteLLMDataPromise;
+};
+
+/**
+ * Hook to get model pricing and capability information
+ * Uses badges configuration or falls back to LiteLLM data
+ */
+export const useModelPricingInfo = (spec: TModelSpec): ModelPricingInfo => {
+  const [pricingInfo, setPricingInfo] = useState<ModelPricingInfo>({
+    inputPrice: null,
+    outputPrice: null,
+    showPricing: true,
+    isFree: false,
+    maxTokens: null,
+    disabled: false,
+  });
+
+  // If spec is invalid or empty, return default values
+  const modelName = spec?.preset?.model || '';
 
   useEffect(() => {
-    if (!modelName) {
+    // If spec is invalid, return early
+    if (!spec || !spec?.name) {
       return;
     }
 
     let isMounted = true;
-    setIsLoading(true);
 
-    const getModelInfo = async () => {
-      try {
-        const data = await fetchModelInfo();
-        // Find the exact model info
-        const info = data[modelName];
-        if (isMounted) {
-          setModelInfo(info || null);
-          setIsLoading(false);
+    const getPricingInfo = async () => {
+      // Initialize with default values
+      let infoData: ModelPricingInfo = {
+        inputPrice: null,
+        outputPrice: null,
+        showPricing: true,
+        isFree: false,
+        maxTokens: null,
+        disabled: false,
+      };
+
+      // Check for badges configuration and apply available properties
+      if (spec.badges) {
+        const {
+          inputPrice,
+          outputPrice,
+          showPricing = true,
+          isFree = false,
+          maxContextToken,
+          disabled = false,
+        } = spec.badges;
+
+        infoData = {
+          ...infoData,
+          inputPrice: inputPrice ?? infoData.inputPrice,
+          outputPrice: outputPrice ?? infoData.outputPrice,
+          showPricing,
+          isFree,
+          maxTokens: maxContextToken ?? infoData.maxTokens,
+          disabled,
+        };
+      }
+
+      // If we have missing data and model name is provided, try to get from LiteLLM
+      const needsMoreData = !infoData.disabled &&
+        modelName &&
+        (infoData.maxTokens === null || infoData.inputPrice === null || infoData.outputPrice === null);
+
+      if (needsMoreData) {
+        try {
+          // Get LiteLLM data (this will use the already initialized cache from ForkedCustomizations)
+          const modelData = await fetchLiteLLMModelInfo();
+
+          // Directly look up the model by name without complex matching
+          const modelInfo = modelData[modelName];
+
+          if (modelInfo && isMounted) {
+            // Only override values that weren't explicitly set in the badges config
+            if (infoData.inputPrice === null && modelInfo.input_cost_per_token !== undefined) {
+              infoData.inputPrice = modelInfo.input_cost_per_token * 1000000;
+            }
+
+            if (infoData.outputPrice === null && modelInfo.output_cost_per_token !== undefined) {
+              infoData.outputPrice = modelInfo.output_cost_per_token * 1000000;
+            }
+
+            // Get max tokens if not already specified
+            if (infoData.maxTokens === null) {
+              // Try max_input_tokens first, then max_tokens as fallback
+              infoData.maxTokens = modelInfo.max_input_tokens || modelInfo.max_tokens || null;
+            }
+
+            // Check if both input and output costs are 0 (free model)
+            // Only update isFree if it wasn't explicitly set
+            if (!spec.badges?.isFree &&
+                modelInfo.input_cost_per_token === 0 &&
+                modelInfo.output_cost_per_token === 0) {
+              infoData.isFree = true;
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching model pricing info:', error);
         }
-      } catch (err) {
-        console.error('Error fetching model info:', err);
-        if (isMounted) {
-          setError(err instanceof Error ? err : new Error('Unknown error'));
-          setIsLoading(false);
-        }
+      }
+
+      if (isMounted) {
+        setPricingInfo(infoData);
       }
     };
 
-    getModelInfo();
+    getPricingInfo();
+    return () => { isMounted = false; };
+  }, [spec, modelName]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [modelName]);
-
-  return { modelInfo, isLoading, error };
-};
-
-// Export a singleton instance for global model info
-export const getModelInfo = async (modelName: string): Promise<LiteLLMModelInfo | null> => {
-  try {
-    const data = await fetchModelInfo();
-    return data[modelName] || null;
-  } catch (error) {
-    console.error('Error getting model info:', error);
-    return null;
-  }
-};
-
-export default {
-  fetchModelInfo,
-  useModelInfo,
-  getModelInfo,
+  // Memoize the returned object to prevent unnecessary re-renders
+  return useMemo(() => pricingInfo, [pricingInfo]);
 };

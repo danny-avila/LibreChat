@@ -25,7 +25,7 @@ interface PromptSuggestionsProps {
  * Hook for managing prompt suggestions
  * Returns an array of suggested prompts to show to the user
  */
-export const usePromptSuggestions = () => {
+const usePromptSuggestions = () => {
   // Default hardcoded prompts
   const defaultPrompts: PromptSuggestion[] = useMemo(
     () => [

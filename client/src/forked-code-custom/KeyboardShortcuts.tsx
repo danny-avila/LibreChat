@@ -217,8 +217,3 @@ const handleToggleTheme = () => {
     console.error('Error toggling theme:', error);
   }
 };
-
-export default {
-  initialize,
-  cleanup,
-};

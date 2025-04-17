@@ -27,7 +27,7 @@ export const CapabilityIcon = memo(({ type }: { type: string }) => {
   let iconElement;
   let bg;
   let ring;
-  
+
   switch (type) {
     case 'reasoning':
       iconElement = <Brain className="h-3.5 w-3.5 text-pink-300" />;
@@ -57,16 +57,16 @@ export const CapabilityIcon = memo(({ type }: { type: string }) => {
     default:
       return null;
   }
-  
+
   const description = getCapabilityDescription(type);
-  
+
   return (
     <TooltipAnchor
       description={description}
       side="top"
       className="cursor-pointer flex items-center justify-center"
     >
-      <div 
+      <div
         className={cn(
           'relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full backdrop-blur-sm bg-opacity-80',
           bg,
@@ -86,7 +86,7 @@ export const CapabilityIcons = memo(({ capabilities }: { capabilities?: string[]
   if (!capabilities || capabilities.length === 0) {
     return null;
   }
-  
+
   return (
     <>
       {capabilities.map((capability: string, index: number) => (
@@ -94,4 +94,4 @@ export const CapabilityIcons = memo(({ capabilities }: { capabilities?: string[]
       ))}
     </>
   );
-}); 
+});
