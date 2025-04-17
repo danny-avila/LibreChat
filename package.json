@@ -32,6 +32,7 @@
     "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
+    "promote-admin": "node config/promote-admin.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
@@ -141,5 +142,10 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@e2b/code-interpreter": "^1.1.1",
+    "better-sqlite3": "^11.9.1",
+    "cheerio": "^1.0.0"
   }
 }

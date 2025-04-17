@@ -178,5 +178,41 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "TimeAPI",
+    "pluginKey": "time_api",
+    "description": "Get the current time in any location, perform time calculations and more.",
+    "icon": "/assets/timeapi.svg",
+    "authConfig": []
+  },
+  {
+    "name": "WebNavigator",
+    "pluginKey": "WebNavigator",
+    "description": "WebNavigator",
+    "icon": "/assets/webnavigator.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "E2BCode",
+    "pluginKey": "E2BCode",
+    "description": "Run code in an E2B sandbox",
+    "icon": "/assets/e2b_symbol.png",
+    "isAuthRequired": "true",
+    "authConfig": [
+      {
+        "authField": "E2B_API_KEY",
+        "label": "E2B.dev API key",
+        "description": "API Key from the e2b.dev dashboard"
+      }
+    ]
+  },
+  {
+    "name": "QuickChart",
+    "pluginKey": "quickchart",
+    "description": "Generate data visualizations and charts using QuickChart.io",
+    "icon": "/assets/quickchart_bar_chart_logo.svg",
+    "authConfig": []
   }
 ]

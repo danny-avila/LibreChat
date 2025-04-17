@@ -114,3 +114,9 @@ uploads/
 # owner
 release/
 !/client/src/@types/i18next.d.ts
+
+# Claude Code
+.claude/config.json
+.devcontainer/.claude/config.json
+files-changed.txt
+merge-files.sh

@@ -1,0 +1,65 @@
+name: Docker Build Only
+
+on:
+  pull_request:
+
+  push:
+    branches:
+      - main
+      - main-upstream
+      - 'dev/main'
+
+  # Allow manual triggering with custom parameters
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - main
+          - main-upstream
+          - upstream-main
+          - dev
+      
+      ref:
+        description: 'Git ref to checkout (branch, tag, or SHA)'
+        required: false
+        default: ''
+        type: string
+        
+      dockerfile:
+        description: 'Dockerfile to use'
+        required: false
+        default: 'Dockerfile.multi'
+        type: string
+          
+jobs:
+  build-docker-image:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+        with:
+          # For manual runs: Use ref if provided, otherwise use branch
+          # For automated runs: Use the triggering ref
+          ref: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.ref || github.event.inputs.branch) || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image (without push)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          # Use specified Dockerfile or default
+          file: ${{ github.event.inputs.dockerfile || 'Dockerfile.multi' }}
+          push: false
+          # Add build cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Output built image to local Docker engine
+          load: true
+          tags: librechat:local-build

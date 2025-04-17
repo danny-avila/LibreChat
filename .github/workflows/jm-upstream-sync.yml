@@ -1,0 +1,30 @@
+name: JM - Upstream Sync
+
+on:
+  # Run on a daily schedule
+  schedule:
+    - cron: '0 0 * * *'  # Runs at midnight UTC every day
+  
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  upstream-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main-upstream
+      
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+      
+      - name: Fetch upstream and force push
+        run: |
+          git remote add upstream https://github.com/danny-avila/LibreChat.git
+          git fetch upstream main
+          git reset --hard upstream/main
+          git push --force origin main-upstream

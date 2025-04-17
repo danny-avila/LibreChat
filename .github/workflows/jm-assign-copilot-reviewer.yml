@@ -1,0 +1,32 @@
+name: Assign GitHub Copilot as PR Reviewer
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+jobs:
+  assign-copilot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign GitHub Copilot as reviewer
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.issue.number;
+            
+            try {
+              await github.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number,
+                reviewers: ['github-copilot']
+              });
+              console.log('GitHub Copilot has been assigned as a reviewer');
+            } catch (error) {
+              console.error('Error assigning GitHub Copilot as a reviewer:', error);
+              // Continue workflow even if reviewer assignment fails
+              return;
+            }
