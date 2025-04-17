@@ -25,6 +25,9 @@ volumeMounts:
 config:
   envSecrets:
     secretRef: librechat-secrets
+  envFrom:
+    - configMapRef:
+        name: librechat-env-config 
   env:
     NODE_ENV: "production"
     ENDPOINTS: "azureOpenAI"
