@@ -856,6 +856,8 @@ export const visionModels = [
   'gpt-4o',
   'gpt-4-turbo',
   'gpt-4-vision',
+  'o4-mini',
+  'o3',
   'o1',
   'gpt-4.1',
   'gpt-4.5',
@@ -1011,6 +1013,10 @@ export enum CacheKeys {
    * Key for in-progress flow states.
    */
   FLOWS = 'flows',
+  /**
+   * Key for pending chat requests (concurrency check)
+   */
+  PENDING_REQ = 'pending_req',
   /**
    * Key for s3 check intervals per user
    */
