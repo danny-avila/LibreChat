@@ -128,7 +128,10 @@ export default function useSSE(
       return {
         ...prev,
         title,
-        conversationId: Constants.PENDING_CONVO as string,
+        conversationId:
+          submission?.isRegenerate || submission?.isEdited || submission?.isResubmission
+            ? prev?.conversationId
+            : (Constants.PENDING_CONVO as string),
       };
     });
     let { payload } = payloadData;
