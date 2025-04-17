@@ -193,7 +193,7 @@ module.exports = {
     try {
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id',
+          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
         )
         .sort({ updatedAt: order === 'asc' ? 1 : -1 })
         .limit(limit + 1)

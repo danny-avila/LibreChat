@@ -165,6 +165,15 @@ describe('getMultiplier', () => {
     );
   });
 
+  it('should return correct multipliers for o4-mini and o3', () => {
+    ['o4-mini', 'o3'].forEach((model) => {
+      const prompt = getMultiplier({ model, tokenType: 'prompt' });
+      const completion = getMultiplier({ model, tokenType: 'completion' });
+      expect(prompt).toBe(tokenValues[model].prompt);
+      expect(completion).toBe(tokenValues[model].completion);
+    });
+  });
+
   it('should return defaultRate if tokenType is provided but not found in tokenValues', () => {
     expect(getMultiplier({ valueKey: '8k', tokenType: 'unknownType' })).toBe(defaultRate);
   });
