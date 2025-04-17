@@ -10,7 +10,7 @@ param (
     [string]$RegistryUsername = "docker-registry",
     [string]$RegistryPassword = "docker-registry",
     [hashtable]$Secrets = @{},
-    [string]$SecretsPrefix = "SECRET_"
+    [hashtable]$EnvVars = @{}
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,31 +96,15 @@ if ($RegistryUsername -and $RegistryPassword) {
 
 # Create application secrets dynamically
 Write-Host "Creating LibreChat application secrets..." -ForegroundColor Cyan
-$secretValues = @{}
-
-# Method 1: Collect secrets from parameters passed directly to the script
-if ($Secrets.Count -gt 0) {
-    foreach ($key in $Secrets.Keys) {
-        if ($Secrets[$key]) {
-            $secretValues[$key] = $Secrets[$key]
-        }
-    }
-}
-
-# Method 2: Collect secrets from environment variables with the specified prefix
-$envSecrets = Get-ChildItem env: | Where-Object { $_.Name.StartsWith($SecretsPrefix) }
-foreach ($envSecret in $envSecrets) {
-    $secretKey = $envSecret.Name.Substring($SecretsPrefix.Length)
-    $secretValues[$secretKey] = $envSecret.Value
-}
 
 # Create the Kubernetes secret if we have any values
-if ($secretValues.Count -gt 0) {
-    $appSecretName = "librechat-secrets"
+$appSecretName = "librechat-secrets"
+if ($Secrets.Count -gt 0) {
+    Write-Host "Creating Kubernetes Secret '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Cyan
     $secretYaml = "apiVersion: v1`nkind: Secret`nmetadata:`n  name: $appSecretName`n  namespace: $Namespace`ntype: Opaque`ndata:`n"
     
-    foreach ($key in $secretValues.Keys) {
-        $value = $secretValues[$key]
+    foreach ($key in $Secrets.Keys) {
+        $value = $Secrets[$key]
         
         # Only encode if not already Base64 encoded
         if (-not (Test-IsBase64 $value)) {
@@ -135,7 +119,24 @@ if ($secretValues.Count -gt 0) {
     }
     
     $secretYaml | kubectl apply -f -
-    Write-Host "Created '$appSecretName' with $($secretValues.Count) values" -ForegroundColor Green
+    Write-Host "Created '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Green
+}
+
+# Create ConfigMap for environment variables if any provided
+$envConfigMapName = "librechat-env-config"
+if ($EnvVars.Count -gt 0) {
+    Write-Host "Creating ConfigMap '$envConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
+    $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $envConfigMapName`n  namespace: $Namespace`ndata:`n"
+    
+    foreach ($key in $EnvVars.Keys) {
+        $value = $EnvVars[$key]
+        # Escape double quotes in value if needed
+        $escapedValue = $value -replace '"', '\"'
+        $configMapYaml += "  $key`: `"$escapedValue`"`n"
+    }
+    
+    $configMapYaml | kubectl apply -f -
+    Write-Host "Created '$envConfigMapName' with $($EnvVars.Count) values" -ForegroundColor Green
 }
 
 # Create TLS secret directly with kubectl
@@ -166,14 +167,34 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "--namespace $Namespace " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
-           "--set `"image.tag=$ImageTag`" " + `
-           "--set `"envFrom[0].secretRef.name=librechat-secrets`" " + `
-           "--force"
+           "--set `"image.tag=$ImageTag`" "
+
+# Add references to secrets and config maps
+$envFromRefs = @()
+
+# Add secret ref if secrets were created
+if ($Secrets.Count -gt 0) {
+    $envFromRefs += "--set `"envFrom[0].secretRef.name=$appSecretName`" "
+}
+
+# Add configmap ref if env vars were created
+if ($EnvVars.Count -gt 0) {
+    $index = $envFromRefs.Count
+    $envFromRefs += "--set `"envFrom[$index].configMapRef.name=$envConfigMapName`" "
+}
+
+# Add all envFrom references to the helm command
+foreach ($ref in $envFromRefs) {
+    $helmCmd += $ref
+}
+
+$helmCmd += "--force"
 
 if ($RegistrySecretParam) {
     $helmCmd = "$helmCmd $RegistrySecretParam"
 }
 
+Write-Host "Executing Helm command: $helmCmd" -ForegroundColor Yellow
 Invoke-Expression $helmCmd
 
 Write-Host "Deployment complete!" -ForegroundColor Green

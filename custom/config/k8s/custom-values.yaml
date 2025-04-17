@@ -29,6 +29,7 @@ config:
     NODE_ENV: "production"
     ENDPOINTS: "azureOpenAI"
     AZURE_OPENAI_INSTANCE: "rg-ch-openai-techagent"
+    ALLOW_PASSWORD_RESET: "true"
     
 resources:
   limits:

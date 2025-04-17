@@ -29,23 +29,50 @@ jobs:
       
     - name: Run build and deploy script
       shell: pwsh
-      env:
-        REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-        REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-        SECRET_MONGO_URI: ${{ secrets.MONGO_URI }}
-        SECRET_CREDS_KEY: ${{ secrets.CREDS_KEY }}
-        SECRET_CREDS_IV: ${{ secrets.CREDS_IV }}
-        SECRET_JWT_SECRET: ${{ secrets.JWT_SECRET }}
-        SECRET_JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
-        SECRET_SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-        SECRET_AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       run: |
+        $secretNames = @(
+          "MONGO_URI",
+          "CREDS_KEY", 
+          "CREDS_IV", 
+          "JWT_SECRET", 
+          "JWT_REFRESH_SECRET", 
+          "SESSION_SECRET", 
+          "AZURE_OPENAI_API_KEY",
+          "EMAIL_PASSWORD",
+          "REGISTRY_USERNAME",
+          "REGISTRY_PASSWORD"
+        )
+
+        $variableNames = @(
+          "EMAIL_FROM",
+          "EMAIL_FROM_NAME",
+          "EMAIL_USERNAME"
+        )
+
+        $secretsHashtable = @{}
+        $envVarsHashtable = @{}
+
+        foreach ($name in $secretNames) {
+          $secretValue = "${{ secrets[format('{0}', name)] }}"
+          if ($secretValue -and $secretValue -ne "") {
+            $secretsHashtable[$name] = $secretValue
+          }
+        }
+
+        foreach ($name in $variableNames) {
+          $varValue = "${{ vars[format('{0}', name)] }}"
+          if ($varValue -and $varValue -ne "") {
+            $envVarsHashtable[$name] = $varValue
+          }
+        }
+
         ./custom/scripts/build-and-deploy.ps1 `
           -ImageName "ts-librechat" `
           -ImageTag "${{ steps.set-tag.outputs.IMAGE_TAG }}" `
           -Registry "registry.totalsoft.local" `
           -Namespace "librechat" `
           -HelmReleaseName "librechat" `
-          -RegistryUsername "$env:REGISTRY_USERNAME" `
-          -RegistryPassword "$env:REGISTRY_PASSWORD" `
-          -SecretsPrefix "SECRET_"
+          -RegistryUsername "${{ secrets.REGISTRY_USERNAME }}" `
+          -RegistryPassword "${{ secrets.REGISTRY_PASSWORD }}" `
+          -Secrets $secretsHashtable `
+          -EnvVars $envVarsHashtable
