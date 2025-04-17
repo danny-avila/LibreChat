@@ -69,7 +69,9 @@ function PromptsCommand({
         label: `${group.command != null && group.command ? `/${group.command} - ` : ''}${
           group.name
         }: ${
-          (group.oneliner?.length ?? 0) > 0 ? group.oneliner : group.productionPrompt?.prompt ?? ''
+          (group.oneliner?.length ?? 0) > 0
+            ? group.oneliner
+            : (group.productionPrompt?.prompt ?? '')
         }`,
         icon: <CategoryIcon category={group.category ?? ''} className="h-5 w-5" />,
       }));
@@ -195,11 +197,11 @@ function PromptsCommand({
       variableGroup={variableGroup}
       setVariableDialogOpen={setVariableDialogOpen}
     >
-      <div className="absolute bottom-14 z-10 w-full space-y-2">
+      <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
             // The user expects focus to transition to the input field when the popover is opened
-            // eslint-disable-next-line jsx-a11y/no-autofocus
+
             autoFocus
             ref={inputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}

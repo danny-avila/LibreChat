@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import compression from 'vite-plugin-compression';
+import { compression } from 'vite-plugin-compression2';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
@@ -82,11 +82,7 @@ export default defineConfig({
     }),
     sourcemapExclude({ excludeNodeModules: true }),
     compression({
-      verbose: true,
-      disable: false,
-      threshold: 10240, // compress files larger than 10KB
-      algorithm: 'gzip',
-      ext: '.gz',
+      threshold: 10240,
     }),
   ],
   publicDir: './public',
@@ -144,7 +140,7 @@ export default defineConfig({
         },
       },
       /**
-       * Ignore "use client" waning since we are not using SSR
+       * Ignore "use client" warning since we are not using SSR
        * @see {@link https://github.com/TanStack/query/pull/5161#issuecomment-1477389761 Preserve 'use client' directives TanStack/query#5161}
        */
       onwarn(warning, warn) {

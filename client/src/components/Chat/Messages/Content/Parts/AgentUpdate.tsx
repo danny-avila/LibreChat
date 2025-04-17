@@ -1,13 +1,16 @@
 import React, { useMemo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
+import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
-import Icon from '~/components/Endpoints/Icon';
+import { useLocalize } from '~/hooks';
 
 interface AgentUpdateProps {
   currentAgentId: string;
 }
 
 const AgentUpdate: React.FC<AgentUpdateProps> = ({ currentAgentId }) => {
+  const localize = useLocalize();
   const agentsMap = useAgentsMapContext() || {};
   const currentAgent = useMemo(() => agentsMap[currentAgentId], [agentsMap, currentAgentId]);
   if (!currentAgentId) {
@@ -23,14 +26,19 @@ const AgentUpdate: React.FC<AgentUpdateProps> = ({ currentAgentId }) => {
       </div>
       <div className="my-4 flex items-center gap-2">
         <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <Icon
-            endpoint={EModelEndpoint.agents}
-            agentName={currentAgent?.name ?? ''}
-            iconURL={currentAgent?.avatar?.filepath}
-            isCreatedByUser={false}
+          <MessageIcon
+            message={
+              {
+                endpoint: EModelEndpoint.agents,
+                isCreatedByUser: false,
+              } as TMessage
+            }
+            agent={currentAgent}
           />
         </div>
-        <div className="font-medium text-text-primary">{currentAgent?.name}</div>
+        <div className="text-base font-medium text-text-primary">
+          {currentAgent?.name || localize('com_ui_agent')}
+        </div>
       </div>
     </div>
   );

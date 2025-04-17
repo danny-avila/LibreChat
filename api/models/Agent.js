@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
-const { SystemRoles } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { agentSchema } = require('@librechat/data-schemas');
+const { SystemRoles, Tools } = require('librechat-data-provider');
+const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
+  require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
@@ -9,7 +11,6 @@ const {
   removeAgentFromAllProjects,
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
-const { agentSchema } = require('@librechat/data-schemas');
 
 const Agent = mongoose.model('agent', agentSchema);
 
@@ -39,12 +40,68 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @param {Object} params
  * @param {ServerRequest} params.req
  * @param {string} params.agent_id
+ * @param {string} params.endpoint
+ * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
+ * @returns {Agent|null} The agent document as a plain object, or null if not found.
+ */
+const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) => {
+  const { model, ...model_parameters } = _m;
+  /** @type {Record<string, FunctionTool>} */
+  const availableTools = req.app.locals.availableTools;
+  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  /** @type {string[]} */
+  const tools = [];
+  if (req.body.ephemeralAgent?.execute_code === true) {
+    tools.push(Tools.execute_code);
+  }
+
+  if (mcpServers.size > 0) {
+    for (const toolName of Object.keys(availableTools)) {
+      if (!toolName.includes(mcp_delimiter)) {
+        continue;
+      }
+      const mcpServer = toolName.split(mcp_delimiter)?.[1];
+      if (mcpServer && mcpServers.has(mcpServer)) {
+        tools.push(toolName);
+      }
+    }
+  }
+
+  const instructions = req.body.promptPrefix;
+  return {
+    id: agent_id,
+    instructions,
+    provider: endpoint,
+    model_parameters,
+    model,
+    tools,
+  };
+};
+
+/**
+ * Load an agent based on the provided ID
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.endpoint
+ * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadAgent = async ({ req, agent_id }) => {
+const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
+  if (!agent_id) {
+    return null;
+  }
+  if (agent_id === EPHEMERAL_AGENT_ID) {
+    return loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+  }
   const agent = await getAgent({
     id: agent_id,
   });
+
+  if (!agent) {
+    return null;
+  }
 
   if (agent.author.toString() === req.user.id) {
     return agent;
@@ -96,9 +153,11 @@ const updateAgent = async (searchParameter, updateData) => {
  */
 const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
-
+  let agent = await getAgent(searchParameter);
+  if (!agent) {
+    throw new Error('Agent not found for adding resource file');
+  }
   const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
-
   await Agent.updateOne(
     {
       id: agent_id,
@@ -111,7 +170,12 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
     },
   );
 
-  const updateData = { $addToSet: { [fileIdsPath]: file_id } };
+  const updateData = {
+    $addToSet: {
+      tools: tool_resource,
+      [fileIdsPath]: file_id,
+    },
+  };
 
   const updatedAgent = await updateAgent(searchParameter, updateData);
   if (updatedAgent) {
@@ -122,16 +186,17 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
 };
 
 /**
- * Removes multiple resource files from an agent in a single update.
+ * Removes multiple resource files from an agent using atomic operations.
  * @param {object} params
  * @param {string} params.agent_id
  * @param {Array<{tool_resource: string, file_id: string}>} params.files
  * @returns {Promise<Agent>} The updated agent.
+ * @throws {Error} If the agent is not found or update fails.
  */
 const removeAgentResourceFiles = async ({ agent_id, files }) => {
   const searchParameter = { id: agent_id };
 
-  // associate each tool resource with the respective file ids array
+  // Group files to remove by resource
   const filesByResource = files.reduce((acc, { tool_resource, file_id }) => {
     if (!acc[tool_resource]) {
       acc[tool_resource] = [];
@@ -140,42 +205,35 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
     return acc;
   }, {});
 
-  // build the update aggregation pipeline wich removes file ids from tool resources array
-  // and eventually deletes empty tool resources
-  const updateData = [];
-  Object.entries(filesByResource).forEach(([resource, fileIds]) => {
-    const toolResourcePath = `tool_resources.${resource}`;
-    const fileIdsPath = `${toolResourcePath}.file_ids`;
-
-    // file ids removal stage
-    updateData.push({
-      $set: {
-        [fileIdsPath]: {
-          $filter: {
-            input: `$${fileIdsPath}`,
-            cond: { $not: [{ $in: ['$$this', fileIds] }] },
-          },
-        },
-      },
-    });
-
-    // empty tool resource deletion stage
-    updateData.push({
-      $set: {
-        [toolResourcePath]: {
-          $cond: [{ $eq: [`$${fileIdsPath}`, []] }, '$$REMOVE', `$${toolResourcePath}`],
-        },
-      },
-    });
-  });
-
-  // return the updated agent or throw if no agent matches
-  const updatedAgent = await updateAgent(searchParameter, updateData);
-  if (updatedAgent) {
-    return updatedAgent;
-  } else {
-    throw new Error('Agent not found for removing resource files');
+  // Step 1: Atomically remove file IDs using $pull
+  const pullOps = {};
+  const resourcesToCheck = new Set();
+  for (const [resource, fileIds] of Object.entries(filesByResource)) {
+    const fileIdsPath = `tool_resources.${resource}.file_ids`;
+    pullOps[fileIdsPath] = { $in: fileIds };
+    resourcesToCheck.add(resource);
   }
+
+  const updatePullData = { $pull: pullOps };
+  const agentAfterPull = await Agent.findOneAndUpdate(searchParameter, updatePullData, {
+    new: true,
+  }).lean();
+
+  if (!agentAfterPull) {
+    // Agent might have been deleted concurrently, or never existed.
+    // Check if it existed before trying to throw.
+    const agentExists = await getAgent(searchParameter);
+    if (!agentExists) {
+      throw new Error('Agent not found for removing resource files');
+    }
+    // If it existed but findOneAndUpdate returned null, something else went wrong.
+    throw new Error('Failed to update agent during file removal (pull step)');
+  }
+
+  // Return the agent state directly after the $pull operation.
+  // Skipping the $unset step for now to simplify and test core $pull atomicity.
+  // Empty arrays might remain, but the removal itself should be correct.
+  return agentAfterPull;
 };
 
 /**

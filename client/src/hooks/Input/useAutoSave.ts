@@ -1,18 +1,47 @@
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { LocalStorageKeys, TFile } from 'librechat-data-provider';
+import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
 
+const clearDraft = debounce((id?: string | null) => {
+  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
+}, 2500);
+
+const encodeBase64 = (plainText: string): string => {
+  try {
+    const textBytes = new TextEncoder().encode(plainText);
+    return btoa(String.fromCharCode(...textBytes));
+  } catch (e) {
+    return '';
+  }
+};
+
+const decodeBase64 = (base64String: string): string => {
+  try {
+    const bytes = atob(base64String);
+    const uint8Array = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      uint8Array[i] = bytes.charCodeAt(i);
+    }
+    return new TextDecoder().decode(uint8Array);
+  } catch (e) {
+    return '';
+  }
+};
+
 export const useAutoSave = ({
-  conversationId,
+  isSubmitting,
+  conversationId: _conversationId,
   textAreaRef,
-  files,
   setFiles,
+  files,
 }: {
+  isSubmitting?: boolean;
   conversationId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
@@ -21,32 +50,11 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const conversationId = isSubmitting ? Constants.PENDING_CONVO : _conversationId;
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
   const { data: fileList } = useGetFiles<TFile[]>();
-
-  const encodeBase64 = (plainText: string): string => {
-    try {
-      const textBytes = new TextEncoder().encode(plainText);
-      return btoa(String.fromCharCode(...textBytes));
-    } catch (e) {
-      return '';
-    }
-  };
-
-  const decodeBase64 = (base64String: string): string => {
-    try {
-      const bytes = atob(base64String);
-      const uint8Array = new Uint8Array(bytes.length);
-      for (let i = 0; i < bytes.length; i++) {
-        uint8Array[i] = bytes.charCodeAt(i);
-      }
-      return new TextDecoder().decode(uint8Array);
-    } catch (e) {
-      return '';
-    }
-  };
 
   const restoreFiles = useCallback(
     (id: string) => {
@@ -102,8 +110,8 @@ export const useAutoSave = ({
         return;
       }
       // Save the draft of the current conversation before switching
-      if (textAreaRef.current.value === '') {
-        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+      if (textAreaRef.current.value === '' || textAreaRef.current.value.length === 1) {
+        clearDraft(id);
       } else {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${id}`,
@@ -122,25 +130,30 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce(() => {
-      if (textAreaRef?.current && textAreaRef.current.value) {
+    const handleInput = debounce((value: string) => {
+      if (value && value.length > 1) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
-          encodeBase64(textAreaRef.current.value),
+          encodeBase64(value),
         );
       } else {
         localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
       }
-    }, 1000);
+    }, 750);
+
+    const eventListener = (e: Event) => {
+      const target = e.target as HTMLTextAreaElement;
+      handleInput(target.value);
+    };
 
     const textArea = textAreaRef?.current;
     if (textArea) {
-      textArea.addEventListener('input', handleInput);
+      textArea.addEventListener('input', eventListener);
     }
 
     return () => {
       if (textArea) {
-        textArea.removeEventListener('input', handleInput);
+        textArea.removeEventListener('input', eventListener);
       }
       handleInput.cancel();
     };
@@ -208,13 +221,4 @@ export const useAutoSave = ({
       );
     }
   }, [files, conversationId, saveDrafts, currentConversationId, fileIds]);
-
-  const clearDraft = useCallback(() => {
-    if (conversationId != null && conversationId) {
-      localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-      localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-    }
-  }, [conversationId]);
-
-  return { clearDraft };
 };

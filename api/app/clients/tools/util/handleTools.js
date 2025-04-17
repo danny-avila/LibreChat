@@ -123,7 +123,7 @@ const getAuthFields = (toolKey) => {
  *
  * @param {object} object
  * @param {string} object.user
- * @param {Agent} [object.agent]
+ * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
  * @param {string} [object.model]
  * @param {EModelEndpoint} [object.endpoint]
  * @param {LoadToolOptions} [object.options]

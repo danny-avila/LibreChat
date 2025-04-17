@@ -1,32 +1,35 @@
 const axios = require('axios');
 const { EventSource } = require('eventsource');
 const { Time, CacheKeys } = require('librechat-data-provider');
+const { MCPManager, FlowStateManager } = require('librechat-mcp');
 const logger = require('./winston');
 
 global.EventSource = EventSource;
 
+/** @type {MCPManager} */
 let mcpManager = null;
 let flowManager = null;
 
 /**
- * @returns {Promise<MCPManager>}
+ * @param {string} [userId] - Optional user ID, to avoid disconnecting the current user.
+ * @returns {MCPManager}
  */
-async function getMCPManager() {
+function getMCPManager(userId) {
   if (!mcpManager) {
-    const { MCPManager } = await import('librechat-mcp');
     mcpManager = MCPManager.getInstance(logger);
+  } else {
+    mcpManager.checkIdleConnections(userId);
   }
   return mcpManager;
 }
 
 /**
- * @param {(key: string) => Keyv} getLogStores
- * @returns {Promise<FlowStateManager>}
+ * @param {Keyv} flowsCache
+ * @returns {FlowStateManager}
  */
-async function getFlowStateManager(getLogStores) {
+function getFlowStateManager(flowsCache) {
   if (!flowManager) {
-    const { FlowStateManager } = await import('librechat-mcp');
-    flowManager = new FlowStateManager(getLogStores(CacheKeys.FLOWS), {
+    flowManager = new FlowStateManager(flowsCache, {
       ttl: Time.ONE_MINUTE * 3,
       logger,
     });

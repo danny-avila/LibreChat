@@ -55,8 +55,7 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
     return response.data;
   } catch (error) {
     const message = '[retrieveRun] Failed to retrieve run data:';
-    logAxiosError({ message, error });
-    throw error;
+    throw new Error(logAxiosError({ message, error }));
   }
 }
 

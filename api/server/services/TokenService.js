@@ -93,11 +93,12 @@ const refreshAccessToken = async ({
     return response.data;
   } catch (error) {
     const message = 'Error refreshing OAuth tokens';
-    logAxiosError({
-      message,
-      error,
-    });
-    throw new Error(message);
+    throw new Error(
+      logAxiosError({
+        message,
+        error,
+      }),
+    );
   }
 };
 
@@ -156,11 +157,12 @@ const getAccessToken = async ({
     return response.data;
   } catch (error) {
     const message = 'Error exchanging OAuth code';
-    logAxiosError({
-      message,
-      error,
-    });
-    throw new Error(message);
+    throw new Error(
+      logAxiosError({
+        message,
+        error,
+      }),
+    );
   }
 };
 

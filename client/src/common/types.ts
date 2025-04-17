@@ -1,10 +1,10 @@
 import { RefObject } from 'react';
-import { FileSources } from 'librechat-data-provider';
-import type * as InputNumberPrimitive from 'rc-input-number';
-import type { ColumnDef } from '@tanstack/react-table';
-import type { SetterOrUpdater } from 'recoil';
-import type * as t from 'librechat-data-provider';
+import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type * as InputNumberPrimitive from 'rc-input-number';
+import type { SetterOrUpdater, RecoilState } from 'recoil';
+import type { ColumnDef } from '@tanstack/react-table';
+import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
 
@@ -29,7 +29,6 @@ export enum STTEndpoints {
 
 export enum TTSEndpoints {
   browser = 'browser',
-  edge = 'edge',
   external = 'external',
 }
 
@@ -46,6 +45,14 @@ export type AudioChunk = {
     chars_durations_ms: number[];
     chars: string[];
   };
+};
+
+export type BadgeItem = {
+  id: string;
+  icon: React.ComponentType<any>;
+  label: string;
+  atom: RecoilState<boolean>;
+  isAvailable: boolean;
 };
 
 export type AssistantListItem = {
@@ -299,7 +306,7 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
-  resubmitFiles?: boolean;
+  isResubmission?: boolean;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
@@ -488,6 +495,16 @@ export interface ExtendedFile {
   metadata?: t.TFile['metadata'];
 }
 
+export interface ModelItemProps {
+  modelName: string;
+  endpoint: EModelEndpoint;
+  isSelected: boolean;
+  onSelect: () => void;
+  onNavigateBack: () => void;
+  icon?: JSX.Element;
+  className?: string;
+}
+
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
 
 export interface SwitcherProps {
@@ -531,7 +548,8 @@ export type TResData = TBaseResData & {
   responseMessage: t.TMessage;
 };
 
-export type TFinalResData = TBaseResData & {
+export type TFinalResData = Omit<TBaseResData, 'conversation'> & {
+  conversation: Partial<t.TConversation> & Pick<t.TConversation, 'conversationId'>;
   requestMessage?: t.TMessage;
   responseMessage?: t.TMessage;
 };

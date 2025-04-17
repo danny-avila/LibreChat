@@ -1,5 +1,5 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes, ErrorTypes } from 'librechat-data-provider';
+import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
@@ -52,6 +52,11 @@ const errorMessages = {
   [ErrorTypes.INPUT_LENGTH]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info } = json;
     return localize('com_error_input_length', { 0: info });
+  },
+  [ErrorTypes.INVALID_AGENT_PROVIDER]: (json: TGenericError, localize: LocalizeFunction) => {
+    const { info } = json;
+    const provider = (alternateName[info] as string | undefined) ?? info;
+    return localize('com_error_invalid_agent_provider', { 0: provider });
   },
   [ErrorTypes.GOOGLE_ERROR]: (json: TGenericError) => {
     const { info } = json;

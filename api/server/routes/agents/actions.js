@@ -58,7 +58,7 @@ router.post('/:agent_id', async (req, res) => {
     }
 
     let { domain } = metadata;
-    domain = await domainParser(req, domain, true);
+    domain = await domainParser(domain, true);
 
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });
@@ -164,7 +164,7 @@ router.delete('/:agent_id/:action_id', async (req, res) => {
       return true;
     });
 
-    domain = await domainParser(req, domain, true);
+    domain = await domainParser(domain, true);
 
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });

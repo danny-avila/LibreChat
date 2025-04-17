@@ -13,7 +13,7 @@ const { logger, getMCPManager } = require('~/config');
  * Creates a general tool for an entire action set.
  *
  * @param {Object} params - The parameters for loading action sets.
- * @param {ServerRequest} params.req - The name of the tool.
+ * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
@@ -37,19 +37,30 @@ async function createMCPTool({ req, toolKey, provider }) {
   }
 
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+
+  if (!req.user?.id) {
+    logger.error(
+      `[MCP][${serverName}][${toolName}] User ID not found on request. Cannot create tool.`,
+    );
+    throw new Error(`User ID not found on request. Cannot create tool for ${toolKey}.`);
+  }
+
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     try {
-      const mcpManager = await getMCPManager();
+      const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
+      const mcpManager = getMCPManager(config?.userId);
       const result = await mcpManager.callTool({
         serverName,
         toolName,
         provider,
         toolArguments,
         options: {
-          signal: config?.signal,
+          userId: config?.configurable?.user_id,
+          signal: derivedSignal,
         },
       });
+
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
       }
@@ -58,8 +69,13 @@ async function createMCPTool({ req, toolKey, provider }) {
       }
       return result;
     } catch (error) {
-      logger.error(`${toolName} MCP server tool call failed`, error);
-      return `${toolName} MCP server tool call failed.`;
+      logger.error(
+        `[MCP][User: ${config?.userId}][${serverName}] Error calling "${toolName}" MCP tool:`,
+        error,
+      );
+      throw new Error(
+        `"${toolKey}" tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
+      );
     }
   };
 

@@ -79,7 +79,7 @@ export default function ExportAndShareMenu({
               <Ariakit.MenuButton
                 id="export-menu-button"
                 aria-label="Export options"
-                className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+                className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
               >
                 <Upload
                   className="icon-md text-text-secondary"
@@ -103,7 +103,6 @@ export default function ExportAndShareMenu({
       <ShareButton
         triggerRef={shareButtonRef}
         conversationId={conversation.conversationId ?? ''}
-        title={conversation.title ?? ''}
         open={showShareDialog}
         onOpenChange={setShowShareDialog}
       />
