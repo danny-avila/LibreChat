@@ -19,7 +19,7 @@ const createViolationInstance = (namespace) => {
 // Serve cache from memory so no need to clear it on startup/exit
 const pending_req = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'pending_req' });
+  : new Keyv({ namespace: CacheKeys.PENDING_REQ });
 
 const config = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
@@ -64,7 +64,7 @@ const abortKeys = isRedisEnabled
 const namespaces = {
   [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
-  pending_req,
+  [CacheKeys.PENDING_REQ]: pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({
     store: keyvMongo,
