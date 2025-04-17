@@ -27,21 +27,6 @@ export type MinimalConversation = Pick<
 
 export type ConversationListResponse = {
   conversations: MinimalConversation[];
-  mwssages?: s.TMessage[];
-  nextCursor: string | null;
-};
-
-export type SearchConversationListParams = {
-  nextCursor?: string | null;
-  pageSize?: number;
-  search: string;
-};
-
-export type SearchConversation = Pick<s.TConversation, 'conversationId' | 'title' | 'user'>;
-
-export type SearchConversationListResponse = {
-  conversations: SearchConversation[];
-  messages: s.TMessage[];
   nextCursor: string | null;
 };
 
@@ -51,6 +36,23 @@ export type ConversationUpdater = (
   conversation: s.TConversation,
 ) => ConversationData;
 
+/* Messages */
+export type MessagesListParams = {
+  cursor?: string | null;
+  sortBy?: 'endpoint' | 'createdAt' | 'updatedAt';
+  sortDirection?: 'asc' | 'desc';
+  pageSize?: number;
+  conversationId?: string;
+  messageId?: string;
+  search?: string;
+};
+
+export type MessagesListResponse = {
+  messages: s.TMessage[];
+  nextCursor: string | null;
+};
+
+/* Shared Links */
 export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
   messages: s.TMessage[];
 };

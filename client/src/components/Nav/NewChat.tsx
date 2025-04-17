@@ -15,8 +15,9 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 const NewChatButtonIcon = React.memo(({ conversation }: { conversation: TConversation | null }) => {
-  const searchQuery = useRecoilValue(store.searchQuery);
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const search = useRecoilValue(store.search);
+  const searchQuery = search.debouncedQuery;
 
   const computedIcon = useMemo(() => {
     if (searchQuery) {
