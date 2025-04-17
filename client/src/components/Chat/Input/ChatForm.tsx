@@ -121,6 +121,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     setFiles,
     textAreaRef,
     conversationId,
+    isSubmitting: isSubmitting || isSubmittingAdded,
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
