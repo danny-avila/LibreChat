@@ -108,7 +108,7 @@ class OpenAIClient extends BaseClient {
       this.checkVisionRequest(this.options.attachments);
     }
 
-    const omniPattern = /\b(o1|o3)\b/i;
+    const omniPattern = /\b(o\d)\b/i;
     this.isOmni = omniPattern.test(this.modelOptions.model);
 
     const { OPENAI_FORCE_PROMPT } = process.env ?? {};
@@ -1236,6 +1236,9 @@ ${convo}
       if (this.isOmni === true && modelOptions.max_tokens != null) {
         modelOptions.max_completion_tokens = modelOptions.max_tokens;
         delete modelOptions.max_tokens;
+      }
+      if (this.isOmni === true && modelOptions.temperature != null) {
+        delete modelOptions.temperature;
       }
 
       if (process.env.OPENAI_ORGANIZATION) {

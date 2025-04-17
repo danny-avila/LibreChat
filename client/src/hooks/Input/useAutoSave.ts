@@ -1,7 +1,8 @@
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { LocalStorageKeys, TFile } from 'librechat-data-provider';
+import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
@@ -34,11 +35,13 @@ const decodeBase64 = (base64String: string): string => {
 };
 
 export const useAutoSave = ({
-  conversationId,
+  isSubmitting,
+  conversationId: _conversationId,
   textAreaRef,
   setFiles,
   files,
 }: {
+  isSubmitting?: boolean;
   conversationId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
@@ -47,6 +50,7 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const conversationId = isSubmitting ? Constants.PENDING_CONVO : _conversationId;
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);

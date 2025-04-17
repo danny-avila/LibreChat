@@ -613,8 +613,17 @@ export default function useEventHandlers({
         messages?.[messages.length - 1] != null &&
         messages[messages.length - 2] != null
       ) {
-        const requestMessage = messages[messages.length - 2];
+        let requestMessage = messages[messages.length - 2];
         const responseMessage = messages[messages.length - 1];
+        if (requestMessage.messageId !== responseMessage.parentMessageId) {
+          // the request message is the parent of response, which we search for backwards
+          for (let i = messages.length - 3; i >= 0; i--) {
+            if (messages[i].messageId === responseMessage.parentMessageId) {
+              requestMessage = messages[i];
+              break;
+            }
+          }
+        }
         finalHandler(
           {
             conversation: {

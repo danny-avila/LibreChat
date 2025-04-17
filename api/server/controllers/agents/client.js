@@ -58,7 +58,7 @@ const payloadParser = ({ req, agent, endpoint }) => {
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
-const noSystemModelRegex = [/\bo1\b/gi];
+const noSystemModelRegex = [/\b(o\d)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
@@ -975,7 +975,7 @@ class AgentClient extends BaseClient {
           })
         )?.llmConfig ?? clientOptions;
     }
-    if (/\b(o1|o3)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+    if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
     }
     try {
