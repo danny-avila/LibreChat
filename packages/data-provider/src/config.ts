@@ -1014,6 +1014,10 @@ export enum CacheKeys {
    */
   FLOWS = 'flows',
   /**
+   * Key for pending chat requests (concurrency check)
+   */
+  PENDING_REQ = 'pending_req',
+  /**
    * Key for s3 check intervals per user
    */
   S3_EXPIRY_INTERVAL = 'S3_EXPIRY_INTERVAL',
