@@ -74,6 +74,7 @@ export function DeleteConversationDialog({
     <OGDialogContent
       title={localize('com_ui_delete_confirm') + ' ' + title}
       className="w-11/12 max-w-md"
+      showCloseButton={false}
     >
       <OGDialogHeader>
         <OGDialogTitle>{localize('com_ui_delete_conversation')}</OGDialogTitle>

@@ -1,4 +1,5 @@
 import type { AssistantsEndpoint } from './schemas';
+import * as q from './types/queries';
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {
@@ -28,8 +29,19 @@ export const userPlugins = () => '/api/user/plugins';
 
 export const deleteUser = () => '/api/user/delete';
 
-export const messages = (conversationId: string, messageId?: string) =>
-  `/api/messages/${conversationId}${messageId != null && messageId ? `/${messageId}` : ''}`;
+export const messages = (params: q.MessagesListParams) => {
+  const { conversationId, messageId, ...rest } = params;
+
+  if (conversationId && messageId) {
+    return `/api/messages/${conversationId}/${messageId}`;
+  }
+
+  if (conversationId) {
+    return `/api/messages/${conversationId}`;
+  }
+
+  return `/api/messages${buildQuery(rest)}`;
+};
 
 const shareRoot = '/api/share';
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
@@ -62,22 +74,7 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (
-  isArchived?: boolean,
-  sortBy?: 'title' | 'createdAt' | 'updatedAt',
-  sortDirection?: 'asc' | 'desc',
-  tags?: string[],
-  search?: string,
-  cursor?: string,
-) => {
-  const params = {
-    isArchived,
-    sortBy,
-    sortDirection,
-    tags,
-    search,
-    cursor,
-  };
+export const conversations = (params: q.ConversationListParams) => {
   return `${conversationsRoot}${buildQuery(params)}`;
 };
 

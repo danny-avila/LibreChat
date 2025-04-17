@@ -16,8 +16,9 @@ import store from '~/store';
 import logo from '/assets/maskable-icon.png';
 
 const NewChatButtonIcon = React.memo(({ conversation }: { conversation: TConversation | null }) => {
-  const searchQuery = useRecoilValue(store.searchQuery);
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const search = useRecoilValue(store.search);
+  const searchQuery = search.debouncedQuery;
 
   const computedIcon = useMemo(() => {
     if (searchQuery) {

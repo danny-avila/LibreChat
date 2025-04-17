@@ -29,6 +29,7 @@ const useNavigateToConvo = (index = 0) => {
         dataService.getConversationById(conversationId),
       );
       logger.log('conversation', 'Fetched fresh conversation data', data);
+      await queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
       setConversation(data);
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
@@ -38,6 +39,7 @@ const useNavigateToConvo = (index = 0) => {
   const navigateToConvo = (
     conversation?: TConversation | null,
     _resetLatestMessage = true,
+    /** Likely need to remove this since it happens after fetching conversation data */
     invalidateMessages = false,
   ) => {
     if (!conversation) {

@@ -216,8 +216,8 @@ export default function DataTable<TData, TValue>({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  const search = useRecoilValue(store.search);
   const [isDeleting, setIsDeleting] = useState(false);
-  const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -331,7 +331,6 @@ export default function DataTable<TData, TValue>({
       const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
       await onDelete(itemsToDelete);
       setRowSelection({});
-      // await fetchNextPage?.({ pageParam: lastPage?.nextCursor });
     } finally {
       setIsDeleting(false);
     }
@@ -375,7 +374,7 @@ export default function DataTable<TData, TValue>({
             localize={localize}
           />
         )}
-        {filterColumn !== undefined && table.getColumn(filterColumn) && isSearchEnabled && (
+        {filterColumn !== undefined && table.getColumn(filterColumn) && search.enabled && (
           <div className="relative flex-1">
             <AnimatedSearchInput
               value={searchTerm}

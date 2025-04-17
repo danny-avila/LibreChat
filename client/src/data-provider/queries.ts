@@ -16,11 +16,10 @@ import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
-  TPlugin,
   ConversationListResponse,
   ConversationListParams,
-  SearchConversationListResponse,
-  SearchConversationListParams,
+  MessagesListParams,
+  MessagesListResponse,
   Assistant,
   AssistantListParams,
   AssistantListResponse,
@@ -30,6 +29,7 @@ import type {
   SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
+import type { ConversationCursorData } from '~/utils/convos';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -68,9 +68,9 @@ export const useGetConvoIdQuery = (
     [QueryKeys.conversation, id],
     () => {
       // Try to find in all fetched infinite pages
-      const convosQuery = queryClient.getQueryData<
-        InfiniteData<import('~/utils').ConversationCursorData>
-          >([QueryKeys.allConversations]);
+      const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
+        QueryKeys.allConversations,
+      ]);
       const found = convosQuery?.pages
         .flatMap((page) => page.conversations)
         .find((c) => c.conversationId === id);
@@ -82,30 +82,6 @@ export const useGetConvoIdQuery = (
       return dataService.getConversationById(id);
     },
     {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
-
-export const useSearchInfiniteQuery = (
-  params?: SearchConversationListParams,
-  config?: UseInfiniteQueryOptions<SearchConversationListResponse, unknown>,
-) => {
-  return useInfiniteQuery<SearchConversationListResponse, unknown>(
-    [QueryKeys.searchConversations, params],
-    ({ pageParam = null }) =>
-      dataService
-        .listConversations({
-          ...params,
-          search: params?.search ?? '',
-          cursor: pageParam?.toString(),
-        })
-        .then((res) => ({ ...res })) as Promise<SearchConversationListResponse>,
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
@@ -134,7 +110,36 @@ export const useConversationsInfiniteQuery = (
         search,
         cursor: pageParam?.toString(),
       }),
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes
+    ...config,
+  });
+};
+
+export const useMessagesInfiniteQuery = (
+  params: MessagesListParams,
+  config?: UseInfiniteQueryOptions<MessagesListResponse, unknown>,
+) => {
+  const { sortBy, sortDirection, pageSize, conversationId, messageId, search } = params;
+
+  return useInfiniteQuery<MessagesListResponse>({
+    queryKey: [
+      QueryKeys.messages,
+      { sortBy, sortDirection, pageSize, conversationId, messageId, search },
+    ],
+    queryFn: ({ pageParam }) =>
+      dataService.listMessages({
+        sortBy,
+        sortDirection,
+        pageSize,
+        conversationId,
+        messageId,
+        search,
+        cursor: pageParam?.toString(),
+      }),
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
     cacheTime: 30 * 60 * 1000, // 30 minutes
@@ -159,7 +164,7 @@ export const useSharedLinksQuery = (
         sortBy,
         sortDirection,
       }),
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
     cacheTime: 30 * 60 * 1000, // 30 minutes

@@ -1,10 +1,10 @@
+import { forwardRef, useState, useCallback, useMemo, useEffect, Ref } from 'react';
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
-import { useLocation } from 'react-router-dom';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -17,29 +17,34 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const localize = useLocalize();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { isSmallScreen } = props;
 
   const [text, setText] = useState('');
   const [showClearIcon, setShowClearIcon] = useState(false);
 
   const { newConversation } = useNewConvo();
-  const clearConvoState = store.useClearConvoState();
-  const setSearchQuery = useSetRecoilState(store.searchQuery);
-  const setIsSearching = useSetRecoilState(store.isSearching);
-  const setIsSearchTyping = useSetRecoilState(store.isSearchTyping);
+  const setSearchState = useSetRecoilState(store.search);
+  const search = useRecoilValue(store.search);
 
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {
       newConversation({ disableFocus: true });
+      navigate('/c/new', { replace: true });
     }
-  }, [newConversation, location.pathname]);
+  }, [newConversation, location.pathname, navigate]);
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
-    setSearchQuery('');
-    clearSearch();
     setText('');
-  }, [setSearchQuery, clearSearch]);
+    setSearchState((prev) => ({
+      ...prev,
+      query: '',
+      debouncedQuery: '',
+      isTyping: false,
+    }));
+    clearSearch();
+  }, [setSearchState, clearSearch]);
 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const { value } = e.target as HTMLInputElement;
@@ -50,33 +55,47 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const sendRequest = useCallback(
     (value: string) => {
-      setSearchQuery(value);
       if (!value) {
         return;
       }
       queryClient.invalidateQueries([QueryKeys.messages]);
-      clearConvoState();
     },
-    [queryClient, clearConvoState, setSearchQuery],
+    [queryClient],
   );
 
-  const debouncedSendRequest = useMemo(
+  const debouncedSetDebouncedQuery = useMemo(
     () =>
       debounce((value: string) => {
+        setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
         sendRequest(value);
-      }, 350),
-    [sendRequest, setIsSearchTyping],
+      }, 500),
+    [setSearchState, sendRequest],
   );
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setShowClearIcon(value.length > 0);
     setText(value);
-    setSearchQuery(value);
-    setIsSearchTyping(true);
-    // debounce only the API call
-    debouncedSendRequest(value);
+    setSearchState((prev) => ({
+      ...prev,
+      query: value,
+      isTyping: true,
+    }));
+    debouncedSetDebouncedQuery(value);
+    if (value.length > 0 && location.pathname !== '/search') {
+      navigate('/search', { replace: true });
+    } else if (value.length === 0 && location.pathname === '/search') {
+      navigate('/c/new', { replace: true });
+    }
   };
+
+  // Automatically set isTyping to false when loading is done and debouncedQuery matches query
+  // (prevents stuck loading state if input is still focused)
+  useEffect(() => {
+    if (search.isTyping && !search.isSearching && search.debouncedQuery === search.query) {
+      setSearchState((prev) => ({ ...prev, isTyping: false }));
+    }
+  }, [search.isTyping, search.isSearching, search.debouncedQuery, search.query, setSearchState]);
 
   return (
     <div
@@ -98,8 +117,8 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         aria-label={localize('com_nav_search_placeholder')}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
-        onFocus={() => setIsSearching(true)}
-        onBlur={() => setIsSearching(true)}
+        onFocus={() => setSearchState((prev) => ({ ...prev, isSearching: true }))}
+        onBlur={() => setSearchState((prev) => ({ ...prev, isSearching: false }))}
         autoComplete="off"
         dir="auto"
       />
