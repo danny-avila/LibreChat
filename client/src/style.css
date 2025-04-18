@@ -2518,7 +2518,7 @@ html {
   border-width: 1px;
   border-style: solid;
   border-color: var(--border-light);
-  background-color: hsl(var(--background));
+  background-color: var(--surface-primary);
   padding: 0.5rem;
   color: var(--text-primary);
   box-shadow:
@@ -2542,7 +2542,7 @@ html {
 }
 
 .popover-ui:where(.dark, .dark *) {
-  background-color: hsl(var(--secondary));
+  background-color: var(--surface-secondary);
   color: var(--text-secondary);
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.25),
