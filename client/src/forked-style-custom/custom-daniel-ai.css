@@ -2,13 +2,17 @@
 
 /* Hide the model icons in the sidebar */
 
-[data-testid='convo-icon'] {
+/* [data-testid='convo-icon'] {
   display: none !important;
-}
+} */
 
 /* [data-testid='convo-item'] > div:first-of-type {
   display: none !important;
 } */
+
+[data-testid='convo-item'] > div:first-of-type > div:first-of-type{ 
+  display: none !important;
+}
 
 /* Adjust footer padding */
 /* div[role='contentinfo'] {
