@@ -217,6 +217,36 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 4,
   },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: anthropicSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking_budget',
+    descriptionCode: true,
+    type: 'number',
+    component: 'input',
+    default: anthropicSettings.thinkingBudget.default,
+    range: {
+      min: anthropicSettings.thinkingBudget.min,
+      max: anthropicSettings.thinkingBudget.max,
+      step: anthropicSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
+    columnSpan: 2,
+  },
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -491,6 +521,8 @@ const openAI: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
+  openAIParams.thinking,
+  openAIParams.thinkingBudget,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -508,6 +540,8 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.presence_penalty,
   baseDefinitions.stop,
   openAIParams.reasoning_effort,
+  openAIParams.thinking,
+  openAIParams.thinkingBudget,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
 ];

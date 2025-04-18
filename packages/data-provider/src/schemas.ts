@@ -1019,6 +1019,8 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  thinking: true,
+  thinkingBudget: true,
 });
 
 export const openAISchema = openAIBaseSchema
