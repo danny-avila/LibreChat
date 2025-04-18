@@ -27,6 +27,12 @@ volumeMounts:
   - name: github-env
     mountPath: /app/github-env
 
+command: ["/bin/bash", "-c"]
+args:
+  - |
+    source /app/github-env/load-env.sh
+    exec node /app/server/start.js
+
 config:
   envSecrets:
     secretRef: librechat-secrets
