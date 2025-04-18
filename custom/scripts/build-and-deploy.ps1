@@ -124,23 +124,11 @@ if ($EnvVars.Count -gt 0) {
     Write-Host "Creating ConfigMap '$githubEnvConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
     $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $githubEnvConfigMapName`n  namespace: $Namespace`ndata:`n"
     
-    # First add individual environment variables
     foreach ($key in $EnvVars.Keys) {
         $value = $EnvVars[$key]
         # Escape double quotes in value if needed
         $escapedValue = $value -replace '"', '\"'
         $configMapYaml += "  $key`: `"$escapedValue`"`n"
-    }
-    
-    # Then add a load-env.sh script that can be sourced to load all variables
-    $loadEnvScript = "#!/bin/sh`n"
-    foreach ($key in $EnvVars.Keys) {
-        $value = $EnvVars[$key] -replace '"', '\"' -replace '`', '``' -replace '$', '\$'
-        $loadEnvScript += "export $key=`"$value`"`n"
-    }
-    $configMapYaml += "  load-env.sh: |`n"
-    foreach ($line in $loadEnvScript -split "`n") {
-        $configMapYaml += "    $line`n"
     }
     
     $configMapYaml | kubectl apply -f -
