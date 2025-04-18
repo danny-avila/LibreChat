@@ -98,6 +98,10 @@ Write-Host "Creating LibreChat application secrets..." -ForegroundColor Cyan
 
 $appSecretName = "librechat-secrets"
 if ($Secrets.Count -gt 0) {
+    # Delete the existing secret if it exists
+    Write-Host "Deleting existing application secret if it exists..." -ForegroundColor Cyan
+    kubectl delete secret $appSecretName --namespace $Namespace --ignore-not-found
+    
     Write-Host "Creating Kubernetes Secret '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Cyan
     $secretYaml = "apiVersion: v1`nkind: Secret`nmetadata:`n  name: $appSecretName`n  namespace: $Namespace`ntype: Opaque`ndata:`n"
     
@@ -121,6 +125,10 @@ if ($Secrets.Count -gt 0) {
 
 $githubEnvConfigMapName = "$HelmReleaseName-github-env"
 if ($EnvVars.Count -gt 0) {
+    # Delete the existing ConfigMap if it exists
+    Write-Host "Deleting existing environment ConfigMap if it exists..." -ForegroundColor Cyan
+    kubectl delete configmap $githubEnvConfigMapName --namespace $Namespace --ignore-not-found
+    
     Write-Host "Creating ConfigMap '$githubEnvConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
     $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $githubEnvConfigMapName`n  namespace: $Namespace`ndata:`n"
     
@@ -132,7 +140,7 @@ if ($EnvVars.Count -gt 0) {
     }
     
     $configMapYaml | kubectl apply -f -
-    Write-Host "Created '$githubEnvConfigMapName' with $($EnvVars.Count) values and load-env.sh script" -ForegroundColor Green
+    Write-Host "Created '$githubEnvConfigMapName' with $($EnvVars.Count) values" -ForegroundColor Green
 }
 
 # Create TLS secret directly with kubectl
@@ -142,6 +150,11 @@ $KeyFile = Join-Path -Path $ProjectRoot -ChildPath "custom\cert\wildcard-totalso
 if ((Test-Path $CertFile) -and (Test-Path $KeyFile)) {
     Write-Host "Creating TLS secret for ingress..." -ForegroundColor Cyan
     $tlsSecretName = "totalsoft-wildcard-tls"
+    
+    # Delete the existing TLS secret if it exists
+    Write-Host "Deleting existing TLS secret if it exists..." -ForegroundColor Cyan
+    kubectl delete secret $tlsSecretName --namespace $Namespace --ignore-not-found
+    
     $secretCmd = "kubectl create secret tls $tlsSecretName --namespace $Namespace --cert=`"$CertFile`" --key=`"$KeyFile`" --dry-run=client -o yaml"
     Invoke-Expression "$secretCmd | kubectl apply -f -"
     Write-Host "TLS secret '$tlsSecretName' created successfully" -ForegroundColor Green
@@ -154,6 +167,11 @@ else {
 # Create ConfigMap for librechat.yaml configuration
 Write-Host "Creating LibreChat configuration ConfigMap..." -ForegroundColor Cyan
 $LibreChatConfigPath = Join-Path -Path $ProjectRoot -ChildPath "custom\config\k8s\configmaps\librechat.totalsoft.yaml"
+
+# Delete the existing ConfigMap if it exists
+Write-Host "Deleting existing LibreChat configuration ConfigMap if it exists..." -ForegroundColor Cyan
+kubectl delete configmap librechat-config --namespace $Namespace --ignore-not-found
+
 kubectl create configmap librechat-config --from-file=librechat.yaml="$LibreChatConfigPath" -n $Namespace --dry-run=client -o yaml | kubectl apply -f -
 
 # Deploy or upgrade using Helm

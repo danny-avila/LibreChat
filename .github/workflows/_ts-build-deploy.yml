@@ -47,6 +47,7 @@ jobs:
           "EMAIL_FROM" = "${{ vars.EMAIL_FROM }}"
           "EMAIL_FROM_NAME" = "${{ vars.EMAIL_FROM_NAME }}"
           "EMAIL_USERNAME" = "${{ vars.EMAIL_USERNAME }}"
+          "EMAIL_SERVICE" = "${{ vars.EMAIL_SERVICE }}"
         }
 
         ./custom/scripts/build-and-deploy.ps1 `
