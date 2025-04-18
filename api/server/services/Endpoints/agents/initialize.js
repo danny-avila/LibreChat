@@ -1,5 +1,6 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
+  Constants,
   ErrorTypes,
   EModelEndpoint,
   getResponseSender,
@@ -158,14 +159,20 @@ const initializeAgentOptions = async ({
     currentFiles,
     agent.tool_resources,
   );
+
+  const provider = agent.provider;
   const { tools, toolContextMap } = await loadAgentTools({
     req,
     res,
-    agent,
+    agent: {
+      id: agent.id,
+      tools: agent.tools,
+      provider,
+      model: agent.model,
+    },
     tool_resources,
   });
 
-  const provider = agent.provider;
   agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
@@ -322,10 +329,14 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    endpoint: EModelEndpoint.agents,
     attachments: primaryConfig.attachments,
+    endpointType: endpointOption.endpointType,
     maxContextTokens: primaryConfig.maxContextTokens,
     resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
+    endpoint:
+      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
+        ? primaryConfig.endpoint
+        : EModelEndpoint.agents,
   });
 
   return { client };

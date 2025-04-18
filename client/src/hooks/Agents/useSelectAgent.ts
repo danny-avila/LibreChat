@@ -4,8 +4,9 @@ import { EModelEndpoint, isAgentsEndpoint, Constants, QueryKeys } from 'librecha
 import type { TConversation, TPreset, Agent } from 'librechat-data-provider';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
-import { useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useGetAgentByIdQuery } from '~/data-provider';
+import { logger } from '~/utils';
 
 export default function useSelectAgent() {
   const queryClient = useQueryClient();
@@ -22,6 +23,7 @@ export default function useSelectAgent() {
 
   const updateConversation = useCallback(
     (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {
+      logger.log('conversation', 'Updating conversation with agent', agent);
       if (isAgentsEndpoint(conversation?.endpoint)) {
         const currentConvo = getDefaultConversation({
           conversation: { ...(conversation ?? {}), agent_id: agent.id },

@@ -1,3 +1,4 @@
+// abortMiddleware.js
 const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
@@ -7,6 +8,68 @@ const abortControllers = require('./abortControllers');
 const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
+
+const abortDataMap = new WeakMap();
+
+function cleanupAbortController(abortKey) {
+  if (!abortControllers.has(abortKey)) {
+    return false;
+  }
+
+  const { abortController } = abortControllers.get(abortKey);
+
+  if (!abortController) {
+    abortControllers.delete(abortKey);
+    return true;
+  }
+
+  // 1. Check if this controller has any composed signals and clean them up
+  try {
+    // This creates a temporary composed signal to use for cleanup
+    const composedSignal = AbortSignal.any([abortController.signal]);
+
+    // Get all event types - in practice, AbortSignal typically only uses 'abort'
+    const eventTypes = ['abort'];
+
+    // First, execute a dummy listener removal to handle potential composed signals
+    for (const eventType of eventTypes) {
+      const dummyHandler = () => {};
+      composedSignal.addEventListener(eventType, dummyHandler);
+      composedSignal.removeEventListener(eventType, dummyHandler);
+
+      const listeners = composedSignal.listeners?.(eventType) || [];
+      for (const listener of listeners) {
+        composedSignal.removeEventListener(eventType, listener);
+      }
+    }
+  } catch (e) {
+    logger.debug(`Error cleaning up composed signals: ${e}`);
+  }
+
+  // 2. Abort the controller if not already aborted
+  if (!abortController.signal.aborted) {
+    abortController.abort();
+  }
+
+  // 3. Remove from registry
+  abortControllers.delete(abortKey);
+
+  // 4. Clean up any data stored in the WeakMap
+  if (abortDataMap.has(abortController)) {
+    abortDataMap.delete(abortController);
+  }
+
+  // 5. Clean up function references on the controller
+  if (abortController.getAbortData) {
+    abortController.getAbortData = null;
+  }
+
+  if (abortController.abortCompletion) {
+    abortController.abortCompletion = null;
+  }
+
+  return true;
+}
 
 async function abortMessage(req, res) {
   let { abortKey, endpoint } = req.body;
@@ -29,24 +92,24 @@ async function abortMessage(req, res) {
   if (!abortController) {
     return res.status(204).send({ message: 'Request not found' });
   }
-  const finalEvent = await abortController.abortCompletion();
+
+  const finalEvent = await abortController.abortCompletion?.();
   logger.debug(
     `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
       JSON.stringify({ abortKey }),
   );
-  abortControllers.delete(abortKey);
+  cleanupAbortController(abortKey);
 
   if (res.headersSent && finalEvent) {
     return sendMessage(res, finalEvent);
   }
 
   res.setHeader('Content-Type', 'application/json');
-
   res.send(JSON.stringify(finalEvent));
 }
 
-const handleAbort = () => {
-  return async (req, res) => {
+const handleAbort = function () {
+  return async function (req, res) {
     try {
       if (isEnabled(process.env.LIMIT_CONCURRENT_MESSAGES)) {
         await clearPendingReq({ userId: req.user.id });
@@ -62,8 +125,48 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
   const abortController = new AbortController();
   const { endpointOption } = req.body;
 
+  // Store minimal data in WeakMap to avoid circular references
+  abortDataMap.set(abortController, {
+    getAbortDataFn: getAbortData,
+    userId: req.user.id,
+    endpoint: endpointOption.endpoint,
+    iconURL: endpointOption.iconURL,
+    model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+  });
+
+  // Replace the direct function reference with a wrapper that uses WeakMap
   abortController.getAbortData = function () {
-    return getAbortData();
+    const data = abortDataMap.get(this);
+    if (!data || typeof data.getAbortDataFn !== 'function') {
+      return {};
+    }
+
+    try {
+      const result = data.getAbortDataFn();
+
+      // Create a copy without circular references
+      const cleanResult = { ...result };
+
+      // If userMessagePromise exists, break its reference to client
+      if (
+        cleanResult.userMessagePromise &&
+        typeof cleanResult.userMessagePromise.then === 'function'
+      ) {
+        // Create a new promise that fulfills with the same result but doesn't reference the original
+        const originalPromise = cleanResult.userMessagePromise;
+        cleanResult.userMessagePromise = new Promise((resolve, reject) => {
+          originalPromise.then(
+            (result) => resolve({ ...result }),
+            (error) => reject(error),
+          );
+        });
+      }
+
+      return cleanResult;
+    } catch (err) {
+      logger.error('[abortController.getAbortData] Error:', err);
+      return {};
+    }
   };
 
   /**
@@ -74,6 +177,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     sendMessage(res, { message: userMessage, created: true });
 
     const abortKey = userMessage?.conversationId ?? req.user.id;
+    getReqData({ abortKey });
     const prevRequest = abortControllers.get(abortKey);
     const { overrideUserMessageId } = req?.body ?? {};
 
@@ -81,34 +185,74 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       const data = prevRequest.abortController.getAbortData();
       getReqData({ userMessage: data?.userMessage });
       const addedAbortKey = `${abortKey}:${responseMessageId}`;
-      abortControllers.set(addedAbortKey, { abortController, ...endpointOption });
-      res.on('finish', function () {
-        abortControllers.delete(addedAbortKey);
-      });
+
+      // Store minimal options
+      const minimalOptions = {
+        endpoint: endpointOption.endpoint,
+        iconURL: endpointOption.iconURL,
+        model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+      };
+
+      abortControllers.set(addedAbortKey, { abortController, ...minimalOptions });
+
+      // Use a simple function for cleanup to avoid capturing context
+      const cleanupHandler = () => {
+        try {
+          cleanupAbortController(addedAbortKey);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      };
+
+      res.on('finish', cleanupHandler);
       return;
     }
 
-    abortControllers.set(abortKey, { abortController, ...endpointOption });
+    // Store minimal options
+    const minimalOptions = {
+      endpoint: endpointOption.endpoint,
+      iconURL: endpointOption.iconURL,
+      model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+    };
 
-    res.on('finish', function () {
-      abortControllers.delete(abortKey);
-    });
+    abortControllers.set(abortKey, { abortController, ...minimalOptions });
+
+    // Use a simple function for cleanup to avoid capturing context
+    const cleanupHandler = () => {
+      try {
+        cleanupAbortController(abortKey);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    };
+
+    res.on('finish', cleanupHandler);
   };
 
+  // Define abortCompletion without capturing the entire parent scope
   abortController.abortCompletion = async function () {
-    abortController.abort();
+    this.abort();
+
+    // Get data from WeakMap
+    const ctrlData = abortDataMap.get(this);
+    if (!ctrlData || !ctrlData.getAbortDataFn) {
+      return { final: true, conversation: {}, title: 'New Chat' };
+    }
+
+    // Get abort data using stored function
     const { conversationId, userMessage, userMessagePromise, promptTokens, ...responseData } =
-      getAbortData();
+      ctrlData.getAbortDataFn();
+
     const completionTokens = await countTokens(responseData?.text ?? '');
-    const user = req.user.id;
+    const user = ctrlData.userId;
 
     const responseMessage = {
       ...responseData,
       conversationId,
       finish_reason: 'incomplete',
-      endpoint: endpointOption.endpoint,
-      iconURL: endpointOption.iconURL,
-      model: endpointOption.modelOptions?.model ?? endpointOption.model_parameters?.model,
+      endpoint: ctrlData.endpoint,
+      iconURL: ctrlData.iconURL,
+      model: ctrlData.modelOptions?.model ?? ctrlData.model_parameters?.model,
       unfinished: false,
       error: false,
       isCreatedByUser: false,
@@ -130,10 +274,12 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     if (userMessagePromise) {
       const resolved = await userMessagePromise;
       conversation = resolved?.conversation;
+      // Break reference to promise
+      resolved.conversation = null;
     }
 
     if (!conversation) {
-      conversation = await getConvo(req.user.id, conversationId);
+      conversation = await getConvo(user, conversationId);
     }
 
     return {
@@ -218,11 +364,12 @@ const handleAbortError = async (res, req, error, data) => {
       };
     }
 
+    // Create a simple callback without capturing parent scope
     const callback = async () => {
-      if (abortControllers.has(conversationId)) {
-        const { abortController } = abortControllers.get(conversationId);
-        abortController.abort();
-        abortControllers.delete(conversationId);
+      try {
+        cleanupAbortController(conversationId);
+      } catch (e) {
+        // Ignore cleanup errors
       }
     };
 
@@ -243,6 +390,7 @@ const handleAbortError = async (res, req, error, data) => {
 
 module.exports = {
   handleAbort,
-  createAbortController,
   handleAbortError,
+  createAbortController,
+  cleanupAbortController,
 };

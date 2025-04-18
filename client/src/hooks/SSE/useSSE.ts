@@ -12,7 +12,7 @@ import {
   removeNullishValues,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { EventSubmission, TMessage, TPayload, TSubmission } from 'librechat-data-provider';
+import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -250,5 +250,6 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 }

@@ -18,7 +18,9 @@ const AttachFile = ({ disabled }: AttachFileProps) => {
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { handleFileChange } = useFileHandling();
+  const { handleFileChange } = useFileHandling({
+    overrideEndpoint: EModelEndpoint.agents,
+  });
 
   const capabilities = useMemo(
     () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],

@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
-const { SystemRoles } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { agentSchema } = require('@librechat/data-schemas');
+const { SystemRoles, Tools } = require('librechat-data-provider');
+const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
+  require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
@@ -9,7 +11,6 @@ const {
   removeAgentFromAllProjects,
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
-const { agentSchema } = require('@librechat/data-schemas');
 
 const Agent = mongoose.model('agent', agentSchema);
 
@@ -39,9 +40,61 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @param {Object} params
  * @param {ServerRequest} params.req
  * @param {string} params.agent_id
+ * @param {string} params.endpoint
+ * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
+ * @returns {Agent|null} The agent document as a plain object, or null if not found.
+ */
+const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) => {
+  const { model, ...model_parameters } = _m;
+  /** @type {Record<string, FunctionTool>} */
+  const availableTools = req.app.locals.availableTools;
+  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  /** @type {string[]} */
+  const tools = [];
+  if (req.body.ephemeralAgent?.execute_code === true) {
+    tools.push(Tools.execute_code);
+  }
+
+  if (mcpServers.size > 0) {
+    for (const toolName of Object.keys(availableTools)) {
+      if (!toolName.includes(mcp_delimiter)) {
+        continue;
+      }
+      const mcpServer = toolName.split(mcp_delimiter)?.[1];
+      if (mcpServer && mcpServers.has(mcpServer)) {
+        tools.push(toolName);
+      }
+    }
+  }
+
+  const instructions = req.body.promptPrefix;
+  return {
+    id: agent_id,
+    instructions,
+    provider: endpoint,
+    model_parameters,
+    model,
+    tools,
+  };
+};
+
+/**
+ * Load an agent based on the provided ID
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.endpoint
+ * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadAgent = async ({ req, agent_id }) => {
+const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
+  if (!agent_id) {
+    return null;
+  }
+  if (agent_id === EPHEMERAL_AGENT_ID) {
+    return loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+  }
   const agent = await getAgent({
     id: agent_id,
   });
@@ -100,9 +153,11 @@ const updateAgent = async (searchParameter, updateData) => {
  */
 const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
-
+  let agent = await getAgent(searchParameter);
+  if (!agent) {
+    throw new Error('Agent not found for adding resource file');
+  }
   const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
-
   await Agent.updateOne(
     {
       id: agent_id,
@@ -115,7 +170,12 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
     },
   );
 
-  const updateData = { $addToSet: { [fileIdsPath]: file_id } };
+  const updateData = {
+    $addToSet: {
+      tools: tool_resource,
+      [fileIdsPath]: file_id,
+    },
+  };
 
   const updatedAgent = await updateAgent(searchParameter, updateData);
   if (updatedAgent) {

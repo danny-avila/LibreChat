@@ -11,31 +11,29 @@ import {
   tMessageSchema,
   tConvoUpdateSchema,
   ContentTypes,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type {
-  TMessage,
-  TConversation,
-  EventSubmission,
-  ConversationData,
-} from 'librechat-data-provider';
-import type { SetterOrUpdater, Resetter } from 'recoil';
+import type { TMessage, TConversation, EventSubmission } from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
+import type { InfiniteData } from '@tanstack/react-query';
 import type { TGenTitleMutation } from '~/data-provider';
+import type { SetterOrUpdater, Resetter } from 'recoil';
+import type { ConversationCursorData } from '~/utils';
 import {
   scrollToEnd,
-  addConversation,
+  addConvoToAllQueries,
+  updateConvoInAllQueries,
+  removeConvoFromAllQueries,
+  findConversationInInfinite,
   getAllContentText,
-  deleteConversation,
-  updateConversation,
-  getConversationById,
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
+import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
-import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
@@ -127,6 +125,37 @@ const createErrorMessage = ({
   return tMessageSchema.parse(errorMessage);
 };
 
+export const getConvoTitle = ({
+  parentId,
+  queryClient,
+  currentTitle,
+  conversationId,
+}: {
+  parentId?: string | null;
+  queryClient: ReturnType<typeof useQueryClient>;
+  currentTitle?: string | null;
+  conversationId?: string | null;
+}): string | null | undefined => {
+  if (
+    parentId !== Constants.NO_PARENT &&
+    (currentTitle?.toLowerCase().includes('new chat') ?? false)
+  ) {
+    const currentConvo = queryClient.getQueryData<TConversation>([
+      QueryKeys.conversation,
+      conversationId,
+    ]);
+    if (currentConvo?.title) {
+      return currentConvo.title;
+    }
+    const convos = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
+      QueryKeys.allConversations,
+    ]);
+    const cachedConvo = findConversationInInfinite(convos, conversationId ?? '');
+    return cachedConvo?.title ?? currentConvo?.title ?? null;
+  }
+  return currentTitle;
+};
+
 export default function useEventHandlers({
   genTitle,
   setMessages,
@@ -140,8 +169,9 @@ export default function useEventHandlers({
   resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
   const { announcePolite } = useLiveAnnouncer();
+  const applyAgentTemplate = useApplyNewAgentTemplate();
+  const setAbortScroll = useSetRecoilState(store.abortScroll);
 
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
@@ -184,7 +214,6 @@ export default function useEventHandlers({
             text,
             plugin: plugin ?? null,
             plugins: plugins ?? [],
-            // unfinished: true
           },
         ]);
       } else {
@@ -196,7 +225,6 @@ export default function useEventHandlers({
             text,
             plugin: plugin ?? null,
             plugins: plugins ?? [],
-            // unfinished: true
           },
         ]);
       }
@@ -208,7 +236,6 @@ export default function useEventHandlers({
     (data: TResData, submission: EventSubmission) => {
       const { requestMessage, responseMessage, conversation } = data;
       const { messages, isRegenerate = false } = submission;
-
       const convoUpdate =
         (conversation as TConversation | null) ?? (submission.conversation as TConversation);
 
@@ -227,12 +254,7 @@ export default function useEventHandlers({
 
       const isNewConvo = conversation.conversationId !== submission.conversation.conversationId;
       if (isNewConvo) {
-        queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
-          if (!convoData) {
-            return convoData;
-          }
-          return deleteConversation(convoData, submission.conversation.conversationId as string);
-        });
+        removeConvoFromAllQueries(queryClient, submission.conversation.conversationId as string);
       }
 
       // refresh title
@@ -244,11 +266,7 @@ export default function useEventHandlers({
 
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          const update = {
-            ...prevState,
-            ...convoUpdate,
-          };
-
+          const update = { ...prevState, ...convoUpdate };
           return update;
         });
       }
@@ -262,7 +280,6 @@ export default function useEventHandlers({
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
       const { initialResponse, messages: _messages, userMessage } = submission;
-
       const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
 
       setMessages([
@@ -282,17 +299,13 @@ export default function useEventHandlers({
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          let title = prevState?.title;
           const parentId = requestMessage.parentMessageId;
-          if (
-            parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase().includes('new chat') ?? false)
-          ) {
-            const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
-            const cachedConvo = getConversationById(convos, conversationId);
-            title = cachedConvo?.title;
-          }
-
+          const title = getConvoTitle({
+            parentId,
+            queryClient,
+            conversationId,
+            currentTitle: prevState?.title,
+          });
           update = tConvoUpdateSchema.parse({
             ...prevState,
             conversationId,
@@ -300,20 +313,14 @@ export default function useEventHandlers({
             title,
             messages: [requestMessage.messageId, responseMessage.messageId],
           }) as TConversation;
-
           return update;
         });
 
-        queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
-          if (!convoData) {
-            return convoData;
-          }
-          if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-            return addConversation(convoData, update);
-          } else {
-            return updateConversation(convoData, update);
-          }
-        });
+        if (requestMessage.parentMessageId === Constants.NO_PARENT) {
+          addConvoToAllQueries(queryClient, update);
+        } else {
+          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update);
+        }
       } else if (setConversation) {
         setConversation((prevState) => {
           update = tConvoUpdateSchema.parse({
@@ -364,41 +371,33 @@ export default function useEventHandlers({
       });
 
       let update = {} as TConversation;
+      if (conversationId) {
+        applyAgentTemplate(conversationId, submission.conversation.conversationId);
+      }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          let title = prevState?.title;
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
-          if (
-            parentId !== Constants.NO_PARENT &&
-            (title?.toLowerCase().includes('new chat') ?? false)
-          ) {
-            const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
-            const cachedConvo = getConversationById(convos, conversationId);
-            title = cachedConvo?.title;
-          }
-
+          const title = getConvoTitle({
+            parentId,
+            queryClient,
+            conversationId,
+            currentTitle: prevState?.title,
+          });
           update = tConvoUpdateSchema.parse({
             ...prevState,
             conversationId,
             title,
           }) as TConversation;
-
           return update;
         });
 
-        if (isTemporary) {
-          return;
-        }
-        queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
-          if (!convoData) {
-            return convoData;
-          }
+        if (!isTemporary) {
           if (parentMessageId === Constants.NO_PARENT) {
-            return addConversation(convoData, update);
+            addConvoToAllQueries(queryClient, update);
           } else {
-            return updateConversation(convoData, update);
+            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update);
           }
-        });
+        }
       } else if (setConversation) {
         setConversation((prevState) => {
           update = tConvoUpdateSchema.parse({
@@ -412,7 +411,6 @@ export default function useEventHandlers({
       if (resetLatestMessage) {
         resetLatestMessage();
       }
-
       scrollToEnd(() => setAbortScroll(false));
     },
     [
@@ -442,18 +440,13 @@ export default function useEventHandlers({
       const currentMessages = getMessages();
       /* Early return if messages are empty; i.e., the user navigated away */
       if (!currentMessages || currentMessages.length === 0) {
-        return setIsSubmitting(false);
+        setIsSubmitting(false);
+        return;
       }
 
       /* a11y announcements */
-      announcePolite({
-        message: 'end',
-        isStatus: true,
-      });
-
-      announcePolite({
-        message: getAllContentText(responseMessage),
-      });
+      announcePolite({ message: 'end', isStatus: true });
+      announcePolite({ message: getAllContentText(responseMessage) });
 
       /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
       if (runMessages) {
@@ -466,12 +459,7 @@ export default function useEventHandlers({
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
       if (isNewConvo) {
-        queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
-          if (!convoData) {
-            return convoData;
-          }
-          return deleteConversation(convoData, submissionConvo.conversationId as string);
-        });
+        removeConvoFromAllQueries(queryClient, submissionConvo.conversationId as string);
       }
 
       /* Refresh title */
@@ -495,13 +483,18 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           const update = {
             ...prevState,
-            ...conversation,
+            ...(conversation as TConversation),
           };
-
           if (prevState?.model != null && prevState.model !== submissionConvo.model) {
             update.model = prevState.model;
           }
-
+          const cachedConvo = queryClient.getQueryData<TConversation>([
+            QueryKeys.conversation,
+            conversation.conversationId,
+          ]);
+          if (!cachedConvo) {
+            queryClient.setQueryData([QueryKeys.conversation, conversation.conversationId], update);
+          }
           return update;
         });
       }
@@ -525,7 +518,6 @@ export default function useEventHandlers({
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
       const { messages, userMessage, initialResponse } = submission;
-
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
       const conversationId =
@@ -590,7 +582,6 @@ export default function useEventHandlers({
         return;
       }
 
-      console.log('Error:', data);
       const errorResponse = tMessageSchema.parse({
         ...data,
         error: true,
@@ -614,10 +605,47 @@ export default function useEventHandlers({
   const abortConversation = useCallback(
     async (conversationId = '', submission: EventSubmission, messages?: TMessage[]) => {
       const runAbortKey = `${conversationId}:${messages?.[messages.length - 1]?.messageId ?? ''}`;
-      console.log({ conversationId, submission, messages, runAbortKey });
       const { endpoint: _endpoint, endpointType } =
         (submission.conversation as TConversation | null) ?? {};
       const endpoint = endpointType ?? _endpoint;
+      if (
+        !isAssistantsEndpoint(endpoint) &&
+        messages?.[messages.length - 1] != null &&
+        messages[messages.length - 2] != null
+      ) {
+        let requestMessage = messages[messages.length - 2];
+        const responseMessage = messages[messages.length - 1];
+        if (requestMessage.messageId !== responseMessage.parentMessageId) {
+          // the request message is the parent of response, which we search for backwards
+          for (let i = messages.length - 3; i >= 0; i--) {
+            if (messages[i].messageId === responseMessage.parentMessageId) {
+              requestMessage = messages[i];
+              break;
+            }
+          }
+        }
+        finalHandler(
+          {
+            conversation: {
+              conversationId,
+            },
+            requestMessage,
+            responseMessage,
+          },
+          submission,
+        );
+        return;
+      } else if (!isAssistantsEndpoint(endpoint)) {
+        if (newConversation) {
+          newConversation({
+            template: { conversationId: conversationId || v4() },
+            preset: tPresetSchema.parse(submission.conversation),
+          });
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
       try {
         const response = await fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
           method: 'POST',
@@ -635,7 +663,6 @@ export default function useEventHandlers({
         const contentType = response.headers.get('content-type');
         if (contentType != null && contentType.includes('application/json')) {
           const data = await response.json();
-          console.log(`[aborted] RESPONSE STATUS: ${response.status}`, data);
           if (response.status === 404) {
             setIsSubmitting(false);
             return;
@@ -646,16 +673,6 @@ export default function useEventHandlers({
             cancelHandler(data, submission);
           }
         } else if (response.status === 204 || response.status === 200) {
-          const responseMessage = {
-            ...submission.initialResponse,
-          };
-
-          const data = {
-            requestMessage: submission.userMessage,
-            responseMessage: responseMessage,
-            conversation: submission.conversation,
-          };
-          console.log(`[aborted] RESPONSE STATUS: ${response.status}`, data);
           setIsSubmitting(false);
         } else {
           throw new Error(
@@ -666,8 +683,6 @@ export default function useEventHandlers({
           );
         }
       } catch (error) {
-        console.error('Error cancelling request');
-        console.error(error);
         const errorResponse = createErrorMessage({
           getMessages,
           submission,

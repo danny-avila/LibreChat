@@ -1,7 +1,8 @@
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { LocalStorageKeys, TFile } from 'librechat-data-provider';
+import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
@@ -34,11 +35,13 @@ const decodeBase64 = (base64String: string): string => {
 };
 
 export const useAutoSave = ({
-  conversationId,
+  isSubmitting,
+  conversationId: _conversationId,
   textAreaRef,
-  files,
   setFiles,
+  files,
 }: {
+  isSubmitting?: boolean;
   conversationId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
@@ -47,6 +50,7 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const conversationId = isSubmitting ? Constants.PENDING_CONVO : _conversationId;
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
@@ -106,7 +110,7 @@ export const useAutoSave = ({
         return;
       }
       // Save the draft of the current conversation before switching
-      if (textAreaRef.current.value === '') {
+      if (textAreaRef.current.value === '' || textAreaRef.current.value.length === 1) {
         clearDraft(id);
       } else {
         localStorage.setItem(
@@ -126,9 +130,8 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      if (value) {
+    const handleInput = debounce((value: string) => {
+      if (value && value.length > 1) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
           encodeBase64(value),
@@ -138,14 +141,19 @@ export const useAutoSave = ({
       }
     }, 750);
 
+    const eventListener = (e: Event) => {
+      const target = e.target as HTMLTextAreaElement;
+      handleInput(target.value);
+    };
+
     const textArea = textAreaRef?.current;
     if (textArea) {
-      textArea.addEventListener('input', handleInput);
+      textArea.addEventListener('input', eventListener);
     }
 
     return () => {
       if (textArea) {
-        textArea.removeEventListener('input', handleInput);
+        textArea.removeEventListener('input', eventListener);
       }
       handleInput.cancel();
     };
