@@ -51,6 +51,10 @@ spec:
             {{- end }}
             - configMapRef:
                 name: {{ include "librechat.fullname" . }}-env
+            {{- range .Values.config.additionalConfigMaps }}
+            - configMapRef:
+                name: {{ .name }}
+            {{- end }}
           env:
             {{- range $secretKeyRef := .Values.config.envSecrets.secretKeyRef }}
             - name: {{ $secretKeyRef.name }}

@@ -119,10 +119,10 @@ if ($Secrets.Count -gt 0) {
     Write-Host "Created '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Green
 }
 
-$envConfigMapName = "librechat-github-env"
+$githubEnvConfigMapName = "$HelmReleaseName-github-env"
 if ($EnvVars.Count -gt 0) {
-    Write-Host "Creating ConfigMap '$envConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
-    $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $envConfigMapName`n  namespace: $Namespace`ndata:`n"
+    Write-Host "Creating ConfigMap '$githubEnvConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
+    $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $githubEnvConfigMapName`n  namespace: $Namespace`ndata:`n"
     
     # First add individual environment variables
     foreach ($key in $EnvVars.Keys) {
@@ -144,7 +144,7 @@ if ($EnvVars.Count -gt 0) {
     }
     
     $configMapYaml | kubectl apply -f -
-    Write-Host "Created '$envConfigMapName' with $($EnvVars.Count) values and load-env.sh script" -ForegroundColor Green
+    Write-Host "Created '$githubEnvConfigMapName' with $($EnvVars.Count) values and load-env.sh script" -ForegroundColor Green
 }
 
 # Create TLS secret directly with kubectl
@@ -176,6 +176,11 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
            "--set `"image.tag=$ImageTag`" "
+
+# Add GitHub environment ConfigMap if environment variables were provided
+if ($EnvVars.Count -gt 0) {
+    $helmCmd += "--set `"config.additionalConfigMaps[0].name=$githubEnvConfigMapName`" "
+}
 
 $helmCmd += "--force"
 

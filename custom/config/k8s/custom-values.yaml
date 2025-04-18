@@ -16,9 +16,6 @@ volumes:
   - name: librechat-config
     configMap:
       name: librechat-config
-  - name: github-env
-    configMap:
-      name: librechat-github-env
 
 volumeMounts:
   - name: librechat-config
@@ -26,12 +23,6 @@ volumeMounts:
     subPath: librechat.yaml
   - name: github-env
     mountPath: /app/github-env
-
-command: ["/bin/bash", "-c"]
-args:
-  - |
-    source /app/github-env/load-env.sh
-    exec node /app/server/start.js
 
 config:
   envSecrets:
