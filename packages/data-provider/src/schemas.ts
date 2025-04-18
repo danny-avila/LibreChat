@@ -1023,7 +1023,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   thinkingBudget: true,
 });
 
-export const openAISchema = openAIBaseSchema;
+export const openAISchema = openAIBaseSchema
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
   .catch(() => ({}));
 
