@@ -59,7 +59,7 @@ export const ThemeSelector = ({
         options={themeOptions}
         sizeClasses="w-[180px]"
         testId="theme-selector"
-        className="rounded-xl"
+        className="z-50"
       />
     </div>
   );
@@ -113,7 +113,7 @@ export const LangSelector = ({
         onChange={onChange}
         sizeClasses="[--anchor-max-height:256px]"
         options={languageOptions}
-        className="rounded-xl"
+        className="z-50"
       />
     </div>
   );
