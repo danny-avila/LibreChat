@@ -123,7 +123,7 @@ if ($Secrets.Count -gt 0) {
 }
 
 # Create ConfigMap for environment variables if any provided
-$envConfigMapName = "librechat-env-config"
+$envConfigMapName = "$HelmReleaseName-env"
 if ($EnvVars.Count -gt 0) {
     Write-Host "Creating ConfigMap '$envConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
     $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $envConfigMapName`n  namespace: $Namespace`ndata:`n"
@@ -168,25 +168,6 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
            "--set `"image.tag=$ImageTag`" "
-
-# Add references to secrets and config maps
-$envFromRefs = @()
-
-# Add secret ref if secrets were created
-if ($Secrets.Count -gt 0) {
-    $envFromRefs += "--set `"envFrom[0].secretRef.name=$appSecretName`" "
-}
-
-# Add configmap ref if env vars were created
-if ($EnvVars.Count -gt 0) {
-    $index = $envFromRefs.Count
-    $envFromRefs += "--set `"envFrom[$index].configMapRef.name=$envConfigMapName`" "
-}
-
-# Add all envFrom references to the helm command
-foreach ($ref in $envFromRefs) {
-    $helmCmd += $ref
-}
 
 $helmCmd += "--force"
 
