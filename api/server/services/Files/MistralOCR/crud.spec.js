@@ -29,9 +29,6 @@ const mockAxios = {
 
 jest.mock('axios', () => mockAxios);
 jest.mock('fs');
-jest.mock('~/utils', () => ({
-  logAxiosError: jest.fn(),
-}));
 jest.mock('~/config', () => ({
   logger: {
     error: jest.fn(),
@@ -175,7 +172,7 @@ describe('MistralOCR Service', () => {
   });
 
   describe('performOCR', () => {
-    it('should perform OCR using Mistral API', async () => {
+    it('should perform OCR using Mistral API (document_url)', async () => {
       const mockResponse = {
         data: {
           pages: [{ markdown: 'Page 1 content' }, { markdown: 'Page 2 content' }],
@@ -185,8 +182,9 @@ describe('MistralOCR Service', () => {
 
       const result = await performOCR({
         apiKey: 'test-api-key',
-        documentUrl: 'https://document-url.com',
+        url: 'https://document-url.com',
         model: 'mistral-ocr-latest',
+        documentType: 'document_url',
       });
 
       expect(mockAxios.post).toHaveBeenCalledWith(
@@ -209,6 +207,41 @@ describe('MistralOCR Service', () => {
       expect(result).toEqual(mockResponse.data);
     });
 
+    it('should perform OCR using Mistral API (image_url)', async () => {
+      const mockResponse = {
+        data: {
+          pages: [{ markdown: 'Image OCR content' }],
+        },
+      };
+      mockAxios.post.mockResolvedValueOnce(mockResponse);
+
+      const result = await performOCR({
+        apiKey: 'test-api-key',
+        url: 'https://image-url.com/image.png',
+        model: 'mistral-ocr-latest',
+        documentType: 'image_url',
+      });
+
+      expect(mockAxios.post).toHaveBeenCalledWith(
+        'https://api.mistral.ai/v1/ocr',
+        {
+          model: 'mistral-ocr-latest',
+          include_image_base64: false,
+          document: {
+            type: 'image_url',
+            image_url: 'https://image-url.com/image.png',
+          },
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer test-api-key',
+          },
+        },
+      );
+      expect(result).toEqual(mockResponse.data);
+    });
+
     it('should handle errors during OCR processing', async () => {
       const errorMessage = 'OCR processing error';
       mockAxios.post.mockRejectedValueOnce(new Error(errorMessage));
@@ -216,7 +249,7 @@ describe('MistralOCR Service', () => {
       await expect(
         performOCR({
           apiKey: 'test-api-key',
-          documentUrl: 'https://document-url.com',
+          url: 'https://document-url.com',
         }),
       ).rejects.toThrow();
 
@@ -298,6 +331,7 @@ describe('MistralOCR Service', () => {
       const file = {
         path: '/tmp/upload/file.pdf',
         originalname: 'document.pdf',
+        mimetype: 'application/pdf',
       };
 
       const result = await uploadMistralOCR({
@@ -322,6 +356,90 @@ describe('MistralOCR Service', () => {
         filepath: 'mistral_ocr',
         text: expect.stringContaining('# PAGE 1'),
         images: ['base64image1', 'base64image2'],
+      });
+    });
+
+    it('should process OCR for an image file and use image_url type', async () => {
+      const { loadAuthValues } = require('~/server/services/Tools/credentials');
+      loadAuthValues.mockResolvedValue({
+        OCR_API_KEY: 'test-api-key',
+        OCR_BASEURL: 'https://api.mistral.ai/v1',
+      });
+
+      // Mock file upload response
+      mockAxios.post.mockResolvedValueOnce({
+        data: { id: 'file-456', purpose: 'ocr' },
+      });
+
+      // Mock signed URL response
+      mockAxios.get.mockResolvedValueOnce({
+        data: { url: 'https://signed-url.com/image.png' },
+      });
+
+      // Mock OCR response for image
+      mockAxios.post.mockResolvedValueOnce({
+        data: {
+          pages: [
+            {
+              markdown: 'Image OCR result',
+              images: [{ image_base64: 'imgbase64' }],
+            },
+          ],
+        },
+      });
+
+      const req = {
+        user: { id: 'user456' },
+        app: {
+          locals: {
+            ocr: {
+              apiKey: '${OCR_API_KEY}',
+              baseURL: '${OCR_BASEURL}',
+              mistralModel: 'mistral-medium',
+            },
+          },
+        },
+      };
+
+      const file = {
+        path: '/tmp/upload/image.png',
+        originalname: 'image.png',
+        mimetype: 'image/png',
+      };
+
+      const result = await uploadMistralOCR({
+        req,
+        file,
+        file_id: 'file456',
+        entity_id: 'entity456',
+      });
+
+      expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/image.png');
+
+      expect(loadAuthValues).toHaveBeenCalledWith({
+        userId: 'user456',
+        authFields: ['OCR_BASEURL', 'OCR_API_KEY'],
+        optional: expect.any(Set),
+      });
+
+      // Check that the OCR API was called with image_url type
+      expect(mockAxios.post).toHaveBeenCalledWith(
+        'https://api.mistral.ai/v1/ocr',
+        expect.objectContaining({
+          document: expect.objectContaining({
+            type: 'image_url',
+            image_url: 'https://signed-url.com/image.png',
+          }),
+        }),
+        expect.any(Object),
+      );
+
+      expect(result).toEqual({
+        filename: 'image.png',
+        bytes: expect.any(Number),
+        filepath: 'mistral_ocr',
+        text: expect.stringContaining('Image OCR result'),
+        images: ['imgbase64'],
       });
     });
 
@@ -494,9 +612,6 @@ describe('MistralOCR Service', () => {
         }),
       ).rejects.toThrow('Error uploading document to Mistral OCR API');
       expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload/file.pdf');
-
-      const { logAxiosError } = require('~/utils');
-      expect(logAxiosError).toHaveBeenCalled();
     });
 
     it('should handle single page documents without page numbering', async () => {

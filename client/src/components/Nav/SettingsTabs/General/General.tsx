@@ -6,8 +6,33 @@ import HideSidePanelSwitch from './HideSidePanelSwitch';
 import { ThemeContext, useLocalize } from '~/hooks';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
-import { Dropdown } from '~/components/ui';
+import ToggleSwitch from '../ToggleSwitch';
+import { Dropdown } from '~/components';
 import store from '~/store';
+
+const toggleSwitchConfigs = [
+  {
+    stateAtom: store.enableUserMsgMarkdown,
+    localizationKey: 'com_nav_user_msg_markdown',
+    switchId: 'enableUserMsgMarkdown',
+    hoverCardText: undefined,
+    key: 'enableUserMsgMarkdown',
+  },
+  {
+    stateAtom: store.autoScroll,
+    localizationKey: 'com_nav_auto_scroll',
+    switchId: 'autoScroll',
+    hoverCardText: undefined,
+    key: 'autoScroll',
+  },
+  {
+    stateAtom: store.hideSidePanel,
+    localizationKey: 'com_nav_hide_panel',
+    switchId: 'hideSidePanel',
+    hoverCardText: undefined,
+    key: 'hideSidePanel',
+  },
+];
 
 export const ThemeSelector = ({
   theme,
@@ -34,6 +59,7 @@ export const ThemeSelector = ({
         options={themeOptions}
         sizeClasses="w-[180px]"
         testId="theme-selector"
+        className="rounded-xl"
       />
     </div>
   );
@@ -57,7 +83,10 @@ export const LangSelector = ({
     { value: 'de-DE', label: localize('com_nav_lang_german') },
     { value: 'es-ES', label: localize('com_nav_lang_spanish') },
     { value: 'et-EE', label: localize('com_nav_lang_estonian') },
+    { value: 'fa-IR', label: localize('com_nav_lang_persian') },
     { value: 'fr-FR', label: localize('com_nav_lang_french') },
+    { value: 'he-HE', label: localize('com_nav_lang_hebrew') },
+    { value: 'hu-HU', label: localize('com_nav_lang_hungarian') },
     { value: 'it-IT', label: localize('com_nav_lang_italian') },
     { value: 'pl-PL', label: localize('com_nav_lang_polish') },
     { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
@@ -72,7 +101,6 @@ export const LangSelector = ({
     { value: 'tr-TR', label: localize('com_nav_lang_turkish') },
     { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
     { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
-    { value: 'he-HE', label: localize('com_nav_lang_hebrew') },
     { value: 'fi-FI', label: localize('com_nav_lang_finnish') },
   ];
 
@@ -85,6 +113,7 @@ export const LangSelector = ({
         onChange={onChange}
         sizeClasses="[--anchor-max-height:256px]"
         options={languageOptions}
+        className="rounded-xl"
       />
     </div>
   );
@@ -126,15 +155,16 @@ function General() {
       <div className="pb-3">
         <LangSelector langcode={langcode} onChange={changeLang} />
       </div>
-      <div className="pb-3">
-        <UserMsgMarkdownSwitch />
-      </div>
-      <div className="pb-3">
-        <AutoScrollSwitch />
-      </div>
-      <div className="pb-3">
-        <HideSidePanelSwitch />
-      </div>
+      {toggleSwitchConfigs.map((config) => (
+        <div key={config.key} className="pb-3">
+          <ToggleSwitch
+            stateAtom={config.stateAtom}
+            localizationKey={config.localizationKey}
+            hoverCardText={config.hoverCardText}
+            switchId={config.switchId}
+          />
+        </div>
+      ))}
       <div className="pb-3">
         <ArchivedChats />
       </div>

@@ -13,7 +13,7 @@ import {
   AzureMinimalIcon,
   CustomMinimalIcon,
 } from '~/components/svg';
-import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
+import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -25,7 +25,7 @@ type EndpointIcon = {
 
 function getOpenAIColor(_model: string | null | undefined) {
   const model = _model?.toLowerCase() ?? '';
-  if (model && /\b(o1|o3)\b/i.test(model)) {
+  if (model && /\b(o\d)\b/i.test(model)) {
     return '#000000';
   }
   return model.includes('gpt-4') ? '#AB68FF' : '#19C37D';
@@ -186,7 +186,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
 
   let { icon, bg, name } =
     endpoint != null && endpoint && endpointIcons[endpoint]
-      ? endpointIcons[endpoint] ?? {}
+      ? (endpointIcons[endpoint] ?? {})
       : (endpointIcons.default as EndpointIcon);
 
   if (iconURL && endpointIcons[iconURL]) {

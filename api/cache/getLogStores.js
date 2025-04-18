@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
 const { math, isEnabled } = require('~/server/utils');
@@ -19,7 +19,7 @@ const createViolationInstance = (namespace) => {
 // Serve cache from memory so no need to clear it on startup/exit
 const pending_req = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'pending_req' });
+  : new Keyv({ namespace: CacheKeys.PENDING_REQ });
 
 const config = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
@@ -49,6 +49,10 @@ const genTitle = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
   : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: Time.TWO_MINUTES });
 
+const s3ExpiryInterval = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.S3_EXPIRY_INTERVAL, ttl: Time.THIRTY_MINUTES });
+
 const modelQueries = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.MODEL_QUERIES });
@@ -60,7 +64,7 @@ const abortKeys = isRedisEnabled
 const namespaces = {
   [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
-  pending_req,
+  [CacheKeys.PENDING_REQ]: pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({
     store: keyvMongo,
@@ -89,6 +93,7 @@ const namespaces = {
   [CacheKeys.ABORT_KEYS]: abortKeys,
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,
   [CacheKeys.GEN_TITLE]: genTitle,
+  [CacheKeys.S3_EXPIRY_INTERVAL]: s3ExpiryInterval,
   [CacheKeys.MODEL_QUERIES]: modelQueries,
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,

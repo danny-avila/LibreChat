@@ -11,7 +11,7 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AssistantListItem } from '~/common';
-import { getEndpointField, buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import { getEndpointField, buildDefaultConvo, getDefaultEndpoint, logger } from '~/utils';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mainTextareaId } from '~/common';
@@ -44,6 +44,7 @@ const useGenerateConvo = ({
           conversationId: rootConvo.conversationId,
         } as TConversation;
 
+        logger.log('conversation', 'Setting conversation from `useNewConvo`', update);
         return update;
       });
     }

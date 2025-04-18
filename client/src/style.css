@@ -67,7 +67,7 @@ html {
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
   --surface-secondary: var(--gray-50);
-  --surface-secondary-alt: var(--gray-300);
+  --surface-secondary-alt: var(--gray-200);
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
@@ -75,6 +75,7 @@ html {
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
+  --surface-chat: var(--white);
   --border-light: var(--gray-200);
   --border-medium-alt: var(--gray-300);
   --border-medium: var(--gray-300);
@@ -132,6 +133,7 @@ html {
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
+  --surface-chat: var(--gray-700);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
   --border-medium: var(--gray-600);
@@ -624,25 +626,127 @@ pre {
   margin: 0;
 }
 
-.scroll-down-enter {
+.scroll-animation-enter {
   opacity: 0;
+  transform: translateY(20px) scale(0.7) rotate(-5deg);
+  pointer-events: none;
 }
-/* .scroll-down-appear {
-  opacity: 0;
-} */
 
-.scroll-down-enter-active {
+.scroll-animation-enter-done {
   opacity: 1;
-  transition: opacity 400ms;
+  transform: translateY(0) scale(1);
 }
 
-.scroll-down-exit {
-  opacity: 1;
+.scroll-animation-exit-done {
+  display: none;
 }
 
-.scroll-down-exit-active {
-  opacity: 0;
-  transition: opacity 400ms;
+@keyframes twist-entrance {
+  0% {
+    transform: translateY(20px) scale(0.7) rotate(-5deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(2px) scale(0.95) rotate(2deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.scroll-animation-enter-active {
+  animation: twist-entrance 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  transition-delay: 50ms;
+}
+
+@keyframes twist-exit {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(5px) scale(0.95) rotate(2deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(20px) scale(0.7) rotate(-5deg);
+    opacity: 0;
+  }
+}
+
+.scroll-animation-exit-active {
+  animation: twist-exit 0.4s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
+  pointer-events: none;
+}
+
+.premium-scroll-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.9);
+  z-index: 10;
+  transition:
+    transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 500ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  overflow: hidden;
+}
+
+.dark .premium-scroll-button {
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  background-color: rgba(35, 35, 40, 0.9);
+}
+
+.scroll-animation-enter-active .premium-scroll-button {
+  pointer-events: none !important;
+}
+
+.premium-scroll-button:hover:not(:active) {
+  transform: translateY(-1.5px) scale(1.02);
+  box-shadow: 
+    0 5px 10px rgba(0, 0, 0, 0.07), 
+    0 7px 14px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.premium-scroll-button:active {
+  transform: translateY(1px) scale(0.98);
+  transition: all 150ms cubic-bezier(0.2, 0, 0.2, 1);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+.scroll-animation-enter-done .premium-scroll-button {
+  animation: float 2s ease-in-out infinite;
+}
+
+.premium-scroll-button:hover,
+.premium-scroll-button:active {
+  animation: none;
 }
 
 .blink {
@@ -749,7 +853,7 @@ pre {
   margin-bottom: 1.6em;
   margin-top: 1.6em;
   padding-left: 1em;
-  quotes: '\201C''\201D''\2018''\2019';
+  quotes: '\201C' '\201D' '\2018' '\2019';
 }
 .prose :where(blockquote p:first-of-type):not(:where([class~='not-prose'] *)):before {
   content: open-quote;
@@ -1099,7 +1203,13 @@ pre {
 
 code,
 pre {
-  font-family: Consolas, Söhne Mono, Monaco, Andale Mono, Ubuntu Mono, monospace !important;
+  font-family:
+    Consolas,
+    Söhne Mono,
+    Monaco,
+    Andale Mono,
+    Ubuntu Mono,
+    monospace !important;
 }
 code[class='language-plaintext'] {
   white-space: pre-line;
@@ -1225,8 +1335,12 @@ button {
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
     var(--tw-ring-color);
   --tw-ring-offset-width: 2px;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), 0 0 transparent;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
+  box-shadow:
+    var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow),
+    0 0 transparent;
+  box-shadow:
+    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .btn-primary.focus-visible {
   --tw-ring-opacity: 1;
@@ -1693,9 +1807,7 @@ html {
 .tooltip-label:before {
   content: attr(data-content);
 }
-button.scroll-convo {
-  display: none;
-}
+
 @-webkit-keyframes blink {
   to {
     visibility: hidden;
@@ -1741,7 +1853,9 @@ button.scroll-convo {
   animation: toast-close 0.12s cubic-bezier(0.4, 0, 1, 1) both;
 }
 .toast-root .alert-root {
-  box-shadow: 0 0 1px rgba(67, 90, 111, 0.3), 0 5px 8px -4px rgba(67, 90, 111, 0.3);
+  box-shadow:
+    0 0 1px rgba(67, 90, 111, 0.3),
+    0 5px 8px -4px rgba(67, 90, 111, 0.3);
   flex-shrink: 0;
   pointer-events: all;
 }
@@ -1846,8 +1960,12 @@ button.scroll-convo {
 }
 .dark .shadow-stroke:after,
 .shadow-stroke:after {
-  box-shadow: 0 0 transparent, 0 0 transparent, var(--tw-shadow);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
+  box-shadow:
+    0 0 transparent,
+    0 0 transparent,
+    var(--tw-shadow);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
     var(--tw-shadow);
 }
 .dark .shadow-stroke:after {
@@ -1869,8 +1987,12 @@ button.scroll-convo {
   position: absolute;
   right: 0;
   top: 0;
-  box-shadow: 0 0 transparent, 0 0 transparent, var(--tw-shadow);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
+  box-shadow:
+    0 0 transparent,
+    0 0 transparent,
+    var(--tw-shadow);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
     var(--tw-shadow);
 }
 
@@ -1885,8 +2007,17 @@ button.scroll-convo {
   content: '⬤';
   width: 12px;
   height: 12px;
-  font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-    Noto Sans, sans-serif;
+  font-family:
+    system-ui,
+    Inter,
+    Söhne Circle,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Ubuntu,
+    Cantarell,
+    Noto Sans,
+    sans-serif;
   line-height: normal;
   margin-left: 0.25rem;
   vertical-align: middle;
@@ -1896,8 +2027,17 @@ button.scroll-convo {
 @supports (selector(:has(*))) {
   .result-streaming > :is(ul, ol):last-child > li:last-child:not(:has(> :is(ul, ol, pre))):after {
     content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
+    font-family:
+      system-ui,
+      Inter,
+      Söhne Circle,
+      -apple-system,
+      Segoe UI,
+      Roboto,
+      Ubuntu,
+      Cantarell,
+      Noto Sans,
+      sans-serif;
     line-height: normal;
     margin-left: 0.25rem;
     vertical-align: middle;
@@ -1912,8 +2052,17 @@ button.scroll-convo {
   .result-streaming > ol:last-child > li:last-child:after,
   .result-streaming > ul:last-child > li:last-child:after {
     content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
+    font-family:
+      system-ui,
+      Inter,
+      Söhne Circle,
+      -apple-system,
+      Segoe UI,
+      Roboto,
+      Ubuntu,
+      Cantarell,
+      Noto Sans,
+      sans-serif;
     line-height: normal;
     margin-left: 0.25rem;
     vertical-align: middle;
@@ -2360,7 +2509,6 @@ button.scroll-convo {
 }
 
 .popover-ui {
-  z-index: 1000;
   display: flex;
   max-height: min(var(--popover-available-height, 1700px), 1700px);
   flex-direction: column;
@@ -2373,7 +2521,9 @@ button.scroll-convo {
   background-color: hsl(var(--background));
   padding: 0.5rem;
   color: var(--text-primary);
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
   transform-origin: top;
   opacity: 0;
   transition-property: opacity, scale, translate;
@@ -2394,7 +2544,9 @@ button.scroll-convo {
 .popover-ui:where(.dark, .dark *) {
   background-color: hsl(var(--secondary));
   color: var(--text-secondary);
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.25),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 .select-item {
@@ -2421,6 +2573,30 @@ button.scroll-convo {
   opacity: 1;
   scale: 1;
   translate: 0;
+}
+
+.animate-popover {
+  transform-origin: top;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translateY(-0.5rem);
+}
+
+.animate-popover[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.animate-popover-left {
+  transform-origin: left;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translateX(-0.5rem);
+}
+
+.animate-popover-left[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateX(0);
 }
 
 /** Note: ensure KaTeX can spread across visible space */
@@ -2473,4 +2649,32 @@ button.scroll-convo {
 
 .scale-98 {
   transform: scale(0.98);
+}
+
+/* Chat Badges Animation */
+
+@keyframes ios-wiggle {
+  0% {
+    transform: rotate(-1deg);
+  }
+  50% {
+    transform: rotate(1deg);
+  }
+  100% {
+    transform: rotate(-1deg);
+  }
+}
+
+.ios-wiggle {
+  animation: ios-wiggle 0.2s ease-in-out infinite;
+}
+
+.ghost-badge {
+  transition:
+    left 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    top 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.badge-icon {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }

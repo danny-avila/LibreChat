@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const passport = require('passport');
 const session = require('express-session');
 const MemoryStore = require('memorystore')(session);
@@ -53,7 +53,7 @@ const configureSocialLogins = (app) => {
     if (isEnabled(process.env.USE_REDIS)) {
       logger.debug('Using Redis for session storage in OpenID...');
       const keyv = new Keyv({ store: keyvRedis });
-      const client = keyv.opts.store.redis;
+      const client = keyv.opts.store.client;
       sessionOptions.store = new RedisStore({ client, prefix: 'openid_session' });
     } else {
       sessionOptions.store = new MemoryStore({

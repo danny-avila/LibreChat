@@ -13,7 +13,6 @@ const {
   actionDomainSeparator,
 } = require('librechat-data-provider');
 const { refreshAccessToken } = require('~/server/services/TokenService');
-const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
@@ -51,7 +50,7 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
       return null;
     }
 
-    const parsedDomain = await domainParser(req, domain, true);
+    const parsedDomain = await domainParser(domain, true);
 
     if (!parsedDomain) {
       return null;
@@ -67,16 +66,14 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
  *
  * Necessary due to `[a-zA-Z0-9_-]*` Regex Validation, limited to a 64-character maximum.
  *
- * @param {Express.Request} req - The Express Request object.
  * @param {string} domain - The domain name to encode/decode.
  * @param {boolean} inverse - False to decode from base64, true to encode to base64.
  * @returns {Promise<string>} Encoded or decoded domain string.
  */
-async function domainParser(req, domain, inverse = false) {
+async function domainParser(domain, inverse = false) {
   if (!domain) {
     return;
   }
-
   const domainsCache = getLogStores(CacheKeys.ENCODED_DOMAINS);
   const cachedDomain = await domainsCache.get(domain);
   if (inverse && cachedDomain) {
@@ -123,34 +120,26 @@ async function loadActionSets(searchParams) {
  * Creates a general tool for an entire action set.
  *
  * @param {Object} params - The parameters for loading action sets.
- * @param {ServerRequest} params.req
+ * @param {string} params.userId
  * @param {ServerResponse} params.res
  * @param {Action} params.action - The action set. Necessary for decrypting authentication values.
  * @param {ActionRequest} params.requestBuilder - The ActionRequest builder class to execute the API call.
  * @param {string | undefined} [params.name] - The name of the tool.
  * @param {string | undefined} [params.description] - The description for the tool.
  * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
+ * @param {{ oauth_client_id?: string; oauth_client_secret?: string; }} params.encrypted - The encrypted values for the action.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createActionTool({
-  req,
+  userId,
   res,
   action,
   requestBuilder,
   zodSchema,
   name,
   description,
+  encrypted,
 }) {
-  const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
-  if (!isDomainAllowed) {
-    return null;
-  }
-  const encrypted = {
-    oauth_client_id: action.metadata.oauth_client_id,
-    oauth_client_secret: action.metadata.oauth_client_secret,
-  };
-  action.metadata = await decryptMetadata(action.metadata);
-
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
     try {
@@ -163,7 +152,7 @@ async function createActionTool({
         try {
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
             const action_id = action.action_id;
-            const identifier = `${req.user.id}:${action.action_id}`;
+            const identifier = `${userId}:${action.action_id}`;
             const requestLogin = async () => {
               const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
               if (!stepId) {
@@ -171,7 +160,7 @@ async function createActionTool({
               }
               const statePayload = {
                 nonce: nanoid(),
-                user: req.user.id,
+                user: userId,
                 action_id,
               };
 
@@ -198,26 +187,33 @@ async function createActionTool({
                     expires_at: Date.now() + Time.TWO_MINUTES,
                   },
                 };
-                const flowManager = await getFlowStateManager(getLogStores);
+                const flowsCache = getLogStores(CacheKeys.FLOWS);
+                const flowManager = getFlowStateManager(flowsCache);
                 await flowManager.createFlowWithHandler(
-                  `${identifier}:login`,
+                  `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
                   async () => {
                     sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
                     logger.debug('Sent OAuth login request to client', { action_id, identifier });
                     return true;
                   },
+                  config?.signal,
                 );
                 logger.debug('Waiting for OAuth Authorization response', { action_id, identifier });
-                const result = await flowManager.createFlow(identifier, 'oauth', {
-                  state: stateToken,
-                  userId: req.user.id,
-                  client_url: metadata.auth.client_url,
-                  redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
-                  /** Encrypted values */
-                  encrypted_oauth_client_id: encrypted.oauth_client_id,
-                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                });
+                const result = await flowManager.createFlow(
+                  identifier,
+                  'oauth',
+                  {
+                    state: stateToken,
+                    userId: userId,
+                    client_url: metadata.auth.client_url,
+                    redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                    /** Encrypted values */
+                    encrypted_oauth_client_id: encrypted.oauth_client_id,
+                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                  },
+                  config?.signal,
+                );
                 logger.debug('Received OAuth Authorization response', { action_id, identifier });
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
@@ -235,10 +231,10 @@ async function createActionTool({
             };
 
             const tokenPromises = [];
-            tokenPromises.push(findToken({ userId: req.user.id, type: 'oauth', identifier }));
+            tokenPromises.push(findToken({ userId, type: 'oauth', identifier }));
             tokenPromises.push(
               findToken({
-                userId: req.user.id,
+                userId,
                 type: 'oauth_refresh',
                 identifier: `${identifier}:refresh`,
               }),
@@ -261,18 +257,20 @@ async function createActionTool({
                 const refresh_token = await decryptV2(refreshTokenData.token);
                 const refreshTokens = async () =>
                   await refreshAccessToken({
+                    userId,
                     identifier,
                     refresh_token,
-                    userId: req.user.id,
                     client_url: metadata.auth.client_url,
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                   });
-                const flowManager = await getFlowStateManager(getLogStores);
+                const flowsCache = getLogStores(CacheKeys.FLOWS);
+                const flowManager = getFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',
                   refreshTokens,
+                  config?.signal,
                 );
                 metadata.oauth_access_token = refreshData.access_token;
                 if (refreshData.refresh_token) {
@@ -308,9 +306,8 @@ async function createActionTool({
       }
       return response.data;
     } catch (error) {
-      const logMessage = `API call to ${action.metadata.domain} failed`;
-      logAxiosError({ message: logMessage, error });
-      throw error;
+      const message = `API call to ${action.metadata.domain} failed:`;
+      return logAxiosError({ message, error });
     }
   };
 
@@ -328,6 +325,27 @@ async function createActionTool({
 }
 
 /**
+ * Encrypts a sensitive value.
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function encryptSensitiveValue(value) {
+  // Encode API key to handle special characters like ":"
+  const encodedValue = encodeURIComponent(value);
+  return await encryptV2(encodedValue);
+}
+
+/**
+ * Decrypts a sensitive value.
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function decryptSensitiveValue(value) {
+  const decryptedValue = await decryptV2(value);
+  return decodeURIComponent(decryptedValue);
+}
+
+/**
  * Encrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to encrypt.
@@ -339,17 +357,19 @@ async function encryptMetadata(metadata) {
   // ServiceHttp
   if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
     if (metadata.api_key) {
-      encryptedMetadata.api_key = await encryptV2(metadata.api_key);
+      encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);
     }
   }
 
   // OAuth
   else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
     if (metadata.oauth_client_id) {
-      encryptedMetadata.oauth_client_id = await encryptV2(metadata.oauth_client_id);
+      encryptedMetadata.oauth_client_id = await encryptSensitiveValue(metadata.oauth_client_id);
     }
     if (metadata.oauth_client_secret) {
-      encryptedMetadata.oauth_client_secret = await encryptV2(metadata.oauth_client_secret);
+      encryptedMetadata.oauth_client_secret = await encryptSensitiveValue(
+        metadata.oauth_client_secret,
+      );
     }
   }
 
@@ -368,17 +388,19 @@ async function decryptMetadata(metadata) {
   // ServiceHttp
   if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
     if (metadata.api_key) {
-      decryptedMetadata.api_key = await decryptV2(metadata.api_key);
+      decryptedMetadata.api_key = await decryptSensitiveValue(metadata.api_key);
     }
   }
 
   // OAuth
   else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
     if (metadata.oauth_client_id) {
-      decryptedMetadata.oauth_client_id = await decryptV2(metadata.oauth_client_id);
+      decryptedMetadata.oauth_client_id = await decryptSensitiveValue(metadata.oauth_client_id);
     }
     if (metadata.oauth_client_secret) {
-      decryptedMetadata.oauth_client_secret = await decryptV2(metadata.oauth_client_secret);
+      decryptedMetadata.oauth_client_secret = await decryptSensitiveValue(
+        metadata.oauth_client_secret,
+      );
     }
   }
 

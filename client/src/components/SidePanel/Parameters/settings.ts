@@ -509,7 +509,7 @@ const googleCol2: SettingsConfiguration = [
 ];
 
 const openAI: SettingsConfiguration = [
-  openAIParams.chatGptLabel,
+  librechat.modelLabel,
   librechat.promptPrefix,
   librechat.maxContextTokens,
   openAIParams.max_tokens,
@@ -527,7 +527,7 @@ const openAI: SettingsConfiguration = [
 
 const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  openAIParams.chatGptLabel,
+  librechat.modelLabel,
   librechat.promptPrefix,
 ];
 
