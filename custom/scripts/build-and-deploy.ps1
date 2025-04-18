@@ -94,10 +94,8 @@ if ($RegistryUsername -and $RegistryPassword) {
     $RegistrySecretParam = "--set imagePullSecrets[0].name=$secretName"
 }
 
-# Create application secrets dynamically
 Write-Host "Creating LibreChat application secrets..." -ForegroundColor Cyan
 
-# Create the Kubernetes secret if we have any values
 $appSecretName = "librechat-secrets"
 if ($Secrets.Count -gt 0) {
     Write-Host "Creating Kubernetes Secret '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Cyan
@@ -106,7 +104,6 @@ if ($Secrets.Count -gt 0) {
     foreach ($key in $Secrets.Keys) {
         $value = $Secrets[$key]
         
-        # Only encode if not already Base64 encoded
         if (-not (Test-IsBase64 $value)) {
             $encodedValue = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($value))
         }
@@ -122,12 +119,12 @@ if ($Secrets.Count -gt 0) {
     Write-Host "Created '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Green
 }
 
-# Create ConfigMap for environment variables if any provided
-$envConfigMapName = "$HelmReleaseName-env"
+$envConfigMapName = "librechat-github-env"
 if ($EnvVars.Count -gt 0) {
     Write-Host "Creating ConfigMap '$envConfigMapName' with $($EnvVars.Count) environment variables" -ForegroundColor Cyan
     $configMapYaml = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: $envConfigMapName`n  namespace: $Namespace`ndata:`n"
     
+    # First add individual environment variables
     foreach ($key in $EnvVars.Keys) {
         $value = $EnvVars[$key]
         # Escape double quotes in value if needed
@@ -135,8 +132,19 @@ if ($EnvVars.Count -gt 0) {
         $configMapYaml += "  $key`: `"$escapedValue`"`n"
     }
     
+    # Then add a load-env.sh script that can be sourced to load all variables
+    $loadEnvScript = "#!/bin/sh`n"
+    foreach ($key in $EnvVars.Keys) {
+        $value = $EnvVars[$key] -replace '"', '\"' -replace '`', '``' -replace '$', '\$'
+        $loadEnvScript += "export $key=`"$value`"`n"
+    }
+    $configMapYaml += "  load-env.sh: |`n"
+    foreach ($line in $loadEnvScript -split "`n") {
+        $configMapYaml += "    $line`n"
+    }
+    
     $configMapYaml | kubectl apply -f -
-    Write-Host "Created '$envConfigMapName' with $($EnvVars.Count) values" -ForegroundColor Green
+    Write-Host "Created '$envConfigMapName' with $($EnvVars.Count) values and load-env.sh script" -ForegroundColor Green
 }
 
 # Create TLS secret directly with kubectl

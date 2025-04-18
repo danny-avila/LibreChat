@@ -16,11 +16,16 @@ volumes:
   - name: librechat-config
     configMap:
       name: librechat-config
+  - name: github-env
+    configMap:
+      name: librechat-github-env
 
 volumeMounts:
   - name: librechat-config
     mountPath: /app/librechat.yaml
     subPath: librechat.yaml
+  - name: github-env
+    mountPath: /app/github-env
 
 config:
   envSecrets:
