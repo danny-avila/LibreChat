@@ -15,6 +15,7 @@ import {
   useHandleKeyUp,
   useQueryParams,
   useSubmitMessage,
+  useMediaQuery,
 } from '~/hooks';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
@@ -124,7 +125,18 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     isSubmitting: isSubmitting || isSubmittingAdded,
   });
 
-  const { submitMessage, submitPrompt } = useSubmitMessage();
+  const { submitMessage: originalSubmitMessage, submitPrompt } = useSubmitMessage();
+
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+
+  // Wrap the submitMessage function to blur the textarea only on mobile devices
+  const submitMessage = useCallback((data: { text: string; } | undefined) => {
+    if (textAreaRef.current && isSmallScreen) {
+      textAreaRef.current.blur();
+    }
+    return originalSubmitMessage(data);
+  }, [isSmallScreen, originalSubmitMessage]);
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -203,9 +215,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         'mx-auto flex flex-row gap-3 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         centerFormOnLanding &&
-          (conversationId == null || conversationId === Constants.NEW_CONVO) &&
-          !isSubmitting &&
-          conversation?.messages?.length === 0
+        (conversationId == null || conversationId === Constants.NEW_CONVO) &&
+        !isSubmitting &&
+        conversation?.messages?.length === 0
           ? 'transition-all duration-200 sm:mb-28'
           : 'sm:mb-10',
       )}
