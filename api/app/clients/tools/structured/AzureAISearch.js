@@ -32,11 +32,15 @@ class AzureAISearch extends Tool {
       fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT,
       'AZURE_AI_SEARCH_SERVICE_ENDPOINT',
     );
-    this.indexName = this._initializeField(
+    // Get the indexes as a comma-separated string
+    this.indexNames = this._initializeField(
       fields.AZURE_AI_SEARCH_INDEX_NAME,
       'AZURE_AI_SEARCH_INDEX_NAME',
     );
-    this.apiKey = this._initializeField(fields.AZURE_AI_SEARCH_API_KEY, 'AZURE_AI_SEARCH_API_KEY');
+    this.apiKey = this._initializeField(
+      fields.AZURE_AI_SEARCH_API_KEY,
+      'AZURE_AI_SEARCH_API_KEY',
+    );
     this.apiVersion = this._initializeField(
       fields.AZURE_AI_SEARCH_API_VERSION,
       'AZURE_AI_SEARCH_API_VERSION',
@@ -58,7 +62,7 @@ class AzureAISearch extends Tool {
     );
 
     // Check for required fields
-    if (!this.override && (!this.serviceEndpoint || !this.indexName || !this.apiKey)) {
+    if (!this.override && (!this.serviceEndpoint || !this.indexNames || !this.apiKey)) {
       throw new Error(
         'Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_INDEX_NAME, or AZURE_AI_SEARCH_API_KEY environment variable.',
       );
@@ -68,12 +72,25 @@ class AzureAISearch extends Tool {
       return;
     }
 
-    // Create SearchClient
-    this.client = new SearchClient(
-      this.serviceEndpoint,
-      this.indexName,
-      new AzureKeyCredential(this.apiKey),
-      { apiVersion: this.apiVersion },
+    // Split the indexNames by comma to support multiple indexes, trim whitespace,
+    // convert to lowercase, and filter out any empty strings.
+    const indexes = this.indexNames
+      .split(',')
+      .map(index => index.trim().toLowerCase())
+      .filter(index => index.length > 0);
+
+    if (indexes.length === 0) {
+      throw new Error('No valid index names provided in AZURE_AI_SEARCH_INDEX_NAME.');
+    }
+
+    // Create a client for each index.
+    this.clients = indexes.map(index =>
+      new SearchClient(
+        this.serviceEndpoint,
+        index,
+        new AzureKeyCredential(this.apiKey),
+        { apiVersion: this.apiVersion },
+      ),
     );
   }
 
@@ -88,12 +105,21 @@ class AzureAISearch extends Tool {
       if (this.select) {
         searchOption.select = this.select.split(',');
       }
-      const searchResults = await this.client.search(query, searchOption);
-      const resultDocuments = [];
-      for await (const result of searchResults.results) {
-        resultDocuments.push(result.document);
-      }
-      return JSON.stringify(resultDocuments);
+
+      // Query all indexes concurrently
+      const searchPromises = this.clients.map(async (client) => {
+        const resultDocuments = [];
+        const searchResults = await client.search(query, searchOption);
+        for await (const result of searchResults.results) {
+          resultDocuments.push(result.document);
+        }
+        return resultDocuments;
+      });
+
+      // Wait for all search promises to complete and flatten the results
+      const resultsByIndex = await Promise.all(searchPromises);
+      const combinedResults = resultsByIndex.flat();
+      return JSON.stringify(combinedResults);
     } catch (error) {
       logger.error('Azure AI Search request failed', error);
       return 'There was an error with Azure AI Search.';
