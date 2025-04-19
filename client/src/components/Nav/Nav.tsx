@@ -18,6 +18,7 @@ import SearchBar from './SearchBar';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
+import PricingNav from '~/components/Nav/PrincingPlans/PricingNav';
 
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
@@ -155,6 +156,9 @@ const Nav = memo(
       () => (
         <>
           {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+
+          <PricingNav isSmallScreen={isSmallScreen} />
+
           {hasAccessToBookmarks && (
             <>
               <div className="mt-1.5" />
