@@ -7,9 +7,11 @@ const {
   loginLimiter,
   setBalanceConfig,
   checkDomainAllowed,
+  verifyGoogleGroupMembership,
 } = require('~/server/middleware');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const { getGoogleScopes } = require('~/strategies/googleStrategy');
 
 const router = express.Router();
 
@@ -42,14 +44,13 @@ router.get('/error', (req, res) => {
   // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
   res.redirect(`${domains.client}/login?redirect=false`);
 });
-
 /**
  * Google Routes
  */
 router.get(
   '/google',
   passport.authenticate('google', {
-    scope: ['openid', 'profile', 'email'],
+    scope: getGoogleScopes(),
     session: false,
   }),
 );
@@ -60,8 +61,9 @@ router.get(
     failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
-    scope: ['openid', 'profile', 'email'],
+    scope: getGoogleScopes(),
   }),
+  verifyGoogleGroupMembership,
   setBalanceConfig,
   oauthHandler,
 );
