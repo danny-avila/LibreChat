@@ -18,13 +18,6 @@ interface SubscriptionPlan {
   onClick: () => void;
 }
 
-interface CreditPackage {
-  amount: string;
-  price: string;
-  bonus?: string;
-  onClick: () => void;
-}
-
 interface SubscriptionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,7 +43,22 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       },
     },
     {
-      name: localize('com_subscription_basic'),
+      name: 'Starter',
+      price: '$4.95/month',
+      features: [
+        '1,000 credits per month',
+        'Access to standard features',
+        localize('com_subscription_rolling_credits'),
+        localize('com_subscription_no_daily_limits'),
+      ],
+      buttonText: localize('com_subscription_upgrade'),
+      onClick: () => {
+        console.log('Starter plan selected');
+        onOpenChange(false);
+      },
+    },
+    {
+      name: 'Plus',
       price: localize('com_subscription_basic_price'),
       features: [
         localize('com_subscription_basic_feature_1'),
@@ -65,7 +73,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       },
     },
     {
-      name: localize('com_subscription_standard'),
+      name: 'Premium',
       price: localize('com_subscription_standard_price'),
       features: [
         localize('com_subscription_standard_feature_1'),
@@ -81,7 +89,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       },
     },
     {
-      name: localize('com_subscription_pro'),
+      name: 'Pro',
       price: localize('com_subscription_pro_price'),
       features: [
         localize('com_subscription_pro_feature_1'),
@@ -96,7 +104,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       },
     },
     {
-      name: localize('com_subscription_enterprise'),
+      name: 'Enterprise',
       price: localize('com_subscription_enterprise_price'),
       features: [
         localize('com_subscription_enterprise_feature_1'),
@@ -107,49 +115,6 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       buttonText: localize('com_subscription_upgrade'),
       onClick: () => {
         console.log('Enterprise plan selected');
-        onOpenChange(false);
-      },
-    },
-  ];
-
-  const creditPackages: CreditPackage[] = [
-    {
-      amount: '500',
-      price: '$4.95',
-      onClick: () => {
-        console.log('500 credits purchased');
-        onOpenChange(false);
-      },
-    },
-    {
-      amount: '1,500',
-      price: '$9.95',
-      onClick: () => {
-        console.log('1,500 credits purchased');
-        onOpenChange(false);
-      },
-    },
-    {
-      amount: '5,000',
-      price: '$19.95',
-      onClick: () => {
-        console.log('5,000 credits purchased');
-        onOpenChange(false);
-      },
-    },
-    {
-      amount: '18,000',
-      price: '$39.95',
-      onClick: () => {
-        console.log('18,000 credits purchased');
-        onOpenChange(false);
-      },
-    },
-    {
-      amount: '50,000',
-      price: '$79.95',
-      onClick: () => {
-        console.log('50,000 credits purchased');
         onOpenChange(false);
       },
     },
@@ -168,7 +133,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
           {/* Subscription Plans */}
           <div>
             <h3 className="mb-4 text-xl font-semibold">{localize('com_subscription_monthly')}</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
               {subscriptionPlans.map((plan) => (
                 <div
                   key={plan.name}
@@ -209,37 +174,6 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
             </div>
             <div className="mt-3 text-sm text-text-secondary">
               {localize('com_subscription_credits_rolling_note')}
-            </div>
-          </div>
-
-          {/* Buy Credits - Pay as you go */}
-          <div>
-            <h3 className="mb-4 text-xl font-semibold">{localize('com_subscription_pay_as_you_go')}</h3>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              {creditPackages.map((pack) => (
-                <div
-                  key={pack.amount}
-                  className="flex flex-col rounded-xl border border-border-medium bg-surface-primary p-4 text-center shadow-sm transition-all duration-200 hover:shadow-md"
-                >
-                  <div className="text-lg font-semibold">{pack.amount} {localize('com_credits')}</div>
-                  <div className="mt-2 text-lg font-bold">{pack.price}</div>
-                  {pack.bonus && (
-                    <div className="mt-1 text-sm font-medium text-green-600 dark:text-green-400">
-                      {pack.bonus}
-                    </div>
-                  )}
-                  <Button
-                    className="mt-4 w-full bg-surface-secondary text-text-primary hover:bg-surface-hover"
-                    onClick={pack.onClick}
-                    size="sm"
-                  >
-                    {localize('com_buy_now')}
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 text-sm text-text-secondary">
-              {localize('com_subscription_payg_never_expire')}
             </div>
           </div>
         </div>
