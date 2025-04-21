@@ -132,7 +132,6 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
         <div className="space-y-8">
           {/* Subscription Plans */}
           <div>
-            <h3 className="mb-4 text-xl font-semibold">{localize('com_subscription_monthly')}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
               {subscriptionPlans.map((plan) => (
                 <div
