@@ -334,7 +334,7 @@ async function processRequiredActions(client, requiredActions) {
         const domainMap = new Map();
 
         for (const action of actionSets) {
-          const domain = await domainParser(client.req, action.metadata.domain, true);
+          const domain = await domainParser(action.metadata.domain, true);
           domainMap.set(domain, action);
 
           // Check if domain is allowed
@@ -404,7 +404,7 @@ async function processRequiredActions(client, requiredActions) {
 
       // We've already decrypted the metadata, so we can pass it directly
       tool = await createActionTool({
-        req: client.req,
+        userId: client.req.user.id,
         res: client.res,
         action,
         requestBuilder,
@@ -458,7 +458,7 @@ async function processRequiredActions(client, requiredActions) {
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
  * @param {ServerResponse} params.res - The request object.
- * @param {Agent} params.agent - The agent to load tools for.
+ * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
@@ -570,7 +570,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   const domainMap = new Map();
 
   for (const action of actionSets) {
-    const domain = await domainParser(req, action.metadata.domain, true);
+    const domain = await domainParser(action.metadata.domain, true);
     domainMap.set(domain, action);
 
     // Check if domain is allowed (do this once per action set)
@@ -639,7 +639,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
 
     if (requestBuilder) {
       const tool = await createActionTool({
-        req,
+        userId: req.user.id,
         res,
         action,
         requestBuilder,

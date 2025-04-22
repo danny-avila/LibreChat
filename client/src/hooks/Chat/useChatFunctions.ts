@@ -15,6 +15,7 @@ import type {
   TConversation,
   TEndpointOption,
   TEndpointsConfig,
+  EndpointSchemaKey,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
@@ -89,7 +90,7 @@ export default function useChatFunctions({
     {
       editedText = null,
       editedMessageId = null,
-      resubmitFiles = false,
+      isResubmission = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -160,8 +161,8 @@ export default function useChatFunctions({
 
     // set the endpoint option
     const convo = parseCompactConvo({
-      endpoint,
-      endpointType,
+      endpoint: endpoint as EndpointSchemaKey,
+      endpointType: endpointType as EndpointSchemaKey,
       conversation: conversation ?? {},
     });
 
@@ -201,7 +202,7 @@ export default function useChatFunctions({
     };
 
     const reuseFiles =
-      (isRegenerate || resubmitFiles) && parentMessage?.files && parentMessage.files.length > 0;
+      (isRegenerate || isResubmission) && parentMessage?.files && parentMessage.files.length > 0;
     if (setFiles && reuseFiles === true) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
@@ -297,6 +298,7 @@ export default function useChatFunctions({
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
+      isResubmission,
       initialResponse,
       isTemporary,
       ephemeralAgent,

@@ -20,7 +20,6 @@ const { logger } = require('~/config');
 const router = express.Router();
 
 router.use(moderateText);
-router.post('/abort', handleAbort());
 
 router.post(
   '/',
@@ -196,7 +195,8 @@ router.post(
 
       logger.debug('[/ask/gptPlugins]', response);
 
-      const { conversation = {} } = await client.responsePromise;
+      const { conversation = {} } = await response.databasePromise;
+      delete response.databasePromise;
       conversation.title =
         conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
