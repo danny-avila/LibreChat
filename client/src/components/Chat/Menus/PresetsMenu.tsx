@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { BookCopy } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
@@ -32,7 +32,7 @@ const PresetsMenu: FC = () => {
           data-testid="presets-button"
           className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
         >
-          <BookCopy size={16} aria-label="Preset Icon" />
+          <Settings2 size={16} aria-label="Preset Icon" />
         </TooltipAnchor>
       </Trigger>
       <Portal>
