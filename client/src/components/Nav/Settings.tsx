@@ -63,11 +63,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       label: 'com_nav_setting_chat',
     },
     {
-      value: SettingsTabValues.BETA,
-      icon: <ExperimentIcon />,
-      label: 'com_nav_setting_beta',
-    },
-    {
       value: SettingsTabValues.COMMANDS,
       icon: <Command className="icon-sm" />,
       label: 'com_nav_commands',
