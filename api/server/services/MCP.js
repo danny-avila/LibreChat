@@ -30,6 +30,7 @@ async function createMCPTool({ req, toolKey, provider: _provider }) {
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
   let schema = convertJsonSchemaToZod(parameters, {
     allowEmptyObject: !isGoogle,
+    dropFields: isGoogle ? ['anyOf', 'oneOf'] : [],
   });
 
   if (!schema) {

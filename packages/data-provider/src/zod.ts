@@ -19,11 +19,80 @@ function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
   );
 }
 
+type ConvertJsonSchemaToZodOptions = {
+  allowEmptyObject?: boolean;
+  dropFields?: string[];
+};
+
+function dropSchemaFields(
+  schema: JsonSchemaType | undefined,
+  fields: string[],
+): JsonSchemaType | undefined {
+  if (schema == null || typeof schema !== 'object') {return schema;}
+  // Handle arrays (should only occur for enum, required, etc.)
+  if (Array.isArray(schema)) {
+    // This should not happen for the root schema, but for completeness:
+    return schema as unknown as JsonSchemaType;
+  }
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (fields.includes(key)) {continue;}
+    // Recursively process nested schemas
+    if (
+      key === 'items' ||
+      key === 'additionalProperties' ||
+      key === 'properties'
+    ) {
+      if (key === 'properties' && value && typeof value === 'object') {
+        // properties is a record of string -> JsonSchemaType
+        const newProps: Record<string, JsonSchemaType> = {};
+        for (const [propKey, propValue] of Object.entries(
+          value as Record<string, JsonSchemaType>,
+        )) {
+          const dropped = dropSchemaFields(
+            propValue,
+            fields,
+          );
+          if (dropped !== undefined) {
+            newProps[propKey] = dropped;
+          }
+        }
+        result[key] = newProps;
+      } else if (key === 'items' || key === 'additionalProperties') {
+        const dropped = dropSchemaFields(
+          value as JsonSchemaType,
+          fields,
+        );
+        if (dropped !== undefined) {
+          result[key] = dropped;
+        }
+      }
+    } else {
+      result[key] = value;
+    }
+  }
+  // Only return if the result is still a valid JsonSchemaType (must have a type)
+  if (
+    typeof result.type === 'string' &&
+    ['string', 'number', 'boolean', 'array', 'object'].includes(result.type)
+  ) {
+    return result as JsonSchemaType;
+  }
+  return undefined;
+}
+
 export function convertJsonSchemaToZod(
   schema: JsonSchemaType,
-  options: { allowEmptyObject?: boolean } = {},
+  options: ConvertJsonSchemaToZodOptions = {},
 ): z.ZodType | undefined {
-  const { allowEmptyObject = true } = options;
+  const { allowEmptyObject = true, dropFields } = options;
+  if (dropFields && Array.isArray(dropFields) && dropFields.length > 0) {
+    const droppedSchema = dropSchemaFields(schema, dropFields);
+    if (!droppedSchema) {
+      return undefined;
+    }
+    schema = droppedSchema as JsonSchemaType;
+  }
   if (!allowEmptyObject && isEmptyObjectSchema(schema)) {
     return undefined;
   }
@@ -43,8 +112,8 @@ export function convertJsonSchemaToZod(
   } else if (schema.type === 'boolean') {
     zodSchema = z.boolean();
   } else if (schema.type === 'array' && schema.items !== undefined) {
-    const itemSchema = convertJsonSchemaToZod(schema.items);
-    zodSchema = z.array(itemSchema as z.ZodType);
+    const itemSchema = convertJsonSchemaToZod(schema.items as JsonSchemaType);
+    zodSchema = z.array((itemSchema ?? z.unknown()) as z.ZodType);
   } else if (schema.type === 'object') {
     const shape: Record<string, z.ZodType> = {};
     const properties = schema.properties ?? {};
@@ -83,7 +152,7 @@ export function convertJsonSchemaToZod(
       const additionalSchema = convertJsonSchemaToZod(
         schema.additionalProperties as JsonSchemaType,
       );
-      zodSchema = objectSchema.catchall(additionalSchema as z.ZodType);
+      zodSchema = objectSchema.catchall((additionalSchema ?? z.unknown()) as z.ZodType);
     } else {
       zodSchema = objectSchema;
     }

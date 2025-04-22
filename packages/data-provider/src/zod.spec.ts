@@ -672,4 +672,196 @@ describe('convertJsonSchemaToZod', () => {
       expect(resultWithoutFlag instanceof z.ZodObject).toBeTruthy();
     });
   });
+
+  describe('dropFields option', () => {
+    it('should drop specified fields from the schema', () => {
+      // Create a schema with fields that should be dropped
+      const schema: JsonSchemaType & { anyOf?: any; oneOf?: any } = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          age: { type: 'number' },
+        },
+        anyOf: [
+          { required: ['name'] },
+          { required: ['age'] },
+        ],
+        oneOf: [
+          { properties: { role: { type: 'string', enum: ['admin'] } } },
+          { properties: { role: { type: 'string', enum: ['user'] } } },
+        ],
+      };
+
+      // Convert with dropFields option
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        dropFields: ['anyOf', 'oneOf'],
+      });
+
+      // The schema should still validate normal properties
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+
+      // But the anyOf/oneOf constraints should be gone
+      // (If they were present, this would fail because neither name nor age is required)
+      expect(zodSchema?.parse({})).toEqual({});
+    });
+
+    it('should drop fields from nested schemas', () => {
+      // Create a schema with nested fields that should be dropped
+      const schema: JsonSchemaType & {
+        properties?: Record<string, JsonSchemaType & { anyOf?: any; oneOf?: any }>
+      } = {
+        type: 'object',
+        properties: {
+          user: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              role: { type: 'string' },
+            },
+            anyOf: [
+              { required: ['name'] },
+              { required: ['role'] },
+            ],
+          },
+          settings: {
+            type: 'object',
+            properties: {
+              theme: { type: 'string' },
+            },
+            oneOf: [
+              { properties: { theme: { enum: ['light'] } } },
+              { properties: { theme: { enum: ['dark'] } } },
+            ],
+          },
+        },
+      };
+
+      // Convert with dropFields option
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        dropFields: ['anyOf', 'oneOf'],
+      });
+
+      // The schema should still validate normal properties
+      expect(zodSchema?.parse({
+        user: { name: 'John', role: 'admin' },
+        settings: { theme: 'custom' }, // This would fail if oneOf was still present
+      })).toEqual({
+        user: { name: 'John', role: 'admin' },
+        settings: { theme: 'custom' },
+      });
+
+      // But the anyOf constraint should be gone from user
+      // (If it was present, this would fail because neither name nor role is required)
+      expect(zodSchema?.parse({
+        user: {},
+        settings: { theme: 'light' },
+      })).toEqual({
+        user: {},
+        settings: { theme: 'light' },
+      });
+    });
+
+    it('should handle dropping fields that are not present in the schema', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          age: { type: 'number' },
+        },
+      };
+
+      // Convert with dropFields option for fields that don't exist
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        dropFields: ['anyOf', 'oneOf', 'nonExistentField'],
+      });
+
+      // The schema should still work normally
+      expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
+    });
+
+    it('should handle complex schemas with dropped fields', () => {
+      // Create a complex schema with fields to drop at various levels
+      const schema: any = {
+        type: 'object',
+        properties: {
+          user: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              roles: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    permissions: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                        enum: ['read', 'write', 'admin'],
+                      },
+                      anyOf: [{ minItems: 1 }],
+                    },
+                  },
+                  oneOf: [
+                    { required: ['name', 'permissions'] },
+                    { required: ['name'] },
+                  ],
+                },
+              },
+            },
+            anyOf: [{ required: ['name'] }],
+          },
+        },
+      };
+
+      // Convert with dropFields option
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        dropFields: ['anyOf', 'oneOf'],
+      });
+
+      // Test with data that would normally fail the constraints
+      const testData = {
+        user: {
+          // Missing name, would fail anyOf
+          roles: [
+            {
+              // Missing permissions, would fail oneOf
+              name: 'moderator',
+            },
+            {
+              name: 'admin',
+              permissions: [], // Empty array, would fail anyOf in permissions
+            },
+          ],
+        },
+      };
+
+      // Should pass validation because constraints were dropped
+      expect(zodSchema?.parse(testData)).toEqual(testData);
+    });
+
+    it('should preserve other options when using dropFields', () => {
+      const schema: JsonSchemaType & { anyOf?: any } = {
+        type: 'object',
+        properties: {},
+        anyOf: [{ required: ['something'] }],
+      };
+
+      // Test with allowEmptyObject: false
+      const result1 = convertJsonSchemaToZod(schema, {
+        allowEmptyObject: false,
+        dropFields: ['anyOf'],
+      });
+      expect(result1).toBeUndefined();
+
+      // Test with allowEmptyObject: true
+      const result2 = convertJsonSchemaToZod(schema, {
+        allowEmptyObject: true,
+        dropFields: ['anyOf'],
+      });
+      expect(result2).toBeDefined();
+      expect(result2 instanceof z.ZodObject).toBeTruthy();
+    });
+  });
 });
