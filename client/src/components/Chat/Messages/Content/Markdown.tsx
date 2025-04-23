@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef, useEffect } from 'react';
+import React, { memo, useMemo, useRef, useEffect, useState } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
@@ -22,6 +22,8 @@ import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
+import CitationTooltip from './CitationTooltip';
+import ReactDOM from 'react-dom';
 
 type TCodeProps = {
   inline?: boolean;
@@ -174,6 +176,14 @@ type TContentProps = {
 const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
+  const [tooltipData, setTooltipData] = useState({
+    isVisible: false,
+    citation: '',
+    position: { x: 0, y: 0 },
+    index: -1,
+  });
+
+  const markdownRef = useRef(null);
 
   const currentContent = useMemo(() => {
     if (isInitializing) {
@@ -181,6 +191,120 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     }
     return LaTeXParsing ? preprocessLaTeX(content) : content;
   }, [content, LaTeXParsing, isInitializing]);
+
+  const processedContent = useMemo(() => {
+    if (isInitializing) {
+      return '';
+    }
+  
+    const result = LaTeXParsing ? preprocessLaTeX(content) : content;
+    if (!result) {
+      return result;
+    }
+  
+    return result.replace(/\[(\d+)\]/g, (match, refNumber) => {
+      return `{{citation-ref:${refNumber}}}`;
+    });
+  }, [content, LaTeXParsing, isInitializing]);
+
+  useEffect(() => {
+    if (!markdownRef.current) {
+      return;
+    }
+    // Trouver tous les nœuds de texte
+    const walker = document.createTreeWalker(
+      markdownRef.current,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node);
+    }
+    textNodes.forEach(textNode => {
+      const text = textNode.nodeValue || '';
+      if (text.includes('{{citation-ref:')) {
+        const fragments = text.split(/(\{\{citation-ref:\d+\}\})/);
+        if (fragments.length > 1) {
+          const container = document.createElement('span');
+          fragments.forEach(fragment => {
+            const match = fragment.match(/\{\{citation-ref:(\d+)\}\}/);
+            if (match) {
+              const refNumber = match[1];
+              const index = parseInt(refNumber, 10) - 1;
+              const refBtn = document.createElement('button');
+              refBtn.textContent = refNumber;
+              refBtn.className = 'inline-flex items-center justify-center w-5 h-5 text-xs font-medium rounded-full bg-gray-800 dark:bg-gray-700 text-white hover:bg-blue-800 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 mx-0.5';
+              refBtn.style.minWidth = '20px';
+              refBtn.dataset.citationIndex = refNumber;
+
+              refBtn.addEventListener('mouseenter', (e) => {
+                const citation = getCitationByIndex(index);
+                if (citation) {
+                  refBtn.classList.remove('bg-gray-800', 'dark:bg-gray-700');
+                  refBtn.classList.add('bg-blue-800', 'dark:bg-blue-800');
+
+                  setTooltipData({
+                    isVisible: true,
+                    citation,
+                    position: { x: e.clientX, y: e.clientY },
+                    index,
+                  });
+                }
+              });
+              refBtn.addEventListener('mouseleave', () => {
+                refBtn.classList.remove('bg-blue-800', 'dark:bg-blue-800');
+                refBtn.classList.add('bg-gray-800', 'dark:bg-gray-700');
+
+                setTooltipData(prev => ({ ...prev, isVisible: false }));
+              });
+              refBtn.addEventListener('click', () => {
+                const citation = getCitationByIndex(index);
+                if (citation) {
+                  window.open(citation, '_blank');
+                }
+              });
+              container.appendChild(refBtn);
+            } else {
+              const textNode = document.createTextNode(fragment);
+              container.appendChild(textNode);
+            }
+          });
+          textNode.parentNode.replaceChild(container, textNode);
+        }
+      }
+    });
+    function getCitationByIndex(index) {
+      const parent = markdownRef.current.closest('.message-render');
+      if (!parent || !parent.id) {
+        return null;
+      }
+      const messageId = parent.id;
+      const message = findMessageById(messageId);
+      if (message && message.citations && index >= 0 && index < message.citations.length) {
+        return message.citations[index];
+      }
+      return null;
+    }
+    function findMessageById(messageId) {
+      const messageElement = document.getElementById(messageId);
+      if (!messageElement) {
+        return null;
+      }
+
+      const citationsAttr = messageElement.getAttribute('data-citations');
+      if (citationsAttr) {
+        try {
+          return { citations: JSON.parse(citationsAttr) };
+        } catch (e) {
+          console.error('Failed to parse citations data attribute', e);
+        }
+      }
+
+      return null;
+    }
+  }, [processedContent]);
 
   const rehypePlugins = useMemo(
     () => [
@@ -221,24 +345,34 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   return (
     <ArtifactProvider>
       <CodeBlockProvider>
-        <ReactMarkdown
-          /** @ts-ignore */
-          remarkPlugins={remarkPlugins}
-          /* @ts-ignore */
-          rehypePlugins={rehypePlugins}
-          components={
-            {
-              code,
-              a,
-              p,
-              artifact: Artifact,
-            } as {
-              [nodeType: string]: React.ElementType;
+        <div ref={markdownRef}>
+          <ReactMarkdown
+            /** @ts-ignore */
+            remarkPlugins={remarkPlugins}
+            /* @ts-ignore */
+            rehypePlugins={rehypePlugins}
+            components={
+              {
+                code,
+                a,
+                p,
+                artifact: Artifact,
+              } as {
+                [nodeType: string]: React.ElementType;
+              }
             }
-          }
-        >
-          {currentContent}
-        </ReactMarkdown>
+          >
+            {processedContent}
+          </ReactMarkdown>
+        </div>
+        {ReactDOM.createPortal(
+          <CitationTooltip
+            citation={tooltipData.citation}
+            isVisible={tooltipData.isVisible}
+            position={tooltipData.position}
+          />,
+          document.body
+        )}
       </CodeBlockProvider>
     </ArtifactProvider>
   );
