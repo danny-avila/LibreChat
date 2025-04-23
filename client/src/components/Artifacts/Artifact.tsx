@@ -11,7 +11,16 @@ import ArtifactButton from './ArtifactButton';
 
 export const artifactPlugin: Pluggable = () => {
   return (tree) => {
-    visit(tree, ['textDirective', 'leafDirective', 'containerDirective'], (node) => {
+    visit(tree, ['textDirective', 'leafDirective', 'containerDirective'], (node, index, parent) => {
+      if (node.type === 'textDirective') {
+        const replacementText = `:${node.name}`;
+        if (parent && Array.isArray(parent.children) && typeof index === 'number') {
+          parent.children[index] = {
+            type: 'text',
+            value: replacementText,
+          };
+        }
+      }
       if (node.name !== 'artifact') {
         return;
       }
@@ -26,7 +35,6 @@ export const artifactPlugin: Pluggable = () => {
 };
 
 export function Artifact({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   node,
   ...props
 }: Artifact & {
