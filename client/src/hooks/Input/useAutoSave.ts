@@ -188,10 +188,16 @@ export const useAutoSave = ({
           `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`,
         );
 
-        // If there's a pending draft, apply it to the new conversationId and clear the pending draft
+        // Clear the pending draft, if it exists, and save the current draft to the new conversationId;
+        // otherwise, save the current text area value to the new conversationId
+        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`);
         if (pendingDraft) {
           localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`, pendingDraft);
-          localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`);
+        } else if (textAreaRef?.current?.value) {
+          localStorage.setItem(
+            `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
+            encodeBase64(textAreaRef.current.value),
+          );
         }
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
@@ -206,9 +212,10 @@ export const useAutoSave = ({
     prevConversationIdRef.current = conversationId;
     setCurrentConversationId(conversationId);
   }, [
-    conversationId,
     currentConversationId,
+    conversationId,
     restoreFiles,
+    textAreaRef,
     restoreText,
     saveDrafts,
     saveText,
