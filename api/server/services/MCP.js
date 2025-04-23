@@ -50,7 +50,7 @@ async function createMCPTool({ req, toolKey, provider: _provider }) {
   const _call = async (toolArguments, config) => {
     try {
       const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
-      const mcpManager = getMCPManager(config?.userId);
+      const mcpManager = getMCPManager(config?.configurable?.user_id);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
       const result = await mcpManager.callTool({
         serverName,
@@ -72,7 +72,7 @@ async function createMCPTool({ req, toolKey, provider: _provider }) {
       return result;
     } catch (error) {
       logger.error(
-        `[MCP][User: ${config?.userId}][${serverName}] Error calling "${toolName}" MCP tool:`,
+        `[MCP][User: ${config?.configurable?.user_id}][${serverName}] Error calling "${toolName}" MCP tool:`,
         error,
       );
       throw new Error(
