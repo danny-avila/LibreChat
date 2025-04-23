@@ -15,6 +15,7 @@ const WebNavigator = require('./structured/WebNavigator');
 const E2BCode = require('./structured/E2BCode');
 const TimeAPI = require('./structured/TimeAPI');
 const Quickchart = require('./structured/Quickchart');
+const WordPress = require('./structured/WordPress');
 
 /** @type {Record<string, TPlugin | undefined>} */
 const manifestToolMap = {};
@@ -48,4 +49,5 @@ module.exports = {
   E2BCode,
   TimeAPI,
   Quickchart,
+  WordPress,
 };
