@@ -180,6 +180,14 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
+  } else if (modelName.includes('o4-mini')) {
+    return 'o4-mini';
+  } else if (modelName.includes('o4')) {
+    return 'o4';
+  } else if (modelName.includes('o3-mini')) {
+    return 'o3-mini';
+  } else if (modelName.includes('o3')) {
+    return 'o3';
   } else if (modelName.includes('o1-preview')) {
     return 'o1-preview';
   } else if (modelName.includes('o1-mini')) {
