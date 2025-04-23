@@ -15,6 +15,7 @@ export interface IMessage extends Document {
   summaryTokenCount?: number;
   sender?: string;
   text?: string;
+  citations?: string[];
   summary?: string;
   isCreatedByUser: boolean;
   unfinished?: boolean;
@@ -90,6 +91,10 @@ const messageSchema: Schema<IMessage> = new Schema(
     text: {
       type: String,
       meiliIndex: true,
+    },
+    citations: {
+      type: [String],
+      default: [],
     },
     summary: {
       type: String,
