@@ -1,5 +1,5 @@
 import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import type { DynamicSettingProps, TConversation } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
 import { Label, Input, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { useChatContext } from '~/Providers';
@@ -25,7 +25,16 @@ function DynamicInput({
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
+  const { preset, updateSearchParams } = useChatContext();
+
+  // Create a custom setter that also updates URL parameters
+  const updateUrlParams = (value: string | number) => {
+    if (conversation && updateSearchParams) {
+      const updatedConvo = { ...conversation } as TConversation;
+      updatedConvo[settingKey as keyof TConversation] = value as never;
+      updateSearchParams(updatedConvo);
+    }
+  };
 
   const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
@@ -45,15 +54,20 @@ function DynamicInput({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
+
     if (type !== 'number') {
       setInputValue(e);
+      updateUrlParams(value);
       return;
     }
 
     if (value === '') {
       setInputValue(e);
+      updateUrlParams('');
     } else if (!isNaN(Number(value))) {
+      const numValue = Number(value);
       setInputValue(e, true);
+      updateUrlParams(numValue);
     }
   };
 

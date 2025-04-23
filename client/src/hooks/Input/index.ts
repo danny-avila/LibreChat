@@ -10,3 +10,4 @@ export { default as useMultipleKeys } from './useMultipleKeys';
 export { default as useSpeechToText } from './useSpeechToText';
 export { default as useTextToSpeech } from './useTextToSpeech';
 export { default as useGetAudioSettings } from './useGetAudioSettings';
+export { default as useUpdateSearchParams } from './useUpdateSearchParams';

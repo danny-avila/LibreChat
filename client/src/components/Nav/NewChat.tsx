@@ -4,15 +4,16 @@ import { useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
-import type { TConversation, TMessage } from 'librechat-data-provider';
+import type { TConversation, TMessage, TPreset } from 'librechat-data-provider';
 import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
+import store from '~/store';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { useLocalize, useNewConvo } from '~/hooks';
+import { useLocalize } from '~/hooks';
+import { conversationToSearchParams } from '~/hooks/Input/useUpdateSearchParams';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { cn } from '~/utils';
-import store from '~/store';
 
 const NewChatButtonIcon = React.memo(({ conversation }: { conversation: TConversation | null }) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
@@ -85,11 +86,10 @@ export default function NewChat({
   isSmallScreen: boolean;
 }) {
   const queryClient = useQueryClient();
-  /** Note: this component needs an explicit index passed if using more than one */
-  const { newConversation: newConvo } = useNewConvo(index);
   const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
+  const defaultPreset = useRecoilValue<TPreset | null>(store.defaultPreset);
 
   const clickHandler = useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
@@ -99,12 +99,22 @@ export default function NewChat({
           [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
           [],
         );
-        newConvo();
-        navigate('/c/new');
+
+        // Use parameters from the default preset if available
+        if (defaultPreset) {
+          const searchParams = conversationToSearchParams(defaultPreset as TConversation);
+          navigate(`/c/new?${searchParams.toString()}`, { replace: true });
+        } else {
+          // Fall back to current conversation parameters
+          const endpoint = conversation?.endpoint || '';
+          const model = conversation?.model || '';
+          navigate(`/c/new?endpoint=${endpoint}&model=${model}`, { replace: true });
+        }
+
         toggleNav();
       }
     },
-    [queryClient, conversation, newConvo, navigate, toggleNav],
+    [queryClient, conversation, navigate, toggleNav, defaultPreset],
   );
 
   return (

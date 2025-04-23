@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import type { DynamicSettingProps, TConversation } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger, Tag } from '~/components/ui';
 import { useChatContext, useToastContext } from '~/Providers';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
@@ -28,7 +28,7 @@ function DynamicTags({
   maxTags,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
+  const { preset, updateSearchParams } = useChatContext();
   const { showToast } = useToastContext();
   const inputRef = useRef<HTMLInputElement>(null);
   const [tagText, setTagText] = useState<string>('');
@@ -44,8 +44,15 @@ function DynamicTags({
         return;
       }
       setOption(settingKey)(update);
+
+      // Update URL parameters when tags change
+      if (conversation && updateSearchParams) {
+        const updatedConvo = { ...conversation } as TConversation;
+        updatedConvo[settingKey as keyof TConversation] = update as never;
+        updateSearchParams(updatedConvo);
+      }
     },
-    [optionType, setOption, settingKey],
+    [optionType, setOption, settingKey, conversation, updateSearchParams],
   );
 
   const onTagClick = useCallback(() => {

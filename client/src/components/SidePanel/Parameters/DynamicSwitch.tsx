@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import type { DynamicSettingProps, TConversation } from 'librechat-data-provider';
 import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
@@ -22,7 +22,7 @@ function DynamicSwitch({
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
+  const { preset, updateSearchParams } = useChatContext();
   const [inputValue, setInputValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
   useParameterEffects({
     preset,
@@ -33,6 +33,17 @@ function DynamicSwitch({
     setInputValue,
     preventDelayedUpdate: true,
   });
+
+  const updateUrlParams = useCallback(
+    (checked: boolean) => {
+      if (conversation && updateSearchParams) {
+        const updatedConvo = { ...conversation } as TConversation;
+        updatedConvo[settingKey as keyof TConversation] = checked as never;
+        updateSearchParams(updatedConvo);
+      }
+    },
+    [conversation, updateSearchParams, settingKey],
+  );
 
   const selectedValue = useMemo(() => {
     if (optionType === OptionTypes.Custom) {
@@ -50,6 +61,7 @@ function DynamicSwitch({
       return;
     }
     setOption(settingKey)(checked);
+    updateUrlParams(checked);
   };
 
   return (
@@ -65,7 +77,7 @@ function DynamicSwitch({
               htmlFor={`${settingKey}-dynamic-switch`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}:{' '}
@@ -84,7 +96,11 @@ function DynamicSwitch({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}

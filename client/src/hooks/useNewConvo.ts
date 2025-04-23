@@ -1,6 +1,5 @@
 import { useCallback, useRef } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { useNavigate } from 'react-router-dom';
 import {
   Constants,
   FileSources,
@@ -32,12 +31,14 @@ import { useResetChatBadges } from './useChatBadges';
 import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import { logger } from '~/utils';
+import { useUpdateSearchParams } from '~/hooks/Input';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
-  const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
   const clearAllConversations = store.useClearConvoState();
+  const updateSearchParams = useUpdateSearchParams();
+
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
@@ -153,18 +154,23 @@ const useNewConvo = (index = 0) => {
           clearAllConversations(true);
         }
         logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
+
+        // First set the conversation state
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!(keepLatestMessage ?? false)) {
           clearAllLatestMessages();
         }
 
+        // Always update search params, whether or not endpoint/model are defined
+        // This ensures params are set for both system defaults and user presets
+        updateSearchParams(conversation);
+
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
           const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
             document.title = appTitle;
           }
-          navigate(`/c/${Constants.NEW_CONVO}`);
         }
 
         clearTimeout(timeoutIdRef.current);
@@ -178,7 +184,7 @@ const useNewConvo = (index = 0) => {
           }
         }, 150);
       },
-    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
+    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data, updateSearchParams],
   );
 
   const newConversation = useCallback(

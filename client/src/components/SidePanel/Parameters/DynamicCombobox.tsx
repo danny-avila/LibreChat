@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import type { DynamicSettingProps, TConversation } from 'librechat-data-provider';
 import { Label, HoverCard, HoverCardTrigger } from '~/components/ui';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
@@ -32,8 +32,19 @@ function DynamicCombobox({
   searchPlaceholder = '',
 }: DynamicSettingProps & { isCollapsed?: boolean; SelectIcon?: React.ReactNode }) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
+  const { preset, updateSearchParams } = useChatContext();
   const [inputValue, setInputValue] = useState<string | null>(null);
+
+  const updateUrlParams = useCallback(
+    (value: string) => {
+      if (conversation && updateSearchParams) {
+        const updatedConvo = { ...conversation } as TConversation;
+        updatedConvo[settingKey as keyof TConversation] = value as never;
+        updateSearchParams(updatedConvo);
+      }
+    },
+    [conversation, updateSearchParams, settingKey],
+  );
 
   const selectedValue = useMemo(() => {
     if (optionType === OptionTypes.Custom) {
@@ -58,9 +69,10 @@ function DynamicCombobox({
         setInputValue(value);
       } else {
         setOption(settingKey)(value);
+        updateUrlParams(value);
       }
     },
-    [optionType, setOption, settingKey],
+    [optionType, setOption, settingKey, updateUrlParams],
   );
 
   useParameterEffects({

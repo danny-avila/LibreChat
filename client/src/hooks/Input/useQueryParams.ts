@@ -37,9 +37,15 @@ const processValidSettings = (queryParams: Record<string, string>) => {
     try {
       const schema = tQueryParamsSchema.shape[key] as ZodAny | undefined;
       if (schema) {
-        const parsedValue = parseQueryValue(value);
-        const validValue = schema.parse(parsedValue);
-        validSettings[key] = validValue;
+        // Special handling for stop parameter (comma-separated values)
+        if (key === 'stop' && value && typeof value === 'string' && value.includes(',')) {
+          const stopValues = value.split(',').filter(val => val.trim() !== '');
+          validSettings[key] = stopValues;
+        } else {
+          const parsedValue = parseQueryValue(value);
+          const validValue = schema.parse(parsedValue);
+          validSettings[key] = validValue;
+        }
       }
     } catch (error) {
       console.warn(`Invalid value for setting ${key}:`, error);
@@ -73,7 +79,7 @@ export default function useQueryParams({
   const attemptsRef = useRef(0);
   const processedRef = useRef(false);
   const methods = useChatFormContext();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
@@ -220,10 +226,13 @@ export default function useQueryParams({
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
       const currentText = methods.getValues('text');
 
-      /** Clean up URL parameters after successful processing */
       const success = () => {
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
+        const currentParams = new URLSearchParams(window.location.search);
+        currentParams.delete('prompt');
+        currentParams.delete('q');
+        currentParams.delete('submit');
+
+        setSearchParams(currentParams, { replace: true });
         processedRef.current = true;
         console.log('Parameters processed successfully');
         clearInterval(intervalId);

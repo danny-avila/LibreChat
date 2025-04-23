@@ -7,6 +7,7 @@ import type { TMessage } from 'librechat-data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useNewConvo from '~/hooks/useNewConvo';
+import { useUpdateSearchParams } from '~/hooks/Input';
 import store from '~/store';
 
 // this to be set somewhere else
@@ -19,6 +20,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const { isAuthenticated } = useAuthContext();
 
   const { newConversation } = useNewConvo(index);
+  const updateSearchParams = useUpdateSearchParams();
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId } = conversation ?? {};
@@ -173,5 +175,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     setFiles,
     filesLoading,
     setFilesLoading,
+    updateSearchParams,
   };
 }
