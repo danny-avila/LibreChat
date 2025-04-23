@@ -13,6 +13,7 @@ import { MessageContext } from '~/Providers';
 import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
+import SourcesDisplay from '../Content/SourcesDisplay';
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -70,6 +71,7 @@ const MessageRender = memo(
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
     const showCardRender = isLast && !isSubmittingFamily && isCard;
     const isLatestCard = isCard && !isSubmittingFamily && isLatestMessage;
+    const hasCitations = msg?.citations && msg.citations.length > 0;
 
     const iconData: TMessageIcon = useMemo(
       () => ({
@@ -132,6 +134,7 @@ const MessageRender = memo(
           conditionalClasses.focus,
           'message-render',
         )}
+        data-citations={msg.citations ? JSON.stringify(msg.citations) : ''}
         onClick={clickHandler}
         onKeyDown={(e) => {
           if ((e.key === 'Enter' || e.key === ' ') && clickHandler) {
@@ -158,6 +161,7 @@ const MessageRender = memo(
           )}
         >
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          {!msg.isCreatedByUser && hasCitations && <SourcesDisplay message={msg} />}
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
