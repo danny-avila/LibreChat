@@ -4,7 +4,6 @@ export { default as AgentsProvider } from './AgentsContext';
 export * from './ChatContext';
 export * from './ShareContext';
 export * from './ToastContext';
-export * from './SearchContext';
 export * from './FileMapContext';
 export * from './AddedChatContext';
 export * from './EditorContext';

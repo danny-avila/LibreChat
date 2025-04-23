@@ -1,5 +1,7 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
+  Constants,
+  ErrorTypes,
   EModelEndpoint,
   getResponseSender,
   AgentCapabilities,
@@ -117,6 +119,7 @@ function optionalChainWithEmptyCheck(...values) {
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
+ * @param {Set<string>} [params.allowedProviders]
  * @param {object} [params.endpointOption]
  * @param {boolean} [params.isInitialAgent]
  * @returns {Promise<Agent>}
@@ -126,8 +129,14 @@ const initializeAgentOptions = async ({
   res,
   agent,
   endpointOption,
+  allowedProviders,
   isInitialAgent = false,
 }) => {
+  if (allowedProviders.size > 0 && !allowedProviders.has(agent.provider)) {
+    throw new Error(
+      `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
+    );
+  }
   let currentFiles;
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
@@ -150,14 +159,20 @@ const initializeAgentOptions = async ({
     currentFiles,
     agent.tool_resources,
   );
+
+  const provider = agent.provider;
   const { tools, toolContextMap } = await loadAgentTools({
     req,
     res,
-    agent,
+    agent: {
+      id: agent.id,
+      tools: agent.tools,
+      provider,
+      model: agent.model,
+    },
     tool_resources,
   });
 
-  const provider = agent.provider;
   agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
@@ -263,6 +278,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
+  /** @type {Set<string>} */
+  const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
   // Handle primary agent
   const primaryConfig = await initializeAgentOptions({
@@ -270,6 +287,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     res,
     agent: primaryAgent,
     endpointOption,
+    allowedProviders,
     isInitialAgent: true,
   });
 
@@ -285,6 +303,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         res,
         agent,
         endpointOption,
+        allowedProviders,
       });
       agentConfigs.set(agentId, config);
     }
@@ -310,10 +329,14 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    endpoint: EModelEndpoint.agents,
     attachments: primaryConfig.attachments,
+    endpointType: endpointOption.endpointType,
     maxContextTokens: primaryConfig.maxContextTokens,
     resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
+    endpoint:
+      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
+        ? primaryConfig.endpoint
+        : EModelEndpoint.agents,
   });
 
   return { client };

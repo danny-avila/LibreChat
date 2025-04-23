@@ -1,21 +1,21 @@
 {
   "name": "librechat-mcp",
-  "version": "1.1.0",
-  "type": "module",
+  "version": "1.2.0",
+  "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.es.js",
+      "require": "./dist/index.js",
       "types": "./dist/types/index.d.ts"
     }
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --configPlugin=@rollup/plugin-typescript",
-    "build:watch": "rollup -c -w --configPlugin=@rollup/plugin-typescript",
+    "build": "npm run clean && rollup -c --bundleConfigAsCjs",
+    "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
     "verify": "npm run test:ci",
@@ -60,7 +60,6 @@
     "rollup": "^4.22.4",
     "rollup-plugin-generate-package-json": "^3.2.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-typescript2": "^0.35.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4"
   },
@@ -68,12 +67,12 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.8.0",
+    "@modelcontextprotocol/sdk": "^1.9.0",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2"
   },
   "peerDependencies": {
-    "keyv": "^4.5.4"
+    "keyv": "^5.3.2"
   }
 }
