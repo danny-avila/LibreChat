@@ -214,5 +214,28 @@
     "description": "Generate data visualizations and charts using QuickChart.io",
     "icon": "/assets/quickchart_bar_chart_logo.svg",
     "authConfig": []
+  },
+  {
+    "name": "WordPress",
+    "pluginKey": "wordpress",
+    "description": "A tool to interact with WordPress. Supports creating, listing, editing, and deleting posts or pages.",
+    "icon": "https://s.w.org/style/images/about/WordPress-logotype-standard.png",
+    "authConfig": [
+      {
+        "authField": "WORDPRESS_BASE_URL",
+        "label": "WordPress Site URL",
+        "description": "The base URL of your WordPress site (e.g., https://example.com)"
+      },
+      {
+        "authField": "WORDPRESS_USERNAME",
+        "label": "WordPress Username",
+        "description": "Your WordPress username"
+      },
+      {
+        "authField": "WORDPRESS_PASSWORD",
+        "label": "WordPress Password",
+        "description": "Your WordPress password or application password"
+      }
+    ]
   }
 ]

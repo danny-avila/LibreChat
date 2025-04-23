@@ -22,6 +22,7 @@ const {
   E2BCode,
   WebNavigator,
   Quickchart,
+  WordPress,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -162,6 +163,7 @@ const loadTools = async ({
     E2BCode: E2BCode,
     time_api: TimeAPI,
     quickchart: Quickchart,
+    wordpress: WordPress,
   };
 
   const customConstructors = {
