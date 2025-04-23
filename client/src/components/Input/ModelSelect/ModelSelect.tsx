@@ -11,6 +11,7 @@ type TGoogleProps = {
 type TSelectProps = {
   conversation: TConversation | null;
   setOption: TSetOption;
+  disabled?: boolean;
   extraProps?: TGoogleProps;
   showAbove?: boolean;
   popover?: boolean;
@@ -18,6 +19,7 @@ type TSelectProps = {
 
 export default function ModelSelect({
   conversation,
+  disabled,
   setOption,
   popover = false,
   showAbove = true,
@@ -40,6 +42,7 @@ export default function ModelSelect({
 
   return (
     <OptionComponent
+      disabled={disabled}
       conversation={conversation}
       setOption={setOption}
       models={models}

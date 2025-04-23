@@ -19,6 +19,7 @@ export default function PluginsByIndex({
   conversation,
   setOption,
   models,
+  disabled,
   showAbove,
   popover = false,
 }: TModelSelectProps) {
@@ -82,6 +83,7 @@ export default function PluginsByIndex({
       {visible && (
         <>
           <Menu
+            disabled={disabled}
             value={conversation.model ?? ''}
             setValue={setOption('model')}
             availableValues={models}
@@ -93,6 +95,7 @@ export default function PluginsByIndex({
             )}
           />
           <PluginsMenu
+            disabled={disabled}
             showAbove={false}
             showLabel={false}
             setSelected={setTools}

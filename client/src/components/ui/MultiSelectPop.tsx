@@ -25,6 +25,7 @@ function MultiSelectPop({
   value,
   setSelected,
   availableValues,
+  disabled,
   showAbove = false,
   showLabel = true,
   containerClassName,
@@ -52,6 +53,7 @@ function MultiSelectPop({
         <div className="relative">
           <Trigger asChild>
             <button
+              disabled={disabled}
               data-testid="select-dropdown-button"
               className={cn(
                 'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',

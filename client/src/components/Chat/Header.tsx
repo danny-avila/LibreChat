@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { getConfigDefaults, PermissionTypes, Permissions, TMessage } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
-import { useMediaQuery, useHasAccess } from '~/hooks';
+import { useMediaQuery, useHasAccess, useChatHelpers } from '~/hooks';
 import HeaderOptions from './Input/HeaderOptions';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import AddMultiConvo from './AddMultiConvo';
@@ -21,6 +21,8 @@ export default function Header() {
     [startupConfig],
   );
 
+  const getHasMessages = (messages: TMessage[] | undefined): boolean => !!messages?.length;
+
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
@@ -32,15 +34,17 @@ export default function Header() {
   });
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const chatHelpers = useChatHelpers();
+  const messages = chatHelpers.getMessages();
 
   return (
     <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold dark:bg-gray-800 dark:text-white">
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
-          {interfaceConfig.endpointsMenu === true && <EndpointsMenu />}
+          {interfaceConfig.endpointsMenu === true && <EndpointsMenu isDisabled={getHasMessages(messages)} />}
           {modelSpecs.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
-          {<HeaderOptions interfaceConfig={interfaceConfig} />}
+          {<HeaderOptions interfaceConfig={interfaceConfig} isDisabled={getHasMessages(messages)} />}
           {interfaceConfig.presets === true && <PresetsMenu />}
           {hasAccessToBookmarks === true && <BookmarkMenu />}
           {hasAccessToMultiConvo === true && <AddMultiConvo />}

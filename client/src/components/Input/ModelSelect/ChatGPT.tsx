@@ -8,6 +8,7 @@ export default function ChatGPT({
   setOption,
   models,
   showAbove,
+  disabled,
   popover = false,
 }: TModelSelectProps) {
   if (!conversation) {
@@ -21,6 +22,7 @@ export default function ChatGPT({
   return (
     <Menu
       value={model ?? ''}
+      disabled={disabled}
       setValue={setOption('model')}
       availableValues={models}
       showAbove={showAbove}

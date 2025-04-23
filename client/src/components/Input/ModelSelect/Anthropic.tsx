@@ -7,6 +7,7 @@ export default function Anthropic({
   conversation,
   setOption,
   models,
+  disabled,
   showAbove,
   popover = false,
 }: TModelSelectProps) {
@@ -14,6 +15,7 @@ export default function Anthropic({
   return (
     <Menu
       value={conversation?.model ?? ''}
+      disabled={disabled}
       setValue={setOption('model')}
       availableValues={models}
       showAbove={showAbove}

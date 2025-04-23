@@ -243,6 +243,7 @@ export type TSettingsProps = TBaseSettingsProps & {
 };
 
 export type TModels = {
+  disabled?: boolean;
   models: string[];
   showAbove?: boolean;
   popover?: boolean;
@@ -491,6 +492,7 @@ export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
+  disabled?: boolean;
 }
 export type TLoginLayoutContext = {
   startupConfig: t.TStartupConfig | null;

@@ -3,7 +3,7 @@ import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel } from '~/components/ui/Resizable';
-import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
+import { useMediaQuery, useLocalStorage, useLocalize, useChatHelpers } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
@@ -47,6 +47,8 @@ const SidePanel = ({
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const chatHelpers = useChatHelpers();
+  const messages = chatHelpers.getMessages()
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const { conversation } = useChatContext();
@@ -178,6 +180,7 @@ const SidePanel = ({
             )}
           >
             <Switcher
+              disabled={!!messages?.length}
               isCollapsed={isCollapsed}
               endpointKeyProvided={keyProvided}
               endpoint={endpoint}

@@ -7,6 +7,7 @@ export default function OpenAI({
   conversation,
   setOption,
   models,
+  disabled,
   showAbove = true,
   popover = false,
 }: TModelSelectProps) {
@@ -16,6 +17,7 @@ export default function OpenAI({
       value={conversation?.model ?? ''}
       setValue={setOption('model')}
       availableValues={models}
+      disabled={disabled}
       showAbove={showAbove}
       showLabel={false}
       className={cn(

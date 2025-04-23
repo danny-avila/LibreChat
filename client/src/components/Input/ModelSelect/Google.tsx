@@ -8,12 +8,14 @@ export default function Google({
   setOption,
   models,
   showAbove,
+  disabled,
   popover = false,
 }: TModelSelectProps) {
   const Menu = popover ? SelectDropDownPop : SelectDropDown;
   return (
     <Menu
       value={conversation?.model ?? ''}
+      disabled={disabled}
       setValue={setOption('model')}
       availableValues={models}
       showAbove={showAbove}

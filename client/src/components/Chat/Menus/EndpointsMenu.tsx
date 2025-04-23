@@ -9,7 +9,11 @@ import EndpointItems from './Endpoints/MenuItems';
 import useLocalize from '~/hooks/useLocalize';
 import TitleButton from './UI/TitleButton';
 
-const EndpointsMenu: FC = () => {
+interface EndpointsMenuProps {
+  isDisabled?: boolean;
+}
+
+const EndpointsMenu: FC<EndpointsMenuProps> = ({ isDisabled }) => {
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
@@ -72,7 +76,7 @@ const EndpointsMenu: FC = () => {
 
   return (
     <Root>
-      <TitleButton primaryText={primaryText + ' '} />
+      <TitleButton primaryText={primaryText + ' '} disabled={isDisabled}/>
       <Portal>
         <div
           style={{

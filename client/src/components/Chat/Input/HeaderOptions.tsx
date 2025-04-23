@@ -22,8 +22,10 @@ import store from '~/store';
 
 export default function HeaderOptions({
   interfaceConfig,
+  isDisabled,
 }: {
   interfaceConfig?: Partial<TInterfaceConfig>;
+  isDisabled?: boolean;
 }) {
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
@@ -73,6 +75,7 @@ export default function HeaderOptions({
             <div className="z-[61] flex w-full items-center justify-center gap-2">
               {interfaceConfig?.modelSelect === true && !isAgentsEndpoint(endpoint) && (
                 <ModelSelect
+                  disabled={isDisabled}
                   conversation={conversation}
                   setOption={setOption}
                   showAbove={false}
