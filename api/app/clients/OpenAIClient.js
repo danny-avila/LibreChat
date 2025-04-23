@@ -61,6 +61,7 @@ class OpenAIClient extends BaseClient {
     this.azure = options.azure || false;
     this.setOptions(options);
     this.metadata = {};
+    this.rawCitations = [];
 
     /** @type {string | undefined} - The API Completions URL */
     this.completionsUrl;
@@ -1470,6 +1471,10 @@ ${convo}
           .catch((err) => {
             handleOpenAIErrors(err, errorCallback, 'create');
           });
+      }
+
+      if (chatCompletion && Array.isArray(chatCompletion.citations)) {
+        this.rawCitations = chatCompletion.citations;
       }
 
       if (openai.abortHandler && abortController.signal) {

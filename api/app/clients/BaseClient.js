@@ -684,6 +684,10 @@ class BaseClient {
       responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
     }
 
+    if (this.rawCitations) {
+      responseMessage.citations = this.rawCitations;
+    }
+
     if (
       tokenCountMap &&
       this.recordTokenUsage &&
