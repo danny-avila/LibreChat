@@ -41,12 +41,17 @@ const providerConfigMap = {
 };
 
 /**
- * @param {ServerRequest} req
- * @param {Promise<Array<MongoFile | null>> | undefined} _attachments
- * @param {AgentToolResources | undefined} _tool_resources
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {Promise<Array<MongoFile | null>> | undefined} [params.attachments]
+ * @param {AgentToolResources | undefined} [params.tool_resources]
  * @returns {Promise<{ attachments: Array<MongoFile | undefined> | undefined, tool_resources: AgentToolResources | undefined }>}
  */
-const primeResources = async (req, _attachments, _tool_resources) => {
+const primeResources = async ({
+  req,
+  attachments: _attachments,
+  tool_resources: _tool_resources,
+}) => {
   try {
     /** @type {Array<MongoFile | undefined> | undefined} */
     let attachments;
@@ -154,11 +159,11 @@ const initializeAgentOptions = async ({
     currentFiles = await processFiles(requestFiles);
   }
 
-  const { attachments, tool_resources } = await primeResources(
+  const { attachments, tool_resources } = await primeResources({
     req,
-    currentFiles,
-    agent.tool_resources,
-  );
+    attachments: currentFiles,
+    tool_resources: agent.tool_resources,
+  });
 
   const provider = agent.provider;
   const { tools, toolContextMap } = await loadAgentTools({
