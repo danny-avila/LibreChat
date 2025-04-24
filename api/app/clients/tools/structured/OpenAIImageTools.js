@@ -91,6 +91,8 @@ function createOpenAIImageTools(fields = {}) {
     closureConfig.apiKey = process.env.IMAGE_GEN_OAI_API_KEY;
   }
 
+  const hasFiles = (fields.imageFiles?.length ?? 0) > 0;
+
   /**
    * Image Generation Tool
    */
@@ -185,10 +187,13 @@ Error Message: ${error.message}`);
     },
     {
       name: 'image_gen_oai',
-      description: `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
-      - Generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
-      - Ideal when the user's request does not involve modifying, enhancing, or drawing inspiration from uploaded images.
-      - If the user refers to uploaded images for inspiration, changes, or remixing, use the image editing tool (\`image_edit_oai\`) instead. That tool is only available when the latest request includes uploaded images to reference.`,
+      description: hasFiles
+        ? `Prefer the image editing tool (\`image_edit_oai\`) when the user has uploaded any files and requests inspiration, modification, or remixing based on those uploads.
+- Use \`image_gen_oai\` only to create entirely new images from detailed text descriptions that do NOT reference the uploaded files.
+- This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.`
+        : `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
+- Generates high-quality, original images based solely on the prompt.
+- Use this tool when there are no uploaded files or references to them in the request.`,
       schema: z.object({
         prompt: z
           .string()
@@ -243,7 +248,7 @@ Error Message: ${error.message}`);
     },
   );
 
-  if (!override && !fields.imageFiles?.length) {
+  if (!override && !hasFiles) {
     return [imageGenTool];
   }
 
