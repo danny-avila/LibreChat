@@ -91,6 +91,9 @@ axios.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    if (originalRequest.url?.includes('/api/auth/2fa') === true) {
+      return Promise.reject(error);
+    }
     if (originalRequest.url?.includes('/api/auth/logout') === true) {
       return Promise.reject(error);
     }

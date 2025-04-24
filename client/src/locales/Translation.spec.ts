@@ -34,9 +34,9 @@ describe('i18next translation tests', () => {
     expect(i18n.t('com_ui_examples')).toBe(English.com_ui_examples);
   });
 
-  it('should return an empty string for an invalid key', () => {
+  it('should return the key itself for an invalid key', () => {
     i18n.changeLanguage('en');
-    expect(i18n.t('invalid-key')).toBe('');
+    expect(i18n.t('invalid-key')).toBe('invalid-key'); // Returns the key itself
   });
 
   it('should correctly format placeholders in the translation', () => {

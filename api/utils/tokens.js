@@ -2,7 +2,9 @@ const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
 const openAIModels = {
+  'o4-mini': 200000,
   'o3-mini': 195000, // -5000 from max
+  o3: 200000,
   o1: 195000, // -5000 from max
   'o1-mini': 127500, // -500 from max
   'o1-preview': 127500, // -500 from max
@@ -13,6 +15,10 @@ const openAIModels = {
   'gpt-4-32k-0613': 32758, // -10 from max
   'gpt-4-1106': 127500, // -500 from max
   'gpt-4-0125': 127500, // -500 from max
+  'gpt-4.5': 127500, // -500 from max
+  'gpt-4.1': 1047576,
+  'gpt-4.1-mini': 1047576,
+  'gpt-4.1-nano': 1047576,
   'gpt-4o': 127500, // -500 from max
   'gpt-4o-mini': 127500, // -500 from max
   'gpt-4o-2024-05-13': 127500, // -500 from max
@@ -33,8 +39,14 @@ const mistralModels = {
   'mistral-7b': 31990, // -10 from max
   'mistral-small': 31990, // -10 from max
   'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large': 131000,
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
+  'pixtral-large': 131000,
+  'mistral-saba': 32000,
+  codestral: 256000,
+  'ministral-8b': 131000,
+  'ministral-3b': 131000,
 };
 
 const cohereModels = {
@@ -51,6 +63,7 @@ const googleModels = {
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,
+  'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,
@@ -74,6 +87,7 @@ const anthropicModels = {
   'claude-instant': 100000,
   'claude-2': 100000,
   'claude-2.1': 200000,
+  'claude-3': 200000,
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
   'claude-3-opus': 200000,
@@ -81,6 +95,8 @@ const anthropicModels = {
   'claude-3-5-haiku': 200000,
   'claude-3-5-sonnet': 200000,
   'claude-3.5-sonnet': 200000,
+  'claude-3-7-sonnet': 200000,
+  'claude-3.7-sonnet': 200000,
   'claude-3-5-sonnet-latest': 200000,
   'claude-3.5-sonnet-latest': 200000,
 };
@@ -88,6 +104,7 @@ const anthropicModels = {
 const deepseekModels = {
   'deepseek-reasoner': 63000, // -1000 from max (API)
   deepseek: 63000, // -1000 from max (API)
+  'deepseek.r1': 127500,
 };
 
 const metaModels = {
@@ -183,7 +200,23 @@ const bedrockModels = {
   ...amazonModels,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
+const xAIModels = {
+  grok: 131072,
+  'grok-beta': 131072,
+  'grok-vision-beta': 8192,
+  'grok-2': 131072,
+  'grok-2-latest': 131072,
+  'grok-2-1212': 131072,
+  'grok-2-vision': 32768,
+  'grok-2-vision-latest': 32768,
+  'grok-2-vision-1212': 32768,
+  'grok-3': 131072,
+  'grok-3-fast': 131072,
+  'grok-3-mini': 131072,
+  'grok-3-mini-fast': 131072,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,

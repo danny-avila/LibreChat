@@ -11,8 +11,15 @@ type ReasoningProps = {
 const Reasoning = memo(({ reasoning }: ReasoningProps) => {
   const { isExpanded, nextType } = useMessageContext();
   const reasoningText = useMemo(() => {
-    return reasoning.replace(/^<think>\s*/, '').replace(/\s*<\/think>$/, '');
+    return reasoning
+      .replace(/^<think>\s*/, '')
+      .replace(/\s*<\/think>$/, '')
+      .trim();
   }, [reasoning]);
+
+  if (!reasoningText) {
+    return null;
+  }
 
   return (
     <div

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { GitFork, InfoIcon } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
@@ -21,9 +21,9 @@ import store from '~/store';
 
 interface PopoverButtonProps {
   children: React.ReactNode;
-  setting: string;
-  onClick: (setting: string) => void;
-  setActiveSetting: React.Dispatch<React.SetStateAction<string>>;
+  setting: ForkOptions;
+  onClick: (setting: ForkOptions) => void;
+  setActiveSetting: React.Dispatch<React.SetStateAction<TranslationKeys>>;
   sideOffset?: number;
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
   hoverInfo?: React.ReactNode | string;
@@ -31,11 +31,11 @@ interface PopoverButtonProps {
   hoverDescription?: React.ReactNode | string;
 }
 
-const optionLabels = {
+const optionLabels: Record<ForkOptions, TranslationKeys> = {
   [ForkOptions.DIRECT_PATH]: 'com_ui_fork_visible',
   [ForkOptions.INCLUDE_BRANCHES]: 'com_ui_fork_branches',
   [ForkOptions.TARGET_LEVEL]: 'com_ui_fork_all_target',
-  default: 'com_ui_fork_from_message',
+  [ForkOptions.DEFAULT]: 'com_ui_fork_from_message',
 };
 
 const PopoverButton: React.FC<PopoverButtonProps> = ({
@@ -65,10 +65,10 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             clearTimeout(timeoutRef.current);
           }
           timeoutRef.current = setTimeout(() => {
-            setActiveSetting(optionLabels.default);
+            setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100 "
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
         type="button"
       >
         {children}
@@ -77,18 +77,12 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
         (hoverTitle != null && hoverTitle !== '') ||
         (hoverDescription != null && hoverDescription !== '')) && (
         <HoverCardPortal>
-          <HoverCardContent
-            side="right"
-            className="z-[999] w-80 dark:bg-gray-700"
-            sideOffset={sideOffset}
-          >
+          <HoverCardContent side="right" className="z-[999] w-80 dark:bg-gray-700" sideOffset={sideOffset}>
             <div className="space-y-2">
               <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
-                {hoverInfo != null && hoverInfo !== '' && hoverInfo}
-                {hoverTitle != null && hoverTitle !== '' && (
-                  <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>
-                )}
-                {hoverDescription != null && hoverDescription !== '' && hoverDescription}
+                {hoverInfo && hoverInfo}
+                {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
+                {hoverDescription && hoverDescription}
               </p>
             </div>
           </HoverCardContent>
@@ -201,7 +195,7 @@ export default function Fork({
             align="center"
           >
             <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
-              {localize(activeSetting as TranslationKeys)}
+              {localize(activeSetting )}
               <HoverCard openDelay={50}>
                 <HoverCardTrigger asChild>
                   <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50" />
@@ -235,7 +229,7 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <GitCommit className="h-5 w-5 rotate-90" />
-                    {localize(optionLabels[ForkOptions.DIRECT_PATH] as TranslationKeys)}
+                    {localize(optionLabels[ForkOptions.DIRECT_PATH])}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_visible')}
@@ -253,7 +247,7 @@ export default function Fork({
                 hoverTitle={
                   <>
                     <GitBranchPlus className="h-4 w-4 rotate-180" />
-                    {localize(optionLabels[ForkOptions.INCLUDE_BRANCHES] as TranslationKeys)}
+                    {localize(optionLabels[ForkOptions.INCLUDE_BRANCHES])}
                   </>
                 }
                 hoverDescription={localize('com_ui_fork_info_branches')}
@@ -272,7 +266,7 @@ export default function Fork({
                   <>
                     <ListTree className="h-5 w-5" />
                     {`${localize(
-                      optionLabels[ForkOptions.TARGET_LEVEL] as TranslationKeys,
+                      optionLabels[ForkOptions.TARGET_LEVEL],
                     )} (${localize('com_endpoint_default')})`}
                   </>
                 }

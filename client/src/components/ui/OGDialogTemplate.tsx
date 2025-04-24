@@ -6,7 +6,6 @@ import {
   OGDialogHeader,
   OGDialogContent,
   OGDialogDescription,
-  OGDialog,
 } from './OriginalDialog';
 import { useLocalize } from '~/hooks';
 import { Spinner } from '../svg';

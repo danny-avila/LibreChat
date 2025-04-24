@@ -159,6 +159,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         filename: fileData.filename,
         source: fileData.source,
         size: fileData.bytes,
+        metadata: fileData.metadata,
       });
     },
     [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints],

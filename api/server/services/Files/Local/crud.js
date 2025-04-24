@@ -176,6 +176,17 @@ const isValidPath = (req, base, subfolder, filepath) => {
 };
 
 /**
+ * @param {string} filepath
+ */
+const unlinkFile = async (filepath) => {
+  try {
+    await fs.promises.unlink(filepath);
+  } catch (error) {
+    logger.error('Error deleting file:', error);
+  }
+};
+
+/**
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
@@ -217,7 +228,7 @@ const deleteLocalFile = async (req, file) => {
       throw new Error(`Invalid file path: ${file.filepath}`);
     }
 
-    await fs.promises.unlink(filepath);
+    await unlinkFile(filepath);
     return;
   }
 
@@ -233,7 +244,7 @@ const deleteLocalFile = async (req, file) => {
     throw new Error('Invalid file path');
   }
 
-  await fs.promises.unlink(filepath);
+  await unlinkFile(filepath);
 };
 
 /**
@@ -275,11 +286,31 @@ async function uploadLocalFile({ req, file, file_id }) {
 /**
  * Retrieves a readable stream for a file from local storage.
  *
+ * @param {ServerRequest} req - The request object from Express
  * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-function getLocalFileStream(filepath) {
+function getLocalFileStream(req, filepath) {
   try {
+    if (filepath.includes('/uploads/')) {
+      const basePath = filepath.split('/uploads/')[1];
+
+      if (!basePath) {
+        logger.warn(`Invalid base path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      const fullPath = path.join(req.app.locals.paths.uploads, basePath);
+      const uploadsDir = req.app.locals.paths.uploads;
+
+      const rel = path.relative(uploadsDir, fullPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+        logger.warn(`Invalid relative file path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      return fs.createReadStream(fullPath);
+    }
     return fs.createReadStream(filepath);
   } catch (error) {
     logger.error('Error getting local file stream:', error);

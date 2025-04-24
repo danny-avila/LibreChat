@@ -1,6 +1,6 @@
 import React from 'react';
 import { HoverCardPortal, HoverCardContent } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
 type TOptionHoverProps = {
@@ -24,7 +24,7 @@ function OptionHover({
   if (disabled) {
     return null;
   }
-  const text = langCode ? localize(description) : description;
+  const text = langCode ? localize(description as TranslationKeys) : description;
   return (
     <HoverCardPortal>
       <HoverCardContent side={side} className={`z-[999] w-80 ${className}`} sideOffset={sideOffset}>

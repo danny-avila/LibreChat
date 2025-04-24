@@ -6,7 +6,7 @@ const getProfileDetails = ({ profile }) => ({
   id: profile.id,
   avatarUrl: profile.photos[0].value,
   username: profile.name.givenName,
-  name: `${profile.name.givenName} ${profile.name.familyName}`,
+  name: `${profile.name.givenName}${profile.name.familyName ? ` ${profile.name.familyName}` : ''}`,
   emailVerified: profile.emails[0].verified,
 });
 

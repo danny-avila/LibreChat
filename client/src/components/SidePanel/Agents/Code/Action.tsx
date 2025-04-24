@@ -86,7 +86,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
               </button>
             )}
             <HoverCardTrigger>
-              <CircleHelpIcon className="h-5 w-5 text-gray-500" />
+              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
             </HoverCardTrigger>
           </div>
           <HoverCardPortal>

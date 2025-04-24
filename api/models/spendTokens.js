@@ -36,7 +36,7 @@ const spendTokens = async (txData, tokenUsage) => {
       prompt = await Transaction.create({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: -Math.max(promptTokens, 0),
+        rawAmount: promptTokens === 0 ? 0 : -Math.max(promptTokens, 0),
       });
     }
 
@@ -44,7 +44,7 @@ const spendTokens = async (txData, tokenUsage) => {
       completion = await Transaction.create({
         ...txData,
         tokenType: 'completion',
-        rawAmount: -Math.max(completionTokens, 0),
+        rawAmount: completionTokens === 0 ? 0 : -Math.max(completionTokens, 0),
       });
     }
 

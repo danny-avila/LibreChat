@@ -1,6 +1,10 @@
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const { ViolationTypes } = require('librechat-data-provider');
+const ioredisClient = require('~/cache/ioredisClient');
 const logViolation = require('~/cache/logViolation');
+const { isEnabled } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const getEnvironmentVariables = () => {
   const FILE_UPLOAD_IP_MAX = parseInt(process.env.FILE_UPLOAD_IP_MAX) || 100;
@@ -52,20 +56,38 @@ const createFileLimiters = () => {
   const { fileUploadIpWindowMs, fileUploadIpMax, fileUploadUserWindowMs, fileUploadUserMax } =
     getEnvironmentVariables();
 
-  const fileUploadIpLimiter = rateLimit({
+  const ipLimiterOptions = {
     windowMs: fileUploadIpWindowMs,
     max: fileUploadIpMax,
     handler: createFileUploadHandler(),
-  });
+  };
 
-  const fileUploadUserLimiter = rateLimit({
+  const userLimiterOptions = {
     windowMs: fileUploadUserWindowMs,
     max: fileUploadUserMax,
     handler: createFileUploadHandler(false),
     keyGenerator: function (req) {
       return req.user?.id; // Use the user ID or NULL if not available
     },
-  });
+  };
+
+  if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
+    logger.debug('Using Redis for file upload rate limiters.');
+    const sendCommand = (...args) => ioredisClient.call(...args);
+    const ipStore = new RedisStore({
+      sendCommand,
+      prefix: 'file_upload_ip_limiter:',
+    });
+    const userStore = new RedisStore({
+      sendCommand,
+      prefix: 'file_upload_user_limiter:',
+    });
+    ipLimiterOptions.store = ipStore;
+    userLimiterOptions.store = userStore;
+  }
+
+  const fileUploadIpLimiter = rateLimit(ipLimiterOptions);
+  const fileUploadUserLimiter = rateLimit(userLimiterOptions);
 
   return { fileUploadIpLimiter, fileUploadUserLimiter };
 };

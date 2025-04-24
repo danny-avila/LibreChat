@@ -16,7 +16,7 @@ interface SortFilterHeaderProps<TData, TValue> extends React.HTMLAttributes<HTML
   title: string;
   column: Column<TData, TValue>;
   filters?: Record<string, string[] | number[]>;
-  valueMap?: Record<string, string>;
+  valueMap?: Record<any, TranslationKeys>;
 }
 
 export function SortFilterHeader<TData, TValue>({
@@ -82,7 +82,7 @@ export function SortFilterHeader<TData, TValue>({
                 const translationKey = valueMap?.[value ?? ''];
                 const filterValue =
                   translationKey != null && translationKey.length
-                    ? localize(translationKey as TranslationKeys)
+                    ? localize(translationKey)
                     : String(value);
                 if (!filterValue) {
                   return null;

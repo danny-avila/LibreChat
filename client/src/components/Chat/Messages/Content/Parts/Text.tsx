@@ -29,9 +29,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return (
-        <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
-      );
+      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
     } else if (enableUserMsgMarkdown) {
       return <MarkdownLite content={text} />;
     } else {

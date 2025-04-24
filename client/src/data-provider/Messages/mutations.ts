@@ -1,7 +1,7 @@
-import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type * as t from 'librechat-data-provider';
+import { dataService, QueryKeys, Constants } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
 
 export const useEditArtifact = (
   _options?: t.EditArtifactOptions,
@@ -11,33 +11,47 @@ export const useEditArtifact = (
   return useMutation({
     mutationFn: (variables: t.TEditArtifactRequest) => dataService.editArtifact(variables),
     onSuccess: (data, vars, context) => {
-      queryClient.setQueryData<t.TMessage[]>([QueryKeys.messages, data.conversationId], (prev) => {
-        if (!prev) {
-          return prev;
+      let targetNotFound = true;
+      const setMessageData = (conversationId?: string | null) => {
+        if (!conversationId) {
+          return;
         }
-
-        const newArray = [...prev];
-        let targetIndex: number | undefined;
-
-        for (let i = newArray.length - 1; i >= 0; i--) {
-          if (newArray[i].messageId === vars.messageId) {
-            targetIndex = i;
-            break;
+        queryClient.setQueryData<t.TMessage[]>([QueryKeys.messages, conversationId], (prev) => {
+          if (!prev) {
+            return prev;
           }
-        }
 
-        if (targetIndex == null) {
-          return prev;
-        }
+          const newArray = [...prev];
+          let targetIndex: number | undefined;
 
-        newArray[targetIndex] = {
-          ...newArray[targetIndex],
-          content: data.content,
-          text: data.text,
-        };
+          for (let i = newArray.length - 1; i >= 0; i--) {
+            if (newArray[i].messageId === vars.messageId) {
+              targetIndex = i;
+              targetNotFound = false;
+              break;
+            }
+          }
 
-        return newArray;
-      });
+          if (targetIndex == null) {
+            return prev;
+          }
+
+          newArray[targetIndex] = {
+            ...newArray[targetIndex],
+            content: data.content,
+            text: data.text,
+          };
+
+          return newArray;
+        });
+      };
+      setMessageData(data.conversationId);
+      if (targetNotFound) {
+        console.warn(
+          'Edited Artifact Message not found in cache, trying `new` as `conversationId`',
+        );
+        setMessageData(Constants.NEW_CONVO);
+      }
 
       onSuccess?.(data, vars, context);
     },

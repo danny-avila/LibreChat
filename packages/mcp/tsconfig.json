@@ -18,7 +18,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "sourceMap": true,
-    "baseUrl": "." // This should be the root of your package
+    "baseUrl": "."
   },
   "ts-node": {
     "experimentalSpecifierResolution": "node",
