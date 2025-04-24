@@ -181,6 +181,7 @@ Error Message: ${error.message}`);
           .describe(
             'Sets transparency for the background. Must be one of transparent, opaque or auto (default). When transparent, the output format should be png or webp.',
           ),
+        /*
         n: z
           .number()
           .int()
@@ -195,6 +196,7 @@ Error Message: ${error.message}`);
           .max(100)
           .optional()
           .describe('The compression level (0-100%) for webp or jpeg formats. Defaults to 100.'),
+           */
         quality: z
           .enum(['auto', 'high', 'medium', 'low'])
           .optional()
