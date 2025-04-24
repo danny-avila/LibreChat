@@ -45,6 +45,7 @@ const providerConfigMap = {
  * @param {Object} params
  * @param {ServerRequest} params.req
  * @param {Promise<Array<MongoFile | null>> | undefined} [params.attachments]
+ * @param {Set<string>} params.requestFileSet
  * @param {AgentToolResources | undefined} [params.tool_resources]
  * @returns {Promise<{ attachments: Array<MongoFile | undefined> | undefined, tool_resources: AgentToolResources | undefined }>}
  */
@@ -52,6 +53,7 @@ const primeResources = async ({
   req,
   attachments: _attachments,
   tool_resources: _tool_resources,
+  requestFileSet,
 }) => {
   try {
     /** @type {Array<MongoFile | undefined> | undefined} */
@@ -96,7 +98,12 @@ const primeResources = async ({
           tool_resources[EToolResources.file_search] = { ...file_search, files: [] };
         }
         tool_resources[EToolResources.file_search].files.push(file);
-      } else if (file.type.startsWith('image') && file.height && file.width) {
+      } else if (
+        requestFileSet.has(file.file_id) &&
+        file.type.startsWith('image') &&
+        file.height &&
+        file.width
+      ) {
         const image_edit = tool_resources[EToolResources.image_edit] ?? {};
         if (!image_edit.files) {
           tool_resources[EToolResources.image_edit] = { ...image_edit, files: [] };
@@ -177,6 +184,7 @@ const initializeAgentOptions = async ({
     req,
     attachments: currentFiles,
     tool_resources: agent.tool_resources,
+    requestFileSet: new Set(requestFiles.map((file) => file.file_id)),
   });
 
   const provider = agent.provider;
