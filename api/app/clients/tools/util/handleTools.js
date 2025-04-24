@@ -18,6 +18,7 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  createImageGenOAITool,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -174,6 +175,15 @@ const loadTools = async ({
       const authFields = getAuthFields('youtube');
       const authValues = await loadAuthValues({ userId: user, authFields });
       return createYouTubeTools(authValues);
+    },
+    image_gen_oai: async () => {
+      const authFields = getAuthFields('image_gen_oai');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      return createImageGenOAITool({
+        ...authValues,
+        isAgent: !!agent,
+        imageOutputType: options.req?.app.locals.imageOutputType,
+      });
     },
   };
 
