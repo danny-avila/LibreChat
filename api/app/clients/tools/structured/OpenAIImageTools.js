@@ -185,10 +185,10 @@ Error Message: ${error.message}`);
     },
     {
       name: 'image_gen_oai',
-      description: `Use \`image_gen_oai\` to create completely new images from text descriptions only.
-      - Use this tool when there are no user-uploaded reference images being used or requested.
-      - Generates high-quality, original images based on your text prompt.
-      - If the user refers to uploaded images for inspiration, modification, or remixing, always use the image editing tool (\`image_edit_oai\`) instead.`,
+      description: `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
+      - Generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
+      - Ideal when the user's request does not involve modifying, enhancing, or drawing inspiration from uploaded images.
+      - If the user refers to uploaded images for inspiration, changes, or remixing, use the image editing tool (\`image_edit_oai\`) instead. That tool is only available when the latest request includes uploaded images to reference.`,
       schema: z.object({
         prompt: z
           .string()
@@ -243,6 +243,10 @@ Error Message: ${error.message}`);
     },
   );
 
+  if (!override && !fields.imageFiles?.length) {
+    return [imageGenTool];
+  }
+
   /**
    * Image Editing Tool
    */
@@ -250,6 +254,9 @@ Error Message: ${error.message}`);
     async ({ prompt, quality = 'auto', size = 'auto' }, runnableConfig) => {
       if (!fileStrategy) {
         throw new Error('Missing required toolkit field: fileStrategy');
+      }
+      if (!fields.imageFiles) {
+        throw new Error('Missing required toolkit field: imageFiles');
       }
       if (!prompt) {
         throw new Error('Missing required field: prompt');
