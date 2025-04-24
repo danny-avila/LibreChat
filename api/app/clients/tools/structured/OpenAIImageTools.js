@@ -190,7 +190,8 @@ Error Message: ${error.message}`);
       description: hasFiles
         ? `Prefer the image editing tool (\`image_edit_oai\`) when the user has uploaded any files and requests inspiration, modification, or remixing based on those uploads.
 - Use \`image_gen_oai\` only to create entirely new images from detailed text descriptions that do NOT reference the uploaded files.
-- This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.`
+- This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
+- Note: The currently uploaded images may not be available in a follow-up request as their inclusion is determined by the user.`
         : `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
 - Generates high-quality, original images based solely on the prompt.
 - Use this tool when there are no uploaded files or references to them in the request.`,
