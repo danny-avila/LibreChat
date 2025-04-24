@@ -57,7 +57,6 @@ function createOpenAIImageTools(fields = {}) {
   const imageOutputType = req?.app.locals.imageOutputType || EImageOutputType.PNG;
   const fileStrategy = req?.app.locals.fileStrategy;
 
-  // Get API key from environment variables or fields
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';
     if (!apiKey && !override) {
@@ -118,7 +117,6 @@ function createOpenAIImageTools(fields = {}) {
       /** @type {OpenAI} */
       const openai = new OpenAI(config);
       let output_format = imageOutputType;
-      // Validate background parameter when using transparent
       if (
         background === 'transparent' &&
         output_format !== EImageOutputType.PNG &&
@@ -135,7 +133,7 @@ function createOpenAIImageTools(fields = {}) {
         resp = await openai.images.generate({
           model: 'gpt-image-1',
           prompt: replaceUnwantedChars(prompt),
-          n: Math.min(Math.max(1, n), 10), // Ensure n is between 1 and 10
+          n: Math.min(Math.max(1, n), 10),
           background,
           output_format,
           output_compression:
