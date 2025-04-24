@@ -54,10 +54,6 @@ const getToolFilesByIds = async (fileIds, toolResources) => {
     if (toolResources.has(EToolResources.execute_code)) {
       filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
     }
-    if (toolResources.has(EToolResources.image_edit)) {
-      filter.$or.push({ height: { $exists: true } });
-      filter.$or.push({ width: { $exists: true } });
-    }
 
     const selectFields = { text: 0 };
     const sortOptions = { updatedAt: -1 };

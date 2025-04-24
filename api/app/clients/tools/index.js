@@ -9,8 +9,8 @@ const createYouTubeTools = require('./structured/YouTube');
 const StructuredACS = require('./structured/AzureAISearch');
 const StructuredSD = require('./structured/StableDiffusion');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
-const createImageGenOAITool = require('./structured/ImageGenOAI');
 const TraversaalSearch = require('./structured/TraversaalSearch');
+const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 
 /** @type {Record<string, TPlugin | undefined>} */
@@ -41,5 +41,5 @@ module.exports = {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
-  createImageGenOAITool,
+  createOpenAIImageTools,
 };

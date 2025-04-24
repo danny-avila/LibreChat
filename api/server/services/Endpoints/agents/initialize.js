@@ -60,7 +60,7 @@ const primeResources = async ({
     const isOCREnabled = (req.app.locals?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
       AgentCapabilities.ocr,
     );
-    if (tool_resources.ocr?.file_ids && isOCREnabled) {
+    if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
       const context = await getFiles(
         {
           file_id: { $in: tool_resources.ocr.file_ids },
@@ -85,23 +85,23 @@ const primeResources = async ({
         continue;
       }
       if (file.metadata?.fileIdentifier) {
-        const execute_code = tool_resources.execute_code ?? {};
+        const execute_code = tool_resources[EToolResources.execute_code] ?? {};
         if (!execute_code.files) {
-          tool_resources.execute_code = { ...execute_code, files: [] };
+          tool_resources[EToolResources.execute_code] = { ...execute_code, files: [] };
         }
-        tool_resources.execute_code.files.push(file);
+        tool_resources[EToolResources.execute_code].files.push(file);
       } else if (file.embedded === true) {
-        const file_search = tool_resources.file_search ?? {};
+        const file_search = tool_resources[EToolResources.file_search] ?? {};
         if (!file_search.files) {
-          tool_resources.file_search = { ...file_search, files: [] };
+          tool_resources[EToolResources.file_search] = { ...file_search, files: [] };
         }
-        tool_resources.file_search.files.push(file);
+        tool_resources[EToolResources.file_search].files.push(file);
       } else if (file.type.startsWith('image') && file.height && file.width) {
-        const image_edit = tool_resources.image_edit ?? {};
+        const image_edit = tool_resources[EToolResources.image_edit] ?? {};
         if (!image_edit.files) {
-          tool_resources.image_edit = { ...image_edit, files: [] };
+          tool_resources[EToolResources.image_edit] = { ...image_edit, files: [] };
         }
-        tool_resources.image_edit.files.push(file);
+        tool_resources[EToolResources.image_edit].files.push(file);
       }
 
       attachments.push(file);
@@ -163,8 +163,6 @@ const initializeAgentOptions = async ({
     for (const tool of agent.tools) {
       if (EToolResources[tool]) {
         toolResources.add(EToolResources[tool]);
-      } else if (tool.startsWith(EToolResources.image_edit)) {
-        toolResources.add(EToolResources.image_edit);
       }
     }
     const toolFiles = await getToolFilesByIds(fileIds, toolResources);

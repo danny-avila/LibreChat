@@ -22,7 +22,7 @@ const {
   domainParser,
 } = require('./ActionService');
 const {
-  createImageGenOAITool,
+  createOpenAIImageTools,
   createYouTubeTools,
   manifestToolMap,
   toolkits,
@@ -111,7 +111,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   /** Basic Tools; schema: { input: string } */
   const basicToolInstances = [
     new Calculator(),
-    createImageGenOAITool({ override: true }),
+    ...createOpenAIImageTools({ override: true }),
     ...createYouTubeTools({ override: true }),
   ];
   for (const toolInstance of basicToolInstances) {

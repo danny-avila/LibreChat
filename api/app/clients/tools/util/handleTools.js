@@ -1,7 +1,7 @@
-const { Tools, Constants } = require('librechat-data-provider');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
+const { Tools, Constants, EToolResources } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -18,7 +18,7 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
-  createImageGenOAITool,
+  createOpenAIImageTools,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -179,10 +179,11 @@ const loadTools = async ({
     image_gen_oai: async () => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });
-      return createImageGenOAITool({
+      return createOpenAIImageTools({
         ...authValues,
         isAgent: !!agent,
-        imageOutputType: options.req?.app.locals.imageOutputType,
+        req: options.req,
+        imageFiles: options.tool_resources?.[EToolResources.image_edit]?.files,
       });
     },
   };

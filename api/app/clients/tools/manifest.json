@@ -45,16 +45,16 @@
     ]
   },
   {
-    "name": "OpenAI Image Gen",
+    "name": "OpenAI Image Tools",
     "pluginKey": "image_gen_oai",
     "toolkit": true,
-    "description": "Image Generation using OpenAI's latest state-of-the-art models",
+    "description": "Image Generation and Editing using OpenAI's latest state-of-the-art models",
     "icon": "https://cdn.openai.com/API/docs/images/model-page/model-icons/gpt-image-1.png",
     "authConfig": [
       {
         "authField": "IMAGE_GEN_OAI_API_KEY",
-        "label": "OpenAI Image Gen API Key",
-        "description": "Your OpenAI Image Gen API Key"
+        "label": "OpenAI Image Tools API Key",
+        "description": "Your OpenAI API Key for Image Generation and Editing"
       }
     ]
   },
