@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { EToolResources } = require('librechat-data-provider');
 const { fileSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
 
@@ -30,9 +31,10 @@ const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
 /**
  * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
  * @param {string[]} fileIds - Array of file_id strings to search for
+ * @param {Set<EToolResources>} toolResources - Optional filter for tool resources
  * @returns {Promise<Array<IMongoFile>>} Files that match the criteria
  */
-const getToolFilesByIds = async (fileIds) => {
+const getToolFilesByIds = async (fileIds, toolResources) => {
   if (!fileIds || !fileIds.length) {
     return [];
   }
@@ -40,8 +42,22 @@ const getToolFilesByIds = async (fileIds) => {
   try {
     const filter = {
       file_id: { $in: fileIds },
-      $or: [{ embedded: true }, { 'metadata.fileIdentifier': { $exists: true } }],
     };
+
+    if (toolResources.size) {
+      filter.$or = [];
+    }
+
+    if (toolResources.has(EToolResources.file_search)) {
+      filter.$or.push({ embedded: true });
+    }
+    if (toolResources.has(EToolResources.execute_code)) {
+      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+    }
+    if (toolResources.has(EToolResources.image_edit)) {
+      filter.$or.push({ height: { $exists: true } });
+      filter.$or.push({ width: { $exists: true } });
+    }
 
     const selectFields = { text: 0 };
     const sortOptions = { updatedAt: -1 };

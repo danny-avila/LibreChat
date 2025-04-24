@@ -3,6 +3,7 @@ const {
   Constants,
   ErrorTypes,
   EModelEndpoint,
+  EToolResources,
   getResponseSender,
   AgentCapabilities,
   providerEndpointMap,
@@ -95,6 +96,12 @@ const primeResources = async ({
           tool_resources.file_search = { ...file_search, files: [] };
         }
         tool_resources.file_search.files.push(file);
+      } else if (file.type.startsWith('image') && file.height && file.width) {
+        const image_edit = tool_resources.image_edit ?? {};
+        if (!image_edit.files) {
+          tool_resources.image_edit = { ...image_edit, files: [] };
+        }
+        tool_resources.image_edit.files.push(file);
       }
 
       attachments.push(file);
@@ -151,7 +158,16 @@ const initializeAgentOptions = async ({
     (agent.model_parameters?.resendFiles ?? true) === true
   ) {
     const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
-    const toolFiles = await getToolFilesByIds(fileIds);
+    /** @type {Set<EToolResources>} */
+    const toolResources = new Set();
+    for (const tool of agent.tools) {
+      if (EToolResources[tool]) {
+        toolResources.add(EToolResources[tool]);
+      } else if (tool.startsWith(EToolResources.image_edit)) {
+        toolResources.add(EToolResources.image_edit);
+      }
+    }
+    const toolFiles = await getToolFilesByIds(fileIds, toolResources);
     if (requestFiles.length || toolFiles.length) {
       currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }
