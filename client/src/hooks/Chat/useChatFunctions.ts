@@ -147,11 +147,14 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    const parentMessage = currentMessages.find(
-      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    /** If the user regenerated the message, the current parent is technically the latest user message,
+     * otherwise, we can rely on the latestMessage to find the parent.
+     */
+    const targetParentMessage = currentMessages.find((msg) =>
+      isRegenerate ? msg.messageId : msg.messageId === latestMessage?.parentMessageId,
     );
 
-    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
     if (thread_id == null) {
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
@@ -202,9 +205,11 @@ export default function useChatFunctions({
     };
 
     const reuseFiles =
-      (isRegenerate || isResubmission) && parentMessage?.files && parentMessage.files.length > 0;
+      (isRegenerate || isResubmission) &&
+      targetParentMessage?.files &&
+      targetParentMessage.files.length > 0;
     if (setFiles && reuseFiles === true) {
-      currentMsg.files = parentMessage.files;
+      currentMsg.files = targetParentMessage.files;
       setFiles(new Map());
       setFilesToDelete({});
     } else if (setFiles && files && files.size > 0) {
