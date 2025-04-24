@@ -113,6 +113,9 @@ class WordPress extends Tool {
   constructor(fields = {}) {
     super();
 
+    /** @type {boolean} Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
+
     // User identifier (used for distinguishing token caches)
     this.userId = fields.userId;
 
@@ -138,9 +141,8 @@ class WordPress extends Tool {
     this.token = null;
     this.tokenExpiry = null;
 
-    // Validate that credentials are available
-    // Only throw if not in test environment and credentials are required
-    if (!baseUrl || !username || !password) {
+    // Only validate credentials if not in override mode
+    if (!this.override && (!baseUrl || !username || !password)) {
       if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'CI') {
         throw new Error('WordPress credentials or base URL are missing.');
       } else {
@@ -187,8 +189,10 @@ class WordPress extends Tool {
     const username = this.getUsername();
     const password = this.getPassword();
 
-    // For test environment, return a mock token if credentials are missing
-    if ((process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'CI') &&
+    // Return a mock token for:
+    // 1. Test/CI environments with missing credentials
+    // 2. When tool is initialized with override flag and credentials are missing
+    if ((process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'CI' || this.override) &&
         (!baseUrl || !username || !password)) {
       this.token = 'mock-token-for-testing';
       this.tokenExpiry = now + 50 * 60 * 1000;
@@ -893,6 +897,18 @@ class WordPress extends Tool {
       const validationResult = this.schema.safeParse(args);
       if (!validationResult.success) {
         return `Validation Error: ${JSON.stringify(validationResult.error.issues)}`;
+      }
+
+      // Check if credentials are available at this point
+      const baseUrl = this.getBaseUrl();
+      const username = this.getUsername();
+      const password = this.getPassword();
+      
+      if (!baseUrl || !username || !password) {
+        return JSON.stringify({
+          error: "WordPress credentials are missing. Please configure WORDPRESS_BASE_URL, WORDPRESS_USERNAME, and WORDPRESS_PASSWORD in your environment or provide them during the tool call.",
+          errorType: "AUTH_ERROR"
+        });
       }
 
       const {
