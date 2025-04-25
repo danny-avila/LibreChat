@@ -94,7 +94,6 @@ const Part = memo(
             args={typeof toolCall.args === 'string' ? toolCall.args : ''}
             output={toolCall.output ?? ''}
             initialProgress={toolCall.progress ?? 0.1}
-            isSubmitting={isSubmitting}
             attachments={attachments}
           />
         );

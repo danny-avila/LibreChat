@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { CodeInProgress } from './Parts/CodeProgress';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import FinishedIcon from './FinishedIcon';
@@ -37,19 +36,6 @@ export default function CodeAnalyze({
   return (
     <>
       <div className="my-2.5 flex items-center gap-2.5">
-        <div className="relative h-5 w-5 shrink-0">
-          {progress < 1 ? (
-            <CodeInProgress
-              offset={offset}
-              radius={radius}
-              progress={progress}
-              isSubmitting={isSubmitting}
-              circumference={circumference}
-            />
-          ) : (
-            <FinishedIcon />
-          )}
-        </div>
         <ProgressText
           progress={progress}
           onClick={() => setShowCode((prev) => !prev)}
