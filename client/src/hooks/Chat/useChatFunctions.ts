@@ -147,11 +147,19 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    /** If the user regenerated the message, the current parent is technically the latest user message,
-     * otherwise, we can rely on the latestMessage to find the parent.
+    let targetParentMessageId = latestMessage?.parentMessageId;
+    if (isRegenerate) {
+      targetParentMessageId = messageId;
+    } else if (isResubmission) {
+      targetParentMessageId = parentMessageId;
+    }
+    /**
+     * If the user regenerated or resubmitted the message, the current parent is technically
+     * the latest user message, which is passed into `ask`; otherwise, we can rely on the
+     * latestMessage to find the parent.
      */
-    const targetParentMessage = currentMessages.find((msg) =>
-      isRegenerate ? msg.messageId : msg.messageId === latestMessage?.parentMessageId,
+    const targetParentMessage = currentMessages.find(
+      (msg) => msg.messageId === targetParentMessageId,
     );
 
     let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
