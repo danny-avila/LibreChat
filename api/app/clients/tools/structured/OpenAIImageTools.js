@@ -342,17 +342,25 @@ Error Message: ${error.message}`);
 
       // TODO: `mask` support
 
-      // Set headers
+      /** @type {import('axios').RawAxiosHeaders} */
       const headers = {
         ...formData.getHeaders(),
         Authorization: `Bearer ${apiKey}`,
       };
 
       try {
-        const response = await axios.post(`${baseURL}images/edits`, formData, {
+        const derivedSignal = runnableConfig?.signal
+          ? AbortSignal.any([runnableConfig.signal])
+          : undefined;
+
+        /** @type {import('axios').AxiosRequestConfig} */
+        const axiosConfig = {
           headers,
           ...clientConfig,
-        });
+          signal: derivedSignal,
+          baseURL,
+        };
+        const response = await axios.post('/images/edits', formData, axiosConfig);
 
         if (!response.data || !response.data.data || !response.data.data.length) {
           return returnValue(
