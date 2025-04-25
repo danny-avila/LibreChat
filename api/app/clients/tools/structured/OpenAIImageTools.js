@@ -212,7 +212,7 @@ function createOpenAIImageTools(fields = {}) {
           },
         );
       } catch (error) {
-        const message = '[`image_gen_oai`] Problem generating the image:';
+        const message = '[image_gen_oai] Problem generating the image:';
         logAxiosError({ error, message });
         return returnValue(`Something went wrong when trying to generate the image. The OpenAI API may be unavailable:
 Error Message: ${error.message}`);
@@ -403,7 +403,7 @@ Error Message: ${error.message}`);
         ];
         return [textResponse, { content }];
       } catch (error) {
-        const message = '[`image_edit_oai`] Problem editing the image:';
+        const message = '[image_edit_oai] Problem editing the image:';
         logAxiosError({ error, message });
         return returnValue(`Something went wrong when trying to edit the image. The OpenAI API may be unavailable:
 Error Message: ${error.message || 'Unknown error'}`);
