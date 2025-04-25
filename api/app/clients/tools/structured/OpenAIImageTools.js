@@ -9,7 +9,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logAxiosError, extractBaseURL } = require('~/utils');
 const { logger } = require('~/config');
 
-// Default descriptions for image generation tool
+/** Default descriptions for image generation tool  */
 const DEFAULT_IMAGE_GEN_DESCRIPTION_WITH_FILES = `Prefer the image editing tool (\`image_edit_oai\`) when the user has uploaded any files and requests inspiration, modification, or remixing based on those uploads.
 - Use \`image_gen_oai\` only to create entirely new images from detailed text descriptions that do NOT reference the uploaded files.
 - This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
@@ -19,13 +19,13 @@ const DEFAULT_IMAGE_GEN_DESCRIPTION_NO_FILES = `Use \`image_gen_oai\` to create 
 - Generates high-quality, original images based solely on the prompt.
 - Use this tool when there are no uploaded files or references to them in the request.`;
 
-// Default description for image editing tool
+/** Default description for image editing tool  */
 const DEFAULT_IMAGE_EDIT_DESCRIPTION = `Use \`image_edit_oai\` if the user has uploaded one or more reference images and wants to modify, extend, or create a new image inspired by them.
       - Always use this tool when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
       - The most recently uploaded images are used as the reference or input.
       - Do not use this tool for brand new image generation from scratch—use \`image_gen_oai\` for that.`;
 
-// Default prompt descriptions
+/** Default prompt descriptions  */
 const DEFAULT_IMAGE_GEN_PROMPT_DESCRIPTION = `Describe the image you want in detail. 
       Be highly specific—break your idea into layers: 
       (1) main concept and subject,
