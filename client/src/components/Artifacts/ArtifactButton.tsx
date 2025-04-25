@@ -8,7 +8,7 @@ import store from '~/store';
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
   const setVisible = useSetRecoilState(store.artifactsVisible);
-  const setArtifactId = useSetRecoilState(store.currentArtifactId);
+  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   if (artifact === null || artifact === undefined) {
     return null;
@@ -23,7 +23,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
           resetCurrentArtifactId();
           setVisible(true);
           setTimeout(() => {
-            setArtifactId(artifact.id);
+            setCurrentArtifactId(artifact.id);
           }, 15);
         }}
         className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
