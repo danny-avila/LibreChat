@@ -9,6 +9,44 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logAxiosError, extractBaseURL } = require('~/utils');
 const { logger } = require('~/config');
 
+// Default descriptions for image generation tool
+const DEFAULT_IMAGE_GEN_DESCRIPTION_WITH_FILES = `Prefer the image editing tool (\`image_edit_oai\`) when the user has uploaded any files and requests inspiration, modification, or remixing based on those uploads.
+- Use \`image_gen_oai\` only to create entirely new images from detailed text descriptions that do NOT reference the uploaded files.
+- This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
+- Note: The currently uploaded images may not be available in a follow-up request as their inclusion is determined by the user.`;
+
+const DEFAULT_IMAGE_GEN_DESCRIPTION_NO_FILES = `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
+- Generates high-quality, original images based solely on the prompt.
+- Use this tool when there are no uploaded files or references to them in the request.`;
+
+// Default description for image editing tool
+const DEFAULT_IMAGE_EDIT_DESCRIPTION = `Use \`image_edit_oai\` if the user has uploaded one or more reference images and wants to modify, extend, or create a new image inspired by them.
+      - Always use this tool when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
+      - The most recently uploaded images are used as the reference or input.
+      - Do not use this tool for brand new image generation from scratch—use \`image_gen_oai\` for that.`;
+
+// Default prompt descriptions
+const DEFAULT_IMAGE_GEN_PROMPT_DESCRIPTION = `Describe the image you want in detail. 
+      Be highly specific—break your idea into layers: 
+      (1) main concept and subject,
+      (2) composition and position,
+      (3) lighting and mood,
+      (4) style, medium, or camera details,
+      (5) important features (age, expression, clothing, etc.),
+      (6) background.
+      Use positive, descriptive language and specify what should be included, not what to avoid. 
+      List number and characteristics of people/objects, and mention style/technical requirements (e.g., "DSLR photo, 85mm lens, golden hour").
+      Do not reference any uploaded images—use for new image creation from text only.`;
+
+const DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION = `Describe the changes, enhancements, or new ideas to apply to the uploaded image(s).
+      Be highly specific—break your request into layers: 
+      (1) main concept or transformation,
+      (2) specific edits/replacements or composition guidance,
+      (3) desired style, mood, or technique,
+      (4) features/items to keep, change, or add (such as objects, people, clothing, lighting, etc.).
+      Use positive, descriptive language and clarify what should be included or changed, not what to avoid.
+      Always base this prompt on the most recently uploaded reference images.`;
+
 const displayMessage =
   'The tool displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
 
@@ -35,6 +73,27 @@ function returnValue(value) {
   }
   return value;
 }
+
+const getImageGenDescription = (hasFiles) => {
+  if (hasFiles) {
+    return (
+      process.env.IMAGE_GEN_OAI_DESCRIPTION_WITH_FILES || DEFAULT_IMAGE_GEN_DESCRIPTION_WITH_FILES
+    );
+  }
+  return process.env.IMAGE_GEN_OAI_DESCRIPTION_NO_FILES || DEFAULT_IMAGE_GEN_DESCRIPTION_NO_FILES;
+};
+
+const getImageEditDescription = () => {
+  return process.env.IMAGE_EDIT_OAI_DESCRIPTION || DEFAULT_IMAGE_EDIT_DESCRIPTION;
+};
+
+const getImageGenPromptDescription = () => {
+  return process.env.IMAGE_GEN_OAI_PROMPT_DESCRIPTION || DEFAULT_IMAGE_GEN_PROMPT_DESCRIPTION;
+};
+
+const getImageEditPromptDescription = () => {
+  return process.env.IMAGE_EDIT_OAI_PROMPT_DESCRIPTION || DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION;
+};
 
 /**
  * Creates OpenAI Image tools (generation and editing)
@@ -187,31 +246,9 @@ Error Message: ${error.message}`);
     },
     {
       name: 'image_gen_oai',
-      description: hasFiles
-        ? `Prefer the image editing tool (\`image_edit_oai\`) when the user has uploaded any files and requests inspiration, modification, or remixing based on those uploads.
-- Use \`image_gen_oai\` only to create entirely new images from detailed text descriptions that do NOT reference the uploaded files.
-- This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
-- Note: The currently uploaded images may not be available in a follow-up request as their inclusion is determined by the user.`
-        : `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
-- Generates high-quality, original images based solely on the prompt.
-- Use this tool when there are no uploaded files or references to them in the request.`,
+      description: getImageGenDescription(hasFiles),
       schema: z.object({
-        prompt: z
-          .string()
-          .max(32000)
-          .describe(
-            `Describe the image you want in detail. 
-      Be highly specific—break your idea into layers: 
-      (1) main concept and subject,
-      (2) composition and position,
-      (3) lighting and mood,
-      (4) style, medium, or camera details,
-      (5) important features (age, expression, clothing, etc.),
-      (6) background.
-      Use positive, descriptive language and specify what should be included, not what to avoid. 
-      List number and characteristics of people/objects, and mention style/technical requirements (e.g., "DSLR photo, 85mm lens, golden hour").
-      Do not reference any uploaded images—use for new image creation from text only.`,
-          ),
+        prompt: z.string().max(32000).describe(getImageGenPromptDescription()),
         background: z
           .enum(['transparent', 'opaque', 'auto'])
           .optional()
@@ -348,24 +385,9 @@ Error Message: ${error.message || 'Unknown error'}`);
     },
     {
       name: 'image_edit_oai',
-      description: `Use \`image_edit_oai\` if the user has uploaded one or more reference images and wants to modify, extend, or create a new image inspired by them.
-      - Always use this tool when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
-      - The most recently uploaded images are used as the reference or input.
-      - Do not use this tool for brand new image generation from scratch—use \`image_gen_oai\` for that.`,
+      description: getImageEditDescription(),
       schema: z.object({
-        prompt: z
-          .string()
-          .max(32000)
-          .describe(
-            `Describe the changes, enhancements, or new ideas to apply to the uploaded image(s).
-      Be highly specific—break your request into layers: 
-      (1) main concept or transformation,
-      (2) specific edits/replacements or composition guidance,
-      (3) desired style, mood, or technique,
-      (4) features/items to keep, change, or add (such as objects, people, clothing, lighting, etc.).
-      Use positive, descriptive language and clarify what should be included or changed, not what to avoid.
-      Always base this prompt on the most recently uploaded reference images.`,
-          ),
+        prompt: z.string().max(32000).describe(getImageEditPromptDescription()),
         /*
         n: z
           .number()
