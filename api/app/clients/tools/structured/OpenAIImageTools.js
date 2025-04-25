@@ -17,7 +17,7 @@ const DEFAULT_IMAGE_GEN_DESCRIPTION_WITH_FILES = `Prefer the image editing tool 
 
 const DEFAULT_IMAGE_GEN_DESCRIPTION_NO_FILES = `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
 - Generates high-quality, original images based solely on the prompt.
-- Use this tool when there are no uploaded files or references to them in the request.`;
+- If the user is referring to a previously uploaded image, instruct them to attach the image again for editing or remixing as only the most recent images are available.`;
 
 /** Default description for image editing tool  */
 const DEFAULT_IMAGE_EDIT_DESCRIPTION = `Use \`image_edit_oai\` if the user has uploaded one or more reference images and wants to modify, extend, or create a new image inspired by them.
