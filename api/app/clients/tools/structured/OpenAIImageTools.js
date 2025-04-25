@@ -127,14 +127,13 @@ function createOpenAIImageTools(fields = {}) {
   let apiKey = fields.IMAGE_GEN_OAI_API_KEY ?? getApiKey();
   const closureConfig = { apiKey };
 
-  // Configure proxy if needed
   let baseURL = 'https://api.openai.com/v1/';
   if (!override && process.env.IMAGE_GEN_OAI_BASEURL) {
     baseURL = extractBaseURL(process.env.IMAGE_GEN_OAI_BASEURL);
     closureConfig.baseURL = baseURL;
   }
 
-  // Configure Azure if needed
+  // Note: Azure may not yet support the latest image generation models
   if (
     !override &&
     process.env.IMAGE_GEN_OAI_AZURE_API_VERSION &&
@@ -380,7 +379,6 @@ Error Message: ${error.message}`);
           );
         }
 
-        // Process the response
         const base64Image = response.data.data[0].b64_json;
         if (!base64Image) {
           return returnValue(
