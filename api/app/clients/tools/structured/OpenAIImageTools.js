@@ -314,7 +314,7 @@ Error Message: ${error.message}`);
       }
 
       // Setup HTTP request configuration
-      const clientConfig = {};
+      const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
         clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
       }
@@ -343,10 +343,15 @@ Error Message: ${error.message}`);
       // TODO: `mask` support
 
       /** @type {import('axios').RawAxiosHeaders} */
-      const headers = {
+      let headers = {
         ...formData.getHeaders(),
-        Authorization: `Bearer ${apiKey}`,
       };
+
+      if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {
+        headers['api-key'] = apiKey;
+      } else {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
 
       try {
         const derivedSignal = runnableConfig?.signal
@@ -360,6 +365,13 @@ Error Message: ${error.message}`);
           signal: derivedSignal,
           baseURL,
         };
+
+        if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {
+          axiosConfig.params = {
+            'api-version': process.env.IMAGE_GEN_OAI_AZURE_API_VERSION,
+            ...axiosConfig.params,
+          };
+        }
         const response = await axios.post('/images/edits', formData, axiosConfig);
 
         if (!response.data || !response.data.data || !response.data.data.length) {
