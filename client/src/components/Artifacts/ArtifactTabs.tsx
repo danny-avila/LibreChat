@@ -5,7 +5,9 @@ import type { Artifact } from '~/common';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
+import { useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
+import { useEditorContext } from '~/Providers';
 import { cn } from '~/utils';
 
 export default function ArtifactTabs({
@@ -21,6 +23,9 @@ export default function ArtifactTabs({
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
+  const { currentCode } = useEditorContext();
+  const { data: startupConfig } = useGetStartupConfig();
+
   const content = artifact.content ?? '';
   const contentRef = useRef<HTMLDivElement>(null);
   useAutoScroll({ ref: contentRef, content, isSubmitting });
@@ -53,6 +58,8 @@ export default function ArtifactTabs({
           template={template}
           previewRef={previewRef}
           sharedProps={sharedProps}
+          currentCode={currentCode}
+          startupConfig={startupConfig}
         />
       </Tabs.Content>
     </>
