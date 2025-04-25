@@ -170,13 +170,13 @@ function createOpenAIImageTools(fields = {}) {
       if (!prompt) {
         throw new Error('Missing required field: prompt');
       }
-      const config = { ...closureConfig };
+      const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+        clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
       }
 
       /** @type {OpenAI} */
-      const openai = new OpenAI(config);
+      const openai = new OpenAI(clientConfig);
       let output_format = imageOutputType;
       if (
         background === 'transparent' &&
@@ -191,19 +191,27 @@ function createOpenAIImageTools(fields = {}) {
 
       let resp;
       try {
-        resp = await openai.images.generate({
-          model: 'gpt-image-1',
-          prompt: replaceUnwantedChars(prompt),
-          n: Math.min(Math.max(1, n), 10),
-          background,
-          output_format,
-          output_compression:
-            output_format === EImageOutputType.WEBP || output_format === EImageOutputType.JPEG
-              ? output_compression
-              : undefined,
-          quality,
-          size,
-        });
+        const derivedSignal = runnableConfig?.signal
+          ? AbortSignal.any([runnableConfig.signal])
+          : undefined;
+        resp = await openai.images.generate(
+          {
+            model: 'gpt-image-1',
+            prompt: replaceUnwantedChars(prompt),
+            n: Math.min(Math.max(1, n), 10),
+            background,
+            output_format,
+            output_compression:
+              output_format === EImageOutputType.WEBP || output_format === EImageOutputType.JPEG
+                ? output_compression
+                : undefined,
+            quality,
+            size,
+          },
+          {
+            signal: derivedSignal,
+          },
+        );
       } catch (error) {
         const message = '[`image_gen_oai`] Problem generating the image:';
         logAxiosError({ error, message });
@@ -306,9 +314,9 @@ Error Message: ${error.message}`);
       }
 
       // Setup HTTP request configuration
-      const config = {};
+      const clientConfig = {};
       if (process.env.PROXY) {
-        config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+        clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
       }
 
       // Create form data for the request
@@ -343,7 +351,7 @@ Error Message: ${error.message}`);
       try {
         const response = await axios.post(`${baseURL}images/edits`, formData, {
           headers,
-          ...config,
+          ...clientConfig,
         });
 
         if (!response.data || !response.data.data || !response.data.data.length) {
