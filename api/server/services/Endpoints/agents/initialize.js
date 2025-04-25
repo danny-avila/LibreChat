@@ -166,13 +166,13 @@ const initializeAgentOptions = async ({
   ) {
     const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
-    const toolResources = new Set();
+    const toolResourceSet = new Set();
     for (const tool of agent.tools) {
       if (EToolResources[tool]) {
-        toolResources.add(EToolResources[tool]);
+        toolResourceSet.add(EToolResources[tool]);
       }
     }
-    const toolFiles = await getToolFilesByIds(fileIds, toolResources);
+    const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
     if (requestFiles.length || toolFiles.length) {
       currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }

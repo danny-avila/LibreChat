@@ -31,10 +31,10 @@ const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
 /**
  * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
  * @param {string[]} fileIds - Array of file_id strings to search for
- * @param {Set<EToolResources>} toolResources - Optional filter for tool resources
+ * @param {Set<EToolResources>} toolResourceSet - Optional filter for tool resources
  * @returns {Promise<Array<IMongoFile>>} Files that match the criteria
  */
-const getToolFilesByIds = async (fileIds, toolResources) => {
+const getToolFilesByIds = async (fileIds, toolResourceSet) => {
   if (!fileIds || !fileIds.length) {
     return [];
   }
@@ -44,14 +44,14 @@ const getToolFilesByIds = async (fileIds, toolResources) => {
       file_id: { $in: fileIds },
     };
 
-    if (toolResources.size) {
+    if (toolResourceSet.size) {
       filter.$or = [];
     }
 
-    if (toolResources.has(EToolResources.file_search)) {
+    if (toolResourceSet.has(EToolResources.file_search)) {
       filter.$or.push({ embedded: true });
     }
-    if (toolResources.has(EToolResources.execute_code)) {
+    if (toolResourceSet.has(EToolResources.execute_code)) {
       filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
     }
 
