@@ -34,6 +34,10 @@ export const artifactPlugin: Pluggable = () => {
   };
 };
 
+const defaultTitle = 'untitled';
+const defaultType = 'unknown';
+const defaultIdentifier = 'lc-no-identifier';
+
 export function Artifact({
   node,
   ...props
@@ -58,15 +62,18 @@ export function Artifact({
     const content = extractContent(props.children);
     logger.log('artifacts', 'updateArtifact: content.length', content.length);
 
-    const title = props.title ?? 'Untitled Artifact';
-    const type = props.type ?? 'unknown';
-    const identifier = props.identifier ?? 'no-identifier';
+    const title = props.title ?? defaultTitle;
+    const type = props.type ?? defaultType;
+    const identifier = props.identifier ?? defaultIdentifier;
     const artifactKey = `${identifier}_${type}_${title}_${messageId}`
       .replace(/\s+/g, '_')
       .toLowerCase();
 
     throttledUpdateRef.current(() => {
       const now = Date.now();
+      if (artifactKey === `${defaultIdentifier}_${defaultType}_${defaultTitle}_${messageId}`) {
+        return;
+      }
 
       const currentArtifact: Artifact = {
         id: artifactKey,
