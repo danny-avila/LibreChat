@@ -114,7 +114,7 @@ function createOpenAIImageTools(fields = {}) {
   }
   const { req } = fields;
   const imageOutputType = req?.app.locals.imageOutputType || EImageOutputType.PNG;
-  const fileStrategy = req?.app.locals.fileStrategy;
+  const appFileStrategy = req?.app.locals.fileStrategy;
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';
@@ -302,9 +302,6 @@ Error Message: ${error.message}`);
    */
   const imageEditTool = tool(
     async ({ prompt, quality = 'auto', size = 'auto' }, runnableConfig) => {
-      if (!fileStrategy) {
-        throw new Error('Missing required toolkit field: fileStrategy');
-      }
       if (!fields.imageFiles) {
         throw new Error('Missing required toolkit field: imageFiles');
       }
@@ -326,9 +323,27 @@ Error Message: ${error.message}`);
       formData.append('quality', quality);
       formData.append('size', size);
 
-      const { getDownloadStream } = getStrategyFunctions(fileStrategy);
+      /** @type {Record<FileSources, undefined | NodeStreamDownloader<File>>} */
+      const streamMethods = {};
       for (const imageFile of fields.imageFiles) {
-        const stream = await getDownloadStream(req, imageFile.filepath);
+        /** @type {NodeStream<File>} */
+        let stream;
+        /** @type {NodeStreamDownloader<File>} */
+        let getDownloadStream;
+        const source = imageFile.source || appFileStrategy;
+        if (!source) {
+          throw new Error('No source found for image file');
+        }
+        if (streamMethods[source]) {
+          getDownloadStream = streamMethods[source];
+        } else {
+          ({ getDownloadStream } = getStrategyFunctions(source));
+          streamMethods[source] = getDownloadStream;
+        }
+        if (!getDownloadStream) {
+          throw new Error(`No download stream method found for source: ${source}`);
+        }
+        stream = await getDownloadStream(req, imageFile.filepath);
         if (!stream) {
           throw new Error('Failed to get download stream for image file');
         }
