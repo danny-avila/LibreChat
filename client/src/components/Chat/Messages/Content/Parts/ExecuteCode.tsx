@@ -149,7 +149,7 @@ export default function ExecuteCode({
         />
       </div>
       <div
-        className={cn('code-wrapper relative', isAnimating && 'animating')}
+        className="relative mb-2"
         style={{
           height: showCode ? contentHeight : 0,
           overflow: 'hidden',
@@ -165,7 +165,7 @@ export default function ExecuteCode({
       >
         <div
           className={cn(
-            'code-analyze-block mb-3 mt-0.5 overflow-hidden rounded-xl bg-surface-primary',
+            'code-analyze-block mt-0.5 overflow-hidden rounded-xl bg-surface-primary',
             showCode && 'shadow-lg',
           )}
           ref={codeContentRef}
@@ -176,20 +176,21 @@ export default function ExecuteCode({
               'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
-          <div
-            className="code-content"
-            style={{
-              transform: showCode ? 'translateY(0)' : 'translateY(-4px)',
-              opacity: showCode ? 1 : 0,
-              transition:
-                'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
-          >
-            <MarkdownLite
-              content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''}
-              codeExecution={false}
-            />
-          </div>
+          {showCode && (
+            <div
+              style={{
+                transform: showCode ? 'translateY(0)' : 'translateY(-4px)',
+                opacity: showCode ? 1 : 0,
+                transition:
+                  'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              <MarkdownLite
+                content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''}
+                codeExecution={false}
+              />
+            </div>
+          )}
           {hasOutput && (
             <div
               className={cn(

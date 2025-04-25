@@ -1,42 +1,28 @@
-import * as Dialog from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
+import { OGDialog, OGDialogClose, OGDialogContent } from '~/components';
 
-export default function DialogImage({ src = '', width = 1920, height = 1080 }) {
+export default function DialogImage({ isOpen, onOpenChange, src = '' }) {
   return (
-    <Dialog.Portal>
-      <Dialog.Overlay
-        className="radix-state-open:animate-show fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black/90 dark:bg-black/80"
-        style={{ pointerEvents: 'auto' }}
-      >
-        <Dialog.Close asChild>
-          <button
-            className="absolute right-4 top-4 text-gray-50 transition hover:text-gray-200"
-            type="button"
-          >
-            <svg
-              stroke="currentColor"
-              fill="none"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-5 w-5"
-              height="1em"
-              width="1em"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </Dialog.Close>
-        <Dialog.Content
-          className="radix-state-open:animate-contentShow relative max-h-[85vh] max-w-[90vw] shadow-xl focus:outline-none"
-          tabIndex={-1}
-          style={{ pointerEvents: 'auto', aspectRatio: height > width ? 1 / 1.75 : 1.75 / 1 }}
+    <OGDialog open={isOpen} onOpenChange={onOpenChange}>
+      <OGDialogClose asChild>
+        <button
+          className="absolute left-4 top-4 text-gray-50 transition hover:text-gray-200"
+          type="button"
         >
-          <img src={src} alt="Uploaded image" className="h-full w-full object-contain" />
-        </Dialog.Content>
-      </Dialog.Overlay>
-    </Dialog.Portal>
+          <X className="size-6" />
+        </button>
+      </OGDialogClose>
+      <OGDialogContent
+        showCloseButton={false}
+        className="w-11/12 overflow-x-auto rounded-none bg-transparent p-0 sm:w-auto"
+        disableScroll={false}
+      >
+        <img
+          src={src}
+          alt="Uploaded image"
+          className="max-w-screen h-full max-h-screen w-full object-contain"
+        />
+      </OGDialogContent>
+    </OGDialog>
   );
 }
