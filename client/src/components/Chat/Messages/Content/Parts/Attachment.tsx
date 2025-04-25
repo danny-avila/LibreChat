@@ -43,48 +43,94 @@ const FileAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   );
 });
 
-export default function Attachment({ attachment }: { attachment?: TAttachment }) {
+const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   const [isLoaded, setIsLoaded] = useState(false);
+  const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
 
   useEffect(() => {
     setIsLoaded(false);
-    if (attachment) {
-      const timer = setTimeout(() => setIsLoaded(true), 100);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
+    const timer = setTimeout(() => setIsLoaded(true), 100);
+    return () => clearTimeout(timer);
   }, [attachment]);
 
+  return (
+    <div
+      className={cn(
+        'image-attachment-container',
+        'transition-all duration-500 ease-out',
+        isLoaded ? 'scale-100 opacity-100' : 'scale-[0.98] opacity-0',
+      )}
+      style={{
+        transformOrigin: 'center top',
+        willChange: 'opacity, transform',
+        WebkitFontSmoothing: 'subpixel-antialiased',
+      }}
+    >
+      <Image
+        altText={attachment.filename}
+        imagePath={filepath ?? ''}
+        height={height ?? 0}
+        width={width ?? 0}
+        className="mb-4"
+      />
+    </div>
+  );
+});
+
+export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
     return null;
   }
+
   const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
   const isImage =
     imageExtRegex.test(attachment.filename) && width != null && height != null && filepath != null;
 
   if (isImage) {
-    return (
-      <div
-        className={cn(
-          'image-attachment-container',
-          'transition-all duration-500 ease-out',
-          isLoaded ? 'scale-100 opacity-100' : 'scale-[0.98] opacity-0',
-        )}
-        style={{
-          transformOrigin: 'center top',
-          willChange: 'opacity, transform',
-          WebkitFontSmoothing: 'subpixel-antialiased',
-        }}
-      >
-        <Image
-          altText={attachment.filename}
-          imagePath={filepath}
-          height={height}
-          width={width}
-          className="mb-4"
-        />
-      </div>
-    );
+    return <ImageAttachment attachment={attachment} />;
   }
   return <FileAttachment attachment={attachment} />;
+}
+
+export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }) {
+  if (!attachments || attachments.length === 0) {
+    return null;
+  }
+
+  const fileAttachments: TAttachment[] = [];
+  const imageAttachments: TAttachment[] = [];
+
+  attachments.forEach((attachment) => {
+    const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
+    const isImage =
+      imageExtRegex.test(attachment.filename) &&
+      width != null &&
+      height != null &&
+      filepath != null;
+
+    if (isImage) {
+      imageAttachments.push(attachment);
+    } else {
+      fileAttachments.push(attachment);
+    }
+  });
+
+  return (
+    <>
+      {fileAttachments.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2.5">
+          {fileAttachments.map((attachment, index) => (
+            <FileAttachment attachment={attachment} key={`file-${index}`} />
+          ))}
+        </div>
+      )}
+      {imageAttachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-4">
+          {imageAttachments.map((attachment, index) => (
+            <ImageAttachment attachment={attachment} key={`image-${index}`} />
+          ))}
+        </div>
+      )}
+    </>
+  );
 }

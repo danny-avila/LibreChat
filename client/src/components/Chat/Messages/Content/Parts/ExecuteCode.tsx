@@ -5,7 +5,7 @@ import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import { useProgress, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import Attachment from './Attachment';
+import { AttachmentGroup } from './Attachment';
 import Stdout from './Stdout';
 import store from '~/store';
 
@@ -211,13 +211,7 @@ export default function ExecuteCode({
           )}
         </div>
       </div>
-      {attachments && attachments.length > 0 && (
-        <div className="my-2 flex flex-wrap items-center gap-2.5">
-          {attachments.map((attachment, index) => (
-            <Attachment attachment={attachment} key={index} />
-          ))}
-        </div>
-      )}
+      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
     </>
   );
 }
