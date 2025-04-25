@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
-import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
+import { TranslationKeys, useLocalize, useParameterEffects, useUpdateSearchParams } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -23,6 +23,7 @@ function DynamicSwitch({
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { preset } = useChatContext();
+  const updateSearchParams = useUpdateSearchParams();
   const [inputValue, setInputValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
   useParameterEffects({
     preset,
@@ -47,6 +48,7 @@ function DynamicSwitch({
     if (optionType === OptionTypes.Custom) {
       // TODO: custom logic, add to payload but not to conversation
       setInputValue(checked);
+      updateSearchParams({ [settingKey]: checked.toString() });
       return;
     }
     setOption(settingKey)(checked);
@@ -65,7 +67,7 @@ function DynamicSwitch({
               htmlFor={`${settingKey}-dynamic-switch`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}:{' '}
@@ -84,7 +86,11 @@ function DynamicSwitch({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}

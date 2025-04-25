@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
+import { createChatSearchParams, getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
@@ -57,7 +57,7 @@ const NewChatButtonIcon = React.memo(({ conversation }: { conversation: TConvers
           context="nav"
         />
       ) : (
-        <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
+        <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-surface-primary-alt dark:text-white dark:after:shadow-none">
           {endpoint && Icon && (
             <Icon
               size={41}
@@ -90,33 +90,29 @@ export default function NewChat({
   const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
+  const defaultPreset = useRecoilValue(store.defaultPreset);
 
-  const clickHandler = useCallback(
-    (event: React.MouseEvent<HTMLAnchorElement>) => {
-      if (event.button === 0 && !(event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        queryClient.setQueryData<TMessage[]>(
-          [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-          [],
-        );
-        newConvo();
-        navigate('/c/new');
-        toggleNav();
-      }
-    },
-    [queryClient, conversation, newConvo, navigate, toggleNav],
-  );
+  const clickHandler = useCallback(() => {
+    queryClient.setQueryData<TMessage[]>(
+      [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+      [],
+    );
+    const params = createChatSearchParams(defaultPreset ?? conversation);
+    const newRoute = params.size > 0 ? `/c/new?${params.toString()}` : '/c/new';
+
+    newConvo();
+    navigate(newRoute);
+    toggleNav();
+  }, [queryClient, conversation, newConvo, navigate, toggleNav, defaultPreset]);
 
   return (
     <div className="sticky left-0 right-0 top-0 z-50 bg-surface-primary-alt pt-3.5">
       <div className="pb-0.5 last:pb-0" style={{ transform: 'none' }}>
-        <a
-          href="/"
-          tabIndex={0}
+        <button
           data-testid="nav-new-chat-button"
           onClick={clickHandler}
           className={cn(
-            'group flex h-10 items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover',
+            'group flex h-10 w-full items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover',
             isSmallScreen ? 'h-14' : '',
           )}
           aria-label={localize('com_ui_new_chat')}
@@ -130,7 +126,7 @@ export default function NewChat({
               <NewChatIcon className="size-5" />
             </span>
           </div>
-        </a>
+        </button>
       </div>
       {subHeaders != null ? subHeaders : null}
     </div>
