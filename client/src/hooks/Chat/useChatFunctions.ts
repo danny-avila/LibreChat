@@ -95,6 +95,7 @@ export default function useChatFunctions({
       isContinued = false,
       isEdited = false,
       overrideMessages,
+      overrideFiles,
     } = {},
   ) => {
     setShowStopButton(false);
@@ -147,12 +148,7 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    let targetParentMessageId = latestMessage?.parentMessageId;
-    if (isRegenerate) {
-      targetParentMessageId = messageId;
-    } else if (isResubmission) {
-      targetParentMessageId = parentMessageId;
-    }
+    const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
     /**
      * If the user regenerated or resubmitted the message, the current parent is technically
      * the latest user message, which is passed into `ask`; otherwise, we can rely on the
@@ -170,7 +166,7 @@ export default function useChatFunctions({
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
 
-    // set the endpoint option
+    /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
@@ -212,12 +208,14 @@ export default function useChatFunctions({
       error: false,
     };
 
+    const submissionFiles = overrideFiles ?? targetParentMessage?.files;
     const reuseFiles =
-      (isRegenerate || isResubmission) &&
-      targetParentMessage?.files &&
-      targetParentMessage.files.length > 0;
+      (isRegenerate || (overrideFiles != null && overrideFiles.length)) &&
+      submissionFiles &&
+      submissionFiles.length > 0;
+
     if (setFiles && reuseFiles === true) {
-      currentMsg.files = targetParentMessage.files;
+      currentMsg.files = [...submissionFiles];
       setFiles(new Map());
       setFilesToDelete({});
     } else if (setFiles && files && files.size > 0) {
@@ -232,7 +230,6 @@ export default function useChatFunctions({
       setFilesToDelete({});
     }
 
-    // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
     const responseText = isEditOrContinue ? generation : '';
 
