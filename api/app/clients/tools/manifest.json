@@ -178,5 +178,18 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "Quickchart",
+    "pluginKey": "quickchart",
+    "description": "Create charts and graphs with the Quickchart API",
+    "icon": "/assets/quickchart_bar_chart_logo.svg",
+    "authConfig": [
+      {
+        "authField": "QUICKCHART_BASE_URL",
+        "label": "Quickchart base url",
+        "description": "You need to provide your Quickchart base url (you can use https://quickchart.io  as well)"
+      }
+    ]
   }
 ]
