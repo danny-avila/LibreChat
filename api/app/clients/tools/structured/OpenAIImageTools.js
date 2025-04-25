@@ -129,8 +129,8 @@ function createOpenAIImageTools(fields = {}) {
 
   // Configure proxy if needed
   let baseURL = 'https://api.openai.com/v1/';
-  if (!override && process.env.IMAGE_GEN_OAI_REVERSE_PROXY) {
-    baseURL = extractBaseURL(process.env.IMAGE_GEN_OAI_REVERSE_PROXY);
+  if (!override && process.env.IMAGE_GEN_OAI_BASEURL) {
+    baseURL = extractBaseURL(process.env.IMAGE_GEN_OAI_BASEURL);
     closureConfig.baseURL = baseURL;
   }
 
