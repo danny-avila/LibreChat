@@ -312,16 +312,15 @@ Error Message: ${error.message}`);
         throw new Error('Missing required field: prompt');
       }
 
-      // Setup HTTP request configuration
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
         clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
       }
 
-      // Create form data for the request
       const formData = new FormData();
       formData.append('model', 'gpt-image-1');
       formData.append('prompt', replaceUnwantedChars(prompt));
+      // TODO: `mask` support
       // TODO: more than 1 image support
       // formData.append('n', n.toString());
       formData.append('quality', quality);
@@ -338,8 +337,6 @@ Error Message: ${error.message}`);
           contentType: imageFile.type,
         });
       }
-
-      // TODO: `mask` support
 
       /** @type {import('axios').RawAxiosHeaders} */
       let headers = {
