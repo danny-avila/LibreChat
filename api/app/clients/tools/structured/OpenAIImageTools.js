@@ -350,7 +350,16 @@ Error Message: ${error.message}`);
       }
 
       if (idsToFetch.length) {
-        const fetchedFiles = await getFiles({ file_id: { $in: idsToFetch } }, {}, {});
+        const fetchedFiles = await getFiles(
+          {
+            user: req.user.id,
+            file_id: { $in: idsToFetch },
+            height: { $exists: true },
+            width: { $exists: true },
+          },
+          {},
+          {},
+        );
 
         for (const file of fetchedFiles) {
           requestFilesMap[file.file_id] = file;
