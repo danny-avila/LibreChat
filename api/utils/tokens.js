@@ -216,7 +216,15 @@ const xAIModels = {
   'grok-3-mini-fast': 131072,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };
+const omnexioModels = {
+  'Omnexio Search': 10000,
+  'Llama-4-Maverick': 10000,
+  'Llama-4-Scout': 10000,
+  'Llama-3.3-Turbo': 10000,
+  'Llama-3.2-Turbo': 10000,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels, ...omnexioModels };
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
