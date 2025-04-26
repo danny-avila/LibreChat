@@ -1,4 +1,4 @@
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize } from '~/hooks';
 
 export default function ToolCallInfo({
   input,
