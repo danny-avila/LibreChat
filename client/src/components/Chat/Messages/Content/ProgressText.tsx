@@ -1,5 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import CancelledIcon from './CancelledIcon';
 import FinishedIcon from './FinishedIcon';
 import { Spinner } from '~/components';
 import { cn } from '~/utils';
@@ -46,6 +47,7 @@ export default function ProgressText({
   hasInput = true,
   popover = false,
   isExpanded = false,
+  error = false,
 }: {
   progress: number;
   onClick?: () => void;
@@ -55,6 +57,7 @@ export default function ProgressText({
   hasInput?: boolean;
   popover?: boolean;
   isExpanded?: boolean;
+  error?: boolean;
 }) {
   const text = progress < 1 ? (authText ?? inProgressText) : finishedText;
   return (
@@ -66,15 +69,16 @@ export default function ProgressText({
           hasInput ? '' : 'pointer-events-none',
         )}
         disabled={!hasInput}
-        onClick={onClick}
+        onClick={hasInput ? onClick : undefined}
       >
-        {progress < 1 ? <Spinner /> : <FinishedIcon />}
-        {text}
-        {isExpanded ? (
-          <ChevronUp className="size-4 translate-y-[1px]" />
-        ) : (
-          <ChevronDown className="size-4 translate-y-[1px]" />
-        )}
+        {progress < 1 ? <Spinner /> : error ? <CancelledIcon /> : <FinishedIcon />}
+        <span className={` ${progress < 1 ? 'shimmer' : ''}`}>{text}</span>
+        {hasInput &&
+          (isExpanded ? (
+            <ChevronUp className="size-4 translate-y-[1px]" />
+          ) : (
+            <ChevronDown className="size-4 translate-y-[1px]" />
+          ))}
       </button>
     </Wrapper>
   );
