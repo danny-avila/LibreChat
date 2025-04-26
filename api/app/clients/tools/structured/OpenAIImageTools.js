@@ -463,6 +463,19 @@ Error Message: ${error.message || 'Unknown error'}`);
       name: 'image_edit_oai',
       description: getImageEditDescription(),
       schema: z.object({
+        image_ids: z
+          .array(z.string())
+          .min(1)
+          .describe(
+            `
+IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
+
+Guidelines:
+- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
+- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
+- If no earlier image is relevant, omit the field entirely.
+`.trim(),
+          ),
         prompt: z.string().max(32000).describe(getImageEditPromptDescription()),
         /*
         n: z
@@ -478,20 +491,6 @@ Error Message: ${error.message || 'Unknown error'}`);
           .optional()
           .describe(
             'The quality of the image. One of auto (default), high, medium, or low. High/medium/low only supported for gpt-image-1.',
-          ),
-        image_ids: z
-          .array(z.string())
-          .min(1)
-          .optional()
-          .describe(
-            `
-IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
-
-Guidelines:
-- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
-- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
-- If no earlier image is relevant, omit the field entirely.
-`.trim(),
           ),
         size: z
           .enum(['auto', '1024x1024', '1536x1024', '1024x1536', '256x256', '512x512'])
