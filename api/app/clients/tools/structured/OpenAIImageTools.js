@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const axios = require('axios');
+const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
 const { tool } = require('@langchain/core/tools');
@@ -7,23 +8,38 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logAxiosError, extractBaseURL } = require('~/utils');
+const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
 /** Default descriptions for image generation tool  */
-const DEFAULT_IMAGE_GEN_DESCRIPTION_WITH_FILES = `Prefer the image editing tool (\`image_edit_oai\`) when the user has uploaded any files and requests inspiration, modification, or remixing based on those uploads.
-- Use \`image_gen_oai\` only to create entirely new images from detailed text descriptions that do NOT reference the uploaded files.
-- This tool generates high-quality, original images based solely on the prompt, not using any uploaded reference images.
-- Note: The currently uploaded images may not be available in a follow-up request as their inclusion is determined by the user.`;
+const DEFAULT_IMAGE_GEN_DESCRIPTION = `
+Generates high-quality, original images based solely on text, not using any uploaded reference images.
 
-const DEFAULT_IMAGE_GEN_DESCRIPTION_NO_FILES = `Use \`image_gen_oai\` to create entirely new images from detailed text descriptions.
-- Generates high-quality, original images based solely on the prompt.
-- If the user is referring to a previously uploaded image, instruct them to attach the image again for editing or remixing as only the most recent images are available.`;
+When to use \`image_gen_oai\`:
+- To create entirely new images from detailed text descriptions that do NOT reference any image files.
+
+When NOT to use \`image_gen_oai\`:
+- If the user has uploaded any images and requests modifications, enhancements, or remixing based on those uploads → use \`image_edit_oai\` instead.
+
+Generated image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.
+`.trim();
 
 /** Default description for image editing tool  */
-const DEFAULT_IMAGE_EDIT_DESCRIPTION = `Use \`image_edit_oai\` if the user has uploaded one or more reference images and wants to modify, extend, or create a new image inspired by them.
-      - Always use this tool when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
-      - The most recently uploaded images are used as the reference or input.
-      - Do not use this tool for brand new image generation from scratch—use \`image_gen_oai\` for that.`;
+const DEFAULT_IMAGE_EDIT_DESCRIPTION =
+  `Generates high-quality, original images based on text and one or more uploaded/referenced images.
+
+When to use \`image_edit_oai\`:
+- The user wants to modify, extend, or remix one **or more** uploaded images, either:
+  - Previously generated, or in the current request (both to be included in the \`image_ids\` array).
+- Always when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
+- Any current or existing images are to be used as visual guides.
+- If there are any files in the current request, they are more likely than not expected as references for image edit requests.
+
+When NOT to use \`image_edit_oai\`:
+- Brand-new generations that do not rely on an existing image → use \`image_gen_oai\` instead.
+
+Both generated and referenced image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.
+`.trim();
 
 /** Default prompt descriptions  */
 const DEFAULT_IMAGE_GEN_PROMPT_DESCRIPTION = `Describe the image you want in detail. 
@@ -74,13 +90,8 @@ function returnValue(value) {
   return value;
 }
 
-const getImageGenDescription = (hasFiles) => {
-  if (hasFiles) {
-    return (
-      process.env.IMAGE_GEN_OAI_DESCRIPTION_WITH_FILES || DEFAULT_IMAGE_GEN_DESCRIPTION_WITH_FILES
-    );
-  }
-  return process.env.IMAGE_GEN_OAI_DESCRIPTION_NO_FILES || DEFAULT_IMAGE_GEN_DESCRIPTION_NO_FILES;
+const getImageGenDescription = () => {
+  return process.env.IMAGE_GEN_OAI_DESCRIPTION || DEFAULT_IMAGE_GEN_DESCRIPTION;
 };
 
 const getImageEditDescription = () => {
@@ -149,7 +160,7 @@ function createOpenAIImageTools(fields = {}) {
     closureConfig.apiKey = process.env.IMAGE_GEN_OAI_API_KEY;
   }
 
-  const hasFiles = (fields.imageFiles?.length ?? 0) > 0;
+  const imageFiles = fields.imageFiles ?? [];
 
   /**
    * Image Generation Tool
@@ -243,17 +254,18 @@ Error Message: ${error.message}`);
         },
       ];
 
+      const file_ids = [v4()];
       const response = [
         {
           type: ContentTypes.TEXT,
-          text: displayMessage,
+          text: displayMessage + `\n\ngenerated_image_id: "${file_ids[0]}"`,
         },
       ];
-      return [response, { content }];
+      return [response, { content, file_ids }];
     },
     {
       name: 'image_gen_oai',
-      description: getImageGenDescription(hasFiles),
+      description: getImageGenDescription(),
       schema: z.object({
         prompt: z.string().max(32000).describe(getImageGenPromptDescription()),
         background: z
@@ -293,18 +305,11 @@ Error Message: ${error.message}`);
     },
   );
 
-  if (!override && !hasFiles) {
-    return [imageGenTool];
-  }
-
   /**
    * Image Editing Tool
    */
   const imageEditTool = tool(
-    async ({ prompt, quality = 'auto', size = 'auto' }, runnableConfig) => {
-      if (!fields.imageFiles) {
-        throw new Error('Missing required toolkit field: imageFiles');
-      }
+    async ({ prompt, image_ids, quality = 'auto', size = 'auto' }, runnableConfig) => {
       if (!prompt) {
         throw new Error('Missing required field: prompt');
       }
@@ -325,7 +330,37 @@ Error Message: ${error.message}`);
 
       /** @type {Record<FileSources, undefined | NodeStreamDownloader<File>>} */
       const streamMethods = {};
-      for (const imageFile of fields.imageFiles) {
+
+      const requestFilesMap = Object.fromEntries(imageFiles.map((f) => [f.file_id, { ...f }]));
+
+      const orderedFiles = new Array(image_ids.length);
+      const idsToFetch = [];
+      const indexOfMissing = Object.create(null);
+
+      for (let i = 0; i < image_ids.length; i++) {
+        const id = image_ids[i];
+        const file = requestFilesMap[id];
+
+        if (file) {
+          orderedFiles[i] = file;
+        } else {
+          idsToFetch.push(id);
+          indexOfMissing[id] = i;
+        }
+      }
+
+      if (idsToFetch.length) {
+        const fetchedFiles = await getFiles({ file_id: { $in: idsToFetch } }, {}, {});
+
+        for (const file of fetchedFiles) {
+          requestFilesMap[file.file_id] = file;
+          orderedFiles[indexOfMissing[file.file_id]] = file;
+        }
+      }
+      for (const imageFile of orderedFiles) {
+        if (!imageFile) {
+          continue;
+        }
         /** @type {NodeStream<File>} */
         let stream;
         /** @type {NodeStreamDownloader<File>} */
@@ -407,13 +442,16 @@ Error Message: ${error.message}`);
           },
         ];
 
+        const file_ids = [v4()];
         const textResponse = [
           {
             type: ContentTypes.TEXT,
-            text: displayMessage,
+            text:
+              displayMessage +
+              `\n\ngenerated_image_id: "${file_ids[0]}"\nreferenced_image_ids: ["${image_ids.join('", "')}"]`,
           },
         ];
-        return [textResponse, { content }];
+        return [textResponse, { content, file_ids }];
       } catch (error) {
         const message = '[image_edit_oai] Problem editing the image:';
         logAxiosError({ error, message });
@@ -440,6 +478,20 @@ Error Message: ${error.message || 'Unknown error'}`);
           .optional()
           .describe(
             'The quality of the image. One of auto (default), high, medium, or low. High/medium/low only supported for gpt-image-1.',
+          ),
+        image_ids: z
+          .array(z.string())
+          .min(1)
+          .optional()
+          .describe(
+            `
+IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
+
+Guidelines:
+- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
+- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
+- If no earlier image is relevant, omit the field entirely.
+`.trim(),
           ),
         size: z
           .enum(['auto', '1024x1024', '1536x1024', '1024x1536', '256x256', '512x512'])
