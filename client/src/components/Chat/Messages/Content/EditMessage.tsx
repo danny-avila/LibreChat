@@ -61,6 +61,7 @@ const EditMessage = ({
         },
         {
           isResubmission: true,
+          overrideFiles: message.files,
         },
       );
 
