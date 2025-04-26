@@ -29,7 +29,7 @@
   "com_assistants_actions_info": "Let your Assistant retrieve information or take actions via API's",
   "com_assistants_add_actions": "Add Actions",
   "com_assistants_add_tools": "Add Tools",
-  "com_assistants_allow_sites_you_trust": "Only allow sites you trust.",
+  "com_assistants_allow_sites_you_trust": "Only allow sites you trust",
   "com_assistants_append_date": "Append Current Date & Time",
   "com_assistants_append_date_tooltip": "When enabled, the current client date and time will be appended to the assistant system instructions.",
   "com_assistants_attempt_info": "Assistant wants to send the following:",

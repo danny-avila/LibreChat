@@ -44,8 +44,8 @@ export default function ToolCallInfo({
           <div className="mb-2 mt-2 text-sm font-medium text-text-primary">
             {localize('com_ui_result')}
           </div>
-          <div className="max-h-32 overflow-y-auto rounded-lg bg-surface-tertiary p-2 text-xs text-text-primary">
-            <code className="!whitespace-pre-wrap">{formatText(output)}</code>
+          <div className="max-h-96 overflow-y-auto break-words rounded-lg bg-surface-tertiary p-2 text-xs text-text-primary">
+            <code className="!whitespace-pre-wrap break-words">{formatText(output)}</code>
           </div>
         </>
       )}
