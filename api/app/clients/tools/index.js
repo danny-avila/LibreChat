@@ -10,6 +10,7 @@ const StructuredACS = require('./structured/AzureAISearch');
 const StructuredSD = require('./structured/StableDiffusion');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
+const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const WebNavigator = require('./structured/WebNavigator');
 const E2BCode = require('./structured/E2BCode');
@@ -50,4 +51,5 @@ module.exports = {
   TimeAPI,
   Quickchart,
   WordPress,
+  createOpenAIImageTools,
 };

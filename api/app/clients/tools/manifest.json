@@ -45,6 +45,20 @@
     ]
   },
   {
+    "name": "OpenAI Image Tools",
+    "pluginKey": "image_gen_oai",
+    "toolkit": true,
+    "description": "Image Generation and Editing using OpenAI's latest state-of-the-art models",
+    "icon": "/assets/image_gen_oai.png",
+    "authConfig": [
+      {
+        "authField": "IMAGE_GEN_OAI_API_KEY",
+        "label": "OpenAI Image Tools API Key",
+        "description": "Your OpenAI API Key for Image Generation and Editing"
+      }
+    ]
+  },
+  {
     "name": "Wolfram",
     "pluginKey": "wolfram",
     "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",
