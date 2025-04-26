@@ -72,7 +72,7 @@ export default function ProgressText({
         onClick={hasInput ? onClick : undefined}
       >
         {progress < 1 ? <Spinner /> : error ? <CancelledIcon /> : <FinishedIcon />}
-        <span className={` ${progress < 1 ? 'shimmer' : ''}`}>{text}</span>
+        <span className={`${progress < 1 ? 'shimmer' : ''}`}>{text}</span>
         {hasInput &&
           (isExpanded ? (
             <ChevronUp className="size-4 translate-y-[1px]" />
