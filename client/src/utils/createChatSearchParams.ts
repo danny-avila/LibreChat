@@ -1,3 +1,4 @@
+import { isAgentsEndpoint, isAssistantsEndpoint, Constants } from 'librechat-data-provider';
 import type { TConversation, TPreset } from 'librechat-data-provider';
 
 export default function createChatSearchParams(
@@ -9,7 +10,6 @@ export default function createChatSearchParams(
 
   const params = new URLSearchParams();
 
-  // Define the allowable parameters
   const allowedParams = [
     'endpoint',
     'model',
@@ -29,7 +29,6 @@ export default function createChatSearchParams(
     'assistant_id',
   ];
 
-  // Handle Record<string, string> directly
   if (input && typeof input === 'object' && !('endpoint' in input) && !('model' in input)) {
     Object.entries(input as Record<string, string>).forEach(([key, value]) => {
       if (value != null && allowedParams.includes(key)) {
@@ -40,17 +39,24 @@ export default function createChatSearchParams(
   }
 
   const conversation = input as TConversation | TPreset;
+  const endpoint = conversation.endpoint;
 
-  // If agent_id or assistant_id are present, they take precedence over all other params
-  if (conversation.agent_id) {
+  if (
+    isAgentsEndpoint(endpoint) &&
+    conversation.agent_id &&
+    conversation.agent_id !== Constants.EPHEMERAL_AGENT_ID
+  ) {
     return new URLSearchParams({ agent_id: String(conversation.agent_id) });
-  } else if (conversation.assistant_id) {
+  } else if (isAssistantsEndpoint(endpoint) && conversation.assistant_id) {
     return new URLSearchParams({ assistant_id: String(conversation.assistant_id) });
+  } else if (isAgentsEndpoint(endpoint) && !conversation.agent_id) {
+    return params;
+  } else if (isAssistantsEndpoint(endpoint) && !conversation.assistant_id) {
+    return params;
   }
 
-  // Otherwise, set regular params
-  if (conversation.endpoint) {
-    params.set('endpoint', conversation.endpoint);
+  if (endpoint) {
+    params.set('endpoint', endpoint);
   }
   if (conversation.model) {
     params.set('model', conversation.model);
