@@ -318,6 +318,9 @@ class GoogleClient extends BaseClient {
           this.contextHandlers?.processFile(file);
           continue;
         }
+        if (file.metadata?.fileIdentifier) {
+          continue;
+        }
       }
 
       this.augmentedPrompt = await this.contextHandlers.createContext();
