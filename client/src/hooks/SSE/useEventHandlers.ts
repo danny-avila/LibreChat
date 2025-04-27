@@ -452,12 +452,20 @@ export default function useEventHandlers({
       announcePolite({ message: getAllContentText(responseMessage) });
 
       /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
+      let finalMessages: TMessage[] = [];
       if (runMessages) {
-        setMessages([...runMessages]);
+        finalMessages = [...runMessages];
       } else if (isRegenerate && responseMessage) {
-        setMessages([...messages, responseMessage]);
+        finalMessages = [...messages, responseMessage];
       } else if (requestMessage != null && responseMessage != null) {
-        setMessages([...messages, requestMessage, responseMessage]);
+        finalMessages = [...messages, requestMessage, responseMessage];
+      }
+      if (finalMessages.length > 0) {
+        setMessages(finalMessages);
+        queryClient.setQueryData<TMessage[]>(
+          [QueryKeys.messages, conversation.conversationId],
+          finalMessages,
+        );
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
