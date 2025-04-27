@@ -51,7 +51,7 @@ export default function NewChat({
 
   return (
     <>
-      <div className="h-header-height xs:pe-3 flex items-center justify-between py-2">
+      <div className="flex items-center justify-between py-[2px] md:py-2">
         <TooltipAnchor
           description={localize('com_nav_close_sidebar')}
           render={
@@ -60,11 +60,11 @@ export default function NewChat({
               variant="outline"
               data-testid="close-sidebar-button"
               aria-label={localize('com_nav_close_sidebar')}
-              className="rounded-xl border-none bg-transparent p-2 hover:bg-surface-hover"
+              className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
               onClick={toggleNav}
             >
               <Sidebar className="max-md:hidden" />
-              <MobileSidebar className="md:hidden" />
+              <MobileSidebar className="m-1 inline-flex size-10 items-center justify-center md:hidden" />
             </Button>
           }
         />
@@ -78,10 +78,10 @@ export default function NewChat({
                 variant="outline"
                 data-testid="nav-new-chat-button"
                 aria-label={localize('com_ui_new_chat')}
-                className="rounded-xl border-none bg-transparent p-2 hover:bg-surface-hover"
+                className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
                 onClick={clickHandler}
               >
-                <NewChatIcon />
+                <NewChatIcon className="icon-md md:h-6 md:w-6" />
               </Button>
             }
           />

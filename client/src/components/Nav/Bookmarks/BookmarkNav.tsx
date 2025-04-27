@@ -39,15 +39,22 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
                 className={cn(
                   'flex items-center justify-center',
                   'size-10 border-none text-text-primary hover:bg-accent hover:text-accent-foreground',
-                  'rounded-xl border-none p-2 hover:bg-surface-hover',
+                  'rounded-full border-none p-2 hover:bg-surface-hover md:rounded-xl',
                   open ? 'bg-surface-hover' : '',
                 )}
                 data-testid="bookmark-menu"
               >
                 {tags.length > 0 ? (
-                  <BookmarkFilledIcon className="icon-lg text-text-primary" aria-hidden="true" />
+                  <BookmarkFilledIcon
+                    /** `isSmallScreen` is used because lazy loading is not influencing `md:` prefix for some reason */
+                    className={cn('text-text-primary', isSmallScreen ? 'icon-md-heavy' : 'icon-lg')}
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <BookmarkIcon className="icon-lg text-text-primary" aria-hidden="true" />
+                  <BookmarkIcon
+                    className={cn('text-text-primary', isSmallScreen ? 'icon-md-heavy' : 'icon-lg')}
+                    aria-hidden="true"
+                  />
                 )}
               </MenuButton>
             }
