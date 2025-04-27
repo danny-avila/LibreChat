@@ -220,6 +220,7 @@ const Conversations: FC<ConversationsProps> = ({
                 role="list"
                 aria-label="Conversations"
                 onRowsRendered={handleRowsRendered}
+                tabIndex={-1}
               />
             )}
           </AutoSizer>
