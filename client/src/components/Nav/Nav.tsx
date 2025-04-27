@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { TConversation, ConversationListResponse } from 'librechat-data-provider';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
@@ -13,7 +13,6 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import NavToggle from './NavToggle';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
