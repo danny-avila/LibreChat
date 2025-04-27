@@ -31,23 +31,29 @@ export default function NewChat({
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { conversation } = store.useCreateConversationAtom(index);
 
-  const clickHandler = useCallback(() => {
-    queryClient.setQueryData<TMessage[]>(
-      [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-      [],
-    );
-    const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
-    const defaultSpec = getDefaultModelSpec(startupConfig);
-    const preset = defaultSpec != null ? getModelSpecPreset(defaultSpec) : defaultPreset;
-    const params = createChatSearchParams(preset ?? conversation);
-    const newRoute = params.size > 0 ? `/c/new?${params.toString()}` : '/c/new';
-
-    newConvo();
-    navigate(newRoute);
-    if (isSmallScreen) {
-      toggleNav();
-    }
-  }, [queryClient, conversation, newConvo, navigate, toggleNav, defaultPreset, isSmallScreen]);
+  const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
+    (e) => {
+      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
+        window.open('/c/new', '_blank');
+        return;
+      }
+      queryClient.setQueryData<TMessage[]>(
+        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+        [],
+      );
+      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const defaultSpec = getDefaultModelSpec(startupConfig);
+      const preset = defaultSpec != null ? getModelSpecPreset(defaultSpec) : defaultPreset;
+      const params = createChatSearchParams(preset ?? conversation);
+      const newRoute = params.size > 0 ? `/c/new?${params.toString()}` : '/c/new';
+      newConvo();
+      navigate(newRoute);
+      if (isSmallScreen) {
+        toggleNav();
+      }
+    },
+    [queryClient, conversation, newConvo, navigate, toggleNav, defaultPreset, isSmallScreen],
+  );
 
   return (
     <>
