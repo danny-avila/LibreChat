@@ -1,6 +1,6 @@
-import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import {
   QueryKeys,
   Constants,
@@ -16,8 +16,9 @@ const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
-  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
+  const resetArtifacts = useResetRecoilState(store.artifactsState);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
+  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
 
   const fetchFreshData = async (conversationId?: string | null) => {
@@ -31,6 +32,7 @@ const useNavigateToConvo = (index = 0) => {
       logger.log('conversation', 'Fetched fresh conversation data', data);
       await queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
       setConversation(data);
+      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
     }
@@ -82,11 +84,13 @@ const useNavigateToConvo = (index = 0) => {
       });
     }
     clearAllConversations(true);
+    resetArtifacts();
     setConversation(convo);
-    navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       fetchFreshData(convo.conversationId);
+    } else {
+      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     }
   };
 
