@@ -28,9 +28,6 @@ const knownEndpointClasses = {
   },
   [KnownEndpoints.xai]: {
     [IconContext.landing]: 'p-2',
-    [IconContext.menuItem]: 'bg-white',
-    [IconContext.message]: 'bg-white',
-    [IconContext.nav]: 'bg-white',
   },
 };
 
