@@ -25,6 +25,7 @@ import store, { useGetEphemeralAgent } from '~/store';
 import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
+import { useNavigate } from 'react-router-dom';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -69,6 +70,7 @@ export default function useChatFunctions({
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const includeShadcnui = useRecoilValue(store.includeShadcnui);
   const customPromptMode = useRecoilValue(store.customPromptMode);
+  const navigate = useNavigate();
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
@@ -146,6 +148,7 @@ export default function useChatFunctions({
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
+      navigate('/c/new');
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
