@@ -1,6 +1,6 @@
-import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import {
   QueryKeys,
   Constants,
@@ -16,8 +16,9 @@ const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
-  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
+  const resetArtifacts = useResetRecoilState(store.artifactsState);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
+  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
 
   const fetchFreshData = async (conversationId?: string | null) => {
@@ -83,6 +84,7 @@ const useNavigateToConvo = (index = 0) => {
       });
     }
     clearAllConversations(true);
+    resetArtifacts();
     setConversation(convo);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
