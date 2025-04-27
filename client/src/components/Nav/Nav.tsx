@@ -58,7 +58,6 @@ const Nav = memo(
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
-    const [isToggleHovering, setIsToggleHovering] = useState(false);
     const [showLoading, setShowLoading] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
 
@@ -201,7 +200,7 @@ const Nav = memo(
               <div
                 className={cn(
                   'flex h-full flex-col transition-opacity',
-                  isToggleHovering && !isSmallScreen ? 'opacity-50' : 'opacity-100',
+                  !isSmallScreen ? 'opacity-50' : 'opacity-100',
                 )}
               >
                 <div className="flex h-full flex-col">
