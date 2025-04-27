@@ -102,6 +102,9 @@ export default function Conversation({
   const handleNavigation = (ctrlOrMetaKey: boolean) => {
     if (ctrlOrMetaKey) {
       toggleNav();
+      const baseUrl = window.location.origin;
+      const path = `/c/${conversationId}`;
+      window.open(baseUrl + path, '_blank');
       return;
     }
 
