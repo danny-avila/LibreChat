@@ -40,7 +40,9 @@ export default function createChatSearchParams(
 
   const conversation = input as TConversation | TPreset;
   const endpoint = conversation.endpoint;
-
+  if (conversation.spec) {
+    return new URLSearchParams({ spec: conversation.spec });
+  }
   if (
     isAgentsEndpoint(endpoint) &&
     conversation.agent_id &&

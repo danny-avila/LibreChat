@@ -3,11 +3,11 @@ import { useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TStartupConfig } from 'librechat-data-provider';
+import { createChatSearchParams, getDefaultModelSpec, getModelSpecPreset } from '~/utils';
 import { NewChatIcon, MobileSidebar, Sidebar } from '~/components/svg';
 import { TooltipAnchor, Button } from '~/components/ui';
 import { useLocalize, useNewConvo } from '~/hooks';
-import { createChatSearchParams } from '~/utils';
 import store from '~/store';
 
 export default function NewChat({
@@ -28,15 +28,18 @@ export default function NewChat({
   const { newConversation: newConvo } = useNewConvo(index);
   const navigate = useNavigate();
   const localize = useLocalize();
-  const { conversation } = store.useCreateConversationAtom(index);
   const defaultPreset = useRecoilValue(store.defaultPreset);
+  const { conversation } = store.useCreateConversationAtom(index);
 
   const clickHandler = useCallback(() => {
     queryClient.setQueryData<TMessage[]>(
       [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
       [],
     );
-    const params = createChatSearchParams(defaultPreset ?? conversation);
+    const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+    const defaultSpec = getDefaultModelSpec(startupConfig);
+    const preset = defaultSpec != null ? getModelSpecPreset(defaultSpec) : defaultPreset;
+    const params = createChatSearchParams(preset ?? conversation);
     const newRoute = params.size > 0 ? `/c/new?${params.toString()}` : '/c/new';
 
     newConvo();
