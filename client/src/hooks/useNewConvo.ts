@@ -22,8 +22,8 @@ import {
   getEndpointField,
   buildDefaultConvo,
   getDefaultEndpoint,
+  getModelSpecPreset,
   getDefaultModelSpec,
-  getModelSpecIconURL,
   updateLastSelectedModel,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -231,11 +231,7 @@ const useNewConvo = (index = 0) => {
           (startupConfig.interface?.modelSelect ?? true) !== true) &&
         defaultModelSpec
       ) {
-        preset = {
-          ...defaultModelSpec.preset,
-          iconURL: getModelSpecIconURL(defaultModelSpec),
-          spec: defaultModelSpec.name,
-        } as TConversation;
+        preset = getModelSpecPreset(defaultModelSpec);
       }
 
       if (conversation.conversationId === 'new' && !modelsData) {
