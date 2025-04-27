@@ -73,7 +73,7 @@ export default function useQueryParams({
   const attemptsRef = useRef(0);
   const processedRef = useRef(false);
   const methods = useChatFormContext();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
@@ -222,8 +222,12 @@ export default function useQueryParams({
 
       /** Clean up URL parameters after successful processing */
       const success = () => {
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
+        const currentParams = new URLSearchParams(searchParams.toString());
+        currentParams.delete('prompt');
+        currentParams.delete('q');
+        currentParams.delete('submit');
+
+        setSearchParams(currentParams, { replace: true });
         processedRef.current = true;
         console.log('Parameters processed successfully');
         clearInterval(intervalId);
@@ -254,5 +258,14 @@ export default function useQueryParams({
     return () => {
       clearInterval(intervalId);
     };
-  }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation, submitMessage]);
+  }, [
+    searchParams,
+    methods,
+    textAreaRef,
+    newQueryConvo,
+    newConversation,
+    submitMessage,
+    setSearchParams,
+    queryClient,
+  ]);
 }

@@ -2,7 +2,13 @@ import { useMemo, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
-import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
+import {
+  useLocalize,
+  useDebouncedInput,
+  useParameterEffects,
+  TranslationKeys,
+  useUpdateSearchParams,
+} from '~/hooks';
 import { cn, defaultTextProps, optionText } from '~/utils';
 import { ESide, defaultDebouncedDelay } from '~/common';
 import { useChatContext } from '~/Providers';
@@ -31,6 +37,7 @@ function DynamicSlider({
     () => (!range && options && options.length > 0) ?? false,
     [options, range],
   );
+  const updateSearchParams = useUpdateSearchParams();
 
   const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
@@ -60,20 +67,26 @@ function DynamicSlider({
 
   const enumToNumeric = useMemo(() => {
     if (isEnum && options) {
-      return options.reduce((acc, mapping, index) => {
-        acc[mapping] = index;
-        return acc;
-      }, {} as Record<string, number>);
+      return options.reduce(
+        (acc, mapping, index) => {
+          acc[mapping] = index;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
     }
     return {};
   }, [isEnum, options]);
 
   const valueToEnumOption = useMemo(() => {
     if (isEnum && options) {
-      return options.reduce((acc, option, index) => {
-        acc[index] = option;
-        return acc;
-      }, {} as Record<number, string>);
+      return options.reduce(
+        (acc, option, index) => {
+          acc[index] = option;
+          return acc;
+        },
+        {} as Record<number, string>,
+      );
     }
     return {};
   }, [isEnum, options]);
@@ -85,8 +98,10 @@ function DynamicSlider({
       } else {
         setInputValue(value);
       }
+
+      updateSearchParams({ [settingKey]: value.toString() });
     },
-    [isEnum, setInputValue, valueToEnumOption],
+    [isEnum, setInputValue, valueToEnumOption, updateSearchParams, settingKey],
   );
 
   const max = useMemo(() => {
@@ -117,7 +132,7 @@ function DynamicSlider({
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -132,7 +147,7 @@ function DynamicSlider({
                 onChange={(value) => setInputValue(Number(value))}
                 max={range ? range.max : (options?.length ?? 0) - 1}
                 min={range ? range.min : 0}
-                step={range ? range.step ?? 1 : 1}
+                step={range ? (range.step ?? 1) : 1}
                 controls={false}
                 className={cn(
                   defaultTextProps,
@@ -164,19 +179,23 @@ function DynamicSlider({
             value={[
               isEnum
                 ? enumToNumeric[(selectedValue as number) ?? '']
-                : (inputValue as number) ?? (defaultValue as number),
+                : ((inputValue as number) ?? (defaultValue as number)),
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
             onDoubleClick={() => setInputValue(defaultValue as string | number)}
             max={max}
             min={range ? range.min : 0}
-            step={range ? range.step ?? 1 : 1}
+            step={range ? (range.step ?? 1) : 1}
             className="flex h-4 w-full"
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}
