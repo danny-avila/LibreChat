@@ -31,6 +31,7 @@ const useNavigateToConvo = (index = 0) => {
       logger.log('conversation', 'Fetched fresh conversation data', data);
       await queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
       setConversation(data);
+      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
     }
@@ -83,10 +84,11 @@ const useNavigateToConvo = (index = 0) => {
     }
     clearAllConversations(true);
     setConversation(convo);
-    navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       fetchFreshData(convo.conversationId);
+    } else {
+      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     }
   };
 

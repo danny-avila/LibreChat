@@ -41,7 +41,7 @@ export default function NewChat({
         [],
       );
       newConvo();
-      navigate('/c/new');
+      navigate('/c/new', { state: { focusChat: true } });
       if (isSmallScreen) {
         toggleNav();
       }
