@@ -152,12 +152,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const textValue = useWatch({ control: methods.control, name: 'text' });
 
   useEffect(() => {
-    if (!search.isSearching && textAreaRef.current && !disableInputs) {
-      textAreaRef.current.focus();
-    }
-  }, [search.isSearching, disableInputs]);
-
-  useEffect(() => {
     if (textAreaRef.current) {
       const style = window.getComputedStyle(textAreaRef.current);
       const lineHeight = parseFloat(style.lineHeight);
