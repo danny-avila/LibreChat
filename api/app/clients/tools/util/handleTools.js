@@ -1,7 +1,7 @@
-const { Tools, Constants } = require('librechat-data-provider');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
+const { Tools, Constants, EToolResources } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -18,6 +18,7 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  createOpenAIImageTools,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -157,7 +158,7 @@ const loadTools = async ({
   };
 
   const customConstructors = {
-    serpapi: async () => {
+    serpapi: async (_toolContextMap) => {
       const authFields = getAuthFields('serpapi');
       let envVar = authFields[0] ?? '';
       let apiKey = process.env[envVar];
@@ -170,10 +171,39 @@ const loadTools = async ({
         gl: 'us',
       });
     },
-    youtube: async () => {
+    youtube: async (_toolContextMap) => {
       const authFields = getAuthFields('youtube');
       const authValues = await loadAuthValues({ userId: user, authFields });
       return createYouTubeTools(authValues);
+    },
+    image_gen_oai: async (toolContextMap) => {
+      const authFields = getAuthFields('image_gen_oai');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      let toolContext = '';
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        if (!file) {
+          continue;
+        }
+        if (i === 0) {
+          toolContext =
+            'Image files provided in this request (their image IDs listed in order of appearance) available for image editing:';
+        }
+        toolContext += `\n\t- ${file.file_id}`;
+        if (i === imageFiles.length - 1) {
+          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`${EToolResources.image_edit}_oai\`. You may also include previously referenced or generated image IDs.`;
+        }
+      }
+      if (toolContext) {
+        toolContextMap.image_edit_oai = toolContext;
+      }
+      return createOpenAIImageTools({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        imageFiles,
+      });
     },
   };
 
@@ -200,6 +230,7 @@ const loadTools = async ({
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };
 
+  /** @type {Record<string, string>} */
   const toolContextMap = {};
   const remainingTools = [];
   const appTools = options.req?.app?.locals?.availableTools ?? {};
@@ -246,7 +277,7 @@ const loadTools = async ({
     }
 
     if (customConstructors[tool]) {
-      requestedTools[tool] = customConstructors[tool];
+      requestedTools[tool] = async () => customConstructors[tool](toolContextMap);
       continue;
     }
 

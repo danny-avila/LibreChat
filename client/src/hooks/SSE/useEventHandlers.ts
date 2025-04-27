@@ -185,7 +185,7 @@ export default function useEventHandlers({
     setIsSubmitting,
     lastAnnouncementTimeRef,
   });
-  const attachmentHandler = useAttachmentHandler();
+  const attachmentHandler = useAttachmentHandler(queryClient);
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
