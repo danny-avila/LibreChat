@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { TConversation, ConversationListResponse } from 'librechat-data-provider';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
@@ -13,7 +13,6 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import NavToggle from './NavToggle';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
@@ -152,20 +151,21 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => (
-        <>
-          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
-          {hasAccessToBookmarks && (
-            <>
-              <div className="mt-1.5" />
-              <Suspense fallback={null}>
-                <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
-              </Suspense>
-            </>
-          )}
-        </>
-      ),
-      [search.enabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
+      () => search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />,
+      [search.enabled, isSmallScreen],
+    );
+
+    const headerButtons = useMemo(
+      () =>
+        hasAccessToBookmarks && (
+          <>
+            <div className="mt-1.5" />
+            <Suspense fallback={null}>
+              <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
+            </Suspense>
+          </>
+        ),
+      [hasAccessToBookmarks, tags, isSmallScreen],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(
@@ -212,9 +212,10 @@ const Nav = memo(
                   >
                     <div className="flex flex-1 flex-col" ref={outerContainerRef}>
                       <MemoNewChat
-                        toggleNav={itemToggleNav}
-                        isSmallScreen={isSmallScreen}
                         subHeaders={subHeaders}
+                        toggleNav={toggleNavVisible}
+                        headerButtons={headerButtons}
+                        isSmallScreen={isSmallScreen}
                       />
                       <Conversations
                         conversations={conversations}
@@ -235,15 +236,6 @@ const Nav = memo(
             </div>
           </div>
         </div>
-
-        <NavToggle
-          isHovering={isToggleHovering}
-          setIsHovering={setIsToggleHovering}
-          onToggle={toggleNavVisible}
-          navVisible={navVisible}
-          className="fixed left-0 top-1/2 z-40 hidden md:flex"
-        />
-
         {isSmallScreen && <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />}
       </>
     );
