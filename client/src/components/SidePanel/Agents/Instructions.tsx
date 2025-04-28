@@ -35,10 +35,11 @@ export default function Instructions() {
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const handleAddVariable = (value: string) => {
+  const handleAddVariable = (label: SpecialVarLabels, value: string) => {
     const currentInstructions = getValues('instructions') || '';
-    const spacer = currentInstructions.length > 0 && !currentInstructions.endsWith(' ') ? ' ' : '';
-    setValue('instructions', currentInstructions + spacer + value);
+    const spacer = currentInstructions.length > 0 ? '\n' : '';
+    const prefix = localize(label);
+    setValue('instructions', currentInstructions + spacer + prefix + ': ' + value);
     setIsMenuOpen(false);
   };
 
@@ -88,7 +89,7 @@ export default function Instructions() {
             }
             items={variableOptions.map((option) => ({
               label: localize(option.label) || option.label,
-              onClick: () => handleAddVariable(option.value),
+              onClick: () => handleAddVariable(option.label, option.value),
             }))}
             menuId={menuId}
             className="z-30"
