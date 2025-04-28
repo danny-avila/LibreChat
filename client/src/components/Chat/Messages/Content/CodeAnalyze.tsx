@@ -2,29 +2,22 @@ import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
-import FinishedIcon from './FinishedIcon';
 import MarkdownLite from './MarkdownLite';
 import store from '~/store';
-
-const radius = 56.08695652173913;
-const circumference = 2 * Math.PI * radius;
 
 export default function CodeAnalyze({
   initialProgress = 0.1,
   code,
   outputs = [],
-  isSubmitting,
 }: {
   initialProgress: number;
   code: string;
   outputs: Record<string, unknown>[];
-  isSubmitting: boolean;
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
   const showAnalysisCode = useRecoilValue(store.showCode);
   const [showCode, setShowCode] = useState(showAnalysisCode);
-  const offset = circumference - progress * circumference;
 
   const logs = outputs.reduce((acc, output) => {
     if (output['logs']) {

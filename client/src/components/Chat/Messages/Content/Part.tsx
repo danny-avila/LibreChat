@@ -117,7 +117,6 @@ const Part = memo(
             initialProgress={toolCall.progress ?? 0.1}
             code={code_interpreter.input}
             outputs={code_interpreter.outputs ?? []}
-            isSubmitting={isSubmitting}
           />
         );
       } else if (
