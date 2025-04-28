@@ -9,8 +9,8 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from '~/data-provider';
+import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
 import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
-import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -34,7 +34,7 @@ export default function ChatRoute() {
 
   const index = 0;
   const { conversationId = '' } = useParams();
-
+  useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
 
