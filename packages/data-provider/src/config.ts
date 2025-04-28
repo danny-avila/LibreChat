@@ -1349,3 +1349,8 @@ export const providerEndpointMap = {
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
 };
+
+export const specialVariables = {
+  current_date: true,
+  current_user: true,
+};

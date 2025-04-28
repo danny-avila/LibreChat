@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleDoubleClick } from '~/utils';
 
-export const CodeVariableGfm = ({ children }: { children: React.ReactNode }) => {
+export const CodeVariableGfm: React.ElementType = ({ children }: { children: React.ReactNode }) => {
   return (
     <code
       onDoubleClick={handleDoubleClick}

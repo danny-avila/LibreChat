@@ -1,18 +1,18 @@
 import React, { useMemo } from 'react';
 import { Variable } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { specialVariables } from 'librechat-data-provider';
 import { cn, extractUniqueVariables } from '~/utils';
 import { CodeVariableGfm } from './Markdown';
 import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-const specialVariables = {
-  current_date: true,
-  current_user: true,
-};
-
 const specialVariableClasses =
   'bg-yellow-500/25 text-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
+
+const components: {
+  [nodeType: string]: React.ElementType;
+} = { code: CodeVariableGfm };
 
 const PromptVariables = ({
   promptText,
@@ -52,7 +52,7 @@ const PromptVariables = ({
           </div>
         ) : (
           <div className="text-sm text-text-secondary">
-            <ReactMarkdown components={{ code: CodeVariableGfm }}>
+            <ReactMarkdown components={components}>
               {localize('com_ui_variables_info')}
             </ReactMarkdown>
           </div>
@@ -65,7 +65,7 @@ const PromptVariables = ({
                 {localize('com_ui_special_variables')}
               </span>
               <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                <ReactMarkdown components={components}>
                   {localize('com_ui_special_variables_info')}
                 </ReactMarkdown>
               </span>
@@ -75,7 +75,7 @@ const PromptVariables = ({
                 {localize('com_ui_dropdown_variables')}
               </span>
               <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                <ReactMarkdown components={components}>
                   {localize('com_ui_dropdown_variables_info')}
                 </ReactMarkdown>
               </span>
