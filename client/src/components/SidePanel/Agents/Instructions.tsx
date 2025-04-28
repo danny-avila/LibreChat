@@ -1,6 +1,7 @@
 import React, { useState, useId } from 'react';
 import { PlusCircle } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
+import { specialVariables } from 'librechat-data-provider';
 import { Controller, useFormContext } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
@@ -14,15 +15,17 @@ const inputClass = cn(
   removeFocusOutlines,
 );
 
+type SpecialVarLabels = 'com_ui_special_var_current_date' | 'com_ui_special_var_current_user';
+
 interface VariableOption {
-  label: string;
+  label: SpecialVarLabels;
   value: string;
 }
 
-const variableOptions: VariableOption[] = [
-  { label: 'Current Date', value: '{{current_date}}' },
-  { label: 'Current User', value: '{{current_user}}' },
-];
+const variableOptions: VariableOption[] = Object.keys(specialVariables).map((key) => ({
+  label: `com_ui_special_var_${key}` as SpecialVarLabels,
+  value: `{{${key}}}`,
+}));
 
 export default function Instructions() {
   const menuId = useId();
@@ -84,7 +87,7 @@ export default function Instructions() {
               </Menu.MenuButton>
             }
             items={variableOptions.map((option) => ({
-              label: option.label,
+              label: localize(option.label) || option.label,
               onClick: () => handleAddVariable(option.value),
             }))}
             menuId={menuId}

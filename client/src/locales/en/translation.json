@@ -806,6 +806,8 @@
   "com_ui_sign_in_to_domain": "Sign-in to {{0}}",
   "com_ui_simple": "Simple",
   "com_ui_size": "Size",
+  "com_ui_special_var_current_date": "Current Date",
+  "com_ui_special_var_current_user": "Current User",
   "com_ui_special_variables": "Special variables:",
   "com_ui_special_variables_info": "Use `{{current_date}}` for the current date, and `{{current_user}}` for your given account name.",
   "com_ui_speech_while_submitting": "Can't submit speech while a response is being generated",
