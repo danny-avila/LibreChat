@@ -4,7 +4,13 @@ import {
   ConversationListResponse,
 } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import {
+  dataService,
+  request,
+  MutationKeys,
+  QueryKeys,
+  defaultOrderQuery,
+} from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { useConversationTagsQuery, useConversationsInfiniteQuery } from './queries';
@@ -19,6 +25,7 @@ import {
   updateConversation,
   deleteConversation,
 } from '~/utils';
+import { useEffect } from 'react';
 
 export type TGenTitleMutation = UseMutationResult<
   t.TGenTitleResponse,
@@ -1067,4 +1074,13 @@ export const useAcceptTermsMutation = (
     onError: options?.onError,
     onMutate: options?.onMutate,
   });
+};
+
+export const useCreateApiKeyMutation = (): UseMutationResult<
+  t.TCreateApiKeyResponse,
+  unknown,
+  t.TCreateApiKeyRequest,
+  unknown
+> => {
+  return useMutation((payload: t.TCreateApiKeyRequest) => dataService.createApiKey(payload));
 };

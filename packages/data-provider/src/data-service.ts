@@ -774,3 +774,7 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
+
+export function createApiKey(payload: t.TCreateApiKeyRequest): Promise<t.TCreateApiKeyResponse> {
+  return request.post(endpoints.apiKeys(), payload);
+}

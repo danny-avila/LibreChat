@@ -21,6 +21,7 @@ const uaParser = require('./uaParser');
 const checkBan = require('./checkBan');
 const noIndex = require('./noIndex');
 const roles = require('./roles');
+const requireApiKey = require('./requireApiKey');
 
 module.exports = {
   ...abortMiddleware,
@@ -34,6 +35,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  requireApiKey,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,

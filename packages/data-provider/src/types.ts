@@ -472,3 +472,14 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+export type TCreateApiKeyResponse = {
+  name: string;
+  key: string;
+  expiresAt?: string;
+};
+
+export type TCreateApiKeyRequest = {
+  name: string;
+  expiresAt?: Date;
+};

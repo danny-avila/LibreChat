@@ -41,6 +41,7 @@ const { createToken, findToken, updateToken, deleteTokens } = require('./Token')
 const Balance = require('./Balance');
 const User = require('./User');
 const Key = require('./Key');
+const ApiKey = require('./ApiKey');
 
 module.exports = {
   comparePassword,
@@ -93,5 +94,6 @@ module.exports = {
 
   User,
   Key,
+  ApiKey,
   Balance,
 };
