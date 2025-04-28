@@ -1,12 +1,13 @@
-import React from 'react';
-import { Controller, useFormContext } from 'react-hook-form';
+import React, { useState, useId } from 'react';
 import { PlusCircle } from 'lucide-react';
+import * as Menu from '@ariakit/react/menu';
+import { Controller, useFormContext } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
-import ControlCombobox from '~/components/ui/ControlCombobox';
+// import ControlCombobox from '~/components/ui/ControlCombobox';
+import { DropdownPopup } from '~/components';
 import { useLocalize } from '~/hooks';
 
-const labelClass = 'mb-2 text-token-text-primary font-medium';
 const inputClass = cn(
   defaultTextProps,
   'flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary',
@@ -18,22 +19,24 @@ interface VariableOption {
   value: string;
 }
 
+const variableOptions: VariableOption[] = [
+  { label: 'Current Date', value: '{{current_date}}' },
+  { label: 'Current User', value: '{{current_user}}' },
+];
+
 export default function Instructions() {
+  const menuId = useId();
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
 
-  // Special variables that will be processed by the backend
-  const variableOptions: VariableOption[] = [
-    { label: 'Current Date', value: '{{current_date}}' },
-    { label: 'Current User', value: '{{current_user}}' },
-  ];
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const handleAddVariable = (value: string) => {
     const currentInstructions = getValues('instructions') || '';
-    // Add a space before the variable if the current instructions don't end with a space
     const spacer = currentInstructions.length > 0 && !currentInstructions.endsWith(' ') ? ' ' : '';
     setValue('instructions', currentInstructions + spacer + value);
+    setIsMenuOpen(false);
   };
 
   return (
@@ -43,6 +46,7 @@ export default function Instructions() {
           {localize('com_ui_instructions')}
         </label>
         <div className="ml-auto" title="Add variables to instructions">
+          {/* ControlCombobox implementation
           <ControlCombobox
             selectedValue=""
             displayValue="Add variables"
@@ -60,6 +64,31 @@ export default function Instructions() {
             className="h-7 gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
             iconSide="left"
             showCarat={false}
+          />
+          */}
+          <DropdownPopup
+            portal={true}
+            mountByState={true}
+            unmountOnHide={true}
+            preserveTabOrder={true}
+            isOpen={isMenuOpen}
+            setIsOpen={setIsMenuOpen}
+            trigger={
+              <Menu.MenuButton
+                id="variables-menu-button"
+                aria-label="Add variable to instructions"
+                className="flex h-7 items-center gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
+              >
+                <PlusCircle className="mr-1 h-3 w-3 text-text-secondary" aria-hidden={true} />
+                {localize('com_ui_variables')}
+              </Menu.MenuButton>
+            }
+            items={variableOptions.map((option) => ({
+              label: option.label,
+              onClick: () => handleAddVariable(option.value),
+            }))}
+            menuId={menuId}
+            className="z-30"
           />
         </div>
       </div>
