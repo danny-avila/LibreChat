@@ -66,8 +66,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   if (isLoading && conversationId !== Constants.NEW_CONVO) {
     content = <LoadingSpinner />;
-  }
-  if ((isLoading || isNavigating) && !isLandingPage) {
+  } else if ((isLoading || isNavigating) && !isLandingPage) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
     content = <MessagesView messagesTree={messagesTree} />;
