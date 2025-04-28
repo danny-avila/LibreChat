@@ -1,6 +1,6 @@
+import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { QueryKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
@@ -10,7 +10,6 @@ const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
-  const resetArtifacts = useResetRecoilState(store.artifactsState);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
@@ -59,7 +58,6 @@ const useNavigateToConvo = (index = 0) => {
       });
     }
     clearAllConversations(true);
-    resetArtifacts();
     setConversation(convo);
     queryClient.setQueryData([QueryKeys.messages, currentConvoId], []);
     navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
