@@ -9,8 +9,8 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from '~/data-provider';
+import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
 import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecIconURL, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -65,15 +65,7 @@ export default function ChatRoute() {
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec
-          ? {
-            preset: {
-              ...spec.preset,
-              iconURL: getModelSpecIconURL(spec),
-              spec: spec.name,
-            },
-          }
-          : {}),
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
       });
 
       hasSetConversation.current = true;
@@ -97,15 +89,7 @@ export default function ChatRoute() {
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec
-          ? {
-            preset: {
-              ...spec.preset,
-              iconURL: getModelSpecIconURL(spec),
-              spec: spec.name,
-            },
-          }
-          : {}),
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
       });
       hasSetConversation.current = true;
     } else if (

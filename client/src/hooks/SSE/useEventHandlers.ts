@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
@@ -172,6 +172,8 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyNewAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
@@ -185,7 +187,7 @@ export default function useEventHandlers({
     setIsSubmitting,
     lastAnnouncementTimeRef,
   });
-  const attachmentHandler = useAttachmentHandler();
+  const attachmentHandler = useAttachmentHandler(queryClient);
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
@@ -421,6 +423,7 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       resetLatestMessage,
+      applyAgentTemplate,
     ],
   );
 
@@ -449,12 +452,20 @@ export default function useEventHandlers({
       announcePolite({ message: getAllContentText(responseMessage) });
 
       /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
+      let finalMessages: TMessage[] = [];
       if (runMessages) {
-        setMessages([...runMessages]);
+        finalMessages = [...runMessages];
       } else if (isRegenerate && responseMessage) {
-        setMessages([...messages, responseMessage]);
+        finalMessages = [...messages, responseMessage];
       } else if (requestMessage != null && responseMessage != null) {
-        setMessages([...messages, requestMessage, responseMessage]);
+        finalMessages = [...messages, requestMessage, responseMessage];
+      }
+      if (finalMessages.length > 0) {
+        setMessages(finalMessages);
+        queryClient.setQueryData<TMessage[]>(
+          [QueryKeys.messages, conversation.conversationId],
+          finalMessages,
+        );
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
@@ -476,8 +487,8 @@ export default function useEventHandlers({
       }
 
       if (setConversation && isAddedRequest !== true) {
-        if (window.location.pathname === '/c/new') {
-          window.history.pushState({}, '', '/c/' + conversation.conversationId);
+        if (location.pathname === '/c/new') {
+          navigate(`/c/${conversation.conversationId}`, { replace: true });
         }
 
         setConversation((prevState) => {
@@ -502,16 +513,18 @@ export default function useEventHandlers({
       setIsSubmitting(false);
     },
     [
-      genTitle,
-      queryClient,
-      getMessages,
-      setMessages,
-      setCompleted,
-      isAddedRequest,
-      announcePolite,
-      setConversation,
-      setIsSubmitting,
       setShowStopButton,
+      setCompleted,
+      getMessages,
+      announcePolite,
+      genTitle,
+      setConversation,
+      isAddedRequest,
+      setIsSubmitting,
+      setMessages,
+      queryClient,
+      location.pathname,
+      navigate,
     ],
   );
 
@@ -599,7 +612,7 @@ export default function useEventHandlers({
       setIsSubmitting(false);
       return;
     },
-    [setMessages, paramId, setIsSubmitting, setCompleted, newConversation],
+    [setCompleted, setMessages, paramId, newConversation, setIsSubmitting, getMessages],
   );
 
   const abortConversation = useCallback(
@@ -698,7 +711,15 @@ export default function useEventHandlers({
         setIsSubmitting(false);
       }
     },
-    [token, setIsSubmitting, finalHandler, cancelHandler, setMessages, newConversation],
+    [
+      finalHandler,
+      newConversation,
+      setIsSubmitting,
+      token,
+      cancelHandler,
+      getMessages,
+      setMessages,
+    ],
   );
 
   return {

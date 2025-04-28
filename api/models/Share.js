@@ -52,6 +52,14 @@ function anonymizeMessages(messages, newConvoId) {
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
+    const anonymizedAttachments = message.attachments?.map((attachment) => {
+      return {
+        ...attachment,
+        messageId: newMessageId,
+        conversationId: newConvoId,
+      };
+    });
+
     return {
       ...message,
       messageId: newMessageId,
@@ -61,6 +69,7 @@ function anonymizeMessages(messages, newConvoId) {
       model: message.model?.startsWith('asst_')
         ? anonymizeAssistantId(message.model)
         : message.model,
+      attachments: anonymizedAttachments,
     };
   });
 }
