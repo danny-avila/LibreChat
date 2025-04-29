@@ -98,7 +98,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             portal={true}
           >
             <div className="space-y-2">
-              <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
+              <p className="flex flex-col gap-2 text-sm text-text-secondary">
                 {hoverInfo && hoverInfo}
                 {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
                 {hoverDescription && hoverDescription}
@@ -242,7 +242,7 @@ export default function Fork({
               className="z-[999] w-80 rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
               portal={true}
             >
-              <div className="flex flex-col gap-2 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex flex-col gap-2 space-y-2 text-sm text-text-secondary">
                 <span>{localize('com_ui_fork_info_1')}</span>
                 <span>{localize('com_ui_fork_info_2')}</span>
                 <span>
@@ -310,7 +310,7 @@ export default function Fork({
           <div className="flex items-center">
             <Ariakit.HovercardAnchor
               render={
-                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
+                <div className="flex h-6 w-full items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary">
                   <Ariakit.Checkbox
                     id="split-target-checkbox"
                     checked={splitAtTarget}
@@ -334,14 +334,12 @@ export default function Fork({
             </Ariakit.HovercardDisclosure>
           </div>
           <Ariakit.Hovercard
-            gutter={20}
-            className="z-[999] w-80 rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
+            gutter={32}
+            className="z-[999] w-80 select-none rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
             portal={true}
           >
             <div className="space-y-2">
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                {localize('com_ui_fork_info_start')}
-              </p>
+              <p className="text-sm text-text-secondary">{localize('com_ui_fork_info_start')}</p>
             </div>
           </Ariakit.Hovercard>
         </Ariakit.HovercardProvider>
@@ -349,7 +347,7 @@ export default function Fork({
           <div className="flex items-center">
             <Ariakit.HovercardAnchor
               render={
-                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
+                <div className="flex h-6 w-full select-none items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary">
                   <Ariakit.Checkbox
                     id="remember-checkbox"
                     checked={remember}
@@ -361,7 +359,7 @@ export default function Fork({
                           status: 'info',
                         });
                       }
-                      setRemember(checked);
+                      return setRemember(checked);
                     }}
                     className="m-2 h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                     aria-label={localize('com_ui_fork_remember')}
@@ -382,14 +380,12 @@ export default function Fork({
             </Ariakit.HovercardDisclosure>
           </div>
           <Ariakit.Hovercard
-            gutter={20}
+            gutter={14}
             className="z-[999] w-80 rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
             portal={true}
           >
             <div className="space-y-2">
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                {localize('com_ui_fork_info_remember')}
-              </p>
+              <p className="text-sm text-text-secondary">{localize('com_ui_fork_info_remember')}</p>
             </div>
           </Ariakit.Hovercard>
         </Ariakit.HovercardProvider>
