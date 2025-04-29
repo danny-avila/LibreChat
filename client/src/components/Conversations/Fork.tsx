@@ -6,7 +6,6 @@ import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
-import { Checkbox } from '~/components/ui';
 import { useForkConvoMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
