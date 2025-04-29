@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
@@ -417,4 +418,22 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
     }
   }
   return lastIndex;
+}
+
+export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+  let result = text;
+  if (!text) {
+    return result;
+  }
+
+  const currentDate = dayjs().format('YYYY-MM-DD');
+  result = result.replace(/{{current_date}}/gi, currentDate);
+
+  if (!user) {
+    return result;
+  }
+  const currentUser = user.name;
+  result = result.replace(/{{current_user}}/gi, currentUser);
+
+  return result;
 }

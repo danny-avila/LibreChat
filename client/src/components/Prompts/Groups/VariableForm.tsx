@@ -5,15 +5,10 @@ import supersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import { replaceSpecialVars } from 'librechat-data-provider';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
-import {
-  cn,
-  wrapVariable,
-  defaultTextProps,
-  replaceSpecialVars,
-  extractVariableInfo,
-} from '~/utils';
+import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import { TextareaAutosize, InputCombobox, Button } from '~/components/ui';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';

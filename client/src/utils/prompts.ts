@@ -1,22 +1,4 @@
-import { format } from 'date-fns';
-import type { TUser, TPromptGroup } from 'librechat-data-provider';
-
-export function replaceSpecialVars({ text, user }: { text: string; user?: TUser }) {
-  if (!text) {
-    return text;
-  }
-
-  const currentDate = format(new Date(), 'yyyy-MM-dd');
-  text = text.replace(/{{current_date}}/gi, currentDate);
-
-  if (!user) {
-    return text;
-  }
-  const currentUser = user.name;
-  text = text.replace(/{{current_user}}/gi, currentUser);
-
-  return text;
-}
+import type { TPromptGroup } from 'librechat-data-provider';
 
 /**
  * Detects the presence of variables in the given text, excluding {{current_date}} and {{current_user}}.
@@ -94,11 +76,14 @@ export function formatDateTime(dateTimeString: string) {
 }
 
 export const mapPromptGroups = (groups: TPromptGroup[]): Record<string, TPromptGroup> => {
-  return groups.reduce((acc, group) => {
-    if (!group._id) {
+  return groups.reduce(
+    (acc, group) => {
+      if (!group._id) {
+        return acc;
+      }
+      acc[group._id] = group;
       return acc;
-    }
-    acc[group._id] = group;
-    return acc;
-  }, {} as Record<string, TPromptGroup>);
+    },
+    {} as Record<string, TPromptGroup>,
+  );
 };
