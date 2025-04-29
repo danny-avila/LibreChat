@@ -52,7 +52,7 @@ const PromptVariables = ({
           </div>
         ) : (
           <div className="text-sm text-text-secondary">
-            <ReactMarkdown components={components}>
+            <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
               {localize('com_ui_variables_info')}
             </ReactMarkdown>
           </div>
@@ -65,7 +65,7 @@ const PromptVariables = ({
                 {localize('com_ui_special_variables')}
               </span>
               <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={components}>
+                <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
                   {localize('com_ui_special_variables_more_info')}
                 </ReactMarkdown>
               </span>
@@ -75,7 +75,7 @@ const PromptVariables = ({
                 {localize('com_ui_dropdown_variables')}
               </span>
               <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={components}>
+                <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
                   {localize('com_ui_dropdown_variables_info')}
                 </ReactMarkdown>
               </span>

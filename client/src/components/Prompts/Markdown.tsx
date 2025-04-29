@@ -29,7 +29,11 @@ export const PromptVariableGfm = ({
     const parts = child.split(regex);
     return parts.map((part, index) =>
       index % 2 === 1 ? (
-        <b key={index} className="rounded-md bg-yellow-100/90 p-1 text-gray-700">
+        // <b key={index} className="rounded-lg bg-amber-100 p-[1px] ml-1 text-gray-700 dark:bg-amber-200/65 dark:text-black">
+        <b
+          key={index}
+          className="ml-1 rounded-lg bg-amber-100 p-[1px] font-medium text-gray-700 dark:border dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90"
+        >
           {`{{${part}}}`}
         </b>
       ) : (
