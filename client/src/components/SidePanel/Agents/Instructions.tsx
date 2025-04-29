@@ -2,6 +2,7 @@ import React, { useState, useId } from 'react';
 import { PlusCircle } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
 import { specialVariables } from 'librechat-data-provider';
+import type { TSpecialVarLabel } from 'librechat-data-provider';
 import { Controller, useFormContext } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
@@ -15,15 +16,13 @@ const inputClass = cn(
   removeFocusOutlines,
 );
 
-type SpecialVarLabels = 'com_ui_special_var_current_date' | 'com_ui_special_var_current_user';
-
 interface VariableOption {
-  label: SpecialVarLabels;
+  label: TSpecialVarLabel;
   value: string;
 }
 
 const variableOptions: VariableOption[] = Object.keys(specialVariables).map((key) => ({
-  label: `com_ui_special_var_${key}` as SpecialVarLabels,
+  label: `com_ui_special_var_${key}` as TSpecialVarLabel,
   value: `{{${key}}}`,
 }));
 
@@ -35,7 +34,7 @@ export default function Instructions() {
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const handleAddVariable = (label: SpecialVarLabels, value: string) => {
+  const handleAddVariable = (label: TSpecialVarLabel, value: string) => {
     const currentInstructions = getValues('instructions') || '';
     const spacer = currentInstructions.length > 0 ? '\n' : '';
     const prefix = localize(label);
