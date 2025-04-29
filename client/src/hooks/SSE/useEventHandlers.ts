@@ -20,12 +20,13 @@ import type { TGenTitleMutation } from '~/data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
 import {
+  logger,
   scrollToEnd,
+  getAllContentText,
   addConvoToAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
-  getAllContentText,
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
@@ -662,9 +663,11 @@ export default function useEventHandlers({
         );
         return;
       } else if (!isAssistantsEndpoint(endpoint)) {
+        const convoId = conversationId || `_${v4()}`;
+        logger.log('conversation', 'Aborted conversation with minimal messages, ID: ' + convoId);
         if (newConversation) {
           newConversation({
-            template: { conversationId: conversationId || `_${v4()}` },
+            template: { conversationId: convoId },
             preset: tPresetSchema.parse(submission.conversation),
           });
         }
