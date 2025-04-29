@@ -31,7 +31,7 @@ export const PromptVariableGfm = ({
       index % 2 === 1 ? (
         <b
           key={index}
-          className="ml-1 rounded-lg bg-amber-100 p-[1px] font-medium text-gray-700 dark:border dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90"
+          className="ml-1 rounded-lg bg-amber-100 p-[1px] font-medium text-yellow-800 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90"
         >
           {`{{${part}}}`}
         </b>
