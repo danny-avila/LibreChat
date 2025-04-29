@@ -815,6 +815,7 @@
   "com_ui_special_variables_info": "Use `{{current_date}}` for the current date, and `{{current_user}}` for your given account name.",
   "com_ui_special_variables_more_info": "You can select special variables from the dropdown: `{{current_date}}` (today's date and day of week), `{{current_datetime}}` (local date and time), `{{utc_iso_datetime}}` (UTC ISO datetime), and `{{current_user}}` (your account name).",
   "com_ui_speech_while_submitting": "Can't submit speech while a response is being generated",
+  "com_ui_sr_actions_menu": "Open actions menu for \"{{0}}\"",
   "com_ui_stop": "Stop",
   "com_ui_storage": "Storage",
   "com_ui_submit": "Submit",
