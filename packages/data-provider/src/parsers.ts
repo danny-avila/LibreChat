@@ -422,21 +422,24 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
 
 export function replaceSpecialVars({ text, user }: { text?: string; user?: t.TUser | null }) {
   let result = text;
-  if (!text) {
+  if (!result) {
     return result;
   }
 
+  // e.g., "2024-04-29 (1)" (1=Monday)
   const currentDate = dayjs().format('YYYY-MM-DD');
   const dayNumber = dayjs().day();
   const combinedDate = `${currentDate} (${dayNumber})`;
-  result = result?.replace(/{{current_date}}/gi, combinedDate);
+  result = result.replace(/{{current_date}}/gi, combinedDate);
 
-  const currentDatetime = dayjs().toISOString();
-  result = result?.replace(/{{current_datetime}}/gi, currentDatetime);
+  const currentDatetime = dayjs().format('YYYY-MM-DD HH:mm:ss');
+  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
 
-  if (user) {
-    const currentUser = user.name;
-    result = result?.replace(/{{current_user}}/gi, currentUser);
+  const isoDatetime = dayjs().toISOString();
+  result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
+
+  if (user && user.name) {
+    result = result.replace(/{{current_user}}/gi, user.name);
   }
 
   return result;
