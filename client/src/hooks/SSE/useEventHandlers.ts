@@ -664,7 +664,7 @@ export default function useEventHandlers({
       } else if (!isAssistantsEndpoint(endpoint)) {
         if (newConversation) {
           newConversation({
-            template: { conversationId: conversationId || v4() },
+            template: { conversationId: conversationId || `_${v4()}` },
             preset: tPresetSchema.parse(submission.conversation),
           });
         }
