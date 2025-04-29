@@ -48,7 +48,7 @@ function ImportConversations() {
     uploadFile.mutate(formData);
   };
 
-  const handleFiles = async (_file: File) => {
+  const handleFile = async (_file: File) => {
     try {
       await startUpload(_file);
     } catch (error) {
@@ -60,7 +60,7 @@ function ImportConversations() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      handleFiles(file);
+      handleFile(file);
     }
   };
 
