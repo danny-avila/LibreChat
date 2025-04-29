@@ -7,7 +7,7 @@ const messages = require('./messages');
 const presets = require('./presets');
 const prompts = require('./prompts');
 const balance = require('./balance');
-const omnexioBalance = require('./omnexioBalance');
+const omnexio = require('./omnexio');
 const plugins = require('./plugins');
 const bedrock = require('./bedrock');
 const actions = require('./actions');
@@ -51,7 +51,7 @@ module.exports = {
   actions,
   presets,
   balance,
-  omnexioBalance,
+  omnexio,
   messages,
   endpoints,
   tokenizer,

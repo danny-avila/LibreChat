@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const controller = require('../controllers/OmnexioBalance');
+const omnexioBalanceController = require('../controllers/omnexio/OmnexioBalance');
 const { requireJwtAuth } = require('../middleware/');
 
-router.get('/', requireJwtAuth, controller);
+router.get('/balance', requireJwtAuth, omnexioBalanceController);
 
 module.exports = router;

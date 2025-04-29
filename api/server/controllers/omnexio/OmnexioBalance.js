@@ -1,11 +1,6 @@
 const axios = require('axios');
 const { logger } = require('~/config');
 
-/**
- * Controller to fetch the balance from Omnexio API
- * @param {import('express').Request} req - The request object
- * @param {import('express').Response} res - The response object
- */
 async function omnexioBalanceController(req, res) {
   try {
     const { OMNEXIO_BASE_URL, OMNEXIO_API_KEY } = process.env;
