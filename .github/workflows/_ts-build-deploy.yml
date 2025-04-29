@@ -7,6 +7,10 @@ on:
         description: 'Docker image tag'
         required: false
         default: 'latest'
+      imageName:
+        description: 'Docker image name'
+        required: false
+        default: 'ts-librechat'
 
 jobs:
   build-and-deploy:
@@ -51,7 +55,7 @@ jobs:
         }
 
         ./custom/scripts/build-and-deploy.ps1 `
-          -ImageName "ts-librechat-custom" `
+          -ImageName "${{ github.event.inputs.imageName }}" `
           -ImageTag "${{ steps.set-tag.outputs.IMAGE_TAG }}" `
           -Registry "registry.totalsoft.local" `
           -Namespace "librechat" `
