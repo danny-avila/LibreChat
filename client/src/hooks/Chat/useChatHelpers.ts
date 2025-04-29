@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
+import { useGetMessagesByConvoId } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
@@ -23,10 +23,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId } = conversation ?? {};
 
-  const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (conversationId ?? paramId ?? '');
 
   /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   const { data: _messages } = useGetMessagesByConvoId(conversationId ?? '', {
     enabled: isAuthenticated,
   });
@@ -41,7 +41,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const setMessages = useCallback(
     (messages: TMessage[]) => {
       queryClient.setQueryData<TMessage[]>([QueryKeys.messages, queryParam], messages);
-      if (queryParam === 'new') {
+      if (queryParam === 'new' && conversationId && conversationId !== 'new') {
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], messages);
       }
     },

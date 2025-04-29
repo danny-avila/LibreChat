@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { ReactNode } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { Dropdown } from '~/components/ui';
@@ -15,6 +17,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
   onValueChange,
   className = '',
 }) => {
+  const { t } = useTranslation();
   const formContext = useFormContext();
   const { categories, emptyCategory } = useCategories();
 
@@ -32,13 +35,25 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
     [watchedCategory, categories, currentCategory, emptyCategory],
   );
 
+  const displayCategory = useMemo(() => {
+    if (!categoryOption.value && !('icon' in categoryOption)) {
+      return {
+        ...categoryOption,
+        icon: (<span className="i-heroicons-tag" />) as ReactNode,
+        label: categoryOption.label || t('com_ui_empty_category'),
+      };
+    }
+    return categoryOption;
+  }, [categoryOption, t]);
+
   return formContext ? (
     <Controller
       name="category"
       control={control}
       render={() => (
         <Dropdown
-          value={categoryOption.value ?? ''}
+          value={displayCategory.value ?? ''}
+          label={displayCategory.value ? undefined : t('com_ui_category')}
           onChange={(value: string) => {
             setValue('category', value, { shouldDirty: false });
             localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
@@ -48,10 +63,12 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
           ariaLabel="Prompt's category selector"
           className={className}
           options={categories || []}
-          renderValue={(option) => (
+          renderValue={() => (
             <div className="flex items-center space-x-2">
-              {option.icon != null && <span>{option.icon as React.ReactNode}</span>}
-              <span>{option.label}</span>
+              {'icon' in displayCategory && displayCategory.icon != null && (
+                <span>{displayCategory.icon as ReactNode}</span>
+              )}
+              <span>{displayCategory.label}</span>
             </div>
           )}
         />
@@ -68,10 +85,12 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       ariaLabel="Prompt's category selector"
       className={className}
       options={categories || []}
-      renderValue={(option) => (
+      renderValue={() => (
         <div className="flex items-center space-x-2">
-          {option.icon != null && <span>{option.icon as React.ReactNode}</span>}
-          <span>{option.label}</span>
+          {'icon' in displayCategory && displayCategory.icon != null && (
+            <span>{displayCategory.icon as ReactNode}</span>
+          )}
+          <span>{displayCategory.label}</span>
         </div>
       )}
     />

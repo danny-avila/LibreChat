@@ -310,6 +310,24 @@ function getLocalFileStream(req, filepath) {
       }
 
       return fs.createReadStream(fullPath);
+    } else if (filepath.includes('/images/')) {
+      const basePath = filepath.split('/images/')[1];
+
+      if (!basePath) {
+        logger.warn(`Invalid base path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      const fullPath = path.join(req.app.locals.paths.imageOutput, basePath);
+      const publicDir = req.app.locals.paths.imageOutput;
+
+      const rel = path.relative(publicDir, fullPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+        logger.warn(`Invalid relative file path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      return fs.createReadStream(fullPath);
     }
     return fs.createReadStream(filepath);
   } catch (error) {

@@ -79,6 +79,8 @@ body:
 
         For UI-related issues, browser console logs can be very helpful. You can provide these as screenshots or paste the text here.
       render: shell
+    validations:
+      required: true
   - type: textarea
     id: screenshots
     attributes:

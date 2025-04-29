@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.7.7",
+  "version": "v0.7.8-rc1",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -48,7 +48,7 @@
     "@langchain/google-genai": "^0.2.2",
     "@langchain/google-vertexai": "^0.2.3",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.4.20",
+    "@librechat/agents": "^2.4.22",
     "@librechat/data-schemas": "*",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",

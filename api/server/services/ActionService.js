@@ -146,7 +146,7 @@ async function createActionTool({
       /** @type {import('librechat-data-provider').ActionMetadataRuntime} */
       const metadata = action.metadata;
       const executor = requestBuilder.createExecutor();
-      const preparedExecutor = executor.setParams(toolInput);
+      const preparedExecutor = executor.setParams(toolInput ?? {});
 
       if (metadata.auth && metadata.auth.type !== AuthTypeEnum.None) {
         try {
