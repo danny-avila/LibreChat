@@ -1,4 +1,3 @@
-const { ErrorTypes } = require('librechat-data-provider');
 const { ApiKey } = require('~/models');
 const { logger } = require('~/config');
 
@@ -37,7 +36,7 @@ const createApiKey = async ({ userId, name, expiresAt = null }) => {
     logger.error('[createApiKey]', err);
     throw new Error(
       JSON.stringify({
-        type: ErrorTypes.API_KEY_CREATION_ERROR,
+        type: 'API_KEY_CREATION_ERROR',
       }),
     );
   }
@@ -57,7 +56,7 @@ const validateApiKey = async (key) => {
     if (!apiKey) {
       throw new Error(
         JSON.stringify({
-          type: ErrorTypes.API_KEY_INVALID,
+          type: 'API_KEY_INVALID',
         }),
       );
     }
@@ -65,7 +64,7 @@ const validateApiKey = async (key) => {
     if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) {
       throw new Error(
         JSON.stringify({
-          type: ErrorTypes.API_KEY_EXPIRED,
+          type: 'API_KEY_EXPIRED',
         }),
       );
     }
@@ -97,7 +96,7 @@ const deleteApiKey = async ({ userId, keyId, all = false }) => {
     logger.error('[deleteApiKey]', err);
     throw new Error(
       JSON.stringify({
-        type: ErrorTypes.API_KEY_DELETION_ERROR,
+        type: 'API_KEY_DELETION_ERROR',
       }),
     );
   }
@@ -134,7 +133,7 @@ const getApiKeys = async ({ userId, decrypt = false }) => {
     logger.error('[getApiKeys]', err);
     throw new Error(
       JSON.stringify({
-        type: ErrorTypes.API_KEY_RETRIEVAL_ERROR,
+        type: 'API_KEY_RETRIEVAL_ERROR',
       }),
     );
   }
