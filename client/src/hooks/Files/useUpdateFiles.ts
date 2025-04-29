@@ -5,19 +5,7 @@ export default function useUpdateFiles(setFiles: FileSetter) {
   const setFilesToDelete = useSetFilesToDelete();
 
   const addFile = (newFile: ExtendedFile) => {
-    setFiles((currentFiles) => {
-      const updatedFiles = new Map(currentFiles);
-      updatedFiles.set(newFile.file_id, newFile);
-      return updatedFiles;
-    });
-  };
-
-  const replaceFile = (newFile: ExtendedFile) => {
-    setFiles((currentFiles) => {
-      const updatedFiles = new Map(currentFiles);
-      updatedFiles.set(newFile.file_id, newFile);
-      return updatedFiles;
-    });
+    setFiles((currentFiles) => new Map(currentFiles).set(newFile.file_id, newFile));
   };
 
   const updateFileById = (fileId: string, updates: Partial<ExtendedFile>, isEntityFile = false) => {
@@ -61,7 +49,6 @@ export default function useUpdateFiles(setFiles: FileSetter) {
 
   return {
     addFile,
-    replaceFile,
     updateFileById,
     deleteFileById,
   };

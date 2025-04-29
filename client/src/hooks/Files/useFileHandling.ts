@@ -37,7 +37,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
+  const { addFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
   );
 
@@ -103,7 +103,7 @@ const useFileHandling = (params?: UseFileHandling) => {
             progress: 0.9,
             filepath: data.filepath,
           },
-          assistant_id ? true : false,
+          !!assistant_id,
         );
 
         setTimeout(() => {
@@ -121,7 +121,7 @@ const useFileHandling = (params?: UseFileHandling) => {
               source: data.source,
               embedded: data.embedded,
             },
-            assistant_id ? true : false,
+            !!assistant_id,
           );
         }, 300);
       },
@@ -224,7 +224,7 @@ const useFileHandling = (params?: UseFileHandling) => {
         ...extendedFile,
         progress: 0.6,
       };
-      replaceFile(extendedFile);
+      addFile(extendedFile);
 
       await startUpload(extendedFile);
       URL.revokeObjectURL(preview);
@@ -285,17 +285,15 @@ const useFileHandling = (params?: UseFileHandling) => {
           continue;
         }
 
-        addFile(extendedFile);
-
         if (isImage) {
           loadImage(extendedFile, preview);
-          continue;
+        } else {
+          addFile(extendedFile);
+          await startUpload(extendedFile);
         }
-
-        await startUpload(extendedFile);
       } catch (error) {
         deleteFileById(file_id);
-        console.log('file handling error', error);
+        console.error('file handling error', error);
         setError('com_error_files_process');
       }
     }
