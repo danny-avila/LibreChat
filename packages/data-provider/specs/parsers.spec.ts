@@ -1,17 +1,27 @@
-// dayjs is imported by the mock
 import { replaceSpecialVars } from '../src/parsers';
 import { specialVariables } from '../src/config';
 import type { TUser } from '../src/types';
 
-// Mock dayjs to return a fixed date for testing
+// Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  const originalDayjs = jest.requireActual('dayjs');
-  const mockDayjs = () => {
-    return originalDayjs('2024-04-29T12:34:56');
-  };
-  mockDayjs.extend = originalDayjs.extend;
-  // Add any other dayjs methods that might be used
-  mockDayjs.toISOString = () => '2024-04-29T16:34:56.000Z';
+  // Create a mock implementation that returns fixed values
+  const mockDayjs = () => ({
+    format: (format: string) => {
+      if (format === 'YYYY-MM-DD') {
+        return '2024-04-29';
+      }
+      if (format === 'YYYY-MM-DD HH:mm:ss') {
+        return '2024-04-29 12:34:56';
+      }
+      return format; // fallback
+    },
+    day: () => 1, // 1 = Monday
+    toISOString: () => '2024-04-29T16:34:56.000Z',
+  });
+
+  // Add any static methods needed
+  mockDayjs.extend = jest.fn();
+
   return mockDayjs;
 });
 
