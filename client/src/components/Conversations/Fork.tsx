@@ -310,7 +310,7 @@ export default function Fork({
           <div className="flex items-center">
             <Ariakit.HovercardAnchor
               render={
-                <div className="flex h-6 w-full items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary">
+                <div className="flex h-6 w-full select-none items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary">
                   <Ariakit.Checkbox
                     id="split-target-checkbox"
                     checked={splitAtTarget}
@@ -347,12 +347,16 @@ export default function Fork({
           <div className="flex items-center">
             <Ariakit.HovercardAnchor
               render={
-                <div className="flex h-6 w-full select-none items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary">
+                <div
+                  onClick={() => setRemember((prev) => !prev)}
+                  className="flex h-6 w-full select-none items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary"
+                >
                   <Ariakit.Checkbox
                     id="remember-checkbox"
                     checked={remember}
                     onChange={(event) => {
                       const checked = event.target.checked;
+                      console.log('checked', checked);
                       if (checked) {
                         showToast({
                           message: localize('com_ui_fork_remember_checked'),
