@@ -669,7 +669,6 @@
   "com_ui_simple": "Prosty",
   "com_ui_size": "Rozmiar",
   "com_ui_special_variables": "Zmienne specjalne:",
-  "com_ui_special_variables_info": "Użyj `{{current_date}}` dla aktualnej daty i `{{current_user}}` dla swojej nazwy konta.",
   "com_ui_speech_while_submitting": "Nie można przesłać mowy podczas generowania odpowiedzi",
   "com_ui_storage": "Przechowywanie",
   "com_ui_submit": "Wyślij",

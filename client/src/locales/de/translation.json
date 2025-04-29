@@ -801,7 +801,6 @@
   "com_ui_simple": "Einfach",
   "com_ui_size": "Größe",
   "com_ui_special_variables": "Spezielle Variablen:",
-  "com_ui_special_variables_info": "Verwende `{{current_date}}` für das aktuelle Datum und `{{current_user}}` für deinen angegebenen Kontonamen.",
   "com_ui_speech_while_submitting": "Spracheingabe nicht möglich während eine Antwort generiert wird",
   "com_ui_stop": "Stopp",
   "com_ui_storage": "Speicher",

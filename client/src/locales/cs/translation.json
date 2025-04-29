@@ -678,7 +678,6 @@
   "com_ui_simple": "Jednoduché",
   "com_ui_size": "Velikost",
   "com_ui_special_variables": "Speciální proměnné:",
-  "com_ui_special_variables_info": "Použijte `{{current_date}}` pro aktuální datum a `{{current_user}}` pro vaše uživatelské jméno.",
   "com_ui_speech_while_submitting": "Nelze odeslat hlasový vstup, zatímco se generuje odpověď",
   "com_ui_stop": "Zastavit",
   "com_ui_storage": "Úložiště",

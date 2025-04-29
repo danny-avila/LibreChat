@@ -801,7 +801,6 @@
   "com_ui_simple": "Egyszerű",
   "com_ui_size": "Méret",
   "com_ui_special_variables": "Speciális változók:",
-  "com_ui_special_variables_info": "Használja a `{{current_date}}` változókat az aktuális dátumhoz, és a `{{current_user}}` változókat a megadott fióknevéhez.",
   "com_ui_speech_while_submitting": "Nem lehet beszédet beküldeni, amíg válasz generálódik",
   "com_ui_stop": "Leállítás",
   "com_ui_storage": "Tárolás",

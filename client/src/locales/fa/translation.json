@@ -801,7 +801,6 @@
   "com_ui_simple": "ساده",
   "com_ui_size": "اندازه",
   "com_ui_special_variables": "متغیرهای ویژه:",
-  "com_ui_special_variables_info": "استفاده از `{{current_date}}` برای تاریخ فعلی، و`{{current_user}}برای نام حساب داده شده شما.",
   "com_ui_speech_while_submitting": "وقتی پاسخی در حال تولید است، نمی‌توان گفتار ارسال کرد",
   "com_ui_stop": "توقف کنید",
   "com_ui_storage": "ذخیره سازی",
