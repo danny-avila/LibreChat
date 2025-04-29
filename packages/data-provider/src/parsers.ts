@@ -427,7 +427,9 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
   }
 
   const currentDate = dayjs().format('YYYY-MM-DD');
-  result = result.replace(/{{current_date}}/gi, currentDate);
+  const dayNumber = dayjs().day();
+  const combinedDate = `${currentDate} (${dayNumber})`;
+  result = result.replace(/{{current_date}}/gi, combinedDate);
 
   if (!user) {
     return result;
