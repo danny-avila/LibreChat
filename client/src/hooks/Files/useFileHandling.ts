@@ -233,6 +233,9 @@ const useFileHandling = (params?: UseFileHandling) => {
   };
 
   const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+    if (_files.length === 0) { return; }
+
+    setFilesLoading(true);
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
@@ -302,7 +305,6 @@ const useFileHandling = (params?: UseFileHandling) => {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>, _toolResource?: string) => {
     event.stopPropagation();
     if (event.target.files) {
-      setFilesLoading(true);
       handleFiles(event.target.files, _toolResource);
       // reset the input
       event.target.value = '';
