@@ -864,5 +864,10 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_ui_fork_more_details_about": "View additional information and details about the \"{{0}}\" fork option",
+  "com_ui_fork_more_info_options": "View detailed explanation of all fork options and their behaviors",
+  "com_ui_fork_info_button_label": "View information about forking conversations",
+  "com_ui_fork_more_info_split_target": "View explanation of how the \"{{0}}\" option affects which messages are included in your fork",
+  "com_ui_fork_more_info_remember": "View explanation of how the \"{{0}}\" option saves your preferences for future forks"
 }

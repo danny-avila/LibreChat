@@ -54,6 +54,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
   hoverDescription,
   label,
 }) => {
+  const localize = useLocalize();
   return (
     <Ariakit.HovercardProvider>
       <div className="flex flex-col items-center">
@@ -84,9 +85,9 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             </Ariakit.Button>
           }
         />
-        <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+        <Ariakit.HovercardDisclosure className="rounded-md text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400">
           <VisuallyHidden>
-            More details about {label}
+            {localize('com_ui_fork_more_details_about', { 0: label })}
           </VisuallyHidden>
           {chevronDown}
         </Ariakit.HovercardDisclosure>
@@ -228,16 +229,14 @@ export default function Fork({
                 render={
                   <button
                     className="flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50"
-                    aria-label="Fork information"
+                    aria-label={localize('com_ui_fork_info_button_label')}
                   >
                     <InfoIcon />
                   </button>
                 }
               />
-              <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
-                <VisuallyHidden>
-                  More information about fork options
-                </VisuallyHidden>
+              <Ariakit.HovercardDisclosure className="rounded-md text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400">
+                <VisuallyHidden>{localize('com_ui_fork_more_info_options')}</VisuallyHidden>
                 {chevronDown}
               </Ariakit.HovercardDisclosure>
             </div>
@@ -331,9 +330,11 @@ export default function Fork({
                 </div>
               }
             />
-            <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+            <Ariakit.HovercardDisclosure className="rounded-md text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400">
               <VisuallyHidden>
-                More information about {localize('com_ui_fork_split_target')}
+                {localize('com_ui_fork_more_info_split_target', {
+                  0: localize('com_ui_fork_split_target'),
+                })}
               </VisuallyHidden>
               {chevronDown}
             </Ariakit.HovercardDisclosure>
@@ -377,9 +378,11 @@ export default function Fork({
                 </div>
               }
             />
-            <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+            <Ariakit.HovercardDisclosure className="rounded-md text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400">
               <VisuallyHidden>
-                More information about {localize('com_ui_fork_remember')}
+                {localize('com_ui_fork_more_info_remember', {
+                  0: localize('com_ui_fork_remember'),
+                })}
               </VisuallyHidden>
               {chevronDown}
             </Ariakit.HovercardDisclosure>
