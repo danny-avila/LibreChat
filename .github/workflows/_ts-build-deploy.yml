@@ -51,7 +51,7 @@ jobs:
         }
 
         ./custom/scripts/build-and-deploy.ps1 `
-          -ImageName "ts-librechat" `
+          -ImageName "ts-librechat-custom" `
           -ImageTag "${{ steps.set-tag.outputs.IMAGE_TAG }}" `
           -Registry "registry.totalsoft.local" `
           -Namespace "librechat" `
