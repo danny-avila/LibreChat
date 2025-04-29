@@ -783,7 +783,6 @@
   "com_ui_simple": "Semplice",
   "com_ui_size": "Dimensione",
   "com_ui_special_variables": "Variabili speciali:",
-  "com_ui_special_variables_info": "Usa `{{current_date}}` per la data attuale e `{{current_user}}` per il nome del tuo account.",
   "com_ui_speech_while_submitting": "Impossibile inviare il messaggio mentre è in corso la generazione di una risposta",
   "com_ui_stop": "Ferma",
   "com_ui_storage": "Archiviazione",

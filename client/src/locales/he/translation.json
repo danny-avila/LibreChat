@@ -797,7 +797,6 @@
   "com_ui_simple": "פשוט",
   "com_ui_size": "סוג",
   "com_ui_special_variables": "משתנים מיוחדים:",
-  "com_ui_special_variables_info": "השתמש ב-`{{current_date}}` עבור התאריך הנוכחי, וב-`{{current_user}}` עבור שם החשבון שלך.",
   "com_ui_speech_while_submitting": "לא ניתן לשלוח אודיו בזמן שנוצרת תגובה",
   "com_ui_stop": "עצור",
   "com_ui_storage": "אחסון",

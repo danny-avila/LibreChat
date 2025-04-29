@@ -692,7 +692,6 @@
   "com_ui_simple": "Basit",
   "com_ui_size": "Boyut",
   "com_ui_special_variables": "Özel değişkenler:",
-  "com_ui_special_variables_info": "Geçerli tarih için `{{current_date}}` ve hesap adınız için `{{current_user}}` kullanın.",
   "com_ui_speech_while_submitting": "Bir yanıt oluşturulurken konuşma gönderilemez",
   "com_ui_stop": "Durdur",
   "com_ui_storage": "Depolama",

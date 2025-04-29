@@ -798,7 +798,6 @@
   "com_ui_simple": "基本",
   "com_ui_size": "大小",
   "com_ui_special_variables": "特殊变量：",
-  "com_ui_special_variables_info": "使用 `{{current_date}}` 获取当前日期，使用 `{{current_user}}` 获取您的账户名称。",
   "com_ui_speech_while_submitting": "正在生成回复时无法提交语音",
   "com_ui_stop": "停止",
   "com_ui_storage": "存储",
