@@ -1,13 +1,7 @@
+import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import {
-  QueryKeys,
-  Constants,
-  dataService,
-  EModelEndpoint,
-  LocalStorageKeys,
-} from 'librechat-data-provider';
+import { QueryKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
 import store from '~/store';
@@ -16,47 +10,27 @@ const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
-  const resetArtifacts = useResetRecoilState(store.artifactsState);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
 
-  const fetchFreshData = async (conversationId?: string | null) => {
-    if (!conversationId) {
-      return;
-    }
-    try {
-      const data = await queryClient.fetchQuery([QueryKeys.conversation, conversationId], () =>
-        dataService.getConversationById(conversationId),
-      );
-      logger.log('conversation', 'Fetched fresh conversation data', data);
-      await queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
-      setConversation(data);
-      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
-    } catch (error) {
-      console.error('Error fetching conversation data on navigation', error);
-    }
-  };
-
   const navigateToConvo = (
     conversation?: TConversation | null,
-    _resetLatestMessage = true,
-    /** Likely need to remove this since it happens after fetching conversation data */
-    invalidateMessages = false,
+    options?: {
+      resetLatestMessage?: boolean;
+      currentConvoId?: string;
+    },
   ) => {
     if (!conversation) {
       logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
+    const { resetLatestMessage = true, currentConvoId } = options || {};
     logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
     setSubmission(null);
-    if (_resetLatestMessage) {
+    if (resetLatestMessage) {
       clearAllLatestMessages();
-    }
-    if (invalidateMessages && conversation.conversationId != null && conversation.conversationId) {
-      queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], []);
-      queryClient.invalidateQueries([QueryKeys.messages, conversation.conversationId]);
     }
 
     let convo = { ...conversation };
@@ -84,51 +58,13 @@ const useNavigateToConvo = (index = 0) => {
       });
     }
     clearAllConversations(true);
-    resetArtifacts();
     setConversation(convo);
-    if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
-      queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
-      fetchFreshData(convo.conversationId);
-    } else {
-      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
-    }
-  };
-
-  const navigateWithLastTools = (
-    conversation?: TConversation | null,
-    _resetLatestMessage?: boolean,
-    invalidateMessages?: boolean,
-  ) => {
-    if (!conversation) {
-      logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
-      return;
-    }
-    // set conversation to the new conversation
-    if (conversation.endpoint === EModelEndpoint.gptPlugins) {
-      let lastSelectedTools = [];
-      try {
-        lastSelectedTools =
-          JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
-      } catch (e) {
-        logger.error('conversation', 'Error parsing last selected tools', e);
-      }
-      const hasTools = (conversation.tools?.length ?? 0) > 0;
-      navigateToConvo(
-        {
-          ...conversation,
-          tools: hasTools ? conversation.tools : lastSelectedTools,
-        },
-        _resetLatestMessage,
-        invalidateMessages,
-      );
-    } else {
-      navigateToConvo(conversation, _resetLatestMessage, invalidateMessages);
-    }
+    queryClient.setQueryData([QueryKeys.messages, currentConvoId], []);
+    navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
   };
 
   return {
     navigateToConvo,
-    navigateWithLastTools,
   };
 };
 
