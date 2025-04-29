@@ -12,6 +12,7 @@ import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import { TextareaAutosize, InputCombobox, Button } from '~/components/ui';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
+import { PromptVariableGfm } from '../Markdown';
 
 type FieldType = 'text' | 'select';
 
@@ -147,7 +148,7 @@ export default function VariableForm({
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
             /** @ts-ignore */
-            components={{ code: codeNoExecution }}
+            components={{ code: codeNoExecution, p: PromptVariableGfm }}
             className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 max-h-[50vh] max-w-full break-words"
           >
             {generateHighlightedMarkdown()}

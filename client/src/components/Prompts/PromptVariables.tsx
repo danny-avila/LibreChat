@@ -8,7 +8,7 @@ import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 const specialVariableClasses =
-  'bg-yellow-400/10 text-yellow-900 border-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
+  'bg-amber-100 text-yellow-800 border-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
 
 const components: {
   [nodeType: string]: React.ElementType;
