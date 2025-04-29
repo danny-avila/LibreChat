@@ -487,10 +487,6 @@ export default function useEventHandlers({
       }
 
       if (setConversation && isAddedRequest !== true) {
-        if (location.pathname === '/c/new') {
-          navigate(`/c/${conversation.conversationId}`, { replace: true });
-        }
-
         setConversation((prevState) => {
           const update = {
             ...prevState,
@@ -508,6 +504,9 @@ export default function useEventHandlers({
           }
           return update;
         });
+        if (location.pathname === '/c/new') {
+          navigate(`/c/${conversation.conversationId}`, { replace: true });
+        }
       }
 
       setIsSubmitting(false);
