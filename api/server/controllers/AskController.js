@@ -128,7 +128,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     clientRef = new WeakRef(client);
 
     getAbortData = () => {
-      const currentClient = clientRef.deref();
+      const currentClient = clientRef?.deref();
       const currentText =
         currentClient?.getStreamText != null ? currentClient.getStreamText() : getPartialText();
 
@@ -255,7 +255,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     logger.error('[AskController] Error handling request', error);
     let partialText = '';
     try {
-      const currentClient = clientRef.deref();
+      const currentClient = clientRef?.deref();
       partialText =
         currentClient?.getStreamText != null ? currentClient.getStreamText() : getPartialText();
     } catch (getTextError) {
