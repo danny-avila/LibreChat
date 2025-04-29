@@ -25,7 +25,6 @@ import {
   getModelSpecPreset,
   getDefaultModelSpec,
   updateLastSelectedModel,
-  createChatSearchParams,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
@@ -183,17 +182,8 @@ const useNewConvo = (index = 0) => {
           if (appTitle) {
             document.title = appTitle;
           }
-          const params = createChatSearchParams(conversation);
-          const newRoute =
-            params.size > 0
-              ? `/c/${Constants.NEW_CONVO}?${params.toString()}`
-              : `/c/${Constants.NEW_CONVO}`;
-
-          navigate(newRoute);
-        }
-
-        clearTimeout(timeoutIdRef.current);
-        if (disableFocus === true) {
+          const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
+          navigate(path, { state: { focusChat: true } });
           return;
         }
 

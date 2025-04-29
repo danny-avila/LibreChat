@@ -1,12 +1,6 @@
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
-import {
-  useLocalize,
-  useDebouncedInput,
-  useParameterEffects,
-  TranslationKeys,
-  useUpdateSearchParams,
-} from '~/hooks';
+import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
 import { Label, Input, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
@@ -32,7 +26,6 @@ function DynamicInput({
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { preset } = useChatContext();
-  const updateSearchParams = useUpdateSearchParams();
 
   const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
@@ -54,7 +47,6 @@ function DynamicInput({
     const value = e.target.value;
     if (type !== 'number') {
       setInputValue(e);
-      updateSearchParams({ [settingKey]: value });
       return;
     }
 
@@ -63,7 +55,6 @@ function DynamicInput({
     } else if (!isNaN(Number(value))) {
       setInputValue(e, true);
     }
-    updateSearchParams({ [settingKey]: value });
   };
 
   return (
