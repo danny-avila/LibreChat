@@ -268,6 +268,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       conversationId: reqDataContext.conversationId,
       messageId: reqDataContext.responseMessageId,
       parentMessageId: overrideParentMessageId ?? reqDataContext.userMessageId ?? parentMessageId,
+      userMessageId: reqDataContext.userMessageId,
     })
       .catch((err) => {
         logger.error('[AskController] Error in `handleAbortError` during catch block', err);

@@ -232,6 +232,7 @@ const EditController = async (req, res, next, initializeClient) => {
       conversationId,
       messageId: reqDataContext.responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
+      userMessageId,
     })
       .catch((err) => {
         logger.error('[EditController] Error in `handleAbortError` during catch block', err);
