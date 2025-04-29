@@ -5,12 +5,10 @@ import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
-import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { Checkbox } from '~/components/ui';
 import { useForkConvoMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import { ESide } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -34,6 +32,16 @@ const optionLabels: Record<ForkOptions, TranslationKeys> = {
   [ForkOptions.DEFAULT]: 'com_ui_fork_from_message',
 };
 
+const chevronDown = (
+  <svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+    />
+  </svg>
+);
+
 const PopoverButton: React.FC<PopoverButtonProps> = ({
   children,
   setting,
@@ -48,46 +56,58 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
 }) => {
   return (
     <Ariakit.HovercardProvider>
-      <Ariakit.Button
-        onClick={() => onClick(setting)}
-        onMouseEnter={() => {
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
+      <div className="flex flex-col items-center">
+        <Ariakit.HovercardAnchor
+          render={
+            <Ariakit.Button
+              onClick={() => onClick(setting)}
+              onMouseEnter={() => {
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                  timeoutRef.current = null;
+                }
+                setActiveSetting(optionLabels[setting]);
+              }}
+              onMouseLeave={() => {
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                }
+                timeoutRef.current = setTimeout(() => {
+                  setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
+                }, 175);
+              }}
+              className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
+              aria-label={label}
+            >
+              {children}
+              <VisuallyHidden>{label}</VisuallyHidden>
+            </Ariakit.Button>
           }
-          setActiveSetting(optionLabels[setting]);
-        }}
-        onMouseLeave={() => {
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-          }
-          timeoutRef.current = setTimeout(() => {
-            setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
-          }, 175);
-        }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
-        aria-label={label}
-      >
-        {children}
-        <VisuallyHidden>{label}</VisuallyHidden>
-      </Ariakit.Button>
-      {((hoverInfo != null && hoverInfo !== '') ||
-        (hoverTitle != null && hoverTitle !== '') ||
-        (hoverDescription != null && hoverDescription !== '')) && (
-        <Ariakit.Hovercard
-          gutter={16}
-          className="z-[999] w-80 rounded-md border border-gray-200 bg-white p-4 shadow-md dark:border-gray-600 dark:bg-gray-700"
-          portal={true}
-        >
-          <div className="space-y-2">
-            <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
-              {hoverInfo && hoverInfo}
-              {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
-              {hoverDescription && hoverDescription}
-            </p>
-          </div>
-        </Ariakit.Hovercard>
-      )}
+        />
+        <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+          <VisuallyHidden>
+            More details about {label}
+          </VisuallyHidden>
+          {chevronDown}
+        </Ariakit.HovercardDisclosure>
+        {((hoverInfo != null && hoverInfo !== '') ||
+          (hoverTitle != null && hoverTitle !== '') ||
+          (hoverDescription != null && hoverDescription !== '')) && (
+          <Ariakit.Hovercard
+            gutter={16}
+            className="z-[999] w-80 rounded-md border border-gray-200 bg-white p-4 shadow-md dark:border-gray-600 dark:bg-gray-700"
+            portal={true}
+          >
+            <div className="space-y-2">
+              <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
+                {hoverInfo && hoverInfo}
+                {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
+                {hoverDescription && hoverDescription}
+              </p>
+            </div>
+          </Ariakit.Hovercard>
+        )}
+      </div>
     </Ariakit.HovercardProvider>
   );
 };
@@ -203,16 +223,24 @@ export default function Fork({
         <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
           {localize(activeSetting)}
           <Ariakit.HovercardProvider>
-            <Ariakit.HovercardAnchor
-              render={
-                <button
-                  className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50"
-                  aria-label="Fork information"
-                >
-                  <InfoIcon />
-                </button>
-              }
-            />
+            <div className="ml-auto flex items-center">
+              <Ariakit.HovercardAnchor
+                render={
+                  <button
+                    className="flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50"
+                    aria-label="Fork information"
+                  >
+                    <InfoIcon />
+                  </button>
+                }
+              />
+              <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+                <VisuallyHidden>
+                  More information about fork options
+                </VisuallyHidden>
+                {chevronDown}
+              </Ariakit.HovercardDisclosure>
+            </div>
             <Ariakit.Hovercard
               gutter={19}
               className="z-[999] w-80 rounded-md border border-gray-200 bg-white p-4 shadow-md dark:border-gray-600 dark:bg-gray-700"
@@ -286,22 +314,30 @@ export default function Fork({
           </PopoverButton>
         </div>
         <Ariakit.HovercardProvider>
-          <Ariakit.HovercardAnchor
-            render={
-              <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
-                <Ariakit.Checkbox
-                  id="split-target-checkbox"
-                  checked={splitAtTarget}
-                  onChange={(event) => setSplitAtTarget(event.target.checked)}
-                  className="m-2 h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                  aria-label={localize('com_ui_fork_split_target')}
-                />
-                <label htmlFor="split-target-checkbox" className="ml-2 cursor-pointer">
-                  {localize('com_ui_fork_split_target')}
-                </label>
-              </div>
-            }
-          />
+          <div className="flex items-center">
+            <Ariakit.HovercardAnchor
+              render={
+                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
+                  <Ariakit.Checkbox
+                    id="split-target-checkbox"
+                    checked={splitAtTarget}
+                    onChange={(event) => setSplitAtTarget(event.target.checked)}
+                    className="m-2 h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                    aria-label={localize('com_ui_fork_split_target')}
+                  />
+                  <label htmlFor="split-target-checkbox" className="ml-2 cursor-pointer">
+                    {localize('com_ui_fork_split_target')}
+                  </label>
+                </div>
+              }
+            />
+            <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+              <VisuallyHidden>
+                More information about {localize('com_ui_fork_split_target')}
+              </VisuallyHidden>
+              {chevronDown}
+            </Ariakit.HovercardDisclosure>
+          </div>
           <Ariakit.Hovercard
             gutter={20}
             className="z-[999] w-80 rounded-md border border-gray-200 bg-white p-4 shadow-md dark:border-gray-600 dark:bg-gray-700"
@@ -315,31 +351,39 @@ export default function Fork({
           </Ariakit.Hovercard>
         </Ariakit.HovercardProvider>
         <Ariakit.HovercardProvider>
-          <Ariakit.HovercardAnchor
-            render={
-              <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
-                <Ariakit.Checkbox
-                  id="remember-checkbox"
-                  checked={remember}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    if (checked) {
-                      showToast({
-                        message: localize('com_ui_fork_remember_checked'),
-                        status: 'info',
-                      });
-                    }
-                    setRemember(checked);
-                  }}
-                  className="m-2 h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                  aria-label={localize('com_ui_fork_remember')}
-                />
-                <label htmlFor="remember-checkbox" className="ml-2 cursor-pointer">
-                  {localize('com_ui_fork_remember')}
-                </label>
-              </div>
-            }
-          />
+          <div className="flex items-center">
+            <Ariakit.HovercardAnchor
+              render={
+                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
+                  <Ariakit.Checkbox
+                    id="remember-checkbox"
+                    checked={remember}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      if (checked) {
+                        showToast({
+                          message: localize('com_ui_fork_remember_checked'),
+                          status: 'info',
+                        });
+                      }
+                      setRemember(checked);
+                    }}
+                    className="m-2 h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                    aria-label={localize('com_ui_fork_remember')}
+                  />
+                  <label htmlFor="remember-checkbox" className="ml-2 cursor-pointer">
+                    {localize('com_ui_fork_remember')}
+                  </label>
+                </div>
+              }
+            />
+            <Ariakit.HovercardDisclosure className="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md">
+              <VisuallyHidden>
+                More information about {localize('com_ui_fork_remember')}
+              </VisuallyHidden>
+              {chevronDown}
+            </Ariakit.HovercardDisclosure>
+          </div>
           <Ariakit.Hovercard
             gutter={20}
             className="z-[999] w-80 rounded-md border border-gray-200 bg-white p-4 shadow-md dark:border-gray-600 dark:bg-gray-700"
