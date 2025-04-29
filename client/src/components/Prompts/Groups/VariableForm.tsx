@@ -111,9 +111,12 @@ export default function VariableForm({
     allVariables.forEach((variable) => {
       const placeholder = `{{${variable}}}`;
       const fieldIndex = variableIndexMap.get(variable) as string | number;
-      const fieldValue = fieldValues[fieldIndex].value as string;
-      const highlightText = fieldValue !== '' ? fieldValue : placeholder;
-      tempText = tempText.replaceAll(placeholder, `**${highlightText}**`);
+      const fieldValue = fieldValues[fieldIndex].value as string | undefined;
+      if (fieldValue === placeholder || fieldValue === '' || !fieldValue) {
+        return;
+      }
+      const highlightText = fieldValue !== '' ? `**${fieldValue}**` : placeholder;
+      tempText = tempText.replaceAll(placeholder, highlightText);
     });
     return tempText;
   };
