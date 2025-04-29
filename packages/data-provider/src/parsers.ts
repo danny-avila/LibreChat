@@ -420,7 +420,7 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
-export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+export function replaceSpecialVars({ text, user }: { text?: string; user?: t.TUser | null }) {
   let result = text;
   if (!text) {
     return result;
@@ -429,13 +429,15 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
   const currentDate = dayjs().format('YYYY-MM-DD');
   const dayNumber = dayjs().day();
   const combinedDate = `${currentDate} (${dayNumber})`;
-  result = result.replace(/{{current_date}}/gi, combinedDate);
+  result = result?.replace(/{{current_date}}/gi, combinedDate);
 
-  if (!user) {
-    return result;
+  const currentDatetime = dayjs().toISOString();
+  result = result?.replace(/{{current_datetime}}/gi, currentDatetime);
+
+  if (user) {
+    const currentUser = user.name;
+    result = result?.replace(/{{current_user}}/gi, currentUser);
   }
-  const currentUser = user.name;
-  result = result.replace(/{{current_user}}/gi, currentUser);
 
   return result;
 }
