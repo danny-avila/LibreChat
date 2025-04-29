@@ -66,7 +66,7 @@ const PromptVariables = ({
               </span>
               <span className="text-sm text-text-secondary">
                 <ReactMarkdown components={components}>
-                  {localize('com_ui_special_variables_info')}
+                  {localize('com_ui_special_variables_more_info')}
                 </ReactMarkdown>
               </span>
             </div>

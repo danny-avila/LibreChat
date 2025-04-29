@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
 import { SaveIcon, CrossIcon } from '~/components/svg';
+import VariablesDropdown from './VariablesDropdown';
 import { TextareaAutosize } from '~/components/ui';
 import { PromptVariableGfm } from './Markdown';
 import { PromptsEditorMode } from '~/common';
@@ -59,10 +60,11 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
         <span className="max-w-[200px] truncate sm:max-w-none">
           {localize('com_ui_prompt_text')}
         </span>
-        <div className="flex flex-shrink-0 flex-row gap-3 sm:gap-6">
+        <div className="flex flex-shrink-0 flex-row items-center gap-3 sm:gap-6">
           {editorMode === PromptsEditorMode.ADVANCED && (
             <AlwaysMakeProd className="hidden sm:flex" />
           )}
+          <VariablesDropdown fieldName={name} />
           <button
             type="button"
             onClick={() => setIsEditing((prev) => !prev)}
