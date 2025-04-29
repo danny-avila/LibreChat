@@ -178,5 +178,28 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "Vertex AI Search",
+    "pluginKey": "vertex_ai",
+    "description": "Search and interact with Google Vertex AI, grounding the model with information from a Vertex AI Search data store. Use this tool when you need to generate text, answer questions, or perform tasks grounded in specific documents.",
+    "icon": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg",
+    "authConfig": [
+      {
+        "authField": "GOOGLE_CLOUD_PROJECT_ID",
+        "label": "Google Cloud Project ID",
+        "description": "Your Google Cloud Project ID."
+      },
+      {
+        "authField": "GOOGLE_CLOUD_LOCATION",
+        "label": "Google Cloud Location",
+        "description": "The location (region) where your Vertex AI Search data store is deployed (e.g., us-central1). Leave blank to use us-central1."
+      },
+      {
+        "authField": "VERTEX_AI_DATASTORE_ID",
+        "label": "Vertex AI Data Store ID",
+        "description": "The ID of your Vertex AI Search data store."
+      }
+    ]
   }
 ]
