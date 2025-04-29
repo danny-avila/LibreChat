@@ -420,7 +420,7 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
-export function replaceSpecialVars({ text, user }: { text?: string; user?: t.TUser | null }) {
+export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
   let result = text;
   if (!result) {
     return result;
