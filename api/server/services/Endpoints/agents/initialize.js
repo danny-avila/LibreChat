@@ -6,6 +6,7 @@ const {
   EToolResources,
   getResponseSender,
   AgentCapabilities,
+  replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
 const {
@@ -244,6 +245,13 @@ const initializeAgentOptions = async ({
 
   if (!agent.model_parameters.model) {
     agent.model_parameters.model = agent.model;
+  }
+
+  if (agent.instructions && agent.instructions !== '') {
+    agent.instructions = replaceSpecialVars({
+      text: agent.instructions,
+      user: req.user,
+    });
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {

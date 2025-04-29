@@ -151,11 +151,27 @@ const useNewConvo = (index = 0) => {
         if (!(keepAddedConvos ?? false)) {
           clearAllConversations(true);
         }
-        logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
-        setConversation(conversation);
+        const isCancelled = conversation.conversationId?.startsWith('_');
+        if (isCancelled) {
+          logger.log(
+            'conversation',
+            'Cancelled conversation, setting to `new` in `useNewConvo`',
+            conversation,
+          );
+          setConversation({
+            ...conversation,
+            conversationId: 'new',
+          });
+        } else {
+          logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
+          setConversation(conversation);
+        }
         setSubmission({} as TSubmission);
         if (!(keepLatestMessage ?? false)) {
           clearAllLatestMessages();
+        }
+        if (isCancelled) {
+          return;
         }
 
         const searchParamsString = searchParams?.toString();
