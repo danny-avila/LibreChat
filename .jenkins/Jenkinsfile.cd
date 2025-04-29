@@ -1,31 +1,56 @@
 pipeline {
-    agent {
-        kubernetes {
-            cloud "k8s-agents"
-            serviceAccount "jenkins-k8s-jobs"
-            inheritFrom "jnlp-aws-helm"
-        }
-    }
+    agent any
     options {
         lock("bai-cd")
         disableConcurrentBuilds() 
     }
+    environment {
+        DOCKER_BUILDKIT = 1
+        ECR_REGISTRY = '223287545160.dkr.ecr.us-east-2.amazonaws.com'
+        REGION = 'us-east-2'
+        ECR_SECRET_ID = "ecr-login"
+        IMAGE_NAME = 'devops:bai'
+    }
     stages {
-        stage('Deploy BAI to Management') {
-            stages {
-                stage('Deploy') {
-                    steps {
-                      container('jnlp') {
-                        script {
-                            sh """
-                              cd charts
-                              helm repo add bitnami https://charts.bitnami.com/bitnami
-                              helm dependency build librechat
-                              helm upgrade bai librechat --install -n default
-                            """
-                        }
-                    }
+        stage('Build and Upload image to ECR') {
+            steps {
+              script {
+                  checkout([$class: 'GitSCM', 
+                      branches: [[name: 'master']], 
+                      userRemoteConfigs: [[
+                          credentialsId: 'devops-getbalance-github-repo-token',
+                          url: 'https://github.com/blnce-io/BAI.git'
+                      ]]
+                  ])
+                  docker.withRegistry("https://${ECR_REGISTRY}", "ecr:${REGION}:${ECR_SECRET_ID}") {
+                      docker.build(IMAGE_NAME)
+                      sh """
+                      docker tag ${IMAGE_NAME} ${ECR_REGISTRY}/${IMAGE_NAME}
+                      docker push ${ECR_REGISTRY}/${IMAGE_NAME}
+                      """
                   }
+              }
+            }
+        }
+        stage('Deploy BAI to Management') {
+            agent {
+                kubernetes {
+                    cloud "k8s-agents"
+                    serviceAccount "jenkins-k8s-jobs"
+                    inheritFrom "jnlp-aws-helm"
+                }
+            }
+            steps {
+                container("jnlp") {
+                    sh """
+                        cd charts
+                        helm repo add bitnami https://charts.bitnami.com/bitnami
+                        helm dependency build librechat
+                        helm upgrade bai librechat --install -n default
+                        aws eks --region us-east-2 update-kubeconfig --name balance-management
+                        kubectl config use-context arn:aws:eks:us-east-2:223287545160:cluster/balance-management
+                        kubectl rollout restart deployment -n default bai-librechat
+                    """
                 }
             }
         }
@@ -37,4 +62,3 @@ pipeline {
         }
     }
 }
-
