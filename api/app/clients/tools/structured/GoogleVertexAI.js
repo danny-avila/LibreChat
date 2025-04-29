@@ -78,20 +78,15 @@ class GoogleVertexAI extends Tool {
 
         // Create Vertex AI client
         try {
-
             const authOptions = {};
-            if (this.apiKey) {
-                // Use API key authentication.  No authOptions needed for Vertex AI initialization in this case.
-                console.log('Using apiKey for authentication.');
-
-            } else if (this.client_email && this.private_key && this.project_id) {
+            if (this.client_email && this.private_key && this.project_id) {
                 // Use Service Account authentication
                 authOptions.credentials = {
                     client_email: this.client_email,
                     private_key: this.private_key,
                 };
                 authOptions.projectId = this.project_id;
-                console.log('Using Service Account for authentication.');
+                logger.debug('Using Service Account for authentication.');
             }
             // Initialize the Vertex AI client, passing in the authentication options
             this.vertexAI = new VertexAI({
@@ -100,8 +95,13 @@ class GoogleVertexAI extends Tool {
                 googleAuthOptions: authOptions,
             });
 
-            this.search = this.vertexAI.getSearch();
-            this.dataStore = this.search.dataStore({ id: this.dataStoreId });
+            const retrievalTool = this.createGroundingTool()
+
+            this.generativeModel = this.vertexAI.preview.getGenerativeModel({
+                model: "gemini-2.0-flash-001",
+                tools: [retrievalTool]
+            });
+
         } catch (error) {
             logger.error('Error initializing Vertex AI client:', error);
             throw new Error(
@@ -110,60 +110,29 @@ class GoogleVertexAI extends Tool {
         }
     }
 
-    // Improved error handling and logging
-    async _call(data) {
-        const { query } = data;
-        try {
-            const parameters = {
-                query: query,
-                pageSize: typeof this.top === 'string' ? Number(this.top) : this.top, // Number of results
-            };
-
-            const searchResponse = await this.dataStore.search(parameters);
-
-            const resultDocuments = [];
-            if (searchResponse.results && searchResponse.results.length > 0) {
-                searchResponse.results.forEach((result) => {
-                    resultDocuments.push({
-                        id: result.id,
-                        title: result.document.title,
-                        content: result.document.content, // Adjust to match your data structure
-                    });
-                });
-            }
-
-            return JSON.stringify(resultDocuments); // Return a JSON string of the results
-        } catch (error) {
-            logger.error('Vertex AI Search request failed', error);
-            return 'There was an error with Vertex AI Search.';
+    createGroundingTool() {
+        return {
+            retrieval: {
+                vertexAiSearch: {
+                    datastore: this.dataStoreId,
+                },
+                disableAttribution: false,
+            },
         }
     }
 
-    async getAccessToken() {
-        // Prioritize API Key if provided
-        if (this.apiKey) {
-            console.log("Using apiKey for authentication");
-            return this.apiKey;
-        }
+    async _call(data) {
+        const { query } = data;
 
         try {
-            const { GoogleAuth } = require('google-auth-library');
-            const auth = new GoogleAuth({
-                credentials: {
-                    client_email: this.client_email,
-                    private_key: this.private_key,
-                },
-            });
-            const client = await auth.getClient({
-                scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-            });
-            const accessToken = await client.getAccessToken();
-            return accessToken;
+            const streamingResult = await this.generativeModel.generateContentStream({
+                contents: [{role: 'user', parts: [{text: query}]}]
+            })
+            const aggregatedResponse = await streamingResult.response;
+            return JSON.stringify(aggregatedResponse);
         } catch (error) {
-            logger.error('Error getting access token:', error);
-            throw new Error(
-                'Error getting access token. Ensure you have the correct credentials configured.',
-            );
+            logger.error('Vertex AI Search request failed', error);
+            return 'There was an error with Vertex AI Search.';
         }
     }
 }
