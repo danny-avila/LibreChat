@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
-import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { useGetStartupConfig, useGetUserBalance, useGetOmnexioUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
@@ -18,6 +18,9 @@ function AccountSettings() {
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
+  });
+  const omnexioBalanceQuery = useGetOmnexioUserBalance({
+    enabled: !!isAuthenticated,
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
@@ -81,6 +84,14 @@ function AccountSettings() {
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
               {localize('com_nav_balance')}: {parseFloat(balanceQuery.data).toFixed(2)}
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {omnexioBalanceQuery.data != null && !isNaN(parseFloat(omnexioBalanceQuery.data)) && (
+          <>
+            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+              {localize('com_nav_balance')}: {parseFloat(omnexioBalanceQuery.data).toFixed(2)} credits
             </div>
             <DropdownMenuSeparator />
           </>

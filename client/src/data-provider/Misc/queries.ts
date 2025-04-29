@@ -43,3 +43,15 @@ export const useGetSearchEnabledQuery = (
     enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
 };
+
+export const useGetOmnexioUserBalance = (
+  config?: UseQueryOptions<string>,
+): QueryObserverResult<string> => {
+  return useQuery<string>([QueryKeys.omnexioBalance], () => dataService.getOmnexioUserBalance(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
+    ...config,
+    enabled: true,
+  });
+};

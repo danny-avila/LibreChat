@@ -11,6 +11,7 @@ export enum QueryKeys {
   name = 'name', // user key name
   models = 'models',
   balance = 'balance',
+  omnexioBalance = 'omnexioBalance',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -45,7 +46,7 @@ export enum QueryKeys {
   conversationTags = 'conversationTags',
   health = 'health',
   userTerms = 'userTerms',
-  banner = 'banner',
+  banner = 'banner'
 }
 
 export enum MutationKeys {
