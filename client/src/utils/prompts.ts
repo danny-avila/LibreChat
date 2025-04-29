@@ -1,11 +1,18 @@
+import { specialVariables } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 
 /**
- * Detects the presence of variables in the given text, excluding {{current_date}} and {{current_user}}.
+ * Detects the presence of variables in the given text, excluding those found in `specialVariables`.
  */
 export const detectVariables = (text: string): boolean => {
-  const regex = /{{(?!current_date|current_user)[^{}]{1,}}}/gi;
-  return regex.test(text);
+  // Extract all variables with a simple regex
+  const allVariablesRegex = /{{([^{}]+?)}}/gi;
+  const matches = Array.from(text.matchAll(allVariablesRegex)).map((match) =>
+    match[1].trim().toLowerCase(),
+  );
+
+  // Check if any non-special variables exist
+  return matches.some((variable) => !specialVariables[variable]);
 };
 
 export const wrapVariable = (variable: string) => `{{${variable}}}`;
