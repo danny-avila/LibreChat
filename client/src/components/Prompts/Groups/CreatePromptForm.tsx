@@ -7,6 +7,7 @@ import PromptVariables from '~/components/Prompts/PromptVariables';
 import { Button, TextareaAutosize, Input } from '~/components/ui';
 import Description from '~/components/Prompts/Description';
 import { useLocalize, useHasAccess } from '~/hooks';
+import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
 import Command from '~/components/Prompts/Command';
 import { useCreatePrompt } from '~/data-provider';
 import { cn } from '~/utils';
@@ -126,13 +127,14 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <CategorySelector tabIndex={0} />
+            <CategorySelector />
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
           <div>
             <h2 className="flex items-center justify-between rounded-t-lg border border-border-medium py-2 pl-4 pr-1 text-base font-semibold dark:text-gray-200">
-              {localize('com_ui_prompt_text')}*
+              <span>{localize('com_ui_prompt_text')}*</span>
+              <VariablesDropdown fieldName="prompt" className="mr-2" />
             </h2>
             <div className="min-h-32 rounded-b-lg border border-border-medium p-4 transition-all duration-150">
               <Controller
@@ -166,7 +168,12 @@ const CreatePromptForm = ({
           />
           <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={0} />
           <div className="mt-4 flex justify-end">
-            <Button tabIndex={0} type="submit" disabled={!isDirty || isSubmitting || !isValid}>
+            <Button
+              aria-label={localize('com_ui_create_prompt')}
+              tabIndex={0}
+              type="submit"
+              disabled={!isDirty || isSubmitting || !isValid}
+            >
               {localize('com_ui_create_prompt')}
             </Button>
           </div>

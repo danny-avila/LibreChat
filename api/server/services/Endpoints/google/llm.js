@@ -1,30 +1,71 @@
 const { Providers } = require('@librechat/agents');
 const { AuthKeys } = require('librechat-data-provider');
+const { isEnabled } = require('~/server/utils');
 
-// Example internal constant from your code
-const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
+function getThresholdMapping(model) {
+  const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
+  const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
 
-function getSafetySettings() {
+  if (gemini1Pattern.test(model)) {
+    return (value) => {
+      if (value === 'OFF') {
+        return 'BLOCK_NONE';
+      }
+      return value;
+    };
+  }
+
+  if (restrictedPattern.test(model)) {
+    return (value) => {
+      if (value === 'OFF' || value === 'HARM_BLOCK_THRESHOLD_UNSPECIFIED') {
+        return 'BLOCK_NONE';
+      }
+      return value;
+    };
+  }
+
+  return (value) => value;
+}
+
+/**
+ *
+ * @param {string} model
+ * @returns {Array<{category: string, threshold: string}> | undefined}
+ */
+function getSafetySettings(model) {
+  if (isEnabled(process.env.GOOGLE_EXCLUDE_SAFETY_SETTINGS)) {
+    return undefined;
+  }
+  const mapThreshold = getThresholdMapping(model);
+
   return [
     {
       category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-      threshold: process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_HATE_SPEECH',
-      threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_HARASSMENT',
-      threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-      threshold: process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-      threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE',
+      threshold: mapThreshold(process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE'),
     },
   ];
 }
@@ -64,24 +105,16 @@ function getLLMConfig(credentials, options = {}) {
   /** @type {GoogleClientOptions | VertexAIClientOptions} */
   let llmConfig = {
     ...(options.modelOptions || {}),
-    safetySettings: getSafetySettings(),
     maxRetries: 2,
   };
 
-  const isGenerativeModel = llmConfig.model.includes('gemini');
-  const isChatModel = !isGenerativeModel && llmConfig.model.includes('chat');
-  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(llmConfig.model);
+  /** Used only for Safety Settings */
+  llmConfig.safetySettings = getSafetySettings(llmConfig.model);
 
   let provider;
 
-  if (project_id && isTextModel) {
+  if (project_id) {
     provider = Providers.VERTEXAI;
-  } else if (project_id && isChatModel) {
-    provider = Providers.VERTEXAI;
-  } else if (project_id) {
-    provider = Providers.VERTEXAI;
-  } else if (!EXCLUDED_GENAI_MODELS.test(llmConfig.model)) {
-    provider = Providers.GOOGLE;
   } else {
     provider = Providers.GOOGLE;
   }
@@ -143,4 +176,5 @@ function getLLMConfig(credentials, options = {}) {
 
 module.exports = {
   getLLMConfig,
+  getSafetySettings,
 };

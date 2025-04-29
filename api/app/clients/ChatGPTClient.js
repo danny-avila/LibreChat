@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const crypto = require('crypto');
 const { CohereClient } = require('cohere-ai');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
@@ -13,7 +13,6 @@ const {
 const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
 const { createContextHandlers } = require('./prompts');
 const { createCoherePayload } = require('./llm');
-const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -186,10 +185,6 @@ class ChatGPTClient extends BaseClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      dispatcher: new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
-      }),
     };
 
     if (this.isVisionModel) {
@@ -275,10 +270,6 @@ class ChatGPTClient extends BaseClient {
       opts.headers['X-Title'] = 'LibreChat';
     }
 
-    if (this.options.proxy) {
-      opts.dispatcher = new ProxyAgent(this.options.proxy);
-    }
-
     /* hacky fixes for Mistral AI API:
       - Re-orders system message to the top of the messages payload, as not allowed anywhere else
       - If there is only one message and it's a system message, change the role to user
@@ -348,7 +339,7 @@ class ChatGPTClient extends BaseClient {
     opts.body = JSON.stringify(modelOptions);
 
     if (modelOptions.stream) {
-      // eslint-disable-next-line no-async-promise-executor
+
       return new Promise(async (resolve, reject) => {
         try {
           let done = false;

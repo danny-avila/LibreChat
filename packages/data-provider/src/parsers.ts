@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
@@ -6,7 +7,6 @@ import { ContentTypes } from './types/runs';
 import {
   openAISchema,
   googleSchema,
-  bingAISchema,
   EModelEndpoint,
   anthropicSchema,
   assistantSchema,
@@ -14,33 +14,30 @@ import {
   // agentsSchema,
   compactAgentsSchema,
   compactGoogleSchema,
-  compactChatGPTSchema,
-  chatGPTBrowserSchema,
   compactPluginsSchema,
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
+import { extractEnvVariable } from './utils';
 import { alternateName } from './config';
 
 type EndpointSchema =
   | typeof openAISchema
   | typeof googleSchema
-  | typeof bingAISchema
   | typeof anthropicSchema
-  | typeof chatGPTBrowserSchema
   | typeof gptPluginsSchema
   | typeof assistantSchema
   | typeof compactAgentsSchema
   | typeof bedrockInputSchema;
 
-const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
+export type EndpointSchemaKey = Exclude<EModelEndpoint, EModelEndpoint.chatGPTBrowser>;
+
+const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
   [EModelEndpoint.google]: googleSchema,
-  [EModelEndpoint.bingAI]: bingAISchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
@@ -61,7 +58,6 @@ export function getEnabledEndpoints() {
     EModelEndpoint.azureAssistants,
     EModelEndpoint.azureOpenAI,
     EModelEndpoint.google,
-    EModelEndpoint.bingAI,
     EModelEndpoint.chatGPTBrowser,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
@@ -126,18 +122,6 @@ export function errorsToString(errors: ZodIssue[]) {
     .join(' ');
 }
 
-export const envVarRegex = /^\${(.+)}$/;
-
-/** Extracts the value of an environment variable from a string. */
-export function extractEnvVariable(value: string) {
-  const envVarMatch = value.match(envVarRegex);
-  if (envVarMatch) {
-    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
-    return process.env[envVarMatch[1]] || value;
-  }
-  return value;
-}
-
 /** Resolves header values to env variables if detected */
 export function resolveHeaders(headers: Record<string, string> | undefined) {
   const resolvedHeaders = { ...(headers ?? {}) };
@@ -182,8 +166,8 @@ export const parseConvo = ({
   conversation,
   possibleValues,
 }: {
-  endpoint: EModelEndpoint;
-  endpointType?: EModelEndpoint;
+  endpoint: EndpointSchemaKey;
+  endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
@@ -215,6 +199,29 @@ export const parseConvo = ({
   return convo;
 };
 
+/** Match GPT followed by digit, optional decimal, and optional suffix
+ *
+ * Examples: gpt-4, gpt-4o, gpt-4.5, gpt-5a, etc. */
+const extractGPTVersion = (modelStr: string): string => {
+  const gptMatch = modelStr.match(/gpt-(\d+(?:\.\d+)?)([a-z])?/i);
+  if (gptMatch) {
+    const version = gptMatch[1];
+    const suffix = gptMatch[2] || '';
+    return `GPT-${version}${suffix}`;
+  }
+  return '';
+};
+
+/** Match omni models (o1, o3, etc.), "o" followed by a digit, possibly with decimal */
+const extractOmniVersion = (modelStr: string): string => {
+  const omniMatch = modelStr.match(/\bo(\d+(?:\.\d+)?)\b/i);
+  if (omniMatch) {
+    const version = omniMatch[1];
+    return `o${version}`;
+  }
+  return '';
+};
+
 export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
   const {
     model: _m,
@@ -223,7 +230,6 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
     modelDisplayLabel: _mdl,
     chatGptLabel: _cgl,
     modelLabel: _ml,
-    jailbreak,
   } = endpointOption;
 
   const model = _m ?? '';
@@ -243,22 +249,17 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return chatGptLabel;
     } else if (modelLabel) {
       return modelLabel;
-    } else if (model && /\bo1\b/i.test(model)) {
-      return 'o1';
-    } else if (model && model.includes('gpt-3')) {
-      return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4o')) {
-      return 'GPT-4o';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
-    } else if (model && model.includes('mistral')) {
+    } else if (model && extractOmniVersion(model)) {
+      return extractOmniVersion(model);
+    } else if (model && (model.includes('mistral') || model.includes('codestral'))) {
       return 'Mistral';
+    } else if (model && model.includes('deepseek')) {
+      return 'Deepseek';
+    } else if (model && model.includes('gpt-')) {
+      const gptVersion = extractGPTVersion(model);
+      return gptVersion || 'GPT';
     }
     return (alternateName[endpoint] as string | undefined) ?? 'ChatGPT';
-  }
-
-  if (endpoint === EModelEndpoint.bingAI) {
-    return jailbreak === true ? 'Sydney' : 'BingAI';
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
@@ -272,7 +273,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   if (endpoint === EModelEndpoint.google) {
     if (modelLabel) {
       return modelLabel;
-    } else if (model && model.includes('gemini')) {
+    } else if (model && (model.includes('gemini') || model.includes('learnlm'))) {
       return 'Gemini';
     } else if (model && model.includes('code')) {
       return 'Codey';
@@ -286,14 +287,15 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return modelLabel;
     } else if (chatGptLabel) {
       return chatGptLabel;
-    } else if (model && model.includes('mistral')) {
+    } else if (model && extractOmniVersion(model)) {
+      return extractOmniVersion(model);
+    } else if (model && (model.includes('mistral') || model.includes('codestral'))) {
       return 'Mistral';
-    } else if (model && model.includes('gpt-3')) {
-      return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4o')) {
-      return 'GPT-4o';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
+    } else if (model && model.includes('deepseek')) {
+      return 'Deepseek';
+    } else if (model && model.includes('gpt-')) {
+      const gptVersion = extractGPTVersion(model);
+      return gptVersion || 'GPT';
     } else if (modelDisplayLabel) {
       return modelDisplayLabel;
     }
@@ -309,13 +311,11 @@ type CompactEndpointSchema =
   | typeof compactAssistantSchema
   | typeof compactAgentsSchema
   | typeof compactGoogleSchema
-  | typeof bingAISchema
   | typeof anthropicSchema
-  | typeof compactChatGPTSchema
   | typeof bedrockInputSchema
   | typeof compactPluginsSchema;
 
-const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
+const compactEndpointSchemas: Record<EndpointSchemaKey, CompactEndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
@@ -324,10 +324,7 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.google]: compactGoogleSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
-  /* BingAI needs all fields */
-  [EModelEndpoint.bingAI]: bingAISchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.chatGPTBrowser]: compactChatGPTSchema,
   [EModelEndpoint.gptPlugins]: compactPluginsSchema,
 };
 
@@ -337,8 +334,8 @@ export const parseCompactConvo = ({
   conversation,
   possibleValues,
 }: {
-  endpoint?: EModelEndpoint;
-  endpointType?: EModelEndpoint;
+  endpoint?: EndpointSchemaKey;
+  endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset>;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
@@ -348,7 +345,7 @@ export const parseCompactConvo = ({
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
 
-  let schema = compactEndpointSchemas[endpoint];
+  let schema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
@@ -356,7 +353,11 @@ export const parseCompactConvo = ({
     schema = compactEndpointSchemas[endpointType];
   }
 
-  const convo = schema.parse(conversation) as s.TConversation;
+  if (!schema) {
+    throw new Error(`Unknown endpointType: ${endpointType}`);
+  }
+
+  const convo = schema.parse(conversation) as s.TConversation | null;
   // const { models, secondaryModels } = possibleValues ?? {};
   const { models } = possibleValues ?? {};
 
@@ -371,13 +372,30 @@ export const parseCompactConvo = ({
   return convo;
 };
 
-export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
+export function parseTextParts(
+  contentParts: a.TMessageContentParts[],
+  skipReasoning: boolean = false,
+): string {
   let result = '';
 
   for (const part of contentParts) {
+    if (!part.type) {
+      continue;
+    }
     if (part.type === ContentTypes.TEXT) {
       const textValue = typeof part.text === 'string' ? part.text : part.text.value;
 
+      if (
+        result.length > 0 &&
+        textValue.length > 0 &&
+        result[result.length - 1] !== ' ' &&
+        textValue[0] !== ' '
+      ) {
+        result += ' ';
+      }
+      result += textValue;
+    } else if (part.type === ContentTypes.THINK && !skipReasoning) {
+      const textValue = typeof part.think === 'string' ? part.think : '';
       if (
         result.length > 0 &&
         textValue.length > 0 &&
@@ -404,4 +422,29 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
     }
   }
   return lastIndex;
+}
+
+export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+  let result = text;
+  if (!result) {
+    return result;
+  }
+
+  // e.g., "2024-04-29 (1)" (1=Monday)
+  const currentDate = dayjs().format('YYYY-MM-DD');
+  const dayNumber = dayjs().day();
+  const combinedDate = `${currentDate} (${dayNumber})`;
+  result = result.replace(/{{current_date}}/gi, combinedDate);
+
+  const currentDatetime = dayjs().format('YYYY-MM-DD HH:mm:ss');
+  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+
+  const isoDatetime = dayjs().toISOString();
+  result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
+
+  if (user && user.name) {
+    result = result.replace(/{{current_user}}/gi, user.name);
+  }
+
+  return result;
 }

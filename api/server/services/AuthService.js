@@ -35,13 +35,14 @@ const genericVerificationMessage = 'Please check your email to verify your email
 /**
  * Logout user
  *
- * @param {String} userId
- * @param {*} refreshToken
+ * @param {ServerRequest} req
+ * @param {string} refreshToken
  * @returns
  */
-const logoutUser = async (userId, refreshToken) => {
+const logoutUser = async (req, refreshToken) => {
   try {
-    const session = await findSession({ userId: userId, refreshToken: refreshToken });
+    const userId = req.user._id;
+    const session = await findSession({ userId: userId, refreshToken });
 
     if (session) {
       try {
@@ -50,6 +51,12 @@ const logoutUser = async (userId, refreshToken) => {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
       }
+    }
+
+    try {
+      req.session.destroy();
+    } catch (destroyErr) {
+      logger.error('[logoutUser] Failed to destroy session.', destroyErr);
     }
 
     return { status: 200, message: 'Logout successful' };
@@ -84,7 +91,7 @@ const sendVerificationEmail = async (user) => {
     subject: 'Verify your email',
     payload: {
       appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name,
+      name: user.name || user.username || user.email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
     },
@@ -108,31 +115,46 @@ const sendVerificationEmail = async (user) => {
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
-  let emailVerificationData = await findToken({ email: decodeURIComponent(email) });
+  const decodedEmail = decodeURIComponent(email);
+
+  const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
+
+  if (!user) {
+    logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
+    return new Error('User not found');
+  }
+
+  if (user.emailVerified) {
+    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    return { message: 'Email already verified', status: 'success' };
+  }
+
+  let emailVerificationData = await findToken({ email: decodedEmail });
 
   if (!emailVerificationData) {
-    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${email}]`);
+    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
     return new Error('Invalid or expired password reset token');
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
 
   if (!isValid) {
-    logger.warn(`[verifyEmail] [Invalid or expired email verification token] [Email: ${email}]`);
+    logger.warn(
+      `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
+    );
     return new Error('Invalid or expired email verification token');
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
   if (!updatedUser) {
-    logger.warn(`[verifyEmail] [User not found] [Email: ${email}]`);
-    return new Error('User not found');
+    logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
+    return new Error('Failed to update user verification status');
   }
 
   await deleteTokens({ token: emailVerificationData.token });
-  logger.info(`[verifyEmail] Email verification successful. [Email: ${email}]`);
-  return { message: 'Email verification was successful' };
+  logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
+  return { message: 'Email verification was successful', status: 'success' };
 };
-
 /**
  * Register a new user.
  * @param {MongoUser} user <email, password, name, username>
@@ -256,7 +278,7 @@ const requestPasswordReset = async (req) => {
       subject: 'Password Reset Request',
       payload: {
         appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name,
+        name: user.name || user.username || user.email,
         link: link,
         year: new Date().getFullYear(),
       },
@@ -309,7 +331,7 @@ const resetPassword = async (userId, token, password) => {
       subject: 'Password Reset Successfully',
       payload: {
         appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name,
+        name: user.name || user.username || user.email,
         year: new Date().getFullYear(),
       },
       template: 'passwordReset.handlebars',
@@ -392,7 +414,7 @@ const resendVerificationEmail = async (req) => {
       subject: 'Verify your email',
       payload: {
         appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name,
+        name: user.name || user.username || user.email,
         verificationLink: verificationLink,
         year: new Date().getFullYear(),
       },

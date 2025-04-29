@@ -1,9 +1,7 @@
 const express = require('express');
-const throttle = require('lodash/throttle');
-const { getResponseSender, CacheKeys, Time } = require('librechat-data-provider');
+const { getResponseSender } = require('librechat-data-provider');
 const {
   setHeaders,
-  handleAbort,
   moderateText,
   validateModel,
   handleAbortError,
@@ -14,14 +12,12 @@ const {
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { saveMessage, updateMessage } = require('~/models');
-const { getLogStores } = require('~/cache');
 const { validateTools } = require('~/app');
 const { logger } = require('~/config');
 
 const router = express.Router();
 
 router.use(moderateText);
-router.post('/abort', handleAbort());
 
 router.post(
   '/',
@@ -80,26 +76,16 @@ router.post(
       }
     };
 
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    const throttledCacheSet = throttle(
-      (text) => {
-        messageCache.set(responseMessageId, text, Time.FIVE_MINUTES);
-      },
-      3000,
-      { trailing: false },
-    );
-
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
       getPartialText,
     } = createOnProgress({
       generation,
-      onProgress: ({ text: partialText }) => {
+      onProgress: () => {
         if (plugin.loading === true) {
           plugin.loading = false;
         }
-        throttledCacheSet(partialText);
       },
     });
 
@@ -185,7 +171,8 @@ router.post(
 
       logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
 
-      const { conversation = {} } = await client.responsePromise;
+      const { conversation = {} } = await response.databasePromise;
+      delete response.databasePromise;
       conversation.title =
         conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 

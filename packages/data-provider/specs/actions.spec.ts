@@ -21,6 +21,7 @@ import type { ParametersSchema } from '../src/actions';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+mockedAxios.create.mockReturnValue(mockedAxios);
 
 describe('FunctionSignature', () => {
   it('creates a function signature and converts to JSON tool', () => {
@@ -205,6 +206,244 @@ describe('ActionRequest', () => {
         },
       });
     });
+
+    it('handles GET requests with header and query parameters', async () => {
+      mockedAxios.get.mockResolvedValue({ data: { success: true } });
+
+      const data: Record<string, unknown> = {
+        'api-version': '2025-01-01',
+        'some-header': 'header-var',
+      };
+
+      const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
+        'api-version': 'query',
+        'some-header': 'header',
+      };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/get',
+        'GET',
+        'testGET',
+        false,
+        '',
+        loc,
+      );
+      const executer = actionRequest.setParams(data);
+      const response = await executer.execute();
+      expect(mockedAxios.get).toHaveBeenCalled();
+
+      const [url, config] = mockedAxios.get.mock.calls[0];
+      expect(url).toBe('https://example.com/get');
+      expect(config?.headers).toEqual({
+        'some-header': 'header-var',
+      });
+      expect(config?.params).toEqual({
+        'api-version': '2025-01-01',
+      });
+      expect(response.data.success).toBe(true);
+    });
+
+    it('handles GET requests with header and path parameters', async () => {
+      mockedAxios.get.mockResolvedValue({ data: { success: true } });
+
+      const data: Record<string, unknown> = {
+        'user-id': '1',
+        'some-header': 'header-var',
+      };
+
+      const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
+        'user-id': 'path',
+        'some-header': 'header',
+      };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/getwithpath/{user-id}',
+        'GET',
+        'testGETwithpath',
+        false,
+        '',
+        loc,
+      );
+      const executer = actionRequest.setParams(data);
+      const response = await executer.execute();
+      expect(mockedAxios.get).toHaveBeenCalled();
+
+      const [url, config] = mockedAxios.get.mock.calls[0];
+      expect(url).toBe('https://example.com/getwithpath/1');
+      expect(config?.headers).toEqual({
+        'some-header': 'header-var',
+      });
+      expect(config?.params).toEqual({
+      });
+      expect(response.data.success).toBe(true);
+    });
+
+    it('handles POST requests with body, header and query parameters', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { success: true } });
+
+      const data: Record<string, unknown> = {
+        'api-version': '2025-01-01',
+        'message': 'a body parameter',
+        'some-header': 'header-var',
+      };
+
+      const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
+        'api-version': 'query',
+        'message': 'body',
+        'some-header': 'header',
+      };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/post',
+        'POST',
+        'testPost',
+        false,
+        'application/json',
+        loc,
+      );
+      const executer = actionRequest.setParams(data);
+      const response = await executer.execute();
+      expect(mockedAxios.post).toHaveBeenCalled();
+
+      const [url, body, config] = mockedAxios.post.mock.calls[0];
+      expect(url).toBe('https://example.com/post');
+      expect(body).toEqual({ message: 'a body parameter' });
+      expect(config?.headers).toEqual({
+        'some-header': 'header-var',
+        'Content-Type': 'application/json',
+      });
+      expect(config?.params).toEqual({
+        'api-version': '2025-01-01',
+      });
+      expect(response.data.success).toBe(true);
+    });
+
+    it('handles PUT requests with body, header and query parameters', async () => {
+      mockedAxios.put.mockResolvedValue({ data: { success: true } });
+
+      const data: Record<string, unknown> = {
+        'api-version': '2025-01-01',
+        'message': 'a body parameter',
+        'some-header': 'header-var',
+      };
+
+      const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
+        'api-version': 'query',
+        'message': 'body',
+        'some-header': 'header',
+      };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/put',
+        'PUT',
+        'testPut',
+        false,
+        'application/json',
+        loc,
+      );
+      const executer = actionRequest.setParams(data);
+      const response = await executer.execute();
+      expect(mockedAxios.put).toHaveBeenCalled();
+
+      const [url, body, config] = mockedAxios.put.mock.calls[0];
+      expect(url).toBe('https://example.com/put');
+      expect(body).toEqual({ message: 'a body parameter' });
+      expect(config?.headers).toEqual({
+        'some-header': 'header-var',
+        'Content-Type': 'application/json',
+      });
+      expect(config?.params).toEqual({
+        'api-version': '2025-01-01',
+      });
+      expect(response.data.success).toBe(true);
+    });
+
+    it('handles PATCH requests with body, header and query parameters', async () => {
+      mockedAxios.patch.mockResolvedValue({ data: { success: true } });
+
+      const data: Record<string, unknown> = {
+        'api-version': '2025-01-01',
+        'message': 'a body parameter',
+        'some-header': 'header-var',
+      };
+
+      const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
+        'api-version': 'query',
+        'message': 'body',
+        'some-header': 'header',
+      };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/patch',
+        'PATCH',
+        'testPatch',
+        false,
+        'application/json',
+        loc,
+      );
+      const executer = actionRequest.setParams(data);
+      const response = await executer.execute();
+      expect(mockedAxios.patch).toHaveBeenCalled();
+
+      const [url, body, config] = mockedAxios.patch.mock.calls[0];
+      expect(url).toBe('https://example.com/patch');
+      expect(body).toEqual({ message: 'a body parameter' });
+      expect(config?.headers).toEqual({
+        'some-header': 'header-var',
+        'Content-Type': 'application/json',
+      });
+      expect(config?.params).toEqual({
+        'api-version': '2025-01-01',
+      });
+      expect(response.data.success).toBe(true);
+    });
+
+    it('handles DELETE requests with body, header and query parameters', async () => {
+      mockedAxios.delete.mockResolvedValue({ data: { success: true } });
+
+      const data: Record<string, unknown> = {
+        'api-version': '2025-01-01',
+        'message-id': '1',
+        'some-header': 'header-var',
+      };
+
+      const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
+        'api-version': 'query',
+        'message-id': 'body',
+        'some-header': 'header',
+      };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/delete',
+        'DELETE',
+        'testDelete',
+        false,
+        'application/json',
+        loc,
+      );
+      const executer = actionRequest.setParams(data);
+      const response = await executer.execute();
+      expect(mockedAxios.delete).toHaveBeenCalled();
+
+      const [url, config] = mockedAxios.delete.mock.calls[0];
+      expect(url).toBe('https://example.com/delete');
+      expect(config?.data).toEqual({ 'message-id': '1' });
+      expect(config?.headers).toEqual({
+        'some-header': 'header-var',
+        'Content-Type': 'application/json',
+      });
+      expect(config?.params).toEqual({
+        'api-version': '2025-01-01',
+      });
+      expect(response.data.success).toBe(true);
+    });
+
   });
 
   it('throws an error for unsupported HTTP method', async () => {
@@ -584,18 +823,96 @@ describe('resolveRef', () => {
       openapiSpec.paths['/ai.chatgpt.render-flowchart']?.post
         ?.requestBody as OpenAPIV3.RequestBodyObject
     ).content['application/json'].schema;
-    expect(flowchartRequestRef).toBeDefined();
-    const resolvedFlowchartRequest = resolveRef(
-      flowchartRequestRef as OpenAPIV3.RequestBodyObject,
-      openapiSpec.components,
-    );
 
-    expect(resolvedFlowchartRequest).toBeDefined();
-    expect(resolvedFlowchartRequest.type).toBe('object');
-    const properties = resolvedFlowchartRequest.properties as FlowchartSchema;
-    expect(properties).toBeDefined();
+    expect(flowchartRequestRef).toBeDefined();
+
+    const resolvedSchemaObject = resolveRef(
+      flowchartRequestRef as OpenAPIV3.ReferenceObject,
+      openapiSpec.components,
+    ) as OpenAPIV3.SchemaObject;
+
+    expect(resolvedSchemaObject).toBeDefined();
+    expect(resolvedSchemaObject.type).toBe('object');
+    expect(resolvedSchemaObject.properties).toBeDefined();
+
+    const properties = resolvedSchemaObject.properties as FlowchartSchema;
     expect(properties.mermaid).toBeDefined();
     expect(properties.mermaid.type).toBe('string');
+  });
+});
+
+describe('resolveRef general cases', () => {
+  const spec = {
+    openapi: '3.0.0',
+    info: { title: 'TestSpec', version: '1.0.0' },
+    paths: {},
+    components: {
+      schemas: {
+        TestSchema: { type: 'string' },
+      },
+      parameters: {
+        TestParam: {
+          name: 'myParam',
+          in: 'query',
+          required: false,
+          schema: { $ref: '#/components/schemas/TestSchema' },
+        },
+      },
+      requestBodies: {
+        TestRequestBody: {
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TestSchema' },
+            },
+          },
+        },
+      },
+    },
+  } satisfies OpenAPIV3.Document;
+
+  it('resolves schema refs correctly', () => {
+    const schemaRef: OpenAPIV3.ReferenceObject = { $ref: '#/components/schemas/TestSchema' };
+    const resolvedSchema = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject>(
+      schemaRef,
+      spec.components,
+    );
+    expect(resolvedSchema.type).toEqual('string');
+  });
+
+  it('resolves parameter refs correctly, then schema within parameter', () => {
+    const paramRef: OpenAPIV3.ReferenceObject = { $ref: '#/components/parameters/TestParam' };
+    const resolvedParam = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.ParameterObject>(
+      paramRef,
+      spec.components,
+    );
+    expect(resolvedParam.name).toEqual('myParam');
+    expect(resolvedParam.in).toEqual('query');
+    expect(resolvedParam.required).toBe(false);
+
+    const paramSchema = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject>(
+      resolvedParam.schema as OpenAPIV3.ReferenceObject,
+      spec.components,
+    );
+    expect(paramSchema.type).toEqual('string');
+  });
+
+  it('resolves requestBody refs correctly, then schema within requestBody', () => {
+    const requestBodyRef: OpenAPIV3.ReferenceObject = {
+      $ref: '#/components/requestBodies/TestRequestBody',
+    };
+    const resolvedRequestBody = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.RequestBodyObject>(
+      requestBodyRef,
+      spec.components,
+    );
+
+    expect(resolvedRequestBody.content['application/json']).toBeDefined();
+
+    const schemaInRequestBody = resolveRef<OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject>(
+      resolvedRequestBody.content['application/json'].schema as OpenAPIV3.ReferenceObject,
+      spec.components,
+    );
+
+    expect(schemaInRequestBody.type).toEqual('string');
   });
 });
 
@@ -1092,6 +1409,45 @@ describe('createURL', () => {
         const invalidData = { id: 1 }; // should be string
         expect(() => GetPersonByIdSchema?.parse(invalidData)).toThrow();
       });
+    });
+  });
+
+  describe('openapiToFunction parameter refs resolution', () => {
+    const weatherSpec = {
+      openapi: '3.0.0',
+      info: { title: 'Weather', version: '1.0.0' },
+      servers: [{ url: 'https://api.weather.gov' }],
+      paths: {
+        '/points/{point}': {
+          get: {
+            operationId: 'getPoint',
+            parameters: [{ $ref: '#/components/parameters/PathPoint' }],
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+      },
+      components: {
+        parameters: {
+          PathPoint: {
+            name: 'point',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^(-?\\d+(?:\\.\\d+)?),(-?\\d+(?:\\.\\d+)?)$' },
+          },
+        },
+      },
+    } satisfies OpenAPIV3.Document;
+
+    it('correctly resolves $ref for parameters', () => {
+      const { functionSignatures } = openapiToFunction(weatherSpec, true);
+      const func = functionSignatures.find((sig) => sig.name === 'getPoint');
+      expect(func).toBeDefined();
+      expect(func?.parameters.properties).toHaveProperty('point');
+      expect(func?.parameters.required).toContain('point');
+
+      const paramSchema = func?.parameters.properties['point'] as OpenAPIV3.SchemaObject;
+      expect(paramSchema.type).toEqual('string');
+      expect(paramSchema.pattern).toEqual('^(-?\\d+(?:\\.\\d+)?),(-?\\d+(?:\\.\\d+)?)$');
     });
   });
 });

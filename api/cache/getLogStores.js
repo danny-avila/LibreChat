@@ -1,11 +1,11 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
 const { math, isEnabled } = require('~/server/utils');
 const keyvRedis = require('./keyvRedis');
 const keyvMongo = require('./keyvMongo');
 
-const { BAN_DURATION, USE_REDIS, DEBUG_MEMORY_CACHE } = process.env ?? {};
+const { BAN_DURATION, USE_REDIS, DEBUG_MEMORY_CACHE, CI } = process.env ?? {};
 
 const duration = math(BAN_DURATION, 7200000);
 const isRedisEnabled = isEnabled(USE_REDIS);
@@ -19,7 +19,7 @@ const createViolationInstance = (namespace) => {
 // Serve cache from memory so no need to clear it on startup/exit
 const pending_req = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'pending_req' });
+  : new Keyv({ namespace: CacheKeys.PENDING_REQ });
 
 const config = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
@@ -37,6 +37,10 @@ const messages = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.ONE_MINUTE })
   : new Keyv({ namespace: CacheKeys.MESSAGES, ttl: Time.ONE_MINUTE });
 
+const flows = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
+  : new Keyv({ namespace: CacheKeys.FLOWS, ttl: Time.ONE_MINUTE * 3 });
+
 const tokenConfig = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
   : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: Time.THIRTY_MINUTES });
@@ -44,6 +48,10 @@ const tokenConfig = isRedisEnabled
 const genTitle = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
   : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: Time.TWO_MINUTES });
+
+const s3ExpiryInterval = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.S3_EXPIRY_INTERVAL, ttl: Time.THIRTY_MINUTES });
 
 const modelQueries = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
@@ -56,7 +64,7 @@ const abortKeys = isRedisEnabled
 const namespaces = {
   [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
-  pending_req,
+  [CacheKeys.PENDING_REQ]: pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({
     store: keyvMongo,
@@ -85,9 +93,11 @@ const namespaces = {
   [CacheKeys.ABORT_KEYS]: abortKeys,
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,
   [CacheKeys.GEN_TITLE]: genTitle,
+  [CacheKeys.S3_EXPIRY_INTERVAL]: s3ExpiryInterval,
   [CacheKeys.MODEL_QUERIES]: modelQueries,
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,
+  [CacheKeys.FLOWS]: flows,
 };
 
 /**
@@ -95,10 +105,8 @@ const namespaces = {
  * @returns {Keyv[]}
  */
 function getTTLStores() {
-  return Object.values(namespaces).filter((store) =>
-    store instanceof Keyv &&
-    typeof store.opts?.ttl === 'number' &&
-    store.opts.ttl > 0,
+  return Object.values(namespaces).filter(
+    (store) => store instanceof Keyv && typeof store.opts?.ttl === 'number' && store.opts.ttl > 0,
   );
 }
 
@@ -125,23 +133,28 @@ async function clearExpiredFromCache(cache) {
   for (const key of keys) {
     try {
       const raw = cache.opts.store.get(key);
-      if (!raw) {continue;}
+      if (!raw) {
+        continue;
+      }
 
       const data = cache.opts.deserialize(raw);
       // Check if the entry is older than TTL
       if (data?.expires && data.expires <= expiryTime) {
         const deleted = await cache.opts.store.delete(key);
         if (!deleted) {
-          debugMemoryCache && console.warn(`[Cache] Error deleting entry: ${key} from ${cache.opts.namespace}`);
+          debugMemoryCache &&
+            console.warn(`[Cache] Error deleting entry: ${key} from ${cache.opts.namespace}`);
           continue;
         }
         cleared++;
       }
     } catch (error) {
-      debugMemoryCache && console.log(`[Cache] Error processing entry from ${cache.opts.namespace}:`, error);
+      debugMemoryCache &&
+        console.log(`[Cache] Error processing entry from ${cache.opts.namespace}:`, error);
       const deleted = await cache.opts.store.delete(key);
       if (!deleted) {
-        debugMemoryCache && console.warn(`[Cache] Error deleting entry: ${key} from ${cache.opts.namespace}`);
+        debugMemoryCache &&
+          console.warn(`[Cache] Error deleting entry: ${key} from ${cache.opts.namespace}`);
         continue;
       }
       cleared++;
@@ -149,7 +162,10 @@ async function clearExpiredFromCache(cache) {
   }
 
   if (cleared > 0) {
-    debugMemoryCache && console.log(`[Cache] Cleared ${cleared} entries older than ${ttl}ms from ${cache.opts.namespace}`);
+    debugMemoryCache &&
+      console.log(
+        `[Cache] Cleared ${cleared} entries older than ${ttl}ms from ${cache.opts.namespace}`,
+      );
   }
 }
 
@@ -157,7 +173,7 @@ const auditCache = () => {
   const ttlStores = getTTLStores();
   console.log('[Cache] Starting audit');
 
-  ttlStores.forEach(store => {
+  ttlStores.forEach((store) => {
     if (!store?.opts?.store?.entries) {
       return;
     }
@@ -166,21 +182,20 @@ const auditCache = () => {
       count: store.opts.store.size,
       ttl: store.opts.ttl,
       keys: Array.from(store.opts.store.keys()),
-      entriesWithTimestamps: Array.from(store.opts.store.entries())
-        .map(([key, value]) => ({
-          key,
-          value,
-        })),
+      entriesWithTimestamps: Array.from(store.opts.store.entries()).map(([key, value]) => ({
+        key,
+        value,
+      })),
     });
   });
 };
 
 /**
-   * Clears expired entries from all TTL-enabled stores
-   */
+ * Clears expired entries from all TTL-enabled stores
+ */
 async function clearAllExpiredFromCache() {
   const ttlStores = getTTLStores();
-  await Promise.all(ttlStores.map(store => clearExpiredFromCache(store)));
+  await Promise.all(ttlStores.map((store) => clearExpiredFromCache(store)));
 
   // Force garbage collection if available (Node.js with --expose-gc flag)
   if (global.gc) {
@@ -188,7 +203,7 @@ async function clearAllExpiredFromCache() {
   }
 }
 
-if (!isRedisEnabled) {
+if (!isRedisEnabled && !isEnabled(CI)) {
   /** @type {Set<NodeJS.Timeout>} */
   const cleanupIntervals = new Set();
 
@@ -221,7 +236,7 @@ if (!isRedisEnabled) {
 
   const dispose = () => {
     debugMemoryCache && console.log('[Cache] Cleaning up and shutting down...');
-    cleanupIntervals.forEach(interval => clearInterval(interval));
+    cleanupIntervals.forEach((interval) => clearInterval(interval));
     cleanupIntervals.clear();
 
     // One final cleanup before exit

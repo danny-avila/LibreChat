@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const { KeyvFile } = require('keyv-file');
 const { logger } = require('~/config');
 
@@ -35,8 +35,6 @@ const addToCache = async ({ endpoint, endpointOption, userMessage, responseMessa
     const roles = (options) => {
       if (endpoint === 'openAI') {
         return options?.chatGptLabel || 'ChatGPT';
-      } else if (endpoint === 'bingAI') {
-        return options?.jailbreak ? 'Sydney' : 'BingAI';
       }
     };
 

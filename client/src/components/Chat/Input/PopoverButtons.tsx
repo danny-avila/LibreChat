@@ -44,8 +44,8 @@ export default function PopoverButtons({
   const endpoint = overrideEndpoint ?? endpointType ?? _endpoint ?? '';
   const model = overrideModel ?? _model;
 
-  const isGenerativeModel = model?.toLowerCase()?.includes('gemini') ?? false;
-  const isChatModel = (!isGenerativeModel && model?.toLowerCase()?.includes('chat')) ?? false;
+  const isGenerativeModel = model?.toLowerCase().includes('gemini') ?? false;
+  const isChatModel = (!isGenerativeModel && model?.toLowerCase().includes('chat')) ?? false;
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
 
   const { showExamples } = optionSettings;
