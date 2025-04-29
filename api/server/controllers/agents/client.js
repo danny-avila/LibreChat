@@ -673,7 +673,7 @@ class AgentClient extends BaseClient {
         this.indexTokenCountMap,
         toolSet,
       );
-      if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
+      if (legacyContentEndpoints.has(this.options.agent.endpoint?.toLowerCase())) {
         initialMessages = formatContentStrings(initialMessages);
       }
 
