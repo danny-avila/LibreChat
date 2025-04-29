@@ -105,6 +105,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             isEditing ? (
               <TextareaAutosize
                 {...field}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 className="w-full resize-none overflow-y-auto rounded bg-transparent text-sm text-text-primary focus:outline-none sm:text-base"
                 minRows={3}
@@ -123,8 +124,8 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                 style={{ minHeight: '4.5em', maxHeight: '21em', overflow: 'auto' }}
               >
                 <ReactMarkdown
-                  /** @ts-ignore */
                   remarkPlugins={[
+                    /** @ts-ignore */
                     supersub,
                     remarkGfm,
                     [remarkMath, { singleDollarTextMath: true }],
