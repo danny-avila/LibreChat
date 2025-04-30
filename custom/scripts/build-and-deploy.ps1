@@ -107,18 +107,9 @@ if ($Secrets.Count -gt 0) {
     
     foreach ($key in $Secrets.Keys) {
         $value = $Secrets[$key]
-        
-        if (-not (Test-IsBase64 $value)) {
-            $encodedValue = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($value))
-        }
-        else {
-            $encodedValue = $value
-            Write-Host "Value for $key is already Base64 encoded" -ForegroundColor Yellow
-        }
-        
+        $encodedValue = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($value))
         $secretYaml += "  $key`: $encodedValue`n"
     }
-    
     $secretYaml | kubectl apply -f -
     Write-Host "Created '$appSecretName' with $($Secrets.Count) values" -ForegroundColor Green
 }
