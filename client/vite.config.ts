@@ -10,7 +10,7 @@ import type { Plugin } from 'vite';
 export default defineConfig({
   server: {
     host: 'localhost',
-    port: 3090,
+    port: 3000,
     strictPort: false,
     proxy: {
       '/api': {

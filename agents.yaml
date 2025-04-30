@@ -1,0 +1,18 @@
+version: 1.0.0
+
+default:
+  capabilities:
+    - execute_code
+    - file_search
+    - tools
+    - actions
+    - chain
+    - ocr
+  recursionLimit: 50
+  executionMode: tools
+  model: gpt-4o
+  tools:
+    - image_gen_oai
+    - image_edit_oai
+    - dalle
+    - google_search
