@@ -3,7 +3,9 @@
 All notable changes to this project will be documented in this file.
 
 
-## [Unreleased]
+## [v0.7.8-rc1] - 
+
+Changes from v0.7.7 to v0.7.8-rc1.
 
 ### ✨ New Features
 
@@ -136,7 +138,12 @@ All notable changes to this project will be documented in this file.
 - 🧭 refactor: Modernize Nav/Header by **@danny-avila** in [#7094](https://github.com/danny-avila/LibreChat/pull/7094)
 - 🪶 refactor: Chat Input Focus for Conversation Navigations & ChatForm Optimizations by **@danny-avila** in [#7100](https://github.com/danny-avila/LibreChat/pull/7100)
 - 🔃 refactor: Streamline Navigation, Message Loading UX by **@danny-avila** in [#7118](https://github.com/danny-avila/LibreChat/pull/7118)
+- 📜 docs: Unreleased changelog by **@github-actions[bot]** in [#6265](https://github.com/danny-avila/LibreChat/pull/6265)
 
 
+
+[See full release details][release-v0.7.8-rc1]
+
+[release-v0.7.8-rc1]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.8-rc1
 
 ---
