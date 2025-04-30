@@ -1,0 +1,80 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: LibreChat-API
+    ports:
+      - 3080:3080
+    depends_on:
+      - mongodb
+      - rag_api
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+      - ./images:/app/client/public/images
+      - ./LibreChat/uploads:/app/uploads
+      - ./LibreChat/logs:/app/api/logs
+
+  mongodb:
+    container_name: chat-mongodb
+    ports:
+      - 27017:27017
+    image: mongo
+    restart: always
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.12.3
+    restart: always
+    # ports: # Uncomment this to access meilisearch from outside docker
+    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
+    env_file:
+      - .env
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - ./meili_data_v1.12:/meili_data
+
+  vectordb:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    restart: always
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+
+  rag_api:
+    # You might need to create a Dockerfile for RAG API
+    # or use a different build configuration
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    restart: always
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+
+volumes:
+  pgdata2:

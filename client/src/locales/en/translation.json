@@ -45,6 +45,8 @@
   "com_buy_now": "Buy Now",
   "com_subscription_terms": "By subscribing, you agree to our Terms of Service and Privacy Policy.",
 
+  "com_ui_processing": "Processing...",
+
   "chat_direction_left_to_right": "something needs to go here. was empty",
   "chat_direction_right_to_left": "something needs to go here. was empty",
   "com_a11y_ai_composing": "The AI is still composing.",

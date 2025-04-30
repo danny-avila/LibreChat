@@ -281,3 +281,4 @@ export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
 // Omnexio Endpoints
 export const omnexio = () => '/api/omnexio';
 export const omnexioBalance = () => `${omnexio()}/balance`;
+export const omnexioSubscriptions = () => `${omnexio()}/subscriptions`;

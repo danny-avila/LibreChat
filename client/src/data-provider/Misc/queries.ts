@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import { useQuery } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import type { QueryObserverResult, UseQueryOptions, UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import store from '~/store';
 
@@ -54,4 +54,39 @@ export const useGetOmnexioUserBalance = (
     ...config,
     enabled: true,
   });
+};
+
+// Define interface for subscription ID parameter
+interface CreateOmnexioSubscriptionParams {
+  subscriptionId: number;
+}
+
+// Define response type for subscription creation
+interface CreateOmnexioSubscriptionResponse {
+  paymentUrl: string;
+}
+
+// Add the new mutation for creating a subscription
+export const useCreateOmnexioSubscription = (): UseMutationResult<
+  CreateOmnexioSubscriptionResponse, // response type
+  unknown, // error type
+  CreateOmnexioSubscriptionParams, // variables type
+  unknown // context type
+> => {
+  return useMutation(
+    (params: CreateOmnexioSubscriptionParams) => dataService.createOmnexioSubscription(params.subscriptionId),
+    {
+      onSuccess: (data) => {
+        // Redirect to the payment URL
+        if (data) {
+          window.location.href = data;
+        } else {
+          console.error('No payment URL received from the server');
+        }
+      },
+      onError: (error) => {
+        console.error('Error creating subscription:', error);
+      },
+    }
+  );
 };

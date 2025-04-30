@@ -1,5 +1,5 @@
-import React from 'react';
-import { CheckIcon } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckIcon, Loader2 } from 'lucide-react';
 import {
   OGDialog,
   OGDialogContent,
@@ -8,8 +8,10 @@ import {
   Button,
 } from '~/components/ui';
 import { useLocalize } from '~/hooks';
+import { useCreateOmnexioSubscription } from '~/data-provider';
 
 interface SubscriptionPlan {
+  id: number;
   name: string;
   price: string;
   features: string[];
@@ -25,9 +27,12 @@ interface SubscriptionModalProps {
 
 const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChange }) => {
   const localize = useLocalize();
+  const [processingId, setProcessingId] = useState<number | null>(null);
+  const createSubscription = useCreateOmnexioSubscription();
 
   const subscriptionPlans: SubscriptionPlan[] = [
     {
+      id: 1,
       name: localize('com_subscription_free'),
       price: localize('com_subscription_free_price'),
       features: [
@@ -39,10 +44,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       buttonText: localize('com_subscription_current_plan'),
       onClick: () => {
         console.log('Free plan selected');
-        onOpenChange(false);
+        setProcessingId(1);
+        createSubscription.mutate({ subscriptionId: 1 }, {
+          onSettled: () => setProcessingId(null),
+        });
       },
     },
     {
+      id: 2,
       name: 'Starter',
       price: '$4.95/month',
       features: [
@@ -54,10 +63,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       buttonText: localize('com_subscription_upgrade'),
       onClick: () => {
         console.log('Starter plan selected');
-        onOpenChange(false);
+        setProcessingId(2);
+        createSubscription.mutate({ subscriptionId: 2 }, {
+          onSettled: () => setProcessingId(null),
+        });
       },
     },
     {
+      id: 3,
       name: 'Plus',
       price: localize('com_subscription_basic_price'),
       features: [
@@ -69,10 +82,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       buttonText: localize('com_subscription_upgrade'),
       onClick: () => {
         console.log('Basic plan selected');
-        onOpenChange(false);
+        setProcessingId(3);
+        createSubscription.mutate({ subscriptionId: 3 }, {
+          onSettled: () => setProcessingId(null),
+        });
       },
     },
     {
+      id: 4,
       name: 'Premium',
       price: localize('com_subscription_standard_price'),
       features: [
@@ -85,10 +102,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       recommended: true,
       onClick: () => {
         console.log('Standard plan selected');
-        onOpenChange(false);
+        setProcessingId(4);
+        createSubscription.mutate({ subscriptionId: 4 }, {
+          onSettled: () => setProcessingId(null),
+        });
       },
     },
     {
+      id: 5,
       name: 'Pro',
       price: localize('com_subscription_pro_price'),
       features: [
@@ -100,10 +121,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       buttonText: localize('com_subscription_upgrade'),
       onClick: () => {
         console.log('Pro plan selected');
-        onOpenChange(false);
+        setProcessingId(5);
+        createSubscription.mutate({ subscriptionId: 5 }, {
+          onSettled: () => setProcessingId(null),
+        });
       },
     },
     {
+      id: 6,
       name: 'Enterprise',
       price: localize('com_subscription_enterprise_price'),
       features: [
@@ -115,7 +140,10 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
       buttonText: localize('com_subscription_upgrade'),
       onClick: () => {
         console.log('Enterprise plan selected');
-        onOpenChange(false);
+        setProcessingId(6);
+        createSubscription.mutate({ subscriptionId: 6 }, {
+          onSettled: () => setProcessingId(null),
+        });
       },
     },
   ];
@@ -135,7 +163,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
               {subscriptionPlans.map((plan) => (
                 <div
-                  key={plan.name}
+                  key={plan.id}
                   className={`relative flex flex-col rounded-xl border p-4 shadow-sm transition-all duration-200 hover:shadow-md ${
                     plan.recommended
                       ? 'border-primary bg-primary/5 dark:border-primary/70'
@@ -164,9 +192,17 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
                         : 'bg-surface-secondary text-text-primary hover:bg-surface-hover'
                     }`}
                     onClick={plan.onClick}
+                    disabled={processingId !== null}
                     size="sm"
                   >
-                    {plan.buttonText}
+                    {processingId === plan.id ? (
+                      <div className="flex items-center justify-center">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {localize('com_ui_processing')}
+                      </div>
+                    ) : (
+                      plan.buttonText
+                    )}
                   </Button>
                 </div>
               ))}
