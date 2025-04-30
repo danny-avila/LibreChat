@@ -1,4 +1,4 @@
-name: _TS Build and Deploy
+name: Build and Deploy - Totalsoft Local
 
 on:
   workflow_dispatch:
