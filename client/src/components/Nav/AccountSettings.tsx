@@ -91,7 +91,7 @@ function AccountSettings() {
         {omnexioBalanceQuery.data != null && !isNaN(parseFloat(omnexioBalanceQuery.data)) && (
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-              {localize('com_nav_balance')}: {parseFloat(omnexioBalanceQuery.data).toFixed(2)} credits
+              {localize('com_nav_balance')}: {parseInt(omnexioBalanceQuery.data,10)} credits
             </div>
             <DropdownMenuSeparator />
           </>
