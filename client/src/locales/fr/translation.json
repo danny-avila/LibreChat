@@ -682,7 +682,6 @@
   "com_ui_simple": "Simple",
   "com_ui_size": "Taille",
   "com_ui_special_variables": "Variables spéciales : Utilisez {{current_date}} pour la date actuelle, et {{current_user}} pour le nom de votre compte donné.",
-  "com_ui_special_variables_info": "Utilisez `{{current_date}}` pour la date actuelle et `{{current_user}}` pour votre nom de compte.",
   "com_ui_speech_while_submitting": "Impossible de soumettre un message vocal pendant la génération d'une réponse",
   "com_ui_stop": "Arrêt ",
   "com_ui_storage": "Stockage",

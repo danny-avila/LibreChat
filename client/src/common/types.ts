@@ -306,11 +306,14 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
-  isResubmission?: boolean;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
+  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
+  isResubmission?: boolean;
+  /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
+  overrideFiles?: t.TMessage['files'];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -505,7 +508,10 @@ export interface ModelItemProps {
   className?: string;
 }
 
-export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
+export type ContextType = {
+  navVisible: boolean;
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+};
 
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;

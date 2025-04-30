@@ -674,7 +674,6 @@
   "com_ui_simple": "간단",
   "com_ui_size": "크기",
   "com_ui_special_variables": "특수 변수:",
-  "com_ui_special_variables_info": "현재 날짜는 `{{current_date}}`, 계정 이름은 `{{current_user}}`로 표시됩니다.",
   "com_ui_speech_while_submitting": "응답 생성 중에는 음성을 전송할 수 없습니다",
   "com_ui_stop": "중지",
   "com_ui_storage": "저장소",

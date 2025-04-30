@@ -760,7 +760,6 @@
   "com_ui_simple": "เรียบง่าย",
   "com_ui_size": "ขนาด",
   "com_ui_special_variables": "ตัวแปรพิเศษ:",
-  "com_ui_special_variables_info": "ใช้ {{current_date}} สำหรับวันที่ปัจจุบัน และ {{current_user}} สำหรับชื่อบัญชีของคุณ",
   "com_ui_speech_while_submitting": "ไม่สามารถส่งเสียงพูดขณะกำลังสร้างคำตอบ",
   "com_ui_stop": "หยุด",
   "com_ui_storage": "ที่เก็บข้อมูล",

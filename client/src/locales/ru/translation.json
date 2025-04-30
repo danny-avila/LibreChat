@@ -788,7 +788,6 @@
   "com_ui_simple": "Простой",
   "com_ui_size": "Размер",
   "com_ui_special_variables": "Специальные переменные:",
-  "com_ui_special_variables_info": "Используйте `{{current_date}}` для отображения текущей даты и `{{current_user}}` для отображения имени вашей учетной записи.",
   "com_ui_speech_while_submitting": "Невозможно отправить голосовой ввод во время генерации ответа",
   "com_ui_stop": "Остановить генерацию",
   "com_ui_storage": "Хранилище",
