@@ -79,9 +79,10 @@ export default function useArtifacts() {
     lastContentRef.current = latestArtifact?.content ?? null;
 
     const latestMessageText = getLatestText(latestMessage);
-    const hasEnclosedArtifact = /:::artifact(?:\{[^}]*\})?\s*\n(?:```[\s\S]*?```\s*\n)?:::/m.test(
-      latestMessageText.trim(),
-    );
+    const hasEnclosedArtifact =
+      /:::artifact(?:\{[^}]*\})?(?:\s|\n)*(?:```[\s\S]*?```(?:\s|\n)*)?:::/m.test(
+        latestMessageText.trim(),
+      );
 
     if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
       setActiveTab('preview');
