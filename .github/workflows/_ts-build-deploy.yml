@@ -80,7 +80,7 @@ jobs:
           "EMAIL_HOST" = "${{ vars.EMAIL_HOST }}"
           "EMAIL_PORT" = "${{ vars.EMAIL_PORT }}"
           "EMAIL_ENCRYPTION" = "${{ vars.EMAIL_ENCRYPTION }}"
-          "DOMAIN_CONTACT" = "${{ vars.DOMAIN_CONTACT }}"
+          "DOMAIN_CLIENT" = "${{ vars.DOMAIN_CLIENT }}"
           "DOMAIN_SERVER" = "${{ vars.DOMAIN_SERVER }}"
           "AZURE_OPENAI_INSTANCE" = "${{ vars.AZURE_OPENAI_INSTANCE }}"
           "ENDPOINTS" = "${{ vars.ENDPOINTS }}"

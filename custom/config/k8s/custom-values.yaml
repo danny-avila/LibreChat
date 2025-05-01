@@ -30,6 +30,16 @@ config:
     NODE_ENV: "production"
     ALLOW_PASSWORD_RESET: "true"
     SEARCH: "true"
+    ALLOW_EMAIL_LOGIN: "true"
+    ALLOW_REGISTRATION: "true"
+    ALLOW_SOCIAL_LOGIN: "false"
+    ALLOW_SOCIAL_REGISTRATION: "false"
+    APP_TITLE: "Librechat"
+    CUSTOM_FOOTER: "Provided with ❤️"
+    DEBUG_CONSOLE: "true"
+    DEBUG_LOGGING: "true"
+    DEBUG_OPENAI: "true"
+    DEBUG_PLUGINS: "true" 
     
 resources:
   limits:

@@ -96,17 +96,17 @@ config:
   env:
     # Full list of possible values
     # https://github.com/danny-avila/LibreChat/blob/main/.env.example
-    ALLOW_EMAIL_LOGIN: "true"
-    ALLOW_REGISTRATION: "true"
-    ALLOW_SOCIAL_LOGIN: "false"
-    ALLOW_SOCIAL_REGISTRATION: "false"
-    APP_TITLE: "Librechat"
-    CUSTOM_FOOTER: "Provided with ❤️"
-    DEBUG_CONSOLE: "true"
-    DEBUG_LOGGING: "true"
-    DEBUG_OPENAI: "true"
-    DEBUG_PLUGINS: "true"
-    DOMAIN_CLIENT: ""
-    DOMAIN_SERVER: ""
-    ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
-    SEARCH: false 
+    # ALLOW_EMAIL_LOGIN: "true"
+    # ALLOW_REGISTRATION: "true"
+    # ALLOW_SOCIAL_LOGIN: "false"
+    # ALLOW_SOCIAL_REGISTRATION: "false"
+    # APP_TITLE: "Librechat"
+    # CUSTOM_FOOTER: "Provided with ❤️"
+    # DEBUG_CONSOLE: "true"
+    # DEBUG_LOGGING: "true"
+    # DEBUG_OPENAI: "true"
+    # DEBUG_PLUGINS: "true"
+    # DOMAIN_CLIENT: ""
+    # DOMAIN_SERVER: ""
+    # ENDPOINTS: "openAI,azureOpenAI,chatGPTBrowser,google,gptPlugins,anthropic"
+    # SEARCH: false 
