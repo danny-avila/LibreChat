@@ -130,6 +130,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
 /**
  * Update an agent with new data without overwriting existing
  *  properties, or create a new agent if it doesn't exist.
+ * When an agent is updated, a copy of the current state will be saved to the versions array.
  *
  * @param {Object} searchParameter - The search parameters to find the agent to update.
  * @param {string} searchParameter.id - The ID of the agent to update.
@@ -139,6 +140,16 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
  */
 const updateAgent = async (searchParameter, updateData) => {
   const options = { new: true, upsert: false };
+
+  const currentAgent = await Agent.findOne(searchParameter);
+  if (currentAgent) {
+    const { __v, _id, id, updatedAt, versions, ...versionData } = currentAgent.toObject();
+    updateData.$push = {
+      ...(updateData.$push || {}),
+      versions: versionData,
+    };
+  }
+
   return Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
 };
 
