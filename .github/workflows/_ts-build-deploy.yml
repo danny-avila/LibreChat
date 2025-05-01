@@ -77,7 +77,11 @@ jobs:
           "EMAIL_FROM" = "${{ vars.EMAIL_FROM }}"
           "EMAIL_FROM_NAME" = "${{ vars.EMAIL_FROM_NAME }}"
           "EMAIL_USERNAME" = "${{ vars.EMAIL_USERNAME }}"
-          "EMAIL_SERVICE" = "${{ vars.EMAIL_SERVICE }}"
+          "EMAIL_HOST" = "${{ vars.EMAIL_HOST }}"
+          "EMAIL_PORT" = "${{ vars.EMAIL_PORT }}"
+          "EMAIL_ENCRYPTION" = "${{ vars.EMAIL_ENCRYPTION }}"
+          "DOMAIN_CONTACT" = "${{ vars.DOMAIN_CONTACT }}"
+          "DOMAIN_SERVER" = "${{ vars.DOMAIN_SERVER }}"
           "AZURE_OPENAI_INSTANCE" = "${{ vars.AZURE_OPENAI_INSTANCE }}"
           "ENDPOINTS" = "${{ vars.ENDPOINTS }}"
         }
