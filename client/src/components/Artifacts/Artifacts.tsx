@@ -18,7 +18,7 @@ export default function Artifacts() {
   const previewRef = useRef<SandpackPreviewRef>();
   const [isVisible, setIsVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const setArtifactsVisible = useSetRecoilState(store.artifactsVisible);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
 
   useEffect(() => {
     setIsVisible(true);

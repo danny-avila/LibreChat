@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
@@ -7,7 +8,7 @@ import store from '~/store';
 
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
-  const setVisible = useSetRecoilState(store.artifactsVisible);
+  const setVisible = useSetRecoilState(store.artifactsVisibility);
   const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   if (artifact === null || artifact === undefined) {
