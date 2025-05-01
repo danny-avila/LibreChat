@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useEffect, useRef } from 'react';
+import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
+import debounce from 'lodash/debounce';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { useLocalize } from '~/hooks';
@@ -9,8 +10,33 @@ import store from '~/store';
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
   const setVisible = useSetRecoilState(store.artifactsVisibility);
+  const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
   const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const [visibleArtifacts, setVisibleArtifacts] = useRecoilState(store.visibleArtifacts);
+
+  const debouncedSetVisibleRef = useRef(
+    debounce((artifactToSet: Artifact) => {
+      console.log('Setting artifact to visible state from Artifact button', artifactToSet);
+      setVisibleArtifacts((prev) => ({
+        ...prev,
+        [artifactToSet.id]: artifactToSet,
+      }));
+    }, 750),
+  );
+
+  useEffect(() => {
+    if (artifact == null || artifact?.id == null || artifact.id === '') {
+      return;
+    }
+
+    const debouncedSetVisible = debouncedSetVisibleRef.current;
+    debouncedSetVisible(artifact);
+    return () => {
+      debouncedSetVisible.cancel();
+    };
+  }, [artifact]);
+
   if (artifact === null || artifact === undefined) {
     return null;
   }
@@ -23,6 +49,9 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
         onClick={() => {
           resetCurrentArtifactId();
           setVisible(true);
+          if (artifacts?.[artifact.id] == null) {
+            setArtifacts(visibleArtifacts);
+          }
           setTimeout(() => {
             setCurrentArtifactId(artifact.id);
           }, 15);
