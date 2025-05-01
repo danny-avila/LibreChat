@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
-import { ArrowLeft, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
@@ -117,15 +117,7 @@ export default function Artifacts() {
                   setTimeout(() => setArtifactsVisible(false), 300);
                 }}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" />
-                </svg>
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -141,21 +133,13 @@ export default function Artifacts() {
           <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
             <div className="flex items-center">
               <button onClick={() => cycleArtifact('prev')} className="mr-2 text-text-secondary">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z" />
-                </svg>
+                <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-xs">{`${currentIndex + 1} / ${
                 orderedArtifactIds.length
               }`}</span>
               <button onClick={() => cycleArtifact('next')} className="ml-2 text-text-secondary">
-                <X />
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
             <div className="flex items-center gap-2">
