@@ -30,7 +30,6 @@ config:
     NODE_ENV: "production"
     ALLOW_PASSWORD_RESET: "true"
     SEARCH: "true"
-    DEPLOYMENT_TIMESTAMP: "{{ .Release.DeploymentTimestamp }}"
     
 resources:
   limits:
@@ -77,3 +76,6 @@ rag_api:
 
 nodeSelector:
   kubernetes.io/os: linux
+
+podAnnotations:
+  rollme: "$(date)"
