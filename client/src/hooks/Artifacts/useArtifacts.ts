@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
+import { getLatestText, logger } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { getKey } from '~/utils/artifacts';
-import { getLatestText } from '~/utils';
 import store from '~/store';
 
 export default function useArtifacts() {
@@ -47,7 +47,7 @@ export default function useArtifacts() {
     prevConversationIdRef.current = conversation?.conversationId ?? null;
     /** Resets artifacts when unmounting */
     return () => {
-      console.log('Unmounting artifacts');
+      logger.log('artifacts_visibility', 'Unmounting artifacts');
       resetState();
     };
   }, [conversation?.conversationId, resetArtifacts, resetCurrentArtifactId]);
