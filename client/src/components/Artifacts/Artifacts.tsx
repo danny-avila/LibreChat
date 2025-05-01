@@ -54,10 +54,8 @@ export default function Artifacts() {
       <div className="flex h-full w-full items-center justify-center">
         {/* Main Container */}
         <div
-          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
-            isVisible
-              ? 'translate-x-0 scale-100 opacity-100'
-              : 'translate-x-full scale-95 opacity-0'
+          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-500 ease-in-out ${
+            isVisible ? 'scale-100 opacity-100 blur-0' : 'scale-105 opacity-0 blur-sm'
           }`}
         >
           {/* Header */}
