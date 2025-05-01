@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
+import { ArrowLeft, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
@@ -70,15 +70,7 @@ export default function Artifacts() {
                   setTimeout(() => setArtifactsVisible(false), 300);
                 }}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z" />
-                </svg>
+                <ArrowLeft className="h-4 w-4" />
               </button>
               <h3 className="truncate text-sm text-text-primary">{currentArtifact.title}</h3>
             </div>
@@ -163,15 +155,7 @@ export default function Artifacts() {
                 orderedArtifactIds.length
               }`}</span>
               <button onClick={() => cycleArtifact('next')} className="ml-2 text-text-secondary">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z" />
-                </svg>
+                <X />
               </button>
             </div>
             <div className="flex items-center gap-2">
