@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.2.1
+version: 1.2.4
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -151,28 +151,28 @@ actions:
 
 # Definition of custom endpoints
 endpoints:
-  # assistants:
-  #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-  #   pollIntervalMs: 3000  # Polling interval for checking assistant updates
-  #   timeoutMs: 180000  # Timeout for assistant operations
-  #   # Should only be one or the other, either `supportedIds` or `excludedIds`
-  #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
-  #   # excludedIds: ["asst_excludedAssistantId"]
-  #   # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
-  #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
-  #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
-  #   retrievalModels: ["gpt-4-turbo-preview"]
-  #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
-  # agents:
-  #   # (optional) Default recursion depth for agents, defaults to 25
-  #   recursionLimit: 50
-  #   # (optional) Max recursion depth for agents, defaults to 25
-  #   maxRecursionLimit: 100
-  #   # (optional) Disable the builder interface for agents
-  #   disableBuilder: false
-  #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+  assistants:
+    disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
+    pollIntervalMs: 3000  # Polling interval for checking assistant updates
+    timeoutMs: 180000  # Timeout for assistant operations
+    # Should only be one or the other, either `supportedIds` or `excludedIds`
+    supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
+    # excludedIds: ["asst_excludedAssistantId"]
+    # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+    # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
+  agents:
+    # (optional) Default recursion depth for agents, defaults to 25
+    recursionLimit: 50
+    # (optional) Max recursion depth for agents, defaults to 25
+    maxRecursionLimit: 100
+    # (optional) Disable the builder interface for agents
+    disableBuilder: false
+    # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    capabilities: ["execute_code", "file_search", "actions", "tools"]
   azureOpenAI:
     # Endpoint-level configuration
     titleModel: "gpt-4o"
@@ -189,40 +189,40 @@ endpoints:
         gpt-4o:
           deploymentName: gpt-4o
   
-  #custom:
-    # - name: 'azure-openai'
-    #   apiKey: '${AZURE_OPENAI_API_KEY}'
-    #   baseURL: 'https://${AZURE_OPENAI_INSTANCE}.openai.azure.com'
-    #   models:
-    #     default: ['gpt-4o']
-    #     fetch: false
-    #   titleConvo: true
-    #   titleModel: 'gpt-4o'
-    #   modelDisplayLabel: 'Azure OpenAI'
-    #   azure: true
-    #   headers:
-    #     'api-key': '${AZURE_OPENAI_API_KEY}'
-    #   addParams:
-    #     'api-version': '2025-01-01-preview'
-    #     deployment_id: 'gpt-4o'
+  custom:
+    - name: 'azure-openai'
+      apiKey: '${AZURE_OPENAI_API_KEY}'
+      baseURL: 'https://${AZURE_OPENAI_INSTANCE}.openai.azure.com'
+      models:
+        default: ['gpt-4o']
+        fetch: false
+      titleConvo: true
+      titleModel: 'gpt-4o'
+      modelDisplayLabel: 'Azure OpenAI'
+      azure: true
+      headers:
+        'api-key': '${AZURE_OPENAI_API_KEY}'
+      addParams:
+        'api-version': '2025-01-01-preview'
+        deployment_id: 'gpt-4o'
         
     # Groq Example
-    # - name: 'groq'
-    #   apiKey: '${GROQ_API_KEY}'
-    #   baseURL: 'https://api.groq.com/openai/v1/'
-    #   models:
-    #     default:
-    #       [
-    #         'llama3-70b-8192',
-    #         'llama3-8b-8192',
-    #         'llama2-70b-4096',
-    #         'mixtral-8x7b-32768',
-    #         'gemma-7b-it',
-    #       ]
-    #     fetch: false
-    #   titleConvo: true
-    #   titleModel: 'mixtral-8x7b-32768'
-    #   modelDisplayLabel: 'groq'
+    - name: 'groq'
+      apiKey: '${GROQ_API_KEY}'
+      baseURL: 'https://api.groq.com/openai/v1/'
+      models:
+        default:
+          [
+            'llama3-70b-8192',
+            'llama3-8b-8192',
+            'llama2-70b-4096',
+            'mixtral-8x7b-32768',
+            'gemma-7b-it',
+          ]
+        fetch: false
+      titleConvo: true
+      titleModel: 'mixtral-8x7b-32768'
+      modelDisplayLabel: 'groq'
 
     # # Mistral AI Example
     # - name: 'Mistral' # Unique name for the endpoint

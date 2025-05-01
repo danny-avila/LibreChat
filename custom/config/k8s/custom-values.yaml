@@ -28,9 +28,9 @@ config:
 
   env:
     NODE_ENV: "production"
-    ENDPOINTS: "azureOpenAI"
-    AZURE_OPENAI_INSTANCE: "rg-ch-openai-techagent"
+    ENDPOINTS: "azureOpenAI,agents,assistants,gptPlugins,google"
     ALLOW_PASSWORD_RESET: "true"
+    DEPLOYMENT_TIMESTAMP: "{{ .Release.DeploymentTimestamp }}"
     
 resources:
   limits:

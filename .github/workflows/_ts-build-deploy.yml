@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       imageTag:
-        description: 'Docker image tag'
+        description: 'Docker image tag (required for feature branches)'
         required: false
-        default: 'latest'
+        default: ''
       imageName:
         description: 'Docker image name'
         required: false
@@ -19,17 +19,41 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
       
     - name: Set dynamic image tag
       id: set-tag
       shell: pwsh
       run: |
-        $tag = "${{ github.event.inputs.imageTag }}"
-        if ($tag -eq "latest" -or $tag -eq "") {
-          $shortSha = "${{ github.sha }}".Substring(0, 7)
-          $tag = "v-$shortSha"
+        $manualTag = "${{ github.event.inputs.imageTag }}"
+        
+        # If manual tag is provided, use it directly
+        if (-not [string]::IsNullOrEmpty($manualTag)) {
+          echo "IMAGE_TAG=$manualTag" >> $env:GITHUB_OUTPUT
+          exit 0
         }
-        echo "IMAGE_TAG=$tag" >> $env:GITHUB_OUTPUT
+        
+        # Get current branch name
+        $branch = git rev-parse --abbrev-ref HEAD
+        
+        # Check if this is a release branch
+        if ($branch -match "^release/(.+)$") {
+          # Extract version from branch name (e.g., release/1.2.3 → v1.2.3)
+          $version = $matches[1]
+          $tag = "v$version"
+          
+          echo "IMAGE_TAG=$tag" >> $env:GITHUB_OUTPUT
+        } elseif ($branch -eq "main") {
+          # For main branch, use dev
+          echo "IMAGE_TAG=dev" >> $env:GITHUB_OUTPUT
+        } else {
+          # For feature branches, require a manually specified tag
+          if ([string]::IsNullOrEmpty($manualTag)) {
+            Write-Error "Error: imageTag parameter is required for feature branches. Please specify a tag."
+            exit 1
+          }
+        }
       
     - name: Run build and deploy script
       shell: pwsh
