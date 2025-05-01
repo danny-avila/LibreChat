@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleDoubleClick } from '~/utils';
 
-export const CodeVariableGfm = ({ children }: { children: React.ReactNode }) => {
+export const CodeVariableGfm: React.ElementType = ({ children }: { children: React.ReactNode }) => {
   return (
     <code
       onDoubleClick={handleDoubleClick}
@@ -29,7 +29,10 @@ export const PromptVariableGfm = ({
     const parts = child.split(regex);
     return parts.map((part, index) =>
       index % 2 === 1 ? (
-        <b key={index} className="rounded-md bg-yellow-100/90 p-1 text-gray-700">
+        <b
+          key={index}
+          className="ml-[0.5] rounded-lg bg-amber-100 p-[1px] font-medium text-yellow-800 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90"
+        >
           {`{{${part}}}`}
         </b>
       ) : (

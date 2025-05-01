@@ -201,7 +201,7 @@ function PromptsCommand({
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
             // The user expects focus to transition to the input field when the popover is opened
-
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             ref={inputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}

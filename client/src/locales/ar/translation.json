@@ -665,7 +665,6 @@
   "com_ui_simple": "بسيط",
   "com_ui_size": "الحجم",
   "com_ui_special_variables": "المتغيرات الخاصة:",
-  "com_ui_special_variables_info": "استخدم `{{current_date}}` للتاريخ الحالي، و `{{current_user}}` لاسم حسابك المحدد.",
   "com_ui_speech_while_submitting": "لا يمكن إرسال الكلام أثناء إنشاء الرد",
   "com_ui_stop": "توقف",
   "com_ui_storage": "التخزين",

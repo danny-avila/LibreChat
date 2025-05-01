@@ -16,6 +16,7 @@ import {
   useQueryParams,
   useSubmitMessage,
   useMediaQuery,
+  useFocusChatEffect,
 } from '~/hooks';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
@@ -37,6 +38,7 @@ import store from '~/store';
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  useFocusChatEffect(textAreaRef);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
@@ -44,7 +46,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
-  const search = useRecoilValue(store.search);
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const chatDirection = useRecoilValue(store.chatDirection);
@@ -143,7 +144,13 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     setShowPlusPopover,
     setShowMentionPopover,
   });
-  const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
+  const {
+    isNotAppendable,
+    handlePaste,
+    handleKeyDown,
+    handleCompositionStart,
+    handleCompositionEnd,
+  } = useTextarea({
     textAreaRef,
     submitButtonRef,
     setIsScrollable,
@@ -262,7 +269,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     ref(e);
                     (textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = e;
                   }}
-                  disabled={disableInputs}
+                  disabled={disableInputs || isNotAppendable}
                   onPaste={handlePaste}
                   onKeyDown={handleKeyDown}
                   onKeyUp={handleKeyUp}
@@ -282,7 +289,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   className={cn(
                     baseClasses,
                     removeFocusRings,
-                    'transition-[max-height] duration-200',
+                    'transition-[max-height] duration-200 disabled:cursor-not-allowed',
                   )}
                 />
                 <div className="flex flex-col items-start justify-start pt-1.5">
@@ -317,7 +324,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   methods={methods}
                   ask={submitMessage}
                   textAreaRef={textAreaRef}
-                  disabled={disableInputs}
+                  disabled={disableInputs || isNotAppendable}
                   isSubmitting={isSubmitting}
                 />
               )}
@@ -329,7 +336,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     <SendButton
                       ref={submitButtonRef}
                       control={methods.control}
-                      disabled={filesLoading || isSubmitting || disableInputs}
+                      disabled={filesLoading || isSubmitting || disableInputs || isNotAppendable}
                     />
                   )
                 )}

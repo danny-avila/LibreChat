@@ -364,7 +364,9 @@ class AgentClient extends BaseClient {
             this.contextHandlers?.processFile(file);
             continue;
           }
-
+          if (file.metadata?.fileIdentifier) {
+            continue;
+          }
           // orderedMessages[i].tokenCount += this.calculateImageTokenCost({
           //   width: file.width,
           //   height: file.height,
@@ -671,7 +673,7 @@ class AgentClient extends BaseClient {
         this.indexTokenCountMap,
         toolSet,
       );
-      if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
+      if (legacyContentEndpoints.has(this.options.agent.endpoint?.toLowerCase())) {
         initialMessages = formatContentStrings(initialMessages);
       }
 

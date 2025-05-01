@@ -801,7 +801,6 @@
   "com_ui_simple": "Lihtne",
   "com_ui_size": "Suurus",
   "com_ui_special_variables": "Erilised muutujad:",
-  "com_ui_special_variables_info": "Kasuta `{{praegune_kuupäev}}` praeguse kuupäeva jaoks ja `{{praegune_kasutaja}}` oma konto nime jaoks.",
   "com_ui_speech_while_submitting": "Kõnet ei saa esitada, kui vastust genereeritakse",
   "com_ui_stop": "Peata",
   "com_ui_storage": "Salvestusruum",

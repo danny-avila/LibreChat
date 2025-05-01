@@ -665,7 +665,6 @@
   "com_ui_simple": "簡單",
   "com_ui_size": "大小",
   "com_ui_special_variables": "特殊變數：",
-  "com_ui_special_variables_info": "使用 `{{current_date}}` 可顯示目前日期，使用 `{{current_user}}` 可顯示您的帳戶名稱。",
   "com_ui_speech_while_submitting": "正在產生回應時無法送出語音",
   "com_ui_stop": "停止",
   "com_ui_storage": "儲存空間",

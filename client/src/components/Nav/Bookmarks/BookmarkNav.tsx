@@ -1,10 +1,12 @@
-import { type FC } from 'react';
+import { useMemo } from 'react';
+import type { FC } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { useGetConversationTags } from '~/data-provider';
 import BookmarkNavItems from './BookmarkNavItems';
+import { TooltipAnchor } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -19,33 +21,48 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
   const localize = useLocalize();
   const { data } = useGetConversationTags();
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const label = useMemo(
+    () => (tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')),
+    [tags, localize],
+  );
 
   return (
     <Menu as="div" className="group relative">
       {({ open }) => (
         <>
-          <MenuButton
-            className={cn(
-              'mt-text-sm flex h-10 w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors duration-200 hover:bg-surface-active-alt',
-              open ? 'bg-surface-active-alt' : '',
-              isSmallScreen ? 'h-12' : '',
-            )}
-            data-testid="bookmark-menu"
-          >
-            <div className="h-7 w-7 flex-shrink-0">
-              <div className="relative flex h-full items-center justify-center text-text-primary">
-                {tags.length > 0 ? (
-                  <BookmarkFilledIcon className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <BookmarkIcon className="h-4 w-4" aria-hidden="true" />
+          <TooltipAnchor
+            description={label}
+            render={
+              <MenuButton
+                id="bookmark-menu-button"
+                aria-label={localize('com_ui_bookmarks')}
+                className={cn(
+                  'flex items-center justify-center',
+                  'size-10 border-none text-text-primary hover:bg-accent hover:text-accent-foreground',
+                  'rounded-full border-none p-2 hover:bg-surface-hover md:rounded-xl',
+                  open ? 'bg-surface-hover' : '',
                 )}
-              </div>
-            </div>
-            <div className="grow overflow-hidden whitespace-nowrap text-left text-sm font-medium text-text-primary">
-              {tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')}
-            </div>
-          </MenuButton>
-          <MenuItems className="absolute left-0 top-full z-[100] mt-1 w-full translate-y-0 overflow-hidden rounded-lg bg-surface-secondary p-1.5 shadow-lg outline-none">
+                data-testid="bookmark-menu"
+              >
+                {tags.length > 0 ? (
+                  <BookmarkFilledIcon
+                    /** `isSmallScreen` is used because lazy loading is not influencing `md:` prefix for some reason */
+                    className={cn('text-text-primary', isSmallScreen ? 'icon-md-heavy' : 'icon-lg')}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <BookmarkIcon
+                    className={cn('text-text-primary', isSmallScreen ? 'icon-md-heavy' : 'icon-lg')}
+                    aria-hidden="true"
+                  />
+                )}
+              </MenuButton>
+            }
+          />
+          <MenuItems
+            anchor="bottom"
+            className="absolute left-0 top-full z-[100] mt-1 w-60 translate-y-0 overflow-hidden rounded-lg bg-surface-secondary p-1.5 shadow-lg outline-none"
+          >
             {data && conversation && (
               <BookmarkContext.Provider value={{ bookmarks: data.filter((tag) => tag.count > 0) }}>
                 <BookmarkNavItems

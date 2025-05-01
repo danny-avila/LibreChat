@@ -13,7 +13,7 @@ const PreviewPrompt = ({
 }) => {
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-5xl">
+      <OGDialogContent className="max-h-[90vh] w-11/12 max-w-full overflow-y-auto md:max-w-[60vw]">
         <div className="p-2">
           <PromptDetails group={group} />
         </div>
