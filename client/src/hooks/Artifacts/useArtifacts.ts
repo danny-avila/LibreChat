@@ -28,13 +28,6 @@ export default function useArtifacts() {
   const prevConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    /** Resets artifacts when unmounting */
-    return () => {
-      resetArtifacts();
-    };
-  }, [resetArtifacts]);
-
-  useEffect(() => {
     const resetState = () => {
       resetArtifacts();
       resetCurrentArtifactId();
@@ -44,16 +37,20 @@ export default function useArtifacts() {
       hasEnclosedArtifactRef.current = false;
     };
     if (
-      conversation &&
-      conversation.conversationId !== prevConversationIdRef.current &&
+      conversation?.conversationId !== prevConversationIdRef.current &&
       prevConversationIdRef.current != null
     ) {
       resetState();
-    } else if (conversation && conversation.conversationId === Constants.NEW_CONVO) {
+    } else if (conversation?.conversationId === Constants.NEW_CONVO) {
       resetState();
     }
     prevConversationIdRef.current = conversation?.conversationId ?? null;
-  }, [conversation, resetArtifacts, resetCurrentArtifactId]);
+    /** Resets artifacts when unmounting */
+    return () => {
+      console.log('Unmounting artifacts');
+      resetState();
+    };
+  }, [conversation?.conversationId, resetArtifacts, resetCurrentArtifactId]);
 
   useEffect(() => {
     if (orderedArtifactIds.length > 0) {
