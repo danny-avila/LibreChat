@@ -69,6 +69,8 @@ jobs:
           "EMAIL_PASSWORD" = "${{ secrets.EMAIL_PASSWORD }}"
           "REGISTRY_USERNAME" = "${{ secrets.REGISTRY_USERNAME }}"
           "REGISTRY_PASSWORD" = "${{ secrets.REGISTRY_PASSWORD }}"
+          "GOOGLE_SEARCH_API_KEY" = "${{ secrets.GOOGLE_SEARCH_API_KEY }}"
+          "GOOGLE_CSE_ID" = "${{ secrets.GOOGLE_CSE_ID }}"
         }
 
         $envVarsHashtable = @{
@@ -76,6 +78,8 @@ jobs:
           "EMAIL_FROM_NAME" = "${{ vars.EMAIL_FROM_NAME }}"
           "EMAIL_USERNAME" = "${{ vars.EMAIL_USERNAME }}"
           "EMAIL_SERVICE" = "${{ vars.EMAIL_SERVICE }}"
+          "AZURE_OPENAI_INSTANCE" = "${{ vars.AZURE_OPENAI_INSTANCE }}"
+          "ENDPOINTS" = "${{ vars.ENDPOINTS }}"
         }
 
         ./custom/scripts/build-and-deploy.ps1 `

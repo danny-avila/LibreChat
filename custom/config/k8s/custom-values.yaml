@@ -28,8 +28,8 @@ config:
 
   env:
     NODE_ENV: "production"
-    ENDPOINTS: "azureOpenAI,agents,assistants,gptPlugins,google"
     ALLOW_PASSWORD_RESET: "true"
+    SEARCH: "true"
     DEPLOYMENT_TIMESTAMP: "{{ .Release.DeploymentTimestamp }}"
     
 resources:
