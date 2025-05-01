@@ -60,30 +60,38 @@ export default function useArtifacts() {
   }, [setCurrentArtifactId, orderedArtifactIds]);
 
   useEffect(() => {
-    if (isSubmitting && orderedArtifactIds.length > 0 && latestMessage) {
-      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      const latestArtifact = artifacts?.[latestArtifactId];
+    if (!isSubmitting) {
+      return;
+    }
+    if (orderedArtifactIds.length === 0) {
+      return;
+    }
+    if (latestMessage == null) {
+      return;
+    }
+    const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
+    const latestArtifact = artifacts?.[latestArtifactId];
+    if (latestArtifact?.content === lastContentRef.current) {
+      return;
+    }
 
-      if (latestArtifact?.content !== lastContentRef.current) {
-        setCurrentArtifactId(latestArtifactId);
-        lastContentRef.current = latestArtifact?.content ?? null;
+    setCurrentArtifactId(latestArtifactId);
+    lastContentRef.current = latestArtifact?.content ?? null;
 
-        const latestMessageText = getLatestText(latestMessage);
-        const hasEnclosedArtifact = /:::artifact(?:\{[^}]*\})?\s*\n```[\s\S]*?```\s*\n:::/m.test(
-          latestMessageText.trim(),
-        );
+    const latestMessageText = getLatestText(latestMessage);
+    const hasEnclosedArtifact = /:::artifact(?:\{[^}]*\})?\s*\n(?:```[\s\S]*?```\s*\n)?:::/m.test(
+      latestMessageText.trim(),
+    );
 
-        if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
-          setActiveTab('preview');
-          hasEnclosedArtifactRef.current = true;
-          hasAutoSwitchedToCodeRef.current = false;
-        } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
-          const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
-          if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
-            setActiveTab('code');
-            hasAutoSwitchedToCodeRef.current = true;
-          }
-        }
+    if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
+      setActiveTab('preview');
+      hasEnclosedArtifactRef.current = true;
+      hasAutoSwitchedToCodeRef.current = false;
+    } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
+      const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
+      if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
+        setActiveTab('code');
+        hasAutoSwitchedToCodeRef.current = true;
       }
     }
   }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts, latestMessage]);
