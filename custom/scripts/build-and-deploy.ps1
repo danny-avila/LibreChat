@@ -176,7 +176,7 @@ $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
            "--set `"image.tag=$ImageTag`" " + `
-           "--set `"podAnnotations.rollme=$timestamp`" "
+           "--set `"podAnnotations.rollme=`"$timestamp`"`" "
 
 # Add GitHub environment ConfigMap if environment variables were provided
 if ($EnvVars.Count -gt 0) {
