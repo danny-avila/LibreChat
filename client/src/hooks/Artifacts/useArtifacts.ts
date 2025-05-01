@@ -28,6 +28,13 @@ export default function useArtifacts() {
   const prevConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    /** Resets artifacts when unmounting */
+    return () => {
+      resetArtifacts();
+    };
+  }, [resetArtifacts]);
+
+  useEffect(() => {
     const resetState = () => {
       resetArtifacts();
       resetCurrentArtifactId();
