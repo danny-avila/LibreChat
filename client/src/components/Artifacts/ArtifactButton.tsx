@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import debounce from 'lodash/debounce';
 import type { Artifact } from '~/common';
@@ -9,6 +11,7 @@ import store from '~/store';
 
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
+  const location = useLocation();
   const setVisible = useSetRecoilState(store.artifactsVisibility);
   const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
   const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
@@ -30,12 +33,16 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       return;
     }
 
+    if (location.pathname.includes(Constants.SEARCH)) {
+      return;
+    }
+
     const debouncedSetVisible = debouncedSetVisibleRef.current;
     debouncedSetVisible(artifact);
     return () => {
       debouncedSetVisible.cancel();
     };
-  }, [artifact]);
+  }, [artifact, location.pathname]);
 
   if (artifact === null || artifact === undefined) {
     return null;
@@ -47,6 +54,9 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       <button
         type="button"
         onClick={() => {
+          if (location.pathname.includes(Constants.SEARCH)) {
+            return;
+          }
           resetCurrentArtifactId();
           setVisible(true);
           if (artifacts?.[artifact.id] == null) {
