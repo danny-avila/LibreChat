@@ -168,11 +168,15 @@ kubectl create configmap librechat-config --from-file=librechat.yaml="$LibreChat
 # Deploy or upgrade using Helm
 Write-Host "Deploying to Kubernetes using Helm..." -ForegroundColor Cyan
 
+# Generate timestamp for rollme annotation to force redeployment
+$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+
 $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "--namespace $Namespace " + `
            "-f `"$CustomValues`" " + `
            "--set `"image.repository=$Registry/$ImageName`" " + `
-           "--set `"image.tag=$ImageTag`" "
+           "--set `"image.tag=$ImageTag`" " + `
+           "--set `"podAnnotations.rollme=$timestamp`" "
 
 # Add GitHub environment ConfigMap if environment variables were provided
 if ($EnvVars.Count -gt 0) {
@@ -189,11 +193,3 @@ Write-Host "Executing Helm command: $helmCmd" -ForegroundColor Yellow
 Invoke-Expression $helmCmd
 
 Write-Host "Deployment complete!" -ForegroundColor Green
-Write-Host "===============================================" -ForegroundColor Green
-Write-Host "To check the status of your deployment:"
-Write-Host "kubectl get pods -n $Namespace" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "To access the application:"
-Write-Host "kubectl port-forward svc/$HelmReleaseName -n $Namespace 3080:3080" -ForegroundColor Yellow
-Write-Host "Then visit: http://localhost:3080"
-Write-Host "===============================================" -ForegroundColor Green 
