@@ -3,7 +3,6 @@ import throttle from 'lodash/throttle';
 import { visit } from 'unist-util-visit';
 import { useSetRecoilState } from 'recoil';
 import { useLocation } from 'react-router-dom';
-import { Constants } from 'librechat-data-provider';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { useMessageContext, useArtifactContext } from '~/Providers';
@@ -89,7 +88,7 @@ export function Artifact({
         lastUpdateTime: now,
       };
 
-      if (location.pathname.includes(Constants.SEARCH)) {
+      if (!location.pathname.includes('/c/')) {
         return setArtifact(currentArtifact);
       }
 

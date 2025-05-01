@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Constants } from 'librechat-data-provider';
-import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import debounce from 'lodash/debounce';
+import { useLocation } from 'react-router-dom';
+import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { useLocalize } from '~/hooks';
@@ -33,7 +32,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       return;
     }
 
-    if (location.pathname.includes(Constants.SEARCH)) {
+    if (!location.pathname.includes('/c/')) {
       return;
     }
 
@@ -54,7 +53,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       <button
         type="button"
         onClick={() => {
-          if (location.pathname.includes(Constants.SEARCH)) {
+          if (!location.pathname.includes('/c/')) {
             return;
           }
           resetCurrentArtifactId();
