@@ -169,14 +169,14 @@ kubectl create configmap librechat-config --from-file=librechat.yaml="$LibreChat
 Write-Host "Deploying to Kubernetes using Helm..." -ForegroundColor Cyan
 
 # Generate timestamp for rollme annotation to force redeployment
-$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HH:mm:ss"
 
 $helmCmd = "helm upgrade --install $HelmReleaseName `"$HelmChart`" " + `
            "--namespace $Namespace " + `
            "-f `"$CustomValues`" " + `
-           "--set `"image.repository=$Registry/$ImageName`" " + `
-           "--set `"image.tag=$ImageTag`" " + `
-           "--set `"podAnnotations.rollme=`"$timestamp`"`" "
+           "--set image.repository=$Registry/$ImageName " + `
+           "--set image.tag=$ImageTag " + `
+           "--set podAnnotations.rollme=$timestamp "
 
 # Add GitHub environment ConfigMap if environment variables were provided
 if ($EnvVars.Count -gt 0) {
