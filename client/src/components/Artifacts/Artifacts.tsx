@@ -48,6 +48,11 @@ export default function Artifacts() {
     setTimeout(() => setIsRefreshing(false), 750);
   };
 
+  const closeArtifacts = () => {
+    setIsVisible(false);
+    setTimeout(() => setArtifactsVisible(false), 300);
+  };
+
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
       {/* Main Parent */}
@@ -61,13 +66,7 @@ export default function Artifacts() {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
             <div className="flex items-center">
-              <button
-                className="mr-2 text-text-secondary"
-                onClick={() => {
-                  setIsVisible(false);
-                  setTimeout(() => setArtifactsVisible(false), 300);
-                }}
-              >
+              <button className="mr-2 text-text-secondary" onClick={closeArtifacts}>
                 <ArrowLeft className="h-4 w-4" />
               </button>
               <h3 className="truncate text-sm text-text-primary">{currentArtifact.title}</h3>
@@ -108,13 +107,7 @@ export default function Artifacts() {
                   {localize('com_ui_code')}
                 </Tabs.Trigger>
               </Tabs.List>
-              <button
-                className="text-text-secondary"
-                onClick={() => {
-                  setIsVisible(false);
-                  setTimeout(() => setArtifactsVisible(false), 300);
-                }}
-              >
+              <button className="text-text-secondary" onClick={closeArtifacts}>
                 <X className="h-4 w-4" />
               </button>
             </div>
