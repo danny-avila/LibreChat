@@ -104,6 +104,8 @@ const getAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    agent.version = agent.versions ? agent.versions.length : 0;
+
     if (agent.avatar && agent.avatar?.source === FileSources.s3) {
       const originalUrl = agent.avatar.filepath;
       agent.avatar.filepath = await refreshS3Url(agent.avatar);
@@ -127,6 +129,7 @@ const getAgentHandler = async (req, res) => {
         author: agent.author,
         projectIds: agent.projectIds,
         isCollaborative: agent.isCollaborative,
+        version: agent.version,
       });
     }
     return res.status(200).json(agent);

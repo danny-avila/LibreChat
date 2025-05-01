@@ -103,6 +103,8 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
     return null;
   }
 
+  agent.version = agent.versions ? agent.versions.length : 0;
+
   if (agent.author.toString() === req.user.id) {
     return agent;
   }

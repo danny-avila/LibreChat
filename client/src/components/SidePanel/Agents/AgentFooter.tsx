@@ -11,6 +11,7 @@ import DeleteButton from './DeleteButton';
 import { Spinner } from '~/components';
 import ShareAgent from './ShareAgent';
 import { Panel } from '~/common';
+import VersionButton from './Version/VersionButton';
 
 export default function AgentFooter({
   activePanel,
@@ -55,7 +56,8 @@ export default function AgentFooter({
   return (
     <div className="mx-1 mb-1 flex w-full flex-col gap-2">
       {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
-      {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
+      {showButtons && <VersionButton setActivePanel={setActivePanel} />}
+      {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
         <DeleteButton
