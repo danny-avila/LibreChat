@@ -69,7 +69,7 @@ export default function useArtifacts() {
         lastContentRef.current = latestArtifact?.content ?? null;
 
         const latestMessageText = getLatestText(latestMessage);
-        const hasEnclosedArtifact = /:::artifact[\s\S]*?(```|:::)\s*$/.test(
+        const hasEnclosedArtifact = /:::artifact(?:\{[^}]*\})?\s*\n```[\s\S]*?```\s*\n:::/m.test(
           latestMessageText.trim(),
         );
 
