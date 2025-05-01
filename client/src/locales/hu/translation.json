@@ -478,6 +478,7 @@
   "com_ui_agent_recursion_limit_info": "Korlátozza, hogy az ügynök hány lépést tehet egy futás során, mielőtt végső választ adna. Alapértelmezett érték 25 lépés. Egy lépés lehet egy AI API kérés vagy egy eszközhasználati kör. Például egy alapvető eszközinterakció 3 lépést igényel: kezdeti kérés, eszközhasználat és követő kérés.",
   "com_ui_agent_shared_to_all": "valaminek itt kell lennie. üres volt",
   "com_ui_agent_var": "{{0}} ügynök",
+  "com_ui_agent_version": "Verzió",
   "com_ui_agents": "Ügynökök",
   "com_ui_agents_allow_create": "Ügynökök létrehozásának engedélyezése",
   "com_ui_agents_allow_share_global": "Ügynökök megosztásának engedélyezése minden felhasználóval",

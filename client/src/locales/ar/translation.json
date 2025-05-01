@@ -422,6 +422,7 @@
   "com_ui_agent_duplicate_error": "حدث خطأ أثناء نسخ المساعد",
   "com_ui_agent_duplicated": "تم نسخ العميل بنجاح",
   "com_ui_agent_editing_allowed": "يمكن للمستخدمين الآخرين تعديل هذا الوكيل بالفعل",
+  "com_ui_agent_version": "إصدار",
   "com_ui_agents": "الوكلاء",
   "com_ui_agents_allow_create": "السماح بإنشاء الوكلاء",
   "com_ui_agents_allow_share_global": "السماح بمشاركة الوكلاء مع جميع المستخدمين",

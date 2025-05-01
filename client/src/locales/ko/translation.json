@@ -424,6 +424,7 @@
   "com_ui_admin": "관리자",
   "com_ui_admin_access_warning": "관리자 접근 권한을 비활성화하면 예기치 않은 UI 문제가 발생할 수 있으며 페이지 새로고침이 필요할 수 있습니다. 저장하면 librechat.yaml 설정 파일에서 모든 역할에 영향을 미치는 인터페이스 설정을 통해서만 되돌릴 수 있습니다.",
   "com_ui_admin_settings": "관리자 설정",
+  "com_ui_agent_version": "버전",
   "com_ui_advanced": "고급",
   "com_ui_agent": "에이전트",
   "com_ui_agent_delete_error": "에이전트 삭제 중 오류가 발생했습니다",

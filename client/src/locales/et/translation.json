@@ -478,6 +478,7 @@
   "com_ui_agent_recursion_limit_info": "Piirab, mitu sammu agent saab teha ühe käivituse jooksul enne lõpliku vastuse andmist. Vaikimisi lubatakse 25 sammu. Samm on kas AI API päring või tööriista kasutamise etapp. Näiteks, lihtne tööriista kasutamine võtab 3 sammu: esialgne päring, tööriista kasutamine ja järelpäring.",
   "com_ui_agent_shared_to_all": "Seda agenti on jagatud kõigi kasutajatega",
   "com_ui_agent_var": "{{0}} agent",
+  "com_ui_agent_version": "Versioon",
   "com_ui_agents": "Agendid",
   "com_ui_agents_allow_create": "Luba agentide loomine",
   "com_ui_agents_allow_share_global": "Luba agentide jagamine kõigile kasutajatele",

@@ -425,6 +425,7 @@
   "com_ui_agent_duplicate_error": "Wystąpił błąd podczas duplikowania agenta",
   "com_ui_agent_duplicated": "Pomyślnie zduplikowano agenta",
   "com_ui_agent_editing_allowed": "Inni użytkownicy mogą już edytować tego agenta",
+  "com_ui_agent_version": "Wersja",
   "com_ui_agents": "Agenci",
   "com_ui_agents_allow_create": "Zezwól na tworzenie agentów",
   "com_ui_agents_allow_share_global": "Zezwól na udostępnianie agentów wszystkim użytkownikom",

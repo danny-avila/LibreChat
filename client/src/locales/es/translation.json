@@ -434,6 +434,7 @@
   "com_ui_admin": "Administrador",
   "com_ui_admin_access_warning": "Deshabilitar el acceso de Administrador a esta función puede causar problemas inesperados en la interfaz que requieran actualizar la página. Si se guarda este cambio, la única forma de revertirlo es mediante la configuración de interfaz en el archivo librechat.yaml, lo cual afectará a todos los roles.",
   "com_ui_admin_settings": "Configuración de Administrador",
+  "com_ui_agent_version": "Versión",
   "com_ui_advanced": "Avanzado",
   "com_ui_advanced_settings": "Configuración avanzada",
   "com_ui_agent": "Agente",

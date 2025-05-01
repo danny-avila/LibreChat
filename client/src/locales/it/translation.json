@@ -452,6 +452,7 @@
   "com_ui_admin": "Amministratore",
   "com_ui_admin_access_warning": "La disattivazione dell'accesso amministratore a questa funzionalità potrebbe causare problemi imprevisti all'interfaccia utente che richiedono un aggiornamento. Una volta salvata, l'unico modo per ripristinare è attraverso l'impostazione dell'interfaccia nel file di configurazione librechat.yaml, che influisce su tutti i ruoli.",
   "com_ui_admin_settings": "Impostazioni Amministratore",
+  "com_ui_agent_version": "Versione",
   "com_ui_advanced": "Avanzate",
   "com_ui_advanced_settings": "Impostazioni avanzate",
   "com_ui_agent": "Agente",

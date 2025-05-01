@@ -477,6 +477,7 @@
   "com_ui_agent_recursion_limit_info": "Begrenzt, wie viele Schritte der Agent in einem Durchlauf ausführen kann, bevor er eine endgültige Antwort gibt. Der Standardwert ist 25 Schritte. Ein Schritt ist entweder eine KI-API-Anfrage oder eine Werkzeugnutzungsrunde. Eine einfache Werkzeuginteraktion umfasst beispielsweise 3 Schritte: die ursprüngliche Anfrage, die Werkzeugnutzung und die Folgeanfrage.",
   "com_ui_agent_shared_to_all": "Hier muss etwas eingegeben werden. War leer.",
   "com_ui_agent_var": "{{0}} Agent",
+  "com_ui_agent_version": "Version",
   "com_ui_agents": "Agenten",
   "com_ui_agents_allow_create": "Erlaube Agents zu erstellen",
   "com_ui_agents_allow_share_global": "Erlaube das Teilen von Agenten mit allen Nutzern",

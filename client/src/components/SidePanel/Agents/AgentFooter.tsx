@@ -1,4 +1,3 @@
-import React from 'react';
 import { useWatch, useFormContext } from 'react-hook-form';
 import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';

@@ -450,6 +450,7 @@
   "com_ui_agent_duplicate_error": "เกิดข้อผิดพลาดในการทำสำเนาเอเจนต์",
   "com_ui_agent_duplicated": "ทำสำเนาเอเจนต์สำเร็จแล้ว",
   "com_ui_agent_editing_allowed": "ผู้ใช้คนอื่นสามารถแก้ไขเอเจนต์นี้ได้แล้ว",
+  "com_ui_agent_version": "เวอร์ชัน",
   "com_ui_agents": "เอเจนต์",
   "com_ui_agents_allow_create": "อนุญาตให้สร้างเอเจนต์",
   "com_ui_agents_allow_share_global": "อนุญาตให้แชร์เอเจนต์ให้ผู้ใช้ทั้งหมด",

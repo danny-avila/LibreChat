@@ -429,6 +429,7 @@
   "com_ui_agent_duplicated": "Ajan başarıyla çoğaltıldı",
   "com_ui_agent_editing_allowed": "Diğer kullanıcılar zaten bu ajanı düzenleyebilir",
   "com_ui_agent_shared_to_all": "Bu ajan tüm kullanıcılarla paylaşıldı",
+  "com_ui_agent_version": "Sürüm",
   "com_ui_agents": "Ajanlar",
   "com_ui_agents_allow_create": "Ajan oluşturmaya izin ver",
   "com_ui_agents_allow_share_global": "Ajanları tüm kullanıcılarla paylaşmaya izin ver",

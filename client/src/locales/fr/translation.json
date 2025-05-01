@@ -456,6 +456,7 @@
   "com_ui_admin": "Administrateur",
   "com_ui_admin_access_warning": "La désactivation de l'accès administrateur à cette fonctionnalité peut entraîner des problèmes d'interface imprévus nécessitant une actualisation. Une fois sauvegardé, le seul moyen de rétablir l'accès est via le paramètre d'interface dans la configuration librechat.yaml, ce qui affecte tous les rôles.",
   "com_ui_admin_settings": "Paramètres administratifs",
+  "com_ui_agent_version": "Version",
   "com_ui_advanced": "Avancé",
   "com_ui_advanced_settings": "Paramètres avancés",
   "com_ui_agent": "Agent",

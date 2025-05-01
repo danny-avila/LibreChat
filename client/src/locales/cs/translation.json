@@ -364,6 +364,7 @@
   "com_ui_agent_deleted": "Agent byl úspěšně smazán",
   "com_ui_agent_duplicate_error": "Při duplikaci agenta došlo k chybě",
   "com_ui_agent_duplicated": "Agent byl úspěšně duplikován",
+  "com_ui_agent_version": "Verze",
   "com_ui_agents": "Agenti",
   "com_ui_agents_allow_create": "Povolit vytváření agentů",
   "com_ui_agents_allow_share_global": "Povolit sdílení agentů všem uživatelům",

@@ -458,6 +458,7 @@
   "com_ui_agent_duplicated": "Agente duplicado com sucesso",
   "com_ui_agent_editing_allowed": "Outros usuários já podem editar este agente",
   "com_ui_agent_shared_to_all": "algo precisa ir aqui. esta vazio",
+  "com_ui_agent_version": "Versão",
   "com_ui_agents": "Agentes",
   "com_ui_agents_allow_create": "Permitir a criação de agentes",
   "com_ui_agents_allow_share_global": "Permitir compartilhamento de agentes para todos os usuários",

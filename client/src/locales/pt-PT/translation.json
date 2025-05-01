@@ -458,6 +458,7 @@
   "com_ui_agent_editing_allowed": "Este agente já pode ser editado por outros utilizadores.",
   "com_ui_agent_recursion_limit": "Máximo de passos de agentes",
   "com_ui_agent_var": "{{0}} agente",
+  "com_ui_agent_version": "Versão",
   "com_ui_agents": "Agentes",
   "com_ui_agents_allow_create": "Permitir a criação de Agentes",
   "com_ui_agents_allow_share_global": "Permitir a partilha de Agentes com todos os utilizadores",

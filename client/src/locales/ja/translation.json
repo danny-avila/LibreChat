@@ -463,6 +463,7 @@
   "com_ui_admin": "管理者",
   "com_ui_admin_access_warning": "管理者アクセスをこの機能で無効にすると、予期せぬUI上の問題が発生し、画面の再読み込みが必要になる場合があります。設定を保存した場合、元に戻すには librechat.yaml の設定ファイルを直接編集する必要があり、この変更はすべての権限に影響します。",
   "com_ui_admin_settings": "管理者設定",
+  "com_ui_agent_version": "バージョン",
   "com_ui_advanced": "高度",
   "com_ui_advanced_settings": "詳細設定",
   "com_ui_agent": "エージェント",
