@@ -29,7 +29,7 @@ const localStorageAtoms = {
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
-  maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', false),
+  maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', true),
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   showCode: atomWithLocalStorage(LocalStorageKeys.SHOW_ANALYSIS_CODE, true),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
