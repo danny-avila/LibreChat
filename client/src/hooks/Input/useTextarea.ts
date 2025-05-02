@@ -57,7 +57,7 @@ export default function useTextarea({
   const entityName = entity?.name ?? '';
 
   const isNotAppendable =
-    (((latestMessage?.unfinished ?? false) && !isSubmitting) || (latestMessage?.error ?? false)) &&
+    (((latestMessage?.unfinished ?? false) && !isSubmitting)) &&
     !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
