@@ -132,6 +132,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const onSubmit = methods.handleSubmit((data: { text: string }) => {
     submitMessage(data);
+    // On touch-screen devices, blur the text area to dismiss the on-screen keyboard
     if (isTouchScreen) {
       textAreaRef.current?.blur();
     }
