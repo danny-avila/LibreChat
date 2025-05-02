@@ -58,7 +58,7 @@ const payloadParser = ({ req, agent, endpoint }) => {
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
-const noSystemModelRegex = [/\b(o\d)\b/gi];
+const noSystemModelRegex = [/\b(o1)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
@@ -728,12 +728,14 @@ class AgentClient extends BaseClient {
         }
 
         if (noSystemMessages === true && systemContent?.length) {
-          let latestMessage = _messages.pop().content;
+          const latestMessageContent = _messages.pop().content;
           if (typeof latestMessage !== 'string') {
-            latestMessage = latestMessage[0].text;
+            latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
+            _messages.push(new HumanMessage({ content: latestMessageContent }));
+          } else {
+            const text = [systemContent, latestMessageContent].join('\n');
+            _messages.push(new HumanMessage(text));
           }
-          latestMessage = [systemContent, latestMessage].join('\n');
-          _messages.push(new HumanMessage(latestMessage));
         }
 
         let messages = _messages;
