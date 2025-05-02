@@ -95,6 +95,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             gutter={16}
             className="z-[999] w-80 rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
             portal={true}
+            unmountOnHide={true}
           >
             <div className="space-y-2">
               <p className="flex flex-col gap-2 text-sm text-text-secondary">
@@ -179,33 +180,38 @@ export default function Fork({
 
   return (
     <>
-      <Ariakit.PopoverAnchor store={popoverStore}>
-        <button
-          className={cn(
-            'hover-button active rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
-            'data-[state=open]:active focus:opacity-100 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500 data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
-            !isLast ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100' : '',
-          )}
-          onClick={(e) => {
-            if (rememberGlobal) {
-              e.preventDefault();
-              forkConvo.mutate({
-                messageId,
-                splitAtTarget,
-                conversationId,
-                option: forkSetting,
-                latestMessageId,
-              });
-            } else {
-              popoverStore.toggle();
-            }
-          }}
-          type="button"
-          aria-label={localize('com_ui_fork')}
-        >
-          <GitFork className="h-4 w-4 hover:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
-        </button>
-      </Ariakit.PopoverAnchor>
+      <Ariakit.PopoverAnchor
+        store={popoverStore}
+        render={
+          <button
+            className={cn(
+              'hover-button active rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
+              'data-[state=open]:active focus:opacity-100 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500 data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+              !isLast
+                ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100'
+                : '',
+            )}
+            onClick={(e) => {
+              if (rememberGlobal) {
+                e.preventDefault();
+                forkConvo.mutate({
+                  messageId,
+                  splitAtTarget,
+                  conversationId,
+                  option: forkSetting,
+                  latestMessageId,
+                });
+              } else {
+                popoverStore.toggle();
+              }
+            }}
+            type="button"
+            aria-label={localize('com_ui_fork')}
+          >
+            <GitFork className="h-4 w-4 hover:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          </button>
+        }
+      />
       <Ariakit.Popover
         store={popoverStore}
         gutter={5}
@@ -216,6 +222,7 @@ export default function Fork({
           zIndex: 50,
         }}
         portal={true}
+        unmountOnHide={true}
       >
         <div className="flex h-8 w-full items-center justify-center text-sm text-text-primary">
           {localize(activeSetting)}
@@ -240,6 +247,7 @@ export default function Fork({
               gutter={19}
               className="z-[999] w-80 rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
               portal={true}
+              unmountOnHide={true}
             >
               <div className="flex flex-col gap-2 space-y-2 text-sm text-text-secondary">
                 <span>{localize('com_ui_fork_info_1')}</span>
@@ -336,6 +344,7 @@ export default function Fork({
             gutter={32}
             className="z-[999] w-80 select-none rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
             portal={true}
+            unmountOnHide={true}
           >
             <div className="space-y-2">
               <p className="text-sm text-text-secondary">{localize('com_ui_fork_info_start')}</p>
@@ -386,6 +395,7 @@ export default function Fork({
             gutter={14}
             className="z-[999] w-80 rounded-md border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
             portal={true}
+            unmountOnHide={true}
           >
             <div className="space-y-2">
               <p className="text-sm text-text-secondary">{localize('com_ui_fork_info_remember')}</p>
