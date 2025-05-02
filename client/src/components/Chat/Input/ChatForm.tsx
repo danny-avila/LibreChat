@@ -126,6 +126,16 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
+
+  const isTouchScreen = useMemo(() => window.matchMedia?.('(pointer: coarse)').matches, []);
+
+  const onSubmit = methods.handleSubmit((data: { text: string }) => {
+    submitMessage(data);
+    if (isTouchScreen) {
+      textAreaRef.current?.blur();
+    }
+  });
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -199,7 +209,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   return (
     <form
-      onSubmit={methods.handleSubmit(submitMessage)}
+      onSubmit={onSubmit}
       className={cn(
         'mx-auto flex flex-row gap-3 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
