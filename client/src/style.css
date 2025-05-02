@@ -2710,9 +2710,9 @@ html {
   position: relative;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.6) 25%,
+    rgba(255, 255, 255, 0.8) 25%,
     rgba(179, 179, 179, 0.25) 50%,
-    rgba(255, 255, 255, 0.6) 75%
+    rgba(255, 255, 255, 0.8) 75%
   );
   background-size: 200% 100%;
   background-clip: text;
@@ -2724,13 +2724,17 @@ html {
 :global(.dark) .shimmer {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.25) 25%,
+    rgba(255, 255, 255) 25%,
     rgba(129, 130, 134, 0.18) 50%,
-    rgba(255, 255, 255, 0.25) 75%
+    rgb(255, 255, 255) 75%
   );
   background-size: 200% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: shimmer 4s linear infinite;
+}
+
+.custom-style-2 {
+  padding: 12px;
 }

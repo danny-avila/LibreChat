@@ -1,28 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
-import * as Dialog from '@radix-ui/react-dialog';
+import { cn, scaleImage } from '~/utils';
 import DialogImage from './DialogImage';
 import { Skeleton } from '~/components';
-import { cn } from '~/utils';
-
-const scaleImage = ({
-  originalWidth,
-  originalHeight,
-  containerRef,
-}: {
-  originalWidth?: number;
-  originalHeight?: number;
-  containerRef: React.RefObject<HTMLDivElement>;
-}) => {
-  const containerWidth = containerRef.current?.offsetWidth ?? 0;
-  if (containerWidth === 0 || originalWidth == null || originalHeight == null) {
-    return { width: 'auto', height: 'auto' };
-  }
-  const aspectRatio = originalWidth / originalHeight;
-  const scaledWidth = Math.min(containerWidth, originalWidth);
-  const scaledHeight = scaledWidth / aspectRatio;
-  return { width: `${scaledWidth}px`, height: `${scaledHeight}px` };
-};
 
 const Image = ({
   imagePath,
@@ -58,8 +38,6 @@ const Image = ({
     [placeholderDimensions, height, width],
   );
 
-  // Use Radix Dialog Trigger for better accessibility integration
-  // It handles keyboard interactions (Enter/Space) and associates ARIA attributes correctly.
   return (
     <>
       <div ref={containerRef}>
@@ -69,47 +47,37 @@ const Image = ({
             className,
           )}
         >
-          {/* Wrap LazyLoadImage with Dialog.Trigger */}
-          <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
-            <Dialog.Trigger asChild>
-              <button
-                type="button"
-                aria-label={`View ${altText} in dialog`} // Provide a clear label for screen readers
-                className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" // Add focus styles
-              >
-                <LazyLoadImage
-                  alt={altText} // Alt text is crucial for accessibility
-                  onLoad={handleImageLoad}
-                  visibleByDefault={true}
-                  className={cn(
-                    'opacity-100 transition-opacity duration-100',
-                    isLoaded ? 'opacity-100' : 'opacity-0',
-                  )}
-                  src={imagePath}
-                  style={{
-                    width: scaledWidth,
-                    height: 'auto', // Maintain aspect ratio
-                    color: 'transparent',
-                    display: 'block', // Ensure image behaves like a block element
-                  }}
-                  // Show skeleton while loading
-                  placeholder={
-                    <Skeleton
-                      className={cn(
-                        'h-auto w-full', // Use scaled dimensions for skeleton
-                        `h-[${scaledHeight}] w-[${scaledWidth}]`,
-                      )}
-                      // Add ARIA attributes for loading state if needed, though skeleton might suffice
-                      // aria-label="Loading image"
-                      // aria-busy="true"
-                    />
-                  }
+          <button
+            type="button"
+            aria-label={`View ${altText} in dialog`}
+            onClick={() => setIsOpen(true)}
+            className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <LazyLoadImage
+              alt={altText}
+              onLoad={handleImageLoad}
+              visibleByDefault={true}
+              className={cn(
+                'opacity-100 transition-opacity duration-100',
+                isLoaded ? 'opacity-100' : 'opacity-0',
+              )}
+              src={imagePath}
+              style={{
+                width: `${scaledWidth}`,
+                height: 'auto',
+                color: 'transparent',
+                display: 'block',
+              }}
+              placeholder={
+                <Skeleton
+                  className={cn('h-auto w-full', `h-[${scaledHeight}] w-[${scaledWidth}]`)}
+                  aria-label="Loading image"
+                  aria-busy="true"
                 />
-              </button>
-            </Dialog.Trigger>
-            {/* Dialog Content - Radix handles focus trapping and Escape key */}
-            {isLoaded && <DialogImage isOpen={isOpen} onOpenChange={setIsOpen} src={imagePath} />}
-          </Dialog.Root>
+              }
+            />
+          </button>
+          {isLoaded && <DialogImage isOpen={isOpen} onOpenChange={setIsOpen} src={imagePath} />}
         </div>
       </div>
     </>
