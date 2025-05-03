@@ -60,6 +60,10 @@ const cohereModels = {
 
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
+  gemma: 8196,
+  'gemma-2': 32768,
+  'gemma-3': 32768,
+  'gemma-3-27b': 131072,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,

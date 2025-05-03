@@ -111,6 +111,10 @@ const tokenValues = Object.assign(
     /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
     command: { prompt: 0.38, completion: 0.38 },
+    gemma: { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
+    'gemma-2': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
+    'gemma-3': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
+    'gemma-3-27b': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
     'gemini-2.0-flash-lite': { prompt: 0.075, completion: 0.3 },
     'gemini-2.0-flash': { prompt: 0.1, completion: 0.4 },
     'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing

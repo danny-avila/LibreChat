@@ -101,6 +101,7 @@ export default [
     },
 
     rules: {
+      'prettier/prettier': 'error',
       'react/react-in-jsx-scope': 'off',
 
       '@typescript-eslint/ban-ts-comment': [
@@ -121,28 +122,6 @@ export default [
       // Also disable the core no-unused-vars rule globally.
       'no-unused-vars': 'warn',
 
-      indent: ['error', 2, { SwitchCase: 1 }],
-      'max-len': [
-        'error',
-        {
-          code: 120,
-          ignoreStrings: true,
-          ignoreTemplateLiterals: true,
-          ignoreComments: true,
-        },
-      ],
-      'linebreak-style': 0,
-      curly: ['error', 'all'],
-      semi: ['error', 'always'],
-      'object-curly-spacing': ['error', 'always'],
-      'no-multiple-empty-lines': [
-        'error',
-        {
-          max: 1,
-        },
-      ],
-      'no-trailing-spaces': 'error',
-      'comma-dangle': ['error', 'always-multiline'],
       'no-console': 'off',
       'import/no-cycle': 'error',
       'import/no-self-import': 'error',
@@ -153,8 +132,6 @@ export default [
       'no-restricted-syntax': 'off',
       'react/prop-types': 'off',
       'react/display-name': 'off',
-      quotes: ['error', 'single'],
-      'key-spacing': ['error', { beforeColon: false, afterColon: true }],
 
       // 'perfectionist/sort-imports': [
       //   'error',
