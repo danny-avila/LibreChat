@@ -244,7 +244,7 @@ const anthropicMaxOutputs = {
   'claude-3-sonnet': 4096,
   'claude-3-opus': 4096,
   'claude-3.5-sonnet': 8192,
-  'claude-3-5-sonnet': 8192,
+  'claude-3-7-sonnet': 64000,
 };
 
 const maxOutputTokensMap = {
