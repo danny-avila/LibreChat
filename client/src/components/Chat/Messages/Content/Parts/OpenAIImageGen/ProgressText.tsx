@@ -1,23 +1,51 @@
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function ProgressText({ progress, error }: { progress: number; error?: boolean }) {
+export default function ProgressText({
+  progress,
+  error,
+  toolName = 'image_gen_oai',
+}: {
+  progress: number;
+  error?: boolean;
+  toolName: string;
+}) {
   const localize = useLocalize();
 
   const getText = () => {
     if (error) {
       return localize('com_ui_error');
-    } else if (progress >= 1) {
-      return localize('com_ui_image_created');
-    } else if (progress >= 0.7) {
-      return localize('com_ui_final_touch');
-    } else if (progress >= 0.5) {
-      return localize('com_ui_adding_details');
-    } else if (progress >= 0.3) {
-      return localize('com_ui_creating_image');
-    } else {
+    }
+
+    if (toolName === 'image_edit_oai') {
+      if (progress >= 1) {
+        return localize('com_ui_image_edited');
+      }
+      if (progress >= 0.7) {
+        return localize('com_ui_final_touch');
+      }
+      if (progress >= 0.5) {
+        return localize('com_ui_adding_details');
+      }
+      if (progress >= 0.3) {
+        return localize('com_ui_edit_editing_image');
+      }
       return localize('com_ui_getting_started');
     }
+
+    if (progress >= 1) {
+      return localize('com_ui_image_created');
+    }
+    if (progress >= 0.7) {
+      return localize('com_ui_final_touch');
+    }
+    if (progress >= 0.5) {
+      return localize('com_ui_adding_details');
+    }
+    if (progress >= 0.3) {
+      return localize('com_ui_creating_image');
+    }
+    return localize('com_ui_getting_started');
   };
 
   const text = getText();

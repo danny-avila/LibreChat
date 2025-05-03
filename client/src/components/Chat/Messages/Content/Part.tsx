@@ -93,13 +93,17 @@ const Part = memo(
             attachments={attachments}
           />
         );
-      } else if (isToolCall && toolCall.name === 'image_gen_oai') {
+      } else if (
+        isToolCall &&
+        (toolCall.name === 'image_gen_oai' || toolCall.name === 'image_edit_oai')
+      ) {
         return (
           <OpenAIImageGen
-            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
-            output={toolCall.output ?? ''}
             initialProgress={toolCall.progress ?? 0.1}
             isSubmitting={isSubmitting}
+            toolName={toolCall.name}
+            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+            output={toolCall.output ?? ''}
             attachments={attachments}
           />
         );

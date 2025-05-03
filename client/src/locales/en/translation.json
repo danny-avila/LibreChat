@@ -876,6 +876,8 @@
   "com_ui_adding_details": "Adding details",
   "com_ui_final_touch": "Final touch",
   "com_ui_image_created": "Image created",
+  "com_ui_edit_editing_image": "Editing image",
+  "com_ui_image_edited": "Image edited",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }

@@ -8,16 +8,17 @@ import { scaleImage } from '~/utils';
 export default function OpenAIImageGen({
   initialProgress = 0.1,
   isSubmitting,
+  toolName,
   args: _args = '',
   output,
   attachments,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  toolName: string;
   args: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
-  expires_at?: number;
 }) {
   const [progress, setProgress] = useState(initialProgress);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -29,7 +30,7 @@ export default function OpenAIImageGen({
 
   let width: number | undefined;
   let height: number | undefined;
-  let quality: 'low' | 'medium' | 'high' = 'medium';
+  let quality: 'low' | 'medium' | 'high' = 'high';
 
   try {
     const argsObj = typeof _args === 'string' ? JSON.parse(_args) : _args;
@@ -40,6 +41,9 @@ export default function OpenAIImageGen({
         width = w;
         height = h;
       }
+    } else if (argsObj && (typeof argsObj.size !== 'string' || !argsObj.size)) {
+      width = undefined;
+      height = undefined;
     }
 
     if (argsObj && typeof argsObj.quality === 'string') {
@@ -49,8 +53,40 @@ export default function OpenAIImageGen({
       }
     }
   } catch (e) {
-    // ignore parse errors
+    width = undefined;
+    height = undefined;
   }
+
+  // Default to 1024x1024 if width and height are still undefined after parsing args and attachment metadata
+  const attachment = attachments?.[0];
+  const {
+    width: imageWidth,
+    height: imageHeight,
+    filepath = null,
+    filename = '',
+  } = (attachment as TFile & TAttachmentMetadata) || {};
+
+  let origWidth = width ?? imageWidth;
+  let origHeight = height ?? imageHeight;
+
+  if (origWidth === undefined || origHeight === undefined) {
+    origWidth = 1024;
+    origHeight = 1024;
+  }
+
+  const [dimensions, setDimensions] = useState({ width: 'auto', height: 'auto' });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const updateDimensions = useCallback(() => {
+    if (origWidth && origHeight && containerRef.current) {
+      const scaled = scaleImage({
+        originalWidth: origWidth,
+        originalHeight: origHeight,
+        containerRef,
+      });
+      setDimensions(scaled);
+    }
+  }, [origWidth, origHeight]);
 
   useEffect(() => {
     if (isSubmitting) {
@@ -111,31 +147,6 @@ export default function OpenAIImageGen({
     }
   }, [initialProgress, cancelled]);
 
-  const attachment = attachments?.[0];
-  const {
-    width: imageWidth,
-    height: imageHeight,
-    filepath = null,
-    filename = '',
-  } = (attachment as TFile & TAttachmentMetadata) || {};
-
-  const origWidth = width ?? imageWidth;
-  const origHeight = height ?? imageHeight;
-
-  const [dimensions, setDimensions] = useState({ width: 'auto', height: 'auto' });
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const updateDimensions = useCallback(() => {
-    if (origWidth && origHeight && containerRef.current) {
-      const scaled = scaleImage({
-        originalWidth: origWidth,
-        originalHeight: origHeight,
-        containerRef,
-      });
-      setDimensions(scaled);
-    }
-  }, [origWidth, origHeight]);
-
   useEffect(() => {
     updateDimensions();
 
@@ -155,7 +166,7 @@ export default function OpenAIImageGen({
   return (
     <>
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
-        <ProgressText progress={progress} error={cancelled} />
+        <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
 
       {/* {showInfo && hasInfo && (
@@ -174,7 +185,7 @@ export default function OpenAIImageGen({
             <PixelCard
               variant="default"
               progress={progress}
-              randomness={0.5}
+              randomness={0.6}
               width={dimensions.width}
               height={dimensions.height}
             />
