@@ -60,11 +60,11 @@ export default function OpenAIImageGen({
         clearInterval(intervalRef.current);
       }
 
-      let baseDuration = 30000;
+      let baseDuration = 20000;
       if (quality === 'low') {
         baseDuration = 10000;
       } else if (quality === 'high') {
-        baseDuration = 60000;
+        baseDuration = 50000;
       }
       // adding some jitter (±30% of base)
       const jitter = Math.floor(baseDuration * 0.3);
@@ -100,7 +100,7 @@ export default function OpenAIImageGen({
         clearInterval(intervalRef.current);
       }
     };
-  }, [isSubmitting, initialProgress, quality]);
+  }, [initialProgress, quality]);
 
   useEffect(() => {
     if (initialProgress >= 1 || cancelled) {
