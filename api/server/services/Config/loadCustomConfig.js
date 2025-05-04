@@ -1,5 +1,5 @@
 const path = require('path');
-const { CacheKeys, configSchema, EImageOutputType } = require('librechat-data-provider');
+const { CacheKeys, configSchema, EImageOutputType, validateSettingDefinitions } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
@@ -105,6 +105,8 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     logger.debug('Custom config:', customConfig);
   }
 
+  validateCustomParams(customConfig);
+
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
@@ -115,6 +117,18 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   }
 
   return customConfig;
+}
+
+function validateCustomParams(config) {
+  const endpoints = (config.endpoints?.custom ?? []).filter((endpoint) => endpoint.customParams?.paramDefinitions);
+  const paramDefinitionsList = endpoints.map(endpoint => [endpoint.name, endpoint.customParams.paramDefinitions]);
+  paramDefinitionsList.forEach(([name, definitions]) => {
+    try{
+      validateSettingDefinitions(definitions);
+    } catch(e) {
+      throw new Error(`Custom parameter definitions for "${name}" endpoint is malformed: ${e.message}`);
+    }
+  });
 }
 
 module.exports = loadCustomConfig;
