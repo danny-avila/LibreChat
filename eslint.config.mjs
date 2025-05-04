@@ -4,6 +4,7 @@ import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
 // import perfectionist from 'eslint-plugin-perfectionist';
 import reactHooks from 'eslint-plugin-react-hooks';
+import prettier from 'eslint-plugin-prettier';
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
 import { FlatCompat } from '@eslint/eslintrc';
@@ -62,6 +63,7 @@ export default [
       'import/parsers': tsParser,
       i18next,
       // perfectionist,
+      prettier: fixupPluginRules(prettier),
     },
 
     languageOptions: {
