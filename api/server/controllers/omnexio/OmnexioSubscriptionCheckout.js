@@ -11,16 +11,18 @@ async function omnexioSubscriptionCheckoutController(req, res) {
     };
 
     const url = `${OMNEXIO_BASE_URL}/v1/subscriptions/checkout`;
-    const response = await axios.post(url,payload, {
+    const response = await axios.post(url, payload, {
       headers: {
-        'Authorization': `Bearer ${OMNEXIO_API_KEY}`,
+        Authorization: `Bearer ${OMNEXIO_API_KEY}`,
       },
     });
 
     if (response.data && response.data.url !== undefined) {
       return res.status(200).send('' + response.data.url);
     } else {
-      logger.warn('[omnexioSubscriptionCheckoutController] Invalid response format from Omnexio API');
+      logger.warn(
+        '[omnexioSubscriptionCheckoutController] Invalid response format from Omnexio API',
+      );
       return res.status(200).send('');
     }
   } catch (error) {

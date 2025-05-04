@@ -1,7 +1,11 @@
 import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions, UseMutationResult } from '@tanstack/react-query';
+import type {
+  QueryObserverResult,
+  UseQueryOptions,
+  UseMutationResult,
+} from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import store from '~/store';
 
@@ -74,7 +78,8 @@ export const useCreateOmnexioSubscription = (): UseMutationResult<
   unknown // context type
 > => {
   return useMutation(
-    (params: CreateOmnexioSubscriptionParams) => dataService.createOmnexioSubscription(params.subscriptionId),
+    (params: CreateOmnexioSubscriptionParams) =>
+      dataService.createOmnexioSubscription(params.subscriptionId),
     {
       onSuccess: (data) => {
         // Redirect to the payment URL
@@ -87,6 +92,22 @@ export const useCreateOmnexioSubscription = (): UseMutationResult<
       onError: (error) => {
         console.error('Error creating subscription:', error);
       },
-    }
+    },
+  );
+};
+
+export const useGetOmnexioSubscriptionPlans = (
+  config?: UseQueryOptions<string>,
+): QueryObserverResult<any> => {
+  return useQuery<string>(
+    [QueryKeys.omnexioSubscriptionPlans],
+    () => dataService.getOmnexioSubscriptionPlans(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: true,
+      ...config,
+      enabled: true,
+    },
   );
 };

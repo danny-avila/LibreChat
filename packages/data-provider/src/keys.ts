@@ -12,6 +12,8 @@ export enum QueryKeys {
   models = 'models',
   balance = 'balance',
   omnexio = 'omnexio',
+  omnexioBalance = 'omnexioBalance',
+  omnexioSubscriptionPlans = 'omnexioSubscriptionPlans',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
