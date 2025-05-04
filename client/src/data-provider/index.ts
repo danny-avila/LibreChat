@@ -4,6 +4,7 @@ export * from './Endpoints';
 export * from './Files';
 export * from './Messages';
 export * from './Misc';
+export * from './Omnexio';
 export * from './Tools';
 export * from './connection';
 export * from './mutations';
