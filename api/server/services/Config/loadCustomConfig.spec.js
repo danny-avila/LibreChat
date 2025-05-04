@@ -1,6 +1,44 @@
 jest.mock('axios');
 jest.mock('~/cache/getLogStores');
 jest.mock('~/utils/loadYaml');
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    agentSettings: {
+      custom: [],
+      google: [
+        {
+          key: 'maxContextTokens',
+          type: 'number',
+          component: 'input',
+        },
+        {
+          key: 'temperature',
+          type: 'number',
+          component: 'slider',
+          default: 0.5,
+          range: {
+            min: 0,
+            max: 2,
+            step: 0.01,
+          },
+        },
+        {
+          key: 'topP',
+          type: 'number',
+          component: 'slider',
+          default: 1,
+          range: {
+            min: 0,
+            max: 1,
+            step: 0.01,
+          },
+        },
+      ],
+    },
+  };
+});
 
 const axios = require('axios');
 const loadCustomConfig = require('./loadCustomConfig');
@@ -149,5 +187,138 @@ describe('loadCustomConfig', () => {
     expect(logger.info).toHaveBeenCalledWith('Custom config file loaded:');
     expect(logger.info).toHaveBeenCalledWith(JSON.stringify(mockConfig, null, 2));
     expect(logger.debug).toHaveBeenCalledWith('Custom config:', mockConfig);
+  });
+
+  describe('parseCustomParams', () => {
+    const mockConfig = {
+      version: '1.0',
+      cache: false,
+      endpoints: {
+        custom: [
+          {
+            name: 'Google',
+            apiKey: 'user_provided',
+            customParams: {},
+          },
+        ],
+      },
+    };
+
+    async function loadCustomParams (customParams) {
+      mockConfig.endpoints.custom[0].customParams = customParams;
+      loadYaml.mockReturnValue(mockConfig);
+      return await loadCustomConfig();
+    }
+
+    beforeEach(() => {
+      jest.resetAllMocks();
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+    });
+
+    it('returns no error when customParams is undefined', async () => {
+      const result = await loadCustomParams(undefined);
+      expect(result).toEqual(mockConfig);
+    });
+
+    it('returns no error when customParams is valid', async () => {
+      const result = await loadCustomParams({
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [{
+          key: 'temperature',
+          default: 0.5,
+        }],
+      });
+      expect(result).toEqual(mockConfig);
+    });
+
+    it('throws an error when paramDefinitions contain unsupported keys', async () => {
+      const malformedCustomParams = {
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [
+          { key: 'temperature', default: 0.5 },
+          { key: 'unsupportedKey', range: 0.5 },
+        ],
+      };
+      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
+        'paramDefinitions of "Google" endpoint contains invalid key(s). Valid parameter keys are maxContextTokens, temperature, topP',
+      );
+    });
+
+    it('throws an error when paramDefinitions is malformed', async () => {
+      const malformedCustomParams = {
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [{
+          key: 'temperature',
+          type: 'noomba',
+          component: 'inpoot',
+          optionType: 'custom',
+        }],
+      };
+      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
+        /Custom parameter definitions for "Google" endpoint is malformed:/,
+      );
+    });
+
+    it('throws an error when defaultParamsEndpoint is of the wrong type', async () => {
+      const malformedCustomParams = { defaultParamsEndpoint: 'foo' };
+      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
+        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are custom, google',
+      );
+    });
+
+    it('fills the paraDefinitions with overridden values', async () => {
+      const customParams = {
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [
+          { key: 'temperature', default: 0.7, range: { min: 0.1, max: 0.9, step: 0.1 } },
+          { key: 'maxContextTokens', default: 100 },
+        ],
+      };
+
+      const parsedConfig = await loadCustomParams(customParams);
+      const paramDefinitions = parsedConfig.endpoints.custom[0].customParams.paramDefinitions;
+      expect (paramDefinitions).toEqual([
+        {
+          'key': 'maxContextTokens',
+          'columnSpan': 1,
+          'component': 'input',
+          'default': 100, // added
+          'label': 'maxContextTokens',
+          'optionType': 'custom',
+          'placeholder': '',
+          'type': 'number',
+        },
+        {
+          'key': 'temperature',
+          'columnSpan': 1,
+          'component': 'slider',
+          'default': 0.7, // overridden
+          'includeInput': true,
+          'label': 'temperature',
+          'optionType': 'custom',
+          'range': { // overridden
+            'max': 0.9,
+            'min': 0.1,
+            'step': 0.1,
+          },
+          'type': 'number',
+        },
+        {
+          'key': 'topP',
+          'columnSpan': 1,
+          'component': 'slider',
+          'default': 1,
+          'includeInput': true,
+          'label': 'topP',
+          'optionType': 'custom',
+          'range': {
+            'max': 1,
+            'min': 0,
+            'step': 0.01,
+          },
+          'type': 'number',
+        },
+      ]);
+    });
   });
 });
