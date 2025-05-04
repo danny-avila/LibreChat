@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { PixelCard } from '~/components/ui';
 import ProgressText from './ProgressText';
+import { PixelCard } from '~/components';
 import { scaleImage } from '~/utils';
 
 export default function OpenAIImageGen({
@@ -136,6 +136,7 @@ export default function OpenAIImageGen({
         clearInterval(intervalRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialProgress, quality]);
 
   useEffect(() => {
@@ -195,6 +196,7 @@ export default function OpenAIImageGen({
             imagePath={filepath ?? ''}
             width={dimensions.width}
             height={dimensions.height}
+            placeholderDimensions={{ width: dimensions.width, height: dimensions.height }}
           />
         </div>
       </div>

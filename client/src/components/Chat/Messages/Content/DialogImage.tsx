@@ -1,27 +1,41 @@
-import { X } from 'lucide-react';
-import { OGDialog, OGDialogClose, OGDialogContent } from '~/components';
+import { X, ArrowDownToLine } from 'lucide-react';
+import { Button, OGDialog, OGDialogContent } from '~/components';
 
-export default function DialogImage({ isOpen, onOpenChange, src = '' }) {
+export default function DialogImage({ isOpen, onOpenChange, src = '', downloadImage }) {
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
       <OGDialogContent
         showCloseButton={false}
-        className="w-11/12 overflow-x-auto rounded-none bg-transparent p-0 sm:w-auto"
+        className="h-full w-full rounded-none bg-transparent"
         disableScroll={false}
+        overlayClassName="bg-surface-secondary"
       >
-        <OGDialogClose asChild>
-          <button
-            className="absolute left-4 top-4 text-gray-50 transition hover:text-gray-200"
-            type="button"
+        <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-4">
+          <Button
+            onClick={() => onOpenChange(false)}
+            variant="ghost"
+            className="h-10 w-10 p-0 hover:bg-surface-hover"
           >
             <X className="size-6" />
-          </button>
-        </OGDialogClose>
-        <img
-          src={src}
-          alt="Uploaded image"
-          className="max-w-screen h-full max-h-screen w-full object-contain"
-        />
+          </Button>
+          <Button onClick={() => downloadImage()} variant="ghost" className="h-10 w-10 p-0">
+            <ArrowDownToLine className="size-6" />
+          </Button>
+        </div>
+        <OGDialog open={isOpen} onOpenChange={onOpenChange}>
+          <OGDialogContent
+            showCloseButton={false}
+            className="w-11/12 overflow-x-auto rounded-none bg-transparent p-4 shadow-none sm:w-auto"
+            disableScroll={false}
+            overlayClassName="bg-transparent"
+          >
+            <img
+              src={src}
+              alt="Uploaded image"
+              className="max-w-screen h-full max-h-screen w-full object-contain"
+            />
+          </OGDialogContent>
+        </OGDialog>
       </OGDialogContent>
     </OGDialog>
   );

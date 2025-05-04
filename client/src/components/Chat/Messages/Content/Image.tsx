@@ -38,49 +38,63 @@ const Image = ({
     [placeholderDimensions, height, width],
   );
 
+  const downloadImage = () => {
+    const link = document.createElement('a');
+    link.href = imagePath;
+    link.download = altText;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <>
-      <div ref={containerRef}>
-        <div
-          className={cn(
-            'relative mt-1 flex h-auto w-full max-w-lg items-center justify-center overflow-hidden rounded-lg bg-surface-active-alt text-text-secondary-alt',
-            className,
-          )}
+    <div ref={containerRef}>
+      <div
+        className={cn(
+          'relative mt-1 flex h-auto w-full max-w-lg items-center justify-center overflow-hidden rounded-lg border border-border-light text-text-secondary-alt shadow-md',
+          className,
+        )}
+      >
+        <button
+          type="button"
+          aria-label={`View ${altText} in dialog`}
+          onClick={() => setIsOpen(true)}
+          className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <button
-            type="button"
-            aria-label={`View ${altText} in dialog`}
-            onClick={() => setIsOpen(true)}
-            className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <LazyLoadImage
-              alt={altText}
-              onLoad={handleImageLoad}
-              visibleByDefault={true}
-              className={cn(
-                'opacity-100 transition-opacity duration-100',
-                isLoaded ? 'opacity-100' : 'opacity-0',
-              )}
-              src={imagePath}
-              style={{
-                width: `${scaledWidth}`,
-                height: 'auto',
-                color: 'transparent',
-                display: 'block',
-              }}
-              placeholder={
-                <Skeleton
-                  className={cn('h-auto w-full', `h-[${scaledHeight}] w-[${scaledWidth}]`)}
-                  aria-label="Loading image"
-                  aria-busy="true"
-                />
-              }
-            />
-          </button>
-          {isLoaded && <DialogImage isOpen={isOpen} onOpenChange={setIsOpen} src={imagePath} />}
-        </div>
+          <LazyLoadImage
+            alt={altText}
+            onLoad={handleImageLoad}
+            visibleByDefault={true}
+            className={cn(
+              'opacity-100 transition-opacity duration-100',
+              isLoaded ? 'opacity-100' : 'opacity-0',
+            )}
+            src={imagePath}
+            style={{
+              width: `${scaledWidth}`,
+              height: 'auto',
+              color: 'transparent',
+              display: 'block',
+            }}
+            placeholder={
+              <Skeleton
+                className={cn('h-auto w-full', `h-[${scaledHeight}] w-[${scaledWidth}]`)}
+                aria-label="Loading image"
+                aria-busy="true"
+              />
+            }
+          />
+        </button>
+        {isLoaded && (
+          <DialogImage
+            isOpen={isOpen}
+            onOpenChange={setIsOpen}
+            src={imagePath}
+            downloadImage={downloadImage}
+          />
+        )}
       </div>
-    </>
+    </div>
   );
 };
 
