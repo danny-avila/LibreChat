@@ -28,8 +28,19 @@ function AccountSettings() {
   const avatarSrc = useAvatar(user);
   const avatarSeed = user?.avatar || user?.name || user?.username || '';
 
+  // Create a select state with custom setOpen handler
+  const selectStore = Select.useSelectStore({
+    setOpen: (open) => {
+      if (open && isAuthenticated) {
+        // Trigger a refetch when the menu opens
+        omnexioBalanceQuery.refetch();
+      }
+      selectStore.setOpen(open);
+    },
+  });
+
   return (
-    <Select.SelectProvider>
+    <Select.SelectProvider store={selectStore}>
       <Select.Select
         aria-label={localize('com_nav_account_settings')}
         data-testid="nav-user"
