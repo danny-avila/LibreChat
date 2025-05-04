@@ -80,11 +80,11 @@ const useNavigateToConvo = (index = 0) => {
     }
     clearAllConversations(true);
     queryClient.setQueryData([QueryKeys.messages, currentConvoId], []);
-    setConversation(convo);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       fetchFreshData(convo);
     } else {
+      setConversation(convo);
       navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     }
   };
