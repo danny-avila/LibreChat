@@ -27,8 +27,8 @@ export const useGetOmnexioSubscriptionPlans = (
     [QueryKeys.omnexioSubscriptionPlans],
     () => dataService.getOmnexioSubscriptionPlans(),
     {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
       refetchOnMount: true,
       ...config,
       enabled: true,
