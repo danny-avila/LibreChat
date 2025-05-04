@@ -278,11 +278,15 @@ export const endpointSchema = baseEndpointSchema.merge(
     headers: z.record(z.any()).optional(),
     addParams: z.record(z.any()).optional(),
     dropParams: z.array(z.string()).optional(),
+    customParams: z.object({
+      includeDefaultParams: z.union([z.boolean(), z.array(z.string())]).default(true).optional(),
+      paramDefinitions: z.array(z.record(z.any())).optional(),
+    }).strict(),
     customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
   }),
-);
+).strict();
 
 export type TEndpoint = z.infer<typeof endpointSchema>;
 
@@ -612,7 +616,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
-      [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
+      [EModelEndpoint.custom]: z.array(endpointSchema.partial().strict()).optional(),
       [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
     .strict()

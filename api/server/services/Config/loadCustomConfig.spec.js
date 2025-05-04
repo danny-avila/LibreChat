@@ -150,4 +150,70 @@ describe('loadCustomConfig', () => {
     expect(logger.info).toHaveBeenCalledWith(JSON.stringify(mockConfig, null, 2));
     expect(logger.debug).toHaveBeenCalledWith('Custom config:', mockConfig);
   });
+
+  describe('validate customParams', () => {
+    const mockConfig = {
+      version: '1.0',
+      cache: false,
+      endpoints: {
+        custom: [
+          {
+            name: 'mistral',
+            apiKey: 'user_provided',
+            customParams: {},
+          },
+        ],
+      },
+    };
+
+    async function loadCustomParamsConfig (customParams) {
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      mockConfig.endpoints.custom[0].customParams = customParams;
+      loadYaml.mockReturnValueOnce(mockConfig);
+      return await loadCustomConfig();
+    }
+
+    beforeEach(() => {
+      jest.resetAllMocks();
+    });
+
+    it('returns no error when customParams is undefined', async () => {
+      const result = await loadCustomParamsConfig(undefined);
+      expect(result).toEqual(mockConfig);
+    });
+
+    it('returns no error when customParams is valid', async () => {
+      const result = await loadCustomParamsConfig({
+        includeDefaultParams: ['user'],
+        paramDefinitions: [{
+          key: 'temperature',
+          type: 'number',
+          component: 'input',
+          optionType: 'custom',
+          default: 0.5,
+        }],
+      });
+      console.log(JSON.stringify(result));
+      expect(result).toEqual(mockConfig);
+    });
+
+    it('logs an error when paramDefinitions is malformed', async () => {
+      const malformedCustomParams = {
+        paramDefinitions: [{
+          key: 'temperature',
+          type: 'noomba',
+          component: 'inpoot',
+          optionType: 'custom',
+        }],
+      };
+      await expect(loadCustomParamsConfig(malformedCustomParams)).rejects.toThrow(
+        /Custom parameter definitions for "mistral" endpoint is malformed:/,
+      );
+    });
+
+    it('logs an error when includeDefaultParams is of the wrong type', async () => {
+      await loadCustomParamsConfig({ includeDefaultParams: 'neither array nor bool' });
+      expect(logger.error).toHaveBeenCalledWith(expect.stringMatching(/^Invalid custom config file/));
+    });
+  });
 });
