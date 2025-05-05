@@ -61,7 +61,10 @@ class ModelEndHandler {
       }
 
       this.collectedUsage.push(usage);
-      if (!graph.clientOptions?.disableStreaming) {
+      const streamingDisabled = !!(
+        graph.clientOptions?.disableStreaming || graph?.boundModel?.disableStreaming
+      );
+      if (!streamingDisabled) {
         return;
       }
       if (!data.output.content) {
