@@ -108,6 +108,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   );
 
   const handleContainerClick = useCallback(() => {
+    /** Check if the device is a touchscreen */
+    if (window.matchMedia?.('(pointer: coarse)').matches) {
+      return;
+    }
     textAreaRef.current?.focus();
   }, []);
 
@@ -126,17 +130,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
-
-  // Detects if the device is a touch-screen by checking if the primary input mechanism is coarse (e.g., a finger).
-  const isTouchScreen = useMemo(() => window.matchMedia?.('(pointer: coarse)').matches, []);
-
-  const onSubmit = methods.handleSubmit((data: { text: string }) => {
-    submitMessage(data);
-    // On touch-screen devices, blur the text area to dismiss the on-screen keyboard
-    if (isTouchScreen) {
-      textAreaRef.current?.blur();
-    }
-  });
 
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -211,7 +204,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
         'mx-auto flex flex-row gap-3 sm:px-2',
         maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
