@@ -112,6 +112,13 @@ export function getOmnexioSubscriptionPlans(): Promise<string> {
   return request.get(endpoints.omnexioSubscriptionPlans());
 }
 
+export function changeOmnexioSubscription(subscriptionPlanId: number): Promise<void> {
+  const payload = {
+    subscription_plan_id: subscriptionPlanId,
+  };
+  return request.post(endpoints.omnexioSubscriptionChange(), payload);
+}
+
 export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };

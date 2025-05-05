@@ -21,6 +21,9 @@
   "com_subscription_terms": "By subscribing, you agree to our Terms of Service and Privacy Policy.",
 
   "com_ui_processing": "Processing...",
+  "com_ui_confirm": "Confirm",
+  "com_subscription_confirm_change": "Confirm Subscription Change",
+  "com_subscription_confirm_change_message": "Are you sure you want to change your current subscription plan? This action will take effect immediately.",
 
   "chat_direction_left_to_right": "something needs to go here. was empty",
   "chat_direction_right_to_left": "something needs to go here. was empty",
