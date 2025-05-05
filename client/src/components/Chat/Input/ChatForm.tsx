@@ -127,9 +127,13 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
+  // Detects if the device is a touch-screen by checking if the primary input mechanism is coarse (e.g., a finger).
+  const isTouchScreen = useMemo(() => window.matchMedia?.('(pointer: coarse)').matches, []);
+
   const onSubmit = methods.handleSubmit((data: { text: string }) => {
     submitMessage(data);
-    if (window.matchMedia?.('(pointer: coarse)').matches) {
+    // On touch-screen devices, blur the text area to dismiss the on-screen keyboard
+    if (isTouchScreen) {
       textAreaRef.current?.blur();
     }
   });
