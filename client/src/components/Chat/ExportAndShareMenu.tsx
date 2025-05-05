@@ -45,15 +45,6 @@ export default function ExportAndShareMenu({
 
   const dropdownItems: t.MenuItemProps[] = [
     {
-      label: localize('com_endpoint_export'),
-      onClick: exportHandler,
-      icon: <Upload className="icon-md mr-2 text-text-secondary" />,
-      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
-      hideOnClick: false,
-      ref: exportButtonRef,
-      render: (props) => <button {...props} />,
-    },
-    {
       label: localize('com_ui_share'),
       onClick: shareHandler,
       icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
@@ -61,6 +52,15 @@ export default function ExportAndShareMenu({
       /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
       ref: shareButtonRef,
+      render: (props) => <button {...props} />,
+    },
+    {
+      label: localize('com_endpoint_export'),
+      onClick: exportHandler,
+      icon: <Upload className="icon-md mr-2 text-text-secondary" />,
+      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+      hideOnClick: false,
+      ref: exportButtonRef,
       render: (props) => <button {...props} />,
     },
   ];
@@ -81,7 +81,7 @@ export default function ExportAndShareMenu({
                 aria-label="Export options"
                 className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
               >
-                <Upload
+                <Share2
                   className="icon-md text-text-secondary"
                   aria-hidden="true"
                   focusable="false"

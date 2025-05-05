@@ -239,12 +239,15 @@ const modelMaxOutputs = {
   system_default: 1024,
 };
 
+/** Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names */
 const anthropicMaxOutputs = {
   'claude-3-haiku': 4096,
   'claude-3-sonnet': 4096,
   'claude-3-opus': 4096,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
+  'claude-3.7-sonnet': 128000,
+  'claude-3-7-sonnet': 128000,
 };
 
 const maxOutputTokensMap = {

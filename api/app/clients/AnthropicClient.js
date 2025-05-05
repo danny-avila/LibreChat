@@ -396,13 +396,13 @@ class AnthropicClient extends BaseClient {
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = this.useMessages
         ? formatMessage({
-          message,
-          endpoint: EModelEndpoint.anthropic,
-        })
+            message,
+            endpoint: EModelEndpoint.anthropic,
+          })
         : {
-          author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-          content: message?.content ?? message.text,
-        };
+            author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
+            content: message?.content ?? message.text,
+          };
 
       const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
@@ -680,7 +680,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getCompletion() {
-    logger.debug('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
+    logger.debug("AnthropicClient doesn't use getCompletion (all handled in sendCompletion)");
   }
 
   /**
@@ -888,7 +888,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getBuildMessagesOptions() {
-    logger.debug('AnthropicClient doesn\'t use getBuildMessagesOptions');
+    logger.debug("AnthropicClient doesn't use getBuildMessagesOptions");
   }
 
   getEncoding() {
