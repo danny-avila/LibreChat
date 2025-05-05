@@ -23,6 +23,13 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- if .Values.initContainers }}
+      # Init containers are specialized containers that run before app containers in a Pod.
+      # They can contain utilities or setup scripts not present in an app image.
+      # For more info: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+      initContainers:
+        {{- toYaml .Values.initContainers | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -30,6 +37,10 @@ spec:
       serviceAccountName: {{ include "librechat.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ include "librechat.fullname" . }}-config
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -65,6 +76,10 @@ spec:
             httpGet:
               path: /
               port: http
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/librechat.yaml
+              subPath: config
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

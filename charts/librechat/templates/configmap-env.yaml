@@ -8,3 +8,13 @@ data:
 {{- range $key, $val := .Values.config.env }}
   {{ $key }}: {{ $val | quote }}
 {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "librechat.fullname" . }}-config
+  labels:
+    {{- include "librechat.labels" . | nindent 4 }}
+data:
+  config: |
+    {{- toYaml .Values.yamlconfig | nindent 4 }}
