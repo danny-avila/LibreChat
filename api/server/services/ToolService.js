@@ -509,6 +509,8 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       return checkCapability(AgentCapabilities.file_search);
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code);
+    } else if (tool === Tools.web_search) {
+      return checkCapability(AgentCapabilities.web_search);
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
