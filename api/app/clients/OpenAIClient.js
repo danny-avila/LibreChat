@@ -475,7 +475,9 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    if (promptPrefix && this.isOmni !== true) {
+    const noSysMsg = /\b(o1-preview|o1-mini)\b/i.test(this.modelOptions.model);
+
+    if (promptPrefix && !noSysMsg) {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
@@ -503,7 +505,7 @@ class OpenAIClient extends BaseClient {
     };
 
     /** EXPERIMENTAL */
-    if (promptPrefix && this.isOmni === true) {
+    if (promptPrefix && noSysMsg) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
         if (Array.isArray(payload[lastUserMessageIndex].content)) {
