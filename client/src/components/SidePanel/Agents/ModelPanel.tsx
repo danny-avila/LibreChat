@@ -63,10 +63,38 @@ export default function ModelPanel({
     [provider, endpointsConfig],
   );
 
+  // Get custom parameters from endpoint config
+  const customParams = useMemo(() => {
+    if (!endpointsConfig || !provider) { return null; }
+    const endpointConfig = endpointsConfig[provider];
+    if (!endpointConfig || !endpointConfig.customParams?.paramDefinitions) { return null; }
+    return endpointConfig.customParams;
+  }, [endpointsConfig, provider]);
+
+  // Combine default parameters with custom parameters
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model ?? '');
-    return agentSettings[combinedKey] ?? agentSettings[endpointKey];
-  }, [endpointType, model, provider]);
+    const defaultParams = agentSettings[combinedKey] ?? agentSettings[endpointKey] ?? [];
+
+    if (!customParams) { return defaultParams; }
+
+    // If includeDefaultParams is false, only use custom parameters
+    if (customParams.includeDefaultParams === false) {
+      return customParams.paramDefinitions ?? [];
+    }
+
+    // If includeDefaultParams is an array, filter default parameters
+    const includeDefaultParams = customParams.includeDefaultParams;
+    if (Array.isArray(includeDefaultParams)) {
+      const filteredDefaultParams = defaultParams.filter(param =>
+        includeDefaultParams.includes(param.key)
+      );
+      return [...filteredDefaultParams, ...(customParams.paramDefinitions ?? [])];
+    }
+
+    // Otherwise, include all default parameters and custom parameters
+    return [...defaultParams, ...(customParams.paramDefinitions ?? [])];
+  }, [endpointType, model, provider, customParams]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);
