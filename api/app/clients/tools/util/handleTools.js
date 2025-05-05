@@ -1,6 +1,6 @@
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
-const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
+const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
 const { Tools, Constants, EToolResources } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
@@ -261,6 +261,19 @@ const loadTools = async ({
           toolContextMap[tool] = toolContext;
         }
         return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
+      };
+      continue;
+    } else if (tool === Tools.web_search) {
+      const onSearchResults = options?.onSearchResults;
+      requestedTools[tool] = async () => {
+        // const { files, toolContext } = await primeSearchFiles(options);
+        // if (toolContext) {
+        //   toolContextMap[tool] = toolContext;
+        // }
+        return createSearchTool({
+          // rerankerType: 'jina',
+          onSearchResults,
+        });
       };
       continue;
     } else if (tool && appTools[tool] && mcpToolPattern.test(tool)) {

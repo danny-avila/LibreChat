@@ -167,6 +167,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
+  web_search = 'web_search',
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
@@ -245,11 +246,12 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
       .default([
         AgentCapabilities.execute_code,
         AgentCapabilities.file_search,
+        AgentCapabilities.web_search,
         AgentCapabilities.artifacts,
         AgentCapabilities.actions,
         AgentCapabilities.tools,
-        AgentCapabilities.ocr,
         AgentCapabilities.chain,
+        AgentCapabilities.ocr,
       ]),
   }),
 );
