@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger, Tag } from '~/components/ui';
 import { useChatContext, useToastContext } from '~/Providers';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
-import { cn, defaultTextProps } from '~/utils';
+import { cn } from '~/utils';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
@@ -15,7 +14,6 @@ function DynamicTags({
   description = '',
   columnSpan,
   setOption,
-  optionType,
   placeholder = '',
   readonly = false,
   showDefault = false,
@@ -38,14 +36,10 @@ function DynamicTags({
 
   const updateState = useCallback(
     (update: string[]) => {
-      if (optionType === OptionTypes.Custom) {
-        // TODO: custom logic, add to payload but not to conversation
-        setTags(update);
-        return;
-      }
+      setTags(update);
       setOption(settingKey)(update);
     },
-    [optionType, setOption, settingKey],
+    [setOption, settingKey],
   );
 
   const onTagClick = useCallback(() => {
@@ -54,18 +48,9 @@ function DynamicTags({
     }
   }, [inputRef]);
 
-  const currentTags: string[] | undefined = useMemo(() => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      return tags;
-    }
-
-    if (!conversation?.[settingKey]) {
-      return defaultValue ?? [];
-    }
-
-    return conversation[settingKey];
-  }, [conversation, defaultValue, optionType, settingKey, tags]);
+  const currentTags = useMemo(() => {
+    return conversation?.[settingKey] ?? defaultValue ?? [];
+  }, [conversation, defaultValue, settingKey]);
 
   const onTagRemove = useCallback(
     (indexToRemove: number) => {
