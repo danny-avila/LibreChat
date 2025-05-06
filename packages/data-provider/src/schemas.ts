@@ -177,6 +177,7 @@ export const defaultAgentFormValues = {
   recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
+  [Tools.web_search]: false,
 };
 
 export const ImageVisionTool: FunctionTool = {
