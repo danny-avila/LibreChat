@@ -58,7 +58,9 @@ class TavilySearchResults extends Tool {
       topic: z
         .enum(['general', 'news', 'finance'])
         .optional()
-        .describe('The category of the search. Use news ONLY if query SPECIFCALLY mentions the word "news".'),
+        .describe(
+          'The category of the search. Use news ONLY if query SPECIFCALLY mentions the word "news".',
+        ),
       time_range: z
         .enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y'])
         .optional()
@@ -71,7 +73,9 @@ class TavilySearchResults extends Tool {
       include_image_descriptions: z
         .boolean()
         .optional()
-        .describe('When include_images is true, also add a descriptive text for each image. Default is false.'),
+        .describe(
+          'When include_images is true, also add a descriptive text for each image. Default is false.',
+        ),
     });
   }
 
