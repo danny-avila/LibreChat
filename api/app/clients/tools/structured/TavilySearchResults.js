@@ -71,7 +71,7 @@ class TavilySearchResults extends Tool {
       include_image_descriptions: z
         .boolean()
         .optional()
-        .describe('When include_images is true, also add a descriptive text for each image. Default is false.'),    
+        .describe('When include_images is true, also add a descriptive text for each image. Default is false.'),
     });
   }
 
