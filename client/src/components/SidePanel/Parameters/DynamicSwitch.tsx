@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
@@ -14,7 +13,6 @@ function DynamicSwitch({
   description = '',
   columnSpan,
   setOption,
-  optionType,
   readonly = false,
   showDefault = false,
   labelCode = false,
@@ -35,20 +33,11 @@ function DynamicSwitch({
   });
 
   const selectedValue = useMemo(() => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      return inputValue;
-    }
-
     return conversation?.[settingKey] ?? defaultValue;
-  }, [conversation, defaultValue, optionType, settingKey, inputValue]);
+  }, [conversation, defaultValue, settingKey]);
 
   const handleCheckedChange = (checked: boolean) => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      setInputValue(checked);
-      return;
-    }
+    setInputValue(checked);
     setOption(settingKey)(checked);
   };
 
