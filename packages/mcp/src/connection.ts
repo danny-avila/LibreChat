@@ -159,6 +159,15 @@ export class MCPConnection extends EventEmitter {
               headers: options.headers,
               signal: abortController.signal,
             },
+            eventSourceInit: {
+              fetch: (url, init) => {
+                const headers = new Headers(Object.assign({}, init?.headers, options.headers));
+                return fetch(url, {
+                  ...init,
+                  headers,
+                });
+              },
+            },
           });
 
           transport.onclose = () => {
