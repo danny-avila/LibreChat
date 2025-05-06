@@ -518,7 +518,7 @@ export const tMessageSchema = z.object({
   iconURL: z.string().nullable().optional(),
 });
 
-export type TAttachmentMetadata = { messageId: string; toolCallId: string };
+export type TAttachmentMetadata = { messageId: string; toolCallId: string; type?: Tools };
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
