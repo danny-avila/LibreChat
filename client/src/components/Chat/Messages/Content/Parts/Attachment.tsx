@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from 'react';
-import { imageExtRegex } from 'librechat-data-provider';
+import { imageExtRegex, Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
@@ -82,6 +82,9 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
 
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
+    return null;
+  }
+  if (attachment.type === Tools.web_search) {
     return null;
   }
 
