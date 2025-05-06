@@ -200,11 +200,12 @@ function generateConfig(key, baseURL, endpoint) {
     config.capabilities = [
       AgentCapabilities.execute_code,
       AgentCapabilities.file_search,
+      AgentCapabilities.web_search,
       AgentCapabilities.artifacts,
       AgentCapabilities.actions,
       AgentCapabilities.tools,
-      AgentCapabilities.ocr,
       AgentCapabilities.chain,
+      AgentCapabilities.ocr,
     ];
   }
 
