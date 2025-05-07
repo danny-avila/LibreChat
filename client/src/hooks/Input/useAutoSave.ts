@@ -75,9 +75,9 @@ export const useAutoSave = ({
         const { fileToRecover, fileIdToRecover } = fileData
           ? { fileToRecover: fileData, fileIdToRecover: fileId }
           : {
-            fileToRecover: tempFileData,
-            fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
-          };
+              fileToRecover: tempFileData,
+              fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
+            };
 
         if (fileToRecover) {
           setFiles((currentFiles) => {
