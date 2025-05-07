@@ -55,8 +55,10 @@ export default function useSideNavLinks({
     const links: NavLink[] = [];
     if (
       isAssistantsEndpoint(endpoint) &&
-      endpointsConfig?.[EModelEndpoint.assistants] &&
-      endpointsConfig[EModelEndpoint.assistants].disableBuilder !== true &&
+      ((endpointsConfig?.[EModelEndpoint.assistants] &&
+        endpointsConfig[EModelEndpoint.assistants].disableBuilder !== true) ||
+        (endpointsConfig?.[EModelEndpoint.azureAssistants] &&
+          endpointsConfig[EModelEndpoint.azureAssistants].disableBuilder !== true)) &&
       keyProvided
     ) {
       links.push({
