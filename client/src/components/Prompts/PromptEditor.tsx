@@ -43,7 +43,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   }, [isEditing, prompt]);
 
   const rehypePlugins: PluggableList = [
-    [rehypeKatex, { output: 'mathml' }],
+    [rehypeKatex],
     [
       rehypeHighlight,
       {
