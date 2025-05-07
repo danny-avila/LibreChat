@@ -29,7 +29,7 @@ class ModelEndHandler {
    * @param {string} event
    * @param {ModelEndData | undefined} data
    * @param {Record<string, unknown> | undefined} metadata
-   * @param {Graph} graph
+   * @param {StandardGraph} graph
    * @returns
    */
   handle(event, data, metadata, graph) {
