@@ -109,6 +109,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   );
 
   const handleContainerClick = useCallback(() => {
+    /** Check if the device is a touchscreen */
+    if (window.matchMedia?.('(pointer: coarse)').matches) {
+      return;
+    }
     textAreaRef.current?.focus();
   }, []);
 
