@@ -44,6 +44,47 @@
  */
 
 /**
+ * @exports Graph
+ * @typedef {import('@librechat/agents').Graph} Graph
+ * @memberof typedefs
+ */
+/**
+ * @exports EventHandler
+ * @typedef {import('@librechat/agents').EventHandler} EventHandler
+ * @memberof typedefs
+ */
+/**
+ * @exports ModelEndData
+ * @typedef {import('@librechat/agents').ModelEndData} ModelEndData
+ * @memberof typedefs
+ */
+/**
+ * @exports ToolEndData
+ * @typedef {import('@librechat/agents').ToolEndData} ToolEndData
+ * @memberof typedefs
+ */
+/**
+ * @exports ToolEndCallback
+ * @typedef {import('@librechat/agents').ToolEndCallback} ToolEndCallback
+ * @memberof typedefs
+ */
+/**
+ * @exports ChatModelStreamHandler
+ * @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler
+ * @memberof typedefs
+ */
+/**
+ * @exports ContentAggregator
+ * @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator
+ * @memberof typedefs
+ */
+/**
+ * @exports GraphEvents
+ * @typedef {import('@librechat/agents').GraphEvents} GraphEvents
+ * @memberof typedefs
+ */
+
+/**
  * @exports AgentRun
  * @typedef {import('@librechat/agents').Run} AgentRun
  * @memberof typedefs
@@ -94,12 +135,6 @@
 /**
  * @exports StreamEventData
  * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
- * @memberof typedefs
- */
-
-/**
- * @exports ToolEndData
- * @typedef {import('@librechat/agents').ToolEndData} ToolEndData
  * @memberof typedefs
  */
 
