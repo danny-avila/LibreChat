@@ -135,12 +135,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   // Wrap the submitMessage function to blur the textarea only on mobile devices
-  const submitMessage = useCallback((data: { text: string; } | undefined) => {
-    if (textAreaRef.current && isSmallScreen) {
-      textAreaRef.current.blur();
-    }
-    return originalSubmitMessage(data);
-  }, [isSmallScreen, originalSubmitMessage]);
+  const submitMessage = useCallback(
+    (data: { text: string } | undefined) => {
+      if (textAreaRef.current && isSmallScreen) {
+        textAreaRef.current.blur();
+      }
+      return originalSubmitMessage(data);
+    },
+    [isSmallScreen, originalSubmitMessage],
+  );
 
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -218,11 +221,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
         'mx-auto flex flex-row gap-3 sm:px-2',
-        maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
+        maximizeChatSpace
+          ? isSmallScreen
+            ? 'w-full max-w-full'
+            : 'ml-4 mr-4'
+          : 'md:max-w-3xl xl:max-w-4xl',
         centerFormOnLanding &&
-        (conversationId == null || conversationId === Constants.NEW_CONVO) &&
-        !isSubmitting &&
-        conversation?.messages?.length === 0
+          (conversationId == null || conversationId === Constants.NEW_CONVO) &&
+          !isSubmitting &&
+          conversation?.messages?.length === 0
           ? 'transition-all duration-200 sm:mb-28'
           : 'sm:mb-10',
       )}
