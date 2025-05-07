@@ -1285,6 +1285,14 @@ ${convo}
         modelOptions.messages[0].role = 'user';
       }
 
+      if (
+        (this.options.endpoint === EModelEndpoint.openAI ||
+          this.options.endpoint === EModelEndpoint.azureOpenAI) &&
+        modelOptions.stream === true
+      ) {
+        modelOptions.stream_options = { include_usage: true };
+      }
+
       if (this.options.addParams && typeof this.options.addParams === 'object') {
         const addParams = { ...this.options.addParams };
         modelOptions = {
@@ -1387,12 +1395,6 @@ ${convo}
           ...modelOptions,
           stream: true,
         };
-        if (
-          this.options.endpoint === EModelEndpoint.openAI ||
-          this.options.endpoint === EModelEndpoint.azureOpenAI
-        ) {
-          params.stream_options = { include_usage: true };
-        }
         const stream = await openai.beta.chat.completions
           .stream(params)
           .on('abort', () => {
