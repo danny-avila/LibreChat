@@ -68,7 +68,7 @@ export class MCPConnection extends EventEmitter {
     this.client = new Client(
       {
         name: 'librechat-mcp-client',
-        version: '1.2.0',
+        version: '1.2.1',
       },
       {
         capabilities: {},
@@ -158,6 +158,15 @@ export class MCPConnection extends EventEmitter {
             requestInit: {
               headers: options.headers,
               signal: abortController.signal,
+            },
+            eventSourceInit: {
+              fetch: (url, init) => {
+                const headers = new Headers(Object.assign({}, init?.headers, options.headers));
+                return fetch(url, {
+                  ...init,
+                  headers,
+                });
+              },
             },
           });
 

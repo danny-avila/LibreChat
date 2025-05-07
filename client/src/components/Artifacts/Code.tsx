@@ -35,7 +35,7 @@ export const CodeMarkdown = memo(
     const [userScrolled, setUserScrolled] = useState(false);
     const currentContent = content;
     const rehypePlugins = [
-      [rehypeKatex, { output: 'mathml' }],
+      [rehypeKatex],
       [
         rehypeHighlight,
         {

@@ -58,7 +58,7 @@ const payloadParser = ({ req, agent, endpoint }) => {
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
-const noSystemModelRegex = [/\b(o1)\b/gi];
+const noSystemModelRegex = [/\b(o1-preview|o1-mini)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
