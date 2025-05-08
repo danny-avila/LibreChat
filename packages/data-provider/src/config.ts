@@ -279,7 +279,8 @@ export const endpointSchema = baseEndpointSchema.merge(
     addParams: z.record(z.any()).optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z.object({
-      includeDefaultParams: z.union([z.boolean(), z.array(z.string())]).default(true).optional(),
+      defaultParamsEndpoint: z.string().default('custom').optional(),
+      defaultParamsIncluded: z.union([z.boolean(), z.array(z.string())]).default(true).optional(),
       paramDefinitions: z.array(z.record(z.any())).optional(),
     }).strict(),
     customOrder: z.number().optional(),
