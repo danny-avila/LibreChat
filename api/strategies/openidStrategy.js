@@ -86,7 +86,7 @@ const getUserInfo = async (config, accessToken, sub) => {
  * @param {Configuration} config 
  * @param {string} accessToken access token 
  * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
- * @returns {Promise<Buffer>}
+ * @returns {Promise<Buffer | string>} The image buffer or an empty string if the download fails.
  */
 const downloadImage = async (url, config, accessToken, sub) => {
   const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub, true);

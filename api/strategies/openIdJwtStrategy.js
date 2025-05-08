@@ -1,10 +1,9 @@
-
-
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const {  updateUser, findUser } = require('~/models');
+const { updateUser, findUser } = require('~/models');
 const { logger } = require('~/config');
 const jwksRsa = require('jwks-rsa');
+const { isEnabled } = require('~/server/utils');
 /**
  * @function openIdJwtLogin
  * @param {import('openid-client').Configuration} openIdConfig - Configuration object for the JWT strategy.
@@ -19,8 +18,8 @@ const openIdJwtLogin = (openIdConfig) =>
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret({
-        cache: process.env.OPENID_JWKS_URL_CACHE_ENABLED || true,
-        cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_MAX_AGE || 60000,
+        cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+        cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME) : 60000,
         jwksUri: openIdConfig.serverMetadata().jwks_uri
       }),
     },
