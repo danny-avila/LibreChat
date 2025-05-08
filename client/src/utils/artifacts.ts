@@ -214,23 +214,3 @@ export const sharedFiles = {
     </html>
   `,
 };
-
-export function preprocessCodeArtifacts(text?: string): string {
-  if (typeof text !== 'string') {
-    return '';
-  }
-
-  // Remove <thinking> tags and their content
-  text = text.replace(/<thinking>[\s\S]*?<\/thinking>|<thinking>[\s\S]*/g, '');
-
-  // Process artifact headers
-  const regex = /(^|\n)(:::artifact[\s\S]*?(?:```[\s\S]*?```|$))/g;
-  return text.replace(regex, (match, newline, artifactBlock) => {
-    if (artifactBlock.includes('```') === true) {
-      // Keep artifact headers with code blocks (empty or not)
-      return newline + artifactBlock;
-    }
-    // Remove artifact headers without code blocks, but keep the newline
-    return newline;
-  });
-}

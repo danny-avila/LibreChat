@@ -14,15 +14,6 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
 const { logger, sendEvent } = require('~/config');
 
-/** @typedef {import('@librechat/agents').Graph} Graph */
-/** @typedef {import('@librechat/agents').EventHandler} EventHandler */
-/** @typedef {import('@librechat/agents').ModelEndData} ModelEndData */
-/** @typedef {import('@librechat/agents').ToolEndData} ToolEndData */
-/** @typedef {import('@librechat/agents').ToolEndCallback} ToolEndCallback */
-/** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
-/** @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator */
-/** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
-
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
@@ -38,7 +29,7 @@ class ModelEndHandler {
    * @param {string} event
    * @param {ModelEndData | undefined} data
    * @param {Record<string, unknown> | undefined} metadata
-   * @param {Graph} graph
+   * @param {StandardGraph} graph
    * @returns
    */
   handle(event, data, metadata, graph) {
@@ -61,7 +52,10 @@ class ModelEndHandler {
       }
 
       this.collectedUsage.push(usage);
-      if (!graph.clientOptions?.disableStreaming) {
+      const streamingDisabled = !!(
+        graph.clientOptions?.disableStreaming || graph?.boundModel?.disableStreaming
+      );
+      if (!streamingDisabled) {
         return;
       }
       if (!data.output.content) {

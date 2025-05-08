@@ -43,7 +43,8 @@ export default function ChatRoute() {
     refetchOnMount: 'always',
   });
   const initialConvoQuery = useGetConvoIdQuery(conversationId, {
-    enabled: isAuthenticated && conversationId !== Constants.NEW_CONVO,
+    enabled:
+      isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();

@@ -431,14 +431,14 @@ describe('Conversation Utilities', () => {
           pageParams: [],
         };
         const newConvo = makeConversation('new');
-        const updated = addConversationToInfinitePages(data, newConvo);
+        const updated = addConversationToInfinitePages(data, newConvo as TConversation);
         expect(updated.pages[0].conversations[0].conversationId).toBe('new');
         expect(updated.pages[0].conversations[1].conversationId).toBe('1');
       });
 
       it('creates new InfiniteData if data is undefined', () => {
         const newConvo = makeConversation('new');
-        const updated = addConversationToInfinitePages(undefined, newConvo);
+        const updated = addConversationToInfinitePages(undefined, newConvo as TConversation);
         expect(updated.pages[0].conversations[0].conversationId).toBe('new');
         expect(updated.pageParams).toEqual([undefined]);
       });
@@ -531,12 +531,12 @@ describe('Conversation Utilities', () => {
       it('stores model for endpoint', () => {
         const conversation = {
           conversationId: '1',
-          endpoint: 'openai',
+          endpoint: 'openAI',
           model: 'gpt-3',
         };
         storeEndpointSettings(conversation as any);
         const stored = JSON.parse(localStorage.getItem('lastModel') || '{}');
-        expect([undefined, 'gpt-3']).toContain(stored.openai);
+        expect([undefined, 'gpt-3']).toContain(stored.openAI);
       });
 
       it('stores secondaryModel for gptPlugins endpoint', () => {
@@ -574,14 +574,14 @@ describe('Conversation Utilities', () => {
           conversationId: 'a',
           updatedAt: '2024-01-01T12:00:00Z',
           createdAt: '2024-01-01T10:00:00Z',
-          endpoint: 'openai',
+          endpoint: 'openAI',
           model: 'gpt-3',
           title: 'Conversation A',
         } as TConversation;
         convoB = {
           conversationId: 'b',
           updatedAt: '2024-01-02T12:00:00Z',
-          endpoint: 'openai',
+          endpoint: 'openAI',
           model: 'gpt-3',
         } as TConversation;
         queryClient.setQueryData(['allConversations'], {
