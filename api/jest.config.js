@@ -12,4 +12,7 @@ module.exports = {
     '~/(.*)': '<rootDir>/$1',
     '~/data/auth.json': '<rootDir>/__mocks__/auth.mock.json',
   },
+  transformIgnorePatterns: [
+    '/node_modules/(?!(openid-client|oauth4webapi|jose)/).*/'
+  ],
 };
