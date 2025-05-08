@@ -68,6 +68,8 @@ const googleModels = {
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
+  'gemini-2.5-pro': 1000000,
+  'gemini-2.5-flash': 1000000,
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,

@@ -228,7 +228,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     if (!client?.skipSaveUserMessage && latestUserMessage) {
       await saveMessage(req, latestUserMessage, {
-        context: 'api/server/controllers/AskController.js - don\'t skip saving user message',
+        context: "api/server/controllers/AskController.js - don't skip saving user message",
       });
     }
 

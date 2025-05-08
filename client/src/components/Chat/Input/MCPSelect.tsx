@@ -31,7 +31,8 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     select: (data) => {
       const serverNames = new Set<string>();
       data.forEach((tool) => {
-        if (tool.pluginKey.includes(Constants.mcp_delimiter)) {
+        const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
+        if (isMCP && tool.chatMenu !== false) {
           const parts = tool.pluginKey.split(Constants.mcp_delimiter);
           serverNames.add(parts[parts.length - 1]);
         }

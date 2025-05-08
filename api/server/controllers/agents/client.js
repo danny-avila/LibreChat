@@ -148,19 +148,13 @@ class AgentClient extends BaseClient {
    * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
-    logger.info(
-      '[api/server/controllers/agents/client.js #checkVisionRequest] not implemented',
-      attachments,
-    );
     // if (!attachments) {
     //   return;
     // }
-
     // const availableModels = this.options.modelsConfig?.[this.options.endpoint];
     // if (!availableModels) {
     //   return;
     // }
-
     // let visionRequestDetected = false;
     // for (const file of attachments) {
     //   if (file?.type?.includes('image')) {
@@ -171,13 +165,11 @@ class AgentClient extends BaseClient {
     // if (!visionRequestDetected) {
     //   return;
     // }
-
     // this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
     // if (this.isVisionModel) {
     //   delete this.modelOptions.stop;
     //   return;
     // }
-
     // for (const model of availableModels) {
     //   if (!validateVisionModel({ model, availableModels })) {
     //     continue;
@@ -187,14 +179,12 @@ class AgentClient extends BaseClient {
     //   delete this.modelOptions.stop;
     //   return;
     // }
-
     // if (!availableModels.includes(this.defaultVisionModel)) {
     //   return;
     // }
     // if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
     //   return;
     // }
-
     // this.modelOptions.model = this.defaultVisionModel;
     // this.isVisionModel = true;
     // delete this.modelOptions.stop;

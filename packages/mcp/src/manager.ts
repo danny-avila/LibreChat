@@ -370,7 +370,9 @@ export class MCPManager {
   /**
    * Loads tools from all app-level connections into the manifest.
    */
-  public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<void> {
+  public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<t.LCToolManifest> {
+    const mcpTools: t.LCManifestTool[] = [];
+
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         if (connection.isConnected() !== true) {
@@ -383,17 +385,24 @@ export class MCPManager {
         const tools = await connection.fetchTools();
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
-          manifestTools.push({
+          const manifestTool: t.LCManifestTool = {
             name: tool.name,
             pluginKey,
             description: tool.description ?? '',
             icon: connection.iconPath,
-          });
+          };
+          const config = this.mcpConfigs[serverName];
+          if (config?.chatMenu === false) {
+            manifestTool.chatMenu = false;
+          }
+          mcpTools.push(manifestTool);
         }
       } catch (error) {
         this.logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
       }
     }
+
+    return [...mcpTools, ...manifestTools];
   }
 
   /**
