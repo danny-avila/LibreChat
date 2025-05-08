@@ -5,6 +5,8 @@ const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
 const axios = require('axios');
 const yaml = require('js-yaml');
+const { agentSettings } = require('@librechat/frontend/src/components/SidePanel/Parameters/settings');
+const _ = require('lodash');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
@@ -105,7 +107,8 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     logger.debug('Custom config:', customConfig);
   }
 
-  validateCustomParams(customConfig);
+  (customConfig.endpoints?.custom ?? []).filter((endpoint) => endpoint.customParams)
+    .forEach(endpoint => parseCustomParams(endpoint.name, endpoint.customParams));
 
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
@@ -119,16 +122,44 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   return customConfig;
 }
 
-function validateCustomParams(config) {
-  const endpoints = (config.endpoints?.custom ?? []).filter((endpoint) => endpoint.customParams?.paramDefinitions);
-  const paramDefinitionsList = endpoints.map(endpoint => [endpoint.name, endpoint.customParams.paramDefinitions]);
-  paramDefinitionsList.forEach(([name, definitions]) => {
-    try{
-      validateSettingDefinitions(definitions);
-    } catch(e) {
-      throw new Error(`Custom parameter definitions for "${name}" endpoint is malformed: ${e.message}`);
-    }
-  });
+function parseCustomParams(endpointName, customParams) {
+  // Ensures `defaultParamsEndpoint` and `defaultParamsIncluded` have defaults.
+  customParams.defaultParamsEndpoint = customParams.defaultParamsEndpoint ?? 'custom';
+  customParams.defaultParamsIncluded = customParams.defaultParamsIncluded ?? true;
+
+  // Combines default and custom parameter definitions, prioritizing custom values.
+  const defaultParams = _.keyBy(agentSettings[customParams.defaultParamsEndpoint] ?? [], 'key');
+  customParams.paramDefinitions = _.mapValues(customParams.paramDefinitions, (value, key) => ({
+    ...(defaultParams[key] ?? {}),
+    ...value,
+  }));
+  validateCustomParams(endpointName, customParams, defaultParams);
+}
+
+function validateCustomParams(endpointName, customParams, defaultParams) {
+  // Checks if `defaultParamsEndpoint` is a key in `agentSettings`.
+  if (_.keys(agentSettings).exclude(customParams.defaultParamsEndpoint)) {
+    throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. Valid options are ${_.keys(agentSettings).join(', ')}`);
+  }
+
+  // Checks if every element in `defaultParamsIncluded` (if it's an array) is a key in `defaultParams`.
+  const included = Array.isArray(customParams.defaultParamsIncluded) ? customParams.defaultParamsIncluded : [];
+  if (!_.every(included, (key) => _.has(defaultParams, key))) {
+    throw new Error(`defaultParamsIncluded of "${endpointName}" endpoint is an invalid array of parameters. Valid parameters are ${_.keys(defaultParams).join(', ')}`);
+  }
+
+  // TODO: Remove this check once we support custom parameters not being included in the default parameters.
+  // Checks if every key in `paramDefinitions` is a key in `defaultParams`.
+  const paramKeys = customParams.paramDefinitions.map((param) => param.key);
+  if (!_.every(paramKeys, (key) => _.has(defaultParams, key))) {
+    throw new Error(`paramDefinitions of "${endpointName}" endpoint contains invalid key(s). Valid parameter keys are ${_.keys(defaultParams).join(', ')}`);
+  }
+
+  try{
+    validateSettingDefinitions(customParams.paramDefinitions || []);
+  } catch(e) {
+    throw new Error(`Custom parameter definitions for "${endpointName}" endpoint is malformed: ${e.message}`);
+  }
 }
 
 module.exports = loadCustomConfig;
