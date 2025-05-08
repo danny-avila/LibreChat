@@ -70,7 +70,7 @@ const startServer = async () => {
 
   /* OAUTH */
   app.use(passport.initialize());
-  passport.use(await jwtLogin());
+  passport.use(jwtLogin());
   passport.use(passportLogin());
 
   /* LDAP Auth */
@@ -79,7 +79,7 @@ const startServer = async () => {
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    configureSocialLogins(app);
+    await configureSocialLogins(app);
   }
 
   app.use('/oauth', routes.oauth);
