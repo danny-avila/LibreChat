@@ -269,25 +269,8 @@ export type TConfig = {
   retrievalModels?: string[];
   capabilities?: string[];
   customParams?: {
-    includeDefaultParams?: boolean | string[];
-    paramDefinitions?: Array<{
-      key: string;
-      type: string;
-      component: string;
-      optionType: string;
-      default?: any;
-      label?: string;
-      description?: string;
-      min?: number;
-      max?: number;
-      step?: number;
-      columnSpan?: number;
-      options?: Array<{
-        value: string;
-        label: string;
-      }>;
-      [key: string]: any;
-    }>;
+    defaultParamsEndpoint?: string;
+    paramDefinitions?: Array<object>;
   };
 };
 

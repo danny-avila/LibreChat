@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { getSettingsKeys, alternateName, agentSettings } from 'librechat-data-provider';
+import { getSettingsKeys, alternateName, agentParamSettings, SettingDefinition } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
@@ -10,6 +10,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
+import _ from 'lodash';
 
 export default function ModelPanel({
   setActivePanel,
@@ -51,7 +52,7 @@ export default function ModelPanel({
     }
   }, [provider, models, modelsData, setValue, model]);
 
-  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
   const bedrockRegions = useMemo(() => {
     return endpointsConfig?.[provider]?.availableRegions ?? [];
@@ -62,38 +63,15 @@ export default function ModelPanel({
     [provider, endpointsConfig],
   );
 
-  // Get custom parameters from endpoint config
-  const customParams = useMemo(() => {
-    if (!endpointsConfig || !provider) { return null; }
-    const endpointConfig = endpointsConfig[provider];
-    if (!endpointConfig || !endpointConfig.customParams?.paramDefinitions) { return null; }
-    return endpointConfig.customParams;
-  }, [endpointsConfig, provider]);
-
-  // Combine default parameters with custom parameters
-  const parameters = useMemo(() => {
+  const parameters = useMemo(() : SettingDefinition[] => {
+    const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model ?? '');
-    const defaultParams = agentSettings[combinedKey] ?? agentSettings[endpointKey] ?? [];
-
-    if (!customParams) { return defaultParams; }
-
-    // If includeDefaultParams is false, only use custom parameters
-    if (customParams.includeDefaultParams === false) {
-      return customParams.paramDefinitions ?? [];
-    }
-
-    // If includeDefaultParams is an array, filter default parameters
-    const includeDefaultParams = customParams.includeDefaultParams;
-    if (Array.isArray(includeDefaultParams)) {
-      const filteredDefaultParams = defaultParams.filter(param =>
-        includeDefaultParams.includes(param.key)
-      );
-      return [...filteredDefaultParams, ...(customParams.paramDefinitions ?? [])];
-    }
-
-    // Otherwise, include all default parameters and custom parameters
-    return [...defaultParams, ...(customParams.paramDefinitions ?? [])];
-  }, [endpointType, model, provider, customParams]);
+    const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
+    const defaultParams = agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
+    const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
+    const overriddenParamsMap = _.keyBy(overriddenParams, 'key');
+    return defaultParams.map(param => overriddenParamsMap[param.key] as SettingDefinition ?? param);
+  }, [endpointType, endpointsConfig, model, provider]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);

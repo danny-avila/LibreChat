@@ -1,5 +1,12 @@
 const path = require('path');
-const { CacheKeys, configSchema, EImageOutputType, validateSettingDefinitions, agentSettings } = require('librechat-data-provider');
+const {
+  CacheKeys,
+  configSchema,
+  EImageOutputType,
+  validateSettingDefinitions,
+  agentParamSettings,
+  paramSettings,
+} = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
@@ -121,41 +128,40 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   return customConfig;
 }
 
+// Validate and fill out missing values for custom parameters
 function parseCustomParams(endpointName, customParams) {
-  // Ensures `defaultParamsEndpoint` and `defaultParamsIncluded` have defaults.
-  customParams.defaultParamsEndpoint = customParams.defaultParamsEndpoint ?? 'custom';
-  customParams.defaultParamsIncluded = customParams.defaultParamsIncluded ?? true;
+  const paramEndpoint = customParams.defaultParamsEndpoint;
+  customParams.paramDefinitions = customParams.paramDefinitions || [];
 
-  // Combines default and custom parameter definitions, prioritizing custom values.
-  const defaultParams = _.keyBy(agentSettings[customParams.defaultParamsEndpoint] ?? [], 'key');
-  customParams.paramDefinitions = _.mapValues(customParams.paramDefinitions, (value, key) => ({
-    ...(defaultParams[key] ?? {}),
-    ...value,
-  }));
-  validateCustomParams(endpointName, customParams, defaultParams);
-}
-
-function validateCustomParams(endpointName, customParams, defaultParams) {
-  // Checks if `defaultParamsEndpoint` is a key in `agentSettings`.
-  if (_.keys(agentSettings).exclude(customParams.defaultParamsEndpoint)) {
-    throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. Valid options are ${_.keys(agentSettings).join(', ')}`);
+  // Checks if `defaultParamsEndpoint` is a key in `paramSettings`.
+  const validEndpoints = new Set(_.keys(paramSettings).concat(_.keys(agentParamSettings)));
+  if (!validEndpoints.has(paramEndpoint)) {
+    throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. ` +
+      `Valid options are ${Array.from(validEndpoints).join(', ')}`);
   }
 
-  // Checks if every element in `defaultParamsIncluded` (if it's an array) is a key in `defaultParams`.
-  const included = Array.isArray(customParams.defaultParamsIncluded) ? customParams.defaultParamsIncluded : [];
-  if (!_.every(included, (key) => _.has(defaultParams, key))) {
-    throw new Error(`defaultParamsIncluded of "${endpointName}" endpoint is an invalid array of parameters. Valid parameters are ${_.keys(defaultParams).join(', ')}`);
-  }
+  // creates default param maps
+  const regularParams = paramSettings[paramEndpoint] ?? [];
+  const agentParams = agentParamSettings[paramEndpoint] ?? [];
+  const defaultParams = regularParams.concat(agentParams);
+  const defaultParamsMap = _.keyBy(defaultParams, 'key');
 
-  // TODO: Remove this check once we support custom parameters not being included in the default parameters.
-  // Checks if every key in `paramDefinitions` is a key in `defaultParams`.
+  // TODO: Remove this check once we support new parameters not part of default parameters.
+  // Checks if every key in `paramDefinitions` is valid.
+  const validKeys = new Set(_.keys(defaultParamsMap));
   const paramKeys = customParams.paramDefinitions.map((param) => param.key);
-  if (!_.every(paramKeys, (key) => _.has(defaultParams, key))) {
-    throw new Error(`paramDefinitions of "${endpointName}" endpoint contains invalid key(s). Valid parameter keys are ${_.keys(defaultParams).join(', ')}`);
+  if (_.some(paramKeys, (key) => !validKeys.has(key))) {
+    throw new Error(`paramDefinitions of "${endpointName}" endpoint contains invalid key(s). ` +
+    `Valid parameter keys are ${Array.from(validKeys).join(', ')}`);
   }
+
+  // Fill out missing values for custom param definitions
+  customParams.paramDefinitions = customParams.paramDefinitions.map(param => {
+    return { ...defaultParamsMap[param.key], ...param, optionType: 'custom' };
+  });
 
   try{
-    validateSettingDefinitions(customParams.paramDefinitions || []);
+    validateSettingDefinitions(customParams.paramDefinitions);
   } catch(e) {
     throw new Error(`Custom parameter definitions for "${endpointName}" endpoint is malformed: ${e.message}`);
   }
