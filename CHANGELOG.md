@@ -4,12 +4,26 @@ All notable changes to this project will be documented in this file.
 
 
 
-## [Unreleased]
+## [v0.7.8] - 
+
+Changes from v0.7.8-rc1 to v0.7.8.
+
+### ✨ New Features
+
+- ✨ feat: Enhance form submission for touch screens by **@berry-13** in [#7198](https://github.com/danny-avila/LibreChat/pull/7198)
+- 🔍 feat: Additional Tavily API Tool Parameters by **@glowforge-opensource** in [#7232](https://github.com/danny-avila/LibreChat/pull/7232)
+- 🐋 feat: Add python to Dockerfile for increased MCP compatibility by **@technicalpickles** in [#7270](https://github.com/danny-avila/LibreChat/pull/7270)
 
 ### 🔧 Fixes
 
 - 🔧 fix: Google Gemma Support & OpenAI Reasoning Instructions by **@danny-avila** in [#7196](https://github.com/danny-avila/LibreChat/pull/7196)
 - 🛠️ fix: Conversation Navigation State by **@danny-avila** in [#7210](https://github.com/danny-avila/LibreChat/pull/7210)
+- 🔄 fix: o-Series Model Regex for System Messages by **@danny-avila** in [#7245](https://github.com/danny-avila/LibreChat/pull/7245)
+- 🔖 fix: Custom Headers for Initial MCP SSE Connection by **@danny-avila** in [#7246](https://github.com/danny-avila/LibreChat/pull/7246)
+- 🛡️ fix: Deep Clone `MCPOptions` for User MCP Connections by **@danny-avila** in [#7247](https://github.com/danny-avila/LibreChat/pull/7247)
+- 🔄 fix: URL Param Race Condition and File Draft Persistence by **@danny-avila** in [#7257](https://github.com/danny-avila/LibreChat/pull/7257)
+- 🔄 fix: Assistants Endpoint & Minor Issues by **@danny-avila** in [#7274](https://github.com/danny-avila/LibreChat/pull/7274)
+- 🔄 fix: Ollama Think Tag Edge Case with Tools by **@danny-avila** in [#7275](https://github.com/danny-avila/LibreChat/pull/7275)
 
 ### ⚙️ Other Changes
 
@@ -18,8 +32,16 @@ All notable changes to this project will be documented in this file.
 - 📦 chore: Bump Package Security by **@danny-avila** in [#7183](https://github.com/danny-avila/LibreChat/pull/7183)
 - 🌿 refactor: Unmount Fork Popover on Hide for Better Performance by **@danny-avila** in [#7189](https://github.com/danny-avila/LibreChat/pull/7189)
 - 🧰 chore: ESLint configuration to enforce Prettier formatting rules by **@mawburn** in [#7186](https://github.com/danny-avila/LibreChat/pull/7186)
+- 🎨 style: Improve KaTeX Rendering for LaTeX Equations by **@andresgit** in [#7223](https://github.com/danny-avila/LibreChat/pull/7223)
+- 📝 docs: Update `.env.example` Google models by **@marlonka** in [#7254](https://github.com/danny-avila/LibreChat/pull/7254)
+- 💬 refactor: MCP Chat Visibility Option, Google Rates, Remove OpenAPI Plugins by **@danny-avila** in [#7286](https://github.com/danny-avila/LibreChat/pull/7286)
+- 📜 docs: Unreleased Changelog by **@github-actions[bot]** in [#7214](https://github.com/danny-avila/LibreChat/pull/7214)
 
 
+
+[See full release details][release-v0.7.8]
+
+[release-v0.7.8]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.8
 
 ---
 ## [v0.7.8-rc1] - 
