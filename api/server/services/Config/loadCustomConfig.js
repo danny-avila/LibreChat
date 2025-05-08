@@ -128,16 +128,16 @@ function parseCustomParams(endpointName, customParams) {
 
   // Combines default and custom parameter definitions, prioritizing custom values.
   const defaultParams = _.keyBy(agentSettings[customParams.defaultParamsEndpoint] ?? [], 'key');
-  customParams.paramDefinitions = _.mapValues(customParams.paramDefinitions, (value, key) => ({
-    ...(defaultParams[key] ?? {}),
-    ...value,
-  }));
+  customParams.paramDefinitions = customParams.paramDefinitions.map((param) => {
+    const defaultParam = defaultParams[param.key] ?? {};
+    return { ...defaultParam, ...param, optionType: 'custom' };
+  });
   validateCustomParams(endpointName, customParams, defaultParams);
 }
 
 function validateCustomParams(endpointName, customParams, defaultParams) {
   // Checks if `defaultParamsEndpoint` is a key in `agentSettings`.
-  if (_.keys(agentSettings).exclude(customParams.defaultParamsEndpoint)) {
+  if (!_.keys(agentSettings).includes(customParams.defaultParamsEndpoint)) {
     throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. Valid options are ${_.keys(agentSettings).join(', ')}`);
   }
 
