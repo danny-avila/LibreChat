@@ -383,12 +383,17 @@ export class MCPManager {
         const tools = await connection.fetchTools();
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
-          manifestTools.push({
+          const manifestTool: t.LCManifestTool = {
             name: tool.name,
             pluginKey,
             description: tool.description ?? '',
             icon: connection.iconPath,
-          });
+          };
+          const config = this.mcpConfigs[serverName];
+          if (config?.chatMenu === false) {
+            manifestTool.chatMenu = false;
+          }
+          manifestTools.push(manifestTool);
         }
       } catch (error) {
         this.logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);

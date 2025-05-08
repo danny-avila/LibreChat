@@ -5,6 +5,8 @@ const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
+  /** Controls visibility in chat dropdown menu (MCPSelect) */
+  chatMenu: z.boolean().optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
