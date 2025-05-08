@@ -5,9 +5,10 @@ const { EModelEndpoint } = require('librechat-data-provider');
  * Resizes an image from a given buffer based on the specified resolution.
  *
  * @param {Buffer} inputBuffer - The buffer of the image to be resized.
- * @param {'low' | 'high'} resolution - The resolution to resize the image to.
+ * @param {'low' | 'high' | {percentage?: number, px?: number}} resolution - The resolution to resize the image to.
  *                                      'low' for a maximum of 512x512 resolution,
- *                                      'high' for a maximum of 768x2000 resolution.
+ *                                      'high' for a maximum of 768x2000 resolution,
+ *                                      or a custom object with percentage or px values.
  * @param {EModelEndpoint} endpoint - Identifier for specific endpoint handling
  * @returns {Promise<{buffer: Buffer, width: number, height: number}>} An object containing the resized image buffer and its dimensions.
  * @throws Will throw an error if the resolution parameter is invalid.
@@ -17,10 +18,32 @@ async function resizeImageBuffer(inputBuffer, resolution, endpoint) {
   const maxShortSideHighRes = 768;
   const maxLongSideHighRes = endpoint === EModelEndpoint.anthropic ? 1568 : 2000;
 
+  let customPercent, customPx;
+  if (resolution && typeof resolution === 'object') {
+    if (typeof resolution.percentage === 'number') {
+      customPercent = resolution.percentage;
+    } else if (typeof resolution.px === 'number') {
+      customPx = resolution.px;
+    }
+  }
+
   let newWidth, newHeight;
   let resizeOptions = { fit: 'inside', withoutEnlargement: true };
 
-  if (resolution === 'low') {
+  if (customPercent != null || customPx != null) {
+    // percentage-based resize
+    const metadata = await sharp(inputBuffer).metadata();
+    if (customPercent != null) {
+      newWidth = Math.round(metadata.width * (customPercent / 100));
+      newHeight = Math.round(metadata.height * (customPercent / 100));
+    } else {
+      // pixel max on both sides
+      newWidth = Math.min(metadata.width, customPx);
+      newHeight = Math.min(metadata.height, customPx);
+    }
+    resizeOptions.width = newWidth;
+    resizeOptions.height = newHeight;
+  } else if (resolution === 'low') {
     resizeOptions.width = maxLowRes;
     resizeOptions.height = maxLowRes;
   } else if (resolution === 'high') {
