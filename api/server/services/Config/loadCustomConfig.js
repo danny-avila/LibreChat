@@ -1,11 +1,10 @@
 const path = require('path');
-const { CacheKeys, configSchema, EImageOutputType, validateSettingDefinitions } = require('librechat-data-provider');
+const { CacheKeys, configSchema, EImageOutputType, validateSettingDefinitions, agentSettings } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
 const axios = require('axios');
 const yaml = require('js-yaml');
-const { agentSettings } = require('@librechat/frontend/src/components/SidePanel/Parameters/settings');
 const _ = require('lodash');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
