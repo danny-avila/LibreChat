@@ -282,7 +282,7 @@ describe('loadCustomConfig', () => {
           'key': 'maxContextTokens',
           'columnSpan': 1,
           'component': 'input',
-          'default': 100,
+          'default': 100, // added
           'label': 'maxContextTokens',
           'optionType': 'custom',
           'placeholder': '',
@@ -292,11 +292,11 @@ describe('loadCustomConfig', () => {
           'key': 'temperature',
           'columnSpan': 1,
           'component': 'slider',
-          'default': 0.7,
+          'default': 0.7, // overridden
           'includeInput': true,
           'label': 'temperature',
           'optionType': 'custom',
-          'range': {
+          'range': { // overridden
             'max': 0.9,
             'min': 0.1,
             'step': 0.1,
