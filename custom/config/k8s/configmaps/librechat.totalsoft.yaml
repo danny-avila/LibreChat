@@ -30,6 +30,14 @@ actions:
     - "librechat.ai"
     - "google.com"
 
+
+mcpServers:
+  mcp-figma:
+    url: https://figma-mcp.totalsoft.local/sse
+    
+  mcp-atlassian:
+    url: https://mcp-atlassian.totalsoft.local/sse
+
 # Example MCP Servers Object Structure
 # mcpServers:
 #   everything:
