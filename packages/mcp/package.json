@@ -1,6 +1,6 @@
 {
   "name": "librechat-mcp",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",

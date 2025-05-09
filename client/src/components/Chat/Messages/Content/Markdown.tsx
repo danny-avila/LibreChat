@@ -184,7 +184,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
 
   const rehypePlugins = useMemo(
     () => [
-      [rehypeKatex, { output: 'mathml' }],
+      [rehypeKatex],
       [
         rehypeHighlight,
         {

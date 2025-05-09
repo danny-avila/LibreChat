@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 
 
+
+## [Unreleased]
+
+### 🔧 Fixes
+
+- 🔧 fix: Google Gemma Support & OpenAI Reasoning Instructions by **@danny-avila** in [#7196](https://github.com/danny-avila/LibreChat/pull/7196)
+- 🛠️ fix: Conversation Navigation State by **@danny-avila** in [#7210](https://github.com/danny-avila/LibreChat/pull/7210)
+
+### ⚙️ Other Changes
+
+- 📜 docs: CHANGELOG for release v0.7.8-rc1 by **@github-actions[bot]** in [#7153](https://github.com/danny-avila/LibreChat/pull/7153)
+- 🔄 refactor: Artifact Visibility Management by **@danny-avila** in [#7181](https://github.com/danny-avila/LibreChat/pull/7181)
+- 📦 chore: Bump Package Security by **@danny-avila** in [#7183](https://github.com/danny-avila/LibreChat/pull/7183)
+- 🌿 refactor: Unmount Fork Popover on Hide for Better Performance by **@danny-avila** in [#7189](https://github.com/danny-avila/LibreChat/pull/7189)
+- 🧰 chore: ESLint configuration to enforce Prettier formatting rules by **@mawburn** in [#7186](https://github.com/danny-avila/LibreChat/pull/7186)
+
+
+
+---
 ## [v0.7.8-rc1] - 
 
 Changes from v0.7.7 to v0.7.8-rc1.
