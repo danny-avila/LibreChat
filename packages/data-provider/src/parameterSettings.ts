@@ -6,8 +6,8 @@ import {
   ReasoningEffort,
   BedrockProviders,
   anthropicSettings,
-} from 'librechat-data-provider';
-import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-provider';
+} from './types';
+import { SettingDefinition, SettingsConfiguration } from './generate';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {
@@ -654,7 +654,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   bedrock.region,
 ];
 
-export const settings: Record<string, SettingsConfiguration | undefined> = {
+export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
   [EModelEndpoint.openAI]: openAI,
   [EModelEndpoint.azureOpenAI]: openAI,
   [EModelEndpoint.custom]: openAI,
@@ -682,9 +682,9 @@ const bedrockGeneralColumns = {
 export const presetSettings: Record<
   string,
   | {
-      col1: SettingsConfiguration;
-      col2: SettingsConfiguration;
-    }
+  col1: SettingsConfiguration;
+  col2: SettingsConfiguration;
+}
   | undefined
 > = {
   [EModelEndpoint.openAI]: openAIColumns,
@@ -716,9 +716,9 @@ export const presetSettings: Record<
   },
 };
 
-export const agentSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(
+export const agentParamSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(
   presetSettings,
-).reduce((acc, [key, value]) => {
+).reduce<Record<string, SettingsConfiguration | undefined>>((acc, [key, value]) => {
   if (value) {
     acc[key] = value.col2;
   }

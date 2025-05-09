@@ -268,6 +268,10 @@ export type TConfig = {
   disableBuilder?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
+  customParams?: {
+    defaultParamsEndpoint?: string;
+    paramDefinitions?: Array<object>;
+  };
 };
 
 export type TEndpointsConfig =
