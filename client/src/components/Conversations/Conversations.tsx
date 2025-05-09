@@ -23,7 +23,7 @@ const LoadingSpinner = memo(() => {
 
   return (
     <div className="mx-auto mt-2 flex items-center justify-center gap-2">
-      <Spinner className="h-4 w-4 text-text-primary" />
+      <Spinner className="text-text-primary" />
       <span className="animate-pulse text-text-primary">{localize('com_ui_loading')}</span>
     </div>
   );

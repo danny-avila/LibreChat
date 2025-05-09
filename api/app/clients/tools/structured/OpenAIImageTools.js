@@ -30,7 +30,7 @@ const DEFAULT_IMAGE_EDIT_DESCRIPTION =
 
 When to use \`image_edit_oai\`:
 - The user wants to modify, extend, or remix one **or more** uploaded images, either:
-  - Previously generated, or in the current request (both to be included in the \`image_ids\` array).
+- Previously generated, or in the current request (both to be included in the \`image_ids\` array).
 - Always when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
 - Any current or existing images are to be used as visual guides.
 - If there are any files in the current request, they are more likely than not expected as references for image edit requests.

@@ -3,10 +3,10 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
-import EditTextPart from './Parts/EditTextPart';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { MessageContext } from '~/Providers';
+import { EditTextPart } from './Parts';
 import store from '~/store';
 import Part from './Part';
 

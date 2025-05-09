@@ -161,7 +161,7 @@ const ImagePreview = ({
       <OGDialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <OGDialogContent
           showCloseButton={false}
-          className={cn('w-11/12 overflow-x-auto bg-transparent p-0 sm:w-auto')}
+          className="w-11/12 overflow-x-auto bg-transparent p-0 sm:w-auto"
           disableScroll={false}
         >
           <img

@@ -1,6 +1,6 @@
 import debounce from 'lodash/debounce';
 import { Tools, AuthType } from 'librechat-data-provider';
-import { TerminalSquareIcon, Loader } from 'lucide-react';
+import { TerminalSquareIcon } from 'lucide-react';
 import React, { useMemo, useCallback, useEffect } from 'react';
 import type { CodeBarProps } from '~/common';
 import { useVerifyAgentToolAuth, useToolCallMutation } from '~/data-provider';
@@ -9,6 +9,7 @@ import { useLocalize, useCodeApiKeyForm } from '~/hooks';
 import { useMessageContext } from '~/Providers';
 import { cn, normalizeLanguage } from '~/utils';
 import { useToastContext } from '~/Providers';
+import { Spinner } from '~/components';
 
 const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex }) => {
   const localize = useLocalize();
@@ -91,7 +92,7 @@ const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex 
         disabled={execute.isLoading}
       >
         {execute.isLoading ? (
-          <Loader className="animate-spin" size={18} />
+          <Spinner className="animate-spin" size={18} />
         ) : (
           <TerminalSquareIcon size={18} />
         )}
