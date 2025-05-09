@@ -50,10 +50,12 @@ export default function AgentFooter({
     return localize('com_ui_create');
   };
 
+  const showButtons = activePanel === Panel.builder;
+
   return (
     <div className="mx-1 mb-1 flex w-full flex-col gap-2">
-      {activePanel !== Panel.advanced && <AdvancedButton setActivePanel={setActivePanel} />}
-      {user?.role === SystemRoles.ADMIN && <AdminSettings />}
+      {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
+      {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
         <DeleteButton
@@ -63,13 +65,13 @@ export default function AgentFooter({
         />
         {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
           hasAccessToShareAgents && (
-          <ShareAgent
-            agent_id={agent_id}
-            agentName={agent?.name ?? ''}
-            projectIds={agent?.projectIds ?? []}
-            isCollaborative={agent?.isCollaborative}
-          />
-        )}
+            <ShareAgent
+              agent_id={agent_id}
+              agentName={agent?.name ?? ''}
+              projectIds={agent?.projectIds ?? []}
+              isCollaborative={agent?.isCollaborative}
+            />
+          )}
         {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
         {/* Submit Button */}
         <button
