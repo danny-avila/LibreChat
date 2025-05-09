@@ -70,6 +70,7 @@ export default function ExportAndShareMenu({
       <DropdownPopup
         menuId={menuId}
         focusLoop={true}
+        unmountOnHide={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={

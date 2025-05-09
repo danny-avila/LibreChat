@@ -467,6 +467,14 @@ export default function useEventHandlers({
           [QueryKeys.messages, conversation.conversationId],
           finalMessages,
         );
+      } else if (
+        isAssistantsEndpoint(submissionConvo.endpoint) &&
+        (!submissionConvo.conversationId || submissionConvo.conversationId === Constants.NEW_CONVO)
+      ) {
+        queryClient.setQueryData<TMessage[]>(
+          [QueryKeys.messages, conversation.conversationId],
+          [...currentMessages],
+        );
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
