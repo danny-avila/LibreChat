@@ -223,14 +223,40 @@ const xAIModels = {
 };
 
 const omnexioModels = {
-  'Omnexio Search': 10000,
-  'Llama-4-Maverick': 10000,
-  'Llama-4-Scout': 10000,
-  'Llama-3.3-Turbo': 10000,
-  'Llama-3.2-Turbo': 10000,
+  'Claude 3.5 Haiku': 100000,
+  'Claude 3.7 Sonnet': 100000,
+  'deepseek-chat': 100000,
+  'deepseek-coder': 100000,
+  'deepseek-reasoner': 100000,
+  'Gemini 2.0 Flash': 100000,
+  'Gemini 2.0 Flash Lite': 100000,
+  'Gemini 2.5 Flash Preview': 100000,
+  'Gemini 2.5 Pro': 100000,
+  'gpt-4.1': 100000,
+  'gpt-4.1-mini': 100000,
+  'gpt-4.1-nano': 100000,
+  'gpt-4o': 100000,
+  'gpt-4o-mini': 100000,
+  'Llama 3.2 Turbo': 100000,
+  'Llama 3.3 Turbo': 100000,
+  'Llama 4 Maverick': 100000,
+  'Llama 4 Scout': 100000,
+  o1: 100000,
+  'o1-mini': 100000,
+  o3: 100000,
+  'o3-mini': 100000,
+  'o4-mini': 100000,
+  'Omnexio Search': 100000,
+  'Qwen 2.5': 100000,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels, ...omnexioModels };
+const aggregateModels = {
+  ...openAIModels,
+  ...googleModels,
+  ...bedrockModels,
+  ...xAIModels,
+  ...omnexioModels,
+};
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
