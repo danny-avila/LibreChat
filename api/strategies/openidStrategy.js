@@ -189,7 +189,6 @@ async function setupOpenId() {
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
-      redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     };
 
     /** @type {Configuration} */
@@ -207,7 +206,8 @@ async function setupOpenId() {
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
-        scope: process.env.OPENID_SCOPE
+        scope: process.env.OPENID_SCOPE,
+        callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
       },
       async (tokenset, done) => {
 
