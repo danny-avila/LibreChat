@@ -5,12 +5,13 @@ jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
   return {
     ...actual,
-    agentSettings: {
+    paramSettings: { foo: {}, bar: {}, custom: {} },
+    agentParamSettings: {
       custom: [],
       google: [
         {
-          key: 'maxContextTokens',
-          type: 'number',
+          key: 'pressure',
+          type: 'string',
           component: 'input',
         },
         {
@@ -21,17 +22,6 @@ jest.mock('librechat-data-provider', () => {
           range: {
             min: 0,
             max: 2,
-            step: 0.01,
-          },
-        },
-        {
-          key: 'topP',
-          type: 'number',
-          component: 'slider',
-          default: 1,
-          range: {
-            min: 0,
-            max: 1,
             step: 0.01,
           },
         },
@@ -240,7 +230,7 @@ describe('loadCustomConfig', () => {
         ],
       };
       await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
-        'paramDefinitions of "Google" endpoint contains invalid key(s). Valid parameter keys are maxContextTokens, temperature, topP',
+        'paramDefinitions of "Google" endpoint contains invalid key(s). Valid parameter keys are pressure, temperature',
       );
     });
 
@@ -259,19 +249,19 @@ describe('loadCustomConfig', () => {
       );
     });
 
-    it('throws an error when defaultParamsEndpoint is of the wrong type', async () => {
-      const malformedCustomParams = { defaultParamsEndpoint: 'foo' };
+    it('throws an error when defaultParamsEndpoint is not provided', async () => {
+      const malformedCustomParams = { defaultParamsEndpoint: undefined };
       await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
-        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are custom, google',
+        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are foo, bar, custom, google',
       );
     });
 
-    it('fills the paraDefinitions with overridden values', async () => {
+    it('fills the paramDefinitions with missing values', async () => {
       const customParams = {
         defaultParamsEndpoint: 'google',
         paramDefinitions: [
           { key: 'temperature', default: 0.7, range: { min: 0.1, max: 0.9, step: 0.1 } },
-          { key: 'maxContextTokens', default: 100 },
+          { key: 'pressure', component: 'textarea' },
         ],
       };
 
@@ -279,21 +269,11 @@ describe('loadCustomConfig', () => {
       const paramDefinitions = parsedConfig.endpoints.custom[0].customParams.paramDefinitions;
       expect (paramDefinitions).toEqual([
         {
-          'key': 'maxContextTokens',
-          'columnSpan': 1,
-          'component': 'input',
-          'default': 100, // added
-          'label': 'maxContextTokens',
-          'optionType': 'custom',
-          'placeholder': '',
-          'type': 'number',
-        },
-        {
-          'key': 'temperature',
           'columnSpan': 1,
           'component': 'slider',
           'default': 0.7, // overridden
           'includeInput': true,
+          'key': 'temperature',
           'label': 'temperature',
           'optionType': 'custom',
           'range': { // overridden
@@ -304,19 +284,13 @@ describe('loadCustomConfig', () => {
           'type': 'number',
         },
         {
-          'key': 'topP',
           'columnSpan': 1,
-          'component': 'slider',
-          'default': 1,
-          'includeInput': true,
-          'label': 'topP',
+          'component': 'textarea', // overridden
+          'key': 'pressure',
+          'label': 'pressure',
           'optionType': 'custom',
-          'range': {
-            'max': 1,
-            'min': 0,
-            'step': 0.01,
-          },
-          'type': 'number',
+          'placeholder': '',
+          'type': 'string',
         },
       ]);
     });

@@ -1,6 +1,6 @@
 import { RotateCcw } from 'lucide-react';
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { excludedKeys, getSettingsKeys, tConvoUpdateSchema, settings } from 'librechat-data-provider';
+import { excludedKeys, getSettingsKeys, tConvoUpdateSchema, paramSettings } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
@@ -33,7 +33,7 @@ export default function Parameters() {
       endpointType ?? conversation?.endpoint ?? '',
       conversation?.model ?? '',
     );
-    return settings[combinedKey] ?? settings[endpointKey];
+    return paramSettings[combinedKey] ?? paramSettings[endpointKey];
   }, [conversation, endpointType]);
 
   useEffect(() => {

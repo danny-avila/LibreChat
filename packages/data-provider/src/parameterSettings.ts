@@ -654,7 +654,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   bedrock.region,
 ];
 
-export const settings: Record<string, SettingsConfiguration | undefined> = {
+export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
   [EModelEndpoint.openAI]: openAI,
   [EModelEndpoint.azureOpenAI]: openAI,
   [EModelEndpoint.custom]: openAI,
@@ -716,7 +716,7 @@ export const presetSettings: Record<
   },
 };
 
-export const agentSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(
+export const agentParamSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(
   presetSettings,
 ).reduce<Record<string, SettingsConfiguration | undefined>>((acc, [key, value]) => {
   if (value) {

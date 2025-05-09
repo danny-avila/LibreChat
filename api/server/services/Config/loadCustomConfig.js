@@ -1,5 +1,12 @@
 const path = require('path');
-const { CacheKeys, configSchema, EImageOutputType, validateSettingDefinitions, agentSettings } = require('librechat-data-provider');
+const {
+  CacheKeys,
+  configSchema,
+  EImageOutputType,
+  validateSettingDefinitions,
+  agentParamSettings,
+  paramSettings,
+} = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
@@ -121,32 +128,40 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   return customConfig;
 }
 
+// Validate and fill out missing values for custom parameters
 function parseCustomParams(endpointName, customParams) {
-  // Ensures `defaultParamsEndpoint` and `paramDefinitions` have defaults.
-  customParams.defaultParamsEndpoint = customParams.defaultParamsEndpoint ?? 'custom';
-  customParams.paramDefinitions = customParams.paramDefinitions ?? {};
+  const paramEndpoint = customParams.defaultParamsEndpoint;
+  customParams.paramDefinitions = customParams.paramDefinitions || [];
 
-  // Checks if `defaultParamsEndpoint` is a key in `agentSettings`.
-  if (!_.keys(agentSettings).includes(customParams.defaultParamsEndpoint)) {
-    throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. Valid options are ${_.keys(agentSettings).join(', ')}`);
+  // Checks if `defaultParamsEndpoint` is a key in `paramSettings`.
+  const validEndpoints = new Set(_.keys(paramSettings).concat(_.keys(agentParamSettings)));
+  if (!validEndpoints.has(paramEndpoint)) {
+    throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. ` +
+      `Valid options are ${Array.from(validEndpoints).join(', ')}`);
   }
 
-  // Combines default and custom parameter definitions, prioritizing custom params.
-  const defaultParams = agentSettings[customParams.defaultParamsEndpoint] ?? [];
-  // TODO: Remove this check once we support custom parameters not being included in the default parameters.
-  // Checks if every key in `paramDefinitions` is a key in `defaultParams`.
+  // creates default param maps
+  const regularParams = paramSettings[paramEndpoint] ?? [];
+  const agentParams = agentParamSettings[paramEndpoint] ?? [];
+  const defaultParams = regularParams.concat(agentParams);
+  const defaultParamsMap = _.keyBy(defaultParams, 'key');
+
+  // TODO: Remove this check once we support new parameters not part of default parameters.
+  // Checks if every key in `paramDefinitions` is valid.
+  const validKeys = new Set(_.keys(defaultParamsMap));
   const paramKeys = customParams.paramDefinitions.map((param) => param.key);
-  if (!_.every(paramKeys, (key) => _.some(defaultParams, param => param.key === key))) {
-    throw new Error(`paramDefinitions of "${endpointName}" endpoint contains invalid key(s). Valid parameter keys are ${defaultParams.map(p => p.key).join(', ')}`);
+  if (_.some(paramKeys, (key) => !validKeys.has(key))) {
+    throw new Error(`paramDefinitions of "${endpointName}" endpoint contains invalid key(s). ` +
+    `Valid parameter keys are ${Array.from(validKeys).join(', ')}`);
   }
-  const customParamsMap = _.keyBy(customParams.paramDefinitions, 'key');
-  customParams.paramDefinitions = defaultParams.map((defaultParam) => {
-    const customParam = customParamsMap[defaultParam.key] ?? {};
-    return { ...defaultParam, ...customParam, optionType: 'custom' };
+
+  // Fill out missing values for custom param definitions
+  customParams.paramDefinitions = customParams.paramDefinitions.map(param => {
+    return { ...defaultParamsMap[param.key], ...param, optionType: 'custom' };
   });
 
   try{
-    validateSettingDefinitions(customParams.paramDefinitions || []);
+    validateSettingDefinitions(customParams.paramDefinitions);
   } catch(e) {
     throw new Error(`Custom parameter definitions for "${endpointName}" endpoint is malformed: ${e.message}`);
   }
