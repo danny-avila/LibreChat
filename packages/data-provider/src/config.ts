@@ -547,10 +547,12 @@ export type TStartupConfig = {
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
   CUSTOM_OCR = 'custom_ocr',
+  AZURE_DOCUMENT_INTELLIGENCE = 'azure_document_intelligence',
 }
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
+  documentIntelligenceModel: z.string().optional(),
   apiKey: z.string().optional().default('OCR_API_KEY'),
   baseURL: z.string().optional().default('OCR_BASEURL'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),

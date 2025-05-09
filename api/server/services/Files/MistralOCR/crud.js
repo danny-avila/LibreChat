@@ -225,6 +225,7 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
 module.exports = {
   uploadDocumentToMistral,
   uploadMistralOCR,
+  uploadAzureDocumentIntelligence,
   getSignedUrl,
   performOCR,
 };
