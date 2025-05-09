@@ -33,10 +33,10 @@ actions:
 
 mcpServers:
   mcp-figma:
-    url: https://figma-mcp.totalsoft.local/sse
+    url: http://10.1.48.107:3333/sse
     
   mcp-atlassian:
-    url: https://mcp-atlassian.totalsoft.local/sse
+    url: http://10.1.48.110:8000/sse
 
 # Example MCP Servers Object Structure
 # mcpServers:
