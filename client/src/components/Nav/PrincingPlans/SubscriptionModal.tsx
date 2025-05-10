@@ -148,13 +148,12 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
   return (
     <>
       <OGDialog open={open} onOpenChange={onOpenChange}>
-        <OGDialogContent className="max-h-[85vh] w-11/12 max-w-5xl overflow-auto">
+        <OGDialogContent className="max-h-[85vh] w-11/12 max-w-3xl overflow-auto">
           <OGDialogHeader>
             <OGDialogTitle className="text-2xl font-bold">
               {localize('com_subscription_plans')}
             </OGDialogTitle>
           </OGDialogHeader>
-
           <div className="space-y-8">
             {/* Subscription Plans */}
             <div>
@@ -163,7 +162,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
                   <p className="text-lg text-text-secondary">{localize('com_ui_processing')}</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
                   {subscriptionPlans.map((plan) => (
                     <div
                       key={plan.id}
@@ -211,16 +210,17 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
                   ))}
                 </div>
               )}
-              <div className="mt-3 text-sm text-text-secondary">
-                {localize('com_subscription_credits_rolling_note')}
-              </div>
             </div>
           </div>
-
-          <div className="mt-6 space-y-3 border-t border-border-medium pt-4 text-sm text-text-secondary">
-            <p>{localize('com_subscription_omnexa_credit_note')}</p>
-            <p>{localize('com_subscription_web_search_credit_note')}</p>
-            <p>{localize('com_subscription_terms')}</p>
+          <div className="border-t border-border-medium pt-2 text-sm text-text-secondary">
+            {localize('com_subscription_credits_rolling_note')}
+            <br />
+            {localize('com_subscription_omnexa_credit_note')}
+            <br />
+            {localize('com_subscription_web_search_credit_note')}
+            <br />
+            {localize('com_subscription_terms')}
+            <br />
           </div>
         </OGDialogContent>
       </OGDialog>
