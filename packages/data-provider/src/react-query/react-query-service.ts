@@ -29,22 +29,6 @@ export const useAbortRequestWithMessage = (): UseMutationResult<
   );
 };
 
-export const useGetMessagesByConvoId = <TData = s.TMessage[]>(
-  id: string,
-  config?: UseQueryOptions<s.TMessage[], unknown, TData>,
-): QueryObserverResult<TData> => {
-  return useQuery<s.TMessage[], unknown, TData>(
-    [QueryKeys.messages, id],
-    () => dataService.getMessagesByConvoId(id),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
-
 export const useGetSharedMessages = (
   shareId: string,
   config?: UseQueryOptions<t.TSharedMessagesResponse>,

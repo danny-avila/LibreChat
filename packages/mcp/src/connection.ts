@@ -1,7 +1,10 @@
 import { EventEmitter } from 'events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from '@modelcontextprotocol/sdk/client/stdio.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -65,7 +68,7 @@ export class MCPConnection extends EventEmitter {
     this.client = new Client(
       {
         name: 'librechat-mcp-client',
-        version: '1.2.0',
+        version: '1.2.2',
       },
       {
         capabilities: {},
@@ -133,7 +136,9 @@ export class MCPConnection extends EventEmitter {
           return new StdioClientTransport({
             command: options.command,
             args: options.args,
-            env: options.env,
+            // workaround bug of mcp sdk that can't pass env:
+            // https://github.com/modelcontextprotocol/typescript-sdk/issues/216
+            env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
           });
 
         case 'websocket':
@@ -153,6 +158,15 @@ export class MCPConnection extends EventEmitter {
             requestInit: {
               headers: options.headers,
               signal: abortController.signal,
+            },
+            eventSourceInit: {
+              fetch: (url, init) => {
+                const headers = new Headers(Object.assign({}, init?.headers, options.headers));
+                return fetch(url, {
+                  ...init,
+                  headers,
+                });
+              },
             },
           });
 

@@ -1,10 +1,11 @@
-# v0.7.7
+# v0.7.8
 
 # Base node image
 FROM node:20-alpine AS node
 
 # Install jemalloc
 RUN apk add --no-cache jemalloc
+RUN apk add --no-cache python3 py3-pip uv
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2

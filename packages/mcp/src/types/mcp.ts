@@ -33,7 +33,7 @@ export interface LCFunctionTool {
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
-
+export type LCManifestTool = TPlugin;
 export type LCToolManifest = TPlugin[];
 export interface MCPPrompt {
   name: string;
@@ -83,6 +83,11 @@ export type FormattedContent =
         url: string;
       };
     };
+
+export type FormattedContentResult = [
+  string | FormattedContent[],
+  undefined | { content: FormattedContent[] },
+];
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 

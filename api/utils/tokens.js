@@ -60,10 +60,16 @@ const cohereModels = {
 
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
+  gemma: 8196,
+  'gemma-2': 32768,
+  'gemma-3': 32768,
+  'gemma-3-27b': 131072,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
+  'gemini-2.5-pro': 1000000,
+  'gemini-2.5-flash': 1000000,
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,
@@ -235,12 +241,15 @@ const modelMaxOutputs = {
   system_default: 1024,
 };
 
+/** Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names */
 const anthropicMaxOutputs = {
   'claude-3-haiku': 4096,
   'claude-3-sonnet': 4096,
   'claude-3-opus': 4096,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
+  'claude-3.7-sonnet': 128000,
+  'claude-3-7-sonnet': 128000,
 };
 
 const maxOutputTokensMap = {

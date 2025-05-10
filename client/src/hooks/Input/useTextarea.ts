@@ -96,13 +96,14 @@ export default function useTextarea({
         return localize('com_endpoint_message_not_appendable');
       }
 
-      const sender = isAssistant || isAgent
-        ? getEntityName({ name: entityName, isAgent, localize })
-        : getSender(conversation as TEndpointOption);
+      const sender =
+        isAssistant || isAgent
+          ? getEntityName({ name: entityName, isAgent, localize })
+          : getSender(conversation as TEndpointOption);
 
-      return `${localize(
-        'com_endpoint_message_new', { 0: sender ? sender : localize('com_endpoint_ai') },
-      )}`;
+      return `${localize('com_endpoint_message_new', {
+        0: sender ? sender : localize('com_endpoint_ai'),
+      })}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -237,7 +238,8 @@ export default function useTextarea({
     textAreaRef,
     handlePaste,
     handleKeyDown,
-    handleCompositionStart,
+    isNotAppendable,
     handleCompositionEnd,
+    handleCompositionStart,
   };
 }

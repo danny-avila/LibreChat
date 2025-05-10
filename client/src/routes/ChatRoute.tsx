@@ -9,8 +9,8 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from '~/data-provider';
-import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecIconURL, logger } from '~/utils';
+import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
+import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -34,7 +34,7 @@ export default function ChatRoute() {
 
   const index = 0;
   const { conversationId = '' } = useParams();
-
+  useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
 
@@ -43,7 +43,8 @@ export default function ChatRoute() {
     refetchOnMount: 'always',
   });
   const initialConvoQuery = useGetConvoIdQuery(conversationId, {
-    enabled: isAuthenticated && conversationId !== Constants.NEW_CONVO,
+    enabled:
+      isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
@@ -65,15 +66,7 @@ export default function ChatRoute() {
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec
-          ? {
-            preset: {
-              ...spec.preset,
-              iconURL: getModelSpecIconURL(spec),
-              spec: spec.name,
-            },
-          }
-          : {}),
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
       });
 
       hasSetConversation.current = true;
@@ -97,15 +90,7 @@ export default function ChatRoute() {
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec
-          ? {
-            preset: {
-              ...spec.preset,
-              iconURL: getModelSpecIconURL(spec),
-              spec: spec.name,
-            },
-          }
-          : {}),
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
       });
       hasSetConversation.current = true;
     } else if (
