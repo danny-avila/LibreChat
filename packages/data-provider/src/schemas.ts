@@ -3,6 +3,7 @@ import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
+import type { SearchResultData } from './web';
 
 export const isUUID = z.string().uuid();
 
@@ -518,7 +519,13 @@ export const tMessageSchema = z.object({
   iconURL: z.string().nullable().optional(),
 });
 
-export type TAttachmentMetadata = { messageId: string; toolCallId: string; type?: Tools };
+export type TAttachmentMetadata = {
+  type?: Tools;
+  messageId: string;
+  toolCallId: string;
+  [Tools.web_search]?: SearchResultData;
+};
+
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {

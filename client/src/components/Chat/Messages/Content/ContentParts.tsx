@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
+import { useSearchResultsByTurn } from '~/hooks/Messages/useSearchResultsByTurn';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
@@ -42,9 +43,12 @@ const ContentParts = memo(
     setSiblingIdx,
   }: ContentPartsProps) => {
     const localize = useLocalize();
+    const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
     const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
     const [isExpanded, setIsExpanded] = useState(showThinking);
-    const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
+    const searchResults = useSearchResultsByTurn(
+      attachments ?? messageAttachmentsMap[messageId] ?? [],
+    );
     const attachmentMap = useMemo(
       () => mapAttachments(attachments ?? messageAttachmentsMap[messageId] ?? []),
       [attachments, messageAttachmentsMap, messageId],
@@ -127,9 +131,10 @@ const ContentParts = memo(
                 key={`provider-${messageId}-${idx}`}
                 value={{
                   messageId,
+                  isExpanded,
                   conversationId,
                   partIndex: idx,
-                  isExpanded,
+                  searchResults,
                   nextType: content[idx + 1]?.type,
                 }}
               >

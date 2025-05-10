@@ -14,6 +14,8 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
+/* web search */
+export * from './web';
 /* RBAC */
 export * from './permissions';
 export * from './roles';

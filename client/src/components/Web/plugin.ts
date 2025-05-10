@@ -1,26 +1,11 @@
 import { visit } from 'unist-util-visit';
 import type { Node } from 'unist';
+import type { Citation, CitationNode } from './types';
 
 const SPAN_REGEX = /(\\ue203.*?\\ue204)/g;
 const COMPOSITE_REGEX = /(\\ue200.*?\\ue201)/g;
 const STANDALONE_PATTERN = /\\ue202turn(\d+)(search|image|news|video)(\d+)/g;
 const CLEANUP_REGEX = /\\ue200|\\ue201|\\ue202|\\ue203|\\ue204|\\ue206/g;
-
-export type Citation = { turn: number; refType: string; index: number };
-export type TextNodeData = {
-  type?: string;
-  value?: string;
-  data?: {
-    hName?: string;
-    hProperties?: {
-      citationId?: string | null;
-      citationType?: string;
-      citations?: Array<Citation>;
-      citation?: Citation;
-    };
-  };
-  children?: Array<TextNodeData>;
-};
 
 /**
  * Checks if a standalone marker is truly standalone (not inside a composite block)
@@ -96,13 +81,13 @@ function findNextMatch(
 
 function processTree(tree: Node) {
   visit(tree, 'text', (node, index, parent) => {
-    const textNode = node as TextNodeData;
-    const parentNode = parent as TextNodeData;
+    const textNode = node as CitationNode;
+    const parentNode = parent as CitationNode;
 
     if (typeof textNode.value !== 'string') return;
 
     const originalValue = textNode.value;
-    const segments: Array<TextNodeData> = [];
+    const segments: Array<CitationNode> = [];
 
     // Single-pass processing through the string
     let currentPosition = 0;
