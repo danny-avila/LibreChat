@@ -81,7 +81,36 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
-  
+
+initContainers: []
+# List of init containers to add to the deployment. Each item should be a valid Kubernetes container spec.
+# For documentation on init containers, see: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+# Example:
+# initContainers:
+#   - name: init-myservice
+#     image: busybox
+#     command: ['sh', '-c', 'echo Initializing... && sleep 5']
+#     env:
+#       - name: EXAMPLE_ENV
+#         value: "example"
+#     volumeMounts:
+#       - name: config-volume
+#         mountPath: /config
+#
+# If you need to use the same volumes as the main container, reference them in volumeMounts.
+#
+# For more details, see the Kubernetes documentation linked above.
+
+# yaml config for librechat
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+yamlconfig: |
+  version: 1.0.0
+  interface: {}
+  registration: {}
+  speech: {}
+  modelSpecs: {}
+  endpoints: {}
+
 config:
   envSecrets:
     # Use this when using one k8s secret for multiply env secrets
