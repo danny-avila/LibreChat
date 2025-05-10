@@ -1,6 +1,5 @@
 import { memo } from 'react';
 import FontSizeSelector from './FontSizeSelector';
-import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
 import ToggleSwitch from '../ToggleSwitch';
 import store from '~/store';
@@ -33,20 +32,6 @@ const toggleSwitchConfigs = [
     switchId: 'showThinking',
     hoverCardText: undefined,
     key: 'showThinking',
-  },
-  {
-    stateAtom: store.showCode,
-    localizationKey: 'com_nav_show_code',
-    switchId: 'showCode',
-    hoverCardText: undefined,
-    key: 'showCode',
-  },
-  {
-    stateAtom: store.LaTeXParsing,
-    localizationKey: 'com_nav_latex_parsing',
-    switchId: 'latexParsing',
-    hoverCardText: 'com_nav_info_latex_parsing',
-    key: 'latexParsing',
   },
   {
     stateAtom: store.saveDrafts,
@@ -97,7 +82,6 @@ function Chat() {
           />
         </div>
       ))}
-      <ForkSettings />
     </div>
   );
 }

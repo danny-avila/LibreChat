@@ -25,13 +25,6 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'autoScroll',
   },
-  {
-    stateAtom: store.hideSidePanel,
-    localizationKey: 'com_nav_hide_panel',
-    switchId: 'hideSidePanel',
-    hoverCardText: undefined,
-    key: 'hideSidePanel',
-  },
 ];
 
 export const ThemeSelector = ({
