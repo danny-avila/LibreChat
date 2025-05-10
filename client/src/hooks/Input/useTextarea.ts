@@ -1,4 +1,4 @@
-import debounce from 'lodash/debounce';
+import { map, debounce } from 'lodash';
 import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
@@ -42,7 +42,7 @@ export default function useTextarea({
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
-  const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
+  const { index, conversation, isSubmitting, filesLoading, latestMessage } =
     useChatContext();
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
@@ -209,29 +209,12 @@ export default function useTextarea({
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const textArea = textAreaRef.current;
-      if (!textArea) {
-        return;
-      }
-
-      const clipboardData = e.clipboardData as DataTransfer | undefined;
-      if (!clipboardData) {
-        return;
-      }
-
-      if (clipboardData.files.length > 0) {
-        setFilesLoading(true);
-        const timestampedFiles: File[] = [];
-        for (const file of clipboardData.files) {
-          const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
-            type: file.type,
-          });
-          timestampedFiles.push(newFile);
-        }
-        handleFiles(timestampedFiles);
-      }
+      const timestampedFiles = map(e.clipboardData.files, (file: File) => {
+        return new File([file], `clipboard_${+new Date()}_${file.name}`, { type: file.type });
+      });
+      handleFiles(timestampedFiles);
     },
-    [handleFiles, setFilesLoading, textAreaRef],
+    [handleFiles],
   );
 
   return {
