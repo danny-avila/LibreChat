@@ -10,14 +10,16 @@ import {
   OGDialogHeader,
   OGDialogTitle,
 } from '~/components';
-import { useDeleteUserMutation } from '~/data-provider';
+import { useDeleteUserMutation, useGetOmnexioSubscriptionPlans } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
+import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
 import { LocalizeFunction } from '~/common';
 
 const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolean }) => {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { user, logout } = useAuthContext();
   const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
     onMutate: () => logout(),
@@ -26,10 +28,25 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState(true);
 
+  // Fetch subscription plans to check if user has an active subscription
+  const subscriptionPlansQuery = useGetOmnexioSubscriptionPlans();
+
   const handleDeleteUser = () => {
-    if (!isLocked) {
-      deleteUser(undefined);
+    if (isLocked) {
+      return;
     }
+
+    // Check if user has an active subscription (any plan with id not equal to 1)
+    const currentPlan = subscriptionPlansQuery.data?.find((plan) => plan.isCurrent);
+    if (currentPlan && parseInt(currentPlan.id) > 1) {
+      showToast({
+        message: localize('com_nav_delete_subscription_active'),
+        status: 'error',
+      });
+      return;
+    }
+
+    deleteUser(undefined);
   };
 
   const handleInputChange = useCallback(
@@ -67,6 +84,14 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
             <ul className="font-semibold text-amber-600">
               <li>{localize('com_nav_delete_warning')}</li>
               <li>{localize('com_nav_delete_data_info')}</li>
+              {subscriptionPlansQuery.data &&
+                subscriptionPlansQuery.data.some(
+                  (plan) => plan.isCurrent && parseInt(plan.id) > 1,
+                ) && (
+                  <li className="mt-2 text-red-500">
+                    {localize('com_nav_delete_subscription_warning')}
+                  </li>
+                )}
             </ul>
           </div>
           <div className="flex-col items-center justify-center">
@@ -78,7 +103,19 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
                 (e) => handleInputChange(e.target.value),
               )}
             </div>
-            {renderDeleteButton(handleDeleteUser, isDeleting, isLocked, localize)}
+            {renderDeleteButton(
+              handleDeleteUser,
+              isDeleting,
+              isLocked ||
+                (subscriptionPlansQuery.data?.some(
+                  (plan) => plan.isCurrent && parseInt(plan.id) > 1,
+                ) ??
+                  false),
+              localize,
+              subscriptionPlansQuery.data?.some(
+                (plan) => plan.isCurrent && parseInt(plan.id) > 1,
+              ) ?? false,
+            )}
           </div>
         </OGDialogContent>
       </OGDialog>
@@ -105,6 +142,7 @@ const renderDeleteButton = (
   isDeleting: boolean,
   isLocked: boolean,
   localize: LocalizeFunction,
+  hasActiveSubscription: boolean,
 ) => (
   <button
     className={cn(
@@ -124,6 +162,11 @@ const renderDeleteButton = (
           <>
             <LockIcon className="size-5" />
             <span className="ml-2">{localize('com_ui_locked')}</span>
+          </>
+        ) : hasActiveSubscription ? (
+          <>
+            <LockIcon className="size-5" />
+            <span className="ml-2">{localize('com_nav_delete_subscription_active_btn')}</span>
           </>
         ) : (
           <>

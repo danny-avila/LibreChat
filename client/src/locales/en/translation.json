@@ -25,6 +25,10 @@
   "com_subscription_confirm_change": "Confirm Subscription Change",
   "com_subscription_confirm_change_message": "Are you sure you want to change your current subscription plan? This action will take effect immediately.",
 
+  "com_nav_delete_subscription_active": "Cannot delete account: You have an active subscription plan. Please cancel your subscription before deleting your account.",
+  "com_nav_delete_subscription_warning": "You currently have an active subscription plan. Please cancel your subscription first before deleting your account.",
+  "com_nav_delete_subscription_active_btn": "Cancel subscription first",
+
   "chat_direction_left_to_right": "something needs to go here. was empty",
   "chat_direction_right_to_left": "something needs to go here. was empty",
   "com_a11y_ai_composing": "The AI is still composing.",
