@@ -585,6 +585,8 @@ export const tConversationSchema = z.object({
   maxOutputTokens: coerceNumber.optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
+  /* OpenAI */
+  seed: z.number().optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),
   system: z.string().optional(),
@@ -1020,6 +1022,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  seed: true,
 });
 
 export const openAISchema = openAIBaseSchema
