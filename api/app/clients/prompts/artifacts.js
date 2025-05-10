@@ -508,6 +508,8 @@ Here are some examples of correct usage of artifacts:
  * @returns
  */
 const generateArtifactsPrompt = ({ endpoint, artifacts }) => {
+  return null;
+
   if (artifacts === ArtifactModes.CUSTOM) {
     return null;
   }
