@@ -8,6 +8,7 @@ import {
   parseCompactConvo,
   replaceSpecialVars,
   isAssistantsEndpoint,
+  LocalStorageKeys,
 } from 'librechat-data-provider';
 import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
@@ -28,6 +29,7 @@ import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
+import useLocalStorage from '~/hooks/useLocalStorageAlt';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -208,6 +210,10 @@ export default function useChatFunctions({
     }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
+    const storageKey = `${LocalStorageKeys.LAST_OMNEXIO_SEARCH_TOGGLE_}${conversationId ?? Constants.NEW_CONVO}`;
+    const omnexioSearchValue = localStorage.getItem(storageKey);
+    const omnexioSearch = omnexioSearchValue === 'true';
+
     const currentMsg: TMessage = {
       text,
       sender: 'User',
@@ -218,6 +224,7 @@ export default function useChatFunctions({
       messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
+      omnexioSearch: omnexioSearch,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;

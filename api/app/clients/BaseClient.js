@@ -651,7 +651,10 @@ class BaseClient {
     }
 
     /** @type {string|string[]|undefined} */
-    const completion = await this.sendCompletion(payload, opts);
+    const completion = await this.sendCompletion(payload, {
+      ...opts,
+      omnexioSearch: opts.omnexioSearch,
+    });
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }

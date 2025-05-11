@@ -11,6 +11,7 @@ import React, {
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
 import CodeInterpreter from './CodeInterpreter';
+import OmnexioSearch from './OmnexioSearch';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
@@ -358,6 +359,7 @@ function BadgeRow({
           <MCPSelect conversationId={conversationId} />
         </>
       )}
+      <OmnexioSearch conversationId={conversationId} />
       {ghostBadge && (
         <div
           className="ghost-badge h-full"

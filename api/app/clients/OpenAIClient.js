@@ -601,6 +601,7 @@ class OpenAIClient extends BaseClient {
         payload,
         onProgress: opts.onProgress,
         abortController: opts.abortController,
+        omnexioSearch: opts.omnexioSearch,
       });
     } else {
       result = await this.getCompletion(
@@ -1135,7 +1136,7 @@ ${convo}
     };
   }
 
-  async chatCompletion({ payload, onProgress, abortController = null }) {
+  async chatCompletion({ payload, onProgress, abortController = null, omnexioSearch = false }) {
     let error = null;
     let intermediateReply = [];
     const errorCallback = (err) => (error = err);
@@ -1395,6 +1396,7 @@ ${convo}
           ...modelOptions,
           stream: true,
           conversation_id: this.conversationId,
+          omnexio_search: omnexioSearch,
         };
         const stream = await openai.beta.chat.completions
           .stream(params)

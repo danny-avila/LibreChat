@@ -22,6 +22,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     modelDisplayLabel,
     parentMessageId = null,
     overrideParentMessageId = null,
+    omnexioSearch,
   } = req.body;
 
   let client = null;
@@ -181,6 +182,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       progressOptions: {
         res,
       },
+      omnexioSearch,
     };
 
     /** @type {TMessage} */

@@ -534,6 +534,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  omnexioSearch?: boolean;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
