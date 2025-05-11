@@ -11,6 +11,16 @@ speech:
       model: 'eleven_multilingual_v2'
       voices: ['XrExE9yKIg1WjnnlVkGX', 'Xb7hH8MSUJpSbSDYk0k2', 'pqHfZKP75CvOlQylNhV4']
 includedTools: [web-browser, calculator, image_gen_oai]
+interface:
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+  prompts: true
+  bookmarks: true
+  multiConvo: true
+  agents: true
+  runCode: true
 endpoints:
   agents:
     recursionLimit: 50
@@ -31,9 +41,9 @@ endpoints:
           ]
         fetch: false
       titleConvo: true
-      titleModel: "llama-3-sonar-small-32k-chat"
+      titleModel: "sonar"
       summarize: false
-      summaryModel: "llama-3-sonar-small-32k-chat"
+      summaryModel: "sonar"
       forcePrompt: false
       dropParams: ["stop", "frequency_penalty"]
       modelDisplayLabel: "Perplexity"
