@@ -236,13 +236,8 @@ export const HighlightedText = memo(function HighlightedText({
   children,
   citationId,
 }: HighlightedTextProps) {
-  const { hoveredCitationId } = useContext(CitationContext);
   const isHighlighted = useHighlightState(citationId);
-  console.log({
-    hoveredCitationId,
-    citationId,
-    isHighlighted,
-  });
+
   return (
     <span
       className={`rounded px-0 py-0.5 transition-colors ${isHighlighted ? 'bg-amber-300/20' : ''}`}
