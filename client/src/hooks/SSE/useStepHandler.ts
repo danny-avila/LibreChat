@@ -123,11 +123,14 @@ export default function useStepHandler({
     } else if (contentType === ContentTypes.TOOL_CALL && 'tool_call' in contentPart) {
       const existingContent = updatedContent[index] as Agents.ToolCallContent | undefined;
       const existingToolCall = existingContent?.tool_call;
-      const toolCallArgs = (contentPart.tool_call.args as unknown as string | undefined) ?? '';
-
-      const args = finalUpdate
-        ? contentPart.tool_call.args
-        : (existingToolCall?.args ?? '') + toolCallArgs;
+      const toolCallArgs = (contentPart.tool_call as Agents.ToolCall).args;
+      /** When args are a valid object, they are likely already invoked */
+      const args =
+        finalUpdate ||
+        typeof existingToolCall?.args === 'object' ||
+        typeof toolCallArgs === 'object'
+          ? contentPart.tool_call.args
+          : (existingToolCall?.args ?? '') + (toolCallArgs ?? '');
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
@@ -195,12 +198,31 @@ export default function useStepHandler({
 
         // Store tool call IDs if present
         if (runStep.stepDetails.type === StepTypes.TOOL_CALLS) {
-          runStep.stepDetails.tool_calls.forEach((toolCall) => {
+          let updatedResponse = { ...response };
+          (runStep.stepDetails.tool_calls as Agents.ToolCall[]).forEach((toolCall) => {
             const toolCallId = toolCall.id ?? '';
             if ('id' in toolCall && toolCallId) {
               toolCallIdMap.current.set(runStep.id, toolCallId);
             }
+
+            const contentPart: Agents.MessageContentComplex = {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: {
+                name: toolCall.name ?? '',
+                args: toolCall.args,
+                id: toolCallId,
+              },
+            };
+
+            updatedResponse = updateContent(updatedResponse, runStep.index, contentPart);
           });
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const updatedMessages = messages.map((msg) =>
+            msg.messageId === runStep.runId ? updatedResponse : msg,
+          );
+
+          setMessages(updatedMessages);
         }
       } else if (event === 'on_agent_update') {
         const { agent_update } = data as Agents.AgentUpdate;

@@ -57,7 +57,7 @@ function ChatGroupItem({
         snippet={
           typeof group.oneliner === 'string' && group.oneliner.length > 0
             ? group.oneliner
-            : group.productionPrompt?.prompt ?? ''
+            : (group.productionPrompt?.prompt ?? '')
         }
       >
         <div className="flex flex-row items-center gap-2">
@@ -83,7 +83,11 @@ function ChatGroupItem({
                 className="z-50 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-hover focus:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
               >
                 <MenuIcon className="icon-md text-text-secondary" aria-hidden="true" />
-                <span className="sr-only">Open actions menu for {group.name}</span>
+                <span className="sr-only">
+                  {localize('com_ui_sr_actions_menu', { 0: group.name }) +
+                    ' ' +
+                    localize('com_ui_prompt')}
+                </span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent

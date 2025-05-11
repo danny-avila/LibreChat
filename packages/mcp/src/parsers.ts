@@ -1,5 +1,14 @@
 import type * as t from './types/mcp';
-const RECOGNIZED_PROVIDERS = new Set(['google', 'anthropic', 'openAI']);
+const RECOGNIZED_PROVIDERS = new Set([
+  'google',
+  'anthropic',
+  'openai',
+  'openrouter',
+  'xai',
+  'deepseek',
+  'ollama',
+]);
+const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   // google: (item) => ({
@@ -76,12 +85,12 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  *
  * @param {t.MCPToolCallResponse} result - The MCPToolCallResponse object
  * @param {string} provider - The provider name (google, anthropic, openai)
- * @returns {t.FormattedToolResponse} Tuple of content and image_urls
+ * @returns {t.FormattedContentResult} Tuple of content and image_urls
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
-): t.FormattedToolResponse {
+): t.FormattedContentResult {
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
     return [parseAsString(result), undefined];
   }
@@ -110,7 +119,7 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
-      if (currentTextBlock) {
+      if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
         formattedContent.push({ type: 'text', text: currentTextBlock });
         currentTextBlock = '';
       }
@@ -149,9 +158,14 @@ export function formatToolContent(
     }
   }
 
-  if (currentTextBlock) {
+  if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  return [formattedContent, imageUrls.length ? { content: imageUrls } : undefined];
+  const artifacts = imageUrls.length ? { content: imageUrls } : undefined;
+  if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
+    return [formattedContent, artifacts];
+  }
+
+  return [currentTextBlock, artifacts];
 }

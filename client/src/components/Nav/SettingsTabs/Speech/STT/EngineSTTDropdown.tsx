@@ -14,9 +14,9 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
 
   const endpointOptions = external
     ? [
-      { value: 'browser', label: localize('com_nav_browser') },
-      { value: 'external', label: localize('com_nav_external') },
-    ]
+        { value: 'browser', label: localize('com_nav_browser') },
+        { value: 'external', label: localize('com_nav_external') },
+      ]
     : [{ value: 'browser', label: localize('com_nav_browser') }];
 
   const handleSelect = (value: string) => {
@@ -32,6 +32,7 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
         options={endpointOptions}
         sizeClasses="w-[180px]"
         testId="EngineSTTDropdown"
+        className="z-50"
       />
     </div>
   );

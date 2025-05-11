@@ -6,9 +6,10 @@ const { logger } = require('~/config');
  * Sets up Model Specs from the config (`librechat.yaml`) file.
  * @param {TCustomConfig['endpoints']} [endpoints] - The loaded custom configuration for endpoints.
  * @param {TCustomConfig['modelSpecs'] | undefined} [modelSpecs] - The loaded custom configuration for model specs.
+ * @param {TCustomConfig['interface'] | undefined} [interfaceConfig] - The loaded interface configuration.
  * @returns {TCustomConfig['modelSpecs'] | undefined} The processed model specs, if any.
  */
-function processModelSpecs(endpoints, _modelSpecs) {
+function processModelSpecs(endpoints, _modelSpecs, interfaceConfig) {
   if (!_modelSpecs) {
     return undefined;
   }
@@ -19,6 +20,19 @@ function processModelSpecs(endpoints, _modelSpecs) {
   const list = _modelSpecs.list;
 
   const customEndpoints = endpoints?.[EModelEndpoint.custom] ?? [];
+
+  if (interfaceConfig.modelSelect !== true && (_modelSpecs.addedEndpoints?.length ?? 0) > 0) {
+    logger.warn(
+      `To utilize \`addedEndpoints\`, which allows provider/model selections alongside model specs, set \`modelSelect: true\` in the interface configuration.
+
+      Example:
+      \`\`\`yaml
+      interface:
+        modelSelect: true
+      \`\`\`
+      `,
+    );
+  }
 
   for (const spec of list) {
     if (EModelEndpoint[spec.preset.endpoint] && spec.preset.endpoint !== EModelEndpoint.custom) {

@@ -18,6 +18,7 @@ const AttachFile = ({ disabled }: { disabled?: boolean | null }) => {
         disabled={isUploadDisabled}
         render={
           <button
+            type="button"
             aria-label={localize('com_sidepanel_attach_files')}
             disabled={isUploadDisabled}
             className={cn(

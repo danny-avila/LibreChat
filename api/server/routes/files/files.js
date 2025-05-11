@@ -2,7 +2,9 @@ const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const {
+  Time,
   isUUID,
+  CacheKeys,
   FileSources,
   EModelEndpoint,
   isAgentsEndpoint,
@@ -17,8 +19,11 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
+const { getFiles, batchUpdateFiles } = require('~/models/File');
+const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
-const { getFiles } = require('~/models/File');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -26,6 +31,18 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const files = await getFiles({ user: req.user.id });
+    if (req.app.locals.fileStrategy === FileSources.s3) {
+      try {
+        const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+        const alreadyChecked = await cache.get(req.user.id);
+        if (!alreadyChecked) {
+          await refreshS3FileUrls(files, batchUpdateFiles);
+          await cache.set(req.user.id, true, Time.THIRTY_MINUTES);
+        }
+      } catch (error) {
+        logger.warn('[/files] Error refreshing S3 file URLs:', error);
+      }
+    }
     res.status(200).send(files);
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
@@ -78,7 +95,7 @@ router.delete('/', async (req, res) => {
       });
     }
 
-    /* Handle entity unlinking even if no valid files to delete */
+    /* Handle agent unlinking even if no valid files to delete */
     if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
       const agent = await getAgent({
         id: req.body.agent_id,
@@ -88,7 +105,21 @@ router.delete('/', async (req, res) => {
       const agentFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
       await processDeleteRequest({ req, files: agentFiles });
-      res.status(200).json({ message: 'File associations removed successfully' });
+      res.status(200).json({ message: 'File associations removed successfully from agent' });
+      return;
+    }
+
+    /* Handle assistant unlinking even if no valid files to delete */
+    if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
+      const assistant = await getAssistant({
+        id: req.body.assistant_id,
+      });
+
+      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
+
+      await processDeleteRequest({ req, files: assistantFiles });
+      res.status(200).json({ message: 'File associations removed successfully from assistant' });
       return;
     }
 

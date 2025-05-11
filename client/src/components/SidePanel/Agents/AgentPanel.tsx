@@ -4,6 +4,7 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
+  Constants,
   SystemRoles,
   EModelEndpoint,
   isAssistantsEndpoint,
@@ -45,7 +46,7 @@ export default function AgentPanel({
 
   const modelsQuery = useGetModelsQuery();
   const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
-    enabled: !!(current_agent_id ?? ''),
+    enabled: !!(current_agent_id ?? '') && current_agent_id !== Constants.EPHEMERAL_AGENT_ID,
   });
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
@@ -56,18 +57,24 @@ export default function AgentPanel({
   const { control, handleSubmit, reset } = methods;
   const agent_id = useWatch({ control, name: 'id' });
 
+  const allowedProviders = useMemo(
+    () => new Set(agentsConfig?.allowedProviders),
+    [agentsConfig?.allowedProviders],
+  );
+
   const providers = useMemo(
     () =>
       Object.keys(endpointsConfig ?? {})
         .filter(
           (key) =>
             !isAssistantsEndpoint(key) &&
+            (allowedProviders.size > 0 ? allowedProviders.has(key) : true) &&
             key !== EModelEndpoint.agents &&
             key !== EModelEndpoint.chatGPTBrowser &&
             key !== EModelEndpoint.gptPlugins,
         )
         .map((provider) => createProviderOption(provider)),
-    [endpointsConfig],
+    [endpointsConfig, allowedProviders],
   );
 
   /* Mutations */

@@ -29,7 +29,6 @@ export enum STTEndpoints {
 
 export enum TTSEndpoints {
   browser = 'browser',
-  edge = 'edge',
   external = 'external',
 }
 
@@ -307,11 +306,14 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
-  resubmitFiles?: boolean;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
+  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
+  isResubmission?: boolean;
+  /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
+  overrideFiles?: t.TMessage['files'];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -505,17 +507,6 @@ export interface ExtendedFile {
   metadata?: t.TFile['metadata'];
 }
 
-export interface ExtendedEndpoint {
-  value: EModelEndpoint;
-  label: string;
-  hasModels: boolean;
-  icon: JSX.Element | null;
-  models?: string[];
-  agentNames?: Record<string, string>;
-  assistantNames?: Record<string, string>;
-  modelIcons?: Record<string, string | undefined>;
-}
-
 export interface ModelItemProps {
   modelName: string;
   endpoint: EModelEndpoint;
@@ -526,7 +517,10 @@ export interface ModelItemProps {
   className?: string;
 }
 
-export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
+export type ContextType = {
+  navVisible: boolean;
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+};
 
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;
@@ -569,7 +563,8 @@ export type TResData = TBaseResData & {
   responseMessage: t.TMessage;
 };
 
-export type TFinalResData = TBaseResData & {
+export type TFinalResData = Omit<TBaseResData, 'conversation'> & {
+  conversation: Partial<t.TConversation> & Pick<t.TConversation, 'conversationId'>;
   requestMessage?: t.TMessage;
   responseMessage?: t.TMessage;
 };

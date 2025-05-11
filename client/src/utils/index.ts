@@ -20,9 +20,9 @@ export { default as logger } from './logger';
 export { default as buildTree } from './buildTree';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
-export { default as filterMenuItems } from './endpointFilter';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
 export { default as getDefaultEndpoint } from './getDefaultEndpoint';
+export { default as createChatSearchParams } from './createChatSearchParams';
 
 export const languages = [
   'java',

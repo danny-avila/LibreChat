@@ -13,6 +13,24 @@ const secretDefaults = {
   JWT_REFRESH_SECRET: 'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418',
 };
 
+const deprecatedVariables = [
+  {
+    key: 'CHECK_BALANCE',
+    description:
+      'Please use the `balance` field in the `librechat.yaml` config file instead.\nMore info: https://librechat.ai/docs/configuration/librechat_yaml/object_structure/balance#overview',
+  },
+  {
+    key: 'START_BALANCE',
+    description:
+      'Please use the `balance` field in the `librechat.yaml` config file instead.\nMore info: https://librechat.ai/docs/configuration/librechat_yaml/object_structure/balance#overview',
+  },
+  {
+    key: 'GOOGLE_API_KEY',
+    description:
+      'Please use the `GOOGLE_SEARCH_API_KEY` environment variable for the Google Search Tool instead.',
+  },
+];
+
 /**
  * Checks environment variables for default secrets and deprecated variables.
  * Logs warnings for any default secret values being used and for usage of deprecated `GOOGLE_API_KEY`.
@@ -37,19 +55,11 @@ function checkVariables() {
     \u200B`);
   }
 
-  if (process.env.GOOGLE_API_KEY) {
-    logger.warn(
-      'The `GOOGLE_API_KEY` environment variable is deprecated.\nPlease use the `GOOGLE_SEARCH_API_KEY` environment variable instead.',
-    );
-  }
-
-  if (process.env.OPENROUTER_API_KEY) {
-    logger.warn(
-      `The \`OPENROUTER_API_KEY\` environment variable is deprecated and its functionality will be removed soon.
-      Use of this environment variable is highly discouraged as it can lead to unexpected errors when using custom endpoints.
-      Please use the config (\`librechat.yaml\`) file for setting up OpenRouter, and use \`OPENROUTER_KEY\` or another environment variable instead.`,
-    );
-  }
+  deprecatedVariables.forEach(({ key, description }) => {
+    if (process.env[key]) {
+      logger.warn(`The \`${key}\` environment variable is deprecated. ${description}`);
+    }
+  });
 
   checkPasswordReset();
 }

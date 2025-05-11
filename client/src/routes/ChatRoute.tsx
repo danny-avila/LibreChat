@@ -4,13 +4,13 @@ import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
 import {
-  useGetConvoIdQuery,
   useHealthCheck,
-  useGetEndpointsQuery,
+  useGetConvoIdQuery,
   useGetStartupConfig,
+  useGetEndpointsQuery,
 } from '~/data-provider';
-import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
+import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
+import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -34,7 +34,7 @@ export default function ChatRoute() {
 
   const index = 0;
   const { conversationId = '' } = useParams();
-
+  useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
 
@@ -43,11 +43,15 @@ export default function ChatRoute() {
     refetchOnMount: 'always',
   });
   const initialConvoQuery = useGetConvoIdQuery(conversationId, {
-    enabled: isAuthenticated && conversationId !== Constants.NEW_CONVO,
+    enabled:
+      isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
 
+  /** This effect is mainly for the first conversation state change on first load of the page.
+   *  Adjusting this may have unintended consequences on the conversation state.
+   */
   useEffect(() => {
     const shouldSetConvo =
       (startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial) ?? false;
@@ -58,23 +62,16 @@ export default function ChatRoute() {
 
     if (conversationId === Constants.NEW_CONVO && endpointsQuery.data && modelsQuery.data) {
       const spec = getDefaultModelSpec(startupConfig);
-
+      logger.log('conversation', 'ChatRoute, new convo effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec
-          ? {
-            preset: {
-              ...spec.preset,
-              iconURL: getModelSpecIconURL(spec),
-              spec: spec.name,
-            },
-          }
-          : {}),
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
       });
 
       hasSetConversation.current = true;
     } else if (initialConvoQuery.data && endpointsQuery.data && modelsQuery.data) {
+      logger.log('conversation', 'ChatRoute initialConvoQuery', initialConvoQuery.data);
       newConversation({
         template: initialConvoQuery.data,
         /* this is necessary to load all existing settings */
@@ -89,24 +86,18 @@ export default function ChatRoute() {
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
       const spec = getDefaultModelSpec(startupConfig);
+      logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec
-          ? {
-            preset: {
-              ...spec.preset,
-              iconURL: getModelSpecIconURL(spec),
-              spec: spec.name,
-            },
-          }
-          : {}),
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
       });
       hasSetConversation.current = true;
     } else if (
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
+      logger.log('conversation', 'ChatRoute convo, assistants effect', initialConvoQuery.data);
       newConversation({
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,

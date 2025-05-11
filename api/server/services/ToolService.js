@@ -8,6 +8,7 @@ const {
   ErrorTypes,
   ContentTypes,
   imageGenTools,
+  EToolResources,
   EModelEndpoint,
   actionDelimiter,
   ImageVisionTool,
@@ -16,13 +17,18 @@ const {
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const {
-  loadActionSets,
   createActionTool,
   decryptMetadata,
+  loadActionSets,
   domainParser,
 } = require('./ActionService');
+const {
+  createOpenAIImageTools,
+  createYouTubeTools,
+  manifestToolMap,
+  toolkits,
+} = require('~/app/clients/tools');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { createYouTubeTools, manifestToolMap, toolkits } = require('~/app/clients/tools');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
@@ -30,6 +36,30 @@ const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+
+/**
+ * @param {string} toolName
+ * @returns {string | undefined} toolKey
+ */
+function getToolkitKey(toolName) {
+  /** @type {string|undefined} */
+  let toolkitKey;
+  for (const toolkit of toolkits) {
+    if (toolName.startsWith(EToolResources.image_edit)) {
+      const splitMatches = toolkit.pluginKey.split('_');
+      const suffix = splitMatches[splitMatches.length - 1];
+      if (toolName.endsWith(suffix)) {
+        toolkitKey = toolkit.pluginKey;
+        break;
+      }
+    }
+    if (toolName.startsWith(toolkit.pluginKey)) {
+      toolkitKey = toolkit.pluginKey;
+      break;
+    }
+  }
+  return toolkitKey;
+}
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -103,14 +133,16 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
     tools.push(formattedTool);
   }
 
-  /** Basic Tools; schema: { input: string } */
-  const basicToolInstances = [new Calculator(), ...createYouTubeTools({ override: true })];
+  /** Basic Tools & Toolkits; schema: { input: string } */
+  const basicToolInstances = [
+    new Calculator(),
+    ...createOpenAIImageTools({ override: true }),
+    ...createYouTubeTools({ override: true }),
+  ];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
     let toolName = formattedTool[Tools.function].name;
-    toolName = toolkits.some((toolkit) => toolName.startsWith(toolkit.pluginKey))
-      ? toolName.split('_')[0]
-      : toolName;
+    toolName = getToolkitKey(toolName) ?? toolName;
     if (filter.has(toolName) && included.size === 0) {
       continue;
     }
@@ -334,7 +366,7 @@ async function processRequiredActions(client, requiredActions) {
         const domainMap = new Map();
 
         for (const action of actionSets) {
-          const domain = await domainParser(client.req, action.metadata.domain, true);
+          const domain = await domainParser(action.metadata.domain, true);
           domainMap.set(domain, action);
 
           // Check if domain is allowed
@@ -404,7 +436,7 @@ async function processRequiredActions(client, requiredActions) {
 
       // We've already decrypted the metadata, so we can pass it directly
       tool = await createActionTool({
-        req: client.req,
+        userId: client.req.user.id,
         res: client.res,
         action,
         requestBuilder,
@@ -458,7 +490,7 @@ async function processRequiredActions(client, requiredActions) {
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
  * @param {ServerResponse} params.res - The request object.
- * @param {Agent} params.agent - The agent to load tools for.
+ * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
@@ -473,10 +505,10 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
   const _agentTools = agent.tools?.filter((tool) => {
-    if (tool === Tools.file_search && !checkCapability(AgentCapabilities.file_search)) {
-      return false;
-    } else if (tool === Tools.execute_code && !checkCapability(AgentCapabilities.execute_code)) {
-      return false;
+    if (tool === Tools.file_search) {
+      return checkCapability(AgentCapabilities.file_search);
+    } else if (tool === Tools.execute_code) {
+      return checkCapability(AgentCapabilities.execute_code);
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
@@ -570,7 +602,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   const domainMap = new Map();
 
   for (const action of actionSets) {
-    const domain = await domainParser(req, action.metadata.domain, true);
+    const domain = await domainParser(action.metadata.domain, true);
     domainMap.set(domain, action);
 
     // Check if domain is allowed (do this once per action set)
@@ -639,7 +671,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
 
     if (requestBuilder) {
       const tool = await createActionTool({
-        req,
+        userId: req.user.id,
         res,
         action,
         requestBuilder,
@@ -673,6 +705,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
 }
 
 module.exports = {
+  getToolkitKey,
   loadAgentTools,
   loadAndFormatTools,
   processRequiredActions,

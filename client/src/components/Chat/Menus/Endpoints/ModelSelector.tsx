@@ -98,9 +98,9 @@ function ModelSelectorContent() {
   );
 }
 
-export default function ModelSelector({ interfaceConfig, modelSpecs }: ModelSelectorProps) {
+export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
   return (
-    <ModelSelectorProvider modelSpecs={modelSpecs} interfaceConfig={interfaceConfig}>
+    <ModelSelectorProvider startupConfig={startupConfig}>
       <ModelSelectorContent />
     </ModelSelectorProvider>
   );

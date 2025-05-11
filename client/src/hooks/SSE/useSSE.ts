@@ -12,7 +12,7 @@ import {
   removeNullishValues,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { EventSubmission, TMessage, TPayload, TSubmission } from 'librechat-data-provider';
+import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -124,7 +124,7 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
-        clearDraft(submission.conversationId);
+        clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
@@ -190,7 +190,10 @@ export default function useSSE(
       const latestMessages = getMessages();
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
       return await abortConversation(
-        conversationId ?? userMessage.conversationId ?? submission.conversationId,
+        conversationId ??
+          userMessage.conversationId ??
+          submission.conversation?.conversationId ??
+          '',
         submission as EventSubmission,
         latestMessages,
       );
@@ -247,5 +250,6 @@ export default function useSSE(
         sse.dispatchEvent(e);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 }

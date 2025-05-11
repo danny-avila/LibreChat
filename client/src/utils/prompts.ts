@@ -1,29 +1,18 @@
-import { format } from 'date-fns';
-import type { TUser, TPromptGroup } from 'librechat-data-provider';
-
-export function replaceSpecialVars({ text, user }: { text: string; user?: TUser }) {
-  if (!text) {
-    return text;
-  }
-
-  const currentDate = format(new Date(), 'yyyy-MM-dd');
-  text = text.replace(/{{current_date}}/gi, currentDate);
-
-  if (!user) {
-    return text;
-  }
-  const currentUser = user.name;
-  text = text.replace(/{{current_user}}/gi, currentUser);
-
-  return text;
-}
+import { specialVariables } from 'librechat-data-provider';
+import type { TPromptGroup } from 'librechat-data-provider';
 
 /**
- * Detects the presence of variables in the given text, excluding {{current_date}} and {{current_user}}.
+ * Detects the presence of variables in the given text, excluding those found in `specialVariables`.
  */
 export const detectVariables = (text: string): boolean => {
-  const regex = /{{(?!current_date|current_user)[^{}]{1,}}}/gi;
-  return regex.test(text);
+  // Extract all variables with a simple regex
+  const allVariablesRegex = /{{([^{}]+?)}}/gi;
+  const matches = Array.from(text.matchAll(allVariablesRegex)).map((match) =>
+    match[1].trim().toLowerCase(),
+  );
+
+  // Check if any non-special variables exist
+  return matches.some((variable) => !specialVariables[variable]);
 };
 
 export const wrapVariable = (variable: string) => `{{${variable}}}`;
@@ -94,11 +83,14 @@ export function formatDateTime(dateTimeString: string) {
 }
 
 export const mapPromptGroups = (groups: TPromptGroup[]): Record<string, TPromptGroup> => {
-  return groups.reduce((acc, group) => {
-    if (!group._id) {
+  return groups.reduce(
+    (acc, group) => {
+      if (!group._id) {
+        return acc;
+      }
+      acc[group._id] = group;
       return acc;
-    }
-    acc[group._id] = group;
-    return acc;
-  }, {} as Record<string, TPromptGroup>);
+    },
+    {} as Record<string, TPromptGroup>,
+  );
 };

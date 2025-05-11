@@ -20,7 +20,7 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
   let Icon: IconType;
 
   if (!iconURL.includes('http')) {
-    Icon = (icons[iconKey] ?? icons.unknown) as IconType;
+    Icon = (icons[iconURL] ?? icons[iconKey] ?? icons.unknown) as IconType;
   } else if (iconURL) {
     return (
       <URLIcon
@@ -32,7 +32,7 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
       />
     );
   } else {
-    Icon = (icons[endpoint ?? ''] ?? icons.unknown) as IconType;
+    Icon = (icons[endpoint ?? ''] ?? icons[iconKey] ?? icons.unknown) as IconType;
   }
 
   return (

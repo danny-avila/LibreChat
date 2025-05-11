@@ -1,8 +1,12 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
+  Constants,
+  ErrorTypes,
   EModelEndpoint,
+  EToolResources,
   getResponseSender,
   AgentCapabilities,
+  replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
 const {
@@ -39,12 +43,19 @@ const providerConfigMap = {
 };
 
 /**
- * @param {ServerRequest} req
- * @param {Promise<Array<MongoFile | null>> | undefined} _attachments
- * @param {AgentToolResources | undefined} _tool_resources
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {Promise<Array<MongoFile | null>> | undefined} [params.attachments]
+ * @param {Set<string>} params.requestFileSet
+ * @param {AgentToolResources | undefined} [params.tool_resources]
  * @returns {Promise<{ attachments: Array<MongoFile | undefined> | undefined, tool_resources: AgentToolResources | undefined }>}
  */
-const primeResources = async (req, _attachments, _tool_resources) => {
+const primeResources = async ({
+  req,
+  attachments: _attachments,
+  tool_resources: _tool_resources,
+  requestFileSet,
+}) => {
   try {
     /** @type {Array<MongoFile | undefined> | undefined} */
     let attachments;
@@ -52,7 +63,7 @@ const primeResources = async (req, _attachments, _tool_resources) => {
     const isOCREnabled = (req.app.locals?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
       AgentCapabilities.ocr,
     );
-    if (tool_resources.ocr?.file_ids && isOCREnabled) {
+    if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
       const context = await getFiles(
         {
           file_id: { $in: tool_resources.ocr.file_ids },
@@ -77,17 +88,28 @@ const primeResources = async (req, _attachments, _tool_resources) => {
         continue;
       }
       if (file.metadata?.fileIdentifier) {
-        const execute_code = tool_resources.execute_code ?? {};
+        const execute_code = tool_resources[EToolResources.execute_code] ?? {};
         if (!execute_code.files) {
-          tool_resources.execute_code = { ...execute_code, files: [] };
+          tool_resources[EToolResources.execute_code] = { ...execute_code, files: [] };
         }
-        tool_resources.execute_code.files.push(file);
+        tool_resources[EToolResources.execute_code].files.push(file);
       } else if (file.embedded === true) {
-        const file_search = tool_resources.file_search ?? {};
+        const file_search = tool_resources[EToolResources.file_search] ?? {};
         if (!file_search.files) {
-          tool_resources.file_search = { ...file_search, files: [] };
+          tool_resources[EToolResources.file_search] = { ...file_search, files: [] };
         }
-        tool_resources.file_search.files.push(file);
+        tool_resources[EToolResources.file_search].files.push(file);
+      } else if (
+        requestFileSet.has(file.file_id) &&
+        file.type.startsWith('image') &&
+        file.height &&
+        file.width
+      ) {
+        const image_edit = tool_resources[EToolResources.image_edit] ?? {};
+        if (!image_edit.files) {
+          tool_resources[EToolResources.image_edit] = { ...image_edit, files: [] };
+        }
+        tool_resources[EToolResources.image_edit].files.push(file);
       }
 
       attachments.push(file);
@@ -117,6 +139,7 @@ function optionalChainWithEmptyCheck(...values) {
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
+ * @param {Set<string>} [params.allowedProviders]
  * @param {object} [params.endpointOption]
  * @param {boolean} [params.isInitialAgent]
  * @returns {Promise<Agent>}
@@ -126,8 +149,14 @@ const initializeAgentOptions = async ({
   res,
   agent,
   endpointOption,
+  allowedProviders,
   isInitialAgent = false,
 }) => {
+  if (allowedProviders.size > 0 && !allowedProviders.has(agent.provider)) {
+    throw new Error(
+      `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
+    );
+  }
   let currentFiles;
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
@@ -137,7 +166,14 @@ const initializeAgentOptions = async ({
     (agent.model_parameters?.resendFiles ?? true) === true
   ) {
     const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
-    const toolFiles = await getToolFilesByIds(fileIds);
+    /** @type {Set<EToolResources>} */
+    const toolResourceSet = new Set();
+    for (const tool of agent.tools) {
+      if (EToolResources[tool]) {
+        toolResourceSet.add(EToolResources[tool]);
+      }
+    }
+    const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
     if (requestFiles.length || toolFiles.length) {
       currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }
@@ -145,19 +181,26 @@ const initializeAgentOptions = async ({
     currentFiles = await processFiles(requestFiles);
   }
 
-  const { attachments, tool_resources } = await primeResources(
+  const { attachments, tool_resources } = await primeResources({
     req,
-    currentFiles,
-    agent.tool_resources,
-  );
-  const { tools, toolContextMap } = await loadAgentTools({
-    req,
-    res,
-    agent,
-    tool_resources,
+    attachments: currentFiles,
+    tool_resources: agent.tool_resources,
+    requestFileSet: new Set(requestFiles.map((file) => file.file_id)),
   });
 
   const provider = agent.provider;
+  const { tools, toolContextMap } = await loadAgentTools({
+    req,
+    res,
+    agent: {
+      id: agent.id,
+      tools: agent.tools,
+      provider,
+      model: agent.model,
+    },
+    tool_resources,
+  });
+
   agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
@@ -190,6 +233,13 @@ const initializeAgentOptions = async ({
     endpointOption: _endpointOption,
   });
 
+  if (
+    agent.endpoint === EModelEndpoint.azureOpenAI &&
+    options.llmConfig?.azureOpenAIApiInstanceName == null
+  ) {
+    agent.provider = Providers.OPENAI;
+  }
+
   if (options.provider != null) {
     agent.provider = options.provider;
   }
@@ -202,6 +252,13 @@ const initializeAgentOptions = async ({
 
   if (!agent.model_parameters.model) {
     agent.model_parameters.model = agent.model;
+  }
+
+  if (agent.instructions && agent.instructions !== '') {
+    agent.instructions = replaceSpecialVars({
+      text: agent.instructions,
+      user: req.user,
+    });
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {
@@ -263,6 +320,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
+  /** @type {Set<string>} */
+  const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
   // Handle primary agent
   const primaryConfig = await initializeAgentOptions({
@@ -270,6 +329,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     res,
     agent: primaryAgent,
     endpointOption,
+    allowedProviders,
     isInitialAgent: true,
   });
 
@@ -285,6 +345,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         res,
         agent,
         endpointOption,
+        allowedProviders,
       });
       agentConfigs.set(agentId, config);
     }
@@ -310,10 +371,14 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    endpoint: EModelEndpoint.agents,
     attachments: primaryConfig.attachments,
+    endpointType: endpointOption.endpointType,
     maxContextTokens: primaryConfig.maxContextTokens,
     resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
+    endpoint:
+      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
+        ? primaryConfig.endpoint
+        : EModelEndpoint.agents,
   });
 
   return { client };

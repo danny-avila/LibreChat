@@ -8,6 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { JsonSchemaType, TPlugin } from 'librechat-data-provider';
 import { ToolSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import type * as t from '@modelcontextprotocol/sdk/types.js';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -32,7 +33,7 @@ export interface LCFunctionTool {
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
-
+export type LCManifestTool = TPlugin;
 export type LCToolManifest = TPlugin[];
 export interface MCPPrompt {
   name: string;
@@ -44,25 +45,7 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'err
 
 export type MCPTool = z.infer<typeof ToolSchema>;
 export type MCPToolListResponse = z.infer<typeof ListToolsResultSchema>;
-export type ToolContentPart =
-  | {
-      type: 'text';
-      text: string;
-    }
-  | {
-      type: 'image';
-      data: string;
-      mimeType: string;
-    }
-  | {
-      type: 'resource';
-      resource: {
-        uri: string;
-        mimeType?: string;
-        text?: string;
-        blob?: string;
-      };
-    };
+export type ToolContentPart = t.TextContent | t.ImageContent | t.EmbeddedResource | t.AudioContent;
 export type ImageContent = Extract<ToolContentPart, { type: 'image' }>;
 export type MCPToolCallResponse =
   | undefined
@@ -100,6 +83,11 @@ export type FormattedContent =
         url: string;
       };
     };
+
+export type FormattedContentResult = [
+  string | FormattedContent[],
+  undefined | { content: FormattedContent[] },
+];
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 

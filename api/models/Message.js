@@ -61,6 +61,14 @@ async function saveMessage(req, params, metadata) {
       update.expiredAt = null;
     }
 
+    if (update.tokenCount != null && isNaN(update.tokenCount)) {
+      logger.warn(
+        `Resetting invalid \`tokenCount\` for message \`${params.messageId}\`: ${update.tokenCount}`,
+      );
+      logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+      update.tokenCount = 0;
+    }
+
     const message = await Message.findOneAndUpdate(
       { messageId: params.messageId, user: req.user.id },
       update,

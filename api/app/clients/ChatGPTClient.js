@@ -1,4 +1,4 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const crypto = require('crypto');
 const { CohereClient } = require('cohere-ai');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
@@ -244,9 +244,9 @@ class ChatGPTClient extends BaseClient {
 
       baseURL = this.langchainProxy
         ? constructAzureURL({
-          baseURL: this.langchainProxy,
-          azureOptions: this.azure,
-        })
+            baseURL: this.langchainProxy,
+            azureOptions: this.azure,
+          })
         : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
 
       if (this.options.forcePrompt) {
@@ -339,7 +339,6 @@ class ChatGPTClient extends BaseClient {
     opts.body = JSON.stringify(modelOptions);
 
     if (modelOptions.stream) {
-      // eslint-disable-next-line no-async-promise-executor
       return new Promise(async (resolve, reject) => {
         try {
           let done = false;

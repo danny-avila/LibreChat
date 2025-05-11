@@ -9,7 +9,23 @@ import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
 
 const containerClassName =
-  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
+
+function getTextSizeClass(text: string | undefined | null) {
+  if (!text) {
+    return 'text-xl sm:text-2xl';
+  }
+
+  if (text.length < 40) {
+    return 'text-2xl sm:text-4xl';
+  }
+
+  if (text.length < 70) {
+    return 'text-xl sm:text-2xl';
+  }
+
+  return 'text-lg sm:text-md';
+}
 
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
@@ -52,11 +68,16 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   });
 
   const name = entity?.name ?? '';
-  const description = entity?.description ?? '';
+  const description = (entity?.description || conversation?.greeting) ?? '';
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
-      return startupConfig.interface.customWelcome;
+      const customWelcome = startupConfig.interface.customWelcome;
+      // Replace {{user.name}} with actual user name if available
+      if (user?.name && customWelcome.includes('{{user.name}}')) {
+        return customWelcome.replace(/{{user.name}}/g, user.name);
+      }
+      return customWelcome;
     }
 
     const now = new Date();
@@ -84,7 +105,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     else {
       return localize('com_ui_good_evening');
     }
-  }, [localize, startupConfig?.interface?.customWelcome]);
+  }, [localize, startupConfig?.interface?.customWelcome, user?.name]);
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);
@@ -117,13 +138,18 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
+  const greetingText =
+    typeof startupConfig?.interface?.customWelcome === 'string'
+      ? getGreeting()
+      : getGreeting() + (user?.name ? ', ' + user.name : '');
+
   return (
     <div
       className={`flex h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'} ${getDynamicMargin}`}
     >
       <div ref={contentRef} className="flex flex-col items-center gap-0 p-2">
         <div
-          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-4`}
+          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
         >
           <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <ConvoIcon
@@ -133,7 +159,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               endpointsConfig={endpointsConfig}
               containerClassName={containerClassName}
               context="landing"
-              className="h-2/3 w-2/3"
+              className="h-2/3 w-2/3 text-black dark:text-white"
               size={41}
             />
             {startupConfig?.showBirthdayIcon && (
@@ -150,7 +176,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               <SplitText
                 key={`split-text-${name}`}
                 text={name}
-                className="text-4xl font-medium text-text-primary"
+                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
                 delay={50}
                 textAlign="center"
                 animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
@@ -163,9 +189,9 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              key={`split-text-${getGreeting()}${user?.name || ''}`}
-              text={getGreeting() + (user?.name ? ', ' + user.name : '')}
-              className="text-4xl font-medium text-text-primary"
+              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
+              text={greetingText}
+              className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
@@ -177,16 +203,10 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
-        {(isAgent || isAssistant) && description ? (
-          <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
+        {description && (
+          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
             {description}
           </div>
-        ) : (
-          typeof startupConfig?.interface?.customWelcome === 'string' && (
-            <div className="animate-fadeIn mt-2 max-w-md text-center text-sm font-normal text-text-primary">
-              {startupConfig?.interface?.customWelcome}
-            </div>
-          )
         )}
       </div>
     </div>
