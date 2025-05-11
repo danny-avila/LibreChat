@@ -12,6 +12,7 @@ import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
+import PrivacyPolicy from './Pages/PrivacyPolicy';
 import dashboardRoutes from './Dashboard';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
@@ -26,6 +27,10 @@ const AuthLayout = () => (
 );
 
 export const router = createBrowserRouter([
+  {
+    path: 'pages/privacy-policy',
+    element: <PrivacyPolicy />,
+  },
   {
     path: 'share/:shareId',
     element: <ShareRoute />,
