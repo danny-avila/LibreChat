@@ -16,3 +16,24 @@ endpoints:
     recursionLimit: 50
     maxRecursionLimit: 100
     disableBuilder: false
+  custom:
+    - name: "Perplexity"
+      apiKey: "${PERPLEXITY_API_KEY}"
+      baseURL: "https://api.perplexity.ai/"
+      models:
+        default: [
+          "sonar-deep-research",
+          "sonar-reasoning-pro",
+          "sonar-reasoning",
+          "sonar-pro",
+          "sonar",
+          "r1-1776"
+          ]
+        fetch: false
+      titleConvo: true
+      titleModel: "llama-3-sonar-small-32k-chat"
+      summarize: false
+      summaryModel: "llama-3-sonar-small-32k-chat"
+      forcePrompt: false
+      dropParams: ["stop", "frequency_penalty"]
+      modelDisplayLabel: "Perplexity"
