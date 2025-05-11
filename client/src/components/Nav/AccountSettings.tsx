@@ -134,6 +134,22 @@ function AccountSettings() {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Select.SelectItem>
+        <Select.SelectItem
+          value=""
+          onClick={() => (window.location.href = '/pages/privacy-policy')}
+          className="select-item text-sm"
+        >
+          <LinkIcon aria-hidden="true" />
+          {localize('com_ui_privacy_policy')}
+        </Select.SelectItem>
+        <Select.SelectItem
+          value=""
+          onClick={() => (window.location.href = '/pages/tos')}
+          className="select-item text-sm"
+        >
+          <LinkIcon aria-hidden="true" />
+          {localize('com_ui_terms_of_service')}
+        </Select.SelectItem>
         <DropdownMenuSeparator />
         <Select.SelectItem
           aria-selected={true}
