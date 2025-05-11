@@ -2,7 +2,7 @@
 # https://docs.librechat.ai/install/configuration/custom_config.html
  
 # Configuration version (required)
-version: 1.1.5
+version: 1.2.5
 cache: true
 speech:
   tts:
