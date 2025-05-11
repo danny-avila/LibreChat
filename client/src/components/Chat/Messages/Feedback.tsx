@@ -21,9 +21,9 @@ export default function Feedback({
     rating: rating,
     ratingContent: feedbackContent
       ? {
-        tags: feedbackContent.tags,
-        text: feedbackContent.text,
-      }
+          tags: feedbackContent.tags,
+          text: feedbackContent.text,
+        }
       : undefined,
   });
 

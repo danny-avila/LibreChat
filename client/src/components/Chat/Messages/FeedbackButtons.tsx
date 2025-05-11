@@ -28,33 +28,6 @@ export default function FeedbackButtons({ isLast, rating, onFeedback }: Feedback
       'md:group-focus-within:visible md:group-hover:visible md:group-[.final-completion]:visible',
     );
 
-  // If a rating is active, only render that button.
-  if (rating === 'thumbsUp') {
-    return (
-      <button
-        className={buttonClasses(true)}
-        onClick={() => onFeedback('thumbsUp')}
-        type="button"
-        title={localize('com_ui_feedback_positive')}
-      >
-        <ThumbUpIcon size="19" bold={true} />
-      </button>
-    );
-  }
-  if (rating === 'thumbsDown') {
-    return (
-      <button
-        className={buttonClasses(true)}
-        onClick={() => onFeedback('thumbsDown')}
-        type="button"
-        title={localize('com_ui_feedback_negative')}
-      >
-        <ThumbDownIcon size="19" bold={true} />
-      </button>
-    );
-  }
-
-  // When no rating is active, show both buttons.
   return (
     <>
       <button

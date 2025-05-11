@@ -6,13 +6,13 @@ import type {
   TMessage,
   TMessageFeedback,
 } from 'librechat-data-provider';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components/svg';
+import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
+import Feedback from './Feedback';
 import { cn } from '~/utils';
 import store from '~/store';
-import Feedback from './Feedback';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -39,6 +39,7 @@ type HoverButtonProps = {
   isDisabled?: boolean;
   isLast?: boolean;
   className?: string;
+  children?: React.ReactNode; // add children prop
 };
 
 const HoverButton = memo(
@@ -51,6 +52,7 @@ const HoverButton = memo(
     isDisabled = false,
     isLast = false,
     className = '',
+    children,
   }: HoverButtonProps) => {
     const buttonStyle = cn(
       'hover-button rounded-lg p-1.5',
@@ -80,6 +82,7 @@ const HoverButton = memo(
         disabled={isDisabled}
       >
         {icon}
+        {children}
       </button>
     );
   },
@@ -240,17 +243,6 @@ const HoverButtons = ({
         />
       )}
 
-      {/* Regenerate Button */}
-      {regenerateEnabled && (
-        <HoverButton
-          onClick={regenerate}
-          title={localize('com_ui_regenerate')}
-          icon={<RegenerateIcon size="19" />}
-          isLast={isLast}
-          className="active"
-        />
-      )}
-
       {/* Fork Button */}
       <Fork
         isLast={isLast}
@@ -267,6 +259,17 @@ const HoverButtons = ({
           handleFeedback={handleFeedback}
           rating={message.rating}
           feedback={message.ratingContent}
+        />
+      )}
+
+      {/* Regenerate Button */}
+      {regenerateEnabled && (
+        <HoverButton
+          onClick={regenerate}
+          title={localize('com_ui_regenerate')}
+          icon={<RegenerateIcon size="19" />}
+          isLast={isLast}
+          className="active"
         />
       )}
 

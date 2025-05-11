@@ -52,6 +52,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
   label,
 }) => {
   const localize = useLocalize();
+
   return (
     <Ariakit.HovercardProvider>
       <div className="flex flex-col items-center">
