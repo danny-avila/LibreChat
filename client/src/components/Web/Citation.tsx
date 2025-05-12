@@ -66,7 +66,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
                 href={currentSource?.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-neutral-600 bg-neutral-800 px-2 py-0.5 text-xs font-medium text-blue-300 no-underline transition-colors hover:bg-neutral-700"
+                className="ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover"
                 onMouseEnter={() => setHoveredCitationId(citationId || null)}
                 onMouseLeave={() => setHoveredCitationId(null)}
               >
@@ -74,21 +74,21 @@ export function CompositeCitation(props: CompositeCitationProps) {
               </a>
             }
           />
-          <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-neutral-500 hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-ring">
+          <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
             <VisuallyHidden>
               {localize('com_citation_more_details', { label: getCitationLabel() })}
             </VisuallyHidden>
-            <ChevronDown className="icon-sm text-text-primary" />
+            <ChevronDown className="icon-sm" />
           </Ariakit.HovercardDisclosure>
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-lg border border-neutral-600 bg-neutral-800 p-3 text-neutral-200 shadow-lg"
+            className="z-[999] w-[300px] rounded-lg border border-border-heavy bg-surface-secondary p-3 shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
             {totalPages > 1 && (
-              <div className="mb-2 flex items-center justify-between border-b border-neutral-600 pb-2">
+              <div className="mb-2 flex items-center justify-between border-b border-border-heavy pb-2">
                 <div className="flex gap-2">
                   <button
                     onClick={handlePrevPage}
@@ -107,7 +107,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
                     →
                   </button>
                 </div>
-                <div className="text-xs text-neutral-400">
+                <div className="text-xs text-text-tertiary">
                   {currentPage + 1}/{totalPages}
                 </div>
               </div>
@@ -120,13 +120,12 @@ export function CompositeCitation(props: CompositeCitationProps) {
               <strong>{currentSource.attribution}</strong>
             </div>
 
-            <h4 className="mb-1.5 mt-0 text-sm text-neutral-200">{currentSource.title}</h4>
-            <p className="my-2 text-sm text-neutral-300">{currentSource.snippet}</p>
-            <small className="block break-all text-xs text-neutral-400">{currentSource.link}</small>
-
+            <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{currentSource.title}</h4>
+            <p className="my-2 text-sm text-text-secondary">{currentSource.snippet}</p>
+            {/* <small className="block break-all text-xs text-text-tertiary">{currentSource.link}</small> */}
             {/* Navigation indicator */}
             {/* {totalPages > 1 && (
-              <div className="mt-2.5 border-t border-neutral-600 pt-2.5 flex justify-center">
+              <div className="mt-2.5 border-t border-border-heavy pt-2.5 flex justify-center">
                 <div className="flex gap-1">
                   {sources?.map((_, idx) => (
                     <a 
@@ -188,7 +187,7 @@ export function Citation(props: CitationComponentProps) {
                 href={refData.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-neutral-600 bg-neutral-800 px-2 py-0.5 text-xs font-medium text-blue-300 no-underline transition-colors hover:bg-neutral-700"
+                className="ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover"
                 onMouseEnter={() => setHoveredCitationId(citationId || null)}
                 onMouseLeave={() => setHoveredCitationId(null)}
               >
@@ -196,16 +195,16 @@ export function Citation(props: CitationComponentProps) {
               </a>
             }
           />
-          <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-neutral-500 hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-ring">
+          <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
             <VisuallyHidden>
               {localize('com_citation_more_details', { label: getCitationLabel() })}
             </VisuallyHidden>
-            <ChevronDown className="icon-sm text-text-primary" />
+            <ChevronDown className="icon-sm" />
           </Ariakit.HovercardDisclosure>
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-lg border border-neutral-600 bg-neutral-800 p-3 text-neutral-200 shadow-lg"
+            className="z-[999] w-[300px] rounded-lg border border-border-heavy bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
@@ -216,9 +215,9 @@ export function Citation(props: CitationComponentProps) {
               <strong>{refData.attribution}</strong>
             </div>
 
-            <h4 className="mb-1.5 mt-0 text-sm text-neutral-200">{refData.title}</h4>
-            <p className="my-2 text-sm text-neutral-300">{refData.snippet}</p>
-            <small className="block break-all text-xs text-neutral-400">{refData.link}</small>
+            <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{refData.title}</h4>
+            <p className="my-2 text-sm text-text-secondary">{refData.snippet}</p>
+            {/* <small className="block break-all text-xs text-text-secondary">{refData.link}</small> */}
           </Ariakit.Hovercard>
         </div>
       </Ariakit.HovercardProvider>
