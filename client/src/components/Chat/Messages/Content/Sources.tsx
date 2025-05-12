@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
@@ -254,42 +254,65 @@ function TabWithIcon({ label, icon }: { label: string; icon: React.ReactNode }) 
 export default function Sources() {
   const localize = useLocalize();
   const { searchResults } = useSearchContext();
-  const [tabs, setTabs] = useState<Array<{ label: React.ReactNode; content: React.ReactNode }>>([]);
 
-  useEffect(() => {
-    if (!searchResults) return;
-    const latestTurn = Object.keys(searchResults)
-      .map(Number)
-      .sort((a, b) => b - a)[0];
-    if (!latestTurn || isNaN(latestTurn)) return;
-    const result = searchResults[latestTurn];
-    if (!result) return;
+  const tabs = useMemo(() => {
+    if (!searchResults) return [];
+
+    const allOrganic: ValidSource[] = [];
+    const allTopStories: ValidSource[] = [];
+    const allImages: ImageResult[] = [];
+    let hasAnswerBox = false;
+
+    Object.values(searchResults).forEach((result) => {
+      if (!result) return;
+
+      if (result.organic?.length) {
+        allOrganic.push(...result.organic);
+      }
+
+      if (result.topStories?.length) {
+        allTopStories.push(...result.topStories);
+      }
+
+      if (result.images?.length) {
+        allImages.push(...result.images);
+      }
+
+      if (result.answerBox) {
+        hasAnswerBox = true;
+      }
+    });
+
     const availableTabs: Array<{ label: React.ReactNode; content: React.ReactNode }> = [];
-    if (result.organic?.length || result.topStories?.length || result.answerBox) {
+
+    if (allOrganic.length || allTopStories.length || hasAnswerBox) {
       availableTabs.push({
         label: <TabWithIcon label={localize('com_sources_tab_all')} icon={<Globe />} />,
-        content: <SourcesGroup sources={result.organic?.concat(result.topStories ?? []) ?? []} />,
+        content: <SourcesGroup sources={[...allOrganic, ...allTopStories]} />,
       });
     }
-    if (result.topStories?.length) {
+
+    if (allTopStories.length) {
       availableTabs.push({
         label: <TabWithIcon label={localize('com_sources_tab_news')} icon={<Newspaper />} />,
-        content: <SourcesGroup sources={result.topStories} limit={3} />,
+        content: <SourcesGroup sources={allTopStories} limit={3} />,
       });
     }
-    if (result.images?.length) {
+
+    if (allImages.length) {
       availableTabs.push({
         label: <TabWithIcon label={localize('com_sources_tab_images')} icon={<Image />} />,
         content: (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {result.images.map((item, i) => (
+            {allImages.map((item, i) => (
               <ImageItem key={`image-${i}`} image={item} />
             ))}
           </div>
         ),
       });
     }
-    setTabs(availableTabs);
+
+    return availableTabs;
   }, [searchResults, localize]);
 
   if (!tabs.length) return null;
