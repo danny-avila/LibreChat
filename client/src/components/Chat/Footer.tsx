@@ -14,7 +14,7 @@ export default function Footer({ className }: { className?: string }) {
 
   const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
     <a
-      className="text-text-secondary underline"
+      className="text-blue-500 underline"
       href={privacyPolicy.externalUrl}
       target={privacyPolicy.openNewTab === true ? '_blank' : undefined}
       rel="noreferrer"
@@ -25,7 +25,7 @@ export default function Footer({ className }: { className?: string }) {
 
   const termsOfServiceRender = termsOfService?.externalUrl != null && (
     <a
-      className="text-text-secondary underline"
+      className="text-blue-500 underline"
       href={termsOfService.externalUrl}
       target={termsOfService.openNewTab === true ? '_blank' : undefined}
       rel="noreferrer"
@@ -59,7 +59,7 @@ export default function Footer({ className }: { className?: string }) {
           a: ({ node: _n, href, children, ...otherProps }) => {
             return (
               <a
-                className="text-text-secondary underline"
+                className="text-blue-500 underline"
                 href={href}
                 target="_blank"
                 rel="noreferrer"
@@ -70,7 +70,7 @@ export default function Footer({ className }: { className?: string }) {
             );
           },
 
-          p: ({ node: _n, ...props }) => <span {...props} />,
+          p: ({ node: _n, ...props }) => <span className="text-blue-500" {...props} />,
         }}
       >
         {text.trim()}
