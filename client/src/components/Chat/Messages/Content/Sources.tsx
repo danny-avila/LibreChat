@@ -1,8 +1,11 @@
 /* eslint-disable i18next/no-literal-string */
-import { AnimatedTabs } from '~/components/ui';
-import { useSearchContext } from '~/Providers';
 import React, { useState, useEffect } from 'react';
-import { Globe, Newspaper, Image } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
+import { VisuallyHidden } from '@ariakit/react';
+import { Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
+import { useSearchContext } from '~/Providers';
+import { AnimatedTabs } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 import {
   OGDialog,
   OGDialogTitle,
@@ -15,6 +18,7 @@ interface SourceItemProps {
   source: ValidSource;
   isNews?: boolean;
   expanded?: boolean;
+  inDialog?: boolean;
 }
 
 // Helper to get domain favicon
@@ -65,7 +69,10 @@ function SourceItemBase({
   );
 }
 
-function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
+function SourceItem({ source, isNews, expanded = false, inDialog = false }: SourceItemProps) {
+  const localize = useLocalize();
+  const domain = getCleanDomain(source.link);
+
   if (expanded) {
     return (
       <SourceItemBase source={source} expanded>
@@ -89,17 +96,66 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
     );
   }
 
+  if (inDialog) {
+    return (
+      <SourceItemBase source={source}>
+        {(domain) => (
+          <>
+            <FaviconImage domain={domain} />
+            <span className="max-w-full truncate text-xs font-medium text-text-primary">
+              {domain}
+            </span>
+          </>
+        )}
+      </SourceItemBase>
+    );
+  }
+
   return (
-    <SourceItemBase source={source}>
-      {(domain) => (
-        <>
-          <FaviconImage domain={domain} />
-          <span className="max-w-full truncate text-xs font-medium text-text-primary">
-            {domain}
-          </span>
-        </>
-      )}
-    </SourceItemBase>
+    <span className="relative inline-block w-full">
+      <Ariakit.HovercardProvider showTimeout={150} hideTimeout={150}>
+        <div className="flex items-center">
+          <Ariakit.HovercardAnchor
+            render={
+              <a
+                href={source.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+              >
+                <FaviconImage domain={domain} />
+                <span className="max-w-full truncate text-xs font-medium text-text-primary">
+                  {domain}
+                </span>
+              </a>
+            }
+          />
+          <Ariakit.HovercardDisclosure className="absolute right-2 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
+            <VisuallyHidden>
+              {localize('com_citation_more_details', { label: domain })}
+            </VisuallyHidden>
+            <ChevronDown className="icon-sm" />
+          </Ariakit.HovercardDisclosure>
+
+          <Ariakit.Hovercard
+            gutter={16}
+            className="z-[999] w-[300px] rounded-lg border border-border-heavy bg-surface-secondary p-3 text-text-primary shadow-lg"
+            portal={true}
+            unmountOnHide={true}
+          >
+            <div className="mb-2 flex items-center">
+              <div className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
+                {domain[0].toUpperCase()}
+              </div>
+              <strong>{source.attribution || domain}</strong>
+            </div>
+
+            <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{source.title || source.link}</h4>
+            {source.snippet && <p className="my-2 text-sm text-text-secondary">{source.snippet}</p>}
+          </Ariakit.Hovercard>
+        </div>
+      </Ariakit.HovercardProvider>
+    </span>
   );
 }
 
@@ -174,7 +230,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
           <OGDialogTitle className="mb-4 text-lg font-medium">All Sources</OGDialogTitle>
           <div className="flex flex-col gap-3">
             {[...visibleSources, ...remainingSources].map((source, i) => (
-              <SourceItem key={`more-source-${i}`} source={source} expanded />
+              <SourceItem key={`more-source-${i}`} source={source} expanded inDialog />
             ))}
           </div>
         </OGDialogContent>
