@@ -94,7 +94,9 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
       {(domain) => (
         <>
           <FaviconImage domain={domain} />
-          <span className="max-w-full truncate font-medium text-text-primary">{domain}</span>
+          <span className="max-w-full truncate text-xs font-medium text-text-primary">
+            {domain}
+          </span>
         </>
       )}
     </SourceItemBase>
