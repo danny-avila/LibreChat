@@ -58,7 +58,7 @@ const Tab = forwardRef<ElementRef<typeof Ariakit.Tab>, Ariakit.TabProps>(functio
         else if (ref) ref.current = node;
       }}
       {...props}
-      className={`animated-tab text-token-text-secondary hover:text-token-text-primary aria-selected:text-token-text-primary flex select-none items-center justify-center gap-2 whitespace-nowrap border-none px-3 py-2 text-sm font-medium outline-none transition-colors aria-disabled:opacity-50 ${props.className || ''}`}
+      className={`animated-tab aria-selected:text-token-text-primary flex select-none items-center justify-center gap-2 whitespace-nowrap border-none text-sm font-medium outline-none transition-colors aria-disabled:opacity-50 ${props.className || ''}`}
     />
   );
 });
@@ -74,7 +74,7 @@ const TabPanel = forwardRef<ElementRef<typeof Ariakit.TabPanel>, Ariakit.TabPane
         ref={ref}
         {...props}
         data-was-open={wasOpen || undefined}
-        className={`animated-tab-panel w-96 max-w-full ${props.className || ''}`}
+        className={`animated-tab-panel max-w-full ${props.className || ''}`}
       />
     );
   },
