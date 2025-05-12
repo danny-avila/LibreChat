@@ -900,5 +900,11 @@
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
   "com_citation_source": "Source",
-  "com_citation_more_details": "More details about {{label}}"
+  "com_citation_more_details": "More details about {{label}}",
+  "com_sources_tab_all": "All",
+  "com_sources_tab_news": "News",
+  "com_sources_tab_images": "Images",
+  "com_sources_more_sources": "+{{count}} sources",
+  "com_sources_title": "Sources",
+  "com_sources_image_alt": "Search result image"
 }

@@ -1,4 +1,3 @@
-/* eslint-disable i18next/no-literal-string */
 import React, { useState, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
@@ -21,12 +20,12 @@ interface SourceItemProps {
   inDialog?: boolean;
 }
 
-// Helper to get domain favicon
+/** Helper to get domain favicon */
 function getFaviconUrl(domain: string) {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
 }
 
-// Helper to get clean domain name
+/** Helper to get clean domain name */
 function getCleanDomain(url: string) {
   const domain = url.replace(/(^\w+:|^)\/\//, '').split('/')[0];
   return domain.startsWith('www.') ? domain.substring(4) : domain;
@@ -160,6 +159,7 @@ function SourceItem({ source, isNews, expanded = false, inDialog = false }: Sour
 }
 
 function ImageItem({ image }: { image: ImageResult }) {
+  const localize = useLocalize();
   return (
     <a
       href={image.imageUrl}
@@ -171,7 +171,7 @@ function ImageItem({ image }: { image: ImageResult }) {
         <div className="relative aspect-square w-full overflow-hidden">
           <img
             src={image.imageUrl}
-            alt={image.title || 'Search result image'}
+            alt={image.title || localize('com_sources_image_alt')}
             className="size-full object-cover"
           />
           {image.title && (
@@ -200,11 +200,12 @@ function StackedFavicons({ sources }: { sources: ValidSource[] }) {
 }
 
 function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: number }) {
+  const localize = useLocalize();
   const visibleSources = sources.slice(0, limit);
   const remainingSources = sources.slice(limit);
   const hasMoreSources = remainingSources.length > 0;
 
-  // Calculate grid columns based on number of items (including the +X sources button if present)
+  /** Calculate grid columns based on number of items (including the +X sources button if present) */
   const totalItems = hasMoreSources ? visibleSources.length + 1 : visibleSources.length;
   const gridCols = `grid-cols-${Math.min(totalItems, 4)}`;
 
@@ -221,13 +222,15 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
             <OGDialogTrigger className="flex h-10 w-full items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary transition-all duration-300 hover:bg-surface-tertiary">
               <StackedFavicons sources={remainingSources} />
               <span className="max-w-full truncate font-medium">
-                +{remainingSources.length} sources
+                {localize('com_sources_more_sources', { count: remainingSources.length })}
               </span>
             </OGDialogTrigger>
           </div>
         )}
-        <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary dark:border-gray-700 md:max-w-[600px]">
-          <OGDialogTitle className="mb-4 text-lg font-medium">All Sources</OGDialogTitle>
+        <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary md:max-w-[600px]">
+          <OGDialogTitle className="mb-4 text-lg font-medium">
+            {localize('com_sources_title')}
+          </OGDialogTitle>
           <div className="flex flex-col gap-3">
             {[...visibleSources, ...remainingSources].map((source, i) => (
               <SourceItem key={`more-source-${i}`} source={source} expanded inDialog />
@@ -249,6 +252,7 @@ function TabWithIcon({ label, icon }: { label: string; icon: React.ReactNode }) 
 }
 
 export default function Sources() {
+  const localize = useLocalize();
   const { searchResults } = useSearchContext();
   const [tabs, setTabs] = useState<Array<{ label: React.ReactNode; content: React.ReactNode }>>([]);
 
@@ -263,19 +267,19 @@ export default function Sources() {
     const availableTabs: Array<{ label: React.ReactNode; content: React.ReactNode }> = [];
     if (result.organic?.length || result.topStories?.length || result.answerBox) {
       availableTabs.push({
-        label: <TabWithIcon label="All" icon={<Globe />} />,
+        label: <TabWithIcon label={localize('com_sources_tab_all')} icon={<Globe />} />,
         content: <SourcesGroup sources={result.organic?.concat(result.topStories ?? []) ?? []} />,
       });
     }
     if (result.topStories?.length) {
       availableTabs.push({
-        label: <TabWithIcon label="News" icon={<Newspaper />} />,
+        label: <TabWithIcon label={localize('com_sources_tab_news')} icon={<Newspaper />} />,
         content: <SourcesGroup sources={result.topStories} limit={3} />,
       });
     }
     if (result.images?.length) {
       availableTabs.push({
-        label: <TabWithIcon label="Images" icon={<Image />} />,
+        label: <TabWithIcon label={localize('com_sources_tab_images')} icon={<Image />} />,
         content: (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {result.images.map((item, i) => (
@@ -286,7 +290,7 @@ export default function Sources() {
       });
     }
     setTabs(availableTabs);
-  }, [searchResults]);
+  }, [searchResults, localize]);
 
   if (!tabs.length) return null;
 
