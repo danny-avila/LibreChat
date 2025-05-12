@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import type * as t from './types';
-import { useMessageContext } from '~/Providers';
+import { useSearchContext } from '~/Providers';
 
 export interface CitationContextType {
   hoveredCitationId: string | null;
@@ -22,7 +22,7 @@ export function useCitation(
   _refType: string,
   index: number,
 ): (t.Citation & t.Reference) | undefined {
-  const { searchResults } = useMessageContext();
+  const { searchResults } = useSearchContext();
   const refType = _refType.toLowerCase() === 'search' ? 'organic' : _refType;
 
   if (!searchResults || !searchResults[turn] || !searchResults[turn][refType]) {
@@ -46,7 +46,7 @@ export function useCitation(
 export function useCompositeCitations(
   citations: Array<{ turn: number; refType: string; index: number }>,
 ): Array<t.Citation & t.Reference> {
-  const { searchResults } = useMessageContext();
+  const { searchResults } = useSearchContext();
 
   const result: Array<t.Citation & t.Reference> = [];
 

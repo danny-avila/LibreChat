@@ -6,7 +6,7 @@ import { useSearchResultsByTurn } from '~/hooks/Messages/useSearchResultsByTurn'
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
-import { MessageContext } from '~/Providers';
+import { MessageContext, SearchContext } from '~/Providers';
 import Sources from './Sources';
 import { EditTextPart } from './Parts';
 import store from '~/store';
@@ -120,38 +120,39 @@ const ContentParts = memo(
             />
           </div>
         )}
-        <Sources />
-        {content
-          .filter((part) => part)
-          .map((part, idx) => {
-            const toolCallId =
-              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-            const attachments = attachmentMap[toolCallId];
+        <SearchContext.Provider value={{ searchResults }}>
+          <Sources />
+          {content
+            .filter((part) => part)
+            .map((part, idx) => {
+              const toolCallId =
+                (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+              const attachments = attachmentMap[toolCallId];
 
-            return (
-              <MessageContext.Provider
-                key={`provider-${messageId}-${idx}`}
-                value={{
-                  messageId,
-                  isExpanded,
-                  conversationId,
-                  partIndex: idx,
-                  searchResults,
-                  nextType: content[idx + 1]?.type,
-                }}
-              >
-                <Part
-                  part={part}
-                  attachments={attachments}
-                  isSubmitting={isSubmitting}
-                  key={`part-${messageId}-${idx}`}
-                  isCreatedByUser={isCreatedByUser}
-                  isLast={idx === content.length - 1}
-                  showCursor={idx === content.length - 1 && isLast}
-                />
-              </MessageContext.Provider>
-            );
-          })}
+              return (
+                <MessageContext.Provider
+                  key={`provider-${messageId}-${idx}`}
+                  value={{
+                    messageId,
+                    isExpanded,
+                    conversationId,
+                    partIndex: idx,
+                    nextType: content[idx + 1]?.type,
+                  }}
+                >
+                  <Part
+                    part={part}
+                    attachments={attachments}
+                    isSubmitting={isSubmitting}
+                    key={`part-${messageId}-${idx}`}
+                    isCreatedByUser={isCreatedByUser}
+                    isLast={idx === content.length - 1}
+                    showCursor={idx === content.length - 1 && isLast}
+                  />
+                </MessageContext.Provider>
+              );
+            })}
+        </SearchContext.Provider>
       </>
     );
   },

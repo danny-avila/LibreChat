@@ -1,8 +1,10 @@
 /* eslint-disable react/no-unescaped-entities */
 /* eslint-disable i18next/no-literal-string */
 import { AnimatedTabs } from '~/components/ui';
+import { useSearchContext } from '~/Providers';
 
 export default function Sources() {
+  const { searchResults } = useSearchContext();
   const tabs = [
     {
       label: 'Popular',
