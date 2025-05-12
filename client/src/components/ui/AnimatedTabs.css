@@ -1,0 +1,33 @@
+/* AnimatedTabs.css */
+.animated-tab-panel {
+  transition-property: opacity, translate;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
+  animation-duration: 300ms;
+}
+
+.animated-tab-panel[data-enter] {
+  opacity: 1 !important;
+  translate: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated-tab-panel {
+    transition: none;
+  }
+}
+
+.animated-tab-panel:not([data-open]) {
+  position: absolute;
+  top: 0px;
+}
+
+.animated-panels:has(> [data-was-open]) > .animated-tab-panel {
+  opacity: 0;
+  translate: -100%;
+}
+
+.animated-panels [data-was-open] ~ .animated-tab-panel,
+.animated-panels [data-open] ~ .animated-tab-panel {
+  translate: 100%;
+}
