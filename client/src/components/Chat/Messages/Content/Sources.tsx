@@ -2,19 +2,19 @@
 import { AnimatedTabs } from '~/components/ui';
 import { useSearchContext } from '~/Providers';
 import React, { useState, useEffect } from 'react';
-import * as Ariakit from '@ariakit/react';
-import { Globe, Newspaper, Image, FilePlus, Plus } from 'lucide-react';
+import { Globe, Newspaper, Image } from 'lucide-react';
 import {
   OGDialog,
   OGDialogTitle,
   OGDialogContent,
   OGDialogTrigger,
 } from '~/components/ui/OriginalDialog';
-import type { SearchResultData, ValidSource, ImageResult } from 'librechat-data-provider';
+import type { ValidSource, ImageResult } from 'librechat-data-provider';
 
 interface SourceItemProps {
   source: ValidSource;
   isNews?: boolean;
+  expanded?: boolean;
 }
 
 // Helper to get domain favicon
@@ -28,7 +28,25 @@ function getCleanDomain(url: string) {
   return domain.startsWith('www.') ? domain.substring(4) : domain;
 }
 
-function SourceItem({ source, isNews }: SourceItemProps) {
+function FaviconImage({ domain, className = '' }: { domain: string; className?: string }) {
+  return (
+    <div className={`relative size-4 flex-shrink-0 overflow-hidden rounded-full ${className}`}>
+      <div className="absolute inset-0 rounded-full bg-white" />
+      <img src={getFaviconUrl(domain)} alt={domain} className="relative size-full" />
+      <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+    </div>
+  );
+}
+
+function SourceItemBase({
+  source,
+  expanded = false,
+  children,
+}: {
+  source: ValidSource;
+  expanded?: boolean;
+  children: (domain: string) => React.ReactNode;
+}) {
   const domain = getCleanDomain(source.link);
 
   return (
@@ -36,15 +54,50 @@ function SourceItem({ source, isNews }: SourceItemProps) {
       href={source.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+      className={
+        expanded
+          ? 'group flex w-full cursor-pointer items-stretch rounded-lg bg-surface-secondary p-3 transition-all duration-300 hover:bg-surface-tertiary'
+          : 'flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary'
+      }
     >
-      <div className="relative size-4 flex-shrink-0 overflow-hidden rounded-full">
-        <div className="absolute inset-0 rounded-full bg-white" />
-        <img src={getFaviconUrl(domain)} alt={domain} className="relative size-full" />
-        <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
-      </div>
-      <span className="text-token-text-primary max-w-full truncate font-medium">{domain}</span>
+      {children(domain)}
     </a>
+  );
+}
+
+function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
+  if (expanded) {
+    return (
+      <SourceItemBase source={source} expanded>
+        {(domain) => (
+          <div className="flex w-full flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <FaviconImage domain={domain} />
+              <span className="text-token-text-secondary text-xs font-medium">{domain}</span>
+            </div>
+            <h3 className="text-token-text-primary text-sm font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400">
+              {source.title || source.link}
+            </h3>
+            {source.snippet && (
+              <p className="text-token-text-secondary mt-1 line-clamp-2 text-xs">
+                {source.snippet}
+              </p>
+            )}
+          </div>
+        )}
+      </SourceItemBase>
+    );
+  }
+
+  return (
+    <SourceItemBase source={source}>
+      {(domain) => (
+        <>
+          <FaviconImage domain={domain} />
+          <span className="max-w-full truncate font-medium text-text-primary">{domain}</span>
+        </>
+      )}
+    </SourceItemBase>
   );
 }
 
@@ -74,6 +127,20 @@ function ImageItem({ image }: { image: ImageResult }) {
   );
 }
 
+function StackedFavicons({ sources }: { sources: ValidSource[] }) {
+  return (
+    <div className="relative flex">
+      {sources.slice(0, 3).map((source, i) => (
+        <FaviconImage
+          key={`icon-${i}`}
+          domain={getCleanDomain(source.link)}
+          className={i > 0 ? 'ml-[-6px]' : ''}
+        />
+      ))}
+    </div>
+  );
+}
+
 function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: number }) {
   const visibleSources = sources.slice(0, limit);
   const remainingSources = sources.slice(limit);
@@ -94,23 +161,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
         {hasMoreSources && (
           <div className="w-full min-w-[120px]">
             <OGDialogTrigger className="flex h-10 w-full items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary transition-all duration-300 hover:bg-surface-tertiary">
-              <div className="relative flex">
-                {remainingSources.slice(0, 3).map((source, i) => (
-                  <div
-                    key={`icon-${i}`}
-                    className="relative size-4 overflow-hidden rounded-full"
-                    style={{ marginLeft: i > 0 ? '-6px' : '0' }}
-                  >
-                    <div className="absolute inset-0 rounded-full bg-white" />
-                    <img
-                      src={getFaviconUrl(getCleanDomain(source.link))}
-                      alt=""
-                      className="relative size-full"
-                    />
-                    <div className="absolute inset-0 rounded-full border border-border-light dark:border-transparent" />
-                  </div>
-                ))}
-              </div>
+              <StackedFavicons sources={remainingSources} />
               <span className="max-w-full truncate font-medium">
                 +{remainingSources.length} sources
               </span>
@@ -121,38 +172,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
           <OGDialogTitle className="mb-4 text-lg font-medium">All Sources</OGDialogTitle>
           <div className="flex flex-col gap-3">
             {[...visibleSources, ...remainingSources].map((source, i) => (
-              <a
-                key={`more-source-${i}`}
-                href={source.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex w-full cursor-pointer items-stretch rounded-lg bg-surface-secondary p-3 transition-all duration-300 hover:bg-surface-tertiary"
-              >
-                <div className="flex w-full flex-col gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="relative size-4 flex-shrink-0 overflow-hidden rounded-full">
-                      <div className="absolute inset-0 rounded-full bg-white" />
-                      <img
-                        src={getFaviconUrl(getCleanDomain(source.link))}
-                        alt=""
-                        className="relative size-full"
-                      />
-                      <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent" />
-                    </div>
-                    <span className="text-token-text-secondary text-xs font-medium">
-                      {getCleanDomain(source.link)}
-                    </span>
-                  </div>
-                  <h3 className="text-token-text-primary text-sm font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                    {source.title || source.link}
-                  </h3>
-                  {source.snippet && (
-                    <p className="text-token-text-secondary mt-1 line-clamp-2 text-xs">
-                      {source.snippet}
-                    </p>
-                  )}
-                </div>
-              </a>
+              <SourceItem key={`more-source-${i}`} source={source} expanded />
             ))}
           </div>
         </OGDialogContent>
