@@ -39,7 +39,7 @@ function SourceItem({ source, isNews }: SourceItemProps) {
       className="flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
     >
       <div className="relative size-4 flex-shrink-0 overflow-hidden rounded-full">
-        <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+        <div className="absolute inset-0 rounded-full bg-white" />
         <img src={getFaviconUrl(domain)} alt={domain} className="relative size-full" />
         <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
       </div>
@@ -101,13 +101,13 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
                     className="relative size-4 overflow-hidden rounded-full"
                     style={{ marginLeft: i > 0 ? '-6px' : '0' }}
                   >
-                    <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+                    <div className="absolute inset-0 rounded-full bg-white" />
                     <img
                       src={getFaviconUrl(getCleanDomain(source.link))}
                       alt=""
                       className="relative size-full"
                     />
-                    <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+                    <div className="absolute inset-0 rounded-full border border-border-light dark:border-transparent" />
                   </div>
                 ))}
               </div>
@@ -131,13 +131,13 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
                 <div className="flex w-full flex-col gap-1">
                   <div className="flex items-center gap-1.5">
                     <div className="relative size-4 flex-shrink-0 overflow-hidden rounded-full">
-                      <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+                      <div className="absolute inset-0 rounded-full bg-white" />
                       <img
                         src={getFaviconUrl(getCleanDomain(source.link))}
                         alt=""
                         className="relative size-full"
                       />
-                      <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+                      <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent" />
                     </div>
                     <span className="text-token-text-secondary text-xs font-medium">
                       {getCleanDomain(source.link)}
