@@ -4,7 +4,12 @@ import { useSearchContext } from '~/Providers';
 import React, { useState, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Globe, Newspaper, Image, FilePlus, Plus } from 'lucide-react';
-import { OGDialog, OGDialogContent, OGDialogTitle } from '~/components/ui/OriginalDialog';
+import {
+  OGDialog,
+  OGDialogTitle,
+  OGDialogContent,
+  OGDialogTrigger,
+} from '~/components/ui/OriginalDialog';
 import type { SearchResultData, ValidSource, ImageResult } from 'librechat-data-provider';
 
 interface SourceItemProps {
@@ -70,7 +75,6 @@ function ImageItem({ image }: { image: ImageResult }) {
 }
 
 function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: number }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
   const visibleSources = sources.slice(0, limit);
   const remainingSources = sources.slice(limit);
   const hasMoreSources = remainingSources.length > 0;
@@ -81,55 +85,78 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
 
   return (
     <div className={`grid ${gridCols} scrollbar-none w-full gap-2 overflow-x-auto`}>
-      {visibleSources.map((source, i) => (
-        <div key={`source-${i}`} className="w-full min-w-[120px]">
-          <SourceItem source={source} />
-        </div>
-      ))}
-      {hasMoreSources && (
-        <div className="w-full min-w-[120px]">
-          <button
-            onClick={() => setDialogOpen(true)}
-            className="flex h-10 w-full items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary transition-all duration-300 hover:bg-surface-tertiary"
-          >
-            <div className="relative flex">
-              {remainingSources.slice(0, 3).map((source, i) => (
-                <div
-                  key={`icon-${i}`}
-                  className="relative size-4 overflow-hidden rounded-full"
-                  style={{ marginLeft: i > 0 ? '-6px' : '0' }}
-                >
-                  <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
-                  <img
-                    src={getFaviconUrl(getCleanDomain(source.link))}
-                    alt=""
-                    className="relative size-full"
-                  />
-                  <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+      <OGDialog>
+        {visibleSources.map((source, i) => (
+          <div key={`source-${i}`} className="w-full min-w-[120px]">
+            <SourceItem source={source} />
+          </div>
+        ))}
+        {hasMoreSources && (
+          <div className="w-full min-w-[120px]">
+            <OGDialogTrigger className="flex h-10 w-full items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary transition-all duration-300 hover:bg-surface-tertiary">
+              <div className="relative flex">
+                {remainingSources.slice(0, 3).map((source, i) => (
+                  <div
+                    key={`icon-${i}`}
+                    className="relative size-4 overflow-hidden rounded-full"
+                    style={{ marginLeft: i > 0 ? '-6px' : '0' }}
+                  >
+                    <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+                    <img
+                      src={getFaviconUrl(getCleanDomain(source.link))}
+                      alt=""
+                      className="relative size-full"
+                    />
+                    <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+                  </div>
+                ))}
+              </div>
+              <span className="max-w-full truncate font-medium">
+                +{remainingSources.length} sources
+              </span>
+            </OGDialogTrigger>
+          </div>
+        )}
+        <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary dark:border-gray-700 md:max-w-[600px]">
+          <OGDialogTitle className="mb-4 text-lg font-medium">All Sources</OGDialogTitle>
+          <div className="flex flex-col gap-3">
+            {[...visibleSources, ...remainingSources].map((source, i) => (
+              <a
+                key={`more-source-${i}`}
+                href={source.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex w-full cursor-pointer items-stretch rounded-lg bg-surface-secondary p-3 transition-all duration-300 hover:bg-surface-tertiary"
+              >
+                <div className="flex w-full flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative size-4 flex-shrink-0 overflow-hidden rounded-full">
+                      <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+                      <img
+                        src={getFaviconUrl(getCleanDomain(source.link))}
+                        alt=""
+                        className="relative size-full"
+                      />
+                      <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+                    </div>
+                    <span className="text-token-text-secondary text-xs font-medium">
+                      {getCleanDomain(source.link)}
+                    </span>
+                  </div>
+                  <h3 className="text-token-text-primary text-sm font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                    {source.title || source.link}
+                  </h3>
+                  {source.snippet && (
+                    <p className="text-token-text-secondary mt-1 line-clamp-2 text-xs">
+                      {source.snippet}
+                    </p>
+                  )}
                 </div>
-              ))}
-            </div>
-            <span className="max-w-full truncate font-medium">
-              +{remainingSources.length} sources
-            </span>
-          </button>
-        </div>
-      )}
-
-      {hasMoreSources && (
-        <OGDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary dark:border-gray-700 md:max-w-[600px]">
-            <OGDialogTitle className="mb-4 text-lg font-medium">All Sources</OGDialogTitle>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-              {[...visibleSources, ...remainingSources].map((source, i) => (
-                <div key={`more-source-${i}`} className="w-full">
-                  <SourceItem source={source} />
-                </div>
-              ))}
-            </div>
-          </OGDialogContent>
-        </OGDialog>
-      )}
+              </a>
+            ))}
+          </div>
+        </OGDialogContent>
+      </OGDialog>
     </div>
   );
 }
@@ -165,7 +192,7 @@ export default function Sources() {
     if (result.topStories?.length) {
       availableTabs.push({
         label: <TabWithIcon label="News" icon={<Newspaper />} />,
-        content: <SourcesGroup sources={result.topStories} limit={6} />,
+        content: <SourcesGroup sources={result.topStories} limit={3} />,
       });
     }
     if (result.images?.length) {
