@@ -323,11 +323,15 @@ const handleAbortError = async (res, req, error, data) => {
     ? error.message
     : 'An error occurred while processing your request. Please contact the Admin.';
 
+  if (error?.type === ErrorTypes.INSUFFICIENT_CREDITS_ERROR) {
+    errorText = `{"type":"${ErrorTypes.INSUFFICIENT_CREDITS_ERROR}"}`;
+  }
+
   if (error?.type === ErrorTypes.INVALID_REQUEST) {
     errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
   }
 
-  if (error?.message?.includes('does not support \'system\'')) {
+  if (error?.message?.includes("does not support 'system'")) {
     errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
   }
 

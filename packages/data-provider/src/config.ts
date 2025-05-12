@@ -1118,6 +1118,8 @@ export enum ErrorTypes {
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
+
+  INSUFFICIENT_CREDITS_ERROR = 'insufficient_credits_error',
 }
 
 /**

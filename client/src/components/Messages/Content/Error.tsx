@@ -5,6 +5,7 @@ import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import useLocalize from '~/hooks/useLocalize';
 import CodeBlock from './CodeBlock';
+import PricingError from '~/components/Nav/PrincingPlans/PricingError';
 
 const localizedErrorPrefix = 'com_error';
 
@@ -99,6 +100,14 @@ const errorMessages = {
             codeChildren={formatJSON(JSON.stringify(generations))}
           />
         )}
+      </>
+    );
+  },
+  insufficient_credits_error: () => {
+    const message = `Oops! You have insufficient funds. Please upgrade your subscription to continue.`;
+    return (
+      <>
+        <PricingError message={message} />
       </>
     );
   },
