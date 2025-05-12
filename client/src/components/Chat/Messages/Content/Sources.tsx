@@ -31,7 +31,7 @@ function SourceItem({ source, isNews }: SourceItemProps) {
       href={source.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="hover:bg-surface-secondary/80 flex h-8 items-center gap-2 rounded-md bg-surface-secondary px-2 py-1 text-sm transition-colors"
+      className="flex h-8 items-center gap-2 rounded-md bg-surface-secondary px-2 py-1 text-sm transition-colors hover:bg-surface-tertiary"
     >
       <div className="size-4 flex-shrink-0 overflow-hidden rounded-full bg-surface-secondary">
         <img src={getFaviconUrl(domain)} alt={domain} className="size-full" />
@@ -115,7 +115,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
 
 function TabWithIcon({ label, icon }: { label: string; icon: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 rounded-md px-3 py-1.5 text-base transition-colors hover:bg-surface-tertiary hover:text-text-primary">
+    <div className="flex items-center gap-2 rounded-md px-3 py-1 text-sm transition-colors hover:bg-surface-tertiary hover:text-text-primary">
       {React.cloneElement(icon as React.ReactElement, { size: 14 })}
       <span>{label}</span>
     </div>
@@ -138,7 +138,7 @@ export default function Sources() {
     if (result.organic?.length || result.topStories?.length || result.answerBox) {
       availableTabs.push({
         label: <TabWithIcon label="All" icon={<Globe />} />,
-        content: <SourcesGroup sources={result.organic ?? []} />,
+        content: <SourcesGroup sources={result.organic?.concat(result.topStories ?? []) ?? []} />,
       });
     }
     if (result.topStories?.length) {
@@ -168,9 +168,9 @@ export default function Sources() {
     <AnimatedTabs
       tabs={tabs}
       containerClassName="flex min-w-full mb-4"
-      tabListClassName="flex items-center mb-3 border-b border-border-light overflow-x-auto"
+      tabListClassName="flex items-center mb-2 border-b border-border-light overflow-x-auto"
       tabPanelClassName="w-full overflow-x-auto scrollbar-none md:mx-0 md:px-0"
-      tabClassName="flex items-center whitespace-nowrap px-3 py-2 text-xs font-medium text-token-text-secondary border-b-2 border-transparent data-[state=active]:text-text-primary -mb-px outline-none"
+      tabClassName="flex items-center whitespace-nowrap text-xs font-medium text-token-text-secondary px-1 pt-2 pb-1 border-b-2 border-transparent data-[state=active]:text-text-primary outline-none"
     />
   );
 }
