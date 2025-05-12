@@ -59,7 +59,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
   return (
     <span className="relative ml-0.5 inline-block">
       <Ariakit.HovercardProvider showTimeout={150} hideTimeout={150}>
-        <div className="flex items-center">
+        <span className="flex items-center">
           <Ariakit.HovercardAnchor
             render={
               <a
@@ -88,8 +88,8 @@ export function CompositeCitation(props: CompositeCitationProps) {
             unmountOnHide={true}
           >
             {totalPages > 1 && (
-              <div className="mb-2 flex items-center justify-between border-b border-border-heavy pb-2">
-                <div className="flex gap-2">
+              <span className="mb-2 flex items-center justify-between border-b border-border-heavy pb-2">
+                <span className="flex gap-2">
                   <button
                     onClick={handlePrevPage}
                     disabled={currentPage === 0}
@@ -106,27 +106,27 @@ export function CompositeCitation(props: CompositeCitationProps) {
                   >
                     →
                   </button>
-                </div>
-                <div className="text-xs text-text-tertiary">
+                </span>
+                <span className="text-xs text-text-tertiary">
                   {currentPage + 1}/{totalPages}
-                </div>
-              </div>
+                </span>
+              </span>
             )}
 
-            <div className="mb-2 flex items-center">
-              <div className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
+            <span className="mb-2 flex items-center">
+              <span className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
                 {getInitial(currentSource.attribution || '')}
-              </div>
+              </span>
               <strong>{currentSource.attribution}</strong>
-            </div>
+            </span>
 
             <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{currentSource.title}</h4>
             <p className="my-2 text-sm text-text-secondary">{currentSource.snippet}</p>
             {/* <small className="block break-all text-xs text-text-tertiary">{currentSource.link}</small> */}
             {/* Navigation indicator */}
             {/* {totalPages > 1 && (
-              <div className="mt-2.5 border-t border-border-heavy pt-2.5 flex justify-center">
-                <div className="flex gap-1">
+              <span className="mt-2.5 border-t border-border-heavy pt-2.5 flex justify-center">
+                <span className="flex gap-1">
                   {sources?.map((_, idx) => (
                     <a 
                       key={idx}
@@ -139,11 +139,11 @@ export function CompositeCitation(props: CompositeCitationProps) {
                       }}
                     />
                   ))}
-                </div>
-              </div>
+                </span>
+              </span>
             )} */}
           </Ariakit.Hovercard>
-        </div>
+        </span>
       </Ariakit.HovercardProvider>
     </span>
   );
@@ -180,7 +180,7 @@ export function Citation(props: CitationComponentProps) {
   return (
     <span className="relative ml-0.5 inline-block">
       <Ariakit.HovercardProvider showTimeout={150} hideTimeout={150}>
-        <div className="flex items-center">
+        <span className="flex items-center">
           <Ariakit.HovercardAnchor
             render={
               <a
@@ -208,18 +208,18 @@ export function Citation(props: CitationComponentProps) {
             portal={true}
             unmountOnHide={true}
           >
-            <div className="mb-2 flex items-center">
-              <div className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
+            <span className="mb-2 flex items-center">
+              <span className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
                 {getInitial()}
-              </div>
+              </span>
               <strong>{refData.attribution}</strong>
-            </div>
+            </span>
 
             <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{refData.title}</h4>
             <p className="my-2 text-sm text-text-secondary">{refData.snippet}</p>
             {/* <small className="block break-all text-xs text-text-secondary">{refData.link}</small> */}
           </Ariakit.Hovercard>
-        </div>
+        </span>
       </Ariakit.HovercardProvider>
     </span>
   );
