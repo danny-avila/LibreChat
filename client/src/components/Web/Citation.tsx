@@ -1,10 +1,10 @@
-/* eslint-disable i18next/no-literal-string */
 import { memo, useState, useContext } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
 import type { CitationProps } from './types';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
+import { useLocalize } from '~/hooks';
 
 interface CompositeCitationProps {
   citationId?: string;
@@ -14,11 +14,10 @@ interface CompositeCitationProps {
 }
 
 export function CompositeCitation(props: CompositeCitationProps) {
+  const localize = useLocalize();
   const { citations, citationId } = props.node?.properties ?? ({} as CitationProps);
   const { setHoveredCitationId } = useContext(CitationContext);
   const [currentPage, setCurrentPage] = useState(0);
-
-  // Use the selector to get the actual citation data
   const sources = useCompositeCitations(citations || []);
 
   if (!sources || sources.length === 0) return null;
@@ -29,14 +28,14 @@ export function CompositeCitation(props: CompositeCitationProps) {
   };
 
   const getCitationLabel = () => {
-    if (!sources || sources.length === 0) return 'Source';
+    if (!sources || sources.length === 0) return localize('com_citation_source');
 
     const firstSource = sources[0];
     const remainingCount = sources.length - 1;
 
     return remainingCount > 0
-      ? `${firstSource.attribution || 'Source'} +${remainingCount}`
-      : firstSource.attribution || 'Source';
+      ? `${firstSource.attribution || localize('com_citation_source')} +${remainingCount}`
+      : firstSource.attribution || localize('com_citation_source');
   };
 
   const handlePrevPage = (e: React.MouseEvent) => {
@@ -76,8 +75,10 @@ export function CompositeCitation(props: CompositeCitationProps) {
             }
           />
           <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-neutral-500 hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-ring">
-            <VisuallyHidden>More details about {getCitationLabel()}</VisuallyHidden>
-            <ChevronDown />
+            <VisuallyHidden>
+              {localize('com_citation_more_details', { label: getCitationLabel() })}
+            </VisuallyHidden>
+            <ChevronDown className="icon-sm text-text-primary" />
           </Ariakit.HovercardDisclosure>
 
           <Ariakit.Hovercard
@@ -158,6 +159,7 @@ interface CitationComponentProps {
 }
 
 export function Citation(props: CitationComponentProps) {
+  const localize = useLocalize();
   const { citation, citationId, citationType } = props.node?.properties ?? {};
   const { setHoveredCitationId } = useContext(CitationContext);
   const refData = useCitation(citation?.turn || 0, citation?.refType || '', citation?.index || 0);
@@ -170,9 +172,9 @@ export function Citation(props: CitationComponentProps) {
   const getCitationLabel = () => {
     switch (citationType) {
       case 'standalone':
-        return refData.attribution || 'Source';
+        return refData.attribution || localize('com_citation_source');
       default:
-        return 'Source';
+        return localize('com_citation_source');
     }
   };
 
@@ -195,8 +197,10 @@ export function Citation(props: CitationComponentProps) {
             }
           />
           <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-neutral-500 hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-ring">
-            <VisuallyHidden>More details about {getCitationLabel()}</VisuallyHidden>
-            <ChevronDown />
+            <VisuallyHidden>
+              {localize('com_citation_more_details', { label: getCitationLabel() })}
+            </VisuallyHidden>
+            <ChevronDown className="icon-sm text-text-primary" />
           </Ariakit.HovercardDisclosure>
 
           <Ariakit.Hovercard
