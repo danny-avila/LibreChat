@@ -7,6 +7,7 @@ import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { MessageContext } from '~/Providers';
+import Sources from './Sources';
 import { EditTextPart } from './Parts';
 import store from '~/store';
 import Part from './Part';
@@ -119,6 +120,7 @@ const ContentParts = memo(
             />
           </div>
         )}
+        <Sources />
         {content
           .filter((part) => part)
           .map((part, idx) => {
