@@ -1,6 +1,6 @@
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
-import { Fragment, useState, memo } from 'react';
+import { Fragment, useState, memo, useMemo } from 'react';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -11,6 +11,44 @@ import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
+
+/**
+ * Adds a time interval to a given date.
+ * @param {Date} date - The starting date.
+ * @param {number} value - The numeric value of the interval.
+ * @param {'seconds'|'minutes'|'hours'|'days'|'weeks'|'months'} unit - The unit of time.
+ * @returns {Date} A new Date representing the starting date plus the interval.
+ */
+const addIntervalToDate = (
+  date: Date,
+  value: number,
+  unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months',
+): Date => {
+  const result = new Date(date);
+  switch (unit) {
+    case 'seconds':
+      result.setSeconds(result.getSeconds() + value);
+      break;
+    case 'minutes':
+      result.setMinutes(result.getMinutes() + value);
+      break;
+    case 'hours':
+      result.setHours(result.getHours() + value);
+      break;
+    case 'days':
+      result.setDate(result.getDate() + value);
+      break;
+    case 'weeks':
+      result.setDate(result.getDate() + value * 7);
+      break;
+    case 'months':
+      result.setMonth(result.getMonth() + value);
+      break;
+    default:
+      break;
+  }
+  return result;
+};
 
 function AccountSettings() {
   const localize = useLocalize();
@@ -24,6 +62,41 @@ function AccountSettings() {
 
   const avatarSrc = useAvatar(user);
   const name = user?.avatar ?? user?.username ?? '';
+
+  const displayBalance = useMemo(() => {
+    if (!balanceQuery.data) {return 0;}
+
+    const {
+      tokenCredits = 0,
+      autoRefillEnabled = false,
+      refillIntervalValue,
+      refillIntervalUnit,
+      lastRefill,
+      refillAmount = 0,
+    } = balanceQuery.data;
+
+    // If auto-refill is not enabled, just display the current balance
+    if (!autoRefillEnabled || !lastRefill || !refillIntervalValue || !refillIntervalUnit) {
+      return tokenCredits;
+    }
+
+    // Check if refill is due
+    const lastRefillDate = new Date(lastRefill);
+    const nextRefillDate = addIntervalToDate(
+      lastRefillDate,
+      refillIntervalValue,
+      refillIntervalUnit,
+    );
+    const now = new Date();
+
+    // If refill is due, show current balance + refill amount
+    if (now >= nextRefillDate) {
+      return tokenCredits + refillAmount;
+    }
+
+    // Otherwise just show the current balance
+    return tokenCredits;
+  }, [balanceQuery.data]);
 
   return (
     <Select.SelectProvider>
@@ -78,7 +151,7 @@ function AccountSettings() {
         {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-              {localize('com_nav_balance')}: {balanceQuery.data.tokenCredits.toFixed(2)}
+              {localize('com_nav_balance')}: {displayBalance.toFixed(2)}
             </div>
             <DropdownMenuSeparator />
           </>
