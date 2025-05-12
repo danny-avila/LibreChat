@@ -6,6 +6,30 @@
   animation-duration: 300ms;
 }
 
+/* Sliding underline animation for tabs */
+.animated-tab-list {
+  position: relative;
+}
+
+.animated-tab-list::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  background-color: currentColor; /* Inherit color from active tab */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  left: var(--tab-left, 0);
+  width: var(--tab-width, 0);
+}
+
+.animated-tab {
+  position: relative;
+}
+
+.animated-tab[data-state="active"] {
+  border-bottom-color: transparent !important;
+}
+
 .animated-tab-panel[data-enter] {
   opacity: 1 !important;
   translate: 0 !important;
