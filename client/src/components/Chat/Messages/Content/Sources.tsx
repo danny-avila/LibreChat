@@ -31,12 +31,14 @@ function SourceItem({ source, isNews }: SourceItemProps) {
       href={source.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex h-8 items-center gap-2 rounded-md bg-surface-secondary px-2 py-1 text-sm transition-colors hover:bg-surface-tertiary"
+      className="flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
     >
-      <div className="size-4 flex-shrink-0 overflow-hidden rounded-full bg-surface-secondary">
-        <img src={getFaviconUrl(domain)} alt={domain} className="size-full" />
+      <div className="relative size-4 flex-shrink-0 overflow-hidden rounded-full">
+        <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+        <img src={getFaviconUrl(domain)} alt={domain} className="relative size-full" />
+        <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
       </div>
-      <span className="text-token-text-primary truncate">{domain}</span>
+      <span className="text-token-text-primary max-w-full truncate font-medium">{domain}</span>
     </a>
   );
 }
@@ -47,7 +49,7 @@ function ImageItem({ image }: { image: ImageResult }) {
       href={image.imageUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="group overflow-hidden rounded-md bg-surface-secondary transition-all hover:opacity-95"
+      className="group overflow-hidden rounded-lg bg-surface-secondary transition-all duration-300 hover:bg-surface-tertiary"
     >
       {image.imageUrl && (
         <div className="relative aspect-square w-full overflow-hidden">
@@ -56,6 +58,11 @@ function ImageItem({ image }: { image: ImageResult }) {
             alt={image.title || 'Search result image'}
             className="size-full object-cover"
           />
+          {image.title && (
+            <div className="bg-surface-secondary/80 text-token-text-primary absolute bottom-0 left-0 right-0 p-1 text-xs font-medium backdrop-blur-sm">
+              <p className="truncate">{image.title}</p>
+            </div>
+          )}
         </div>
       )}
     </a>
@@ -68,42 +75,56 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
   const remainingSources = sources.slice(limit);
   const hasMoreSources = remainingSources.length > 0;
 
+  // Calculate grid columns based on number of items (including the +X sources button if present)
+  const totalItems = hasMoreSources ? visibleSources.length + 1 : visibleSources.length;
+  const gridCols = `grid-cols-${Math.min(totalItems, 4)}`;
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className={`grid ${gridCols} scrollbar-none w-full gap-2 overflow-x-auto`}>
       {visibleSources.map((source, i) => (
-        <SourceItem key={`source-${i}`} source={source} />
+        <div key={`source-${i}`} className="w-full min-w-[120px]">
+          <SourceItem source={source} />
+        </div>
       ))}
       {hasMoreSources && (
-        <button
-          onClick={() => setDialogOpen(true)}
-          className="flex h-8 items-center gap-1.5 rounded-md bg-surface-secondary px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-tertiary"
-        >
-          <div className="relative flex">
-            {remainingSources.slice(0, 3).map((source, i) => (
-              <div
-                key={`icon-${i}`}
-                className="size-4 overflow-hidden rounded-full border border-surface-primary bg-surface-secondary"
-                style={{ marginLeft: i > 0 ? '-6px' : '0' }}
-              >
-                <img
-                  src={getFaviconUrl(getCleanDomain(source.link))}
-                  alt=""
-                  className="size-full"
-                />
-              </div>
-            ))}
-          </div>
-          <span>+{remainingSources.length} sources</span>
-        </button>
+        <div className="w-full min-w-[120px]">
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="flex h-10 w-full items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary transition-all duration-300 hover:bg-surface-tertiary"
+          >
+            <div className="relative flex">
+              {remainingSources.slice(0, 3).map((source, i) => (
+                <div
+                  key={`icon-${i}`}
+                  className="relative size-4 overflow-hidden rounded-full"
+                  style={{ marginLeft: i > 0 ? '-6px' : '0' }}
+                >
+                  <div className="absolute inset-0 rounded-full bg-surface-primary"></div>
+                  <img
+                    src={getFaviconUrl(getCleanDomain(source.link))}
+                    alt=""
+                    className="relative size-full"
+                  />
+                  <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
+                </div>
+              ))}
+            </div>
+            <span className="max-w-full truncate font-medium">
+              +{remainingSources.length} sources
+            </span>
+          </button>
+        </div>
       )}
 
       {hasMoreSources && (
         <OGDialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary dark:border-gray-700 md:max-w-[600px]">
             <OGDialogTitle className="mb-4 text-lg font-medium">All Sources</OGDialogTitle>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
               {[...visibleSources, ...remainingSources].map((source, i) => (
-                <SourceItem key={`more-source-${i}`} source={source} />
+                <div key={`more-source-${i}`} className="w-full">
+                  <SourceItem source={source} />
+                </div>
               ))}
             </div>
           </OGDialogContent>
