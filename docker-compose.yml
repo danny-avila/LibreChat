@@ -2,6 +2,16 @@
 # Refer to `docker-compose.override.yaml.example’ for some sample configurations.
 
 services:
+  mcp-atlassian:
+    container_name: mcp-atlassian
+    image: ghcr.io/sooperset/mcp-atlassian:latest
+    command: --transport sse --port 9000 -vv
+    ports:
+      - "9000:9000"
+    env_file:
+      - PATH/TO/LibreChat/.env
+    restart: always
+
   api:
     container_name: LibreChat
     ports:
@@ -67,6 +77,13 @@ services:
       - vectordb
     env_file:
       - .env
+  bundler:
+    container_name: bundler
+    image: ghcr.io/librechat-ai/codesandbox-client/bundler:latest
+    restart: always
+    ports:
+      - "8080:80"
+
 
 volumes:
   pgdata2:

@@ -1,0 +1,4 @@
+https://raw.githubusercontent.com/modelcontextprotocol/servers/main/src/fetch/src/mcp_server_fetch/__init__.py
+https://raw.githubusercontent.com/modelcontextprotocol/servers/main/src/fetch/src/mcp_server_fetch/__main__.py
+https://raw.githubusercontent.com/modelcontextprotocol/servers/main/src/fetch/src/mcp_server_fetch/server.py
+https://raw.githubusercontent.com/modelcontextprotocol/servers/refs/heads/main/src/fetch/pyproject.toml

@@ -1,0 +1,15 @@
+FROM ghcr.io/danny-avila/librechat-dev:latest
+USER root
+
+# Install Python and venv on Alpine
+RUN apk add --no-cache python3 py3-pip py3-virtualenv
+
+RUN npm install @modelcontextprotocol/server-github
+
+# Install uv/uvx permanently
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add uvx to PATH
+ENV PATH="/root/.local/bin:${PATH}"
+
+COPY . /app

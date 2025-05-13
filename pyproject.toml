@@ -1,0 +1,14 @@
+[project]
+# These two have to be in a pyproject.toml file
+name = "mcp-server-fetch"     # the actual name doesn't matter
+version = "0.6.2"             # nor the version
+# these make sure you have the correct version of Python / Python packages
+requires-python = ">=3.10"    
+dependencies = [
+    "markdownify>=0.13.1",
+    "mcp>=1.1.3",
+    "protego>=0.3.1",
+    "pydantic>=2.0.0",
+    "readabilipy>=0.2.0",
+    "requests>=2.32.3",
+]

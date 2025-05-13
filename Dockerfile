@@ -36,6 +36,16 @@ RUN \
 
 RUN mkdir -p /app/client/public/images /app/api/logs
 
+# NNI UI sed modifications
+# Hide Assistants Builder Knowledge Block
+RUN sed -i 's/<Knowledge/<Knowledge style={{ display: "none" }}/' /app/client/src/components/SidePanel/Builder/AssistantPanel.tsx
+# Hide Speech Options STT non-External options
+RUN sed -i  's/options={endpointOptions}/options={[{ value: "external", label: localize("com_nav_external") },]} /' /app/client/src/components/Nav/SettingsTabs/Speech/STT/EngineSTTDropdown.tsx
+# Hide Speech Options TTS non-External options
+RUN sed -i  's/options={endpointOptions}/options={[{ value: "external", label: localize("com_nav_external") },]} /' /app/client/src/components/Nav/SettingsTabs/Speech/TTS/EngineTTSDropdown.tsx
+# Alter Base Case Error Message, recommending a refresh to user
+RUN sed -i 's/Please contact the Admin./Please refresh the page and retry your request. If the problem persists, please contact an Admin. /' /app/api/server/middleware/abortMiddleware.js
+
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
