@@ -46,7 +46,7 @@
     "@langchain/community": "^0.3.42",
     "@langchain/core": "^0.3.51",
     "@langchain/google-genai": "^0.2.8",
-    "@langchain/google-vertexai": "^0.2.5",
+    "@langchain/google-vertexai": "^0.2.8",
     "@langchain/textsplitters": "^0.1.0",
     "@librechat/data-schemas": "*",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
