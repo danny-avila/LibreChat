@@ -49,8 +49,8 @@ function OmnexioSearch({ conversationId }: { conversationId?: string | null }) {
         defaultChecked={omnexioSearch}
         setValue={debouncedChange}
         label={localize('com_omnexio_search')}
-        isCheckedClassName="border-blue-600/40 bg-blue-500/50 hover:bg-blue-700/60"
-        icon={<GlobeIcon className="icon-md" />}
+        isCheckedClassName="border-blue-400/20 bg-blue-400/50 hover:bg-blue-500/20 text-blue-500/90"
+        icon={<GlobeIcon className={omnexioSearch ? 'icon-md text-blue-500/80' : 'icon-md'} />}
       />
     </>
   );
