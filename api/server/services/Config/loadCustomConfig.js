@@ -12,7 +12,7 @@ const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
 const axios = require('axios');
 const yaml = require('js-yaml');
-const _ = require('lodash');
+const { keyBy } = require('lodash');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
@@ -135,7 +135,10 @@ function parseCustomParams(endpointName, customParams) {
   customParams.paramDefinitions = customParams.paramDefinitions || [];
 
   // Checks if `defaultParamsEndpoint` is a key in `paramSettings`.
-  const validEndpoints = new Set(_.keys(paramSettings).concat(_.keys(agentParamSettings)));
+  const validEndpoints = new Set([
+    ...Object.keys(paramSettings),
+    ...Object.keys(agentParamSettings),
+  ]);
   if (!validEndpoints.has(paramEndpoint)) {
     throw new Error(
       `defaultParamsEndpoint of "${endpointName}" endpoint is invalid. ` +
@@ -147,13 +150,13 @@ function parseCustomParams(endpointName, customParams) {
   const regularParams = paramSettings[paramEndpoint] ?? [];
   const agentParams = agentParamSettings[paramEndpoint] ?? [];
   const defaultParams = regularParams.concat(agentParams);
-  const defaultParamsMap = _.keyBy(defaultParams, 'key');
+  const defaultParamsMap = keyBy(defaultParams, 'key');
 
   // TODO: Remove this check once we support new parameters not part of default parameters.
   // Checks if every key in `paramDefinitions` is valid.
-  const validKeys = new Set(_.keys(defaultParamsMap));
+  const validKeys = new Set(Object.keys(defaultParamsMap));
   const paramKeys = customParams.paramDefinitions.map((param) => param.key);
-  if (_.some(paramKeys, (key) => !validKeys.has(key))) {
+  if (paramKeys.some((key) => !validKeys.has(key))) {
     throw new Error(
       `paramDefinitions of "${endpointName}" endpoint contains invalid key(s). ` +
         `Valid parameter keys are ${Array.from(validKeys).join(', ')}`,

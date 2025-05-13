@@ -14,7 +14,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, logger } from '~/utils';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
-import _ from 'lodash';
+import { keyBy } from 'lodash';
 
 export default function Parameters() {
   const localize = useLocalize();
@@ -43,7 +43,7 @@ export default function Parameters() {
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
-    const overriddenParamsMap = _.keyBy(overriddenParams, 'key');
+    const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );

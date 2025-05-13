@@ -15,7 +15,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
-import _ from 'lodash';
+import { keyBy } from 'lodash';
 
 export default function ModelPanel({
   setActivePanel,
@@ -75,7 +75,7 @@ export default function ModelPanel({
     const defaultParams =
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
-    const overriddenParamsMap = _.keyBy(overriddenParams, 'key');
+    const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
