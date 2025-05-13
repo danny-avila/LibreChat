@@ -5,6 +5,7 @@ import {
   MCPServersSchema,
   StdioOptionsSchema,
   WebSocketOptionsSchema,
+  StreamableHTTPOptionsSchema,
 } from 'librechat-data-provider';
 import type { JsonSchemaType, TPlugin } from 'librechat-data-provider';
 import { ToolSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -13,6 +14,7 @@ import type * as t from '@modelcontextprotocol/sdk/types.js';
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
 export type SSEOptions = z.infer<typeof SSEOptionsSchema>;
+export type StreamableHTTPOptions = z.infer<typeof StreamableHTTPOptionsSchema>;
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
 export type MCPServers = z.infer<typeof MCPServersSchema>;
 export interface MCPResource {
