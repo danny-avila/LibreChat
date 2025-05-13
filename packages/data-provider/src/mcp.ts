@@ -82,10 +82,25 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
     ),
 });
 
+export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
+  type: z.literal('streamable-http'),
+  headers: z.record(z.string(), z.string()).optional(),
+  url: z.string().url().refine(
+      (val) => {
+        const protocol = new URL(val).protocol;
+        return protocol !== 'ws:' && protocol !== 'wss:';
+      },
+      {
+        message: 'Streamable HTTP URL must not start with ws:// or wss://',
+      },
+  ),
+});
+
 export const MCPOptionsSchema = z.union([
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   SSEOptionsSchema,
+  StreamableHTTPOptionsSchema,
 ]);
 
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
