@@ -44,7 +44,7 @@
     "@googleapis/youtube": "^20.0.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/community": "^0.3.42",
-    "@langchain/core": "^0.3.51",
+    "@langchain/core": "^0.3.55",
     "@langchain/google-genai": "^0.2.8",
     "@langchain/google-vertexai": "^0.2.8",
     "@langchain/textsplitters": "^0.1.0",
