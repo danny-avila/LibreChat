@@ -37,14 +37,16 @@ export default function Parameters() {
     [conversation?.endpoint, endpointsConfig],
   );
 
-  const parameters = useMemo(() : SettingDefinition[] => {
+  const parameters = useMemo((): SettingDefinition[] => {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = _.keyBy(overriddenParams, 'key');
-    return defaultParams.map(param => overriddenParamsMap[param.key] as SettingDefinition ?? param);
+    return defaultParams.map(
+      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
+    );
   }, [endpointType, endpointsConfig, model, provider]);
 
   useEffect(() => {

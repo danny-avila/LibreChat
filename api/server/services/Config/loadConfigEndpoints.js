@@ -29,7 +29,14 @@ async function loadConfigEndpoints(req) {
 
     for (let i = 0; i < customEndpoints.length; i++) {
       const endpoint = customEndpoints[i];
-      const { baseURL, apiKey, name: configName, iconURL, modelDisplayLabel, customParams } = endpoint;
+      const {
+        baseURL,
+        apiKey,
+        name: configName,
+        iconURL,
+        modelDisplayLabel,
+        customParams,
+      } = endpoint;
       const name = normalizeEndpointName(configName);
 
       const resolvedApiKey = extractEnvVariable(apiKey);

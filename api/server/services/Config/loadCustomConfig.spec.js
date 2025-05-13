@@ -194,7 +194,7 @@ describe('loadCustomConfig', () => {
       },
     };
 
-    async function loadCustomParams (customParams) {
+    async function loadCustomParams(customParams) {
       mockConfig.endpoints.custom[0].customParams = customParams;
       loadYaml.mockReturnValue(mockConfig);
       return await loadCustomConfig();
@@ -213,10 +213,12 @@ describe('loadCustomConfig', () => {
     it('returns no error when customParams is valid', async () => {
       const result = await loadCustomParams({
         defaultParamsEndpoint: 'google',
-        paramDefinitions: [{
-          key: 'temperature',
-          default: 0.5,
-        }],
+        paramDefinitions: [
+          {
+            key: 'temperature',
+            default: 0.5,
+          },
+        ],
       });
       expect(result).toEqual(mockConfig);
     });
@@ -237,12 +239,14 @@ describe('loadCustomConfig', () => {
     it('throws an error when paramDefinitions is malformed', async () => {
       const malformedCustomParams = {
         defaultParamsEndpoint: 'google',
-        paramDefinitions: [{
-          key: 'temperature',
-          type: 'noomba',
-          component: 'inpoot',
-          optionType: 'custom',
-        }],
+        paramDefinitions: [
+          {
+            key: 'temperature',
+            type: 'noomba',
+            component: 'inpoot',
+            optionType: 'custom',
+          },
+        ],
       };
       await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
         /Custom parameter definitions for "Google" endpoint is malformed:/,
@@ -267,30 +271,31 @@ describe('loadCustomConfig', () => {
 
       const parsedConfig = await loadCustomParams(customParams);
       const paramDefinitions = parsedConfig.endpoints.custom[0].customParams.paramDefinitions;
-      expect (paramDefinitions).toEqual([
+      expect(paramDefinitions).toEqual([
         {
-          'columnSpan': 1,
-          'component': 'slider',
-          'default': 0.7, // overridden
-          'includeInput': true,
-          'key': 'temperature',
-          'label': 'temperature',
-          'optionType': 'custom',
-          'range': { // overridden
-            'max': 0.9,
-            'min': 0.1,
-            'step': 0.1,
+          columnSpan: 1,
+          component: 'slider',
+          default: 0.7, // overridden
+          includeInput: true,
+          key: 'temperature',
+          label: 'temperature',
+          optionType: 'custom',
+          range: {
+            // overridden
+            max: 0.9,
+            min: 0.1,
+            step: 0.1,
           },
-          'type': 'number',
+          type: 'number',
         },
         {
-          'columnSpan': 1,
-          'component': 'textarea', // overridden
-          'key': 'pressure',
-          'label': 'pressure',
-          'optionType': 'custom',
-          'placeholder': '',
-          'type': 'string',
+          columnSpan: 1,
+          component: 'textarea', // overridden
+          key: 'pressure',
+          label: 'pressure',
+          optionType: 'custom',
+          placeholder: '',
+          type: 'string',
         },
       ]);
     });

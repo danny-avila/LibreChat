@@ -113,8 +113,9 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     logger.debug('Custom config:', customConfig);
   }
 
-  (customConfig.endpoints?.custom ?? []).filter((endpoint) => endpoint.customParams)
-    .forEach(endpoint => parseCustomParams(endpoint.name, endpoint.customParams));
+  (customConfig.endpoints?.custom ?? [])
+    .filter((endpoint) => endpoint.customParams)
+    .forEach((endpoint) => parseCustomParams(endpoint.name, endpoint.customParams));
 
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
@@ -136,8 +137,10 @@ function parseCustomParams(endpointName, customParams) {
   // Checks if `defaultParamsEndpoint` is a key in `paramSettings`.
   const validEndpoints = new Set(_.keys(paramSettings).concat(_.keys(agentParamSettings)));
   if (!validEndpoints.has(paramEndpoint)) {
-    throw new Error(`defaultParamsEndpoint of "${endpointName}" endpoint is invalid. ` +
-      `Valid options are ${Array.from(validEndpoints).join(', ')}`);
+    throw new Error(
+      `defaultParamsEndpoint of "${endpointName}" endpoint is invalid. ` +
+        `Valid options are ${Array.from(validEndpoints).join(', ')}`,
+    );
   }
 
   // creates default param maps
@@ -151,19 +154,23 @@ function parseCustomParams(endpointName, customParams) {
   const validKeys = new Set(_.keys(defaultParamsMap));
   const paramKeys = customParams.paramDefinitions.map((param) => param.key);
   if (_.some(paramKeys, (key) => !validKeys.has(key))) {
-    throw new Error(`paramDefinitions of "${endpointName}" endpoint contains invalid key(s). ` +
-    `Valid parameter keys are ${Array.from(validKeys).join(', ')}`);
+    throw new Error(
+      `paramDefinitions of "${endpointName}" endpoint contains invalid key(s). ` +
+        `Valid parameter keys are ${Array.from(validKeys).join(', ')}`,
+    );
   }
 
   // Fill out missing values for custom param definitions
-  customParams.paramDefinitions = customParams.paramDefinitions.map(param => {
+  customParams.paramDefinitions = customParams.paramDefinitions.map((param) => {
     return { ...defaultParamsMap[param.key], ...param, optionType: 'custom' };
   });
 
-  try{
+  try {
     validateSettingDefinitions(customParams.paramDefinitions);
-  } catch(e) {
-    throw new Error(`Custom parameter definitions for "${endpointName}" endpoint is malformed: ${e.message}`);
+  } catch (e) {
+    throw new Error(
+      `Custom parameter definitions for "${endpointName}" endpoint is malformed: ${e.message}`,
+    );
   }
 }
 

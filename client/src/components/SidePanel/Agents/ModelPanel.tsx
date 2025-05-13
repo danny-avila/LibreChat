@@ -1,7 +1,12 @@
 import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { getSettingsKeys, alternateName, agentParamSettings, SettingDefinition } from 'librechat-data-provider';
+import {
+  getSettingsKeys,
+  alternateName,
+  agentParamSettings,
+  SettingDefinition,
+} from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
@@ -63,14 +68,17 @@ export default function ModelPanel({
     [provider, endpointsConfig],
   );
 
-  const parameters = useMemo(() : SettingDefinition[] => {
+  const parameters = useMemo((): SettingDefinition[] => {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model ?? '');
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
-    const defaultParams = agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
+    const defaultParams =
+      agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = _.keyBy(overriddenParams, 'key');
-    return defaultParams.map(param => overriddenParamsMap[param.key] as SettingDefinition ?? param);
+    return defaultParams.map(
+      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
+    );
   }, [endpointType, endpointsConfig, model, provider]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
