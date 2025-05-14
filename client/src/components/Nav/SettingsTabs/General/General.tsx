@@ -83,6 +83,7 @@ export const LangSelector = ({
     { value: 'da-DK', label: localize('com_nav_lang_danish') },
     { value: 'de-DE', label: localize('com_nav_lang_german') },
     { value: 'es-ES', label: localize('com_nav_lang_spanish') },
+    { value: 'ca-ES', label: localize('com_nav_lang_catalan') },
     { value: 'et-EE', label: localize('com_nav_lang_estonian') },
     { value: 'fa-IR', label: localize('com_nav_lang_persian') },
     { value: 'fr-FR', label: localize('com_nav_lang_french') },
