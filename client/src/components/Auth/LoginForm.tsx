@@ -166,7 +166,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
 
         {/* Render Turnstile only if enabled in startupConfig */}
         {startupConfig.turnstile && (
-          <div className="flex justify-center my-4">
+          <div className="my-4 flex justify-center">
             <Turnstile
               siteKey={startupConfig.turnstile.siteKey}
               options={{
