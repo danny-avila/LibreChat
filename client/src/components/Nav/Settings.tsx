@@ -47,7 +47,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     }
   };
 
-  const settingsTabs: { value: SettingsTabValues; icon:  React.JSX.Element; label: TranslationKeys }[] = [
+  const settingsTabs: {
+    value: SettingsTabValues;
+    icon: React.JSX.Element;
+    label: TranslationKeys;
+  }[] = [
     {
       value: SettingsTabValues.GENERAL,
       icon: <GearIcon />,
@@ -144,7 +148,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <line x1="18" x2="6" y1="6" y2="18"></line>
                     <line x1="6" x2="18" y1="6" y2="18"></line>
                   </svg>
-                  <span className="sr-only">Close</span>
+                  <span className="sr-only">{localize('com_ui_close')}</span>
                 </button>
               </DialogTitle>
               <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
@@ -168,10 +172,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       <Tabs.Trigger
                         key={value}
                         className={cn(
-                          'group relative z-10 m-1 flex items-center justify-start gap-2 px-2 py-1.5 transition-all duration-200 ease-in-out',
+                          'group relative z-10 m-1 flex items-center justify-start gap-2 rounded-xl px-2 py-1.5 transition-all duration-200 ease-in-out',
                           isSmallScreen
-                            ? 'flex-1 justify-center text-nowrap rounded-xl p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
-                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-surface-tertiary',
+                            ? 'flex-1 justify-center text-nowrap p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
+                            : 'bg-transparent text-text-secondary radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary',
                         )}
                         value={value}
                         ref={(el) => (tabRefs.current[value] = el)}

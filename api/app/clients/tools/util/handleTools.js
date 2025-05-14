@@ -1,7 +1,7 @@
-const { Tools, Constants } = require('librechat-data-provider');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
+const { Tools, Constants, EToolResources } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -18,12 +18,12 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  createOpenAIImageTools,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { createMCPTool } = require('~/server/services/MCP');
-const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
 const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -123,7 +123,7 @@ const getAuthFields = (toolKey) => {
  *
  * @param {object} object
  * @param {string} object.user
- * @param {Agent} [object.agent]
+ * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
  * @param {string} [object.model]
  * @param {EModelEndpoint} [object.endpoint]
  * @param {LoadToolOptions} [object.options]
@@ -157,7 +157,7 @@ const loadTools = async ({
   };
 
   const customConstructors = {
-    serpapi: async () => {
+    serpapi: async (_toolContextMap) => {
       const authFields = getAuthFields('serpapi');
       let envVar = authFields[0] ?? '';
       let apiKey = process.env[envVar];
@@ -170,10 +170,39 @@ const loadTools = async ({
         gl: 'us',
       });
     },
-    youtube: async () => {
+    youtube: async (_toolContextMap) => {
       const authFields = getAuthFields('youtube');
       const authValues = await loadAuthValues({ userId: user, authFields });
       return createYouTubeTools(authValues);
+    },
+    image_gen_oai: async (toolContextMap) => {
+      const authFields = getAuthFields('image_gen_oai');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      let toolContext = '';
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        if (!file) {
+          continue;
+        }
+        if (i === 0) {
+          toolContext =
+            'Image files provided in this request (their image IDs listed in order of appearance) available for image editing:';
+        }
+        toolContext += `\n\t- ${file.file_id}`;
+        if (i === imageFiles.length - 1) {
+          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`${EToolResources.image_edit}_oai\`. You may also include previously referenced or generated image IDs.`;
+        }
+      }
+      if (toolContext) {
+        toolContextMap.image_edit_oai = toolContext;
+      }
+      return createOpenAIImageTools({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        imageFiles,
+      });
     },
   };
 
@@ -200,8 +229,8 @@ const loadTools = async ({
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };
 
+  /** @type {Record<string, string>} */
   const toolContextMap = {};
-  const remainingTools = [];
   const appTools = options.req?.app?.locals?.availableTools ?? {};
 
   for (const tool of tools) {
@@ -246,7 +275,7 @@ const loadTools = async ({
     }
 
     if (customConstructors[tool]) {
-      requestedTools[tool] = customConstructors[tool];
+      requestedTools[tool] = async () => customConstructors[tool](toolContextMap);
       continue;
     }
 
@@ -260,30 +289,6 @@ const loadTools = async ({
       );
       requestedTools[tool] = toolInstance;
       continue;
-    }
-
-    if (functions === true) {
-      remainingTools.push(tool);
-    }
-  }
-
-  let specs = null;
-  if (useSpecs === true && functions === true && remainingTools.length > 0) {
-    specs = await loadSpecs({
-      llm: model,
-      user,
-      message: options.message,
-      memory: options.memory,
-      signal: options.signal,
-      tools: remainingTools,
-      map: true,
-      verbose: false,
-    });
-  }
-
-  for (const tool of remainingTools) {
-    if (specs && specs[tool]) {
-      requestedTools[tool] = specs[tool];
     }
   }
 

@@ -136,7 +136,7 @@ function getLLMConfig(apiKey, options = {}, endpoint = null) {
     Object.assign(llmConfig, azure);
     llmConfig.model = llmConfig.azureOpenAIApiDeploymentName;
   } else {
-    llmConfig.openAIApiKey = apiKey;
+    llmConfig.apiKey = apiKey;
     // Object.assign(llmConfig, {
     //   configuration: { apiKey },
     // });
@@ -151,6 +151,12 @@ function getLLMConfig(apiKey, options = {}, endpoint = null) {
       effort: llmConfig.reasoning_effort,
     };
     delete llmConfig.reasoning_effort;
+  }
+
+  if (llmConfig?.['max_tokens'] != null) {
+    /** @type {number} */
+    llmConfig.maxTokens = llmConfig['max_tokens'];
+    delete llmConfig['max_tokens'];
   }
 
   return {

@@ -103,6 +103,15 @@ openid:
         clientSecret: "client-secret-for-tenant2"
         issuer: "https://example.com/oidc2"
 
+# Example Balance settings
+# balance:
+#   enabled: false
+#   startBalance: 20000
+#   autoRefillEnabled: false
+#   refillIntervalValue: 30
+#   refillIntervalUnit: 'days'
+#   refillAmount: 10000
+
 # speech:
 #   tts:
 #     openai:

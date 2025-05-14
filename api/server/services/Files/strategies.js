@@ -211,6 +211,8 @@ const getStrategyFunctions = (fileSource) => {
   } else if (fileSource === FileSources.openai) {
     return openAIStrategy();
   } else if (fileSource === FileSources.azure) {
+    return openAIStrategy();
+  } else if (fileSource === FileSources.azure_blob) {
     return azureStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();

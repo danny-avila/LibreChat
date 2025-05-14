@@ -1,6 +1,6 @@
 const fs = require('fs');
 const ioredis = require('ioredis');
-const KeyvRedis = require('@keyv/redis');
+const KeyvRedis = require('@keyv/redis').default;
 const { isEnabled } = require('~/server/utils');
 const logger = require('~/config/winston');
 
@@ -50,6 +50,7 @@ function mapURI(uri) {
 
 if (REDIS_URI && isEnabled(USE_REDIS)) {
   let redisOptions = null;
+  /** @type {import('@keyv/redis').KeyvRedisOptions} */
   let keyvOpts = {
     useRedisSets: false,
     keyPrefix: redis_prefix,
@@ -74,6 +75,25 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   } else {
     keyvRedis = new KeyvRedis(REDIS_URI, keyvOpts);
   }
+
+  const pingInterval = setInterval(() => {
+    logger.debug('KeyvRedis ping');
+    keyvRedis.client.ping().catch(err => logger.error('Redis keep-alive ping failed:', err));
+  }, 5 * 60 * 1000);
+
+  keyvRedis.on('ready', () => {
+    logger.info('KeyvRedis connection ready');
+  });
+  keyvRedis.on('reconnecting', () => {
+    logger.info('KeyvRedis connection reconnecting');
+  });
+  keyvRedis.on('end', () => {
+    logger.info('KeyvRedis connection ended');
+  });
+  keyvRedis.on('close', () => {
+    clearInterval(pingInterval);
+    logger.info('KeyvRedis connection closed');
+  });
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
   keyvRedis.setMaxListeners(redis_max_listeners);
   logger.info(

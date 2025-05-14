@@ -11,7 +11,7 @@ const FilePreview = ({
   fileType,
   className = '',
 }: {
-  file?: ExtendedFile | TFile;
+  file?: Partial<ExtendedFile | TFile>;
   fileType: {
     paths: React.FC;
     fill: string;

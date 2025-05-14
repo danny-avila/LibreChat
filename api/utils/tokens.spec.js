@@ -113,6 +113,43 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-4.1 matches', () => {
+    expect(getModelMaxTokens('gpt-4.1')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4.1']);
+    expect(getModelMaxTokens('gpt-4.1-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1'],
+    );
+    expect(getModelMaxTokens('openai/gpt-4.1')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1'],
+    );
+    expect(getModelMaxTokens('gpt-4.1-2024-08-06')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1'],
+    );
+  });
+
+  test('should return correct tokens for gpt-4.1-mini matches', () => {
+    expect(getModelMaxTokens('gpt-4.1-mini')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1-mini'],
+    );
+    expect(getModelMaxTokens('gpt-4.1-mini-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1-mini'],
+    );
+    expect(getModelMaxTokens('openai/gpt-4.1-mini')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1-mini'],
+    );
+  });
+
+  test('should return correct tokens for gpt-4.1-nano matches', () => {
+    expect(getModelMaxTokens('gpt-4.1-nano')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1-nano'],
+    );
+    expect(getModelMaxTokens('gpt-4.1-nano-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1-nano'],
+    );
+    expect(getModelMaxTokens('openai/gpt-4.1-nano')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4.1-nano'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -303,6 +340,15 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('o1-preview-something')).toBe(o1PreviewTokens);
     expect(getModelMaxTokens('openai/o1-preview-something')).toBe(o1PreviewTokens);
   });
+
+  test('should return correct max context tokens for o4-mini and o3', () => {
+    const o4MiniTokens = maxTokensMap[EModelEndpoint.openAI]['o4-mini'];
+    const o3Tokens = maxTokensMap[EModelEndpoint.openAI]['o3'];
+    expect(getModelMaxTokens('o4-mini')).toBe(o4MiniTokens);
+    expect(getModelMaxTokens('openai/o4-mini')).toBe(o4MiniTokens);
+    expect(getModelMaxTokens('o3')).toBe(o3Tokens);
+    expect(getModelMaxTokens('openai/o3')).toBe(o3Tokens);
+  });
 });
 
 describe('matchModelName', () => {
@@ -353,6 +399,25 @@ describe('matchModelName', () => {
     expect(matchModelName('gpt-4-0125')).toBe('gpt-4-0125');
     expect(matchModelName('gpt-4-0125-preview')).toBe('gpt-4-0125');
     expect(matchModelName('gpt-4-0125-vision-preview')).toBe('gpt-4-0125');
+  });
+
+  it('should return the closest matching key for gpt-4.1 matches', () => {
+    expect(matchModelName('openai/gpt-4.1')).toBe('gpt-4.1');
+    expect(matchModelName('gpt-4.1-preview')).toBe('gpt-4.1');
+    expect(matchModelName('gpt-4.1-2024-08-06')).toBe('gpt-4.1');
+    expect(matchModelName('gpt-4.1-2024-08-06-0718')).toBe('gpt-4.1');
+  });
+
+  it('should return the closest matching key for gpt-4.1-mini matches', () => {
+    expect(matchModelName('openai/gpt-4.1-mini')).toBe('gpt-4.1-mini');
+    expect(matchModelName('gpt-4.1-mini-preview')).toBe('gpt-4.1-mini');
+    expect(matchModelName('gpt-4.1-mini-2024-08-06')).toBe('gpt-4.1-mini');
+  });
+
+  it('should return the closest matching key for gpt-4.1-nano matches', () => {
+    expect(matchModelName('openai/gpt-4.1-nano')).toBe('gpt-4.1-nano');
+    expect(matchModelName('gpt-4.1-nano-preview')).toBe('gpt-4.1-nano');
+    expect(matchModelName('gpt-4.1-nano-2024-08-06')).toBe('gpt-4.1-nano');
   });
 
   // Tests for Google models
@@ -517,18 +582,30 @@ describe('Grok Model Tests - Tokens', () => {
       expect(getModelMaxTokens('grok-2-latest')).toBe(131072);
     });
 
+    test('should return correct tokens for Grok 3 series models', () => {
+      expect(getModelMaxTokens('grok-3')).toBe(131072);
+      expect(getModelMaxTokens('grok-3-fast')).toBe(131072);
+      expect(getModelMaxTokens('grok-3-mini')).toBe(131072);
+      expect(getModelMaxTokens('grok-3-mini-fast')).toBe(131072);
+    });
+
     test('should handle partial matches for Grok models with prefixes', () => {
       // Vision models should match before general models
-      expect(getModelMaxTokens('openai/grok-2-vision-1212')).toBe(32768);
-      expect(getModelMaxTokens('openai/grok-2-vision')).toBe(32768);
-      expect(getModelMaxTokens('openai/grok-2-vision-latest')).toBe(32768);
+      expect(getModelMaxTokens('xai/grok-2-vision-1212')).toBe(32768);
+      expect(getModelMaxTokens('xai/grok-2-vision')).toBe(32768);
+      expect(getModelMaxTokens('xai/grok-2-vision-latest')).toBe(32768);
       // Beta models
-      expect(getModelMaxTokens('openai/grok-vision-beta')).toBe(8192);
-      expect(getModelMaxTokens('openai/grok-beta')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-vision-beta')).toBe(8192);
+      expect(getModelMaxTokens('xai/grok-beta')).toBe(131072);
       // Text models
-      expect(getModelMaxTokens('openai/grok-2-1212')).toBe(131072);
-      expect(getModelMaxTokens('openai/grok-2')).toBe(131072);
-      expect(getModelMaxTokens('openai/grok-2-latest')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-2-1212')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-2')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-2-latest')).toBe(131072);
+      // Grok 3 models
+      expect(getModelMaxTokens('xai/grok-3')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-3-fast')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-3-mini')).toBe(131072);
+      expect(getModelMaxTokens('xai/grok-3-mini-fast')).toBe(131072);
     });
   });
 
@@ -545,20 +622,30 @@ describe('Grok Model Tests - Tokens', () => {
       expect(matchModelName('grok-2-1212')).toBe('grok-2-1212');
       expect(matchModelName('grok-2')).toBe('grok-2');
       expect(matchModelName('grok-2-latest')).toBe('grok-2-latest');
+      // Grok 3 models
+      expect(matchModelName('grok-3')).toBe('grok-3');
+      expect(matchModelName('grok-3-fast')).toBe('grok-3-fast');
+      expect(matchModelName('grok-3-mini')).toBe('grok-3-mini');
+      expect(matchModelName('grok-3-mini-fast')).toBe('grok-3-mini-fast');
     });
 
     test('should match Grok model variations with prefixes', () => {
       // Vision models should match before general models
-      expect(matchModelName('openai/grok-2-vision-1212')).toBe('grok-2-vision-1212');
-      expect(matchModelName('openai/grok-2-vision')).toBe('grok-2-vision');
-      expect(matchModelName('openai/grok-2-vision-latest')).toBe('grok-2-vision-latest');
+      expect(matchModelName('xai/grok-2-vision-1212')).toBe('grok-2-vision-1212');
+      expect(matchModelName('xai/grok-2-vision')).toBe('grok-2-vision');
+      expect(matchModelName('xai/grok-2-vision-latest')).toBe('grok-2-vision-latest');
       // Beta models
-      expect(matchModelName('openai/grok-vision-beta')).toBe('grok-vision-beta');
-      expect(matchModelName('openai/grok-beta')).toBe('grok-beta');
+      expect(matchModelName('xai/grok-vision-beta')).toBe('grok-vision-beta');
+      expect(matchModelName('xai/grok-beta')).toBe('grok-beta');
       // Text models
-      expect(matchModelName('openai/grok-2-1212')).toBe('grok-2-1212');
-      expect(matchModelName('openai/grok-2')).toBe('grok-2');
-      expect(matchModelName('openai/grok-2-latest')).toBe('grok-2-latest');
+      expect(matchModelName('xai/grok-2-1212')).toBe('grok-2-1212');
+      expect(matchModelName('xai/grok-2')).toBe('grok-2');
+      expect(matchModelName('xai/grok-2-latest')).toBe('grok-2-latest');
+      // Grok 3 models
+      expect(matchModelName('xai/grok-3')).toBe('grok-3');
+      expect(matchModelName('xai/grok-3-fast')).toBe('grok-3-fast');
+      expect(matchModelName('xai/grok-3-mini')).toBe('grok-3-mini');
+      expect(matchModelName('xai/grok-3-mini-fast')).toBe('grok-3-mini-fast');
     });
   });
 });

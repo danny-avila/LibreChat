@@ -1,7 +1,13 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
-const { loginLimiter, logHeaders, checkBan, checkDomainAllowed } = require('~/server/middleware');
+const {
+  checkBan,
+  logHeaders,
+  loginLimiter,
+  setBalanceConfig,
+  checkDomainAllowed,
+} = require('~/server/middleware');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
 const { chooseOpenIdStrategy } = require('~/server/utils/openidHelper');
@@ -57,6 +63,7 @@ router.get(
     session: false,
     scope: ['openid', 'profile', 'email'],
   }),
+  setBalanceConfig,
   oauthHandler,
 );
 
@@ -81,6 +88,7 @@ router.get(
     scope: ['public_profile'],
     profileFields: ['id', 'email', 'name'],
   }),
+  setBalanceConfig,
   oauthHandler,
 );
 
@@ -113,6 +121,7 @@ router.get(
       next(err);
     }
   },
+  setBalanceConfig,
   oauthHandler,
 );
 
@@ -135,6 +144,7 @@ router.get(
     session: false,
     scope: ['user:email', 'read:user'],
   }),
+  setBalanceConfig,
   oauthHandler,
 );
 
@@ -157,6 +167,7 @@ router.get(
     session: false,
     scope: ['identify', 'email'],
   }),
+  setBalanceConfig,
   oauthHandler,
 );
 
@@ -177,6 +188,7 @@ router.post(
     failureMessage: true,
     session: false,
   }),
+  setBalanceConfig,
   oauthHandler,
 );
 

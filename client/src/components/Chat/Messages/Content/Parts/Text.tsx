@@ -35,7 +35,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
     } else {
       return <>{text}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, showCursorState, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
 
   return (
     <div

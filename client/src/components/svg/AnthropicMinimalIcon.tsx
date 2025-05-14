@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function AzureMinimalistIcon() {
+export default function AnthropicMinimalIcon() {
   return (
     <svg
       stroke="currentColor"

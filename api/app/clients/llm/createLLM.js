@@ -34,6 +34,7 @@ function createLLM({
   let credentials = { openAIApiKey };
   let configuration = {
     apiKey: openAIApiKey,
+    ...(configOptions.basePath && { baseURL: configOptions.basePath }),
   };
 
   /**  @type {AzureOptions} */
