@@ -32,5 +32,4 @@ function loadTurnstileConfig(config, configDefaults) {
 
 module.exports = { 
   loadTurnstileConfig
-
 };
