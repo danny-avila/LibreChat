@@ -30,7 +30,7 @@ const PresetsMenu: FC = () => {
           tabIndex={0}
           role="button"
           data-testid="presets-button"
-          className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+          className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
         >
           <BookCopy size={16} aria-label="Preset Icon" />
         </TooltipAnchor>

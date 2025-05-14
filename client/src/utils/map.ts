@@ -103,12 +103,15 @@ export function processPlugins(
 export function mapToolCalls(toolCalls: t.ToolCallResults = []): {
   [key: string]: t.ToolCallResult[] | undefined;
 } {
-  return toolCalls.reduce((acc, call) => {
-    const key = `${call.messageId}_${call.partIndex ?? 0}_${call.blockIndex ?? 0}_${call.toolId}`;
-    const array = acc[key] ?? [];
-    array.push(call);
-    acc[key] = array;
+  return toolCalls.reduce(
+    (acc, call) => {
+      const key = `${call.messageId}_${call.partIndex ?? 0}_${call.blockIndex ?? 0}_${call.toolId}`;
+      const array = acc[key] ?? [];
+      array.push(call);
+      acc[key] = array;
 
-    return acc;
-  }, {} as { [key: string]: t.ToolCallResult[] | undefined });
+      return acc;
+    },
+    {} as { [key: string]: t.ToolCallResult[] | undefined },
+  );
 }

@@ -32,7 +32,7 @@ jest.mock('~/models', () => ({
 
 const { getConvo, saveConvo } = require('~/models');
 
-jest.mock('@langchain/openai', () => {
+jest.mock('@librechat/agents', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
@@ -164,7 +164,7 @@ describe('BaseClient', () => {
     const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
-    expect(result.summaryIndex).toEqual(expectedIndex);
+    expect(result.messagesToRefine.length - 1).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
@@ -200,7 +200,7 @@ describe('BaseClient', () => {
     const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
-    expect(result.summaryIndex).toEqual(expectedIndex);
+    expect(result.messagesToRefine.length - 1).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });

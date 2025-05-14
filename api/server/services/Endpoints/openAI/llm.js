@@ -28,7 +28,7 @@ const { isEnabled } = require('~/server/utils');
  * @returns {Object} Configuration options for creating an LLM instance.
  */
 function getLLMConfig(apiKey, options = {}, endpoint = null) {
-  const {
+  let {
     modelOptions = {},
     reverseProxyUrl,
     defaultQuery,
@@ -50,10 +50,32 @@ function getLLMConfig(apiKey, options = {}, endpoint = null) {
   if (addParams && typeof addParams === 'object') {
     Object.assign(llmConfig, addParams);
   }
+  /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
+  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
+    const searchExcludeParams = [
+      'frequency_penalty',
+      'presence_penalty',
+      'temperature',
+      'top_p',
+      'top_k',
+      'stop',
+      'logit_bias',
+      'seed',
+      'response_format',
+      'n',
+      'logprobs',
+      'user',
+    ];
+
+    dropParams = dropParams || [];
+    dropParams = [...new Set([...dropParams, ...searchExcludeParams])];
+  }
 
   if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => {
-      delete llmConfig[param];
+      if (llmConfig[param]) {
+        llmConfig[param] = undefined;
+      }
     });
   }
 
@@ -114,7 +136,7 @@ function getLLMConfig(apiKey, options = {}, endpoint = null) {
     Object.assign(llmConfig, azure);
     llmConfig.model = llmConfig.azureOpenAIApiDeploymentName;
   } else {
-    llmConfig.openAIApiKey = apiKey;
+    llmConfig.apiKey = apiKey;
     // Object.assign(llmConfig, {
     //   configuration: { apiKey },
     // });
@@ -129,6 +151,12 @@ function getLLMConfig(apiKey, options = {}, endpoint = null) {
       effort: llmConfig.reasoning_effort,
     };
     delete llmConfig.reasoning_effort;
+  }
+
+  if (llmConfig?.['max_tokens'] != null) {
+    /** @type {number} */
+    llmConfig.maxTokens = llmConfig['max_tokens'];
+    delete llmConfig['max_tokens'];
   }
 
   return {

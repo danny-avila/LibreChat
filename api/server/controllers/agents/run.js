@@ -11,6 +11,13 @@ const { providerEndpointMap, KnownEndpoints } = require('librechat-data-provider
  * @typedef {import('@librechat/agents').IState} IState
  */
 
+const customProviders = new Set([
+  Providers.XAI,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+]);
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -43,6 +50,15 @@ async function createRun({
     agent.model_parameters,
   );
 
+  /** Resolves issues with new OpenAI usage field */
+  if (
+    customProviders.has(agent.provider) ||
+    (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
+  ) {
+    llmConfig.streamUsage = false;
+    llmConfig.usage = true;
+  }
+
   /** @type {'reasoning_content' | 'reasoning'} */
   let reasoningKey;
   if (
@@ -50,10 +66,6 @@ async function createRun({
     (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
   ) {
     reasoningKey = 'reasoning';
-  }
-  if (/o1(?!-(?:mini|preview)).*$/.test(llmConfig.model)) {
-    llmConfig.streaming = false;
-    llmConfig.disableStreaming = true;
   }
 
   /** @type {StandardGraphConfig} */
@@ -68,7 +80,7 @@ async function createRun({
   };
 
   // TEMPORARY FOR TESTING
-  if (agent.provider === Providers.ANTHROPIC) {
+  if (agent.provider === Providers.ANTHROPIC || agent.provider === Providers.BEDROCK) {
     graphConfig.streamBuffer = 2000;
   }
 

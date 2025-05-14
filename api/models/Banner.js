@@ -28,4 +28,4 @@ const getBanner = async (user) => {
   }
 };
 
-module.exports = { getBanner };
+module.exports = { Banner, getBanner };

@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
+import { getLatestText, logger } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { getKey } from '~/utils/artifacts';
-import { getLatestText } from '~/utils';
 import store from '~/store';
 
 export default function useArtifacts() {
@@ -37,16 +37,20 @@ export default function useArtifacts() {
       hasEnclosedArtifactRef.current = false;
     };
     if (
-      conversation &&
-      conversation.conversationId !== prevConversationIdRef.current &&
+      conversation?.conversationId !== prevConversationIdRef.current &&
       prevConversationIdRef.current != null
     ) {
       resetState();
-    } else if (conversation && conversation.conversationId === Constants.NEW_CONVO) {
+    } else if (conversation?.conversationId === Constants.NEW_CONVO) {
       resetState();
     }
     prevConversationIdRef.current = conversation?.conversationId ?? null;
-  }, [conversation, resetArtifacts, resetCurrentArtifactId]);
+    /** Resets artifacts when unmounting */
+    return () => {
+      logger.log('artifacts_visibility', 'Unmounting artifacts');
+      resetState();
+    };
+  }, [conversation?.conversationId, resetArtifacts, resetCurrentArtifactId]);
 
   useEffect(() => {
     if (orderedArtifactIds.length > 0) {
@@ -56,30 +60,39 @@ export default function useArtifacts() {
   }, [setCurrentArtifactId, orderedArtifactIds]);
 
   useEffect(() => {
-    if (isSubmitting && orderedArtifactIds.length > 0 && latestMessage) {
-      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      const latestArtifact = artifacts?.[latestArtifactId];
+    if (!isSubmitting) {
+      return;
+    }
+    if (orderedArtifactIds.length === 0) {
+      return;
+    }
+    if (latestMessage == null) {
+      return;
+    }
+    const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
+    const latestArtifact = artifacts?.[latestArtifactId];
+    if (latestArtifact?.content === lastContentRef.current) {
+      return;
+    }
 
-      if (latestArtifact?.content !== lastContentRef.current) {
-        setCurrentArtifactId(latestArtifactId);
-        lastContentRef.current = latestArtifact?.content ?? null;
+    setCurrentArtifactId(latestArtifactId);
+    lastContentRef.current = latestArtifact?.content ?? null;
 
-        const latestMessageText = getLatestText(latestMessage);
-        const hasEnclosedArtifact = /:::artifact[\s\S]*?(```|:::)\s*$/.test(
-          latestMessageText.trim(),
-        );
+    const latestMessageText = getLatestText(latestMessage);
+    const hasEnclosedArtifact =
+      /:::artifact(?:\{[^}]*\})?(?:\s|\n)*(?:```[\s\S]*?```(?:\s|\n)*)?:::/m.test(
+        latestMessageText.trim(),
+      );
 
-        if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
-          setActiveTab('preview');
-          hasEnclosedArtifactRef.current = true;
-          hasAutoSwitchedToCodeRef.current = false;
-        } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
-          const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
-          if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
-            setActiveTab('code');
-            hasAutoSwitchedToCodeRef.current = true;
-          }
-        }
+    if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
+      setActiveTab('preview');
+      hasEnclosedArtifactRef.current = true;
+      hasAutoSwitchedToCodeRef.current = false;
+    } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
+      const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
+      if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
+        setActiveTab('code');
+        hasAutoSwitchedToCodeRef.current = true;
       }
     }
   }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts, latestMessage]);

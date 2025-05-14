@@ -23,6 +23,7 @@ type TStepEvent = {
   event: string;
   data:
     | Agents.MessageDeltaEvent
+    | Agents.AgentUpdate
     | Agents.RunStep
     | Agents.ToolEndEvent
     | {
@@ -89,6 +90,17 @@ export default function useStepHandler({
       }
       updatedContent[index] = update;
     } else if (
+      contentType.startsWith(ContentTypes.AGENT_UPDATE) &&
+      ContentTypes.AGENT_UPDATE in contentPart &&
+      contentPart.agent_update
+    ) {
+      const update: Agents.AgentUpdate = {
+        type: ContentTypes.AGENT_UPDATE,
+        agent_update: contentPart.agent_update,
+      };
+
+      updatedContent[index] = update;
+    } else if (
       contentType.startsWith(ContentTypes.THINK) &&
       ContentTypes.THINK in contentPart &&
       typeof contentPart.think === 'string'
@@ -111,11 +123,14 @@ export default function useStepHandler({
     } else if (contentType === ContentTypes.TOOL_CALL && 'tool_call' in contentPart) {
       const existingContent = updatedContent[index] as Agents.ToolCallContent | undefined;
       const existingToolCall = existingContent?.tool_call;
-      const toolCallArgs = (contentPart.tool_call.args as unknown as string | undefined) ?? '';
-
-      const args = finalUpdate
-        ? contentPart.tool_call.args
-        : (existingToolCall?.args ?? '') + toolCallArgs;
+      const toolCallArgs = (contentPart.tool_call as Agents.ToolCall).args;
+      /** When args are a valid object, they are likely already invoked */
+      const args =
+        finalUpdate ||
+        typeof existingToolCall?.args === 'object' ||
+        typeof toolCallArgs === 'object'
+          ? contentPart.tool_call.args
+          : (existingToolCall?.args ?? '') + (toolCallArgs ?? '');
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
@@ -183,37 +198,47 @@ export default function useStepHandler({
 
         // Store tool call IDs if present
         if (runStep.stepDetails.type === StepTypes.TOOL_CALLS) {
-          runStep.stepDetails.tool_calls.forEach((toolCall) => {
+          let updatedResponse = { ...response };
+          (runStep.stepDetails.tool_calls as Agents.ToolCall[]).forEach((toolCall) => {
             const toolCallId = toolCall.id ?? '';
             if ('id' in toolCall && toolCallId) {
               toolCallIdMap.current.set(runStep.id, toolCallId);
             }
+
+            const contentPart: Agents.MessageContentComplex = {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: {
+                name: toolCall.name ?? '',
+                args: toolCall.args,
+                id: toolCallId,
+              },
+            };
+
+            updatedResponse = updateContent(updatedResponse, runStep.index, contentPart);
           });
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const updatedMessages = messages.map((msg) =>
+            msg.messageId === runStep.runId ? updatedResponse : msg,
+          );
+
+          setMessages(updatedMessages);
         }
       } else if (event === 'on_agent_update') {
-        const { runId, message } = data as { runId?: string; message: string };
-        const responseMessageId = runId ?? '';
+        const { agent_update } = data as Agents.AgentUpdate;
+        const responseMessageId = agent_update.runId || '';
         if (!responseMessageId) {
           console.warn('No message id found in agent update event');
           return;
         }
 
-        const responseMessage = messages[messages.length - 1] as TMessage;
-
-        const response = {
-          ...responseMessage,
-          parentMessageId: userMessage.messageId,
-          conversationId: userMessage.conversationId,
-          messageId: responseMessageId,
-          content: [
-            {
-              type: ContentTypes.TEXT,
-              text: message,
-            },
-          ],
-        } as TMessage;
-
-        setMessages([...messages.slice(0, -1), response]);
+        const response = messageMap.current.get(responseMessageId);
+        if (response) {
+          const updatedResponse = updateContent(response, agent_update.index, data);
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
       } else if (event === 'on_message_delta') {
         const messageDelta = data as Agents.MessageDeltaEvent;
         const runStep = stepMap.current.get(messageDelta.id);

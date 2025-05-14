@@ -12,7 +12,7 @@ import store from '~/store';
 
 export default function Presentation({ children }: { children: React.ReactNode }) {
   const artifacts = useRecoilValue(store.artifactsState);
-  const artifactsVisible = useRecoilValue(store.artifactsVisible);
+  const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
 
   const setFilesToDelete = useSetFilesToDelete();
 
@@ -57,14 +57,6 @@ export default function Presentation({ children }: { children: React.ReactNode }
   }, []);
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
-  const layout = () => (
-    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-presentation pt-0">
-      <div className="flex h-full flex-col" role="presentation">
-        {children}
-      </div>
-    </div>
-  );
-
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
       <SidePanelGroup
@@ -72,7 +64,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
         fullPanelCollapse={fullCollapse}
         defaultCollapsed={defaultCollapsed}
         artifacts={
-          artifactsVisible === true && Object.keys(artifacts ?? {}).length > 0 ? (
+          artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
             <EditorProvider>
               <Artifacts />
             </EditorProvider>

@@ -1,7 +1,9 @@
-const axios = require('axios');
 const FormData = require('form-data');
 const { getCodeBaseURL } = require('@librechat/agents');
+const { createAxiosInstance } = require('~/config');
 const { logAxiosError } = require('~/utils');
+
+const axios = createAxiosInstance();
 
 const MAX_FILE_SIZE = 150 * 1024 * 1024;
 
@@ -27,21 +29,15 @@ async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
       timeout: 15000,
     };
 
-    if (process.env.PROXY) {
-      options.proxy = {
-        host: process.env.PROXY,
-        protocol: process.env.PROXY.startsWith('https') ? 'https' : 'http',
-      };
-    }
-
     const response = await axios(options);
     return response;
   } catch (error) {
-    logAxiosError({
-      message: `Error downloading code environment file stream: ${error.message}`,
-      error,
-    });
-    throw new Error(`Error downloading file: ${error.message}`);
+    throw new Error(
+      logAxiosError({
+        message: `Error downloading code environment file stream: ${error.message}`,
+        error,
+      }),
+    );
   }
 }
 
@@ -79,13 +75,6 @@ async function uploadCodeEnvFile({ req, stream, filename, apiKey, entity_id = ''
       maxBodyLength: MAX_FILE_SIZE,
     };
 
-    if (process.env.PROXY) {
-      options.proxy = {
-        host: process.env.PROXY,
-        protocol: process.env.PROXY.startsWith('https') ? 'https' : 'http',
-      };
-    }
-
     const response = await axios.post(`${baseURL}/upload`, form, options);
 
     /** @type {{ message: string; session_id: string; files: Array<{ fileId: string; filename: string }> }} */
@@ -101,11 +90,12 @@ async function uploadCodeEnvFile({ req, stream, filename, apiKey, entity_id = ''
 
     return `${fileIdentifier}?entity_id=${entity_id}`;
   } catch (error) {
-    logAxiosError({
-      message: `Error uploading code environment file: ${error.message}`,
-      error,
-    });
-    throw new Error(`Error uploading code environment file: ${error.message}`);
+    throw new Error(
+      logAxiosError({
+        message: `Error uploading code environment file: ${error.message}`,
+        error,
+      }),
+    );
   }
 }
 

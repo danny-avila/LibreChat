@@ -61,6 +61,7 @@ export default function MobileNav({
             [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
             [],
           );
+          queryClient.invalidateQueries([QueryKeys.messages]);
           newConversation();
         }}
       >

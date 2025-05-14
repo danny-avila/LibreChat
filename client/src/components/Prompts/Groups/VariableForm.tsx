@@ -5,18 +5,14 @@ import supersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import { replaceSpecialVars } from 'librechat-data-provider';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
-import {
-  cn,
-  wrapVariable,
-  defaultTextProps,
-  replaceSpecialVars,
-  extractVariableInfo,
-} from '~/utils';
+import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import { TextareaAutosize, InputCombobox, Button } from '~/components/ui';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
+import { PromptVariableGfm } from '../Markdown';
 
 type FieldType = 'text' | 'select';
 
@@ -115,9 +111,12 @@ export default function VariableForm({
     allVariables.forEach((variable) => {
       const placeholder = `{{${variable}}}`;
       const fieldIndex = variableIndexMap.get(variable) as string | number;
-      const fieldValue = fieldValues[fieldIndex].value as string;
-      const highlightText = fieldValue !== '' ? fieldValue : placeholder;
-      tempText = tempText.replaceAll(placeholder, `**${highlightText}**`);
+      const fieldValue = fieldValues[fieldIndex].value as string | undefined;
+      if (fieldValue === placeholder || fieldValue === '' || !fieldValue) {
+        return;
+      }
+      const highlightText = fieldValue !== '' ? `**${fieldValue}**` : placeholder;
+      tempText = tempText.replaceAll(placeholder, highlightText);
     });
     return tempText;
   };
@@ -141,19 +140,19 @@ export default function VariableForm({
   return (
     <div className="mx-auto p-1 md:container">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-gray-100 p-4 text-text-secondary dark:bg-gray-700/50 sm:max-w-full md:max-h-80">
+        <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-surface-tertiary p-4 text-text-secondary dark:bg-surface-primary sm:max-w-full md:max-h-96">
           <ReactMarkdown
             /** @ts-ignore */
             remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
             rehypePlugins={[
               /** @ts-ignore */
-              [rehypeKatex, { output: 'mathml' }],
+              [rehypeKatex],
               /** @ts-ignore */
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
             /** @ts-ignore */
-            components={{ code: codeNoExecution }}
-            className="prose dark:prose-invert light dark:text-gray-70 my-1 max-h-[50vh] break-words"
+            components={{ code: codeNoExecution, p: PromptVariableGfm }}
+            className="markdown prose dark:prose-invert light my-1 max-h-[50vh] max-w-full break-words dark:text-text-secondary"
           >
             {generateHighlightedMarkdown()}
           </ReactMarkdown>
