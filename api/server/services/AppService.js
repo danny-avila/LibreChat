@@ -66,7 +66,7 @@ const AppService = async (app) => {
   });
 
   if (config.mcpServers != null) {
-    const mcpManager = await getMCPManager();
+    const mcpManager = getMCPManager();
     await mcpManager.initializeMCP(config.mcpServers, processMCPEnv);
     await mcpManager.mapAvailableTools(availableTools);
   }

@@ -14,10 +14,9 @@ export default function MessagesView({
   messagesTree?: TMessage[] | null;
 }) {
   const localize = useLocalize();
-  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
-  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const fontSize = useRecoilValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
+  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
 
   const {

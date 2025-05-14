@@ -3,6 +3,7 @@ name: Generate Unreleased Changelog PR
 on:
   schedule:
     - cron: "0 0 * * 1"  # Runs every Monday at 00:00 UTC
+  workflow_dispatch:
 
 jobs:
   generate-unreleased-changelog-pr:
@@ -98,7 +99,7 @@ jobs:
           branch: "changelog/unreleased-update"
           sign-commits: true
           commit-message: "action: update Unreleased changelog"
-          title: "action: update Unreleased changelog"
+          title: "📜 docs: Unreleased Changelog"
           body: |
             **Description**:
             - This PR updates the Unreleased section in CHANGELOG.md.

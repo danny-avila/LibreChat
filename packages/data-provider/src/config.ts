@@ -540,6 +540,7 @@ export type TStartupConfig = {
   analyticsGtmId?: string;
   instanceProjectId: string;
   bundlerURL?: string;
+  staticBundlerURL?: string;
 };
 
 export enum OCRStrategy {
@@ -854,12 +855,16 @@ export const visionModels = [
   'gpt-4o',
   'gpt-4-turbo',
   'gpt-4-vision',
+  'o4-mini',
+  'o3',
   'o1',
+  'gpt-4.1',
   'gpt-4.5',
   'llava',
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
+  'gemma',
   'gemini-exp',
   'gemini-1.5',
   'gemini-2.0',
@@ -1008,6 +1013,10 @@ export enum CacheKeys {
    * Key for in-progress flow states.
    */
   FLOWS = 'flows',
+  /**
+   * Key for pending chat requests (concurrency check)
+   */
+  PENDING_REQ = 'pending_req',
   /**
    * Key for s3 check intervals per user
    */
@@ -1218,13 +1227,15 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.7',
+  VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.4',
+  CONFIG_VERSION = '1.2.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
   NEW_CONVO = 'new',
+  /** Standard value for the temporary conversationId after a request is sent and before the server responds */
+  PENDING_CONVO = 'PENDING',
   /** Standard value for the conversationId used for search queries */
   SEARCH = 'search',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
@@ -1245,6 +1256,8 @@ export enum Constants {
   GLOBAL_PROJECT_NAME = 'instance',
   /** Delimiter for MCP tools */
   mcp_delimiter = '_mcp_',
+  /** Placeholder Agent ID for Ephemeral Agents */
+  EPHEMERAL_AGENT_ID = 'ephemeral',
 }
 
 export enum LocalStorageKeys {
@@ -1280,6 +1293,10 @@ export enum LocalStorageKeys {
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
   /** Key for displaying analysis tool code input */
   SHOW_ANALYSIS_CODE = 'showAnalysisCode',
+  /** Last selected MCP values per conversation ID */
+  LAST_MCP_ = 'LAST_MCP_',
+  /** Last checked toggle for Code Interpreter API per conversation ID */
+  LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
 }
 
 export enum ForkOptions {
@@ -1332,3 +1349,12 @@ export const providerEndpointMap = {
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
 };
+
+export const specialVariables = {
+  current_date: true,
+  current_user: true,
+  iso_datetime: true,
+  current_datetime: true,
+};
+
+export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;

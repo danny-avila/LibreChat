@@ -4,7 +4,7 @@ import type { AssistantsEndpoint, TConversation, TPreset } from 'librechat-data-
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext } from '~/Providers/ChatContext';
 import useAssistantListMap from './useAssistantListMap';
-import { mapAssistants } from '~/utils';
+import { mapAssistants, logger } from '~/utils';
 
 export default function useSelectAssistant(endpoint: AssistantsEndpoint) {
   const getDefaultConversation = useDefaultConvo();
@@ -24,6 +24,7 @@ export default function useSelectAssistant(endpoint: AssistantsEndpoint) {
         conversationId: 'new',
       };
 
+      logger.log('conversation', 'Updating conversation with assistant', assistant);
       if (isAssistantsEndpoint(conversation?.endpoint)) {
         const currentConvo = getDefaultConversation({
           conversation: { ...(conversation ?? {}) },

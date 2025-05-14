@@ -74,12 +74,28 @@ export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.ADMIN]: {
     name: SystemRoles.ADMIN,
     permissions: {
-      [PermissionTypes.PROMPTS]: {},
-      [PermissionTypes.BOOKMARKS]: {},
-      [PermissionTypes.AGENTS]: {},
-      [PermissionTypes.MULTI_CONVO]: {},
-      [PermissionTypes.TEMPORARY_CHAT]: {},
-      [PermissionTypes.RUN_CODE]: {},
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.SHARED_GLOBAL]: true,
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.BOOKMARKS]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.AGENTS]: {
+        [Permissions.SHARED_GLOBAL]: true,
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.MULTI_CONVO]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.TEMPORARY_CHAT]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.RUN_CODE]: {
+        [Permissions.USE]: true,
+      },
     },
   },
   [SystemRoles.USER]: {

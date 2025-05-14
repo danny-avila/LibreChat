@@ -32,7 +32,7 @@ jest.mock('~/models', () => ({
 
 const { getConvo, saveConvo } = require('~/models');
 
-jest.mock('@langchain/openai', () => {
+jest.mock('@librechat/agents', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
