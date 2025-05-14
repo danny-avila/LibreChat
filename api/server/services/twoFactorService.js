@@ -1,15 +1,14 @@
-const { sign } = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { hashBackupCode, decryptV2 } = require('~/server/utils/crypto');
-const { updateUser } = require('~/models/userMethods');
+const { decryptV3, decryptV2 } = require('../utils/crypto');
+const { hashBackupCode } = require('~/server/utils/crypto');
 
+// Base32 alphabet for TOTP secret encoding.
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 /**
- * Encodes a Buffer into a Base32 string using the RFC 4648 alphabet.
- *
- * @param {Buffer} buffer - The buffer to encode.
- * @returns {string} The Base32 encoded string.
+ * Encodes a Buffer into a Base32 string.
+ * @param {Buffer} buffer
+ * @returns {string}
  */
 const encodeBase32 = (buffer) => {
   let bits = 0;
@@ -30,10 +29,9 @@ const encodeBase32 = (buffer) => {
 };
 
 /**
- * Decodes a Base32-encoded string back into a Buffer.
- *
- * @param {string} base32Str - The Base32-encoded string.
- * @returns {Buffer} The decoded buffer.
+ * Decodes a Base32 string into a Buffer.
+ * @param {string} base32Str
+ * @returns {Buffer}
  */
 const decodeBase32 = (base32Str) => {
   const cleaned = base32Str.replace(/=+$/, '').toUpperCase();
@@ -56,20 +54,8 @@ const decodeBase32 = (base32Str) => {
 };
 
 /**
- * Generates a temporary token for 2FA verification.
- * The token is signed with the JWT_SECRET and expires in 5 minutes.
- *
- * @param {string} userId - The unique identifier of the user.
- * @returns {string} The signed JWT token.
- */
-const generate2FATempToken = (userId) =>
-  sign({ userId, twoFAPending: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
-
-/**
- * Generates a TOTP secret.
- * Creates 10 random bytes using WebCrypto and encodes them into a Base32 string.
- *
- * @returns {string} A Base32-encoded secret for TOTP.
+ * Generates a new TOTP secret (Base32 encoded).
+ * @returns {string}
  */
 const generateTOTPSecret = () => {
   const randomArray = new Uint8Array(10);
@@ -78,29 +64,25 @@ const generateTOTPSecret = () => {
 };
 
 /**
- * Generates a Time-based One-Time Password (TOTP) based on the provided secret and time.
- * This implementation uses a 30-second time step and produces a 6-digit code.
- *
- * @param {string} secret - The Base32-encoded TOTP secret.
- * @param {number} [forTime=Date.now()] - The time (in milliseconds) for which to generate the TOTP.
- * @returns {Promise<string>} A promise that resolves to the 6-digit TOTP code.
+ * Generates a TOTP code based on the secret and time.
+ * Uses a 30-second time step and produces a 6-digit code.
+ * @param {string} secret
+ * @param {number} [forTime=Date.now()]
+ * @returns {Promise<string>}
  */
 const generateTOTP = async (secret, forTime = Date.now()) => {
   const timeStep = 30; // seconds
   const counter = Math.floor(forTime / 1000 / timeStep);
   const counterBuffer = new ArrayBuffer(8);
   const counterView = new DataView(counterBuffer);
-  // Write counter into the last 4 bytes (big-endian)
   counterView.setUint32(4, counter, false);
 
-  // Decode the secret into an ArrayBuffer
   const keyBuffer = decodeBase32(secret);
   const keyArrayBuffer = keyBuffer.buffer.slice(
     keyBuffer.byteOffset,
     keyBuffer.byteOffset + keyBuffer.byteLength,
   );
 
-  // Import the key for HMAC-SHA1 signing
   const cryptoKey = await webcrypto.subtle.importKey(
     'raw',
     keyArrayBuffer,
@@ -108,12 +90,10 @@ const generateTOTP = async (secret, forTime = Date.now()) => {
     false,
     ['sign'],
   );
-
-  // Generate HMAC signature
   const signatureBuffer = await webcrypto.subtle.sign('HMAC', cryptoKey, counterBuffer);
   const hmac = new Uint8Array(signatureBuffer);
 
-  // Dynamic truncation as per RFC 4226
+  // Dynamic truncation per RFC 4226.
   const offset = hmac[hmac.length - 1] & 0xf;
   const slice = hmac.slice(offset, offset + 4);
   const view = new DataView(slice.buffer, slice.byteOffset, slice.byteLength);
@@ -123,12 +103,10 @@ const generateTOTP = async (secret, forTime = Date.now()) => {
 };
 
 /**
- * Verifies a provided TOTP token against the secret.
- * It allows for a ±1 time-step window to account for slight clock discrepancies.
- *
- * @param {string} secret - The Base32-encoded TOTP secret.
- * @param {string} token - The TOTP token provided by the user.
- * @returns {Promise<boolean>} A promise that resolves to true if the token is valid; otherwise, false.
+ * Verifies a TOTP token by checking a ±1 time step window.
+ * @param {string} secret
+ * @param {string} token
+ * @returns {Promise<boolean>}
  */
 const verifyTOTP = async (secret, token) => {
   const timeStepMS = 30 * 1000;
@@ -143,27 +121,24 @@ const verifyTOTP = async (secret, token) => {
 };
 
 /**
- * Generates backup codes for two-factor authentication.
- * Each backup code is an 8-character hexadecimal string along with its SHA-256 hash.
- * The plain codes are returned for one-time download, while the hashed objects are meant for secure storage.
- *
- * @param {number} [count=10] - The number of backup codes to generate.
+ * Generates backup codes (default count: 10).
+ * Each code is an 8-character hexadecimal string and stored with its SHA-256 hash.
+ * @param {number} [count=10]
  * @returns {Promise<{ plainCodes: string[], codeObjects: Array<{ codeHash: string, used: boolean, usedAt: Date | null }> }>}
- *          A promise that resolves to an object containing both plain backup codes and their corresponding code objects.
  */
 const generateBackupCodes = async (count = 10) => {
   const plainCodes = [];
   const codeObjects = [];
   const encoder = new TextEncoder();
+
   for (let i = 0; i < count; i++) {
     const randomArray = new Uint8Array(4);
     webcrypto.getRandomValues(randomArray);
     const code = Array.from(randomArray)
       .map((b) => b.toString(16).padStart(2, '0'))
-      .join(''); // 8-character hex code
+      .join('');
     plainCodes.push(code);
 
-    // Compute SHA-256 hash of the code using WebCrypto
     const codeBuffer = encoder.encode(code);
     const hashBuffer = await webcrypto.subtle.digest('SHA-256', codeBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -174,12 +149,11 @@ const generateBackupCodes = async (count = 10) => {
 };
 
 /**
- * Verifies a backup code for a user and updates its status as used if valid.
- *
- * @param {Object} params - The parameters object.
- * @param {TUser | undefined} [params.user] - The user object containing backup codes.
- * @param {string | undefined} [params.backupCode] - The backup code to verify.
- * @returns {Promise<boolean>} A promise that resolves to true if the backup code is valid and updated; otherwise, false.
+ * Verifies a backup code and, if valid, marks it as used.
+ * @param {Object} params
+ * @param {Object} params.user
+ * @param {string} params.backupCode
+ * @returns {Promise<boolean>}
  */
 const verifyBackupCode = async ({ user, backupCode }) => {
   if (!backupCode || !user || !Array.isArray(user.backupCodes)) {
@@ -197,42 +171,54 @@ const verifyBackupCode = async ({ user, backupCode }) => {
         ? { ...codeObj, used: true, usedAt: new Date() }
         : codeObj,
     );
-
+    // Update the user record with the marked backup code.
+    const { updateUser } = require('~/models');
     await updateUser(user._id, { backupCodes: updatedBackupCodes });
     return true;
   }
-
   return false;
 };
 
 /**
- * Retrieves and, if necessary, decrypts a stored TOTP secret.
- * If the secret contains a colon, it is assumed to be in the format "iv:encryptedData" and will be decrypted.
- * If the secret is exactly 16 characters long, it is assumed to be a legacy plain secret.
- *
- * @param {string|null} storedSecret - The stored TOTP secret (which may be encrypted).
- * @returns {Promise<string|null>} A promise that resolves to the plain TOTP secret, or null if none is provided.
+ * Retrieves and decrypts a stored TOTP secret.
+ * - Uses decryptV3 if the secret has a "v3:" prefix.
+ * - Falls back to decryptV2 for colon-delimited values.
+ * - Assumes a 16-character secret is already plain.
+ * @param {string|null} storedSecret
+ * @returns {Promise<string|null>}
  */
 const getTOTPSecret = async (storedSecret) => {
-  if (!storedSecret) { return null; }
-  // Check for a colon marker (encrypted secrets are stored as "iv:encryptedData")
+  if (!storedSecret) {
+    return null;
+  }
+  if (storedSecret.startsWith('v3:')) {
+    return decryptV3(storedSecret);
+  }
   if (storedSecret.includes(':')) {
     return await decryptV2(storedSecret);
   }
-  // If it's exactly 16 characters, assume it's already plain (legacy secret)
   if (storedSecret.length === 16) {
     return storedSecret;
   }
-  // Fallback in case it doesn't meet our criteria.
   return storedSecret;
 };
 
+/**
+ * Generates a temporary JWT token for 2FA verification that expires in 5 minutes.
+ * @param {string} userId
+ * @returns {string}
+ */
+const generate2FATempToken = (userId) => {
+  const { sign } = require('jsonwebtoken');
+  return sign({ userId, twoFAPending: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
+};
+
 module.exports = {
-  verifyTOTP,
-  generateTOTP,
-  getTOTPSecret,
-  verifyBackupCode,
   generateTOTPSecret,
+  generateTOTP,
+  verifyTOTP,
   generateBackupCodes,
+  verifyBackupCode,
+  getTOTPSecret,
   generate2FATempToken,
 };

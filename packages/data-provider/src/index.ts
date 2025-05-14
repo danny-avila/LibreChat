@@ -7,6 +7,7 @@ export * from './file-config';
 export * from './artifacts';
 /* schema helpers  */
 export * from './parsers';
+export * from './ocr';
 export * from './zod';
 /* custom/dynamic configurations  */
 export * from './generate';
@@ -14,6 +15,7 @@ export * from './models';
 /* mcp */
 export * from './mcp';
 /* RBAC */
+export * from './permissions';
 export * from './roles';
 /* types (exports schemas from `./types` as they contain needed in other defs) */
 export * from './types';

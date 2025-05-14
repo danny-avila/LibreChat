@@ -2,7 +2,7 @@ const path = require('path');
 const { v5: uuidv5 } = require('uuid');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, askMultiLineQuestion, silentExit } = require('./helpers');
-const Banner = require('~/models/schema/banner');
+const { Banner } = require('~/models/Banner');
 const connect = require('./connect');
 
 (async () => {

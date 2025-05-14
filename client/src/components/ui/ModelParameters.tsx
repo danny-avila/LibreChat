@@ -33,7 +33,8 @@ const ModelParameters: React.FC<ModelParametersProps> = ({
   const rangeRef = useRef<HTMLInputElement>(null);
 
   const id = `model-parameter-${ariaLabel.toLowerCase().replace(/\s+/g, '-')}`;
-  const displayLabel = label.startsWith('com_') ? localize(label as TranslationKeys) : label;
+  const displayLabel =
+    label && label.startsWith('com_') ? localize(label as TranslationKeys) : label;
 
   const getDecimalPlaces = (num: number) => {
     const match = ('' + num).match(/(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);

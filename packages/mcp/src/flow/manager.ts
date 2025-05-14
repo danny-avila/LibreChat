@@ -1,4 +1,5 @@
-import Keyv from 'keyv';
+import { Keyv } from 'keyv';
+import type { StoredDataNoRaw } from 'keyv';
 import type { Logger } from 'winston';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
@@ -55,13 +56,18 @@ export class FlowStateManager<T = unknown> {
   /**
    * Creates a new flow and waits for its completion
    */
-  async createFlow(flowId: string, type: string, metadata: FlowMetadata = {}): Promise<T> {
+  async createFlow(
+    flowId: string,
+    type: string,
+    metadata: FlowMetadata = {},
+    signal?: AbortSignal,
+  ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
 
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
       this.logger.debug(`[${flowKey}] Flow already exists`);
-      return this.monitorFlow(flowKey, type);
+      return this.monitorFlow(flowKey, type, signal);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -69,7 +75,7 @@ export class FlowStateManager<T = unknown> {
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
       this.logger.debug(`[${flowKey}] Flow exists on 2nd check`);
-      return this.monitorFlow(flowKey, type);
+      return this.monitorFlow(flowKey, type, signal);
     }
 
     const initialState: FlowState = {
@@ -81,10 +87,10 @@ export class FlowStateManager<T = unknown> {
 
     this.logger.debug('Creating initial flow state:', flowKey);
     await this.keyv.set(flowKey, initialState, this.ttl);
-    return this.monitorFlow(flowKey, type);
+    return this.monitorFlow(flowKey, type, signal);
   }
 
-  private monitorFlow(flowKey: string, type: string): Promise<T> {
+  private monitorFlow(flowKey: string, type: string, signal?: AbortSignal): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 2000;
       let elapsedTime = 0;
@@ -98,6 +104,16 @@ export class FlowStateManager<T = unknown> {
             this.intervals.delete(intervalId);
             this.logger.error(`[${flowKey}] Flow state not found`);
             reject(new Error(`${type} Flow state not found`));
+            return;
+          }
+
+          if (signal?.aborted) {
+            clearInterval(intervalId);
+            this.intervals.delete(intervalId);
+            this.logger.warn(`[${flowKey}] Flow aborted`);
+            const message = `${type} flow aborted`;
+            await this.keyv.delete(flowKey);
+            reject(new Error(message));
             return;
           }
 
@@ -187,7 +203,7 @@ export class FlowStateManager<T = unknown> {
   /**
    * Gets current flow state
    */
-  async getFlowState(flowId: string, type: string): Promise<FlowState<T> | null> {
+  async getFlowState(flowId: string, type: string): Promise<StoredDataNoRaw<FlowState<T>> | null> {
     const flowKey = this.getFlowKey(flowId, type);
     return this.keyv.get(flowKey);
   }
@@ -197,19 +213,19 @@ export class FlowStateManager<T = unknown> {
    * @param flowId - The ID of the flow
    * @param type - The type of flow
    * @param handler - Async function to execute if no existing flow is found
-   * @param metadata - Optional metadata for the flow
+   * @param signal - Optional AbortSignal to cancel the flow
    */
   async createFlowWithHandler(
     flowId: string,
     type: string,
     handler: () => Promise<T>,
-    metadata: FlowMetadata = {},
+    signal?: AbortSignal,
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
       this.logger.debug(`[${flowKey}] Flow already exists`);
-      return this.monitorFlow(flowKey, type);
+      return this.monitorFlow(flowKey, type, signal);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -217,13 +233,13 @@ export class FlowStateManager<T = unknown> {
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
     if (existingState) {
       this.logger.debug(`[${flowKey}] Flow exists on 2nd check`);
-      return this.monitorFlow(flowKey, type);
+      return this.monitorFlow(flowKey, type, signal);
     }
 
     const initialState: FlowState = {
       type,
       status: 'PENDING',
-      metadata,
+      metadata: {},
       createdAt: Date.now(),
     };
     this.logger.debug(`[${flowKey}] Creating initial flow state`);

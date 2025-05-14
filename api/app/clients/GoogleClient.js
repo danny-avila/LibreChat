@@ -9,6 +9,7 @@ const {
   validateVisionModel,
   getResponseSender,
   endpointSettings,
+  parseTextParts,
   EModelEndpoint,
   ContentTypes,
   VisionModes,
@@ -139,8 +140,7 @@ class GoogleClient extends BaseClient {
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     /** @type {boolean} Whether using a "GenerativeAI" Model */
-    this.isGenerativeModel =
-      this.modelOptions.model.includes('gemini') || this.modelOptions.model.includes('learnlm');
+    this.isGenerativeModel = /gemini|learnlm|gemma/.test(this.modelOptions.model);
 
     this.maxContextTokens =
       this.options.maxContextTokens ??
@@ -198,7 +198,11 @@ class GoogleClient extends BaseClient {
    */
   checkVisionRequest(attachments) {
     /* Validation vision request */
-    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
+    this.defaultVisionModel =
+      this.options.visionModel ??
+      (!EXCLUDED_GENAI_MODELS.test(this.modelOptions.model)
+        ? this.modelOptions.model
+        : 'gemini-pro-vision');
     const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
     this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 
@@ -311,6 +315,9 @@ class GoogleClient extends BaseClient {
       for (const file of attachments) {
         if (file.embedded) {
           this.contextHandlers?.processFile(file);
+          continue;
+        }
+        if (file.metadata?.fileIdentifier) {
           continue;
         }
       }
@@ -770,6 +777,22 @@ class GoogleClient extends BaseClient {
     return this.usage;
   }
 
+  getMessageMapMethod() {
+    /**
+     * @param {TMessage} msg
+     */
+    return (msg) => {
+      if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
+        msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
+      } else if (msg.content != null) {
+        msg.text = parseTextParts(msg.content, true);
+        delete msg.content;
+      }
+
+      return msg;
+    };
+  }
+
   /**
    * Calculates the correct token count for the current user message based on the token count map and API usage.
    * Edge case: If the calculation results in a negative value, it returns the original estimate.
@@ -827,7 +850,8 @@ class GoogleClient extends BaseClient {
     let reply = '';
     const { abortController } = options;
 
-    const model = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    const model =
+      this.options.titleModel ?? this.modelOptions.modelName ?? this.modelOptions.model ?? '';
     const safetySettings = getSafetySettings(model);
     if (!EXCLUDED_GENAI_MODELS.test(model) && !this.project_id) {
       logger.debug('Identified titling model as GenAI version');

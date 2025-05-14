@@ -1,6 +1,10 @@
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const { ViolationTypes } = require('librechat-data-provider');
+const ioredisClient = require('~/cache/ioredisClient');
 const logViolation = require('~/cache/logViolation');
+const { isEnabled } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const getEnvironmentVariables = () => {
   const TTS_IP_MAX = parseInt(process.env.TTS_IP_MAX) || 100;
@@ -47,20 +51,38 @@ const createTTSHandler = (ip = true) => {
 const createTTSLimiters = () => {
   const { ttsIpWindowMs, ttsIpMax, ttsUserWindowMs, ttsUserMax } = getEnvironmentVariables();
 
-  const ttsIpLimiter = rateLimit({
+  const ipLimiterOptions = {
     windowMs: ttsIpWindowMs,
     max: ttsIpMax,
     handler: createTTSHandler(),
-  });
+  };
 
-  const ttsUserLimiter = rateLimit({
+  const userLimiterOptions = {
     windowMs: ttsUserWindowMs,
     max: ttsUserMax,
     handler: createTTSHandler(false),
     keyGenerator: function (req) {
       return req.user?.id; // Use the user ID or NULL if not available
     },
-  });
+  };
+
+  if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
+    logger.debug('Using Redis for TTS rate limiters.');
+    const sendCommand = (...args) => ioredisClient.call(...args);
+    const ipStore = new RedisStore({
+      sendCommand,
+      prefix: 'tts_ip_limiter:',
+    });
+    const userStore = new RedisStore({
+      sendCommand,
+      prefix: 'tts_user_limiter:',
+    });
+    ipLimiterOptions.store = ipStore;
+    userLimiterOptions.store = userStore;
+  }
+
+  const ttsIpLimiter = rateLimit(ipLimiterOptions);
+  const ttsUserLimiter = rateLimit(userLimiterOptions);
 
   return { ttsIpLimiter, ttsUserLimiter };
 };

@@ -5,9 +5,8 @@ const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_pars
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { processFileURL } = require('~/server/services/Files/process');
 const { EModelEndpoint } = require('librechat-data-provider');
+const { checkBalance } = require('~/models/balanceMethods');
 const { formatLangChainMessages } = require('./prompts');
-const checkBalance = require('~/models/checkBalance');
-const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
 const { logger } = require('~/config');
@@ -253,12 +252,14 @@ class PluginsClient extends OpenAIClient {
       await this.recordTokenUsage(responseMessage);
     }
 
-    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    const databasePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
-    return { ...responseMessage, ...result };
+    return { ...responseMessage, ...result, databasePromise };
   }
 
   async sendMessage(message, opts = {}) {
+    /** @type {Promise<TMessage>} */
+    let userMessagePromise;
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = this.options.req.app.locals;
 
@@ -328,15 +329,16 @@ class PluginsClient extends OpenAIClient {
     }
 
     if (!this.skipSaveUserMessage) {
-      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
-          userMessagePromise: this.userMessagePromise,
+          userMessagePromise,
         });
       }
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE)) {
+    const balance = this.options.req?.app?.locals?.balance;
+    if (balance?.enabled) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,

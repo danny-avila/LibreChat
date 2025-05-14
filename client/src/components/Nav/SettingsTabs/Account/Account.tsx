@@ -22,7 +22,7 @@ function Account() {
           <div className="pb-3">
             <EnableTwoFactorItem />
           </div>
-          {Array.isArray(user.user?.backupCodes) && user.user?.backupCodes.length > 0 && (
+          {user?.user?.twoFactorEnabled && (
             <div className="pb-3">
               <BackupCodesItem />
             </div>
