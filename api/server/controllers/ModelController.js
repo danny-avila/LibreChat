@@ -1,4 +1,6 @@
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
+const { getLogStores } = require('~/cache');
+const { logger } = require('~/config');
 
 /**
  * @param {ServerRequest} req
@@ -19,8 +21,13 @@ async function loadModels(req) {
 }
 
 async function modelController(req, res) {
-  const modelConfig = await loadModels(req);
-  res.send(modelConfig);
+  try {
+    const modelConfig = await loadModels(req);
+    res.send(modelConfig);
+  } catch (error) {
+    logger.error('Error fetching models:', error);
+    res.status(500).send({ error: error.message });
+  }
 }
 
 module.exports = { modelController, loadModels, getModelsConfig };

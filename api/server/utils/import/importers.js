@@ -113,7 +113,7 @@ async function importLibreChatConvo(
        */
       const traverseMessages = async (messages, parentMessageId = null) => {
         for (const message of messages) {
-          if (!message.text) {
+          if (!message.text && !message.content) {
             continue;
           }
 
@@ -121,6 +121,7 @@ async function importLibreChatConvo(
           if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
             savedMessage = await importBatchBuilder.saveMessage({
               text: message.text,
+              content: message.content,
               sender: 'user',
               isCreatedByUser: true,
               parentMessageId: parentMessageId,
@@ -128,6 +129,7 @@ async function importLibreChatConvo(
           } else {
             savedMessage = await importBatchBuilder.saveMessage({
               text: message.text,
+              content: message.content,
               sender: message.sender,
               isCreatedByUser: false,
               model: options.model,

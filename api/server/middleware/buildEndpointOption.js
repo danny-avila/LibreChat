@@ -1,6 +1,11 @@
-const { parseCompactConvo, EModelEndpoint, isAgentsEndpoint } = require('librechat-data-provider');
-const { getModelsConfig } = require('~/server/controllers/ModelController');
+const {
+  parseCompactConvo,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  EndpointURLs,
+} = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
 const assistants = require('~/server/services/Endpoints/assistants');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
 const { processFiles } = require('~/server/services/Files/process');
@@ -10,7 +15,6 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
-const { getConvoFiles } = require('~/models/Conversation');
 const { handleError } = require('~/server/utils');
 
 const buildFunction = {
@@ -78,8 +82,9 @@ async function buildEndpointOption(req, res, next) {
   }
 
   try {
-    const isAgents = isAgentsEndpoint(endpoint);
-    const endpointFn = buildFunction[endpointType ?? endpoint];
+    const isAgents =
+      isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
+    const endpointFn = buildFunction[isAgents ? EModelEndpoint.agents : (endpointType ?? endpoint)];
     const builder = isAgents ? (...args) => endpointFn(req, ...args) : endpointFn;
 
     // TODO: use object params
@@ -87,16 +92,8 @@ async function buildEndpointOption(req, res, next) {
 
     // TODO: use `getModelsConfig` only when necessary
     const modelsConfig = await getModelsConfig(req);
-    const { resendFiles = true } = req.body.endpointOption;
     req.body.endpointOption.modelsConfig = modelsConfig;
-    if (isAgents && resendFiles && req.body.conversationId) {
-      const fileIds = await getConvoFiles(req.body.conversationId);
-      const requestFiles = req.body.files ?? [];
-      if (requestFiles.length || fileIds.length) {
-        req.body.endpointOption.attachments = processFiles(requestFiles, fileIds);
-      }
-    } else if (req.body.files) {
-      // hold the promise
+    if (req.body.files && !isAgents) {
       req.body.endpointOption.attachments = processFiles(req.body.files);
     }
     next();

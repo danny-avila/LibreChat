@@ -1,10 +1,12 @@
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const {
-  FileContext,
-  Constants,
   Tools,
+  Constants,
+  FileContext,
+  FileSources,
   SystemRoles,
+  EToolResources,
   actionDelimiter,
 } = require('librechat-data-provider');
 const {
@@ -16,9 +18,10 @@ const {
 } = require('~/models/Agent');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { updateAction, getActions } = require('~/models/Action');
-const { getProjectByName } = require('~/models/Project');
 const { updateAgentProjects } = require('~/models/Agent');
+const { getProjectByName } = require('~/models/Project');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -99,6 +102,14 @@ const getAgentHandler = async (req, res) => {
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (agent.avatar && agent.avatar?.source === FileSources.s3) {
+      const originalUrl = agent.avatar.filepath;
+      agent.avatar.filepath = await refreshS3Url(agent.avatar);
+      if (originalUrl !== agent.avatar.filepath) {
+        await updateAgent({ id }, { avatar: agent.avatar });
+      }
     }
 
     agent.author = agent.author.toString();
@@ -203,13 +214,25 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     const {
-      _id: __id,
       id: _id,
+      _id: __id,
       author: _author,
       createdAt: _createdAt,
       updatedAt: _updatedAt,
+      tool_resources: _tool_resources = {},
       ...cloneData
     } = agent;
+    cloneData.name = `${agent.name} (${new Date().toLocaleString('en-US', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      hour12: false,
+    })})`;
+
+    if (_tool_resources?.[EToolResources.ocr]) {
+      cloneData.tool_resources = {
+        [EToolResources.ocr]: _tool_resources[EToolResources.ocr],
+      };
+    }
 
     const newAgentId = `agent_${nanoid()}`;
     const newAgentData = Object.assign(cloneData, {

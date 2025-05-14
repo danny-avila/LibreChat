@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TMessage, TPreset, Assistant, Agent } from 'librechat-data-provider';
+import type { TMessage, Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageEndpointIcon from '../Endpoints/MessageEndpointIcon';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
@@ -14,11 +14,6 @@ export default function MessageIcon(
 ) {
   const { message, conversation, assistant, agent } = props;
 
-  const assistantName = assistant ? (assistant.name as string | undefined) : '';
-  const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
-  const agentName = agent ? (agent.name as string | undefined) : '';
-  const agentAvatar = agent ? (agent.metadata?.avatar as string | undefined) : '';
-
   const messageSettings = useMemo(
     () => ({
       ...(conversation ?? {}),
@@ -30,14 +25,35 @@ export default function MessageIcon(
     [conversation, message],
   );
 
-  const iconURL = messageSettings?.iconURL;
-  let endpoint = messageSettings?.endpoint;
+  const iconURL = messageSettings.iconURL ?? '';
+  let endpoint = messageSettings.endpoint;
   endpoint = getIconEndpoint({ endpointsConfig: undefined, iconURL, endpoint });
-
-  if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
+  const assistantName = (assistant ? assistant.name : '') ?? '';
+  const assistantAvatar = (assistant ? assistant.metadata?.avatar : '') ?? '';
+  const agentName = (agent ? agent.name : '') ?? '';
+  const agentAvatar = (agent ? agent?.avatar?.filepath : '') ?? '';
+  const avatarURL = useMemo(() => {
+    let result = '';
+    if (assistant) {
+      result = assistantAvatar;
+    } else if (agent) {
+      result = agentAvatar;
+    }
+    return result;
+  }, [assistant, agent, assistantAvatar, agentAvatar]);
+  console.log('MessageIcon', {
+    endpoint,
+    iconURL,
+    assistantName,
+    assistantAvatar,
+    agentName,
+    agentAvatar,
+  });
+  if (message?.isCreatedByUser !== true && iconURL && iconURL.includes('http')) {
     return (
       <ConvoIconURL
-        preset={messageSettings as typeof messageSettings & TPreset}
+        iconURL={iconURL}
+        modelLabel={messageSettings.chatGptLabel ?? messageSettings.modelLabel ?? ''}
         context="message"
         assistantAvatar={assistantAvatar}
         assistantName={assistantName}
@@ -47,7 +63,7 @@ export default function MessageIcon(
     );
   }
 
-  if (message?.isCreatedByUser) {
+  if (message?.isCreatedByUser === true) {
     return (
       <div
         style={{
@@ -67,7 +83,7 @@ export default function MessageIcon(
     <MessageEndpointIcon
       {...messageSettings}
       endpoint={endpoint}
-      iconURL={!assistant ? undefined : assistantAvatar}
+      iconURL={avatarURL}
       model={message?.model ?? conversation?.model}
       assistantName={assistantName}
       agentName={agentName}

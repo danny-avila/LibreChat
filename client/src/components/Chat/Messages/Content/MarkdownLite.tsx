@@ -7,13 +7,13 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
 import { code, codeNoExecution, a, p } from './Markdown';
-import { CodeBlockProvider } from '~/Providers';
+import { CodeBlockProvider, ArtifactProvider } from '~/Providers';
 import { langSubset } from '~/utils';
 
 const MarkdownLite = memo(
   ({ content = '', codeExecution = true }: { content?: string; codeExecution?: boolean }) => {
     const rehypePlugins: PluggableList = [
-      [rehypeKatex, { output: 'mathml' }],
+      [rehypeKatex],
       [
         rehypeHighlight,
         {
@@ -25,30 +25,32 @@ const MarkdownLite = memo(
     ];
 
     return (
-      <CodeBlockProvider>
-        <ReactMarkdown
-          remarkPlugins={[
+      <ArtifactProvider>
+        <CodeBlockProvider>
+          <ReactMarkdown
+            remarkPlugins={[
+              /** @ts-ignore */
+              supersub,
+              remarkGfm,
+              [remarkMath, { singleDollarTextMath: true }],
+            ]}
             /** @ts-ignore */
-            supersub,
-            remarkGfm,
-            [remarkMath, { singleDollarTextMath: true }],
-          ]}
-          /** @ts-ignore */
-          rehypePlugins={rehypePlugins}
-          // linkTarget="_new"
-          components={
-            {
-              code: codeExecution ? code : codeNoExecution,
-              a,
-              p,
-            } as {
-              [nodeType: string]: React.ElementType;
+            rehypePlugins={rehypePlugins}
+            // linkTarget="_new"
+            components={
+              {
+                code: codeExecution ? code : codeNoExecution,
+                a,
+                p,
+              } as {
+                [nodeType: string]: React.ElementType;
+              }
             }
-          }
-        >
-          {content}
-        </ReactMarkdown>
-      </CodeBlockProvider>
+          >
+            {content}
+          </ReactMarkdown>
+        </CodeBlockProvider>
+      </ArtifactProvider>
     );
   },
 );

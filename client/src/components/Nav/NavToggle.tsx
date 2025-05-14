@@ -10,6 +10,14 @@ export default function NavToggle({
   side = 'left',
   className = '',
   translateX = true,
+}: {
+  onToggle: () => void;
+  navVisible: boolean;
+  isHovering: boolean;
+  setIsHovering: (isHovering: boolean) => void;
+  side?: 'left' | 'right';
+  className?: string;
+  translateX?: boolean;
 }) {
   const localize = useLocalize();
   const transition = {

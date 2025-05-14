@@ -23,7 +23,6 @@ const idSchema = z.string().uuid();
  * @param {string} [params.error] - Any error associated with the message.
  * @param {boolean} [params.unfinished] - Indicates if the message is unfinished.
  * @param {Object[]} [params.files] - An array of files associated with the message.
- * @param {boolean} [params.isEdited] - Indicates if the message was edited.
  * @param {string} [params.finish_reason] - Reason for finishing the message.
  * @param {number} [params.tokenCount] - The number of tokens in the message.
  * @param {string} [params.plugin] - Plugin associated with the message.
@@ -53,6 +52,23 @@ async function saveMessage(req, params, metadata) {
       user: req.user.id,
       messageId: params.newMessageId || params.messageId,
     };
+
+    if (req?.body?.isTemporary) {
+      const expiredAt = new Date();
+      expiredAt.setDate(expiredAt.getDate() + 30);
+      update.expiredAt = expiredAt;
+    } else {
+      update.expiredAt = null;
+    }
+
+    if (update.tokenCount != null && isNaN(update.tokenCount)) {
+      logger.warn(
+        `Resetting invalid \`tokenCount\` for message \`${params.messageId}\`: ${update.tokenCount}`,
+      );
+      logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+      update.tokenCount = 0;
+    }
+
     const message = await Message.findOneAndUpdate(
       { messageId: params.messageId, user: req.user.id },
       update,
@@ -63,7 +79,44 @@ async function saveMessage(req, params, metadata) {
   } catch (err) {
     logger.error('Error saving message:', err);
     logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-    throw err;
+
+    // Check if this is a duplicate key error (MongoDB error code 11000)
+    if (err.code === 11000 && err.message.includes('duplicate key error')) {
+      // Log the duplicate key error but don't crash the application
+      logger.warn(`Duplicate messageId detected: ${params.messageId}. Continuing execution.`);
+
+      try {
+        // Try to find the existing message with this ID
+        const existingMessage = await Message.findOne({
+          messageId: params.messageId,
+          user: req.user.id,
+        });
+
+        // If we found it, return it
+        if (existingMessage) {
+          return existingMessage.toObject();
+        }
+
+        // If we can't find it (unlikely but possible in race conditions)
+        return {
+          ...params,
+          messageId: params.messageId,
+          user: req.user.id,
+        };
+      } catch (findError) {
+        // If the findOne also fails, log it but don't crash
+        logger.warn(
+          `Could not retrieve existing message with ID ${params.messageId}: ${findError.message}`,
+        );
+        return {
+          ...params,
+          messageId: params.messageId,
+          user: req.user.id,
+        };
+      }
+    }
+
+    throw err; // Re-throw other errors
   }
 }
 
@@ -77,7 +130,7 @@ async function saveMessage(req, params, metadata) {
  * @returns {Promise<Object>} The result of the bulk write operation.
  * @throws {Error} If there is an error in saving messages in bulk.
  */
-async function bulkSaveMessages(messages, overrideTimestamp=false) {
+async function bulkSaveMessages(messages, overrideTimestamp = false) {
   try {
     const bulkOps = messages.map((message) => ({
       updateOne: {
@@ -182,7 +235,6 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
-    update.isEdited = true;
     const updatedMessage = await Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
@@ -203,7 +255,6 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
-      isEdited: true,
     };
   } catch (err) {
     logger.error('Error updating message:', err);

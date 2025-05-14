@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
+import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
@@ -16,16 +17,17 @@ export const authTypeSchema = z.nativeEnum(AuthType);
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
-  gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
   assistants = 'assistants',
   azureAssistants = 'azureAssistants',
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
+  /** @deprecated */
+  chatGPTBrowser = 'chatGPTBrowser',
+  /** @deprecated */
+  gptPlugins = 'gptPlugins',
 }
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
@@ -35,6 +37,7 @@ export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
+  EModelEndpoint.google,
 ]);
 
 export enum BedrockProviders {
@@ -45,6 +48,7 @@ export enum BedrockProviders {
   Meta = 'meta',
   MistralAI = 'mistral',
   StabilityAI = 'stability',
+  DeepSeek = 'deepseek',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
@@ -85,6 +89,21 @@ export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | stri
   return endpoint === EModelEndpoint.agents;
 };
 
+export const isEphemeralAgent = (
+  endpoint?: EModelEndpoint.agents | null | string,
+  ephemeralAgent?: TEphemeralAgent | null,
+) => {
+  if (!ephemeralAgent) {
+    return false;
+  }
+  if (isAgentsEndpoint(endpoint)) {
+    return false;
+  }
+  const hasMCPSelected = (ephemeralAgent?.mcp?.length ?? 0) > 0;
+  const hasCodeSelected = (ephemeralAgent?.execute_code ?? false) === true;
+  return hasMCPSelected || hasCodeSelected;
+};
+
 export const isParamEndpoint = (
   endpoint: EModelEndpoint | string,
   endpointType?: EModelEndpoint | string,
@@ -106,6 +125,12 @@ export enum ImageDetail {
   high = 'high',
 }
 
+export enum ReasoningEffort {
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -119,6 +144,7 @@ export const imageDetailValue = {
 };
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
+export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -146,7 +172,9 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  artifacts: '',
   isCollaborative: false,
+  recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
 };
@@ -169,34 +197,34 @@ export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
 
 export const openAISettings = {
   model: {
-    default: 'gpt-4o',
+    default: 'gpt-4o-mini' as const,
   },
   temperature: {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    default: 1,
+    min: 0 as const,
+    max: 2 as const,
+    step: 0.01 as const,
+    default: 1 as const,
   },
   top_p: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 1,
+    min: 0 as const,
+    max: 1 as const,
+    step: 0.01 as const,
+    default: 1 as const,
   },
   presence_penalty: {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    default: 0,
+    min: 0 as const,
+    max: 2 as const,
+    step: 0.01 as const,
+    default: 0 as const,
   },
   frequency_penalty: {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    default: 0,
+    min: 0 as const,
+    max: 2 as const,
+    step: 0.01 as const,
+    default: 0 as const,
   },
   resendFiles: {
-    default: true,
+    default: true as const,
   },
   maxContextTokens: {
     default: undefined,
@@ -205,72 +233,85 @@ export const openAISettings = {
     default: undefined,
   },
   imageDetail: {
-    default: ImageDetail.auto,
-    min: 0,
-    max: 2,
-    step: 1,
+    default: ImageDetail.auto as const,
+    min: 0 as const,
+    max: 2 as const,
+    step: 1 as const,
   },
 };
 
 export const googleSettings = {
   model: {
-    default: 'gemini-1.5-flash-latest',
+    default: 'gemini-1.5-flash-latest' as const,
   },
   maxOutputTokens: {
-    min: 1,
-    max: 8192,
-    step: 1,
-    default: 8192,
+    min: 1 as const,
+    max: 64000 as const,
+    step: 1 as const,
+    default: 8192 as const,
   },
   temperature: {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    default: 1,
+    min: 0 as const,
+    max: 2 as const,
+    step: 0.01 as const,
+    default: 1 as const,
   },
   topP: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 0.95,
+    min: 0 as const,
+    max: 1 as const,
+    step: 0.01 as const,
+    default: 0.95 as const,
   },
   topK: {
-    min: 1,
-    max: 40,
-    step: 1,
-    default: 40,
+    min: 1 as const,
+    max: 40 as const,
+    step: 1 as const,
+    default: 40 as const,
   },
 };
 
-const ANTHROPIC_MAX_OUTPUT = 8192;
-const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096;
+const ANTHROPIC_MAX_OUTPUT = 128000 as const;
+const DEFAULT_MAX_OUTPUT = 8192 as const;
+const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
   model: {
-    default: 'claude-3-5-sonnet-20241022',
+    default: 'claude-3-5-sonnet-latest' as const,
   },
   temperature: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 1,
+    min: 0 as const,
+    max: 1 as const,
+    step: 0.01 as const,
+    default: 1 as const,
   },
   promptCache: {
-    default: true,
+    default: true as const,
+  },
+  thinking: {
+    default: true as const,
+  },
+  thinkingBudget: {
+    min: 1024 as const,
+    step: 100 as const,
+    max: 200000 as const,
+    default: 2000 as const,
   },
   maxOutputTokens: {
-    min: 1,
+    min: 1 as const,
     max: ANTHROPIC_MAX_OUTPUT,
-    step: 1,
-    default: ANTHROPIC_MAX_OUTPUT,
+    step: 1 as const,
+    default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (modelName.includes('claude-3-5-sonnet')) {
-        return ANTHROPIC_MAX_OUTPUT;
+      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
+        return DEFAULT_MAX_OUTPUT;
       }
 
       return 4096;
     },
     set: (value: number, modelName: string) => {
-      if (!modelName.includes('claude-3-5-sonnet') && value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
+      if (
+        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
+        value > LEGACY_ANTHROPIC_MAX_OUTPUT
+      ) {
         return LEGACY_ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -278,28 +319,28 @@ export const anthropicSettings = {
     },
   },
   topP: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 0.7,
+    min: 0 as const,
+    max: 1 as const,
+    step: 0.01 as const,
+    default: 0.7 as const,
   },
   topK: {
-    min: 1,
-    max: 40,
-    step: 1,
-    default: 5,
+    min: 1 as const,
+    max: 40 as const,
+    step: 1 as const,
+    default: 5 as const,
   },
   resendFiles: {
-    default: true,
+    default: true as const,
   },
   maxContextTokens: {
     default: undefined,
   },
   legacy: {
     maxOutputTokens: {
-      min: 1,
+      min: 1 as const,
       max: LEGACY_ANTHROPIC_MAX_OUTPUT,
-      step: 1,
+      step: 1 as const,
       default: LEGACY_ANTHROPIC_MAX_OUTPUT,
     },
   },
@@ -307,34 +348,34 @@ export const anthropicSettings = {
 
 export const agentsSettings = {
   model: {
-    default: 'gpt-3.5-turbo-test',
+    default: 'gpt-3.5-turbo-test' as const,
   },
   temperature: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 1,
+    min: 0 as const,
+    max: 1 as const,
+    step: 0.01 as const,
+    default: 1 as const,
   },
   top_p: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 1,
+    min: 0 as const,
+    max: 1 as const,
+    step: 0.01 as const,
+    default: 1 as const,
   },
   presence_penalty: {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    default: 0,
+    min: 0 as const,
+    max: 2 as const,
+    step: 0.01 as const,
+    default: 0 as const,
   },
   frequency_penalty: {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    default: 0,
+    min: 0 as const,
+    max: 2 as const,
+    step: 0.01 as const,
+    default: 0 as const,
   },
   resendFiles: {
-    default: true,
+    default: true as const,
   },
   maxContextTokens: {
     default: undefined,
@@ -343,7 +384,7 @@ export const agentsSettings = {
     default: undefined,
   },
   imageDetail: {
-    default: ImageDetail.auto,
+    default: ImageDetail.auto as const,
   },
 };
 
@@ -376,7 +417,9 @@ export const tPluginSchema = z.object({
   icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
+  chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
+  toolkit: z.boolean().optional(),
 });
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
@@ -453,7 +496,6 @@ export const tMessageSchema = z.object({
   sender: z.string().optional(),
   text: z.string(),
   generation: z.string().nullable().optional(),
-  isEdited: z.boolean().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),
   clientTimestamp: z.string().optional(),
@@ -472,7 +514,7 @@ export const tMessageSchema = z.object({
   /* assistant */
   thread_id: z.string().optional(),
   /* frontend components */
-  iconURL: z.string().optional(),
+  iconURL: z.string().nullable().optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
@@ -523,7 +565,7 @@ const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
-  endpointType: eModelEndpointSchema.optional(),
+  endpointType: eModelEndpointSchema.nullable().optional(),
   isArchived: z.boolean().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
@@ -546,6 +588,8 @@ export const tConversationSchema = z.object({
   /* Anthropic */
   promptCache: z.boolean().optional(),
   system: z.string().optional(),
+  thinking: z.boolean().optional(),
+  thinkingBudget: coerceNumber.optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -556,10 +600,12 @@ export const tConversationSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
+  resendFiles: z.boolean().optional(),
   file_ids: z.array(z.string()).optional(),
   /* vision */
-  resendFiles: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
+  /* OpenAI: o1 only */
+  reasoning_effort: eReasoningEffortSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -568,42 +614,25 @@ export const tConversationSchema = z.object({
   region: z.string().optional(),
   maxTokens: coerceNumber.optional(),
   additionalModelRequestFields: DocumentType.optional(),
-  /* assistant + agents */
+  /* assistants */
   instructions: z.string().optional(),
   additional_instructions: z.string().optional(),
+  append_current_datetime: z.boolean().optional(),
   /** Used to overwrite active conversation settings when saving a Preset */
   presetOverride: z.record(z.unknown()).optional(),
   stop: z.array(z.string()).optional(),
   /* frontend components */
-  iconURL: z.string().optional(),
   greeting: z.string().optional(),
-  spec: z.string().optional(),
-  /*
-  Deprecated fields
-  */
-  /** @deprecated */
-  suggestions: z.array(z.string()).optional(),
-  /** @deprecated */
-  systemMessage: z.string().nullable().optional(),
-  /** @deprecated */
-  jailbreak: z.boolean().optional(),
-  /** @deprecated */
-  jailbreakConversationId: z.string().nullable().optional(),
-  /** @deprecated */
-  conversationSignature: z.string().nullable().optional(),
-  /** @deprecated */
-  clientId: z.string().nullable().optional(),
-  /** @deprecated */
-  invocationId: z.number().nullable().optional(),
-  /** @deprecated */
-  toneStyle: z.string().nullable().optional(),
+  spec: z.string().nullable().optional(),
+  iconURL: z.string().nullable().optional(),
+  /* temporary chat */
+  expiredAt: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
-  append_current_datetime: z.boolean().optional(),
 });
 
 export const tPresetSchema = tConversationSchema
@@ -627,14 +656,86 @@ export const tPresetSchema = tConversationSchema
 export const tConvoUpdateSchema = tConversationSchema.merge(
   z.object({
     endpoint: extendedModelEndpointSchema.nullable(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
   }),
 );
 
-export const tPresetUpdateSchema = tConversationSchema.merge(
-  z.object({
-    endpoint: extendedModelEndpointSchema.nullable(),
-  }),
-);
+export const tQueryParamsSchema = tConversationSchema
+  .pick({
+    // librechat settings
+    /** The model spec to be used */
+    spec: true,
+    /** The AI context window, overrides the system-defined window as determined by `model` value */
+    maxContextTokens: true,
+    /**
+     * Whether or not to re-submit files from previous messages on subsequent messages
+     * */
+    resendFiles: true,
+    /**
+     * @endpoints openAI, custom, azureOpenAI
+     *
+     * System parameter that only affects the above endpoints.
+     * Image detail for re-sizing according to OpenAI spec, defaults to `auto`
+     * */
+    imageDetail: true,
+    /**
+     * AKA Custom Instructions, dynamically added to chat history as a system message;
+     * for `bedrock` endpoint, this is used as the `system` model param if the provider uses it;
+     * for `assistants` endpoint, this is used as the `additional_instructions` model param:
+     * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-additional_instructions
+     * ; otherwise, a message with `system` role is added to the chat history
+     */
+    promptPrefix: true,
+    // Model parameters
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock */
+    model: true,
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, bedrock */
+    temperature: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    presence_penalty: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    frequency_penalty: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    stop: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    top_p: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    max_tokens: true,
+    /** @endpoints google, anthropic, bedrock */
+    topP: true,
+    /** @endpoints google, anthropic */
+    topK: true,
+    /** @endpoints google, anthropic */
+    maxOutputTokens: true,
+    /** @endpoints anthropic */
+    promptCache: true,
+    thinking: true,
+    thinkingBudget: true,
+    /** @endpoints bedrock */
+    region: true,
+    /** @endpoints bedrock */
+    maxTokens: true,
+    /** @endpoints agents */
+    agent_id: true,
+    /** @endpoints assistants, azureAssistants */
+    assistant_id: true,
+    /** @endpoints assistants, azureAssistants */
+    append_current_datetime: true,
+    /**
+     * @endpoints assistants, azureAssistants
+     *
+     * Overrides existing assistant instructions, only used for the current run:
+     * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-instructions
+     * */
+    instructions: true,
+  })
+  .merge(
+    z.object({
+      /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock, agents */
+      endpoint: extendedModelEndpointSchema.nullable(),
+    }),
+  );
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
@@ -650,13 +751,12 @@ export const tSharedLinkSchema = z.object({
   conversationId: z.string(),
   shareId: z.string(),
   messages: z.array(z.string()),
-  isAnonymous: z.boolean(),
   isPublic: z.boolean(),
-  isVisible: z.boolean(),
   title: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
+
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
 
 export const tConversationTagSchema = z.object({
@@ -671,119 +771,64 @@ export const tConversationTagSchema = z.object({
 });
 export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
-export const googleSchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    promptPrefix: true,
-    examples: true,
-    temperature: true,
-    maxOutputTokens: true,
-    artifacts: true,
-    topP: true,
-    topK: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    maxContextTokens: true,
-  })
-  .transform((obj) => {
-    return {
-      ...obj,
-      model: obj.model ?? google.model.default,
-      modelLabel: obj.modelLabel ?? null,
-      promptPrefix: obj.promptPrefix ?? null,
-      examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-      temperature: obj.temperature ?? google.temperature.default,
-      maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
-      topP: obj.topP ?? google.topP.default,
-      topK: obj.topK ?? google.topK.default,
-      iconURL: obj.iconURL ?? undefined,
-      greeting: obj.greeting ?? undefined,
-      spec: obj.spec ?? undefined,
-      maxContextTokens: obj.maxContextTokens ?? undefined,
-    };
-  })
-  .catch(() => ({
-    model: google.model.default,
-    modelLabel: null,
-    promptPrefix: null,
-    examples: [{ input: { content: '' }, output: { content: '' } }],
-    temperature: google.temperature.default,
-    maxOutputTokens: google.maxOutputTokens.default,
-    topP: google.topP.default,
-    topK: google.topK.default,
-    iconURL: undefined,
-    greeting: undefined,
-    spec: undefined,
-    maxContextTokens: undefined,
-  }));
+export const googleBaseSchema = tConversationSchema.pick({
+  model: true,
+  modelLabel: true,
+  promptPrefix: true,
+  examples: true,
+  temperature: true,
+  maxOutputTokens: true,
+  artifacts: true,
+  topP: true,
+  topK: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+  maxContextTokens: true,
+});
 
-export const bingAISchema = tConversationSchema
-  .pick({
-    jailbreak: true,
-    systemMessage: true,
-    context: true,
-    toneStyle: true,
-    jailbreakConversationId: true,
-    conversationSignature: true,
-    clientId: true,
-    invocationId: true,
-  })
-  .transform((obj) => ({
-    ...obj,
-    model: '',
-    jailbreak: obj.jailbreak ?? false,
-    systemMessage: obj.systemMessage ?? null,
-    context: obj.context ?? null,
-    toneStyle: obj.toneStyle ?? 'creative',
-    jailbreakConversationId: obj.jailbreakConversationId ?? null,
-    conversationSignature: obj.conversationSignature ?? null,
-    clientId: obj.clientId ?? null,
-    invocationId: obj.invocationId ?? 1,
-  }))
-  .catch(() => ({
-    model: '',
-    jailbreak: false,
-    systemMessage: null,
-    context: null,
-    toneStyle: 'creative',
-    jailbreakConversationId: null,
-    conversationSignature: null,
-    clientId: null,
-    invocationId: 1,
-  }));
+export const googleSchema = googleBaseSchema
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .catch(() => ({}));
 
-export const chatGPTBrowserSchema = tConversationSchema
-  .pick({
-    model: true,
+/**
+   * TODO: Map the following fields:
+  - presence_penalty -> presencePenalty
+  - frequency_penalty -> frequencyPenalty
+  - stop -> stopSequences
+   */
+export const googleGenConfigSchema = z
+  .object({
+    maxOutputTokens: coerceNumber.optional(),
+    temperature: coerceNumber.optional(),
+    topP: coerceNumber.optional(),
+    topK: coerceNumber.optional(),
+    presencePenalty: coerceNumber.optional(),
+    frequencyPenalty: coerceNumber.optional(),
+    stopSequences: z.array(z.string()).optional(),
   })
-  .transform((obj) => ({
-    ...obj,
-    model: obj.model ?? 'text-davinci-002-render-sha',
-  }))
-  .catch(() => ({
-    model: 'text-davinci-002-render-sha',
-  }));
+  .strip()
+  .optional();
 
-export const gptPluginsSchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    chatGptLabel: true,
-    promptPrefix: true,
-    temperature: true,
-    artifacts: true,
-    top_p: true,
-    presence_penalty: true,
-    frequency_penalty: true,
-    tools: true,
-    agentOptions: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    maxContextTokens: true,
-  })
+const gptPluginsBaseSchema = tConversationSchema.pick({
+  model: true,
+  modelLabel: true,
+  chatGptLabel: true,
+  promptPrefix: true,
+  temperature: true,
+  artifacts: true,
+  top_p: true,
+  presence_penalty: true,
+  frequency_penalty: true,
+  tools: true,
+  agentOptions: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+  maxContextTokens: true,
+});
+
+export const gptPluginsSchema = gptPluginsBaseSchema
   .transform((obj) => {
     const result = {
       ...obj,
@@ -834,7 +879,10 @@ export const gptPluginsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export function removeNullishValues<T extends Record<string, unknown>>(obj: T): Partial<T> {
+export function removeNullishValues<T extends Record<string, unknown>>(
+  obj: T,
+  removeEmptyStrings?: boolean,
+): Partial<T> {
   const newObj: Partial<T> = { ...obj };
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
@@ -842,23 +890,27 @@ export function removeNullishValues<T extends Record<string, unknown>>(obj: T): 
     if (value === undefined || value === null) {
       delete newObj[key];
     }
+    if (removeEmptyStrings && typeof value === 'string' && value === '') {
+      delete newObj[key];
+    }
   });
 
   return newObj;
 }
 
-export const assistantSchema = tConversationSchema
-  .pick({
-    model: true,
-    assistant_id: true,
-    instructions: true,
-    artifacts: true,
-    promptPrefix: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    append_current_datetime: true,
-  })
+const assistantBaseSchema = tConversationSchema.pick({
+  model: true,
+  assistant_id: true,
+  instructions: true,
+  artifacts: true,
+  promptPrefix: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+  append_current_datetime: true,
+});
+
+export const assistantSchema = assistantBaseSchema
   .transform((obj) => ({
     ...obj,
     model: obj.model ?? openAISettings.model.default,
@@ -881,38 +933,39 @@ export const assistantSchema = tConversationSchema
     append_current_datetime: false,
   }));
 
-export const compactAssistantSchema = tConversationSchema
-  .pick({
-    model: true,
-    assistant_id: true,
-    instructions: true,
-    promptPrefix: true,
-    artifacts: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-  })
-  // will change after adding temperature
-  .transform(removeNullishValues)
+const compactAssistantBaseSchema = tConversationSchema.pick({
+  model: true,
+  assistant_id: true,
+  instructions: true,
+  promptPrefix: true,
+  artifacts: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+});
+
+export const compactAssistantSchema = compactAssistantBaseSchema
+  .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));
 
-export const agentsSchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    temperature: true,
-    top_p: true,
-    presence_penalty: true,
-    frequency_penalty: true,
-    resendFiles: true,
-    imageDetail: true,
-    agent_id: true,
-    instructions: true,
-    promptPrefix: true,
-    iconURL: true,
-    greeting: true,
-    maxContextTokens: true,
-  })
+export const agentsBaseSchema = tConversationSchema.pick({
+  model: true,
+  modelLabel: true,
+  temperature: true,
+  top_p: true,
+  presence_penalty: true,
+  frequency_penalty: true,
+  resendFiles: true,
+  imageDetail: true,
+  agent_id: true,
+  instructions: true,
+  promptPrefix: true,
+  iconURL: true,
+  greeting: true,
+  maxContextTokens: true,
+});
+
+export const agentsSchema = agentsBaseSchema
   .transform((obj) => ({
     ...obj,
     model: obj.model ?? agentsSettings.model.default,
@@ -948,45 +1001,32 @@ export const agentsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export const openAISchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    chatGptLabel: true,
-    promptPrefix: true,
-    temperature: true,
-    top_p: true,
-    presence_penalty: true,
-    frequency_penalty: true,
-    resendFiles: true,
-    artifacts: true,
-    imageDetail: true,
-    stop: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    maxContextTokens: true,
-    max_tokens: true,
-  })
+export const openAIBaseSchema = tConversationSchema.pick({
+  model: true,
+  modelLabel: true,
+  chatGptLabel: true,
+  promptPrefix: true,
+  temperature: true,
+  top_p: true,
+  presence_penalty: true,
+  frequency_penalty: true,
+  resendFiles: true,
+  artifacts: true,
+  imageDetail: true,
+  stop: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+  maxContextTokens: true,
+  max_tokens: true,
+  reasoning_effort: true,
+});
+
+export const openAISchema = openAIBaseSchema
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
   .catch(() => ({}));
 
-export const compactGoogleSchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    promptPrefix: true,
-    examples: true,
-    temperature: true,
-    maxOutputTokens: true,
-    artifacts: true,
-    topP: true,
-    topK: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    maxContextTokens: true,
-  })
+export const compactGoogleSchema = googleBaseSchema
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
     if (newObj.temperature === google.temperature.default) {
@@ -1006,53 +1046,30 @@ export const compactGoogleSchema = tConversationSchema
   })
   .catch(() => ({}));
 
-export const anthropicSchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    promptPrefix: true,
-    temperature: true,
-    maxOutputTokens: true,
-    topP: true,
-    topK: true,
-    resendFiles: true,
-    promptCache: true,
-    artifacts: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    maxContextTokens: true,
-  })
+export const anthropicBaseSchema = tConversationSchema.pick({
+  model: true,
+  modelLabel: true,
+  promptPrefix: true,
+  temperature: true,
+  maxOutputTokens: true,
+  topP: true,
+  topK: true,
+  resendFiles: true,
+  promptCache: true,
+  thinking: true,
+  thinkingBudget: true,
+  artifacts: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+  maxContextTokens: true,
+});
+
+export const anthropicSchema = anthropicBaseSchema
   .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));
 
-export const compactChatGPTSchema = tConversationSchema
-  .pick({
-    model: true,
-  })
-  .transform((obj) => {
-    const newObj: Partial<TConversation> = { ...obj };
-    return removeNullishValues(newObj);
-  })
-  .catch(() => ({}));
-
-export const compactPluginsSchema = tConversationSchema
-  .pick({
-    model: true,
-    modelLabel: true,
-    chatGptLabel: true,
-    promptPrefix: true,
-    temperature: true,
-    top_p: true,
-    presence_penalty: true,
-    frequency_penalty: true,
-    tools: true,
-    agentOptions: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-    maxContextTokens: true,
-  })
+export const compactPluginsSchema = gptPluginsBaseSchema
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
     if (newObj.modelLabel === null) {
@@ -1094,7 +1111,7 @@ export const compactPluginsSchema = tConversationSchema
   })
   .catch(() => ({}));
 
-const tBannerSchema = z.object({
+export const tBannerSchema = z.object({
   bannerId: z.string(),
   message: z.string(),
   displayFrom: z.string(),
@@ -1105,16 +1122,16 @@ const tBannerSchema = z.object({
 });
 export type TBanner = z.infer<typeof tBannerSchema>;
 
-export const compactAgentsSchema = tConversationSchema
-  .pick({
-    spec: true,
-    // model: true,
-    iconURL: true,
-    greeting: true,
-    agent_id: true,
-    resendFiles: true,
-    instructions: true,
-    additional_instructions: true,
-  })
-  .transform(removeNullishValues)
+export const compactAgentsBaseSchema = tConversationSchema.pick({
+  spec: true,
+  // model: true,
+  iconURL: true,
+  greeting: true,
+  agent_id: true,
+  instructions: true,
+  additional_instructions: true,
+});
+
+export const compactAgentsSchema = compactAgentsBaseSchema
+  .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));

@@ -18,9 +18,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "sourceMap": true,
-    "baseUrl": ".", // This should be the root of your package
+    "baseUrl": ".",
     "paths": {
-      // Add path mappings
       "librechat-data-provider/react-query": ["./src/react-query/index.ts"]
     }
   },

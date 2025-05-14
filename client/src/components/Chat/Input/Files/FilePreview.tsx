@@ -11,7 +11,7 @@ const FilePreview = ({
   fileType,
   className = '',
 }: {
-  file?: ExtendedFile | TFile;
+  file?: Partial<ExtendedFile | TFile>;
   fileType: {
     paths: React.FC;
     fill: string;
@@ -19,20 +19,23 @@ const FilePreview = ({
   };
   className?: string;
 }) => {
-  const radius = 55; // Radius of the SVG circle
+  const radius = 55;
   const circumference = 2 * Math.PI * radius;
-  const progress = useProgress(file?.['progress'] ?? 1, 0.001, (file as ExtendedFile)?.size ?? 1);
+  const progress = useProgress(
+    file?.['progress'] ?? 1,
+    0.001,
+    (file as ExtendedFile | undefined)?.size ?? 1,
+  );
 
-  // Calculate the offset based on the loading progress
   const offset = circumference - progress * circumference;
   const circleCSSProperties = {
     transition: 'stroke-dashoffset 0.5s linear',
   };
 
   return (
-    <div className={cn('h-10 w-10 shrink-0 overflow-hidden rounded-md', className)}>
+    <div className={cn('relative size-10 shrink-0 overflow-hidden rounded-xl', className)}>
       <FileIcon file={file} fileType={fileType} />
-      <SourceIcon source={file?.source} />
+      <SourceIcon source={file?.source} isCodeFile={!!file?.['metadata']?.fileIdentifier} />
       {progress < 1 && (
         <ProgressCircle
           circumference={circumference}

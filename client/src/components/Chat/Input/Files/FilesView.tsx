@@ -21,7 +21,7 @@ export default function Files({ open, onOpenChange }) {
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogContent
         title={localize('com_nav_my_files')}
-        className="w-11/12 overflow-x-auto bg-background text-text-primary shadow-2xl"
+        className="w-11/12 bg-background text-text-primary shadow-2xl"
       >
         <OGDialogHeader>
           <OGDialogTitle>{localize('com_nav_my_files')}</OGDialogTitle>

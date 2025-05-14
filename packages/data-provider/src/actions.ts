@@ -1,9 +1,15 @@
 import { z } from 'zod';
-import axios from 'axios';
+import _axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
-import type { FunctionTool, Schema, Reference, ActionMetadata } from './types/assistants';
+import type {
+  FunctionTool,
+  Schema,
+  Reference,
+  ActionMetadata,
+  ActionMetadataRuntime,
+} from './types/assistants';
 import type { OpenAPIV3 } from 'openapi-types';
 import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
 
@@ -11,6 +17,7 @@ export type ParametersSchema = {
   type: string;
   properties: Record<string, Reference | Schema>;
   required: string[];
+  additionalProperties?: boolean;
 };
 
 export type OpenAPISchema = OpenAPIV3.SchemaObject &
@@ -118,28 +125,40 @@ function openAPISchemaToZod(schema: OpenAPISchema): z.ZodTypeAny | undefined {
   return handler(schema);
 }
 
+/**
+ * Class representing a function signature.
+ */
 export class FunctionSignature {
   name: string;
   description: string;
   parameters: ParametersSchema;
+  strict: boolean;
 
-  constructor(name: string, description: string, parameters: ParametersSchema) {
+  constructor(name: string, description: string, parameters: ParametersSchema, strict?: boolean) {
     this.name = name;
     this.description = description;
     this.parameters = parameters;
+    this.strict = strict ?? false;
   }
 
   toObjectTool(): FunctionTool {
+    const parameters = {
+      ...this.parameters,
+      additionalProperties: this.strict ? false : undefined,
+    };
+
     return {
       type: Tools.function,
       function: {
         name: this.name,
         description: this.description,
-        parameters: this.parameters,
+        parameters,
+        ...(this.strict ? { strict: this.strict } : {}),
       },
     };
   }
 }
+
 class RequestConfig {
   constructor(
     readonly domain: string,
@@ -148,12 +167,13 @@ class RequestConfig {
     readonly operation: string,
     readonly isConsequential: boolean,
     readonly contentType: string,
+    readonly parameterLocations?: Record<string, 'query' | 'path' | 'header' | 'body'>,
   ) {}
 }
 
 class RequestExecutor {
   path: string;
-  params?: object;
+  params?: Record<string, unknown>;
   private operationHash?: string;
   private authHeaders: Record<string, string> = {};
   private authToken?: string;
@@ -162,21 +182,34 @@ class RequestExecutor {
     this.path = config.basePath;
   }
 
-  setParams(params: object) {
+  setParams(params: Record<string, unknown>) {
     this.operationHash = sha1(JSON.stringify(params));
-    this.params = Object.assign({}, params);
-
-    for (const [key, value] of Object.entries(params)) {
-      const paramPattern = `{${key}}`;
-      if (this.path.includes(paramPattern)) {
-        this.path = this.path.replace(paramPattern, encodeURIComponent(value as string));
-        delete (this.params as Record<string, unknown>)[key];
+    this.params = { ...params } as Record<string, unknown>;
+    if (this.config.parameterLocations) {
+      //Substituting “Path” Parameters:
+      for (const [key, value] of Object.entries(params)) {
+        if (this.config.parameterLocations[key] === 'path') {
+          const paramPattern = `{${key}}`;
+          if (this.path.includes(paramPattern)) {
+            this.path = this.path.replace(paramPattern, encodeURIComponent(String(value)));
+            delete this.params[key];
+          }
+        }
+      }
+    } else {
+      // Fallback: if no locations are defined, perform path substitution for all keys.
+      for (const [key, value] of Object.entries(params)) {
+        const paramPattern = `{${key}}`;
+        if (this.path.includes(paramPattern)) {
+          this.path = this.path.replace(paramPattern, encodeURIComponent(String(value)));
+          delete this.params[key];
+        }
       }
     }
     return this;
   }
 
-  async setAuth(metadata: ActionMetadata) {
+  async setAuth(metadata: ActionMetadataRuntime) {
     if (!metadata.auth) {
       return this;
     }
@@ -199,6 +232,8 @@ class RequestExecutor {
       /* OAuth */
       oauth_client_id,
       oauth_client_secret,
+      oauth_token_expires_at,
+      oauth_access_token = '',
     } = metadata;
 
     const isApiKey = api_key != null && api_key.length > 0 && type === AuthTypeEnum.ServiceHttp;
@@ -230,22 +265,23 @@ class RequestExecutor {
     ) {
       this.authHeaders[custom_auth_header] = api_key;
     } else if (isOAuth) {
-      const authToken = this.authToken ?? '';
-      if (!authToken) {
-        const tokenResponse = await axios.post(
-          client_url,
-          {
-            client_id: oauth_client_id,
-            client_secret: oauth_client_secret,
-            scope: scope,
-            grant_type: 'client_credentials',
-          },
-          {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          },
-        );
-        this.authToken = tokenResponse.data.access_token;
+      // TODO: maybe doing it in a different way later on. but we want that the user needs to folllow the oauth flow.
+      // If we do not have a valid token, bail or ask user to sign in
+      const now = new Date();
+
+      // 1. Check if token is set
+      if (!oauth_access_token) {
+        throw new Error('No access token found. Please log in first.');
       }
+
+      // 2. Check if token is expired
+      if (oauth_token_expires_at && now >= new Date(oauth_token_expires_at)) {
+        // Optionally check refresh_token logic, or just prompt user to re-login
+        throw new Error('Access token is expired. Please re-login.');
+      }
+
+      // If valid, use it
+      this.authToken = oauth_access_token;
       this.authHeaders['Authorization'] = `Bearer ${this.authToken}`;
     }
     return this;
@@ -253,23 +289,46 @@ class RequestExecutor {
 
   async execute() {
     const url = createURL(this.config.domain, this.path);
-    const headers = {
+    const headers: Record<string, string> = {
       ...this.authHeaders,
-      'Content-Type': this.config.contentType,
+      ...(this.config.contentType ? { 'Content-Type': this.config.contentType } : {}),
     };
-
     const method = this.config.method.toLowerCase();
+    const axios = _axios.create();
+
+    // Initialize separate containers for query and body parameters.
+    const queryParams: Record<string, unknown> = {};
+    const bodyParams: Record<string, unknown> = {};
+
+    if (this.config.parameterLocations && this.params) {
+      for (const key of Object.keys(this.params)) {
+        // Determine parameter placement; default to "query" for GET and "body" for others.
+        const loc: 'query' | 'path' | 'header' | 'body' = this.config.parameterLocations[key] || (method === 'get' ? 'query' : 'body');
+
+        const val = this.params[key];
+        if (loc === 'query') {
+          queryParams[key] = val;
+        } else if (loc === 'header') {
+          headers[key] = String(val);
+        } else if (loc === 'body') {
+          bodyParams[key] = val;
+        }
+      }
+    } else if (this.params) {
+      Object.assign(queryParams, this.params);
+      Object.assign(bodyParams, this.params);
+    }
 
     if (method === 'get') {
-      return axios.get(url, { headers, params: this.params });
+      return axios.get(url, { headers, params: queryParams });
     } else if (method === 'post') {
-      return axios.post(url, this.params, { headers });
+      return axios.post(url, bodyParams, { headers, params: queryParams });
     } else if (method === 'put') {
-      return axios.put(url, this.params, { headers });
+      return axios.put(url, bodyParams, { headers, params: queryParams });
     } else if (method === 'delete') {
-      return axios.delete(url, { headers, data: this.params });
+      return axios.delete(url, { headers, data: bodyParams, params: queryParams });
     } else if (method === 'patch') {
-      return axios.patch(url, this.params, { headers });
+      return axios.patch(url, bodyParams, { headers, params: queryParams });
     } else {
       throw new Error(`Unsupported HTTP method: ${method}`);
     }
@@ -290,8 +349,9 @@ export class ActionRequest {
     operation: string,
     isConsequential: boolean,
     contentType: string,
+    parameterLocations?: Record<string, 'query' | 'path' | 'header' | 'body'>,
   ) {
-    this.config = new RequestConfig(domain, path, method, operation, isConsequential, contentType);
+    this.config = new RequestConfig(domain, path, method, operation, isConsequential, contentType, parameterLocations);
   }
 
   // Add getters to maintain backward compatibility
@@ -319,7 +379,7 @@ export class ActionRequest {
   }
 
   // Maintain backward compatibility by delegating to a new executor
-  setParams(params: object) {
+  setParams(params: Record<string, unknown>) {
     const executor = this.createExecutor();
     executor.setParams(params);
     return executor;
@@ -336,26 +396,38 @@ export class ActionRequest {
   }
 }
 
-export function resolveRef(
-  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | RequestBodyObject,
-  components?: OpenAPIV3.ComponentsObject,
-): OpenAPIV3.SchemaObject {
-  if ('$ref' in schema && components) {
-    const refPath = schema.$ref.replace(/^#\/components\/schemas\//, '');
-    const resolvedSchema = components.schemas?.[refPath];
-    if (!resolvedSchema) {
-      throw new Error(`Reference ${schema.$ref} not found`);
+export function resolveRef<
+  T extends
+    | OpenAPIV3.ReferenceObject
+    | OpenAPIV3.SchemaObject
+    | OpenAPIV3.ParameterObject
+    | OpenAPIV3.RequestBodyObject,
+>(obj: T, components?: OpenAPIV3.ComponentsObject): Exclude<T, OpenAPIV3.ReferenceObject> {
+  if ('$ref' in obj && components) {
+    const refPath = obj.$ref.replace(/^#\/components\//, '').split('/');
+
+    let resolved: unknown = components as Record<string, unknown>;
+    for (const segment of refPath) {
+      if (typeof resolved === 'object' && resolved !== null && segment in resolved) {
+        resolved = (resolved as Record<string, unknown>)[segment];
+      } else {
+        throw new Error(`Could not resolve reference: ${obj.$ref}`);
+      }
     }
-    return resolveRef(resolvedSchema, components);
+
+    return resolveRef(resolved as typeof obj, components) as Exclude<T, OpenAPIV3.ReferenceObject>;
   }
-  return schema as OpenAPIV3.SchemaObject;
+
+  return obj as Exclude<T, OpenAPIV3.ReferenceObject>;
 }
 
 function sanitizeOperationId(input: string) {
   return input.replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
-/** Function to convert OpenAPI spec to function signatures and request builders */
+/**
+ * Converts an OpenAPI spec to function signatures and request builders.
+ */
 export function openapiToFunction(
   openapiSpec: OpenAPIV3.Document,
   generateZodSchemas = false,
@@ -372,14 +444,18 @@ export function openapiToFunction(
   // Iterate over each path and method in the OpenAPI spec
   for (const [path, methods] of Object.entries(openapiSpec.paths)) {
     for (const [method, operation] of Object.entries(methods as OpenAPIV3.PathsObject)) {
+      const paramLocations: Record<string, 'query' | 'path' | 'header' | 'body'> = {};
       const operationObj = operation as OpenAPIV3.OperationObject & {
         'x-openai-isConsequential'?: boolean;
+      } & {
+        'x-strict'?: boolean;
       };
 
       // Operation ID is used as the function name
       const defaultOperationId = `${method}_${path}`;
       const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
+      const isStrict = operationObj['x-strict'] ?? false;
 
       const parametersSchema: OpenAPISchema = {
         type: 'object',
@@ -388,16 +464,34 @@ export function openapiToFunction(
       };
 
       if (operationObj.parameters) {
-        for (const param of operationObj.parameters) {
-          const paramObj = param as OpenAPIV3.ParameterObject;
-          const resolvedSchema = resolveRef(
-            { ...paramObj.schema } as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
+        for (const param of operationObj.parameters ?? []) {
+          const resolvedParam = resolveRef(
+            param,
             openapiSpec.components,
-          );
-          parametersSchema.properties[paramObj.name] = resolvedSchema;
-          if (paramObj.required === true) {
-            parametersSchema.required.push(paramObj.name);
+          ) as OpenAPIV3.ParameterObject;
+
+          const paramName = resolvedParam.name;
+          if (!paramName || !resolvedParam.schema) {
+            continue;
           }
+
+          const paramSchema = resolveRef(
+            resolvedParam.schema,
+            openapiSpec.components,
+          ) as OpenAPIV3.SchemaObject;
+
+          parametersSchema.properties[paramName] = paramSchema;
+          if (resolvedParam.required) {
+            parametersSchema.required.push(paramName);
+          }
+          // Record the parameter location from the OpenAPI "in" field.
+          paramLocations[paramName] =
+          (resolvedParam.in === 'query' ||
+           resolvedParam.in === 'path' ||
+           resolvedParam.in === 'header' ||
+           resolvedParam.in === 'body')
+            ? resolvedParam.in
+            : 'query';
         }
       }
 
@@ -417,9 +511,20 @@ export function openapiToFunction(
         if (resolvedSchema.required) {
           parametersSchema.required.push(...resolvedSchema.required);
         }
+        // Mark requestBody properties as belonging to the "body"
+        if (resolvedSchema.properties) {
+          for (const key in resolvedSchema.properties) {
+            paramLocations[key] = 'body';
+          }
+        }
       }
 
-      const functionSignature = new FunctionSignature(operationId, description, parametersSchema);
+      const functionSignature = new FunctionSignature(
+        operationId,
+        description,
+        parametersSchema,
+        isStrict,
+      );
       functionSignatures.push(functionSignature);
 
       const actionRequest = new ActionRequest(
@@ -427,8 +532,9 @@ export function openapiToFunction(
         path,
         method,
         operationId,
-        !!(operationObj['x-openai-isConsequential'] ?? false), // Custom extension for consequential actions
-        operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
+        !!(operationObj['x-openai-isConsequential'] ?? false),
+        operationObj.requestBody ? 'application/json' : '',
+        paramLocations,
       );
 
       requestBuilders[operationId] = actionRequest;
@@ -451,6 +557,9 @@ export type ValidationResult = {
   spec?: OpenAPIV3.Document;
 };
 
+/**
+ * Validates and parses an OpenAPI spec.
+ */
 export function validateAndParseOpenAPISpec(specString: string): ValidationResult {
   try {
     let parsedSpec;
@@ -511,6 +620,7 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
       spec: parsedSpec,
     };
   } catch (error) {
+    console.error(error);
     return { status: false, message: 'Error parsing OpenAPI spec.' };
   }
 }

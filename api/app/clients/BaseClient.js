@@ -4,16 +4,17 @@ const {
   supportsBalanceCheck,
   isAgentsEndpoint,
   isParamEndpoint,
+  EModelEndpoint,
+  ContentTypes,
+  excludedKeys,
   ErrorTypes,
   Constants,
-  CacheKeys,
-  Time,
 } = require('librechat-data-provider');
-const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
-const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
-const checkBalance = require('~/models/checkBalance');
+const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const { checkBalance } = require('~/models/balanceMethods');
+const { truncateToolCallOutputs } = require('./prompts');
+const { addSpaceIfNeeded } = require('~/server/utils');
 const { getFiles } = require('~/models/File');
-const { getLogStores } = require('~/cache');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -27,15 +28,10 @@ class BaseClient {
       month: 'long',
       day: 'numeric',
     });
-    this.fetch = this.fetch.bind(this);
     /** @type {boolean} */
     this.skipSaveConvo = false;
     /** @type {boolean} */
     this.skipSaveUserMessage = false;
-    /** @type {ClientDatabaseSavePromise} */
-    this.userMessagePromise;
-    /** @type {ClientDatabaseSavePromise} */
-    this.responsePromise;
     /** @type {string} */
     this.user;
     /** @type {string} */
@@ -52,18 +48,30 @@ class BaseClient {
     this.outputTokensKey = 'completion_tokens';
     /** @type {Set<string>} */
     this.savedMessageIds = new Set();
+    /**
+     * Flag to determine if the client re-submitted the latest assistant message.
+     * @type {boolean | undefined} */
+    this.continued;
+    /**
+     * Flag to determine if the client has already fetched the conversation while saving new messages.
+     * @type {boolean | undefined} */
+    this.fetchedConvo;
+    /** @type {TMessage[]} */
+    this.currentMessages = [];
+    /** @type {import('librechat-data-provider').VisionModes | undefined} */
+    this.visionMode;
   }
 
   setOptions() {
-    throw new Error('Method \'setOptions\' must be implemented.');
+    throw new Error("Method 'setOptions' must be implemented.");
   }
 
   async getCompletion() {
-    throw new Error('Method \'getCompletion\' must be implemented.');
+    throw new Error("Method 'getCompletion' must be implemented.");
   }
 
   async sendCompletion() {
-    throw new Error('Method \'sendCompletion\' must be implemented.');
+    throw new Error("Method 'sendCompletion' must be implemented.");
   }
 
   getSaveOptions() {
@@ -95,7 +103,7 @@ class BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse(responseMessage) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', responseMessage);
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', responseMessage);
   }
 
   /**
@@ -106,7 +114,7 @@ class BaseClient {
    * @returns {Promise<void>}
    */
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       promptTokens,
       completionTokens,
     });
@@ -229,11 +237,11 @@ class BaseClient {
     const userMessage = opts.isEdited
       ? this.currentMessages[this.currentMessages.length - 2]
       : this.createUserMessage({
-        messageId: userMessageId,
-        parentMessageId,
-        conversationId,
-        text: message,
-      });
+          messageId: userMessageId,
+          parentMessageId,
+          conversationId,
+          text: message,
+        });
 
     if (typeof opts?.getReqData === 'function') {
       opts.getReqData({
@@ -262,17 +270,24 @@ class BaseClient {
   /**
    * Adds instructions to the messages array. If the instructions object is empty or undefined,
    * the original messages array is returned. Otherwise, the instructions are added to the messages
-   * array, preserving the last message at the end.
+   * array either at the beginning (default) or preserving the last message at the end.
    *
    * @param {Array} messages - An array of messages.
    * @param {Object} instructions - An object containing instructions to be added to the messages.
+   * @param {boolean} [beforeLast=false] - If true, adds instructions before the last message; if false, adds at the beginning.
    * @returns {Array} An array containing messages and instructions, or the original messages if instructions are empty.
    */
-  addInstructions(messages, instructions) {
-    const payload = [];
+  addInstructions(messages, instructions, beforeLast = false) {
     if (!instructions || Object.keys(instructions).length === 0) {
       return messages;
     }
+
+    if (!beforeLast) {
+      return [instructions, ...messages];
+    }
+
+    // Legacy behavior: add instructions before the last message
+    const payload = [];
     if (messages.length > 1) {
       payload.push(...messages.slice(0, -1));
     }
@@ -287,6 +302,9 @@ class BaseClient {
   }
 
   async handleTokenCountMap(tokenCountMap) {
+    if (this.clientName === EModelEndpoint.agents) {
+      return;
+    }
     if (this.currentMessages.length === 0) {
       return;
     }
@@ -335,25 +353,35 @@ class BaseClient {
    * If the token limit would be exceeded by adding a message, that message is not added to the context and remains in the original array.
    * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the context array at the end to maintain the original order of the messages.
    *
-   * @param {Array} _messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
-   * @param {number} [maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
-   * @returns {Object} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
+   * @param {Object} params
+   * @param {TMessage[]} params.messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @param {number} [params.maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
+   * @param {{ role: 'system', content: text, tokenCount: number }} [params.instructions] - Instructions already added to the context at index 0.
+   * @returns {Promise<{
+   *  context: TMessage[],
+   *  remainingContextTokens: number,
+   *  messagesToRefine: TMessage[],
+   * }>} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
-   *    `summaryIndex` is the index of the first message in the `messagesToRefine` array.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
-  async getMessagesWithinTokenLimit(_messages, maxContextTokens) {
+  async getMessagesWithinTokenLimit({ messages: _messages, maxContextTokens, instructions }) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
     let currentTokenCount = 3;
-    let summaryIndex = -1;
-    let remainingContextTokens = maxContextTokens ?? this.maxContextTokens;
+    const instructionsTokenCount = instructions?.tokenCount ?? 0;
+    let remainingContextTokens =
+      (maxContextTokens ?? this.maxContextTokens) - instructionsTokenCount;
     const messages = [..._messages];
 
     const context = [];
+
     if (currentTokenCount < remainingContextTokens) {
       while (messages.length > 0 && currentTokenCount < remainingContextTokens) {
+        if (messages.length === 1 && instructions) {
+          break;
+        }
         const poppedMessage = messages.pop();
         const { tokenCount } = poppedMessage;
 
@@ -367,15 +395,18 @@ class BaseClient {
       }
     }
 
+    if (instructions) {
+      context.push(_messages[0]);
+      messages.shift();
+    }
+
     const prunedMemory = messages;
-    summaryIndex = prunedMemory.length - 1;
     remainingContextTokens -= currentTokenCount;
 
     return {
       context: context.reverse(),
       remainingContextTokens,
       messagesToRefine: prunedMemory,
-      summaryIndex,
     };
   }
 
@@ -391,12 +422,38 @@ class BaseClient {
     if (instructions) {
       ({ tokenCount, ..._instructions } = instructions);
     }
+
     _instructions && logger.debug('[BaseClient] instructions tokenCount: ' + tokenCount);
-    let payload = this.addInstructions(formattedMessages, _instructions);
+    if (tokenCount && tokenCount > this.maxContextTokens) {
+      const info = `${tokenCount} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(`Instructions token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
+    }
+
+    if (this.clientName === EModelEndpoint.agents) {
+      const { dbMessages, editedIndices } = truncateToolCallOutputs(
+        orderedMessages,
+        this.maxContextTokens,
+        this.getTokenCountForMessage.bind(this),
+      );
+
+      if (editedIndices.length > 0) {
+        logger.debug('[BaseClient] Truncated tool call outputs:', editedIndices);
+        for (const index of editedIndices) {
+          formattedMessages[index].content = dbMessages[index].content;
+        }
+        orderedMessages = dbMessages;
+      }
+    }
+
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
 
-    let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
-      await this.getMessagesWithinTokenLimit(orderedWithInstructions);
+    let { context, remainingContextTokens, messagesToRefine } =
+      await this.getMessagesWithinTokenLimit({
+        messages: orderedWithInstructions,
+        instructions,
+      });
 
     logger.debug('[BaseClient] Context Count (1/2)', {
       remainingContextTokens,
@@ -408,7 +465,9 @@ class BaseClient {
     let { shouldSummarize } = this;
 
     // Calculate the difference in length to determine how many messages were discarded if any
-    const { length } = payload;
+    let payload;
+    let { length } = formattedMessages;
+    length += instructions != null ? 1 : 0;
     const diff = length - context.length;
     const firstMessage = orderedWithInstructions[0];
     const usePrevSummary =
@@ -418,17 +477,30 @@ class BaseClient {
       this.previous_summary.messageId === firstMessage.messageId;
 
     if (diff > 0) {
-      payload = payload.slice(diff);
+      payload = formattedMessages.slice(diff);
       logger.debug(
         `[BaseClient] Difference between original payload (${length}) and context (${context.length}): ${diff}`,
       );
     }
+
+    payload = this.addInstructions(payload ?? formattedMessages, _instructions);
 
     const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
     if (payload.length === 0 && !shouldSummarize && latestMessage) {
       const info = `${latestMessage.tokenCount} / ${this.maxContextTokens}`;
       const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
       logger.warn(`Prompt token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
+    } else if (
+      _instructions &&
+      payload.length === 1 &&
+      payload[0].content === _instructions.content
+    ) {
+      const info = `${tokenCount + 3} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(
+        `Including instructions, the prompt token count exceeds remaining max token count (${info}).`,
+      );
       throw new Error(errorMessage);
     }
 
@@ -447,7 +519,7 @@ class BaseClient {
     }
 
     // Make sure to only continue summarization logic if the summary message was generated
-    shouldSummarize = summaryMessage && shouldSummarize;
+    shouldSummarize = summaryMessage != null && shouldSummarize === true;
 
     logger.debug('[BaseClient] Context Count (2/2)', {
       remainingContextTokens,
@@ -457,17 +529,18 @@ class BaseClient {
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;
     if (buildTokenMap) {
-      tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+      const currentPayload = shouldSummarize ? orderedWithInstructions : context;
+      tokenCountMap = currentPayload.reduce((map, message, index) => {
         const { messageId } = message;
         if (!messageId) {
           return map;
         }
 
-        if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
+        if (shouldSummarize && index === messagesToRefine.length - 1 && !usePrevSummary) {
           map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
         }
 
-        map[messageId] = orderedWithInstructions[index].tokenCount;
+        map[messageId] = currentPayload[index].tokenCount;
         return map;
       }, {});
     }
@@ -486,6 +559,8 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    /** @type {Promise<TMessage>} */
+    let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
@@ -518,6 +593,7 @@ class BaseClient {
       } else {
         latestMessage.text = generation;
       }
+      this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
     }
@@ -546,17 +622,18 @@ class BaseClient {
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
-      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
-          userMessagePromise: this.userMessagePromise,
+          userMessagePromise,
         });
       }
     }
 
+    const balance = this.options.req?.app?.locals?.balance;
     if (
-      isEnabled(process.env.CHECK_BALANCE) &&
+      balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
@@ -575,7 +652,9 @@ class BaseClient {
 
     /** @type {string|string[]|undefined} */
     const completion = await this.sendCompletion(payload, opts);
-    this.abortController.requestCompleted = true;
+    if (this.abortController) {
+      this.abortController.requestCompleted = true;
+    }
 
     /** @type {TMessage} */
     const responseMessage = {
@@ -596,7 +675,8 @@ class BaseClient {
       responseMessage.text = addSpaceIfNeeded(generation) + completion;
     } else if (
       Array.isArray(completion) &&
-      isParamEndpoint(this.options.endpoint, this.options.endpointType)
+      (this.clientName === EModelEndpoint.agents ||
+        isParamEndpoint(this.options.endpoint, this.options.endpointType))
     ) {
       responseMessage.text = '';
       responseMessage.content = completion;
@@ -622,17 +702,23 @@ class BaseClient {
       if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
         responseMessage.tokenCount = usage[this.outputTokensKey];
         completionTokens = responseMessage.tokenCount;
-        await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
+        await this.updateUserMessageTokenCount({
+          usage,
+          tokenCountMap,
+          userMessage,
+          userMessagePromise,
+          opts,
+        });
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-        completionTokens = this.getTokenCount(completion);
+        completionTokens = responseMessage.tokenCount;
       }
 
       await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 
-    if (this.userMessagePromise) {
-      await this.userMessagePromise;
+    if (userMessagePromise) {
+      await userMessagePromise;
     }
 
     if (this.artifactPromises) {
@@ -647,17 +733,12 @@ class BaseClient {
       }
     }
 
-    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    this.savedMessageIds.add(responseMessage.messageId);
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    messageCache.set(
-      responseMessageId,
-      {
-        text: responseMessage.text,
-        complete: true,
-      },
-      Time.FIVE_MINUTES,
+    responseMessage.databasePromise = this.saveMessageToDatabase(
+      responseMessage,
+      saveOptions,
+      user,
     );
+    this.savedMessageIds.add(responseMessage.messageId);
     delete responseMessage.tokenCount;
     return responseMessage;
   }
@@ -677,9 +758,16 @@ class BaseClient {
    * @param {StreamUsage} params.usage
    * @param {Record<string, number>} params.tokenCountMap
    * @param {TMessage} params.userMessage
+   * @param {Promise<TMessage>} params.userMessagePromise
    * @param {object} params.opts
    */
-  async updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts }) {
+  async updateUserMessageTokenCount({
+    usage,
+    tokenCountMap,
+    userMessage,
+    userMessagePromise,
+    opts,
+  }) {
     /** @type {boolean} */
     const shouldUpdateCount =
       this.calculateCurrentTokenCount != null &&
@@ -715,7 +803,7 @@ class BaseClient {
       Note: we update the user message to be sure it gets the calculated token count;
       though `AskController` saves the user message, EditController does not
     */
-    await this.userMessagePromise;
+    await userMessagePromise;
     await this.updateMessageInDatabase({
       messageId: userMessage.messageId,
       tokenCount: userMessageTokenCount,
@@ -781,7 +869,7 @@ class BaseClient {
     }
 
     const savedMessage = await saveMessage(
-      this.options.req,
+      this.options?.req,
       {
         ...message,
         endpoint: this.options.endpoint,
@@ -795,16 +883,40 @@ class BaseClient {
       return { message: savedMessage };
     }
 
-    const conversation = await saveConvo(
-      this.options.req,
-      {
-        conversationId: message.conversationId,
-        endpoint: this.options.endpoint,
-        endpointType: this.options.endpointType,
-        ...endpointOptions,
-      },
-      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo' },
-    );
+    const fieldsToKeep = {
+      conversationId: message.conversationId,
+      endpoint: this.options.endpoint,
+      endpointType: this.options.endpointType,
+      ...endpointOptions,
+    };
+
+    const existingConvo =
+      this.fetchedConvo === true
+        ? null
+        : await getConvo(this.options?.req?.user?.id, message.conversationId);
+
+    const unsetFields = {};
+    const exceptions = new Set(['spec', 'iconURL']);
+    if (existingConvo != null) {
+      this.fetchedConvo = true;
+      for (const key in existingConvo) {
+        if (!key) {
+          continue;
+        }
+        if (excludedKeys.has(key) && !exceptions.has(key)) {
+          continue;
+        }
+
+        if (endpointOptions?.[key] === undefined) {
+          unsetFields[key] = 1;
+        }
+      }
+    }
+
+    const conversation = await saveConvo(this.options?.req, fieldsToKeep, {
+      context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
+      unsetFields,
+    });
 
     return { message: savedMessage, conversation };
   }
@@ -925,7 +1037,31 @@ class BaseClient {
     const processValue = (value) => {
       if (Array.isArray(value)) {
         for (let item of value) {
-          if (!item || !item.type || item.type === 'image_url') {
+          if (
+            !item ||
+            !item.type ||
+            item.type === ContentTypes.THINK ||
+            item.type === ContentTypes.ERROR ||
+            item.type === ContentTypes.IMAGE_URL
+          ) {
+            continue;
+          }
+
+          if (item.type === ContentTypes.TOOL_CALL && item.tool_call != null) {
+            const toolName = item.tool_call?.name || '';
+            if (toolName != null && toolName && typeof toolName === 'string') {
+              numTokens += this.getTokenCount(toolName);
+            }
+
+            const args = item.tool_call?.args || '';
+            if (args != null && args && typeof args === 'string') {
+              numTokens += this.getTokenCount(args);
+            }
+
+            const output = item.tool_call?.output || '';
+            if (output != null && output && typeof output === 'string') {
+              numTokens += this.getTokenCount(output);
+            }
             continue;
           }
 
@@ -1007,11 +1143,15 @@ class BaseClient {
         return message;
       }
 
-      const files = await getFiles({
-        file_id: { $in: fileIds },
-      });
+      const files = await getFiles(
+        {
+          file_id: { $in: fileIds },
+        },
+        {},
+        {},
+      );
 
-      await this.addImageURLs(message, files);
+      await this.addImageURLs(message, files, this.visionMode);
 
       this.message_file_map[message.messageId] = files;
       return message;

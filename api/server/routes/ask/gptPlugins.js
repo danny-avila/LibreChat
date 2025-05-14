@@ -1,11 +1,9 @@
 const express = require('express');
-const throttle = require('lodash/throttle');
-const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
+const { getResponseSender, Constants } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
 const { saveMessage, updateMessage } = require('~/models');
-const { getLogStores } = require('~/cache');
 const {
   handleAbort,
   createAbortController,
@@ -22,7 +20,6 @@ const { logger } = require('~/config');
 const router = express.Router();
 
 router.use(moderateText);
-router.post('/abort', handleAbort());
 
 router.post(
   '/',
@@ -72,15 +69,6 @@ router.post(
       }
     };
 
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    const throttledCacheSet = throttle(
-      (text) => {
-        messageCache.set(responseMessageId, text, Time.FIVE_MINUTES);
-      },
-      3000,
-      { trailing: false },
-    );
-
     let streaming = null;
     let timer = null;
 
@@ -89,12 +77,10 @@ router.post(
       sendIntermediateMessage,
       getPartialText,
     } = createOnProgress({
-      onProgress: ({ text: partialText }) => {
+      onProgress: () => {
         if (timer) {
           clearTimeout(timer);
         }
-
-        throttledCacheSet(partialText);
 
         streaming = new Promise((resolve) => {
           timer = setTimeout(() => {
@@ -209,7 +195,8 @@ router.post(
 
       logger.debug('[/ask/gptPlugins]', response);
 
-      const { conversation = {} } = await client.responsePromise;
+      const { conversation = {} } = await response.databasePromise;
+      delete response.databasePromise;
       conversation.title =
         conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 

@@ -1,6 +1,7 @@
-const Redis = require('ioredis');
+const { Keyv } = require('keyv');
 const passport = require('passport');
 const session = require('express-session');
+const MemoryStore = require('memorystore')(session);
 const RedisStore = require('connect-redis').default;
 const {
   setupOpenId,
@@ -8,8 +9,10 @@ const {
   githubLogin,
   discordLogin,
   facebookLogin,
+  appleLogin,
 } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
+const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
 
 /**
@@ -17,6 +20,8 @@ const { logger } = require('~/config');
  * @param {Express.Application} app
  */
 const configureSocialLogins = (app) => {
+  logger.info('Configuring social logins...');
+
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(googleLogin());
   }
@@ -29,6 +34,9 @@ const configureSocialLogins = (app) => {
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());
   }
+  if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
+    passport.use(appleLogin());
+  }
   if (
     process.env.OPENID_CLIENT_ID &&
     process.env.OPENID_CLIENT_SECRET &&
@@ -36,22 +44,27 @@ const configureSocialLogins = (app) => {
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET
   ) {
+    logger.info('Configuring OpenID Connect...');
     const sessionOptions = {
       secret: process.env.OPENID_SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
     };
     if (isEnabled(process.env.USE_REDIS)) {
-      const client = new Redis(process.env.REDIS_URI);
-      client
-        .on('error', (err) => logger.error('ioredis error:', err))
-        .on('ready', () => logger.info('ioredis successfully initialized.'))
-        .on('reconnecting', () => logger.info('ioredis reconnecting...'));
-      sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+      logger.debug('Using Redis for session storage in OpenID...');
+      const keyv = new Keyv({ store: keyvRedis });
+      const client = keyv.opts.store.client;
+      sessionOptions.store = new RedisStore({ client, prefix: 'openid_session' });
+    } else {
+      sessionOptions.store = new MemoryStore({
+        checkPeriod: 86400000, // prune expired entries every 24h
+      });
     }
     app.use(session(sessionOptions));
     app.use(passport.session());
     setupOpenId();
+
+    logger.info('OpenID Connect configured.');
   }
 };
 

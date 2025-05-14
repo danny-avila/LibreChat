@@ -29,7 +29,7 @@ export default function ModelSelect({
   }
 
   const { endpoint: _endpoint, endpointType } = conversation;
-  const models = modelsQuery?.data?.[_endpoint] ?? [];
+  const models = modelsQuery.data?.[_endpoint] ?? [];
   const endpoint = endpointType ?? _endpoint;
 
   const OptionComponent = multiChatOptions[endpoint];

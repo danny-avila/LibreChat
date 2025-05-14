@@ -1,4 +1,5 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { KnownEndpoints } = require('librechat-data-provider');
 const { sanitizeModelName, constructAzureURL } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
 
@@ -8,6 +9,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {Object} options - Additional options for configuring the LLM.
  * @param {Object} [options.modelOptions] - Model-specific options.
  * @param {string} [options.modelOptions.model] - The name of the model to use.
+ * @param {string} [options.modelOptions.user] - The user ID
  * @param {number} [options.modelOptions.temperature] - Controls randomness in output generation (0-2).
  * @param {number} [options.modelOptions.top_p] - Controls diversity via nucleus sampling (0-1).
  * @param {number} [options.modelOptions.frequency_penalty] - Reduces repetition of token sequences (-2 to 2).
@@ -22,13 +24,13 @@ const { isEnabled } = require('~/server/utils');
  * @param {boolean} [options.streaming] - Whether to use streaming mode.
  * @param {Object} [options.addParams] - Additional parameters to add to the model options.
  * @param {string[]} [options.dropParams] - Parameters to remove from the model options.
+ * @param {string|null} [endpoint=null] - The endpoint name
  * @returns {Object} Configuration options for creating an LLM instance.
  */
-function getLLMConfig(apiKey, options = {}) {
-  const {
+function getLLMConfig(apiKey, options = {}, endpoint = null) {
+  let {
     modelOptions = {},
     reverseProxyUrl,
-    useOpenRouter,
     defaultQuery,
     headers,
     proxy,
@@ -38,6 +40,7 @@ function getLLMConfig(apiKey, options = {}) {
     dropParams,
   } = options;
 
+  /** @type {OpenAIClientOptions} */
   let llmConfig = {
     streaming,
   };
@@ -47,36 +50,61 @@ function getLLMConfig(apiKey, options = {}) {
   if (addParams && typeof addParams === 'object') {
     Object.assign(llmConfig, addParams);
   }
+  /** Note: OpenAI Web Search models do not support any known parameters besdies `max_tokens` */
+  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
+    const searchExcludeParams = [
+      'frequency_penalty',
+      'presence_penalty',
+      'temperature',
+      'top_p',
+      'top_k',
+      'stop',
+      'logit_bias',
+      'seed',
+      'response_format',
+      'n',
+      'logprobs',
+      'user',
+    ];
+
+    dropParams = dropParams || [];
+    dropParams = [...new Set([...dropParams, ...searchExcludeParams])];
+  }
 
   if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => {
-      delete llmConfig[param];
+      if (llmConfig[param]) {
+        llmConfig[param] = undefined;
+      }
     });
   }
 
+  let useOpenRouter;
+  /** @type {OpenAIClientOptions['configuration']} */
   const configOptions = {};
-
-  // Handle OpenRouter or custom reverse proxy
-  if (useOpenRouter || reverseProxyUrl === 'https://openrouter.ai/api/v1') {
-    configOptions.basePath = 'https://openrouter.ai/api/v1';
-    configOptions.baseOptions = {
-      headers: Object.assign(
-        {
-          'HTTP-Referer': 'https://librechat.ai',
-          'X-Title': 'LibreChat',
-        },
-        headers,
-      ),
-    };
+  if (
+    (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
+    (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    useOpenRouter = true;
+    llmConfig.include_reasoning = true;
+    configOptions.baseURL = reverseProxyUrl;
+    configOptions.defaultHeaders = Object.assign(
+      {
+        'HTTP-Referer': 'https://librechat.ai',
+        'X-Title': 'LibreChat',
+      },
+      headers,
+    );
   } else if (reverseProxyUrl) {
-    configOptions.basePath = reverseProxyUrl;
+    configOptions.baseURL = reverseProxyUrl;
     if (headers) {
-      configOptions.baseOptions = { headers };
+      configOptions.defaultHeaders = headers;
     }
   }
 
   if (defaultQuery) {
-    configOptions.baseOptions.defaultQuery = defaultQuery;
+    configOptions.defaultQuery = defaultQuery;
   }
 
   if (proxy) {
@@ -97,9 +125,9 @@ function getLLMConfig(apiKey, options = {}) {
       llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     }
 
-    if (configOptions.basePath) {
+    if (configOptions.baseURL) {
       const azureURL = constructAzureURL({
-        baseURL: configOptions.basePath,
+        baseURL: configOptions.baseURL,
         azureOptions: azure,
       });
       azure.azureOpenAIBasePath = azureURL.split(`/${azure.azureOpenAIApiDeploymentName}`)[0];
@@ -108,7 +136,7 @@ function getLLMConfig(apiKey, options = {}) {
     Object.assign(llmConfig, azure);
     llmConfig.model = llmConfig.azureOpenAIApiDeploymentName;
   } else {
-    llmConfig.openAIApiKey = apiKey;
+    llmConfig.apiKey = apiKey;
     // Object.assign(llmConfig, {
     //   configuration: { apiKey },
     // });
@@ -118,7 +146,25 @@ function getLLMConfig(apiKey, options = {}) {
     llmConfig.organization = process.env.OPENAI_ORGANIZATION;
   }
 
-  return { llmConfig, configOptions };
+  if (useOpenRouter && llmConfig.reasoning_effort != null) {
+    llmConfig.reasoning = {
+      effort: llmConfig.reasoning_effort,
+    };
+    delete llmConfig.reasoning_effort;
+  }
+
+  if (llmConfig?.['max_tokens'] != null) {
+    /** @type {number} */
+    llmConfig.maxTokens = llmConfig['max_tokens'];
+    delete llmConfig['max_tokens'];
+  }
+
+  return {
+    /** @type {OpenAIClientOptions} */
+    llmConfig,
+    /** @type {OpenAIClientOptions['configuration']} */
+    configOptions,
+  };
 }
 
 module.exports = { getLLMConfig };

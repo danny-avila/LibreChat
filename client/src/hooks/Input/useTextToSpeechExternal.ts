@@ -67,7 +67,10 @@ function useTextToSpeechExternal({
         return playPromise().catch(console.error);
       }
       console.error(error);
-      showToast({ message: localize('com_nav_audio_play_error', error.message), status: 'error' });
+      showToast({
+        message: localize('com_nav_audio_play_error', { 0: error.message }),
+        status: 'error',
+      });
     });
 
     newAudio.onended = () => {
@@ -87,7 +90,7 @@ function useTextToSpeechExternal({
     setDownloadFile(false);
   };
 
-  const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
+  const { mutate: processAudio, isLoading } = useTextToSpeechMutation({
     onMutate: (variables) => {
       const inputText = (variables.get('input') ?? '') as string;
       if (inputText.length >= 4096) {
@@ -123,7 +126,7 @@ function useTextToSpeechExternal({
     },
     onError: (error: unknown) => {
       showToast({
-        message: localize('com_nav_audio_process_error', (error as Error).message),
+        message: localize('com_nav_audio_process_error', { 0: (error as Error).message }),
         status: 'error',
       });
     },
@@ -178,20 +181,21 @@ function useTextToSpeechExternal({
       promiseAudioRef.current = null;
       setIsSpeaking(false);
     }
-  }, []);
+  }, [setIsSpeaking]);
 
   useEffect(() => cancelPromiseSpeech, [cancelPromiseSpeech]);
 
-  const isLoading = useMemo(() => {
-    return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
-  }, [isProcessing, globalIsFetching, globalIsPlaying, isLast]);
+  const isFetching = useMemo(
+    () => isLast && globalIsFetching && !globalIsPlaying,
+    [globalIsFetching, globalIsPlaying, isLast],
+  );
 
   const { data: voicesData = [] } = useVoicesQuery();
 
   return {
     generateSpeechExternal,
     cancelSpeech,
-    isLoading,
+    isLoading: isFetching || isLoading,
     audioRef,
     voices: voicesData,
   };

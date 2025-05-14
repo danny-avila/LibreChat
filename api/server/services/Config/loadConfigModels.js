@@ -49,7 +49,7 @@ async function loadConfigModels(req) {
   );
 
   /**
-   * @type {Record<string, string[]>}
+   * @type {Record<string, Promise<string[]>>}
    * Map for promises keyed by unique combination of baseURL and apiKey */
   const fetchPromisesMap = {};
   /**
@@ -128,7 +128,7 @@ async function loadConfigModels(req) {
 
     for (const name of associatedNames) {
       const endpoint = endpointsMap[name];
-      modelsConfig[name] = !modelData?.length ? endpoint.models.default ?? [] : modelData;
+      modelsConfig[name] = !modelData?.length ? (endpoint.models.default ?? []) : modelData;
     }
   }
 

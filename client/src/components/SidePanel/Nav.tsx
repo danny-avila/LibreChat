@@ -25,7 +25,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex h-full min-h-0 flex-col opacity-100 transition-opacity">
             <div className="scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20">
-              <div className="flex h-full w-full flex-col gap-1 px-3 pb-3.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+              <div className="flex h-full w-full flex-col gap-1 px-3 py-2.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
                 {links.map((link, index) => {
                   const variant = getVariant(link);
                   return isCollapsed ? (
@@ -48,10 +48,10 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           }}
                         >
                           <link.icon className="h-4 w-4 text-text-secondary" />
-                          <span className="sr-only">{link.title}</span>
+                          <span className="sr-only">{localize(link.title)}</span>
                         </Button>
                       }
-                    ></TooltipAnchor>
+                    />
                   ) : (
                     <Accordion
                       key={index}
@@ -80,7 +80,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 <span
                                   className={cn(
                                     'ml-auto opacity-100 transition-all duration-300 ease-in-out',
-                                    variant === 'default' ? 'text-background dark:text-white' : '',
+                                    variant === 'default' ? 'text-text-primary' : '',
                                   )}
                                 >
                                   {link.label}
@@ -90,7 +90,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           </AccordionPrimitive.Trigger>
                         </AccordionPrimitive.Header>
 
-                        <AccordionContent className="w-full dark:text-white">
+                        <AccordionContent className="w-full text-text-primary">
                           {link.Component && <link.Component />}
                         </AccordionContent>
                       </AccordionItem>

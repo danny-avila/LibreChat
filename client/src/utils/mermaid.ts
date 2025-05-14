@@ -50,7 +50,6 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         diagramPadding: 8,
         htmlLabels: true,
         useMaxWidth: true,
-        defaultRenderer: "dagre-d3",
         padding: 15,
         wrappingWidth: 200,
       },

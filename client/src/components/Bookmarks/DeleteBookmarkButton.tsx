@@ -37,7 +37,7 @@ const DeleteBookmarkButton: FC<{
   }, [bookmark, deleteBookmarkMutation]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       event.stopPropagation();
       setOpen(!open);
@@ -49,6 +49,8 @@ const DeleteBookmarkButton: FC<{
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogTrigger asChild>
           <TooltipAnchor
+            role="button"
+            aria-label={localize('com_ui_bookmarks_delete')}
             description={localize('com_ui_delete')}
             className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
             tabIndex={tabIndex}
@@ -63,7 +65,7 @@ const DeleteBookmarkButton: FC<{
         <OGDialogTemplate
           showCloseButton={false}
           title={localize('com_ui_bookmarks_delete')}
-          className="max-w-[450px]"
+          className="w-11/12 max-w-lg"
           main={
             <Label className="text-left text-sm font-medium">
               {localize('com_ui_bookmark_delete_confirm')} {bookmark}

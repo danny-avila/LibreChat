@@ -59,6 +59,6 @@ class Tokenizer {
   }
 }
 
-const tokenizerService = new Tokenizer();
+const TokenizerSingleton = new Tokenizer();
 
-module.exports = tokenizerService;
+module.exports = TokenizerSingleton;

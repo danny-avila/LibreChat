@@ -1,14 +1,16 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
-  EModelEndpoint,
-  Constants,
   AuthType,
+  Constants,
+  EModelEndpoint,
+  bedrockInputParser,
+  bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { sleep } = require('~/server/utils');
+const { createHandleLLMNewToken } = require('~/app/clients/generators');
 
-const getOptions = async ({ req, endpointOption }) => {
+const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -60,42 +62,41 @@ const getOptions = async ({ req, endpointOption }) => {
     streamRate = allConfig.streamRate;
   }
 
-  /** @type {import('@librechat/agents').BedrockConverseClientOptions} */
-  const requestOptions = Object.assign(
-    {
-      model: endpointOption.model,
-      region: BEDROCK_AWS_DEFAULT_REGION,
-      streaming: true,
-      streamUsage: true,
-      callbacks: [
-        {
-          handleLLMNewToken: async () => {
-            if (!streamRate) {
-              return;
-            }
-            await sleep(streamRate);
-          },
-        },
-      ],
-    },
-    endpointOption.model_parameters,
-  );
-
-  if (credentials) {
-    requestOptions.credentials = credentials;
-  }
+  /** @type {BedrockClientOptions} */
+  const requestOptions = {
+    model: overrideModel ?? endpointOption.model,
+    region: BEDROCK_AWS_DEFAULT_REGION,
+  };
 
   const configOptions = {};
   if (PROXY) {
+    /** NOTE: NOT SUPPORTED BY BEDROCK */
     configOptions.httpAgent = new HttpsProxyAgent(PROXY);
   }
 
-  if (BEDROCK_REVERSE_PROXY) {
-    configOptions.endpointHost = BEDROCK_REVERSE_PROXY;
+  const llmConfig = bedrockOutputParser(
+    bedrockInputParser.parse(
+      removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+    ),
+  );
+
+  if (credentials) {
+    llmConfig.credentials = credentials;
   }
 
+  if (BEDROCK_REVERSE_PROXY) {
+    llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
+  }
+
+  llmConfig.callbacks = [
+    {
+      handleLLMNewToken: createHandleLLMNewToken(streamRate),
+    },
+  ];
+
   return {
-    llmConfig: removeNullishValues(requestOptions),
+    /** @type {BedrockClientOptions} */
+    llmConfig,
     configOptions,
   };
 };

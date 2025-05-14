@@ -5,14 +5,13 @@ import {
   OpenAIMinimalIcon,
   LightningIcon,
   MinimalPlugin,
-  BingAIMinimalIcon,
   GoogleMinimalIcon,
   CustomMinimalIcon,
   AnthropicIcon,
   BedrockIcon,
   Sparkles,
 } from '~/components/svg';
-import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
+import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -44,7 +43,6 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       icon: <CustomMinimalIcon />,
       name: 'Custom',
     },
-    [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
@@ -71,6 +69,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     <div
       data-testid="convo-icon"
       title={name}
+      aria-hidden="true"
       style={{
         width: size,
         height: size,

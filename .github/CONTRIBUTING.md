@@ -24,22 +24,40 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## To contribute to this project, please adhere to the following guidelines:
 
-## 1. Development notes
+## 1. Development Setup
 
-1. Before starting work, make sure your main branch has the latest commits with `npm run update`
-2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
+1. Use Node.JS 20.x.
+2. Install typescript globally: `npm i -g typescript`.
+3. Run `npm ci` to install dependencies.
+4. Build the data provider: `npm run build:data-provider`.
+5. Build MCP: `npm run build:mcp`.
+6. Build data schemas: `npm run build:data-schemas`.
+7. Setup and run unit tests:
+    - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
+    - Run backend unit tests: `npm run test:api`.
+    - Run frontend unit tests: `npm run test:client`.
+8. Setup and run integration tests:
+    - Build client: `cd client && npm run build`.
+    - Create `.env`: `cp .env.example .env`.
+    - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance.
+    - Run: `npx install playwright`, then `npx playwright install`.
+    - Copy `config.local`: `cp e2e/config.local.example.ts e2e/config.local.ts`.
+    - Copy `librechat.yaml`: `cp librechat.example.yaml librechat.yaml`.
+    - Run: `npm run e2e`.
+
+## 2. Development Notes
+
+1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
+3. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
 3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
     - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.
-5. For frontend changes:
-    - Install typescript globally: `npm i -g typescript`.
-    - Compile typescript before and after changes to check for introduced errors: `cd client && tsc --noEmit`.
-6. Run tests locally:
-    - Backend unit tests: `npm run test:api`
-    - Frontend unit tests: `npm run test:client`
-    - Integration tests: `npm run e2e` (requires playwright installed, `npx install playwright`)
+5. For frontend changes, compile typescript before and after changes to check for introduced errors: `cd client && npm run build`.
+6. Run backend unit tests: `npm run test:api`.
+7. Run frontend unit tests: `npm run test:client`.
+8. Run integration tests: `npm run e2e`.
 
-## 2. Git Workflow
+## 3. Git Workflow
 
 We utilize a GitFlow workflow to manage changes to this project's codebase. Follow these general steps when contributing code:
 
@@ -49,7 +67,7 @@ We utilize a GitFlow workflow to manage changes to this project's codebase. Foll
 4. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
 5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
 
-## 3. Commit Message Format
+## 4. Commit Message Format
 
 We follow the [semantic format](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716) for commit messages.
 
@@ -76,7 +94,7 @@ feat: add hat wobble
 ```
 
 
-## 4. Pull Request Process
+## 5. Pull Request Process
 
 When submitting a pull request, please follow these guidelines:
 
@@ -91,7 +109,7 @@ Ensure that your changes meet the following criteria:
 - The commit history is clean and easy to follow. You can use `git rebase` or `git merge --squash` to clean your commit history before submitting the pull request.
 - The pull request description clearly outlines the changes and the reasons behind them. Be sure to include the steps to test the pull request.
 
-## 5. Naming Conventions
+## 6. Naming Conventions
 
 Apply the following naming conventions to branches, labels, and other Git-related entities:
 
@@ -100,7 +118,7 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 - **JS/TS:** Directories and file names: Descriptive and camelCase. First letter uppercased for React files (e.g., `helperFunction.ts, ReactComponent.tsx`).
 - **Docs:** Directories and file names: Descriptive and snake_case (e.g., `config_files.md`).
 
-## 6. TypeScript Conversion
+## 7. TypeScript Conversion
 
 1. **Original State**: The project was initially developed entirely in JavaScript (JS).
 
@@ -126,7 +144,7 @@ Apply the following naming conventions to branches, labels, and other Git-relate
       
    - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
 
-## 7. Module Import Conventions
+## 8. Module Import Conventions
 
 - `npm` packages first, 
      - from shortest line (top) to longest (bottom)
