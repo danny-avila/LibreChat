@@ -12,7 +12,7 @@ const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
 const axios = require('axios');
 const yaml = require('js-yaml');
-const { keyBy } = require('lodash');
+const keyBy = require('lodash/keyBy');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');

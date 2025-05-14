@@ -15,7 +15,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
-import { keyBy } from 'lodash';
+import keyBy from 'lodash/keyBy';
 
 export default function ModelPanel({
   setActivePanel,

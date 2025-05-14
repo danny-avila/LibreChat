@@ -14,7 +14,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, logger } from '~/utils';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
-import { keyBy } from 'lodash';
+import keyBy from 'lodash/keyBy';
 
 export default function Parameters() {
   const localize = useLocalize();
