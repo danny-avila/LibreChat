@@ -21,6 +21,7 @@ const { initializeRoles } = require('~/models/Role');
 const { isEnabled } = require('~/server/utils');
 const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
+const { loadTokenRatesConfig } = require('./Config/loadTokenRatesConfig');
 
 /**
  *
@@ -33,6 +34,7 @@ const AppService = async (app) => {
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
+  loadTokenRatesConfig(config, configDefaults);
 
   const ocr = loadOCRConfig(config.ocr);
   const filteredTools = config.filteredTools;
