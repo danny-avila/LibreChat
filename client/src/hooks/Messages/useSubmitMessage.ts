@@ -1,10 +1,9 @@
 import { v4 } from 'uuid';
 import { useCallback } from 'react';
-import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { Constants, replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { replaceSpecialVars } from '~/utils';
 import store from '~/store';
 
 const appendIndex = (index: number, value?: string) => {

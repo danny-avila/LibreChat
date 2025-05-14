@@ -10,6 +10,7 @@ import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { processAgentOption } from '~/utils';
+import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import { useLocalize } from '~/hooks';
@@ -228,39 +229,7 @@ export default function AgentConfig({
           />
         </div>
         {/* Instructions */}
-        <div className="mb-4">
-          <label className={labelClass} htmlFor="instructions">
-            {localize('com_ui_instructions')}
-          </label>
-          <Controller
-            name="instructions"
-            control={control}
-            render={({ field, fieldState: { error } }) => (
-              <>
-                <textarea
-                  {...field}
-                  value={field.value ?? ''}
-                  // maxLength={32768}
-                  className={cn(inputClass, 'min-h-[100px] resize-y')}
-                  id="instructions"
-                  placeholder={localize('com_agents_instructions_placeholder')}
-                  rows={3}
-                  aria-label="Agent instructions"
-                  aria-required="true"
-                  aria-invalid={error ? 'true' : 'false'}
-                />
-                {error && (
-                  <span
-                    className="text-sm text-red-500 transition duration-300 ease-in-out"
-                    role="alert"
-                  >
-                    {localize('com_ui_field_required')}
-                  </span>
-                )}
-              </>
-            )}
-          />
-        </div>
+        <Instructions />
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">

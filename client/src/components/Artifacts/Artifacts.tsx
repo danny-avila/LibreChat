@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
@@ -18,7 +18,7 @@ export default function Artifacts() {
   const previewRef = useRef<SandpackPreviewRef>();
   const [isVisible, setIsVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const setArtifactsVisible = useSetRecoilState(store.artifactsVisible);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
 
   useEffect(() => {
     setIsVisible(true);
@@ -48,37 +48,26 @@ export default function Artifacts() {
     setTimeout(() => setIsRefreshing(false), 750);
   };
 
+  const closeArtifacts = () => {
+    setIsVisible(false);
+    setTimeout(() => setArtifactsVisible(false), 300);
+  };
+
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
       {/* Main Parent */}
       <div className="flex h-full w-full items-center justify-center">
         {/* Main Container */}
         <div
-          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
-            isVisible
-              ? 'translate-x-0 scale-100 opacity-100'
-              : 'translate-x-full scale-95 opacity-0'
+          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-500 ease-in-out ${
+            isVisible ? 'scale-100 opacity-100 blur-0' : 'scale-105 opacity-0 blur-sm'
           }`}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
             <div className="flex items-center">
-              <button
-                className="mr-2 text-text-secondary"
-                onClick={() => {
-                  setIsVisible(false);
-                  setTimeout(() => setArtifactsVisible(false), 300);
-                }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z" />
-                </svg>
+              <button className="mr-2 text-text-secondary" onClick={closeArtifacts}>
+                <ArrowLeft className="h-4 w-4" />
               </button>
               <h3 className="truncate text-sm text-text-primary">{currentArtifact.title}</h3>
             </div>
@@ -118,22 +107,8 @@ export default function Artifacts() {
                   {localize('com_ui_code')}
                 </Tabs.Trigger>
               </Tabs.List>
-              <button
-                className="text-text-secondary"
-                onClick={() => {
-                  setIsVisible(false);
-                  setTimeout(() => setArtifactsVisible(false), 300);
-                }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" />
-                </svg>
+              <button className="text-text-secondary" onClick={closeArtifacts}>
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -149,29 +124,13 @@ export default function Artifacts() {
           <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
             <div className="flex items-center">
               <button onClick={() => cycleArtifact('prev')} className="mr-2 text-text-secondary">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z" />
-                </svg>
+                <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-xs">{`${currentIndex + 1} / ${
                 orderedArtifactIds.length
               }`}</span>
               <button onClick={() => cycleArtifact('next')} className="ml-2 text-text-secondary">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z" />
-                </svg>
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
             <div className="flex items-center gap-2">

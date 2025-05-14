@@ -24,7 +24,7 @@ export default function GroupSidePanel({
 } & ReturnType<typeof usePromptGroupsNav>) {
   const location = useLocation();
   const isSmallerScreen = useMediaQuery('(max-width: 1024px)');
-  const isChatRoute = useMemo(() => location.pathname.startsWith('/c/'), [location.pathname]);
+  const isChatRoute = useMemo(() => location.pathname?.startsWith('/c/'), [location.pathname]);
 
   return (
     <div

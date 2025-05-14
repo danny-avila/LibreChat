@@ -417,6 +417,7 @@ export const tPluginSchema = z.object({
   icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
+  chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
   toolkit: z.boolean().optional(),
 });
@@ -655,6 +656,8 @@ export const tPresetSchema = tConversationSchema
 export const tConvoUpdateSchema = tConversationSchema.merge(
   z.object({
     endpoint: extendedModelEndpointSchema.nullable(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
   }),
 );
 
