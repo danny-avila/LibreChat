@@ -14,7 +14,6 @@ import {
   FileMapContext,
   SetConvoProvider,
 } from '~/Providers';
-import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
 import TermsAndConditionsModal from '~/components/Chat/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
