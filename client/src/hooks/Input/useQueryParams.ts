@@ -95,7 +95,7 @@ export default function useQueryParams({
   const settingsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const methods = useChatFormContext();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
@@ -332,6 +332,12 @@ export default function useQueryParams({
 
       /** Mark processing as complete and clean up as needed */
       const success = () => {
+        const currentParams = new URLSearchParams(searchParams.toString());
+        currentParams.delete('prompt');
+        currentParams.delete('q');
+        currentParams.delete('submit');
+
+        setSearchParams(currentParams, { replace: true });
         processedRef.current = true;
         console.log('Parameters processed successfully');
         clearInterval(intervalId);
@@ -407,6 +413,7 @@ export default function useQueryParams({
     newQueryConvo,
     newConversation,
     submitMessage,
+    setSearchParams,
     queryClient,
     processSubmission,
   ]);

@@ -1,4 +1,4 @@
-import { StdioOptionsSchema, processMCPEnv, MCPOptions } from '../src/mcp';
+import { StdioOptionsSchema, StreamableHTTPOptionsSchema, processMCPEnv, MCPOptions } from '../src/mcp';
 
 describe('Environment Variable Extraction (MCP)', () => {
   const originalEnv = process.env;
@@ -47,6 +47,74 @@ describe('Environment Variable Extraction (MCP)', () => {
       const result = StdioOptionsSchema.parse(options);
 
       expect(result.env).toBeUndefined();
+    });
+  });
+
+  describe('StreamableHTTPOptionsSchema', () => {
+    it('should validate a valid streamable-http configuration', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'https://example.com/api',
+        headers: {
+          Authorization: 'Bearer token',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+
+      expect(result).toEqual(options);
+    });
+
+    it('should reject websocket URLs', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'ws://example.com/socket',
+      };
+
+      expect(() => StreamableHTTPOptionsSchema.parse(options)).toThrow();
+    });
+
+    it('should reject secure websocket URLs', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'wss://example.com/socket',
+      };
+
+      expect(() => StreamableHTTPOptionsSchema.parse(options)).toThrow();
+    });
+
+    it('should require type field to be set explicitly', () => {
+      const options = {
+        url: 'https://example.com/api',
+      };
+
+      // Type is now required, so parsing should fail
+      expect(() => StreamableHTTPOptionsSchema.parse(options)).toThrow();
+      
+      // With type provided, it should pass
+      const validOptions = {
+        type: 'streamable-http' as const,
+        url: 'https://example.com/api',
+      };
+      
+      const result = StreamableHTTPOptionsSchema.parse(validOptions);
+      expect(result.type).toBe('streamable-http');
+    });
+
+    it('should validate headers as record of strings', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'https://example.com/api',
+        headers: {
+          'X-API-Key': '123456',
+          'User-Agent': 'MCP Client',
+        },
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+      
+      expect(result.headers).toEqual(options.headers);
     });
   });
 
@@ -172,6 +240,38 @@ describe('Environment Variable Extraction (MCP)', () => {
 
       // Second user's config should be unchanged
       expect('headers' in resultUser2 && resultUser2.headers?.['User-Id']).toBe(user2Id);
+    });
+
+    it('should process headers in streamable-http options', () => {
+      const userId = 'test-user-123';
+      const obj: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://example.com',
+        headers: {
+          Authorization: '${TEST_API_KEY}',
+          'User-Id': '{{LIBRECHAT_USER_ID}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv(obj, userId);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: 'test-api-key-value',
+        'User-Id': 'test-user-123',
+        'Content-Type': 'application/json',
+      });
+    });
+    
+    it('should maintain streamable-http type in processed options', () => {
+      const obj: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://example.com/api',
+      };
+
+      const result = processMCPEnv(obj);
+
+      expect(result.type).toBe('streamable-http');
     });
   });
 });
