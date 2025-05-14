@@ -39,6 +39,8 @@ const startServer = async () => {
 
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', trusted_proxy);
+
   await AppService(app);
 
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
@@ -57,16 +59,10 @@ const startServer = async () => {
   app.use(
     helmet.contentSecurityPolicy({
       directives: {
-        // allow everything from same origin by default
-        defaultSrc: ["'self'"],
-        // only own scripts and a trusted external source
-        scriptSrc: ["'self'"],
-        // disallow plugin-based content
-        objectSrc: ["'none'"],
-        // prevent framing by other sites
-        frameAncestors: ["'self'"],
-        // you can add more directives here as needed:
-        // styleSrc, imgSrc, fontSrc, connectSrc, etc.
+        defaultSrc: ["'self'"], // allow everything from same origin by default
+        scriptSrc: ["'self'"], // only own scripts and a trusted external source
+        objectSrc: ["'none'"], // disallow plugin-based content
+        frameAncestors: ["'self'"], // prevent framing by other sites
       },
     }),
   );
@@ -81,8 +77,6 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
-
-  app.set('trust proxy', trusted_proxy);
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
