@@ -117,7 +117,7 @@ const agentSchema = new Schema<IAgent>(
       index: true,
     },
     versions: {
-      type: [Schema.Types.Array],
+      type: [Schema.Types.Mixed],
       default: [],
     },
   },
