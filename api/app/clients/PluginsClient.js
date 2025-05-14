@@ -252,12 +252,14 @@ class PluginsClient extends OpenAIClient {
       await this.recordTokenUsage(responseMessage);
     }
 
-    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    const databasePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
-    return { ...responseMessage, ...result };
+    return { ...responseMessage, ...result, databasePromise };
   }
 
   async sendMessage(message, opts = {}) {
+    /** @type {Promise<TMessage>} */
+    let userMessagePromise;
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = this.options.req.app.locals;
 
@@ -327,10 +329,10 @@ class PluginsClient extends OpenAIClient {
     }
 
     if (!this.skipSaveUserMessage) {
-      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
-          userMessagePromise: this.userMessagePromise,
+          userMessagePromise,
         });
       }
     }

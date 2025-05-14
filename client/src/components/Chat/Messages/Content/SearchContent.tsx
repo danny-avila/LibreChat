@@ -1,16 +1,23 @@
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import { ContentTypes } from 'librechat-data-provider';
+import type { Agents, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import { UnfinishedMessage } from './MessageContent';
 import { DelayedRender } from '~/components/ui';
 import MarkdownLite from './MarkdownLite';
-import { cn } from '~/utils';
+import { cn, mapAttachments } from '~/utils';
 import store from '~/store';
 import Part from './Part';
 
 const SearchContent = ({ message }: { message: TMessage }) => {
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const { messageId } = message;
+  const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
+  const attachmentMap = useMemo(
+    () => mapAttachments(message?.attachments ?? messageAttachmentsMap[messageId] ?? []),
+    [message?.attachments, messageAttachmentsMap, messageId],
+  );
+
   if (Array.isArray(message.content) && message.content.length > 0) {
     return (
       <>
@@ -20,13 +27,17 @@ const SearchContent = ({ message }: { message: TMessage }) => {
             if (!part) {
               return null;
             }
+
+            const toolCallId =
+              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+            const attachments = attachmentMap[toolCallId];
             return (
               <Part
                 key={`display-${messageId}-${idx}`}
                 showCursor={false}
                 isSubmitting={false}
                 isCreatedByUser={message.isCreatedByUser}
-                messageId={message.messageId}
+                attachments={attachments}
                 part={part}
               />
             );

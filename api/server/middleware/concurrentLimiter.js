@@ -1,4 +1,4 @@
-const { Time } = require('librechat-data-provider');
+const { Time, CacheKeys } = require('librechat-data-provider');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { logViolation, getLogStores } = require('~/cache');
 const { isEnabled } = require('~/server/utils');
@@ -25,7 +25,7 @@ const {
  * @throws {Error} Throws an error if the user exceeds the concurrent request limit.
  */
 const concurrentLimiter = async (req, res, next) => {
-  const namespace = 'pending_req';
+  const namespace = CacheKeys.PENDING_REQ;
   const cache = getLogStores(namespace);
   if (!cache) {
     return next();

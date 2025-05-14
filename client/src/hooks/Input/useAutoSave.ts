@@ -1,7 +1,8 @@
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { LocalStorageKeys, TFile } from 'librechat-data-provider';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
@@ -34,11 +35,13 @@ const decodeBase64 = (base64String: string): string => {
 };
 
 export const useAutoSave = ({
-  conversationId,
+  isSubmitting,
+  conversationId: _conversationId,
   textAreaRef,
-  files,
   setFiles,
+  files,
 }: {
+  isSubmitting?: boolean;
   conversationId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
@@ -47,6 +50,7 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const conversationId = isSubmitting ? Constants.PENDING_CONVO : _conversationId;
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
@@ -71,9 +75,9 @@ export const useAutoSave = ({
         const { fileToRecover, fileIdToRecover } = fileData
           ? { fileToRecover: fileData, fileIdToRecover: fileId }
           : {
-            fileToRecover: tempFileData,
-            fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
-          };
+              fileToRecover: tempFileData,
+              fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
+            };
 
         if (fileToRecover) {
           setFiles((currentFiles) => {
@@ -106,7 +110,7 @@ export const useAutoSave = ({
         return;
       }
       // Save the draft of the current conversation before switching
-      if (textAreaRef.current.value === '') {
+      if (textAreaRef.current.value === '' || textAreaRef.current.value.length === 1) {
         clearDraft(id);
       } else {
         localStorage.setItem(
@@ -126,8 +130,7 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value;
+    const handleInput = debounce((value: string) => {
       if (value && value.length > 1) {
         localStorage.setItem(
           `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
@@ -138,18 +141,25 @@ export const useAutoSave = ({
       }
     }, 750);
 
+    const eventListener = (e: Event) => {
+      const target = e.target as HTMLTextAreaElement;
+      handleInput(target.value);
+    };
+
     const textArea = textAreaRef?.current;
     if (textArea) {
-      textArea.addEventListener('input', handleInput);
+      textArea.addEventListener('input', eventListener);
     }
 
     return () => {
       if (textArea) {
-        textArea.removeEventListener('input', handleInput);
+        textArea.removeEventListener('input', eventListener);
       }
       handleInput.cancel();
     };
   }, [conversationId, saveDrafts, textAreaRef]);
+
+  const prevConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // This useEffect is responsible for saving the current conversation's draft and
@@ -168,7 +178,43 @@ export const useAutoSave = ({
     setFiles(new Map());
 
     try {
-      if (currentConversationId != null && currentConversationId) {
+      // Check for transition from PENDING_CONVO to a valid conversationId
+      if (
+        prevConversationIdRef.current === Constants.PENDING_CONVO &&
+        conversationId !== Constants.PENDING_CONVO &&
+        conversationId.length > 3
+      ) {
+        const pendingDraft = localStorage.getItem(
+          `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`,
+        );
+
+        // Clear the pending text draft, if it exists, and save the current draft to the new conversationId;
+        // otherwise, save the current text area value to the new conversationId
+        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`);
+        if (pendingDraft) {
+          localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`, pendingDraft);
+        } else if (textAreaRef?.current?.value) {
+          localStorage.setItem(
+            `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
+            encodeBase64(textAreaRef.current.value),
+          );
+        }
+        const pendingFileDraft = localStorage.getItem(
+          `${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`,
+        );
+
+        if (pendingFileDraft) {
+          localStorage.setItem(
+            `${LocalStorageKeys.FILES_DRAFT}${conversationId}`,
+            pendingFileDraft,
+          );
+          localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`);
+          const filesDraft = JSON.parse(pendingFileDraft || '[]') as string[];
+          if (filesDraft.length > 0) {
+            restoreFiles(conversationId);
+          }
+        }
+      } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }
 
@@ -178,11 +224,13 @@ export const useAutoSave = ({
       console.error(e);
     }
 
+    prevConversationIdRef.current = conversationId;
     setCurrentConversationId(conversationId);
   }, [
-    conversationId,
     currentConversationId,
+    conversationId,
     restoreFiles,
+    textAreaRef,
     restoreText,
     saveDrafts,
     saveText,

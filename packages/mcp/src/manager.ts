@@ -151,11 +151,14 @@ export class MCPManager {
   }
 
   /** Check for and disconnect idle connections */
-  private checkIdleConnections(): void {
+  private checkIdleConnections(currentUserId?: string): void {
     const now = Date.now();
 
     // Iterate through all users to check for idle ones
     for (const [userId, lastActivity] of this.userLastActivity.entries()) {
+      if (currentUserId && currentUserId === userId) {
+        continue;
+      }
       if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
         this.logger.info(
           `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
@@ -190,9 +193,11 @@ export class MCPManager {
         `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`,
       );
       // Disconnect all user connections
-      await this.disconnectUserConnections(userId).catch((err) =>
-        this.logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err),
-      );
+      try {
+        await this.disconnectUserConnections(userId);
+      } catch (err) {
+        this.logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err);
+      }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
       if (connection.isConnected()) {
@@ -299,18 +304,20 @@ export class MCPManager {
   /** Disconnects and removes all connections for a specific user */
   public async disconnectUserConnections(userId: string): Promise<void> {
     const userMap = this.userConnections.get(userId);
+    const disconnectPromises: Promise<void>[] = [];
     if (userMap) {
       this.logger.info(`[MCP][User: ${userId}] Disconnecting all servers...`);
-      const disconnectPromises = Array.from(userMap.keys()).map(async (serverName) => {
-        try {
-          await this.disconnectUserConnection(userId, serverName);
-        } catch (error) {
-          this.logger.error(
-            `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
-            error,
-          );
-        }
-      });
+      const userServers = Array.from(userMap.keys());
+      for (const serverName of userServers) {
+        disconnectPromises.push(
+          this.disconnectUserConnection(userId, serverName).catch((error) => {
+            this.logger.error(
+              `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
+              error,
+            );
+          }),
+        );
+      }
       await Promise.allSettled(disconnectPromises);
       // Ensure user activity timestamp is removed
       this.userLastActivity.delete(userId);
@@ -363,7 +370,9 @@ export class MCPManager {
   /**
    * Loads tools from all app-level connections into the manifest.
    */
-  public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<void> {
+  public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<t.LCToolManifest> {
+    const mcpTools: t.LCManifestTool[] = [];
+
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         if (connection.isConnected() !== true) {
@@ -376,17 +385,24 @@ export class MCPManager {
         const tools = await connection.fetchTools();
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
-          manifestTools.push({
+          const manifestTool: t.LCManifestTool = {
             name: tool.name,
             pluginKey,
             description: tool.description ?? '',
             icon: connection.iconPath,
-          });
+          };
+          const config = this.mcpConfigs[serverName];
+          if (config?.chatMenu === false) {
+            manifestTool.chatMenu = false;
+          }
+          mcpTools.push(manifestTool);
         }
       } catch (error) {
         this.logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
       }
     }
+
+    return [...mcpTools, ...manifestTools];
   }
 
   /**

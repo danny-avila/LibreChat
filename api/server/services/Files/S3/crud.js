@@ -358,10 +358,10 @@ async function getNewS3URL(currentURL) {
 /**
  * Refreshes S3 URLs for an array of files if they're expired or close to expiring
  *
- * @param {IMongoFile[]} files - Array of file documents
+ * @param {MongoFile[]} files - Array of file documents
  * @param {(files: MongoFile[]) => Promise<void>} batchUpdateFiles - Function to update files in the database
  * @param {number} [bufferSeconds=3600] - Buffer time in seconds to check for expiration
- * @returns {Promise<IMongoFile[]>} The files with refreshed URLs if needed
+ * @returns {Promise<MongoFile[]>} The files with refreshed URLs if needed
  */
 async function refreshS3FileUrls(files, batchUpdateFiles, bufferSeconds = 3600) {
   if (!files || !Array.isArray(files) || files.length === 0) {
