@@ -140,8 +140,7 @@ class GoogleClient extends BaseClient {
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     /** @type {boolean} Whether using a "GenerativeAI" Model */
-    this.isGenerativeModel =
-      this.modelOptions.model.includes('gemini') || this.modelOptions.model.includes('learnlm');
+    this.isGenerativeModel = /gemini|learnlm|gemma/.test(this.modelOptions.model);
 
     this.maxContextTokens =
       this.options.maxContextTokens ??
@@ -316,6 +315,9 @@ class GoogleClient extends BaseClient {
       for (const file of attachments) {
         if (file.embedded) {
           this.contextHandlers?.processFile(file);
+          continue;
+        }
+        if (file.metadata?.fileIdentifier) {
           continue;
         }
       }

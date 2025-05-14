@@ -25,7 +25,7 @@ type EndpointIcon = {
 
 function getOpenAIColor(_model: string | null | undefined) {
   const model = _model?.toLowerCase() ?? '';
-  if (model && /\b(o1|o3)\b/i.test(model)) {
+  if (model && /\b(o\d)\b/i.test(model)) {
     return '#000000';
   }
   return model.includes('gpt-4') ? '#AB68FF' : '#19C37D';
@@ -34,10 +34,7 @@ function getOpenAIColor(_model: string | null | undefined) {
 function getGoogleIcon(model: string | null | undefined, size: number) {
   if (model?.toLowerCase().includes('code') === true) {
     return <CodeyIcon size={size * 0.75} />;
-  } else if (
-    model?.toLowerCase().includes('gemini') === true ||
-    model?.toLowerCase().includes('learnlm') === true
-  ) {
+  } else if (/gemini|learnlm|gemma/.test(model?.toLowerCase() ?? '')) {
     return <GeminiIcon size={size * 0.7} />;
   } else {
     return <PaLMIcon size={size * 0.7} />;
@@ -52,6 +49,8 @@ function getGoogleModelName(model: string | null | undefined) {
     model?.toLowerCase().includes('learnlm') === true
   ) {
     return 'Gemini';
+  } else if (model?.toLowerCase().includes('gemma') === true) {
+    return 'Gemma';
   } else {
     return 'PaLM2';
   }

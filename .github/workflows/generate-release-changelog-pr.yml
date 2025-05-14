@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 jobs:
   generate-release-changelog-pr:
@@ -88,7 +89,7 @@ jobs:
           base: main
           branch: "changelog/${{ github.ref_name }}"
           reviewers: danny-avila
-          title: "chore: update CHANGELOG for release ${{ github.ref_name }}"
+          title: "📜 docs: Changelog for release ${{ github.ref_name }}"
           body: |
             **Description**:
             - This PR updates the CHANGELOG.md by removing the "Unreleased" section and adding new release notes for release ${{ github.ref_name }} above previous releases.

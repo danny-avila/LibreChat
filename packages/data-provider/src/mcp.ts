@@ -5,6 +5,8 @@ const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
+  /** Controls visibility in chat dropdown menu (MCPSelect) */
+  chatMenu: z.boolean().optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
@@ -80,10 +82,25 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
     ),
 });
 
+export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
+  type: z.literal('streamable-http'),
+  headers: z.record(z.string(), z.string()).optional(),
+  url: z.string().url().refine(
+      (val) => {
+        const protocol = new URL(val).protocol;
+        return protocol !== 'ws:' && protocol !== 'wss:';
+      },
+      {
+        message: 'Streamable HTTP URL must not start with ws:// or wss://',
+      },
+  ),
+});
+
 export const MCPOptionsSchema = z.union([
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   SSEOptionsSchema,
+  StreamableHTTPOptionsSchema,
 ]);
 
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
@@ -96,28 +113,30 @@ export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
  * @param {string} [userId] - The user ID
  * @returns {MCPOptions} - The processed object with environment variables replaced
  */
-export function processMCPEnv(obj: MCPOptions, userId?: string): MCPOptions {
+export function processMCPEnv(obj: Readonly<MCPOptions>, userId?: string): MCPOptions {
   if (obj === null || obj === undefined) {
     return obj;
   }
 
-  if ('env' in obj && obj.env) {
+  const newObj: MCPOptions = structuredClone(obj);
+
+  if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(obj.env)) {
+    for (const [key, value] of Object.entries(newObj.env)) {
       processedEnv[key] = extractEnvVariable(value);
     }
-    obj.env = processedEnv;
-  } else if ('headers' in obj && obj.headers) {
+    newObj.env = processedEnv;
+  } else if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
-    for (const [key, value] of Object.entries(obj.headers)) {
+    for (const [key, value] of Object.entries(newObj.headers)) {
       if (value === '{{LIBRECHAT_USER_ID}}' && userId != null && userId) {
         processedHeaders[key] = userId;
         continue;
       }
       processedHeaders[key] = extractEnvVariable(value);
     }
-    obj.headers = processedHeaders;
+    newObj.headers = processedHeaders;
   }
 
-  return obj;
+  return newObj;
 }

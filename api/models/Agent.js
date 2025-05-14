@@ -153,9 +153,11 @@ const updateAgent = async (searchParameter, updateData) => {
  */
 const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
-
+  let agent = await getAgent(searchParameter);
+  if (!agent) {
+    throw new Error('Agent not found for adding resource file');
+  }
   const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
-
   await Agent.updateOne(
     {
       id: agent_id,
@@ -168,7 +170,12 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
     },
   );
 
-  const updateData = { $addToSet: { [fileIdsPath]: file_id } };
+  const updateData = {
+    $addToSet: {
+      tools: tool_resource,
+      [fileIdsPath]: file_id,
+    },
+  };
 
   const updatedAgent = await updateAgent(searchParameter, updateData);
   if (updatedAgent) {
@@ -301,7 +308,7 @@ const getListAgents = async (searchParameter) => {
  * This function also updates the corresponding projects to include or exclude the agent ID.
  *
  * @param {Object} params - Parameters for updating the agent's projects.
- * @param {import('librechat-data-provider').TUser} params.user - Parameters for updating the agent's projects.
+ * @param {MongoUser} params.user - Parameters for updating the agent's projects.
  * @param {string} params.agentId - The ID of the agent to update.
  * @param {string[]} [params.projectIds] - Array of project IDs to add to the agent.
  * @param {string[]} [params.removeProjectIds] - Array of project IDs to remove from the agent.

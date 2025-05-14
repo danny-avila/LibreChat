@@ -5,27 +5,27 @@ import {
   SandpackProviderProps,
 } from '@codesandbox/sandpack-react/unstyled';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
+import type { TStartupConfig } from 'librechat-data-provider';
 import type { ArtifactFiles } from '~/common';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
-import { useGetStartupConfig } from '~/data-provider';
-import { useEditorContext } from '~/Providers';
 
 export const ArtifactPreview = memo(function ({
   files,
   fileKey,
-  previewRef,
-  sharedProps,
   template,
+  sharedProps,
+  previewRef,
+  currentCode,
+  startupConfig,
 }: {
   files: ArtifactFiles;
   fileKey: string;
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  currentCode?: string;
+  startupConfig?: TStartupConfig;
 }) {
-  const { currentCode } = useEditorContext();
-  const { data: config } = useGetStartupConfig();
-
   const artifactFiles = useMemo(() => {
     if (Object.keys(files).length === 0) {
       return files;
@@ -43,18 +43,16 @@ export const ArtifactPreview = memo(function ({
   }, [currentCode, files, fileKey]);
 
   const options: typeof sharedOptions = useMemo(() => {
-    if (!config) {
+    if (!startupConfig) {
       return sharedOptions;
     }
     const _options: typeof sharedOptions = {
       ...sharedOptions,
-      bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
+      bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
     };
 
     return _options;
-  }, [config, template]);
-
-  console.log(options);
+  }, [startupConfig, template]);
 
   if (Object.keys(artifactFiles).length === 0) {
     return null;

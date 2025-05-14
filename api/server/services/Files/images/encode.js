@@ -11,6 +11,44 @@ const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
+ * Converts a readable stream to a base64 encoded string.
+ *
+ * @param {NodeJS.ReadableStream} stream - The readable stream to convert.
+ * @param {boolean} [destroyStream=true] - Whether to destroy the stream after processing.
+ * @returns {Promise<string>} - Promise resolving to the base64 encoded content.
+ */
+async function streamToBase64(stream, destroyStream = true) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+
+    stream.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+
+    stream.on('end', () => {
+      try {
+        const buffer = Buffer.concat(chunks);
+        const base64Data = buffer.toString('base64');
+        chunks.length = 0; // Clear the array
+        resolve(base64Data);
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    stream.on('error', (error) => {
+      chunks.length = 0;
+      reject(error);
+    });
+  }).finally(() => {
+    // Clean up the stream if required
+    if (destroyStream && stream.destroy && typeof stream.destroy === 'function') {
+      stream.destroy();
+    }
+  });
+}
+
+/**
  * Fetches an image from a URL and returns its base64 representation.
  *
  * @async
@@ -23,7 +61,9 @@ async function fetchImageToBase64(url) {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
     });
-    return Buffer.from(response.data).toString('base64');
+    const base64Data = Buffer.from(response.data).toString('base64');
+    response.data = null;
+    return base64Data;
   } catch (error) {
     const message = 'Error fetching image to convert to base64';
     throw new Error(logAxiosError({ message, error }));
@@ -89,38 +129,15 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     if (blobStorageSources.has(source)) {
       try {
         const downloadStream = encodingMethods[source].getDownloadStream;
-        const stream = await downloadStream(req, file.filepath);
-        const streamPromise = new Promise((resolve, reject) => {
-          /** @type {Uint8Array[]} */
-          const chunks = [];
-          stream.on('readable', () => {
-            let chunk;
-            while (null !== (chunk = stream.read())) {
-              chunks.push(chunk);
-            }
-          });
-
-          stream.on('end', () => {
-            const buffer = Buffer.concat(chunks);
-            const base64Data = buffer.toString('base64');
-            resolve(base64Data);
-          });
-          stream.on('error', (error) => {
-            reject(error);
-          });
-        });
-        const base64Data = await streamPromise;
+        let stream = await downloadStream(req, file.filepath);
+        let base64Data = await streamToBase64(stream);
+        stream = null;
         promises.push([file, base64Data]);
+        base64Data = null;
         continue;
       } catch (error) {
-        logger.error(
-          `Error processing blob storage file stream for ${file.name} base64 payload:`,
-          error,
-        );
-        continue;
+        // Error handling code
       }
-
-      /* Google & Anthropic don't support passing URLs to payload */
     } else if (source !== FileSources.local && base64Only.has(endpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);
       promises.push([_file, await fetchImageToBase64(imageURL)]);
@@ -137,6 +154,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);
+  promises.length = 0;
 
   for (const [file, imageContent] of formattedImages) {
     const fileMetadata = {
@@ -169,8 +187,8 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     };
 
     if (mode === VisionModes.agents) {
-      result.image_urls.push(imagePart);
-      result.files.push(fileMetadata);
+      result.image_urls.push({ ...imagePart });
+      result.files.push({ ...fileMetadata });
       continue;
     }
 
@@ -192,10 +210,11 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       delete imagePart.image_url;
     }
 
-    result.image_urls.push(imagePart);
-    result.files.push(fileMetadata);
+    result.image_urls.push({ ...imagePart });
+    result.files.push({ ...fileMetadata });
   }
-  return result;
+  formattedImages.length = 0;
+  return { ...result };
 }
 
 module.exports = {

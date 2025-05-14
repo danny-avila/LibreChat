@@ -203,6 +203,17 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
   return list?.find((spec) => spec.name === lastConversationSetup.spec);
 }
 
+export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
+  if (!modelSpec) {
+    return;
+  }
+  return {
+    ...modelSpec.preset,
+    spec: modelSpec.name,
+    iconURL: getModelSpecIconURL(modelSpec),
+  };
+}
+
 /** Gets the default spec iconURL by order or definition.
  *
  * First, the admin defined default, then last selected spec, followed by first spec
