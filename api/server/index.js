@@ -2,6 +2,7 @@ require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
+const helmet = require('helmet');
 const axios = require('axios');
 const express = require('express');
 const compression = require('compression');
@@ -49,23 +50,42 @@ const startServer = async () => {
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
-  app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(staticCache(app.locals.paths.dist));
-  app.use(staticCache(app.locals.paths.fonts));
-  app.use(staticCache(app.locals.paths.assets));
-  app.set('trust proxy', trusted_proxy);
+  app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
+  app.use(
+    helmet.contentSecurityPolicy({
+      directives: {
+        // allow everything from same origin by default
+        defaultSrc: ["'self'"],
+        // only own scripts and a trusted external source
+        scriptSrc: ["'self'"],
+        // disallow plugin-based content
+        objectSrc: ["'none'"],
+        // prevent framing by other sites
+        frameAncestors: ["'self'"],
+        // you can add more directives here as needed:
+        // styleSrc, imgSrc, fontSrc, connectSrc, etc.
+      },
+    }),
+  );
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
+  } else {
+    console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
+  // Serve static assets with aggressive caching
+  app.use(staticCache(app.locals.paths.dist));
+  app.use(staticCache(app.locals.paths.fonts));
+  app.use(staticCache(app.locals.paths.assets));
+
+  app.set('trust proxy', trusted_proxy);
+
   if (!ALLOW_SOCIAL_LOGIN) {
-    console.warn(
-      'Social logins are disabled. Set Environment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
-    );
+    console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
 
   /* OAUTH */
@@ -128,7 +148,7 @@ const startServer = async () => {
   });
 
   app.listen(port, host, () => {
-    if (host == '0.0.0.0') {
+    if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
       );
