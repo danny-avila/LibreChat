@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 
 
+
+## [Unreleased]
+
+### ✨ New Features
+
+- ✨ feat: implement search parameter updates by **@mawburn** in [#7151](https://github.com/danny-avila/LibreChat/pull/7151)
+- 🎏 feat: Add MCP support for Streamable HTTP Transport by **@benverhees** in [#7353](https://github.com/danny-avila/LibreChat/pull/7353)
+
+### 🔧 Fixes
+
+- 💬 fix: update aria-label for accessibility in ConvoLink component by **@berry-13** in [#7320](https://github.com/danny-avila/LibreChat/pull/7320)
+- 🔑 fix: use `apiKey` instead of `openAIApiKey` in OpenAI-like Config by **@danny-avila** in [#7337](https://github.com/danny-avila/LibreChat/pull/7337)
+- 🔄 fix: update navigation logic in `useFocusChatEffect` to ensure correct search parameters are used by **@mawburn** in [#7340](https://github.com/danny-avila/LibreChat/pull/7340)
+
+### ⚙️ Other Changes
+
+- 📜 docs: CHANGELOG for release v0.7.8 by **@github-actions[bot]** in [#7290](https://github.com/danny-avila/LibreChat/pull/7290)
+- 📦 chore: Update API Package Dependencies by **@danny-avila** in [#7359](https://github.com/danny-avila/LibreChat/pull/7359)
+
+
+
+---
 ## [v0.7.8] - 
 
 Changes from v0.7.8-rc1 to v0.7.8.
@@ -44,6 +66,7 @@ Changes from v0.7.8-rc1 to v0.7.8.
 [release-v0.7.8]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.8
 
 ---
+## [v0.7.8-rc1] - 
 ## [v0.7.8-rc1] - 
 
 Changes from v0.7.7 to v0.7.8-rc1.
