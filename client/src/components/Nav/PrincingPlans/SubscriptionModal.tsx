@@ -219,7 +219,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
             <br />
             {localize('com_subscription_web_search_credit_note')}
             <br />
-            {localize('com_subscription_terms')}
+            {localize('com_by_subscribing')}{' '}
+            <a className="text-sm text-blue-500" href="/pages/privacy-policy">
+              {localize('com_ui_privacy_policy')}
+            </a>{' '}
+            {localize('com_and')}{' '}
+            <a className="text-sm text-blue-500" href="/pages/tos">
+              {localize('com_ui_terms_of_service')}
+            </a>
             <br />
           </div>
         </OGDialogContent>

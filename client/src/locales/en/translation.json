@@ -20,7 +20,9 @@
   "com_buy_credits": "Buy Credits",
   "com_credits": "credits",
   "com_buy_now": "Buy Now",
-  "com_subscription_terms": "By subscribing, you agree to our Terms of Service and Privacy Policy.",
+
+  "com_by_subscribing": "By subscribing, you agree to our",
+  "com_and": "and",
 
   "com_ui_processing": "Processing...",
   "com_ui_confirm": "Confirm",
