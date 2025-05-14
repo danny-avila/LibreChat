@@ -1,10 +1,17 @@
 const jwt = require('jsonwebtoken');
-const { verifyTOTP, verifyBackupCode, getTOTPSecret } = require('~/server/services/twoFactorService');
+const {
+  verifyTOTP,
+  verifyBackupCode,
+  getTOTPSecret,
+} = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { getUserById } = require('~/models/userMethods');
 const { logger } = require('~/config');
 
-const verify2FA = async (req, res) => {
+/**
+ * Verifies the 2FA code during login using a temporary token.
+ */
+const verify2FAWithTempToken = async (req, res) => {
   try {
     const { tempToken, token, backupCode } = req.body;
     if (!tempToken) {
@@ -19,29 +26,24 @@ const verify2FA = async (req, res) => {
     }
 
     const user = await getUserById(payload.userId);
-    // Ensure that the user exists and has backup codes (i.e. 2FA enabled)
-    if (!user || !(user.backupCodes && user.backupCodes.length > 0)) {
+    if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }
 
-    // Use the new getTOTPSecret function to retrieve (and decrypt if necessary) the TOTP secret.
     const secret = await getTOTPSecret(user.totpSecret);
-
-    let verified = false;
-    if (token && (await verifyTOTP(secret, token))) {
-      verified = true;
+    let isVerified = false;
+    if (token) {
+      isVerified = await verifyTOTP(secret, token);
     } else if (backupCode) {
-      verified = await verifyBackupCode({ user, backupCode });
+      isVerified = await verifyBackupCode({ user, backupCode });
     }
 
-    if (!verified) {
+    if (!isVerified) {
       return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
     }
 
-    // Prepare user data for response.
-    // If the user is a plain object (from lean queries), we create a shallow copy.
+    // Prepare user data to return (omit sensitive fields).
     const userData = user.toObject ? user.toObject() : { ...user };
-    // Remove sensitive fields.
     delete userData.password;
     delete userData.__v;
     delete userData.totpSecret;
@@ -50,9 +52,9 @@ const verify2FA = async (req, res) => {
     const authToken = await setAuthTokens(user._id, res);
     return res.status(200).json({ token: authToken, user: userData });
   } catch (err) {
-    logger.error('[verify2FA]', err);
+    logger.error('[verify2FAWithTempToken]', err);
     return res.status(500).json({ message: 'Something went wrong' });
   }
 };
 
-module.exports = { verify2FA };
+module.exports = { verify2FAWithTempToken };

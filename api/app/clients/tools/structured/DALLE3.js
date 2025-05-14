@@ -1,14 +1,17 @@
 const { z } = require('zod');
 const path = require('path');
 const OpenAI = require('openai');
+const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, ContentTypes } = require('librechat-data-provider');
 const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
+const displayMessage =
+  'DALL-E displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
@@ -114,10 +117,7 @@ class DALLE3 extends Tool {
     if (this.isAgent === true && typeof value === 'string') {
       return [value, {}];
     } else if (this.isAgent === true && typeof value === 'object') {
-      return [
-        'DALL-E displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.',
-        value,
-      ];
+      return [displayMessage, value];
     }
 
     return value;
@@ -158,6 +158,32 @@ Error Message: ${error.message}`);
       return this.returnValue(
         'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.',
       );
+    }
+
+    if (this.isAgent) {
+      let fetchOptions = {};
+      if (process.env.PROXY) {
+        fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+      }
+      const imageResponse = await fetch(theImageUrl, fetchOptions);
+      const arrayBuffer = await imageResponse.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const content = [
+        {
+          type: ContentTypes.IMAGE_URL,
+          image_url: {
+            url: `data:image/png;base64,${base64}`,
+          },
+        },
+      ];
+
+      const response = [
+        {
+          type: ContentTypes.TEXT,
+          text: displayMessage,
+        },
+      ];
+      return [response, { content }];
     }
 
     const imageBasename = getImageBasename(theImageUrl);

@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { Constants } = require('librechat-data-provider');
 const { Conversation } = require('~/models/Conversation');
-const SharedLink = require('./schema/shareSchema');
+const { shareSchema } = require('@librechat/data-schemas');
+const SharedLink = mongoose.model('SharedLink', shareSchema);
 const { getMessages } = require('./Message');
 const logger = require('~/config/winston');
 
@@ -50,6 +52,14 @@ function anonymizeMessages(messages, newConvoId) {
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
+    const anonymizedAttachments = message.attachments?.map((attachment) => {
+      return {
+        ...attachment,
+        messageId: newMessageId,
+        conversationId: newConvoId,
+      };
+    });
+
     return {
       ...message,
       messageId: newMessageId,
@@ -59,6 +69,7 @@ function anonymizeMessages(messages, newConvoId) {
       model: message.model?.startsWith('asst_')
         ? anonymizeAssistantId(message.model)
         : message.model,
+      attachments: anonymizedAttachments,
     };
   });
 }

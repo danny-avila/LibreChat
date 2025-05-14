@@ -37,7 +37,7 @@ const TwoFactorAuthentication: React.FC = () => {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [verificationToken, setVerificationToken] = useState<string>('');
-  const [phase, setPhase] = useState<Phase>(Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? 'disable' : 'setup');
+  const [phase, setPhase] = useState<Phase>(user?.twoFactorEnabled ? 'disable' : 'setup');
 
   const { mutate: confirm2FAMutate } = useConfirmTwoFactorMutation();
   const { mutate: enable2FAMutate, isLoading: isGenerating } = useEnableTwoFactorMutation();
@@ -56,7 +56,7 @@ const TwoFactorAuthentication: React.FC = () => {
   const currentStep = steps.indexOf(phasesLabel[phase]);
 
   const resetState = useCallback(() => {
-    if (Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 && otpauthUrl) {
+    if (user?.twoFactorEnabled && otpauthUrl) {
       disable2FAMutate(undefined, {
         onError: () =>
           showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
@@ -68,7 +68,7 @@ const TwoFactorAuthentication: React.FC = () => {
     setBackupCodes([]);
     setVerificationToken('');
     setDisableToken('');
-    setPhase(Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? 'disable' : 'setup');
+    setPhase(user?.twoFactorEnabled ? 'disable' : 'setup');
     setDownloaded(false);
   }, [user, otpauthUrl, disable2FAMutate, localize, showToast]);
 
@@ -136,6 +136,7 @@ const TwoFactorAuthentication: React.FC = () => {
             used: false,
             usedAt: null,
           })),
+          twoFactorEnabled: true,
         }) as TUser,
     );
   }, [setUser, localize, showToast, backupCodes]);
@@ -171,6 +172,7 @@ const TwoFactorAuthentication: React.FC = () => {
                     ...prev,
                     totpSecret: '',
                     backupCodes: [],
+                    twoFactorEnabled: false,
                   }) as TUser,
               );
               setPhase('setup');
@@ -183,7 +185,7 @@ const TwoFactorAuthentication: React.FC = () => {
         onError: () => showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
       });
     },
-    [disableToken, verify2FAMutate, disable2FAMutate, showToast, localize, setUser],
+    [verify2FAMutate, disable2FAMutate, showToast, localize, setUser],
   );
 
   return (
@@ -197,7 +199,7 @@ const TwoFactorAuthentication: React.FC = () => {
       }}
     >
       <DisableTwoFactorToggle
-        enabled={Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0}
+        enabled={!!user?.twoFactorEnabled}
         onChange={() => setDialogOpen(true)}
         disabled={isVerifying || isDisabling || isGenerating}
       />
@@ -215,9 +217,11 @@ const TwoFactorAuthentication: React.FC = () => {
             <OGDialogHeader>
               <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
                 <SmartphoneIcon className="h-6 w-6 text-primary" />
-                {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_setup')}
+                {user?.twoFactorEnabled
+                  ? localize('com_ui_2fa_disable')
+                  : localize('com_ui_2fa_setup')}
               </OGDialogTitle>
-              {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 && phase !== 'disable' && (
+              {user?.twoFactorEnabled && phase !== 'disable' && (
                 <div className="mt-4 space-y-3">
                   <Progress
                     value={(steps.indexOf(phasesLabel[phase]) / (steps.length - 1)) * 100}

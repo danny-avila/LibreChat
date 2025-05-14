@@ -13,11 +13,6 @@ const addTitle = async (req, { text, response, client }) => {
     return;
   }
 
-  // If the request was aborted, don't generate the title.
-  if (client.abortController.signal.aborted) {
-    return;
-  }
-
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${response.conversationId}`;
 

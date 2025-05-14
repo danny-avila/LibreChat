@@ -160,6 +160,7 @@ const BookmarkMenu: FC = () => {
         focusLoop={true}
         menuId={menuId}
         isOpen={isMenuOpen}
+        unmountOnHide={true}
         setIsOpen={setIsMenuOpen}
         keyPrefix={`${conversationId}-bookmark-`}
         trigger={
@@ -170,7 +171,7 @@ const BookmarkMenu: FC = () => {
                 id="bookmark-menu-button"
                 aria-label={localize('com_ui_bookmarks_add')}
                 className={cn(
-                  'mt-text-sm flex size-10 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
+                  'mt-text-sm flex size-10 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
                   isMenuOpen ? 'bg-surface-hover' : '',
                 )}
                 data-testid="bookmark-menu"
