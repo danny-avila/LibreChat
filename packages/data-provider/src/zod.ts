@@ -29,7 +29,9 @@ function dropSchemaFields(
   schema: JsonSchemaType | undefined,
   fields: string[],
 ): JsonSchemaType | undefined {
-  if (schema == null || typeof schema !== 'object') {return schema;}
+  if (schema == null || typeof schema !== 'object') {
+    return schema;
+  }
   // Handle arrays (should only occur for enum, required, etc.)
   if (Array.isArray(schema)) {
     // This should not happen for the root schema, but for completeness:
@@ -37,33 +39,25 @@ function dropSchemaFields(
   }
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (fields.includes(key)) {continue;}
+    if (fields.includes(key)) {
+      continue;
+    }
     // Recursively process nested schemas
-    if (
-      key === 'items' ||
-      key === 'additionalProperties' ||
-      key === 'properties'
-    ) {
+    if (key === 'items' || key === 'additionalProperties' || key === 'properties') {
       if (key === 'properties' && value && typeof value === 'object') {
         // properties is a record of string -> JsonSchemaType
         const newProps: Record<string, JsonSchemaType> = {};
         for (const [propKey, propValue] of Object.entries(
           value as Record<string, JsonSchemaType>,
         )) {
-          const dropped = dropSchemaFields(
-            propValue,
-            fields,
-          );
+          const dropped = dropSchemaFields(propValue, fields);
           if (dropped !== undefined) {
             newProps[propKey] = dropped;
           }
         }
         result[key] = newProps;
       } else if (key === 'items' || key === 'additionalProperties') {
-        const dropped = dropSchemaFields(
-          value as JsonSchemaType,
-          fields,
-        );
+        const dropped = dropSchemaFields(value as JsonSchemaType, fields);
         if (dropped !== undefined) {
           result[key] = dropped;
         }
@@ -127,12 +121,12 @@ function convertToZodUnion(
 
         // Special handling for schemas that add properties
         if (subSchema.properties && Object.keys(subSchema.properties).length > 0) {
-        // Create a schema with the properties and make them all optional
+          // Create a schema with the properties and make them all optional
           const objSchema = {
             type: 'object',
             properties: subSchema.properties,
             additionalProperties: true, // Allow additional properties
-          // Don't include required here to make all properties optional
+            // Don't include required here to make all properties optional
           } as JsonSchemaType;
 
           // Convert to Zod schema
@@ -141,15 +135,17 @@ function convertToZodUnion(
           // For the special case of { optional: true }
           if ('optional' in (subSchema.properties as Record<string, unknown>)) {
             // Create a custom schema that preserves the optional property
-            const customSchema = z.object({
-              optional: z.boolean(),
-            }).passthrough();
+            const customSchema = z
+              .object({
+                optional: z.boolean(),
+              })
+              .passthrough();
 
             return customSchema;
           }
 
           if (zodSchema instanceof z.ZodObject) {
-          // Make sure the schema allows additional properties
+            // Make sure the schema allows additional properties
             return zodSchema.passthrough();
           }
           return zodSchema;
@@ -362,12 +358,15 @@ export function convertJsonSchemaToZod(
       const partial = Object.fromEntries(
         Object.entries(shape).map(([key, value]) => [
           key,
-          schema.required?.includes(key) === true ? value : value.optional(),
+          schema.required?.includes(key) === true ? value : value.optional().nullable(),
         ]),
       );
       objectSchema = z.object(partial);
     } else {
-      objectSchema = objectSchema.partial();
+      const partialNullable = Object.fromEntries(
+        Object.entries(shape).map(([key, value]) => [key, value.optional().nullable()]),
+      );
+      objectSchema = z.object(partialNullable);
     }
 
     // Handle additionalProperties for open-ended objects

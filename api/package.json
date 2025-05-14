@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.7.7",
+  "version": "v0.7.8",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -43,12 +43,12 @@
     "@google/generative-ai": "^0.23.0",
     "@googleapis/youtube": "^20.0.0",
     "@keyv/redis": "^4.3.3",
-    "@langchain/community": "^0.3.39",
-    "@langchain/core": "^0.3.43",
-    "@langchain/google-genai": "^0.2.2",
-    "@langchain/google-vertexai": "^0.2.3",
+    "@langchain/community": "^0.3.42",
+    "@langchain/core": "^0.3.55",
+    "@langchain/google-genai": "^0.2.8",
+    "@langchain/google-vertexai": "^0.2.8",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.4.22",
+    "@librechat/agents": "^2.4.317",
     "@librechat/data-schemas": "*",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
@@ -90,7 +90,7 @@
     "nanoid": "^3.3.7",
     "nodemailer": "^6.9.15",
     "ollama": "^0.5.0",
-    "openai": "^4.47.1",
+    "openai": "^4.96.2",
     "openai-chat-tokens": "^0.2.8",
     "openid-client": "^5.4.2",
     "passport": "^0.6.0",
@@ -116,6 +116,6 @@
     "jest": "^29.7.0",
     "mongodb-memory-server": "^10.1.3",
     "nodemon": "^3.0.3",
-    "supertest": "^7.0.0"
+    "supertest": "^7.1.0"
   }
 }

@@ -63,15 +63,15 @@ class BaseClient {
   }
 
   setOptions() {
-    throw new Error('Method \'setOptions\' must be implemented.');
+    throw new Error("Method 'setOptions' must be implemented.");
   }
 
   async getCompletion() {
-    throw new Error('Method \'getCompletion\' must be implemented.');
+    throw new Error("Method 'getCompletion' must be implemented.");
   }
 
   async sendCompletion() {
-    throw new Error('Method \'sendCompletion\' must be implemented.');
+    throw new Error("Method 'sendCompletion' must be implemented.");
   }
 
   getSaveOptions() {
@@ -237,11 +237,11 @@ class BaseClient {
     const userMessage = opts.isEdited
       ? this.currentMessages[this.currentMessages.length - 2]
       : this.createUserMessage({
-        messageId: userMessageId,
-        parentMessageId,
-        conversationId,
-        text: message,
-      });
+          messageId: userMessageId,
+          parentMessageId,
+          conversationId,
+          text: message,
+        });
 
     if (typeof opts?.getReqData === 'function') {
       opts.getReqData({

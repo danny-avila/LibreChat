@@ -61,6 +61,7 @@ const EditMessage = ({
         },
         {
           isResubmission: true,
+          overrideFiles: message.files,
         },
       );
 
@@ -112,9 +113,9 @@ const EditMessage = ({
         messages.map((msg) =>
           msg.messageId === messageId
             ? {
-              ...msg,
-              text: data.text,
-            }
+                ...msg,
+                text: data.text,
+              }
             : msg,
         ),
       );
