@@ -10,6 +10,7 @@ import type {
   TConversationTag,
   TBanner,
 } from './schemas';
+import { SettingDefinition } from './generate';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
@@ -270,7 +271,7 @@ export type TConfig = {
   capabilities?: string[];
   customParams?: {
     defaultParamsEndpoint?: string;
-    paramDefinitions?: Array<object>;
+    paramDefinitions?: SettingDefinition[];
   };
 };
 

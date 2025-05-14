@@ -48,9 +48,10 @@ function DynamicTags({
     }
   }, [inputRef]);
 
+  const currentValue = conversation?.[settingKey];
   const currentTags = useMemo(() => {
-    return conversation?.[settingKey] ?? defaultValue ?? [];
-  }, [conversation, defaultValue, settingKey]);
+    return currentValue ?? defaultValue ?? [];
+  }, [currentValue, defaultValue]);
 
   const onTagRemove = useCallback(
     (indexToRemove: number) => {
@@ -60,7 +61,7 @@ function DynamicTags({
 
       if (minTags != null && currentTags.length <= minTags) {
         showToast({
-          message: localize('com_ui_min_tags',{ 0: minTags + '' }),
+          message: localize('com_ui_min_tags', { 0: minTags + '' }),
           status: 'warning',
         });
         return;
@@ -111,7 +112,7 @@ function DynamicTags({
               htmlFor={`${settingKey}-dynamic-input`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   (
@@ -159,7 +160,11 @@ function DynamicTags({
                   }
                 }}
                 onChange={(e) => setTagText(e.target.value)}
-                placeholder={placeholderCode ? localize(placeholder as TranslationKeys) ?? placeholder : placeholder}
+                placeholder={
+                  placeholderCode
+                    ? (localize(placeholder as TranslationKeys) ?? placeholder)
+                    : placeholder
+                }
                 className={cn('flex h-10 max-h-10 border-none bg-surface-secondary px-3 py-2')}
               />
             </div>
@@ -167,7 +172,11 @@ function DynamicTags({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={descriptionSide as ESide}
           />
         )}

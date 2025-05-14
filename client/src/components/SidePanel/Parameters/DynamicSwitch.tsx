@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
@@ -32,9 +32,7 @@ function DynamicSwitch({
     preventDelayedUpdate: true,
   });
 
-  const selectedValue = useMemo(() => {
-    return conversation?.[settingKey] ?? defaultValue;
-  }, [conversation, defaultValue, settingKey]);
+  const selectedValue = conversation?.[settingKey] ?? defaultValue;
 
   const handleCheckedChange = (checked: boolean) => {
     setInputValue(checked);
@@ -54,7 +52,7 @@ function DynamicSwitch({
               htmlFor={`${settingKey}-dynamic-switch`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}:{' '}
@@ -73,7 +71,11 @@ function DynamicSwitch({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}
