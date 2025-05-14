@@ -23,8 +23,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const agent = {
     id: EModelEndpoint.bedrock,
     name: endpointOption.name,
-    instructions: endpointOption.promptPrefix,
     provider: EModelEndpoint.bedrock,
+    endpoint: EModelEndpoint.bedrock,
+    instructions: endpointOption.promptPrefix,
     model: endpointOption.model_parameters.model,
     model_parameters: endpointOption.model_parameters,
   };
@@ -54,6 +55,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
+    res,
     agent,
     sender,
     // tools,

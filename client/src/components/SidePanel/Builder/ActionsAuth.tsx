@@ -34,7 +34,7 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
           </div>
           <div className="border-token-border-medium flex rounded-lg border text-sm hover:cursor-pointer">
             <div className="h-9 grow px-3 py-2">
-              {localize(`com_ui_${type}` as TranslationKeys)}
+              {localize(getAuthLocalizationKey(type))}
             </div>
             <div className="bg-token-border-medium w-px"></div>
             <button type="button" color="neutral" className="flex items-center gap-2 px-3">
@@ -268,6 +268,18 @@ const ApiKey = () => {
     </>
   );
 };
+
+/** Returns the appropriate localization key for authentication type */
+function getAuthLocalizationKey(type: AuthTypeEnum): TranslationKeys {
+  switch (type) {
+    case AuthTypeEnum.ServiceHttp:
+      return 'com_ui_api_key';
+    case AuthTypeEnum.OAuth:
+      return 'com_ui_oauth';
+    default:
+      return 'com_ui_none';
+  }
+}
 
 const OAuth = () => {
   const localize = useLocalize();

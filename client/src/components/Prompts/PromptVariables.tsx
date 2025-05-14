@@ -1,18 +1,18 @@
 import React, { useMemo } from 'react';
 import { Variable } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { specialVariables } from 'librechat-data-provider';
 import { cn, extractUniqueVariables } from '~/utils';
 import { CodeVariableGfm } from './Markdown';
 import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-const specialVariables = {
-  current_date: true,
-  current_user: true,
-};
-
 const specialVariableClasses =
-  'bg-yellow-500/25 text-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
+  'bg-amber-100 text-yellow-800 border-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
+
+const components: {
+  [nodeType: string]: React.ElementType;
+} = { code: CodeVariableGfm };
 
 const PromptVariables = ({
   promptText,
@@ -28,7 +28,7 @@ const PromptVariables = ({
   }, [promptText]);
 
   return (
-    <div className="rounded-xl border border-border-light bg-transparent p-4 shadow-md ">
+    <div className="rounded-xl border border-border-light bg-transparent p-4 shadow-md">
       <h3 className="flex items-center gap-2 py-2 text-lg font-semibold text-text-primary">
         <Variable className="icon-sm" aria-hidden="true" />
         {localize('com_ui_variables')}
@@ -52,7 +52,7 @@ const PromptVariables = ({
           </div>
         ) : (
           <div className="text-sm text-text-secondary">
-            <ReactMarkdown components={{ code: CodeVariableGfm }}>
+            <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
               {localize('com_ui_variables_info')}
             </ReactMarkdown>
           </div>
@@ -65,17 +65,17 @@ const PromptVariables = ({
                 {localize('com_ui_special_variables')}
               </span>
               <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={{ code: CodeVariableGfm }}>
-                  {localize('com_ui_special_variables_info')}
+                <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
+                  {localize('com_ui_special_variables_more_info')}
                 </ReactMarkdown>
               </span>
             </div>
             <div>
-              <span className="text-text-text-primary text-sm font-medium">
+              <span className="text-sm font-medium text-text-primary">
                 {localize('com_ui_dropdown_variables')}
               </span>
               <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
                   {localize('com_ui_dropdown_variables_info')}
                 </ReactMarkdown>
               </span>

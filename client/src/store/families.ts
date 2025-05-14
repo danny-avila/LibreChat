@@ -14,7 +14,8 @@ import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
-import { storeEndpointSettings, logger } from '~/utils';
+import { storeEndpointSettings, logger, createChatSearchParams } from '~/utils';
+import { createSearchParams } from 'react-router-dom';
 
 const latestMessageKeysAtom = atom<(string | number)[]>({
   key: 'latestMessageKeys',
@@ -73,9 +74,9 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
   default: null,
   effects: [
     ({ onSet, node }) => {
-      onSet(async (newValue) => {
+      onSet(async (newValue, oldValue) => {
         const index = Number(node.key.split('__')[1]);
-        logger.log('conversation', 'Setting conversation:', { index, newValue });
+        logger.log('conversation', 'Setting conversation:', { index, newValue, oldValue });
         if (newValue?.assistant_id != null && newValue.assistant_id) {
           localStorage.setItem(
             `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
@@ -104,6 +105,18 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
           `${LocalStorageKeys.LAST_CONVO_SETUP}_${index}`,
           JSON.stringify(newValue),
         );
+
+        const shouldUpdateParams =
+          newValue.createdAt === '' &&
+          JSON.stringify(newValue) !== JSON.stringify(oldValue) &&
+          (oldValue as TConversation)?.conversationId === 'new';
+
+        if (shouldUpdateParams) {
+          const newParams = createChatSearchParams(newValue);
+          const searchParams = createSearchParams(newParams);
+          const url = `${window.location.pathname}?${searchParams.toString()}`;
+          window.history.pushState({}, '', url);
+        }
       });
     },
   ] as const,

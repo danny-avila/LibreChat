@@ -31,6 +31,7 @@ export const useGetStartupConfig = (
     [QueryKeys.startupConfig],
     () => dataService.getStartupConfig(),
     {
+      staleTime: Infinity,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

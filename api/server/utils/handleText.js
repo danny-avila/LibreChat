@@ -203,6 +203,8 @@ function generateConfig(key, baseURL, endpoint) {
       AgentCapabilities.artifacts,
       AgentCapabilities.actions,
       AgentCapabilities.tools,
+      AgentCapabilities.ocr,
+      AgentCapabilities.chain,
     ];
   }
 

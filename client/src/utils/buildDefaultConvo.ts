@@ -4,18 +4,18 @@ import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
 } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 
 const buildDefaultConvo = ({
+  models,
   conversation,
   endpoint = null,
-  models,
   lastConversationSetup,
 }: {
-  conversation: TConversation;
-  endpoint: EModelEndpoint | null;
   models: string[];
+  conversation: TConversation;
+  endpoint?: EModelEndpoint | null;
   lastConversationSetup: TConversation | null;
 }): TConversation => {
   const { lastSelectedModel, lastSelectedTools } = getLocalStorageItems();
@@ -33,7 +33,7 @@ const buildDefaultConvo = ({
   const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
   const secondaryModel: string | null =
     endpoint === EModelEndpoint.gptPlugins
-      ? lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null
+      ? (lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null)
       : null;
 
   let possibleModels: string[], secondaryModels: string[];
@@ -51,8 +51,8 @@ const buildDefaultConvo = ({
   }
 
   const convo = parseConvo({
-    endpoint,
-    endpointType,
+    endpoint: endpoint as EndpointSchemaKey,
+    endpointType: endpointType as EndpointSchemaKey,
     conversation: lastConversationSetup,
     possibleValues: {
       models: possibleModels,
@@ -68,7 +68,7 @@ const buildDefaultConvo = ({
   };
 
   // Ensures assistant_id is always defined
-  const assistantId = convo?.assistant_id ?? '';
+  const assistantId = convo?.assistant_id ?? conversation?.assistant_id ?? '';
   const defaultAssistantId = lastConversationSetup?.assistant_id ?? '';
   if (isAssistantsEndpoint(endpoint) && !defaultAssistantId && assistantId) {
     defaultConvo.assistant_id = assistantId;

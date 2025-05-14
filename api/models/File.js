@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
-const fileSchema = require('./schema/fileSchema');
+const { EToolResources } = require('librechat-data-provider');
+const { fileSchema } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 
 const File = mongoose.model('File', fileSchema);
 
@@ -17,11 +19,50 @@ const findFileById = async (file_id, options = {}) => {
  * Retrieves files matching a given filter, sorted by the most recently updated.
  * @param {Object} filter - The filter criteria to apply.
  * @param {Object} [_sortOptions] - Optional sort parameters.
+ * @param {Object|String} [selectFields={ text: 0 }] - Fields to include/exclude in the query results.
+ *                                                   Default excludes the 'text' field.
  * @returns {Promise<Array<MongoFile>>} A promise that resolves to an array of file documents.
  */
-const getFiles = async (filter, _sortOptions) => {
+const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
-  return await File.find(filter).sort(sortOptions).lean();
+  return await File.find(filter).select(selectFields).sort(sortOptions).lean();
+};
+
+/**
+ * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
+ * @param {string[]} fileIds - Array of file_id strings to search for
+ * @param {Set<EToolResources>} toolResourceSet - Optional filter for tool resources
+ * @returns {Promise<Array<MongoFile>>} Files that match the criteria
+ */
+const getToolFilesByIds = async (fileIds, toolResourceSet) => {
+  if (!fileIds || !fileIds.length) {
+    return [];
+  }
+
+  try {
+    const filter = {
+      file_id: { $in: fileIds },
+    };
+
+    if (toolResourceSet.size) {
+      filter.$or = [];
+    }
+
+    if (toolResourceSet.has(EToolResources.file_search)) {
+      filter.$or.push({ embedded: true });
+    }
+    if (toolResourceSet.has(EToolResources.execute_code)) {
+      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+    }
+
+    const selectFields = { text: 0 };
+    const sortOptions = { updatedAt: -1 };
+
+    return await getFiles(filter, sortOptions, selectFields);
+  } catch (error) {
+    logger.error('[getToolFilesByIds] Error retrieving tool files:', error);
+    throw new Error('Error retrieving tool files');
+  }
 };
 
 /**
@@ -105,14 +146,38 @@ const deleteFiles = async (file_ids, user) => {
   return await File.deleteMany(deleteQuery);
 };
 
+/**
+ * Batch updates files with new signed URLs in MongoDB
+ *
+ * @param {MongoFile[]} updates - Array of updates in the format { file_id, filepath }
+ * @returns {Promise<void>}
+ */
+async function batchUpdateFiles(updates) {
+  if (!updates || updates.length === 0) {
+    return;
+  }
+
+  const bulkOperations = updates.map((update) => ({
+    updateOne: {
+      filter: { file_id: update.file_id },
+      update: { $set: { filepath: update.filepath } },
+    },
+  }));
+
+  const result = await File.bulkWrite(bulkOperations);
+  logger.info(`Updated ${result.modifiedCount} files with new S3 URLs`);
+}
+
 module.exports = {
   File,
   findFileById,
   getFiles,
+  getToolFilesByIds,
   createFile,
   updateFile,
   updateFileUsage,
   deleteFile,
   deleteFiles,
   deleteFileByFilter,
+  batchUpdateFiles,
 };
