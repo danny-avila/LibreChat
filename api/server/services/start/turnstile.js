@@ -30,6 +30,6 @@ function loadTurnstileConfig(config, configDefaults) {
   return loadedTurnstile;
 }
 
-module.exports = { 
+module.exports = {
   loadTurnstileConfig,
 };
