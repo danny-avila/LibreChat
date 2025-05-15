@@ -73,24 +73,25 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
 
   if (expanded) {
     return (
-      <SourceItemBase source={source} expanded>
-        {(domain) => (
-          <div className="flex w-full flex-col gap-1">
-            <div className="flex items-center gap-1.5">
-              <FaviconImage domain={domain} />
-              <span className="text-token-text-secondary text-xs font-medium">{domain}</span>
-            </div>
-            <h3 className="text-token-text-primary text-sm font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400">
-              {source.title || source.link}
-            </h3>
-            {'snippet' in source && source.snippet && (
-              <p className="text-token-text-secondary mt-1 line-clamp-2 text-xs">
-                {source.snippet}
-              </p>
-            )}
-          </div>
-        )}
-      </SourceItemBase>
+      <a
+        href={source.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+      >
+        <div className="flex items-center gap-2">
+          <FaviconImage domain={domain} />
+          <span className="truncate text-xs font-medium text-text-secondary">{domain}</span>
+        </div>
+        <div className="mt-1">
+          <span className="line-clamp-2 text-sm font-medium text-text-primary">
+            {source.title || source.link}
+          </span>
+          {'snippet' in source && source.snippet && (
+            <span className="mt-1 line-clamp-2 text-xs text-text-secondary">{source.snippet}</span>
+          )}
+        </div>
+      </a>
     );
   }
 
@@ -223,11 +224,11 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
             </div>
           </OGDialogTrigger>
         )}
-        <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary md:max-w-[600px]">
-          <OGDialogTitle className="mb-4 text-lg font-medium">
+        <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary p-2 md:max-w-[600px]">
+          <OGDialogTitle className="mb-4 px-4 text-lg font-medium">
             {localize('com_sources_title')}
           </OGDialogTitle>
-          <div className="flex flex-col gap-3">
+          <div className="grid gap-2">
             {[...visibleSources, ...remainingSources].map((source, i) => (
               <SourceItem key={`more-source-${i}`} source={source} expanded />
             ))}
