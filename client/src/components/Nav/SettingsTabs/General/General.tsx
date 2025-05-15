@@ -1,6 +1,6 @@
-import { useRecoilState } from 'recoil';
-import Cookies from 'js-cookie';
 import React, { useContext, useCallback } from 'react';
+import Cookies from 'js-cookie';
+import { useRecoilState } from 'recoil';
 import { ThemeContext, useLocalize } from '~/hooks';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
