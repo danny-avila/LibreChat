@@ -299,10 +299,10 @@ const conversationByKeySelector = selectorFamily({
   key: 'conversationByKeySelector',
   get:
     (index: string | number) =>
-      ({ get }) => {
-        const conversation = get(conversationByIndex(index));
-        return conversation;
-      },
+    ({ get }) => {
+      const conversation = get(conversationByIndex(index));
+      return conversation;
+    },
 });
 
 function useClearSubmissionState() {
@@ -361,24 +361,24 @@ const updateConversationSelector = selectorFamily({
   get: () => () => null as Partial<TConversation> | null,
   set:
     (conversationId: string) =>
-      ({ set, get }, newPartialConversation) => {
-        if (newPartialConversation instanceof DefaultValue) {
-          return;
-        }
+    ({ set, get }, newPartialConversation) => {
+      if (newPartialConversation instanceof DefaultValue) {
+        return;
+      }
 
-        const keys = get(conversationKeysAtom);
-        keys.forEach((key) => {
-          set(conversationByIndex(key), (prevConversation) => {
-            if (prevConversation && prevConversation.conversationId === conversationId) {
-              return {
-                ...prevConversation,
-                ...newPartialConversation,
-              };
-            }
-            return prevConversation;
-          });
+      const keys = get(conversationKeysAtom);
+      keys.forEach((key) => {
+        set(conversationByIndex(key), (prevConversation) => {
+          if (prevConversation && prevConversation.conversationId === conversationId) {
+            return {
+              ...prevConversation,
+              ...newPartialConversation,
+            };
+          }
+          return prevConversation;
         });
-      },
+      });
+    },
 });
 
 export default {
