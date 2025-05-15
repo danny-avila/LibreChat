@@ -57,12 +57,15 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
   app.use(
-    helmet.contentSecurityPolicy({
-      directives: {
-        defaultSrc: ["'self'"], // allow everything from same origin by default
-        scriptSrc: ["'self'"], // only own scripts and a trusted external source
-        objectSrc: ["'none'"], // disallow plugin-based content
-        frameAncestors: ["'self'"], // prevent framing by other sites
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'"], // allow everything from same origin by default
+          scriptSrc: ["'self'"], // only own scripts and a trusted external source
+          objectSrc: ["'none'"], // disallow plugin-based content
+          frameAncestors: ["'self'"], // prevent framing by other sites
+        },
       },
     }),
   );
