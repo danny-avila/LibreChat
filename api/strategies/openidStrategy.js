@@ -12,7 +12,7 @@ const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 const getLogStores = require('~/cache/getLogStores');
 
-/** 
+/**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
  * @typedef {import('openid-client').Configuration} Configuration
  **/
@@ -31,7 +31,7 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
 }
 /**
  * Exchange the access token for a new access token using the on-behalf-of flow if required.
- * @param {Configuration} config 
+ * @param {Configuration} config
  * @param {string} accessToken access token to be exchanged if necessary
  * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
  * @param {boolean} fromCache - Indicates whether to use cached tokens.
@@ -47,11 +47,15 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
         return cachedToken.access_token;
       }
     }
-    const grantResponse = await client.genericGrantRequest(config, "urn:ietf:params:oauth:grant-type:jwt-bearer", {
-      scope: process.env.OPENID_ON_BEHALF_FLOW_USERINFRO_SCOPE || 'user.read',
-      assertion: accessToken,
-      requested_token_use: 'on_behalf_of',
-    });
+    const grantResponse = await client.genericGrantRequest(
+      config,
+      'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      {
+        scope: process.env.OPENID_ON_BEHALF_FLOW_USERINFRO_SCOPE || 'user.read',
+        assertion: accessToken,
+        requested_token_use: 'on_behalf_of',
+      },
+    );
     tokensCache.set(
       sub,
       {
@@ -62,13 +66,13 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
     return grantResponse.access_token;
   }
   return accessToken;
-}
+};
 /**
  * get user info from openid provider
- * @param {Configuration} config 
- * @param {string} accessToken access token 
+ * @param {Configuration} config
+ * @param {string} accessToken access token
  * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
- * @returns {Promise<Object|null>} 
+ * @returns {Promise<Object|null>}
  */
 const getUserInfo = async (config, accessToken, sub) => {
   try {
@@ -76,15 +80,15 @@ const getUserInfo = async (config, accessToken, sub) => {
     return await client.fetchUserInfo(config, exchangedAccessToken, sub);
   } catch (error) {
     logger.warn(`[openidStrategy] getUserInfo: Error fetching user info: ${error}`);
-    return null
+    return null;
   }
-}
+};
 
 /**
  * Downloads an image from a URL using an access token.
  * @param {string} url
- * @param {Configuration} config 
- * @param {string} accessToken access token 
+ * @param {Configuration} config
+ * @param {string} accessToken access token
  * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
  * @returns {Promise<Buffer | string>} The image buffer or an empty string if the download fails.
  */
@@ -174,7 +178,7 @@ function convertToUsername(input, defaultValue = '') {
 
 /**
  * Sets up the OpenID strategy for authentication.
- * This function configures the OpenID client, handles proxy settings, 
+ * This function configures the OpenID client, handles proxy settings,
  * and defines the OpenID strategy for Passport.js.
  *
  * @async
@@ -184,7 +188,6 @@ function convertToUsername(input, defaultValue = '') {
  */
 async function setupOpenId() {
   try {
-
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
@@ -192,7 +195,11 @@ async function setupOpenId() {
     };
 
     /** @type {Configuration} */
-    openidConfig = await client.discovery(new URL(process.env.OPENID_ISSUER), process.env.OPENID_CLIENT_ID, clientMetadata);
+    openidConfig = await client.discovery(
+      new URL(process.env.OPENID_ISSUER),
+      process.env.OPENID_CLIENT_ID,
+      clientMetadata,
+    );
     if (process.env.PROXY) {
       const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
       openidConfig[client.customFetch] = (...args) => {
@@ -210,7 +217,6 @@ async function setupOpenId() {
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
       },
       async (tokenset, done) => {
-
         try {
           const claims = tokenset.claims();
           let user = await findUser({ openidId: claims.sub });
@@ -221,11 +227,15 @@ async function setupOpenId() {
           if (!user) {
             user = await findUser({ email: claims.email });
             logger.info(
-              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${claims.email
+              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
+                claims.email
               } for openidId: ${claims.sub}`,
             );
           }
-          const userinfo = { ...claims, ...await getUserInfo(openidConfig, tokenset.access_token, claims.sub) };
+          const userinfo = {
+            ...claims,
+            ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
+          };
           const fullName = getFullName(userinfo);
 
           if (requiredRole) {
@@ -295,7 +305,12 @@ async function setupOpenId() {
               fileName = userinfo.sub + '.png';
             }
 
-            const imageBuffer = await downloadImage(imageUrl, openidConfig, tokenset.access_token, userinfo.sub);
+            const imageBuffer = await downloadImage(
+              imageUrl,
+              openidConfig,
+              tokenset.access_token,
+              userinfo.sub,
+            );
             if (imageBuffer) {
               const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
               const imagePath = await saveBuffer({
@@ -330,7 +345,6 @@ async function setupOpenId() {
     );
     passport.use('openid', openidLogin);
     return openidConfig;
-
   } catch (err) {
     logger.error('[openidStrategy]', err);
     return null;

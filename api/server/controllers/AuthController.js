@@ -59,16 +59,18 @@ const resetPasswordController = async (req, res) => {
 
 const refreshController = async (req, res) => {
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
-  const token_provider = req.headers.cookie ? cookies.parse(req.headers.cookie).token_provider : null;
+  const token_provider = req.headers.cookie
+    ? cookies.parse(req.headers.cookie).token_provider
+    : null;
   if (!refreshToken) {
     return res.status(200).send('Refresh token not provided');
   }
-  if (token_provider === "openid" && isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
+  if (token_provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
     try {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
       const claims = tokenset.claims();
-      const user = await findUser({ email: claims.email });;
+      const user = await findUser({ email: claims.email });
       if (!user) {
         return res.status(401).redirect('/login');
       }

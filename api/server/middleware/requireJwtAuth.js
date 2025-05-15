@@ -15,7 +15,7 @@ const requireJwtAuth = (req, res, next) => {
   if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
     return passport.authenticate('openidJwt', { session: false })(req, res, next);
   }
-  
+
   // Default to standard JWT authentication
   return passport.authenticate('jwt', { session: false })(req, res, next);
 };

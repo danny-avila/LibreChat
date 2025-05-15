@@ -377,7 +377,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
       secure: isProduction,
       sameSite: 'strict',
     });
-    res.cookie('token_provider', "librechat", {
+    res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: isProduction,
@@ -393,7 +393,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
  * @function setOpenIDAuthTokens
  * Set OpenID Authentication Tokens
  * //type tokenset from openid-client
- * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset 
+ * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
  * - The tokenset object containing access and refresh tokens
  * @param {Object} res - response object
  * @returns {String} - access token
@@ -421,7 +421,7 @@ const setOpenIDAuthTokens = (tokenset, res) => {
       secure: isProduction,
       sameSite: 'strict',
     });
-    res.cookie('token_provider', "openid", {
+    res.cookie('token_provider', 'openid', {
       expires: expirationDate,
       httpOnly: true,
       secure: isProduction,

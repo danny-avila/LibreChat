@@ -29,9 +29,13 @@ const oauthHandler = async (req, res) => {
     if (req.banned) {
       return;
     }
-    if(req.user && req.user.provider == "openid" && isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
+    if (
+      req.user &&
+      req.user.provider == 'openid' &&
+      isEnabled(process.env.OPENID_REUSE_TOKENS) === true
+    ) {
       setOpenIDAuthTokens(req.user.tokenset, res);
-    }else{
+    } else {
       await setAuthTokens(req.user._id, res);
     }
     res.redirect(domains.client);

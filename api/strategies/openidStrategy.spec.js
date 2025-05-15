@@ -30,10 +30,12 @@ jest.mock('~/config', () => ({
     warn: jest.fn(),
   },
 }));
-jest.mock('~/cache/getLogStores', () => jest.fn(() => ({
-  get: jest.fn(),
-  set: jest.fn(),
-})));
+jest.mock('~/cache/getLogStores', () =>
+  jest.fn(() => ({
+    get: jest.fn(),
+    set: jest.fn(),
+  })),
+);
 jest.mock('librechat-data-provider', () => ({
   CacheKeys: {
     OPENID_EXCHANGED_TOKENS: 'openid-exchanged-tokens',

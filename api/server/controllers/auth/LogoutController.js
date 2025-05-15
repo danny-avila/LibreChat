@@ -18,15 +18,17 @@ const logoutController = async (req, res) => {
       process.env.OPENID_ISSUER
     ) {
       const openIdConfig = getOpenIdConfig();
-      if(!openIdConfig){
+      if (!openIdConfig) {
         logger.warn(
           '[logoutController] OpenID config not found. Please verify that the open id configuration and initialization are correct.',
         );
-      }else{
-        const endSessionEndpoint = openIdConfig? openIdConfig.serverMetadata().end_session_endpoint: null;
-        if(endSessionEndpoint){
+      } else {
+        const endSessionEndpoint = openIdConfig
+          ? openIdConfig.serverMetadata().end_session_endpoint
+          : null;
+        if (endSessionEndpoint) {
           response.redirect = endSessionEndpoint;
-        }else{
+        } else {
           logger.warn(
             '[logoutController] end_session_endpoint not found in OpenID issuer metadata. Please verify that the issuer is correct.',
           );

@@ -64,9 +64,9 @@ const configureSocialLogins = async (app) => {
     app.use(session(sessionOptions));
     app.use(passport.session());
     const config = await setupOpenId();
-    if(isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       logger.info('OpenID token reuse is enabled.');
-      passport.use('openidJwt', openIdJwtLogin(config))
+      passport.use('openidJwt', openIdJwtLogin(config));
     }
     logger.info('OpenID Connect configured.');
   }

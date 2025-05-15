@@ -19,8 +19,10 @@ const openIdJwtLogin = (openIdConfig) =>
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret({
         cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
-        cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME) : 60000,
-        jwksUri: openIdConfig.serverMetadata().jwks_uri
+        cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME
+          ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
+          : 60000,
+        jwksUri: openIdConfig.serverMetadata().jwks_uri,
       }),
     },
     async (payload, done) => {
@@ -35,7 +37,10 @@ const openIdJwtLogin = (openIdConfig) =>
           }
           done(null, user);
         } else {
-          logger.warn('[openIdJwtLogin] openId JwtStrategy => no user found with the sub claims: ' + payload?.sub);
+          logger.warn(
+            '[openIdJwtLogin] openId JwtStrategy => no user found with the sub claims: ' +
+              payload?.sub,
+          );
           done(null, false);
         }
       } catch (err) {

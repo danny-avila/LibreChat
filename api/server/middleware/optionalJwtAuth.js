@@ -16,8 +16,8 @@ const optionalJwtAuth = (req, res, next) => {
     }
     next();
   };
-   if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-    return passport.authenticate('openidJwt', { session: false },callback)(req, res, next);
+  if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    return passport.authenticate('openidJwt', { session: false }, callback)(req, res, next);
   }
   passport.authenticate('jwt', { session: false }, callback)(req, res, next);
 };
