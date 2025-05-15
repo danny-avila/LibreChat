@@ -40,33 +40,6 @@ function FaviconImage({ domain, className = '' }: { domain: string; className?: 
   );
 }
 
-function SourceItemBase({
-  source,
-  expanded = false,
-  children,
-}: {
-  source: ValidSource;
-  expanded?: boolean;
-  children: (domain: string) => React.ReactNode;
-}) {
-  const domain = getCleanDomain(source.link);
-
-  return (
-    <a
-      href={source.link}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={
-        expanded
-          ? 'group flex w-full cursor-pointer items-stretch rounded-lg bg-surface-secondary p-3 transition-all duration-300 hover:bg-surface-tertiary'
-          : 'flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary'
-      }
-    >
-      {children(domain)}
-    </a>
-  );
-}
-
 function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
   const localize = useLocalize();
   const domain = getCleanDomain(source.link);
@@ -96,16 +69,16 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
   }
 
   return (
-    <span className="relative inline-block w-full">
+    <span className="relative inline-block h-full w-full">
       <Ariakit.HovercardProvider showTimeout={150} hideTimeout={150}>
-        <div className="flex items-center">
+        <div className="flex h-full items-center">
           <Ariakit.HovercardAnchor
             render={
               <a
                 href={source.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+                className="flex h-full w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
               >
                 <div className="flex items-center gap-2">
                   <FaviconImage domain={domain} />
