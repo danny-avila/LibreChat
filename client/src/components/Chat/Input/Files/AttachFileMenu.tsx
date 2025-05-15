@@ -18,7 +18,9 @@ const AttachFile = ({ disabled }: AttachFileProps) => {
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { handleFileChange } = useFileHandling();
+  const { handleFileChange } = useFileHandling({
+    overrideEndpoint: EModelEndpoint.agents,
+  });
 
   const capabilities = useMemo(
     () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
@@ -117,6 +119,7 @@ const AttachFile = ({ disabled }: AttachFileProps) => {
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         modal={true}
+        unmountOnHide={true}
         trigger={menuTrigger}
         items={dropdownItems}
         iconClassName="mr-0"

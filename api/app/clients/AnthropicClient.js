@@ -4,11 +4,12 @@ const {
   Constants,
   ErrorTypes,
   EModelEndpoint,
+  parseTextParts,
   anthropicSettings,
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { SplitStreamHandler: _Handler, GraphEvents } = require('@librechat/agents');
+const { SplitStreamHandler: _Handler } = require('@librechat/agents');
 const {
   truncateText,
   formatMessage,
@@ -25,10 +26,11 @@ const {
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { createFetch, createStreamEventHandlers } = require('./generators');
 const Tokenizer = require('~/server/services/Tokenizer');
-const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -183,7 +185,10 @@ class AnthropicClient extends BaseClient {
   getClient(requestOptions) {
     /** @type {Anthropic.ClientOptions} */
     const options = {
-      fetch: this.fetch,
+      fetch: createFetch({
+        directEndpoint: this.options.directEndpoint,
+        reverseProxyUrl: this.options.reverseProxyUrl,
+      }),
       apiKey: this.apiKey,
     };
 
@@ -391,13 +396,13 @@ class AnthropicClient extends BaseClient {
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = this.useMessages
         ? formatMessage({
-          message,
-          endpoint: EModelEndpoint.anthropic,
-        })
+            message,
+            endpoint: EModelEndpoint.anthropic,
+          })
         : {
-          author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-          content: message?.content ?? message.text,
-        };
+            author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
+            content: message?.content ?? message.text,
+          };
 
       const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
@@ -411,6 +416,9 @@ class AnthropicClient extends BaseClient {
         for (const file of attachments) {
           if (file.embedded) {
             this.contextHandlers?.processFile(file);
+            continue;
+          }
+          if (file.metadata?.fileIdentifier) {
             continue;
           }
 
@@ -672,7 +680,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getCompletion() {
-    logger.debug('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
+    logger.debug("AnthropicClient doesn't use getCompletion (all handled in sendCompletion)");
   }
 
   /**
@@ -696,15 +704,8 @@ class AnthropicClient extends BaseClient {
       if (msg.text != null && msg.text && msg.text.startsWith(':::thinking')) {
         msg.text = msg.text.replace(/:::thinking.*?:::/gs, '').trim();
       } else if (msg.content != null) {
-        /** @type {import('@librechat/agents').MessageContentComplex} */
-        const newContent = [];
-        for (let part of msg.content) {
-          if (part.think != null) {
-            continue;
-          }
-          newContent.push(part);
-        }
-        msg.content = newContent;
+        msg.text = parseTextParts(msg.content, true);
+        delete msg.content;
       }
 
       return msg;
@@ -801,14 +802,11 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
+    const handlers = createStreamEventHandlers(this.options.res);
     this.streamHandler = new SplitStreamHandler({
       accumulate: true,
       runId: this.responseMessageId,
-      handlers: {
-        [GraphEvents.ON_RUN_STEP]: (event) => sendEvent(this.options.res, event),
-        [GraphEvents.ON_MESSAGE_DELTA]: (event) => sendEvent(this.options.res, event),
-        [GraphEvents.ON_REASONING_DELTA]: (event) => sendEvent(this.options.res, event),
-      },
+      handlers,
     });
 
     let intermediateReply = this.streamHandler.tokens;
@@ -890,7 +888,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getBuildMessagesOptions() {
-    logger.debug('AnthropicClient doesn\'t use getBuildMessagesOptions');
+    logger.debug("AnthropicClient doesn't use getBuildMessagesOptions");
   }
 
   getEncoding() {

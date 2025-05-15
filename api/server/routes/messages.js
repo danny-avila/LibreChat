@@ -10,11 +10,89 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
+const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
+const { Message } = require('~/models/Message');
 const { logger } = require('~/config');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+router.get('/', async (req, res) => {
+  try {
+    const user = req.user.id ?? '';
+    const {
+      cursor = null,
+      sortBy = 'createdAt',
+      sortDirection = 'desc',
+      pageSize: pageSizeRaw,
+      conversationId,
+      messageId,
+      search,
+    } = req.query;
+    const pageSize = parseInt(pageSizeRaw, 10) || 25;
+
+    let response;
+    const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
+      ? sortBy
+      : 'createdAt';
+    const sortOrder = sortDirection === 'asc' ? 1 : -1;
+
+    if (conversationId && messageId) {
+      const message = await Message.findOne({ conversationId, messageId, user: user }).lean();
+      response = { messages: message ? [message] : [], nextCursor: null };
+    } else if (conversationId) {
+      const filter = { conversationId, user: user };
+      if (cursor) {
+        filter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
+      }
+      const messages = await Message.find(filter)
+        .sort({ [sortField]: sortOrder })
+        .limit(pageSize + 1)
+        .lean();
+      const nextCursor = messages.length > pageSize ? messages.pop()[sortField] : null;
+      response = { messages, nextCursor };
+    } else if (search) {
+      const searchResults = await Message.meiliSearch(search, undefined, true);
+
+      const messages = searchResults.hits || [];
+
+      const result = await getConvosQueried(req.user.id, messages, cursor);
+
+      const activeMessages = [];
+      for (let i = 0; i < messages.length; i++) {
+        let message = messages[i];
+        if (message.conversationId.includes('--')) {
+          message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
+        }
+        if (result.convoMap[message.conversationId]) {
+          const convo = result.convoMap[message.conversationId];
+
+          const dbMessage = await getMessage({ user, messageId: message.messageId });
+          activeMessages.push({
+            ...message,
+            title: convo.title,
+            conversationId: message.conversationId,
+            model: convo.model,
+            isCreatedByUser: dbMessage?.isCreatedByUser,
+            endpoint: dbMessage?.endpoint,
+            iconURL: dbMessage?.iconURL,
+          });
+        }
+      }
+
+      response = { messages: activeMessages, nextCursor: null };
+    } else {
+      response = { messages: [], nextCursor: null };
+    }
+
+    res.status(200).json(response);
+  } catch (error) {
+    logger.error('Error fetching messages:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.post('/artifact/:messageId', async (req, res) => {
   try {

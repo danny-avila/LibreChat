@@ -184,10 +184,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       <Tabs.Trigger
                         key={value}
                         className={cn(
-                          'group relative z-10 m-1 flex items-center justify-start gap-2 px-2 py-1.5 transition-all duration-200 ease-in-out',
+                          'group relative z-10 m-1 flex items-center justify-start gap-2 rounded-xl px-2 py-1.5 transition-all duration-200 ease-in-out',
                           isSmallScreen
-                            ? 'flex-1 justify-center text-nowrap rounded-xl p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
-                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-surface-tertiary',
+                            ? 'flex-1 justify-center text-nowrap p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
+                            : 'bg-transparent text-text-secondary radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary',
                         )}
                         value={value}
                         ref={(el) => (tabRefs.current[value] = el)}

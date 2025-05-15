@@ -5,9 +5,13 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import your JSON translations
 import translationEn from './en/translation.json';
 import translationAr from './ar/translation.json';
+import translationCa from './ca/translation.json';
+import translationCs from './cs/translation.json';
+import translationDa from './da/translation.json';
 import translationDe from './de/translation.json';
 import translationEs from './es/translation.json';
 import translationEt from './et/translation.json';
+import translationFa from './fa/translation.json';
 import translationFr from './fr/translation.json';
 import translationIt from './it/translation.json';
 import translationPl from './pl/translation.json';
@@ -34,11 +38,15 @@ export const defaultNS = 'translation';
 export const resources = {
   en: { translation: translationEn },
   ar: { translation: translationAr },
+  ca: { translation: translationCa },
+  cs: { translation: translationCs },
   'zh-Hans': { translation: translationZh_Hans },
   'zh-Hant': { translation: translationZh_Hant },
+  da: { translation: translationDa },
   de: { translation: translationDe },
   es: { translation: translationEs },
   et: { translation: translationEt },
+  fa: { translation: translationFa },
   fr: { translation: translationFr },
   it: { translation: translationIt },
   pl: { translation: translationPl },

@@ -492,7 +492,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
-
+  const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
@@ -520,7 +520,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('OCR capability is not enabled for Agents');
     }
 
-    const { handleFileUpload } = getStrategyFunctions(
+    const { handleFileUpload: uploadMistralOCR } = getStrategyFunctions(
       req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
     );
     const { file_id, temp_file_id } = metadata;
@@ -532,7 +532,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       images,
       filename,
       filepath: ocrFileURL,
-    } = await handleFileUpload({ req, file, file_id, entity_id: agent_id });
+    } = await uploadMistralOCR({ req, file, file_id, entity_id: agent_id, basePath });
 
     const fileInfo = removeNullishValues({
       text,
@@ -540,7 +540,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       file_id,
       temp_file_id,
       user: req.user.id,
-      type: file.mimetype,
+      type: 'text/plain',
       filepath: ocrFileURL,
       source: FileSources.text,
       filename: filename ?? file.originalname,
@@ -582,6 +582,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     file,
     file_id,
     entity_id,
+    basePath,
   });
 
   let filepath = _filepath;

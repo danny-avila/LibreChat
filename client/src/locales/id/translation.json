@@ -1,4 +1,5 @@
 {
+  "com_agents_by_librechat": "oleh LibreChat",
   "com_auth_already_have_account": "Sudah memiliki akun?",
   "com_auth_click": "Klik",
   "com_auth_click_here": "Klik di sini",
@@ -140,7 +141,6 @@
   "com_nav_archive_created_at": "TanggalDibuat",
   "com_nav_archive_name": "Nama",
   "com_nav_archived_chats": "Percakapan Arsip",
-  "com_nav_archived_chats_empty": "Tidak ada percakapan yang diarsipkan.",
   "com_nav_auto_scroll": "Otomatis gulir ke Baru saat Buka",
   "com_nav_balance": "Keseimbangan",
   "com_nav_change_picture": "Ubah foto",
@@ -211,7 +211,6 @@
   "com_nav_theme_system": "Sistem",
   "com_nav_user": "PENGGUNA",
   "com_nav_user_name_display": "Tampilkan nama pengguna dalam pesan",
-  "com_nav_welcome_message": "Bagaimana saya bisa membantu Anda hari ini?",
   "com_show_agent_settings": "Tampilkan Pengaturan Agen",
   "com_show_completion_settings": "Tampilkan Pengaturan Penyelesaian",
   "com_show_examples": "Tampilkan Contoh",

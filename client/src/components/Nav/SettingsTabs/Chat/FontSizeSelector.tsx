@@ -30,6 +30,7 @@ export default function FontSizeSelector() {
         onChange={handleChange}
         testId="font-size-selector"
         sizeClasses="w-[150px]"
+        className="z-50"
       />
     </div>
   );
