@@ -25,8 +25,8 @@ let openidConfig = null;
 
 class CustomOpenIDStrategy extends OpenIDStrategy {
   currentUrl(req) {
-    const host = req.headers && !!req.headers.host ? req.headers.host : req.host;
-    return new URL(`${req.protocol}://${host}${req.originalUrl ?? req.url}`);
+    const hostAndProtocol = process.env.DOMAIN_SERVER;
+    return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
 }
 /**
