@@ -89,7 +89,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       ? [
         {
           value: SettingsTabValues.BALANCE,
-          icon: <DollarSign size={18} />,
+            icon: <DollarSign size={18} />,
           label: 'com_nav_setting_balance' as TranslationKeys,
         },
         ]
