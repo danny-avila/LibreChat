@@ -47,13 +47,12 @@ const ContentParts = memo(
     const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
     const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
     const [isExpanded, setIsExpanded] = useState(showThinking);
-    const searchResults = useSearchResultsByTurn(
-      attachments ?? messageAttachmentsMap[messageId] ?? [],
-    );
-    const attachmentMap = useMemo(
-      () => mapAttachments(attachments ?? messageAttachmentsMap[messageId] ?? []),
+    const messageAttachments = useMemo(
+      () => attachments ?? messageAttachmentsMap[messageId] ?? [],
       [attachments, messageAttachmentsMap, messageId],
     );
+    const searchResults = useSearchResultsByTurn(messageAttachments);
+    const attachmentMap = useMemo(() => mapAttachments(messageAttachments), [messageAttachments]);
 
     const hasReasoningParts = useMemo(() => {
       const hasThinkPart = content?.some((part) => part?.type === ContentTypes.THINK) ?? false;
