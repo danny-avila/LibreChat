@@ -53,7 +53,10 @@ export default function createChatSearchParams(
 
   const paramMap: Record<string, any> = {};
   allowedParams.forEach((key) => {
-    if (key !== 'endpoint' && key !== 'model' && key in conversation) {
+    if (key === 'agent_id' && conversation.agent_id === Constants.EPHEMERAL_AGENT_ID) {
+      return;
+    }
+    if (key !== 'endpoint' && key !== 'model') {
       paramMap[key] = (conversation as any)[key];
     }
   });
