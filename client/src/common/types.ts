@@ -535,6 +535,7 @@ export type NewConversationParams = {
   buildDefault?: boolean;
   keepLatestMessage?: boolean;
   keepAddedConvos?: boolean;
+  disableParams?: boolean;
 };
 
 export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;
