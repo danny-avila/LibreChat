@@ -6,11 +6,11 @@ import { TAttachment, Tools, SearchResultData } from 'librechat-data-provider';
  * @param attachments Array of attachment metadata
  * @returns A map of turn numbers to their corresponding search result data
  */
-export function useSearchResultsByTurn(attachments: TAttachment[]) {
+export function useSearchResultsByTurn(attachments?: TAttachment[]) {
   const searchResultsByTurn = useMemo(() => {
     const turnMap: { [key: string]: SearchResultData } = {};
 
-    attachments.forEach((attachment) => {
+    attachments?.forEach((attachment) => {
       if (attachment.type === Tools.web_search && attachment[Tools.web_search]) {
         const searchData = attachment[Tools.web_search];
         if (searchData && typeof searchData.turn === 'number') {
