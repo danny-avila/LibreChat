@@ -1,3 +1,5 @@
+export type SearchRefType = 'search' | 'image' | 'news' | 'video' | 'ref';
+
 export interface MediaReference {
   originalUrl: string;
   title?: string;
@@ -154,6 +156,7 @@ export interface VideoResult {
 
 export type RelatedSearches = Array<{ query: string }>;
 export interface SearchResultData {
+  turn?: number;
   organic?: ProcessedOrganic[];
   topStories?: ProcessedTopStory[];
   images?: ImageResult[];

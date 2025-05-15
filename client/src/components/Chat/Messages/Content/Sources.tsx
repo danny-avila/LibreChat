@@ -17,7 +17,6 @@ interface SourceItemProps {
   source: ValidSource;
   isNews?: boolean;
   expanded?: boolean;
-  inDialog?: boolean;
 }
 
 /** Helper to get domain favicon */
@@ -68,7 +67,7 @@ function SourceItemBase({
   );
 }
 
-function SourceItem({ source, isNews, expanded = false, inDialog = false }: SourceItemProps) {
+function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
   const localize = useLocalize();
   const domain = getCleanDomain(source.link);
 
@@ -84,27 +83,12 @@ function SourceItem({ source, isNews, expanded = false, inDialog = false }: Sour
             <h3 className="text-token-text-primary text-sm font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400">
               {source.title || source.link}
             </h3>
-            {source.snippet && (
+            {'snippet' in source && source.snippet && (
               <p className="text-token-text-secondary mt-1 line-clamp-2 text-xs">
                 {source.snippet}
               </p>
             )}
           </div>
-        )}
-      </SourceItemBase>
-    );
-  }
-
-  if (inDialog) {
-    return (
-      <SourceItemBase source={source}>
-        {(domain) => (
-          <>
-            <FaviconImage domain={domain} />
-            <span className="max-w-full truncate text-xs font-medium text-text-primary">
-              {domain}
-            </span>
-          </>
         )}
       </SourceItemBase>
     );
@@ -120,12 +104,22 @@ function SourceItem({ source, isNews, expanded = false, inDialog = false }: Sour
                 href={source.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex h-10 w-full items-center gap-2 rounded-lg bg-surface-secondary px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+                className="flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
               >
-                <FaviconImage domain={domain} />
-                <span className="max-w-full truncate text-xs font-medium text-text-primary">
-                  {domain}
-                </span>
+                <div className="flex items-center gap-2">
+                  <FaviconImage domain={domain} />
+                  <span className="truncate text-xs font-medium text-text-secondary">{domain}</span>
+                </div>
+                <div className="mt-1">
+                  <span className="line-clamp-2 text-sm font-medium text-text-primary">
+                    {source.title || source.link}
+                  </span>
+                  {/* {'snippet' in source && source.snippet && (
+                    <span className="mt-1 line-clamp-2 text-xs text-text-secondary">
+                      {source.snippet}
+                    </span>
+                  )} */}
+                </div>
               </a>
             }
           />
@@ -150,7 +144,9 @@ function SourceItem({ source, isNews, expanded = false, inDialog = false }: Sour
             </div>
 
             <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{source.title || source.link}</h4>
-            {source.snippet && <p className="my-2 text-sm text-text-secondary">{source.snippet}</p>}
+            {'snippet' in source && source.snippet && (
+              <p className="my-2 text-sm text-text-secondary">{source.snippet}</p>
+            )}
           </Ariakit.Hovercard>
         </div>
       </Ariakit.HovercardProvider>
@@ -218,14 +214,14 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
           </div>
         ))}
         {hasMoreSources && (
-          <div className="w-full min-w-[120px]">
-            <OGDialogTrigger className="flex h-10 w-full items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary transition-all duration-300 hover:bg-surface-tertiary">
+          <OGDialogTrigger className="flex flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary">
+            <div className="flex items-center gap-2">
               <StackedFavicons sources={remainingSources} />
-              <span className="max-w-full truncate font-medium">
+              <span className="truncate text-xs font-medium text-text-secondary">
                 {localize('com_sources_more_sources', { count: remainingSources.length })}
               </span>
-            </OGDialogTrigger>
-          </div>
+            </div>
+          </OGDialogTrigger>
         )}
         <OGDialogContent className="max-h-[80vh] max-w-full overflow-y-auto bg-surface-primary md:max-w-[600px]">
           <OGDialogTitle className="mb-4 text-lg font-medium">
@@ -233,7 +229,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
           </OGDialogTitle>
           <div className="flex flex-col gap-3">
             {[...visibleSources, ...remainingSources].map((source, i) => (
-              <SourceItem key={`more-source-${i}`} source={source} expanded inDialog />
+              <SourceItem key={`more-source-${i}`} source={source} expanded />
             ))}
           </div>
         </OGDialogContent>
@@ -269,7 +265,9 @@ export default function Sources() {
       if (result.organic?.length) {
         allOrganic.push(...result.organic);
       }
-
+      if (result.references?.length) {
+        allOrganic.push(...result.references);
+      }
       if (result.topStories?.length) {
         allTopStories.push(...result.topStories);
       }

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { SearchRefType, ValidSource, ResultReference } from 'librechat-data-provider';
 import type * as t from './types';
 import { useSearchContext } from '~/Providers';
 
@@ -17,19 +18,39 @@ export function useHighlightState(citationId: string | undefined) {
   return citationId && hoveredCitationId === citationId;
 }
 
-export function useCitation(
-  turn: number,
-  _refType: string,
-  index: number,
-): (t.Citation & t.Reference) | undefined {
+export type CitationSource = (ValidSource | ResultReference) & {
+  turn: number;
+  refType: string | SearchRefType;
+  index: number;
+};
+
+const refTypeMap: Record<string | SearchRefType, string> = {
+  search: 'organic',
+  ref: 'references',
+};
+
+export function useCitation({
+  turn,
+  index,
+  refType: _refType,
+}: {
+  turn: number;
+  index: number;
+  refType?: SearchRefType | string;
+}): (t.Citation & t.Reference) | undefined {
   const { searchResults } = useSearchContext();
-  const refType = _refType.toLowerCase() === 'search' ? 'organic' : _refType;
+  if (!_refType) {
+    return undefined;
+  }
+  const refType = refTypeMap[_refType.toLowerCase()]
+    ? refTypeMap[_refType.toLowerCase()]
+    : _refType;
 
   if (!searchResults || !searchResults[turn] || !searchResults[turn][refType]) {
     return undefined;
   }
 
-  const source = searchResults[turn][refType][index];
+  const source: CitationSource = searchResults[turn][refType][index];
 
   if (!source) {
     return undefined;
@@ -38,25 +59,31 @@ export function useCitation(
   return {
     ...source,
     turn,
-    refType: refType as 'search' | 'image' | 'news' | 'video',
+    refType: _refType.toLowerCase(),
     index,
+    link: source.link ?? '',
+    title: source.title ?? '',
+    snippet: source['snippet'] ?? '',
+    attribution: source.attribution ?? '',
   };
 }
 
 export function useCompositeCitations(
-  citations: Array<{ turn: number; refType: string; index: number }>,
+  citations: Array<{ turn: number; refType: SearchRefType | string; index: number }>,
 ): Array<t.Citation & t.Reference> {
   const { searchResults } = useSearchContext();
 
   const result: Array<t.Citation & t.Reference> = [];
 
-  for (const { turn, refType, index } of citations) {
+  for (const { turn, refType: _refType, index } of citations) {
+    const refType = refTypeMap[_refType.toLowerCase()]
+      ? refTypeMap[_refType.toLowerCase()]
+      : _refType;
+
     if (!searchResults || !searchResults[turn] || !searchResults[turn][refType]) {
       continue;
     }
-
-    const source = searchResults[turn][refType][index];
-
+    const source: CitationSource = searchResults[turn][refType][index];
     if (!source) {
       continue;
     }
@@ -64,8 +91,12 @@ export function useCompositeCitations(
     result.push({
       ...source,
       turn,
-      refType: refType as 'search' | 'image' | 'news' | 'video',
+      refType: _refType.toLowerCase(),
       index,
+      link: source.link ?? '',
+      title: source.title ?? '',
+      snippet: source['snippet'] ?? '',
+      attribution: source.attribution ?? '',
     });
   }
 
