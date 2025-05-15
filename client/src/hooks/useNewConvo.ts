@@ -88,7 +88,12 @@ const useNewConvo = (index = 0) => {
             ? defaultPreset
             : preset;
 
-        const disableParams = _disableParams ?? activePreset?.presetId === defaultPreset?.presetId;
+        const disableParams =
+          _disableParams ??
+          (activePreset?.presetId != null &&
+            activePreset.presetId &&
+            activePreset.presetId === defaultPreset?.presetId);
+
         if (buildDefaultConversation) {
           let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
