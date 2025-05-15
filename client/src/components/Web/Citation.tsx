@@ -161,7 +161,11 @@ export function Citation(props: CitationComponentProps) {
   const localize = useLocalize();
   const { citation, citationId, citationType } = props.node?.properties ?? {};
   const { setHoveredCitationId } = useContext(CitationContext);
-  const refData = useCitation(citation?.turn || 0, citation?.refType || '', citation?.index || 0);
+  const refData = useCitation({
+    turn: citation?.turn || 0,
+    refType: citation?.refType,
+    index: citation?.index || 0,
+  });
   if (!refData) return null;
 
   const getInitial = () => {
