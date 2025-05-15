@@ -71,6 +71,7 @@ const useNewConvo = (index = 0) => {
         keepLatestMessage?: boolean,
         keepAddedConvos?: boolean,
         disableFocus?: boolean,
+        _disableParams?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -87,6 +88,7 @@ const useNewConvo = (index = 0) => {
             ? defaultPreset
             : preset;
 
+        const disableParams = _disableParams ?? activePreset?.presetId === defaultPreset?.presetId;
         if (buildDefaultConversation) {
           let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
@@ -148,6 +150,10 @@ const useNewConvo = (index = 0) => {
           });
         }
 
+        if (disableParams === true) {
+          conversation.disableParams = true;
+        }
+
         if (!(keepAddedConvos ?? false)) {
           clearAllConversations(true);
         }
@@ -160,7 +166,7 @@ const useNewConvo = (index = 0) => {
           );
           setConversation({
             ...conversation,
-            conversationId: 'new',
+            conversationId: Constants.NEW_CONVO as string,
           });
         } else {
           logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
@@ -205,6 +211,7 @@ const useNewConvo = (index = 0) => {
       buildDefault = true,
       keepLatestMessage = false,
       keepAddedConvos = false,
+      disableParams,
     }: {
       template?: Partial<TConversation>;
       preset?: Partial<TPreset>;
@@ -213,6 +220,7 @@ const useNewConvo = (index = 0) => {
       disableFocus?: boolean;
       keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
+      disableParams?: boolean;
     } = {}) {
       pauseGlobalAudio();
       if (!saveBadgesState) {
@@ -282,17 +290,19 @@ const useNewConvo = (index = 0) => {
         keepLatestMessage,
         keepAddedConvos,
         disableFocus,
+        disableParams,
       );
     },
     [
-      pauseGlobalAudio,
-      startupConfig,
-      saveDrafts,
-      switchToConversation,
       files,
       setFiles,
+      saveDrafts,
       mutateAsync,
       resetBadges,
+      startupConfig,
+      saveBadgesState,
+      pauseGlobalAudio,
+      switchToConversation,
     ],
   );
 

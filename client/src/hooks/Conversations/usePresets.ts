@@ -58,10 +58,11 @@ export default function usePresets() {
     }
     setDefaultPreset(defaultPreset);
     if (!conversation?.conversationId || conversation.conversationId === 'new') {
-      newConversation({ preset: defaultPreset, modelsData });
+      newConversation({ preset: defaultPreset, modelsData, disableParams: true });
     }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetsQuery.data, user, modelsData]);
 
   const setPresets = useCallback(

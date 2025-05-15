@@ -106,10 +106,13 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
           JSON.stringify(newValue),
         );
 
+        const disableParams = newValue.disableParams === true;
         const shouldUpdateParams =
+          index === 0 &&
+          !disableParams &&
           newValue.createdAt === '' &&
           JSON.stringify(newValue) !== JSON.stringify(oldValue) &&
-          (oldValue as TConversation)?.conversationId === 'new';
+          (oldValue as TConversation)?.conversationId === Constants.NEW_CONVO;
 
         if (shouldUpdateParams) {
           const newParams = createChatSearchParams(newValue);
