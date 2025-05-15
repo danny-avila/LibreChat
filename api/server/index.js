@@ -23,7 +23,8 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY, SANDPACK_BUNDLER_URL } =
+  process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
@@ -64,7 +65,9 @@ const startServer = async () => {
           defaultSrc: ["'self'"], // allow everything from same origin by default
           scriptSrc: ["'self'"], // only own scripts and a trusted external source
           objectSrc: ["'none'"], // disallow plugin-based content
-          frameAncestors: ["'self'"], // prevent framing by other sites
+          frameAncestors: ["'self'"].concat(
+            SANDPACK_BUNDLER_URL ? [SANDPACK_BUNDLER_URL] : ['https://codesandbox.io'],
+          ), // prevent framing by other sites
         },
       },
     }),
