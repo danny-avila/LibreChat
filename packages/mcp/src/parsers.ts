@@ -1,5 +1,13 @@
 import type * as t from './types/mcp';
-const RECOGNIZED_PROVIDERS = new Set(['google', 'anthropic', 'openai', 'openrouter', 'xai', 'deepseek', 'ollama']);
+const RECOGNIZED_PROVIDERS = new Set([
+  'google',
+  'anthropic',
+  'openai',
+  'openrouter',
+  'xai',
+  'deepseek',
+  'ollama',
+]);
 const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
