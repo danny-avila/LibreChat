@@ -167,7 +167,7 @@ export default function useQueryParams({
         template.iconURL = null;
         template.modelLabel = null;
         resetParams = { spec: null, iconURL: null, modelLabel: null };
-        newPreset = { ...newPreset, ...resetParams, modelLabel: newPreset.modelLabel };
+        newPreset = { ...newPreset, ...resetParams };
       }
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;

@@ -666,11 +666,6 @@ export const tQueryParamsSchema = tConversationSchema
     // librechat settings
     /** The model spec to be used */
     spec: true,
-    /**
-     * Legacy: The model label, if any, usually from a preset.
-     * Overrides the system-defined model label shown in AI messages.
-     * */
-    modelLabel: true,
     /** The AI context window, overrides the system-defined window as determined by `model` value */
     maxContextTokens: true,
     /**
