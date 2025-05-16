@@ -25,32 +25,7 @@ type VersionPanelProps = {
   selectedAgentId?: string; // Add prop for directly passing an agent ID
 };
 
-// Text placeholder constants to avoid i18next linting errors
-const TEXT = {
-  TITLE: 'Version History',
-  ERROR: 'Error fetching versions',
-  EMPTY: 'No versions available',
-  VERSION: 'Version',
-  RESTORE: 'Restore',
-};
-
-// Helper function to get timestamp from version object regardless of field name
-const getVersionTimestamp = (version: Record<string, any>): string => {
-  // Try different possible timestamp field names, in order of preference
-  const timestamp = version.created_at || version.createdAt || version.updatedAt;
-
-  if (timestamp) {
-    try {
-      return new Date(timestamp).toLocaleString();
-    } catch (error) {
-      console.error('Error parsing timestamp:', error);
-      return 'Unknown date';
-    }
-  }
-
-  // Fallback if no timestamp field is found
-  return 'Date not available';
-};
+// Using localization instead of hardcoded text constants
 
 export default function VersionPanel({
   agentsConfig,
@@ -58,6 +33,24 @@ export default function VersionPanel({
   selectedAgentId,
 }: VersionPanelProps) {
   const localize = useLocalize();
+
+  // Helper function to get timestamp from version object regardless of field name
+  const getVersionTimestamp = (version: Record<string, any>): string => {
+    // Try different possible timestamp field names, in order of preference
+    const timestamp = version.created_at || version.createdAt || version.updatedAt;
+
+    if (timestamp) {
+      try {
+        return new Date(timestamp).toLocaleString();
+      } catch (error) {
+        // Silent error handling for invalid date formats
+        return localize('com_ui_agent_version_unknown_date');
+      }
+    }
+
+    // Fallback if no timestamp field is found
+    return localize('com_ui_agent_version_no_date');
+  };
 
   // Get agent_id either from props, URL params, or form context
   // This handles the case where the component might be used outside of a form
@@ -106,43 +99,48 @@ export default function VersionPanel({
             </div>
           </button>
         </div>
-        <div className="mb-2 mt-2 text-xl font-medium">{TEXT.TITLE}</div>
+        <div className="mb-2 mt-2 text-xl font-medium">
+          {localize('com_ui_agent_version_history')}
+        </div>
       </div>
       <div className="flex flex-col gap-4 px-2">
         {!agent_id ? (
           <div className="py-8 text-center text-text-secondary">
-            {'No agent selected. Please select an agent to view version history.'}
+            {localize('com_ui_agent_version_no_agent')}
           </div>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Spinner className="h-6 w-6" />
           </div>
         ) : error ? (
-          <div className="py-8 text-center text-red-500">{TEXT.ERROR}</div>
+          <div className="py-8 text-center text-red-500">
+            {localize('com_ui_agent_version_error')}
+          </div>
         ) : versions.length > 0 ? (
           <div className="flex flex-col gap-2">
             {versions.map((version, index) => (
               <div key={index} className="rounded-md border border-border-light p-3">
                 <div className="font-medium">
-                  {TEXT.VERSION} {versions.length - index}
+                  {localize('com_ui_agent_version_title')} {versions.length - index}
                 </div>
                 <div className="text-sm text-text-secondary">{getVersionTimestamp(version)}</div>
                 <button
                   className="mt-2 text-sm text-blue-500 hover:text-blue-600"
                   onClick={() => {
                     // Handle restore version logic here
-                    console.log('Restore version', version);
-                    // You would implement the restore functionality here
+                    // TODO: Implement restore functionality
                   }}
-                  aria-label={TEXT.RESTORE}
+                  aria-label={localize('com_ui_agent_version_restore')}
                 >
-                  {TEXT.RESTORE}
+                  {localize('com_ui_agent_version_restore')}
                 </button>
               </div>
             ))}
           </div>
         ) : (
-          <div className="py-8 text-center text-text-secondary">{TEXT.EMPTY}</div>
+          <div className="py-8 text-center text-text-secondary">
+            {localize('com_ui_agent_version_empty')}
+          </div>
         )}
       </div>
     </div>
