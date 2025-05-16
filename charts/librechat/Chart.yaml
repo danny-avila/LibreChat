@@ -1,4 +1,7 @@
 apiVersion: v2
 name: librechat
 type: application
-version: 1.0.0
+version: 1.0.1
+home: https://github.com/danny-avila/librechat
+description: Enhanced ChatGPT Clone, open-source for self-hosting.
+icon: https://www.librechat.ai/librechat_alt.svg
