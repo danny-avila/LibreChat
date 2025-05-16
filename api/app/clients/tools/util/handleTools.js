@@ -138,7 +138,6 @@ const loadTools = async ({
   agent,
   model,
   endpoint,
-  useSpecs,
   tools = [],
   options = {},
   functions = true,
