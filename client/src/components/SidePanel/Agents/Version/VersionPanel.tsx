@@ -1,20 +1,44 @@
 import type { Agent, TAgentsEndpoint } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import type { AgentPanelProps } from '~/common';
 import { Panel } from '~/common';
-import { Spinner } from '~/components/svg';
 import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
 import { useLocalize, useToast } from '~/hooks';
+import VersionContent from './VersionContent';
+import { isActiveVersion } from './isActiveVersion';
 
-interface AgentWithVersions extends Agent {
-  versions?: Array<{
-    createdAt?: string | number | Date;
-    updatedAt?: string | number | Date;
-    [key: string]: any;
-  }>;
+export type VersionRecord = Record<string, any>;
+
+export type AgentState = {
+  name: string | null;
+  description: string | null;
+  instructions: string | null;
+  capabilities?: string[];
+  tools?: string[];
+} | null;
+
+export type VersionWithId = {
+  id: number;
+  originalIndex: number;
+  version: VersionRecord;
+  isActive: boolean;
+};
+
+export type VersionContext = {
+  versions: VersionRecord[];
+  versionIds: VersionWithId[];
+  currentAgent: AgentState;
+  selectedAgentId: string;
+  activeVersion: VersionRecord | null;
+};
+
+export interface AgentWithVersions extends Agent {
+  capabilities?: string[];
+  versions?: Array<VersionRecord>;
 }
 
-type VersionPanelProps = {
+export type VersionPanelProps = {
   agentsConfig: TAgentsEndpoint | null;
   setActivePanel: AgentPanelProps['setActivePanel'];
   selectedAgentId?: string;
@@ -49,25 +73,85 @@ export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: V
   });
 
   const agentWithVersions = agent as AgentWithVersions;
-  const versions = [...(agentWithVersions?.versions || [])].sort((a, b) => {
-    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-    return bTime - aTime;
-  });
 
-  const getVersionTimestamp = (version: Record<string, any>): string => {
-    const timestamp = version.updatedAt || version.createdAt;
+  const currentAgent = useMemo(() => {
+    if (!agentWithVersions) return null;
+    return {
+      name: agentWithVersions.name,
+      description: agentWithVersions.description,
+      instructions: agentWithVersions.instructions,
+      capabilities: agentWithVersions.capabilities,
+      tools: agentWithVersions.tools,
+    };
+  }, [agentWithVersions]);
 
-    if (timestamp) {
-      try {
-        return new Date(timestamp).toLocaleString();
-      } catch (error) {
-        return localize('com_ui_agent_version_unknown_date');
+  const versions = useMemo(() => {
+    const versionsCopy = [...(agentWithVersions?.versions || [])];
+    return versionsCopy.sort((a, b) => {
+      const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [agentWithVersions?.versions]);
+
+  const activeVersion = useMemo(() => {
+    return versions.length > 0
+      ? versions.find((v) => isActiveVersion(v, currentAgent, versions)) || null
+      : null;
+  }, [versions, currentAgent]);
+
+  const versionIds = useMemo(() => {
+    if (versions.length === 0) return [];
+
+    const matchingVersions = versions.filter((v) => isActiveVersion(v, currentAgent, versions));
+
+    const activeVersionId =
+      matchingVersions.length > 0 ? versions.findIndex((v) => v === matchingVersions[0]) : -1;
+
+    return versions.map((version, displayIndex) => {
+      const originalIndex =
+        agentWithVersions?.versions?.findIndex(
+          (v) =>
+            v.updatedAt === version.updatedAt &&
+            v.createdAt === version.createdAt &&
+            v.name === version.name,
+        ) ?? displayIndex;
+
+      return {
+        id: displayIndex,
+        originalIndex,
+        version,
+        isActive: displayIndex === activeVersionId,
+      };
+    });
+  }, [versions, currentAgent, agentWithVersions?.versions]);
+
+  const versionContext: VersionContext = useMemo(
+    () => ({
+      versions,
+      versionIds,
+      currentAgent,
+      selectedAgentId,
+      activeVersion,
+    }),
+    [versions, versionIds, currentAgent, selectedAgentId, activeVersion],
+  );
+
+  const handleRestore = useCallback(
+    (displayIndex: number) => {
+      const versionWithId = versionIds.find((v) => v.id === displayIndex);
+
+      if (versionWithId) {
+        const originalIndex = versionWithId.originalIndex;
+
+        revertAgentVersion.mutate({
+          agent_id: selectedAgentId,
+          version_index: originalIndex,
+        });
       }
-    }
-
-    return localize('com_ui_agent_version_no_date');
-  };
+    },
+    [revertAgentVersion, selectedAgentId, versionIds],
+  );
 
   return (
     <div className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm">
@@ -90,57 +174,13 @@ export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: V
         </div>
       </div>
       <div className="flex flex-col gap-4 px-2">
-        {!selectedAgentId ? (
-          <div className="py-8 text-center text-text-secondary">
-            {localize('com_ui_agent_version_no_agent')}
-          </div>
-        ) : isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Spinner className="h-6 w-6" />
-          </div>
-        ) : error ? (
-          <div className="py-8 text-center text-red-500">
-            {localize('com_ui_agent_version_error')}
-          </div>
-        ) : versions.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {versions.map((version, index) => (
-              <div key={index} className="rounded-md border border-border-light p-3">
-                <div className="flex items-center justify-between font-medium">
-                  <span>
-                    {localize('com_ui_agent_version_title')} {versions.length - index}
-                  </span>
-                  {index === 0 && (
-                    <span className="rounded-full border border-green-600 bg-green-600/20 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-500 dark:bg-green-500/30 dark:text-green-300">
-                      {localize('com_ui_agent_version_active')}
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm text-text-secondary">{getVersionTimestamp(version)}</div>
-                {index !== 0 && (
-                  <button
-                    className="mt-2 text-sm text-blue-500 hover:text-blue-600"
-                    onClick={() => {
-                      if (window.confirm(localize('com_ui_agent_version_restore_confirm'))) {
-                        revertAgentVersion.mutate({
-                          agent_id: selectedAgentId,
-                          version_index: index,
-                        });
-                      }
-                    }}
-                    aria-label={localize('com_ui_agent_version_restore')}
-                  >
-                    {localize('com_ui_agent_version_restore')}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="py-8 text-center text-text-secondary">
-            {localize('com_ui_agent_version_empty')}
-          </div>
-        )}
+        <VersionContent
+          selectedAgentId={selectedAgentId}
+          isLoading={isLoading}
+          error={error}
+          versionContext={versionContext}
+          onRestore={handleRestore}
+        />
       </div>
     </div>
   );
