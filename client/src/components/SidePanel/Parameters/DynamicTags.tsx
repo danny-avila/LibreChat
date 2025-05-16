@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger, Tag } from '~/components/ui';
 import { useChatContext, useToastContext } from '~/Providers';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
-import { cn, defaultTextProps } from '~/utils';
+import { cn } from '~/utils';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
@@ -15,7 +14,6 @@ function DynamicTags({
   description = '',
   columnSpan,
   setOption,
-  optionType,
   placeholder = '',
   readonly = false,
   showDefault = false,
@@ -38,14 +36,10 @@ function DynamicTags({
 
   const updateState = useCallback(
     (update: string[]) => {
-      if (optionType === OptionTypes.Custom) {
-        // TODO: custom logic, add to payload but not to conversation
-        setTags(update);
-        return;
-      }
+      setTags(update);
       setOption(settingKey)(update);
     },
-    [optionType, setOption, settingKey],
+    [setOption, settingKey],
   );
 
   const onTagClick = useCallback(() => {
@@ -54,18 +48,10 @@ function DynamicTags({
     }
   }, [inputRef]);
 
-  const currentTags: string[] | undefined = useMemo(() => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      return tags;
-    }
-
-    if (!conversation?.[settingKey]) {
-      return defaultValue ?? [];
-    }
-
-    return conversation[settingKey];
-  }, [conversation, defaultValue, optionType, settingKey, tags]);
+  const currentValue = conversation?.[settingKey];
+  const currentTags = useMemo(() => {
+    return currentValue ?? defaultValue ?? [];
+  }, [currentValue, defaultValue]);
 
   const onTagRemove = useCallback(
     (indexToRemove: number) => {
@@ -75,7 +61,7 @@ function DynamicTags({
 
       if (minTags != null && currentTags.length <= minTags) {
         showToast({
-          message: localize('com_ui_min_tags',{ 0: minTags + '' }),
+          message: localize('com_ui_min_tags', { 0: minTags + '' }),
           status: 'warning',
         });
         return;
@@ -126,7 +112,7 @@ function DynamicTags({
               htmlFor={`${settingKey}-dynamic-input`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   (
@@ -174,7 +160,11 @@ function DynamicTags({
                   }
                 }}
                 onChange={(e) => setTagText(e.target.value)}
-                placeholder={placeholderCode ? localize(placeholder as TranslationKeys) ?? placeholder : placeholder}
+                placeholder={
+                  placeholderCode
+                    ? (localize(placeholder as TranslationKeys) ?? placeholder)
+                    : placeholder
+                }
                 className={cn('flex h-10 max-h-10 border-none bg-surface-secondary px-3 py-2')}
               />
             </div>
@@ -182,7 +172,11 @@ function DynamicTags({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={descriptionSide as ESide}
           />
         )}
