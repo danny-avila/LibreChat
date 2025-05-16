@@ -160,7 +160,10 @@ const updateAgent = async (searchParameter, updateData) => {
     const { __v, _id, id, versions, ...versionData } = currentAgent.toObject();
     updateData.$push = {
       ...(updateData.$push || {}),
-      versions: versionData,
+      versions: {
+        ...versionData,
+        updatedAt: new Date(),
+      },
     };
   }
 

@@ -495,6 +495,7 @@
   "com_ui_agent_version_no_agent": "No agent selected. Please select an agent to view version history.",
   "com_ui_agent_version_unknown_date": "Unknown date",
   "com_ui_agent_version_no_date": "Date not available",
+  "com_ui_agent_version_active": "Active Version",
   "com_ui_agents": "Agents",
   "com_ui_agents_allow_create": "Allow creating Agents",
   "com_ui_agents_allow_share_global": "Allow sharing Agents to all users",

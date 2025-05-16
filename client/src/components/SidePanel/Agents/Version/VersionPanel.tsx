@@ -49,7 +49,11 @@ export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: V
   });
 
   const agentWithVersions = agent as AgentWithVersions;
-  const versions = agentWithVersions?.versions || [];
+  const versions = [...(agentWithVersions?.versions || [])].sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return bTime - aTime;
+  });
 
   const getVersionTimestamp = (version: Record<string, any>): string => {
     const timestamp = version.updatedAt || version.createdAt;
@@ -102,25 +106,33 @@ export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: V
           <div className="flex flex-col gap-2">
             {versions.map((version, index) => (
               <div key={index} className="rounded-md border border-border-light p-3">
-                <div className="font-medium">
-                  {localize('com_ui_agent_version_title')} {versions.length - index}
+                <div className="flex items-center justify-between font-medium">
+                  <span>
+                    {localize('com_ui_agent_version_title')} {versions.length - index}
+                  </span>
+                  {index === 0 && (
+                    <span className="rounded-full border border-green-600 bg-green-600/20 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-500 dark:bg-green-500/30 dark:text-green-300">
+                      {localize('com_ui_agent_version_active')}
+                    </span>
+                  )}
                 </div>
                 <div className="text-sm text-text-secondary">{getVersionTimestamp(version)}</div>
-                <button
-                  className="mt-2 text-sm text-blue-500 hover:text-blue-600"
-                  onClick={() => {
-                    // TODO: Add confirmation dialog before reverting
-                    if (window.confirm(localize('com_ui_agent_version_restore_confirm'))) {
-                      revertAgentVersion.mutate({
-                        agent_id: selectedAgentId,
-                        version_index: index,
-                      });
-                    }
-                  }}
-                  aria-label={localize('com_ui_agent_version_restore')}
-                >
-                  {localize('com_ui_agent_version_restore')}
-                </button>
+                {index !== 0 && (
+                  <button
+                    className="mt-2 text-sm text-blue-500 hover:text-blue-600"
+                    onClick={() => {
+                      if (window.confirm(localize('com_ui_agent_version_restore_confirm'))) {
+                        revertAgentVersion.mutate({
+                          agent_id: selectedAgentId,
+                          version_index: index,
+                        });
+                      }
+                    }}
+                    aria-label={localize('com_ui_agent_version_restore')}
+                  >
+                    {localize('com_ui_agent_version_restore')}
+                  </button>
+                )}
               </div>
             ))}
           </div>
