@@ -29,7 +29,7 @@
   "com_assistants_actions_info": "Let your Assistant retrieve information or take actions via API's",
   "com_assistants_add_actions": "Add Actions",
   "com_assistants_add_tools": "Add Tools",
-  "com_assistants_allow_sites_you_trust": "Only allow sites you trust.",
+  "com_assistants_allow_sites_you_trust": "Only allow sites you trust",
   "com_assistants_append_date": "Append Current Date & Time",
   "com_assistants_append_date_tooltip": "When enabled, the current client date and time will be appended to the assistant system instructions.",
   "com_assistants_attempt_info": "Assistant wants to send the following:",
@@ -871,6 +871,13 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
+  "com_ui_getting_started": "Getting Started",
+  "com_ui_creating_image": "Creating image. May take a moment",
+  "com_ui_adding_details": "Adding details",
+  "com_ui_final_touch": "Final touch",
+  "com_ui_image_created": "Image created",
+  "com_ui_edit_editing_image": "Editing image",
+  "com_ui_image_edited": "Image edited",
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
 }
