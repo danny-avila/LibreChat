@@ -8,7 +8,6 @@ import { useLocalize, useToast } from '~/hooks';
 
 interface AgentWithVersions extends Agent {
   versions?: Array<{
-    created_at?: string | number | Date;
     createdAt?: string | number | Date;
     updatedAt?: string | number | Date;
     [key: string]: any;
@@ -53,7 +52,7 @@ export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: V
   const versions = agentWithVersions?.versions || [];
 
   const getVersionTimestamp = (version: Record<string, any>): string => {
-    const timestamp = version.created_at || version.createdAt || version.updatedAt;
+    const timestamp = version.updatedAt || version.createdAt;
 
     if (timestamp) {
       try {
