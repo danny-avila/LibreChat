@@ -21,7 +21,19 @@ const Agent = mongoose.model('agent', agentSchema);
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  return (await Agent.create(agentData)).toObject();
+  const { versions, ...versionData } = agentData;
+  const timestamp = new Date();
+  const initialAgentData = {
+    ...agentData,
+    versions: [
+      {
+        ...versionData,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+  };
+  return (await Agent.create(initialAgentData)).toObject();
 };
 
 /**
@@ -371,6 +383,29 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
   return await getAgent({ id: agentId });
 };
 
+const revertAgentVersion = async (searchParameter, versionIndex) => {
+  const agent = await Agent.findOne(searchParameter);
+  if (!agent) {
+    throw new Error('Agent not found');
+  }
+
+  if (!agent.versions || !agent.versions[versionIndex]) {
+    throw new Error(`Version ${versionIndex} not found`);
+  }
+
+  const revertToVersion = agent.versions[versionIndex];
+
+  const updateData = {
+    ...revertToVersion,
+  };
+
+  delete updateData._id;
+  delete updateData.id;
+  delete updateData.versions;
+
+  return Agent.findOneAndUpdate(searchParameter, updateData, { new: true }).lean();
+};
+
 module.exports = {
   Agent,
   getAgent,
@@ -382,4 +417,5 @@ module.exports = {
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
+  revertAgentVersion,
 };

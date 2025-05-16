@@ -6,8 +6,8 @@ import type { AgentPanelProps } from '~/common';
 import { Panel } from '~/common';
 import type { AgentForm } from '~/common/agents-types';
 import { Spinner } from '~/components/svg';
-import { useGetAgentByIdQuery } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
+import { useLocalize, useToast } from '~/hooks';
 
 interface AgentWithVersions extends Agent {
   versions?: Array<{
@@ -26,6 +26,7 @@ type VersionPanelProps = {
 
 export default function VersionPanel({ setActivePanel, selectedAgentId }: VersionPanelProps) {
   const localize = useLocalize();
+  const { showToast } = useToast();
   const { agent_id: urlAgentId } = useParams<{ agent_id: string }>();
   const methods = useFormContext<AgentForm>();
 
@@ -35,8 +36,25 @@ export default function VersionPanel({ setActivePanel, selectedAgentId }: Versio
     data: agent,
     isLoading,
     error,
+    refetch,
   } = useGetAgentByIdQuery(agent_id || '', {
     enabled: !!agent_id && agent_id !== '',
+  });
+
+  const revertAgentVersion = useRevertAgentVersionMutation({
+    onSuccess: () => {
+      showToast({
+        message: localize('com_ui_agent_version_restore_success'),
+        status: 'success',
+      });
+      refetch();
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_agent_version_restore_error'),
+        status: 'error',
+      });
+    },
   });
 
   const agentWithVersions = agent as AgentWithVersions;
@@ -100,8 +118,13 @@ export default function VersionPanel({ setActivePanel, selectedAgentId }: Versio
                 <button
                   className="mt-2 text-sm text-blue-500 hover:text-blue-600"
                   onClick={() => {
-                    // Handle restore version logic here
-                    // TODO: Implement restore functionality
+                    // TODO: Add confirmation dialog before reverting
+                    if (window.confirm(localize('com_ui_agent_version_restore_confirm'))) {
+                      revertAgentVersion.mutate({
+                        agent_id,
+                        version_index: index,
+                      });
+                    }
                   }}
                   aria-label={localize('com_ui_agent_version_restore')}
                 >

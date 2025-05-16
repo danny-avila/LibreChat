@@ -414,6 +414,49 @@ const uploadAgentAvatarHandler = async (req, res) => {
   }
 };
 
+const revertAgentVersionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { version_index } = req.body;
+
+    if (version_index === undefined) {
+      return res.status(400).json({ error: 'version_index is required' });
+    }
+
+    const isAdmin = req.user.role === SystemRoles.ADMIN;
+    const existingAgent = await getAgent({ id });
+
+    if (!existingAgent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
+
+    if (!hasEditPermission) {
+      return res.status(403).json({
+        error: 'You do not have permission to modify this non-collaborative agent',
+      });
+    }
+
+    const { revertAgentVersion } = require('~/models/Agent');
+    const updatedAgent = await revertAgentVersion({ id }, version_index);
+
+    if (updatedAgent.author) {
+      updatedAgent.author = updatedAgent.author.toString();
+    }
+
+    if (updatedAgent.author !== req.user.id) {
+      delete updatedAgent.author;
+    }
+
+    return res.json(updatedAgent);
+  } catch (error) {
+    logger.error('[/agents/:id/revert] Error reverting Agent version', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
@@ -422,4 +465,5 @@ module.exports = {
   deleteAgent: deleteAgentHandler,
   getListAgents: getListAgentsHandler,
   uploadAgentAvatar: uploadAgentAvatarHandler,
+  revertAgentVersion: revertAgentVersionHandler,
 };

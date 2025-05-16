@@ -159,6 +159,13 @@ export type DeleteAgentActionVariables = {
 
 export type DeleteAgentActionOptions = MutationOptions<void, DeleteAgentActionVariables>;
 
+export type RevertAgentVersionVariables = {
+  agent_id: string;
+  version_index: number;
+};
+
+export type RevertAgentVersionOptions = MutationOptions<Agent, RevertAgentVersionVariables>;
+
 export type DeleteConversationOptions = MutationOptions<
   types.TDeleteConversationResponse,
   types.TDeleteConversationRequest
