@@ -55,6 +55,7 @@
 
 # # ADD SAML CERT FILE
 #   api:
+#     volumes:
 #     - type: bind
 #       source: ./your_cert.pem
 #       target: /app/your_cert.pem
