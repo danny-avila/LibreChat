@@ -7,6 +7,7 @@ import { useAttachmentLink } from './LogLink';
 import { cn } from '~/utils';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
+  const [isVisible, setIsVisible] = useState(false);
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',
@@ -118,7 +119,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
     if (isImage) {
       imageAttachments.push(attachment);
-    } else {
+    } else if (attachment.type !== Tools.web_search) {
       fileAttachments.push(attachment);
     }
   });
