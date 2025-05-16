@@ -2,7 +2,6 @@ require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
-const helmet = require('helmet');
 const axios = require('axios');
 const express = require('express');
 const compression = require('compression');
@@ -23,15 +22,7 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const {
-  PORT,
-  HOST,
-  ALLOW_SOCIAL_LOGIN,
-  DISABLE_COMPRESSION,
-  TRUST_PROXY,
-  SANDPACK_BUNDLER_URL,
-  SANDPACK_STATIC_BUNDLER_URL,
-} = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
@@ -64,36 +55,6 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        useDefaults: false,
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", 'https://challenges.cloudflare.com'],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          fontSrc: ["'self'", 'data:'],
-          objectSrc: ["'none'"],
-          imgSrc: ["'self'", 'data:'],
-          mediaSrc: ["'self'", 'data:', 'blob:'],
-          connectSrc: ["'self'"],
-          frameSrc: [
-            "'self'",
-            'https://challenges.cloudflare.com',
-            'https://codesandbox.io',
-            ...(SANDPACK_BUNDLER_URL ? [SANDPACK_BUNDLER_URL] : []),
-            ...(SANDPACK_STATIC_BUNDLER_URL ? [SANDPACK_STATIC_BUNDLER_URL] : []),
-          ],
-          frameAncestors: [
-            "'self'",
-            'https://codesandbox.io',
-            ...(SANDPACK_BUNDLER_URL ? [SANDPACK_BUNDLER_URL] : []),
-            ...(SANDPACK_STATIC_BUNDLER_URL ? [SANDPACK_STATIC_BUNDLER_URL] : []),
-          ],
-        },
-      },
-    }),
-  );
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
