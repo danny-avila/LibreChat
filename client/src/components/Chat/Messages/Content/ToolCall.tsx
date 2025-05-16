@@ -220,7 +220,7 @@ export default function ToolCall({
               {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
             </Button>
           </div>
-          <p className="flex items-center text-xs text-text-warning">
+          <p className="text-text-warning flex items-center text-xs">
             <TriangleAlert className="mr-1.5 inline-block h-4 w-4" />
             {localize('com_assistants_allow_sites_you_trust')}
           </p>
