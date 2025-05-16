@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
@@ -8,6 +10,22 @@ describe('Server Configuration', () => {
 
   let mongoServer;
   let app;
+
+  /** Mocked fs.readFileSync for index.html */
+  const originalReadFileSync = fs.readFileSync;
+  beforeAll(() => {
+    fs.readFileSync = function (filepath, options) {
+      if (filepath.includes('index.html')) {
+        return '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>';
+      }
+      return originalReadFileSync(filepath, options);
+    };
+  });
+
+  afterAll(() => {
+    // Restore original fs.readFileSync
+    fs.readFileSync = originalReadFileSync;
+  });
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
