@@ -137,23 +137,24 @@ const processDeleteRequest = async ({ req, files }) => {
   /** @type {Record<string, OpenAI | undefined>} */
   const client = { [FileSources.openai]: undefined, [FileSources.azure]: undefined };
   const initializeClients = async () => {
-    const openAIClient = await getOpenAIClient({
-      req,
-      overrideEndpoint: EModelEndpoint.assistants,
-    });
-    client[FileSources.openai] = openAIClient.openai;
+    if (EModelEndpoint.assistants in req.app.locals) {
+      logger.debug('OpenAI assistants is configured, a client will be created');
+      const openAIClient = await getOpenAIClient({
+        req,
+        overrideEndpoint: EModelEndpoint.assistants,
+      });
+      client[FileSources.openai] = openAIClient.openai;
+    } else logger.warn('OpenAI assistants are not configured. Skipping OpenAI file deletion.');
 
-    if (!req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
-      return;
-    }
-
-    const azureClient = await getOpenAIClient({
-      req,
-      overrideEndpoint: EModelEndpoint.azureAssistants,
-    });
-    client[FileSources.azure] = azureClient.openai;
+    if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+      logger.debug('Azure assistants is configured, a client will be created');
+      const azureClient = await getOpenAIClient({
+        req,
+        overrideEndpoint: EModelEndpoint.azureAssistants,
+      });
+      client[FileSources.azure] = azureClient.openai;
+    } else logger.warn('Azure OpenAI assistants are not configured. Skipping Azure file deletion.');
   };
-
   if (req.body.assistant_id !== undefined) {
     await initializeClients();
   }
