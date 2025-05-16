@@ -58,7 +58,13 @@ export default function AgentPanelSwitch() {
   }
 
   if (activePanel === Panel.version) {
-    return <VersionPanel setActivePanel={setActivePanel} agentsConfig={agentsConfig} />;
+    return (
+      <VersionPanel
+        setActivePanel={setActivePanel}
+        agentsConfig={agentsConfig}
+        selectedAgentId={currentAgentId}
+      />
+    );
   }
 
   return (

@@ -1,18 +1,20 @@
+import type { Agent, TAgentsEndpoint } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
-import { useParams } from 'react-router-dom';
 import { useFormContext } from 'react-hook-form';
-import type { TAgentsEndpoint, Agent } from 'librechat-data-provider';
-import type { AgentForm } from '~/common/agents-types';
+import { useParams } from 'react-router-dom';
 import type { AgentPanelProps } from '~/common';
+import { Panel } from '~/common';
+import type { AgentForm } from '~/common/agents-types';
+import { Spinner } from '~/components/svg';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { Spinner } from '~/components/svg';
-import { Panel } from '~/common';
 
 // Extend Agent type to include versions field
 interface AgentWithVersions extends Agent {
   versions?: Array<{
-    created_at: string | number | Date;
+    created_at?: string | number | Date;
+    createdAt?: string | number | Date;
+    updatedAt?: string | number | Date;
     [key: string]: any;
   }>;
 }
@@ -20,6 +22,7 @@ interface AgentWithVersions extends Agent {
 type VersionPanelProps = {
   agentsConfig: TAgentsEndpoint | null;
   setActivePanel: AgentPanelProps['setActivePanel'];
+  selectedAgentId?: string; // Add prop for directly passing an agent ID
 };
 
 // Text placeholder constants to avoid i18next linting errors
@@ -31,7 +34,29 @@ const TEXT = {
   RESTORE: 'Restore',
 };
 
-export default function VersionPanel({ agentsConfig, setActivePanel }: VersionPanelProps) {
+// Helper function to get timestamp from version object regardless of field name
+const getVersionTimestamp = (version: Record<string, any>): string => {
+  // Try different possible timestamp field names, in order of preference
+  const timestamp = version.created_at || version.createdAt || version.updatedAt;
+
+  if (timestamp) {
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch (error) {
+      console.error('Error parsing timestamp:', error);
+      return 'Unknown date';
+    }
+  }
+
+  // Fallback if no timestamp field is found
+  return 'Date not available';
+};
+
+export default function VersionPanel({
+  agentsConfig,
+  setActivePanel,
+  selectedAgentId,
+}: VersionPanelProps) {
   const localize = useLocalize();
 
   // Get agent_id either from props, URL params, or form context
@@ -43,8 +68,11 @@ export default function VersionPanel({ agentsConfig, setActivePanel }: VersionPa
   // Then try to get it from form context if available
   const methods = useFormContext<AgentForm>();
 
-  // Prioritize form context agent_id, fallback to URL param
-  const agent_id = methods?.getValues?.('id') || urlAgentId || '';
+  // Get form context agent_id if available
+  const formAgentId = methods?.getValues?.('id');
+
+  // Prioritize selectedAgentId prop, then form context, then URL param
+  const agent_id = selectedAgentId || formAgentId || urlAgentId || '';
 
   // Fetch the agent data, including versions
   const {
@@ -81,7 +109,11 @@ export default function VersionPanel({ agentsConfig, setActivePanel }: VersionPa
         <div className="mb-2 mt-2 text-xl font-medium">{TEXT.TITLE}</div>
       </div>
       <div className="flex flex-col gap-4 px-2">
-        {isLoading ? (
+        {!agent_id ? (
+          <div className="py-8 text-center text-text-secondary">
+            {'No agent selected. Please select an agent to view version history.'}
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Spinner className="h-6 w-6" />
           </div>
@@ -94,9 +126,7 @@ export default function VersionPanel({ agentsConfig, setActivePanel }: VersionPa
                 <div className="font-medium">
                   {TEXT.VERSION} {versions.length - index}
                 </div>
-                <div className="text-sm text-text-secondary">
-                  {new Date(version.created_at).toLocaleString()}
-                </div>
+                <div className="text-sm text-text-secondary">{getVersionTimestamp(version)}</div>
                 <button
                   className="mt-2 text-sm text-blue-500 hover:text-blue-600"
                   onClick={() => {

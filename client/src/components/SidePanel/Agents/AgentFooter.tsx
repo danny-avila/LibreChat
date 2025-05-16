@@ -55,7 +55,7 @@ export default function AgentFooter({
   return (
     <div className="mx-1 mb-1 flex w-full flex-col gap-2">
       {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
-      {showButtons && <VersionButton setActivePanel={setActivePanel} />}
+      {showButtons && agent_id && <VersionButton setActivePanel={setActivePanel} />}
       {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
