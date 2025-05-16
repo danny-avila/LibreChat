@@ -73,18 +73,17 @@ const configureSocialLogins = (app) => {
     process.env.SAML_CERT &&
     process.env.SAML_SESSION_SECRET
   ) {
+    logger.info('Configuring SAML Connect...');
     const sessionOptions = {
       secret: process.env.SAML_SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
     };
     if (isEnabled(process.env.USE_REDIS)) {
-      const client = new Redis(process.env.REDIS_URI);
-      client
-        .on('error', (err) => logger.error('ioredis error:', err))
-        .on('ready', () => logger.info('ioredis successfully initialized.'))
-        .on('reconnecting', () => logger.info('ioredis reconnecting...'));
-      sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+      logger.debug('Using Redis for session storage in SAML...');
+      const keyv = new Keyv({ store: keyvRedis });
+      const client = keyv.opts.store.client;
+      sessionOptions.store = new RedisStore({ client, prefix: 'saml_session' });
     } else {
       sessionOptions.store = new MemoryStore({
         checkPeriod: 86400000, // prune expired entries every 24h
@@ -93,6 +92,8 @@ const configureSocialLogins = (app) => {
     app.use(session(sessionOptions));
     app.use(passport.session());
     setupSaml();
+
+    logger.info('SAML Connect configured.');
   }
 };
 
