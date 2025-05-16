@@ -9,7 +9,6 @@ import { Spinner } from '~/components/svg';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
-// Extend Agent type to include versions field
 interface AgentWithVersions extends Agent {
   versions?: Array<{
     created_at?: string | number | Date;
@@ -22,52 +21,16 @@ interface AgentWithVersions extends Agent {
 type VersionPanelProps = {
   agentsConfig: TAgentsEndpoint | null;
   setActivePanel: AgentPanelProps['setActivePanel'];
-  selectedAgentId?: string; // Add prop for directly passing an agent ID
+  selectedAgentId?: string;
 };
 
-// Using localization instead of hardcoded text constants
-
-export default function VersionPanel({
-  agentsConfig,
-  setActivePanel,
-  selectedAgentId,
-}: VersionPanelProps) {
+export default function VersionPanel({ setActivePanel, selectedAgentId }: VersionPanelProps) {
   const localize = useLocalize();
-
-  // Helper function to get timestamp from version object regardless of field name
-  const getVersionTimestamp = (version: Record<string, any>): string => {
-    // Try different possible timestamp field names, in order of preference
-    const timestamp = version.created_at || version.createdAt || version.updatedAt;
-
-    if (timestamp) {
-      try {
-        return new Date(timestamp).toLocaleString();
-      } catch (error) {
-        // Silent error handling for invalid date formats
-        return localize('com_ui_agent_version_unknown_date');
-      }
-    }
-
-    // Fallback if no timestamp field is found
-    return localize('com_ui_agent_version_no_date');
-  };
-
-  // Get agent_id either from props, URL params, or form context
-  // This handles the case where the component might be used outside of a form
-
-  // Try to get the agent_id from URL params first (if we're in a route with an agent_id)
   const { agent_id: urlAgentId } = useParams<{ agent_id: string }>();
-
-  // Then try to get it from form context if available
   const methods = useFormContext<AgentForm>();
 
-  // Get form context agent_id if available
   const formAgentId = methods?.getValues?.('id');
-
-  // Prioritize selectedAgentId prop, then form context, then URL param
   const agent_id = selectedAgentId || formAgentId || urlAgentId || '';
-
-  // Fetch the agent data, including versions
   const {
     data: agent,
     isLoading,
@@ -76,12 +39,22 @@ export default function VersionPanel({
     enabled: !!agent_id && agent_id !== '',
   });
 
-  // Get versions from the fetched agent data
   const agentWithVersions = agent as AgentWithVersions;
   const versions = agentWithVersions?.versions || [];
 
-  // We'll continue even if methods or agent_id is not available
-  // The UI will handle showing appropriate states
+  const getVersionTimestamp = (version: Record<string, any>): string => {
+    const timestamp = version.created_at || version.createdAt || version.updatedAt;
+
+    if (timestamp) {
+      try {
+        return new Date(timestamp).toLocaleString();
+      } catch (error) {
+        return localize('com_ui_agent_version_unknown_date');
+      }
+    }
+
+    return localize('com_ui_agent_version_no_date');
+  };
 
   return (
     <div className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm">
