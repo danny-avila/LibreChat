@@ -318,10 +318,8 @@ export const useRevertAgentVersionMutation = (
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (revertedAgent, variables, context) => {
-        // Update agent data in cache
         queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], revertedAgent);
 
-        // Update agent list if needed
         const listRes = queryClient.getQueryData<t.AgentListResponse>([
           QueryKeys.agents,
           defaultOrderQuery,

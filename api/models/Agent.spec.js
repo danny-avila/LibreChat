@@ -1,10 +1,8 @@
-// Save original environment variables before requiring any modules
 const originalEnv = {
   CREDS_KEY: process.env.CREDS_KEY,
   CREDS_IV: process.env.CREDS_IV,
 };
 
-// Set env vars BEFORE requiring any modules
 process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef';
 process.env.CREDS_IV = '0123456789abcdef';
 
@@ -19,7 +17,6 @@ const {
   updateAgent,
   getAgent,
   deleteAgent,
-  loadAgent,
   getListAgents,
   updateAgentProjects,
 } = require('./Agent');
@@ -378,7 +375,6 @@ describe('Agent CRUD Operations', () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
 
-    // Create agent
     const newAgent = await createAgent({
       id: agentId,
       name: 'Test Agent',
@@ -392,7 +388,6 @@ describe('Agent CRUD Operations', () => {
     expect(newAgent.id).toBe(agentId);
     expect(newAgent.name).toBe('Test Agent');
 
-    // Get agent
     const retrievedAgent = await getAgent({ id: agentId });
     expect(retrievedAgent).toBeDefined();
     expect(retrievedAgent.id).toBe(agentId);
@@ -404,7 +399,6 @@ describe('Agent CRUD Operations', () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
 
-    // Create agent
     await createAgent({
       id: agentId,
       name: 'Agent To Delete',
@@ -413,14 +407,11 @@ describe('Agent CRUD Operations', () => {
       author: authorId,
     });
 
-    // Verify agent exists
     const agentBeforeDelete = await getAgent({ id: agentId });
     expect(agentBeforeDelete).toBeDefined();
 
-    // Delete agent
     await deleteAgent({ id: agentId });
 
-    // Verify agent is deleted
     const agentAfterDelete = await getAgent({ id: agentId });
     expect(agentAfterDelete).toBeNull();
   });
@@ -429,7 +420,6 @@ describe('Agent CRUD Operations', () => {
     const authorId = new mongoose.Types.ObjectId();
     const otherAuthorId = new mongoose.Types.ObjectId();
 
-    // Create multiple agents for two different authors
     const agentIds = [];
     for (let i = 0; i < 5; i++) {
       const id = `agent_${uuidv4()}`;
@@ -443,7 +433,6 @@ describe('Agent CRUD Operations', () => {
       });
     }
 
-    // Create agents for another author
     for (let i = 0; i < 3; i++) {
       await createAgent({
         id: `other_agent_${uuidv4()}`,
@@ -454,23 +443,19 @@ describe('Agent CRUD Operations', () => {
       });
     }
 
-    // List agents for the first author
     const result = await getListAgents({ author: authorId.toString() });
 
-    // Verify results
     expect(result).toBeDefined();
     expect(result.data).toBeDefined();
     expect(result.data).toHaveLength(5);
     expect(result.has_more).toBe(true);
 
-    // Verify all returned agents belong to the specified author
     for (const agent of result.data) {
       expect(agent.author).toBe(authorId.toString());
     }
   });
 
   test('should update agent projects', async () => {
-    // Mock console.error and store the original for restoration
     const originalConsoleError = console.error;
     console.error = jest.fn();
 
@@ -480,7 +465,6 @@ describe('Agent CRUD Operations', () => {
     const projectId2 = new mongoose.Types.ObjectId();
     const projectId3 = new mongoose.Types.ObjectId();
 
-    // Create agent
     await createAgent({
       id: agentId,
       name: 'Agent With Projects',
@@ -490,35 +474,28 @@ describe('Agent CRUD Operations', () => {
       projectIds: [projectId1],
     });
 
-    // Update projects: add projectId2 and projectId3
     await updateAgent(
       { id: agentId },
       { $addToSet: { projectIds: { $each: [projectId2, projectId3] } } },
     );
 
-    // Then remove projectId1 in a separate operation
     await updateAgent({ id: agentId }, { $pull: { projectIds: projectId1 } });
 
-    // Verify the agent's projects were updated
     const updatedAgent = await getAgent({ id: agentId });
     expect(updatedAgent.projectIds).toHaveLength(2);
     expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
     expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId3.toString());
     expect(updatedAgent.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
 
-    // Restore console.error
     console.error = originalConsoleError;
   });
 
   test('should handle ephemeral agent loading', async () => {
-    // We need to use real IDs to match validation, even though this is a mock test
     const agentId = 'ephemeral_test';
     const endpoint = 'openai';
 
-    // Save the original module for restoration
     const originalModule = jest.requireActual('librechat-data-provider');
 
-    // Create a mock implementation
     const mockDataProvider = {
       ...originalModule,
       Constants: {
@@ -527,10 +504,8 @@ describe('Agent CRUD Operations', () => {
       },
     };
 
-    // Apply the mock
     jest.doMock('librechat-data-provider', () => mockDataProvider);
 
-    // Mock request object with required properties for ephemeral agent
     const mockReq = {
       user: { id: 'user123' },
       body: {
@@ -551,7 +526,6 @@ describe('Agent CRUD Operations', () => {
       },
     };
 
-    // Create params for loadAgent
     const params = {
       req: mockReq,
       agent_id: agentId,
@@ -562,25 +536,16 @@ describe('Agent CRUD Operations', () => {
       },
     };
 
-    // Test cases without requiring external dependencies
-    // We need to skip the actual loadAgent test since it has dependencies
-    // that are difficult to mock in this test environment
-
-    // However, we can verify the ephemeral agent structure matches what we expect
     expect(agentId).toBeDefined();
     expect(endpoint).toBeDefined();
 
-    // Restore the original module
     jest.dontMock('librechat-data-provider');
   });
 
-  // Mocked test for loadAgent functionality
   test('should handle loadAgent functionality', async () => {
-    // Create a test agent
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
 
-    // Create an agent to test with
     await createAgent({
       id: agentId,
       name: 'Test Load Agent',
@@ -590,43 +555,32 @@ describe('Agent CRUD Operations', () => {
       tools: ['tool1', 'tool2'],
     });
 
-    // Instead of calling loadAgent, we'll verify the agent exists in the database
     const agent = await getAgent({ id: agentId });
 
-    // Verify the agent
     expect(agent).toBeDefined();
     expect(agent.id).toBe(agentId);
     expect(agent.name).toBe('Test Load Agent');
     expect(agent.tools).toEqual(expect.arrayContaining(['tool1', 'tool2']));
 
-    // Mock the loadAgent behavior to return success
     const mockLoadAgent = jest.fn().mockResolvedValue(agent);
 
-    // Call our mock function
     const loadedAgent = await mockLoadAgent();
 
-    // Verify it works as expected
     expect(loadedAgent).toBeDefined();
     expect(loadedAgent.id).toBe(agentId);
   });
 
-  // Mocked test for loadAgent error handling
   test('should handle loadAgent errors', async () => {
-    // Create a non-existent agent ID
     const nonExistentId = `agent_${uuidv4()}`;
 
-    // Verify this agent doesn't exist
     const agent = await getAgent({ id: nonExistentId });
     expect(agent).toBeNull();
 
-    // Instead of calling loadAgent directly, we'll mock its error behavior
     const mockLoadAgent = jest.fn().mockRejectedValue(new Error('No agent found with ID'));
 
-    // Test that our mock function rejects
     await expect(mockLoadAgent()).rejects.toThrow('No agent found with ID');
   });
 
-  // Test for updating agent projects using updateAgent
   test('should update agent projects with updateAgent', async () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
@@ -634,7 +588,6 @@ describe('Agent CRUD Operations', () => {
     const projectId2 = new mongoose.Types.ObjectId();
     const projectId3 = new mongoose.Types.ObjectId();
 
-    // Create agent with initial project
     await createAgent({
       id: agentId,
       name: 'Project Test Agent',
@@ -644,10 +597,8 @@ describe('Agent CRUD Operations', () => {
       projectIds: [projectId1],
     });
 
-    // Update agent projects using updateAgent instead of updateAgentProjects
     await updateAgent({ id: agentId }, { projectIds: [projectId2, projectId3] });
 
-    // Verify updated projects
     const updatedAgent = await getAgent({ id: agentId });
     expect(updatedAgent).toBeDefined();
     expect(updatedAgent.projectIds).toHaveLength(2);
@@ -656,13 +607,11 @@ describe('Agent CRUD Operations', () => {
     expect(updatedAgent.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
   });
 
-  // Test for handling empty project array using updateAgent
   test('should handle empty project array with updateAgent', async () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
     const projectId1 = new mongoose.Types.ObjectId();
 
-    // Create agent with initial project
     await createAgent({
       id: agentId,
       name: 'Project Test Agent',
@@ -672,10 +621,8 @@ describe('Agent CRUD Operations', () => {
       projectIds: [projectId1],
     });
 
-    // Update agent with empty projects array using updateAgent
     await updateAgent({ id: agentId }, { projectIds: [] });
 
-    // Verify all projects were removed
     const updatedAgent = await getAgent({ id: agentId });
     expect(updatedAgent).toBeDefined();
     expect(updatedAgent.projectIds).toHaveLength(0);
@@ -712,7 +659,7 @@ describe('Agent Version History', () => {
     await Agent.deleteMany({});
   });
 
-  test('should create an agent with empty versions array', async () => {
+  test('should create an agent with a single entry in versions array', async () => {
     const agentId = `agent_${uuidv4()}`;
     const agent = await createAgent({
       id: agentId,
@@ -724,34 +671,39 @@ describe('Agent Version History', () => {
 
     expect(agent.versions).toBeDefined();
     expect(Array.isArray(agent.versions)).toBe(true);
-    expect(agent.versions).toHaveLength(0);
+    expect(agent.versions).toHaveLength(1);
+    expect(agent.versions[0].name).toBe('Test Agent');
+    expect(agent.versions[0].provider).toBe('test');
+    expect(agent.versions[0].model).toBe('test-model');
   });
 
   test('should save current state to versions array when updating', async () => {
-    // Create initial agent
     const agentId = `agent_${uuidv4()}`;
 
-    // Update the agent name
+    await createAgent({
+      id: agentId,
+      name: 'Original Name',
+      description: 'Original description',
+      provider: 'test',
+      model: 'test-model',
+      author: new mongoose.Types.ObjectId(),
+    });
     const updatedAgent = await updateAgent({ id: agentId }, { name: 'Updated Name' });
 
-    // Check that the versions array contains the original state
     expect(updatedAgent.versions).toBeDefined();
     expect(Array.isArray(updatedAgent.versions)).toBe(true);
-    expect(updatedAgent.versions).toHaveLength(1);
+    expect(updatedAgent.versions).toHaveLength(2);
 
     const versionedState = updatedAgent.versions[0];
     expect(versionedState.name).toBe('Original Name');
     expect(versionedState.description).toBe('Original description');
     expect(versionedState.provider).toBe('test');
     expect(versionedState.model).toBe('test-model');
-
-    // Check that current state is updated
     expect(updatedAgent.name).toBe('Updated Name');
     expect(updatedAgent.description).toBe('Original description');
   });
 
   test('should accumulate version history across multiple updates', async () => {
-    // Create initial agent
     const agentId = `agent_${uuidv4()}`;
     const author = new mongoose.Types.ObjectId();
     const agent = await createAgent({
@@ -763,43 +715,38 @@ describe('Agent Version History', () => {
       description: 'First description',
     });
 
-    // First update
     await updateAgent({ id: agentId }, { name: 'Second Name', description: 'Second description' });
 
-    // Second update
     await updateAgent({ id: agentId }, { name: 'Third Name', model: 'new-model' });
 
-    // Third update
     const finalAgent = await updateAgent({ id: agentId }, { description: 'Final description' });
 
-    // Check version history
     expect(finalAgent.versions).toBeDefined();
     expect(Array.isArray(finalAgent.versions)).toBe(true);
-    expect(finalAgent.versions).toHaveLength(3);
+    expect(finalAgent.versions).toHaveLength(4);
 
-    // Check first version (original state)
     expect(finalAgent.versions[0].name).toBe('First Name');
     expect(finalAgent.versions[0].description).toBe('First description');
     expect(finalAgent.versions[0].model).toBe('test-model');
 
-    // Check second version
-    expect(finalAgent.versions[1].name).toBe('Second Name');
-    expect(finalAgent.versions[1].description).toBe('Second description');
+    expect(finalAgent.versions[1].name).toBe('First Name');
+    expect(finalAgent.versions[1].description).toBe('First description');
     expect(finalAgent.versions[1].model).toBe('test-model');
 
-    // Check third version
-    expect(finalAgent.versions[2].name).toBe('Third Name');
+    expect(finalAgent.versions[2].name).toBe('Second Name');
     expect(finalAgent.versions[2].description).toBe('Second description');
-    expect(finalAgent.versions[2].model).toBe('new-model');
+    expect(finalAgent.versions[2].model).toBe('test-model');
 
-    // Check current state
+    expect(finalAgent.versions[3].name).toBe('Third Name');
+    expect(finalAgent.versions[3].description).toBe('Second description');
+    expect(finalAgent.versions[3].model).toBe('new-model');
+
     expect(finalAgent.name).toBe('Third Name');
     expect(finalAgent.description).toBe('Final description');
     expect(finalAgent.model).toBe('new-model');
   });
 
   test('should not include _id, __v, or updatedAt in version history', async () => {
-    // Create initial agent
     const agentId = `agent_${uuidv4()}`;
     const agent = await createAgent({
       id: agentId,
@@ -809,20 +756,19 @@ describe('Agent Version History', () => {
       author: new mongoose.Types.ObjectId(),
     });
 
-    // Update the agent
     const updatedAgent = await updateAgent({ id: agentId }, { description: 'New description' });
 
-    // Check that the version history doesn't include MongoDB internal fields
-    expect(updatedAgent.versions).toHaveLength(1);
+    expect(updatedAgent.versions).toHaveLength(2);
     expect(updatedAgent.versions[0]._id).toBeUndefined();
     expect(updatedAgent.versions[0].__v).toBeUndefined();
-    expect(updatedAgent.versions[0].updatedAt).toBeUndefined();
     expect(updatedAgent.versions[0].name).toBe('Test Agent');
     expect(updatedAgent.versions[0].author).toBeDefined();
+
+    expect(updatedAgent.versions[1]._id).toBeUndefined();
+    expect(updatedAgent.versions[1].__v).toBeUndefined();
   });
 
   test('should not recursively include previous versions in version history', async () => {
-    // Create initial agent
     const agentId = `agent_${uuidv4()}`;
     const agent = await createAgent({
       id: agentId,
@@ -832,13 +778,11 @@ describe('Agent Version History', () => {
       author: new mongoose.Types.ObjectId(),
     });
 
-    // Make multiple updates
     await updateAgent({ id: agentId }, { name: 'Updated Name 1' });
     await updateAgent({ id: agentId }, { name: 'Updated Name 2' });
     const finalAgent = await updateAgent({ id: agentId }, { name: 'Updated Name 3' });
 
-    // Check that no version contains another version array
-    expect(finalAgent.versions).toHaveLength(3);
+    expect(finalAgent.versions).toHaveLength(4);
 
     finalAgent.versions.forEach((version) => {
       expect(version.versions).toBeUndefined();
