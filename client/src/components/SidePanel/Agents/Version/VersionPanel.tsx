@@ -1,10 +1,7 @@
 import type { Agent, TAgentsEndpoint } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
-import { useFormContext } from 'react-hook-form';
-import { useParams } from 'react-router-dom';
 import type { AgentPanelProps } from '~/common';
 import { Panel } from '~/common';
-import type { AgentForm } from '~/common/agents-types';
 import { Spinner } from '~/components/svg';
 import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
 import { useLocalize, useToast } from '~/hooks';
@@ -24,21 +21,16 @@ type VersionPanelProps = {
   selectedAgentId?: string;
 };
 
-export default function VersionPanel({ setActivePanel, selectedAgentId }: VersionPanelProps) {
+export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: VersionPanelProps) {
   const localize = useLocalize();
   const { showToast } = useToast();
-  const { agent_id: urlAgentId } = useParams<{ agent_id: string }>();
-  const methods = useFormContext<AgentForm>();
-
-  const formAgentId = methods?.getValues?.('id');
-  const agent_id = selectedAgentId || formAgentId || urlAgentId || '';
   const {
     data: agent,
     isLoading,
     error,
     refetch,
-  } = useGetAgentByIdQuery(agent_id || '', {
-    enabled: !!agent_id && agent_id !== '',
+  } = useGetAgentByIdQuery(selectedAgentId, {
+    enabled: !!selectedAgentId && selectedAgentId !== '',
   });
 
   const revertAgentVersion = useRevertAgentVersionMutation({
@@ -95,7 +87,7 @@ export default function VersionPanel({ setActivePanel, selectedAgentId }: Versio
         </div>
       </div>
       <div className="flex flex-col gap-4 px-2">
-        {!agent_id ? (
+        {!selectedAgentId ? (
           <div className="py-8 text-center text-text-secondary">
             {localize('com_ui_agent_version_no_agent')}
           </div>
@@ -121,7 +113,7 @@ export default function VersionPanel({ setActivePanel, selectedAgentId }: Versio
                     // TODO: Add confirmation dialog before reverting
                     if (window.confirm(localize('com_ui_agent_version_restore_confirm'))) {
                       revertAgentVersion.mutate({
-                        agent_id,
+                        agent_id: selectedAgentId,
                         version_index: index,
                       });
                     }
