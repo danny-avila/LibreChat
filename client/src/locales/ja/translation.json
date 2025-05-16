@@ -477,6 +477,7 @@
   "com_ui_agent_version_no_agent": "エージェントが選択されていません。バージョン履歴を表示するにはエージェントを選択してください。",
   "com_ui_agent_version_unknown_date": "不明な日付",
   "com_ui_agent_version_no_date": "日付なし",
+  "com_ui_agent_version_active": "アクティブバージョン",
   "com_ui_advanced": "高度",
   "com_ui_advanced_settings": "詳細設定",
   "com_ui_agent": "エージェント",

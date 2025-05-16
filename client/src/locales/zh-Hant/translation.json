@@ -436,6 +436,7 @@
   "com_ui_agent_version_no_agent": "未選擇智能體。請選擇一個智能體查看版本歷史。",
   "com_ui_agent_version_unknown_date": "未知日期",
   "com_ui_agent_version_no_date": "日期不可用",
+  "com_ui_agent_version_active": "當前版本",
   "com_ui_agents": "助理",
   "com_ui_agents_allow_create": "允許建立代理",
   "com_ui_agents_allow_share_global": "允許與所有使用者共享助理",

@@ -355,6 +355,7 @@
   "com_ui_agent_version_no_agent": "Agenttia ei ole valittu. Valitse agentti nähdäksesi versiohistorian.",
   "com_ui_agent_version_unknown_date": "Tuntematon päivämäärä",
   "com_ui_agent_version_no_date": "Päivämäärä ei saatavilla",
+  "com_ui_agent_version_active": "Aktiivinen versio",
   "com_ui_advanced": "Edistynyt",
   "com_ui_all": "kaikki",
   "com_ui_all_proper": "Kaikki",

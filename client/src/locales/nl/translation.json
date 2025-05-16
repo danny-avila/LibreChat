@@ -261,6 +261,7 @@
   "com_ui_agent_version_no_agent": "Geen agent geselecteerd. Selecteer een agent om de versiegeschiedenis te bekijken.",
   "com_ui_agent_version_unknown_date": "Onbekende datum",
   "com_ui_agent_version_no_date": "Datum niet beschikbaar",
+  "com_ui_agent_version_active": "Actieve versie",
   "com_ui_all": "alle",
   "com_ui_archive": "Archiveren",
   "com_ui_archive_error": "Kan conversatie niet archiveren",

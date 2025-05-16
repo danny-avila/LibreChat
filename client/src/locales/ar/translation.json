@@ -436,6 +436,7 @@
   "com_ui_agent_version_no_agent": "لم يتم تحديد وكيل. يرجى تحديد وكيل لعرض تاريخ الإصدار.",
   "com_ui_agent_version_unknown_date": "تاريخ غير معروف",
   "com_ui_agent_version_no_date": "التاريخ غير متوفر",
+  "com_ui_agent_version_active": "النسخة النشطة",
   "com_ui_agents": "الوكلاء",
   "com_ui_agents_allow_create": "السماح بإنشاء الوكلاء",
   "com_ui_agents_allow_share_global": "السماح بمشاركة الوكلاء مع جميع المستخدمين",

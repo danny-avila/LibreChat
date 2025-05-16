@@ -189,6 +189,7 @@
   "com_ui_agent_version_no_agent": "Ingen agent vald. Välj en agent för att visa versionshistorik.",
   "com_ui_agent_version_unknown_date": "Okänt datum",
   "com_ui_agent_version_no_date": "Datum ej tillgängligt",
+  "com_ui_agent_version_active": "Aktiv version",
   "com_ui_all": "alla",
   "com_ui_archive": "Arkiv",
   "com_ui_archive_error": "Kunde inte arkivera chatt",

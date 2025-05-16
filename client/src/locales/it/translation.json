@@ -466,6 +466,7 @@
   "com_ui_agent_version_no_agent": "Nessun agente selezionato. Seleziona un agente per visualizzare la cronologia delle versioni.",
   "com_ui_agent_version_unknown_date": "Data sconosciuta",
   "com_ui_agent_version_no_date": "Data non disponibile",
+  "com_ui_agent_version_active": "Versione attiva",
   "com_ui_advanced": "Avanzate",
   "com_ui_advanced_settings": "Impostazioni avanzate",
   "com_ui_agent": "Agente",

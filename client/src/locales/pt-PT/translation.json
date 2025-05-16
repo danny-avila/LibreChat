@@ -472,6 +472,7 @@
   "com_ui_agent_version_no_agent": "Nenhum agente selecionado. Por favor, selecione um agente para visualizar o histórico de versões.",
   "com_ui_agent_version_unknown_date": "Data desconhecida",
   "com_ui_agent_version_no_date": "Data não disponível",
+  "com_ui_agent_version_active": "Versão ativa",
   "com_ui_agents": "Agentes",
   "com_ui_agents_allow_create": "Permitir a criação de Agentes",
   "com_ui_agents_allow_share_global": "Permitir a partilha de Agentes com todos os utilizadores",

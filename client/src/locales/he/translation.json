@@ -492,6 +492,7 @@
   "com_ui_agent_version_no_agent": "לא נבחר סוכן. אנא בחר סוכן כדי לצפות בהיסטוריית הגרסאות.",
   "com_ui_agent_version_unknown_date": "תאריך לא ידוע",
   "com_ui_agent_version_no_date": "תאריך לא זמין",
+  "com_ui_agent_version_active": "גרסה פעילה",
   "com_ui_agents": "סוכנים",
   "com_ui_agents_allow_create": "אפשר יצירת סוכנים",
   "com_ui_agents_allow_share_global": "אפשר שיתוף סוכנים לכל המשתמשים",

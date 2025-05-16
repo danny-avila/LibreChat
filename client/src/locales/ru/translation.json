@@ -488,6 +488,7 @@
   "com_ui_agent_version_no_agent": "Агент не выбран. Выберите агента для просмотра истории версий.",
   "com_ui_agent_version_unknown_date": "Неизвестная дата",
   "com_ui_agent_version_no_date": "Дата недоступна",
+  "com_ui_agent_version_active": "Активная версия",
   "com_ui_agents": "Агенты",
   "com_ui_agents_allow_create": "Разрешить создание ассистентов",
   "com_ui_agents_allow_share_global": "Разрешить доступ к Агентам всем пользователям",

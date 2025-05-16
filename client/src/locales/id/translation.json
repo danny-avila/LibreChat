@@ -229,6 +229,7 @@
   "com_ui_agent_version_no_agent": "Tidak ada agen yang dipilih. Silakan pilih agen untuk melihat riwayat versi.",
   "com_ui_agent_version_unknown_date": "Tanggal tidak diketahui",
   "com_ui_agent_version_no_date": "Tanggal tidak tersedia",
+  "com_ui_agent_version_active": "Versi Aktif",
   "com_ui_all": "semua",
   "com_ui_archive": "Arsip",
   "com_ui_archive_error": "Gagal mengarsipkan percakapan",

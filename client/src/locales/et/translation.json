@@ -492,6 +492,7 @@
   "com_ui_agent_version_no_agent": "Ühtegi agenti pole valitud. Palun valige agent, et näha versiooni ajalugu.",
   "com_ui_agent_version_unknown_date": "Tundmatu kuupäev",
   "com_ui_agent_version_no_date": "Kuupäev pole saadaval",
+  "com_ui_agent_version_active": "Aktiivne versioon",
   "com_ui_agents": "Agendid",
   "com_ui_agents_allow_create": "Luba agentide loomine",
   "com_ui_agents_allow_share_global": "Luba agentide jagamine kõigile kasutajatele",

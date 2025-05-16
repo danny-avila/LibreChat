@@ -492,6 +492,7 @@
   "com_ui_agent_version_no_agent": "هیچ عاملی انتخاب نشده است. لطفاً یک عامل را برای مشاهده تاریخچه نسخه انتخاب کنید.",
   "com_ui_agent_version_unknown_date": "تاریخ نامشخص",
   "com_ui_agent_version_no_date": "تاریخ در دسترس نیست",
+  "com_ui_agent_version_active": "نسخه فعال",
   "com_ui_agents": "عوامل",
   "com_ui_agents_allow_create": "اجازه ایجاد کارگزارs",
   "com_ui_agents_allow_share_global": "به همه کاربران اجازه اشتراک گذاری کارگزارs را بدهید",

@@ -448,6 +448,7 @@
   "com_ui_agent_version_no_agent": "No se ha seleccionado ningún agente. Por favor, seleccione un agente para ver el historial de versiones.",
   "com_ui_agent_version_unknown_date": "Fecha desconocida",
   "com_ui_agent_version_no_date": "Fecha no disponible",
+  "com_ui_agent_version_active": "Versión activa",
   "com_ui_advanced": "Avanzado",
   "com_ui_advanced_settings": "Configuración avanzada",
   "com_ui_agent": "Agente",

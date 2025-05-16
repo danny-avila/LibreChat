@@ -492,6 +492,7 @@
   "com_ui_agent_version_no_agent": "Nincs kiválasztva ügynök. Kérjük, válasszon egy ügynököt a verzió előzmények megtekintéséhez.",
   "com_ui_agent_version_unknown_date": "Ismeretlen dátum",
   "com_ui_agent_version_no_date": "Dátum nem elérhető",
+  "com_ui_agent_version_active": "Aktív verzió",
   "com_ui_agents": "Ügynökök",
   "com_ui_agents_allow_create": "Ügynökök létrehozásának engedélyezése",
   "com_ui_agents_allow_share_global": "Ügynökök megosztásának engedélyezése minden felhasználóval",
