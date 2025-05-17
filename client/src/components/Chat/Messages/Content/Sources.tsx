@@ -231,58 +231,67 @@ export default function Sources() {
   const localize = useLocalize();
   const { searchResults } = useSearchContext();
 
-  const tabs = useMemo(() => {
-    if (!searchResults) return [];
+  const { organicSources, topStories, images, hasAnswerBox } = useMemo(() => {
+    if (!searchResults) {
+      return {
+        organicSources: [],
+        topStories: [],
+        images: [],
+        hasAnswerBox: false,
+      };
+    }
 
-    const allOrganic: ValidSource[] = [];
-    const allTopStories: ValidSource[] = [];
-    const allImages: ImageResult[] = [];
+    const organicSources: ValidSource[] = [];
+    const topStories: ValidSource[] = [];
+    const images: ImageResult[] = [];
     let hasAnswerBox = false;
 
     Object.values(searchResults).forEach((result) => {
       if (!result) return;
 
       if (result.organic?.length) {
-        allOrganic.push(...result.organic);
+        organicSources.push(...result.organic);
       }
       if (result.references?.length) {
-        allOrganic.push(...result.references);
+        organicSources.push(...result.references);
       }
       if (result.topStories?.length) {
-        allTopStories.push(...result.topStories);
+        topStories.push(...result.topStories);
       }
-
       if (result.images?.length) {
-        allImages.push(...result.images);
+        images.push(...result.images);
       }
-
       if (result.answerBox) {
         hasAnswerBox = true;
       }
     });
 
+    return { organicSources, topStories, images, hasAnswerBox };
+  }, [searchResults]);
+
+  const tabs = useMemo(() => {
     const availableTabs: Array<{ label: React.ReactNode; content: React.ReactNode }> = [];
 
-    if (allOrganic.length || allTopStories.length || hasAnswerBox) {
+    if (organicSources.length || topStories.length || hasAnswerBox) {
       availableTabs.push({
         label: <TabWithIcon label={localize('com_sources_tab_all')} icon={<Globe />} />,
-        content: <SourcesGroup sources={[...allOrganic, ...allTopStories]} />,
+        content: <SourcesGroup sources={[...organicSources, ...topStories]} />,
       });
     }
 
-    if (allTopStories.length) {
+    if (topStories.length) {
       availableTabs.push({
         label: <TabWithIcon label={localize('com_sources_tab_news')} icon={<Newspaper />} />,
-        content: <SourcesGroup sources={allTopStories} limit={3} />,
+        content: <SourcesGroup sources={topStories} limit={3} />,
       });
     }
 
-    if (allImages.length) {
+    if (images.length) {
       availableTabs.push({
         label: <TabWithIcon label={localize('com_sources_tab_images')} icon={<Image />} />,
         content: (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {allImages.map((item, i) => (
+            {images.map((item, i) => (
               <ImageItem key={`image-${i}`} image={item} />
             ))}
           </div>
@@ -291,7 +300,7 @@ export default function Sources() {
     }
 
     return availableTabs;
-  }, [searchResults, localize]);
+  }, [organicSources, topStories, images, hasAnswerBox, localize]);
 
   if (!tabs.length) return null;
 
