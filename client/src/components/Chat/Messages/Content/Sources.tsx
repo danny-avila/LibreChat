@@ -155,7 +155,7 @@ function ImageItem({ image }: { image: ImageResult }) {
   );
 }
 
-function StackedFavicons({ sources }: { sources: ValidSource[] }) {
+export function StackedFavicons({ sources }: { sources: ValidSource[] }) {
   return (
     <div className="relative flex">
       {sources.slice(0, 3).map((source, i) => (
