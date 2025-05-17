@@ -6,3 +6,7 @@ process.env.BAN_VIOLATIONS = 'true';
 process.env.BAN_DURATION = '7200000';
 process.env.BAN_INTERVAL = '20';
 process.env.CI = 'true';
+process.env.JWT_SECRET = 'test';
+process.env.JWT_REFRESH_SECRET = 'test';
+process.env.CREDS_KEY = 'test';
+process.env.CREDS_IV = 'test';

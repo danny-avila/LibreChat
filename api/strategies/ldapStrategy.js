@@ -23,7 +23,7 @@ const {
 
 // Check required environment variables
 if (!LDAP_URL || !LDAP_USER_SEARCH_BASE) {
-  return null;
+  module.exports = null;
 }
 
 const searchAttributes = [

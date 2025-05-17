@@ -358,7 +358,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         // continue;
       }
       setting.includeInput =
-        setting.type === SettingTypes.Number ? setting.includeInput ?? true : false; // Default to true if type is number
+        setting.type === SettingTypes.Number ? (setting.includeInput ?? true) : false; // Default to true if type is number
     }
 
     if (setting.component === ComponentTypes.Slider && setting.type === SettingTypes.Number) {
@@ -445,7 +445,8 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     // Validate optionType and conversation schema
     if (setting.optionType !== OptionTypes.Custom) {
-      const conversationSchema = tConversationSchema.shape[setting.key as keyof TConversation];
+      const conversationSchema =
+        tConversationSchema.shape[setting.key as keyof Omit<TConversation, 'disableParams'>];
       if (!conversationSchema) {
         errors.push({
           code: ZodIssueCode.custom,

@@ -71,7 +71,7 @@ export class MCPManager {
           const connectionAttempt = this.initializeServer(connection, `[MCP][${serverName}]`);
           await Promise.race([connectionAttempt, connectionTimeout]);
 
-          if (connection.isConnected()) {
+          if (await connection.isConnected()) {
             initializedServers.add(i);
             this.connections.set(serverName, connection); // Store in app-level map
 
@@ -135,7 +135,7 @@ export class MCPManager {
     while (attempts < maxAttempts) {
       try {
         await connection.connect();
-        if (connection.isConnected()) {
+        if (await connection.isConnected()) {
           return;
         }
         throw new Error('Connection attempt succeeded but status is not connected');
@@ -200,7 +200,7 @@ export class MCPManager {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (connection.isConnected()) {
+      if (await connection.isConnected()) {
         this.logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         // Update timestamp on reuse
         this.updateUserLastActivity(userId);
@@ -244,7 +244,7 @@ export class MCPManager {
       );
       await Promise.race([connectionAttempt, connectionTimeout]);
 
-      if (!connection.isConnected()) {
+      if (!(await connection.isConnected())) {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
 
@@ -342,7 +342,7 @@ export class MCPManager {
   public async mapAvailableTools(availableTools: t.LCAvailableTools): Promise<void> {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
-        if (connection.isConnected() !== true) {
+        if ((await connection.isConnected()) !== true) {
           this.logger.warn(
             `[MCP][${serverName}] Connection not established. Skipping tool mapping.`,
           );
@@ -375,7 +375,7 @@ export class MCPManager {
 
     for (const [serverName, connection] of this.connections.entries()) {
       try {
-        if (connection.isConnected() !== true) {
+        if ((await connection.isConnected()) !== true) {
           this.logger.warn(
             `[MCP][${serverName}] Connection not established. Skipping manifest loading.`,
           );
@@ -443,7 +443,7 @@ export class MCPManager {
         }
       }
 
-      if (!connection.isConnected()) {
+      if (!(await connection.isConnected())) {
         // This might happen if getUserConnection failed silently or app connection dropped
         throw new McpError(
           ErrorCode.InternalError, // Use InternalError for connection issues
