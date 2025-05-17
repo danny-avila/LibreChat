@@ -1,10 +1,16 @@
-import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon, AppleIcon } from '~/components';
-
+import React from 'react';
+import {
+  GoogleIcon,
+  FacebookIcon,
+  OpenIDIcon,
+  GithubIcon,
+  DiscordIcon,
+  AppleIcon,
+} from '~/components';
 import SocialButton from './SocialButton';
-
 import { useLocalize } from '~/hooks';
-
 import { TStartupConfig } from 'librechat-data-provider';
+import MultiTenantOpenID from './MultiTenantOpenID';
 
 function SocialLoginRender({
   startupConfig,
@@ -73,23 +79,37 @@ function SocialLoginRender({
         id="apple"
       />
     ),
-    openid: startupConfig.openidLoginEnabled && (
-      <SocialButton
-        key="openid"
-        enabled={startupConfig.openidLoginEnabled}
-        serverDomain={startupConfig.serverDomain}
-        oauthPath="openid"
-        Icon={() =>
-          startupConfig.openidImageUrl ? (
-            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
-          ) : (
-            <OpenIDIcon />
-          )
-        }
-        label={startupConfig.openidLabel}
-        id="openid"
-      />
-    ),
+    openid:
+        startupConfig.openidLoginEnabled &&
+        (startupConfig.openidMultiTenantEnabled ? (
+          <MultiTenantOpenID
+            key="openid"
+            openidImageUrl={startupConfig.openidImageUrl}
+            serverDomain={startupConfig.serverDomain}
+            openidLabel={startupConfig.openidLabel}
+            localize={localize}
+          />
+        ) : (
+          <SocialButton
+            key="openid"
+            enabled={startupConfig.openidLoginEnabled}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="openid"
+            Icon={() =>
+              startupConfig.openidImageUrl ? (
+                <img
+                  src={startupConfig.openidImageUrl}
+                  alt="OpenID Logo"
+                  className="h-5 w-5"
+                />
+              ) : (
+                <OpenIDIcon />
+              )
+            }
+            label={startupConfig.openidLabel}
+            id="openid"
+          />
+        )),
   };
 
   return (
