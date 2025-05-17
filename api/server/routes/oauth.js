@@ -8,8 +8,9 @@ const {
   setBalanceConfig,
   checkDomainAllowed,
 } = require('~/server/middleware');
-const { setAuthTokens } = require('~/server/services/AuthService');
+const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const { isEnabled } = require('~/server/utils');
 
 const router = express.Router();
 
@@ -28,7 +29,15 @@ const oauthHandler = async (req, res) => {
     if (req.banned) {
       return;
     }
-    await setAuthTokens(req.user._id, res);
+    if (
+      req.user &&
+      req.user.provider == 'openid' &&
+      isEnabled(process.env.OPENID_REUSE_TOKENS) === true
+    ) {
+      setOpenIDAuthTokens(req.user.tokenset, res);
+    } else {
+      await setAuthTokens(req.user._id, res);
+    }
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);

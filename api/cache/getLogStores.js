@@ -61,6 +61,10 @@ const abortKeys = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: Time.TEN_MINUTES });
 
+const openIdExchangedTokensCache = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.OPENID_EXCHANGED_TOKENS, ttl: Time.TEN_MINUTES });
+
 const namespaces = {
   [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
@@ -98,6 +102,7 @@ const namespaces = {
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,
   [CacheKeys.FLOWS]: flows,
+  [CacheKeys.OPENID_EXCHANGED_TOKENS]: openIdExchangedTokensCache,
 };
 
 /**

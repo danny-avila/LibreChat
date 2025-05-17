@@ -4,7 +4,7 @@ const { getUserById, updateUser } = require('~/models');
 const { logger } = require('~/config');
 
 // JWT strategy
-const jwtLogin = async () =>
+const jwtLogin = () =>
   new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),

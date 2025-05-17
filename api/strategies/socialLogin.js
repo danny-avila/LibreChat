@@ -7,7 +7,8 @@ const socialLogin =
   (provider, getProfileDetails) => async (accessToken, refreshToken, idToken, profile, cb) => {
     try {
       const { email, id, avatarUrl, username, name, emailVerified } = getProfileDetails({
-        idToken, profile,
+        idToken,
+        profile,
       });
 
       const oldUser = await findUser({ email: email.trim() });
