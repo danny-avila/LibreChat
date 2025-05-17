@@ -56,6 +56,12 @@
  */
 
 /**
+ * @exports MessageContentComplex
+ * @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex
+ * @memberof typedefs
+ */
+
+/**
  * @exports EventHandler
  * @typedef {import('@librechat/agents').EventHandler} EventHandler
  * @memberof typedefs
@@ -186,6 +192,8 @@
  * agent_index: number;
  * last_agent_index: number;
  * hide_sequential_outputs: boolean;
+ * version?: 'v1' | 'v2';
+ * streamMode?: string
  * }> & {
  * toolCall?: LangChainToolCall & { stepId?: string };
  * }} GraphRunnableConfig
