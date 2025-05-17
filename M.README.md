@@ -5,7 +5,9 @@ https://github.com/danny-avila/LibreChat/discussions/3000
 https://github.com/danny-avila/LibreChat/discussions/2222
 ![alt text](./m_readme_image/model_selection.png)
 
-
+Azure openai studio deployments
+https://ai.azure.com/resource/deployments?wsid=/subscriptions/1ac287e6-83d4-4da7-a4dd-1a77339a54a1/resourceGroups/easyorder-entegris/providers/Microsoft.CognitiveServices/accounts/easyorder&tid=faca1ccf-c66d-4f65-b4eb-3347bb31be0d
+![alt text](./m_readme_image/auzre_openai_deployments.png)
 
 MCP
 https://www.librechat.ai/docs/features/agents#model-context-protocol-mcp
