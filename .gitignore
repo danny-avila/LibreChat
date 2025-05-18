@@ -114,5 +114,11 @@ uploads/
 
 # owner
 release/
+
+# Helm
+helm/librechat/Chart.lock
+helm/**/charts/
+helm/**/.values.yaml
+
 !/client/src/@types/i18next.d.ts
-.bkp/
+

@@ -71,6 +71,7 @@
     "firebase": "^11.0.2",
     "googleapis": "^126.0.1",
     "handlebars": "^4.7.7",
+    "helmet": "^8.1.0",
     "https-proxy-agent": "^7.0.6",
     "ioredis": "^5.3.2",
     "js-yaml": "^4.1.0",
