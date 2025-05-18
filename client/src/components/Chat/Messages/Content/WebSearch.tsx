@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TAttachment, ValidSource, ImageResult } from 'librechat-data-provider';
+import type { TAttachment } from 'librechat-data-provider';
 import { useSearchContext } from '~/Providers';
 import { StackedFavicons } from './Sources';
 import ProgressText from './ProgressText';
@@ -20,55 +20,30 @@ export default function WebSearch({
   const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
   const cancelled = (!isSubmitting && progress < 1) || error === true;
 
-  const { organicSources, topStories } = useMemo(() => {
-    if (!searchResults) {
-      return {
-        organicSources: [],
-        topStories: [],
-        images: [],
-        hasAnswerBox: false,
-      };
+  const processedSources = useMemo(() => {
+    if (progress === 1) {
+      return [];
     }
-
-    const organicSources: ValidSource[] = [];
-    const topStories: ValidSource[] = [];
-    const images: ImageResult[] = [];
-
-    Object.values(searchResults).forEach((result) => {
-      if (!result) return;
-
-      if (result.organic?.length) {
-        organicSources.push(...result.organic);
-      }
-      if (result.references?.length) {
-        organicSources.push(...result.references);
-      }
-      if (result.topStories?.length) {
-        topStories.push(...result.topStories);
-      }
-      if (result.images?.length) {
-        images.push(...result.images);
-      }
+    if (!searchResults) return [];
+    return Object.values(searchResults).flatMap((result) => {
+      if (!result) return [];
+      return [...(result.organic || []), ...(result.topStories || [])].filter(
+        (source) => source.processed === true,
+      );
     });
-
-    return { organicSources, topStories, images };
-  }, [searchResults]);
-
-  const allSources = useMemo(() => {
-    return [...organicSources, ...topStories];
-  }, [organicSources, topStories]);
+  }, [searchResults, progress]);
 
   if (progress === 1 || cancelled) {
     return null;
   }
 
-  const showSources = allSources.length > 0;
+  const showSources = processedSources.length > 0;
   return (
     <>
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         {showSources && (
           <div className="mr-2">
-            <StackedFavicons sources={allSources} limit={allSources.length} />
+            <StackedFavicons sources={processedSources} limit={processedSources.length} />
           </div>
         )}
         <ProgressText

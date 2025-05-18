@@ -505,13 +505,15 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   const checkCapability = (capability) => enabledCapabilities.has(capability);
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
+  let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code);
     } else if (tool === Tools.web_search) {
-      return checkCapability(AgentCapabilities.web_search);
+      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      return includesWebSearch;
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
@@ -521,7 +523,11 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (!_agentTools || _agentTools.length === 0) {
     return {};
   }
-
+  /** @type {ReturnType<createOnSearchResults>} */
+  let webSearchCallbacks;
+  if (includesWebSearch) {
+    webSearchCallbacks = createOnSearchResults(res);
+  }
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
     functions: true,
@@ -535,7 +541,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       uploadImageBuffer,
       returnMetadata: true,
       fileStrategy: req.app.locals.fileStrategy,
-      onSearchResults: createOnSearchResults(res),
+      [Tools.web_search]: webSearchCallbacks,
     },
   });
 

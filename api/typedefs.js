@@ -80,18 +80,6 @@
  */
 
 /**
- * @exports SearchResult
- * @typedef {import('@librechat/agents').SearchResult} SearchResult
- * @memberof typedefs
- */
-
-/**
- * @exports SearchResultData
- * @typedef {import('@librechat/agents').SearchResultData} SearchResultData
- * @memberof typedefs
- */
-
-/**
  * @exports ToolEndCallback
  * @typedef {import('@librechat/agents').ToolEndCallback} ToolEndCallback
  * @memberof typedefs
@@ -491,6 +479,25 @@
 /**
  * @exports MessageContentImageUrl
  * @typedef {import('librechat-data-provider').Agents.MessageContentImageUrl} MessageContentImageUrl
+ * @memberof typedefs
+ */
+/** Web Search */
+
+/**
+ * @exports SearchResult
+ * @typedef {import('@librechat/agents').SearchResult} SearchResult
+ * @memberof typedefs
+ */
+
+/**
+ * @exports SearchResultData
+ * @typedef {import('@librechat/agents').SearchResultData} SearchResultData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ValidSource
+ * @typedef {import('librechat-data-provider').ValidSource} ValidSource
  * @memberof typedefs
  */
 

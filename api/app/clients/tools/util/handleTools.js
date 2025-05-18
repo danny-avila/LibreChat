@@ -263,7 +263,7 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.web_search) {
-      const onSearchResults = options?.onSearchResults;
+      const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
         // const { files, toolContext } = await primeSearchFiles(options);
         // if (toolContext) {
@@ -272,6 +272,7 @@ const loadTools = async ({
         return createSearchTool({
           // rerankerType: 'jina',
           onSearchResults,
+          onGetHighlights,
         });
       };
       continue;

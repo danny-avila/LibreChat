@@ -29,6 +29,7 @@ export type ProcessedSource = {
   attribution?: string;
   references?: References;
   highlights?: Highlight[];
+  processed?: boolean;
 };
 
 export type ProcessedOrganic = OrganicResult & ProcessedSource;
