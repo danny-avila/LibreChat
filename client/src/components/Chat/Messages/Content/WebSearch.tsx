@@ -1,15 +1,9 @@
 import { useMemo } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment, ValidSource, ImageResult } from 'librechat-data-provider';
-import { useLocalize, useProgress } from '~/hooks';
 import { useSearchContext } from '~/Providers';
 import { StackedFavicons } from './Sources';
-import { AttachmentGroup } from './Parts';
-import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { Button } from '~/components';
-import { logger, cn } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 export default function WebSearch({
   initialProgress: progress = 0.1,
@@ -23,11 +17,10 @@ export default function WebSearch({
 }) {
   const localize = useLocalize();
   const { searchResults } = useSearchContext();
-  const error =
-    typeof output === 'string' && output.toLowerCase().includes('error processing tool');
+  const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
   const cancelled = (!isSubmitting && progress < 1) || error === true;
 
-  const { organicSources, topStories, images, hasAnswerBox } = useMemo(() => {
+  const { organicSources, topStories } = useMemo(() => {
     if (!searchResults) {
       return {
         organicSources: [],
@@ -40,7 +33,6 @@ export default function WebSearch({
     const organicSources: ValidSource[] = [];
     const topStories: ValidSource[] = [];
     const images: ImageResult[] = [];
-    let hasAnswerBox = false;
 
     Object.values(searchResults).forEach((result) => {
       if (!result) return;
@@ -57,25 +49,24 @@ export default function WebSearch({
       if (result.images?.length) {
         images.push(...result.images);
       }
-      if (result.answerBox) {
-        hasAnswerBox = true;
-      }
     });
 
-    return { organicSources, topStories, images, hasAnswerBox };
+    return { organicSources, topStories, images };
   }, [searchResults]);
 
   const allSources = useMemo(() => {
     return [...organicSources, ...topStories];
   }, [organicSources, topStories]);
 
-  if (progress === 1) {
+  if (progress === 1 || cancelled) {
     return null;
   }
+
+  const showSources = allSources.length > 0;
   return (
     <>
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
-        {progress === 0.5 && allSources.length > 0 && (
+        {showSources && (
           <div className="mr-2">
             <StackedFavicons sources={allSources} limit={allSources.length} />
           </div>
@@ -83,7 +74,7 @@ export default function WebSearch({
         <ProgressText
           progress={progress}
           inProgressText={
-            progress === 0.5
+            showSources
               ? localize('com_ui_web_search_processing')
               : localize('com_ui_web_searching')
           }
