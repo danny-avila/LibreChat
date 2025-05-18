@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { nanoid } = require('nanoid');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
@@ -30,13 +29,14 @@ const {
   toolkits,
 } = require('~/app/clients/tools');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
-const { logger, sendEvent } = require('~/config');
 const { sleep } = require('~/server/utils');
+const { logger } = require('~/config');
 
 /**
  * @param {string} toolName
@@ -60,47 +60,6 @@ function getToolkitKey(toolName) {
     }
   }
   return toolkitKey;
-}
-
-/**
- * Creates a function to handle search results and stream them as attachments
- * @param {import('http').ServerResponse} res - The HTTP server response object
- * @returns {function(SearchResult, GraphRunnableConfig): void} - Function that takes search results and returns or streams an attachment
- */
-function createOnSearchResults(res) {
-  /**
-   * @param {SearchResult} results
-   * @param {GraphRunnableConfig} runnableConfig
-   */
-  return function onSearchResults(results, runnableConfig) {
-    logger.info(
-      `[onSearchResults] user: ${runnableConfig.metadata.user_id} | thread_id: ${runnableConfig.metadata.thread_id} | run_id: ${runnableConfig.metadata.run_id}`,
-      results,
-    );
-
-    if (!results.success) {
-      logger.error(
-        `[onSearchResults] user: ${runnableConfig.metadata.user_id} | thread_id: ${runnableConfig.metadata.thread_id} | run_id: ${runnableConfig.metadata.run_id} | error: ${results.error}`,
-      );
-      return;
-    }
-
-    const toolCallId = runnableConfig.toolCall.id;
-    const turn = runnableConfig.toolCall?.turn ?? 0;
-    const name = `${runnableConfig.toolCall.name}_${toolCallId}_${nanoid()}`;
-    const attachment = {
-      name,
-      type: Tools.web_search,
-      messageId: runnableConfig.metadata.run_id,
-      toolCallId,
-      conversationId: runnableConfig.metadata.thread_id,
-      [Tools.web_search]: { turn, ...results.data },
-    };
-    if (!res.headersSent) {
-      return attachment;
-    }
-    res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
-  };
 }
 
 /**
