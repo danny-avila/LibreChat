@@ -27,7 +27,7 @@ type THoverButtons = {
   isLast: boolean;
   index: number;
   handleFeedback: (rating: TFeedbackRating, payload?: any) => void;
-  rated: TMessageFeedback | undefined;
+  // rated: TMessageFeedback | undefined;
 };
 
 type HoverButtonProps = {
@@ -39,56 +39,8 @@ type HoverButtonProps = {
   isDisabled?: boolean;
   isLast?: boolean;
   className?: string;
-  children?: React.ReactNode; // add children prop
+  buttonStyle?: string;
 };
-
-const HoverButton = memo(
-  ({
-    onClick,
-    title,
-    icon,
-    isActive = false,
-    isVisible = true,
-    isDisabled = false,
-    isLast = false,
-    className = '',
-    children,
-  }: HoverButtonProps) => {
-    const buttonStyle = cn(
-      'hover-button rounded-lg p-1.5',
-
-      'hover:bg-gray-100 hover:text-gray-500',
-
-      'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
-      'disabled:dark:hover:text-gray-400',
-
-      'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
-      !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
-      !isVisible && 'opacity-0',
-
-      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
-
-      isActive && isVisible && 'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
-
-      className,
-    );
-
-    return (
-      <button
-        className={buttonStyle}
-        onClick={onClick}
-        type="button"
-        title={title}
-        disabled={isDisabled}
-      >
-        {icon}
-        {children}
-      </button>
-    );
-  },
-);
-
-HoverButton.displayName = 'HoverButton';
 
 const extractMessageContent = (message: TMessage): string => {
   if (typeof message.content === 'string') {
@@ -119,6 +71,52 @@ const extractMessageContent = (message: TMessage): string => {
   return message.text || '';
 };
 
+const HoverButton = memo(
+  ({
+    onClick,
+    title,
+    icon,
+    isActive = false,
+    isVisible = true,
+    isDisabled = false,
+    isLast = false,
+    className = '',
+  }: HoverButtonProps) => {
+    const buttonStyle = cn(
+      'hover-button rounded-lg p-1.5',
+
+      'hover:bg-gray-100 hover:text-gray-500',
+
+      'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+      'disabled:dark:hover:text-gray-400',
+
+      'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
+      !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+      !isVisible && 'opacity-0',
+
+      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
+
+      isActive && isVisible && 'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
+
+      className,
+    );
+
+    return (
+      <button
+        className={buttonStyle}
+        onClick={onClick}
+        type="button"
+        title={title}
+        disabled={isDisabled}
+      >
+        {icon}
+      </button>
+    );
+  },
+);
+
+HoverButton.displayName = 'HoverButton';
+
 const HoverButtons = ({
   index,
   isEditing,
@@ -132,7 +130,6 @@ const HoverButtons = ({
   latestMessage,
   isLast,
   handleFeedback,
-  rated,
 }: THoverButtons) => {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
@@ -170,6 +167,17 @@ const HoverButtons = ({
   }
 
   const { isCreatedByUser, error } = message;
+
+  const buttonStyle = cn(
+    'hover-button rounded-lg p-1.5',
+    'hover:bg-gray-100 hover:text-gray-500',
+    'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+    'disabled:dark:hover:text-gray-400',
+    'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
+    !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+    'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
+    'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
+  );
 
   // If message has an error, only show regenerate button
   if (error === true) {
@@ -245,11 +253,11 @@ const HoverButtons = ({
 
       {/* Fork Button */}
       <Fork
-        isLast={isLast}
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
         latestMessageId={latestMessage?.messageId}
+        isLast={isLast}
       />
 
       {/* Feedback Buttons */}
