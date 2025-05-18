@@ -8,19 +8,15 @@ const { logger } = require('~/config');
  * @returns {{ onSearchResults: function(SearchResult, GraphRunnableConfig): void; onGetHighlights: function(string): void}} - Function that takes search results and returns or streams an attachment
  */
 function createOnSearchResults(res) {
-  /** @type {Map<string, { type: 'organic' | 'topStories'; index: number; turn: number }>} */
-  const sourceMap = new Map();
+  const context = {
+    sourceMap: new Map(),
+    searchResultData: undefined,
+    toolCallId: undefined,
+    attachmentName: undefined,
+    messageId: undefined,
+    conversationId: undefined,
+  };
 
-  /** @type {SearchResultData | undefined} */
-  let searchResultData;
-  /** @type {string} */
-  let toolCallId;
-  /** @type {string} */
-  let attachmentName;
-  /** @type {string} */
-  let messageId;
-  /** @type {string} */
-  let conversationId;
   /**
    * @param {SearchResult} results
    * @param {GraphRunnableConfig} runnableConfig
@@ -40,11 +36,13 @@ function createOnSearchResults(res) {
 
     const turn = runnableConfig.toolCall?.turn ?? 0;
     const data = { turn, ...structuredClone(results.data ?? {}) };
-    searchResultData = data;
+    context.searchResultData = data;
+
+    // Map sources to links
     for (let i = 0; i < data.organic.length; i++) {
       const source = data.organic[i];
       if (source.link) {
-        sourceMap.set(source.link, {
+        context.sourceMap.set(source.link, {
           type: 'organic',
           index: i,
           turn,
@@ -54,7 +52,7 @@ function createOnSearchResults(res) {
     for (let i = 0; i < data.topStories.length; i++) {
       const source = data.topStories[i];
       if (source.link) {
-        sourceMap.set(source.link, {
+        context.sourceMap.set(source.link, {
           type: 'topStories',
           index: i,
           turn,
@@ -62,18 +60,13 @@ function createOnSearchResults(res) {
       }
     }
 
-    toolCallId = runnableConfig.toolCall.id;
-    messageId = runnableConfig.metadata.run_id;
-    conversationId = runnableConfig.metadata.thread_id;
-    attachmentName = `${runnableConfig.toolCall.name}_${toolCallId}_${nanoid()}`;
-    const attachment = {
-      messageId,
-      toolCallId,
-      conversationId,
-      name: attachmentName,
-      type: Tools.web_search,
-      [Tools.web_search]: data,
-    };
+    context.toolCallId = runnableConfig.toolCall.id;
+    context.messageId = runnableConfig.metadata.run_id;
+    context.conversationId = runnableConfig.metadata.thread_id;
+    context.attachmentName = `${runnableConfig.toolCall.name}_${context.toolCallId}_${nanoid()}`;
+
+    const attachment = buildAttachment(context);
+
     if (!res.headersSent) {
       return attachment;
     }
@@ -85,32 +78,42 @@ function createOnSearchResults(res) {
    * @returns {void}
    */
   function onGetHighlights(link) {
-    const source = sourceMap.get(link);
+    const source = context.sourceMap.get(link);
     if (!source) {
       return;
     }
     const { type, index } = source;
-    const data = searchResultData;
+    const data = context.searchResultData;
     if (!data) {
       return;
     }
     if (data[type][index] != null) {
       data[type][index].processed = true;
     }
-    const attachment = {
-      messageId,
-      toolCallId,
-      conversationId,
-      name: attachmentName,
-      type: Tools.web_search,
-      [Tools.web_search]: data,
-    };
+
+    const attachment = buildAttachment(context);
     res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
   }
 
   return {
     onSearchResults,
     onGetHighlights,
+  };
+}
+
+/**
+ * Helper function to build an attachment object
+ * @param {object} context - The context containing attachment data
+ * @returns {object} - The attachment object
+ */
+function buildAttachment(context) {
+  return {
+    messageId: context.messageId,
+    toolCallId: context.toolCallId,
+    conversationId: context.conversationId,
+    name: context.attachmentName,
+    type: Tools.web_search,
+    [Tools.web_search]: context.searchResultData,
   };
 }
 
