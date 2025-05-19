@@ -279,6 +279,12 @@ export const endpointSchema = baseEndpointSchema.merge(
     headers: z.record(z.any()).optional(),
     addParams: z.record(z.any()).optional(),
     dropParams: z.array(z.string()).optional(),
+    customParams: z
+      .object({
+        defaultParamsEndpoint: z.string().default('custom'),
+        paramDefinitions: z.array(z.record(z.any())).optional(),
+      })
+      .strict(),
     customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
