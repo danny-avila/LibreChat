@@ -88,7 +88,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
           href={currentSource.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="not-prose cursor-pointer font-bold"
+          className="cursor-pointer"
         >
           {currentSource.attribution}
         </a>

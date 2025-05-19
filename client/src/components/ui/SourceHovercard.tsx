@@ -47,7 +47,7 @@ export function SourceHovercard({
   label,
   onMouseEnter,
   onMouseLeave,
-  anchorClassName = 'not-prose ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy dark:border-border-medium bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:hover:bg-surface-tertiary',
+  anchorClassName = 'ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy dark:border-border-medium bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:hover:bg-surface-tertiary',
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -92,7 +92,7 @@ export function SourceHovercard({
                     href={source.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="not-prose cursor-pointer font-bold"
+                    className="cursor-pointer font-bold text-[#0066cc] hover:underline dark:text-blue-400"
                   >
                     {source.attribution || domain}
                   </a>

@@ -30,7 +30,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
         href={source.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="not-prose flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+        className="flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
       >
         <div className="flex items-center gap-2">
           <FaviconImage domain={domain} />
@@ -49,7 +49,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
   }
 
   return (
-    <span className="relative inline-block h-full w-full">
+    <span className="not-prose relative inline-block h-full w-full">
       <Ariakit.HovercardProvider showTimeout={150} hideTimeout={150}>
         <div className="flex h-full items-center">
           <Ariakit.HovercardAnchor
@@ -58,7 +58,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
                 href={source.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="not-prose flex h-full w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+                className="flex h-full w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
               >
                 <div className="flex items-center gap-2">
                   <FaviconImage domain={domain} />
@@ -96,7 +96,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
                 href={source.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="not-prose cursor-pointer font-bold"
+                className="cursor-pointer"
               >
                 {source.attribution || domain}
               </a>
@@ -120,7 +120,7 @@ function ImageItem({ image }: { image: ImageResult }) {
       href={image.imageUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="not-prose group overflow-hidden rounded-lg bg-surface-secondary transition-all duration-300 hover:bg-surface-tertiary"
+      className="group overflow-hidden rounded-lg bg-surface-secondary transition-all duration-300 hover:bg-surface-tertiary"
     >
       {image.imageUrl && (
         <div className="relative aspect-square w-full overflow-hidden">
@@ -181,7 +181,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
           </div>
         ))}
         {hasMoreSources && (
-          <OGDialogTrigger className="not-prose flex flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary">
+          <OGDialogTrigger className="flex flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary">
             <div className="flex items-center gap-2">
               <StackedFavicons sources={remainingSources} />
               <span className="truncate text-xs font-medium text-text-secondary">
