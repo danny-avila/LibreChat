@@ -64,7 +64,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
               onClick={handlePrevPage}
               disabled={currentPage === 0}
               style={{ opacity: currentPage === 0 ? 0.5 : 1 }}
-              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base text-blue-300"
+              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base"
             >
               ←
             </button>
@@ -72,7 +72,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
               onClick={handleNextPage}
               disabled={currentPage === totalPages - 1}
               style={{ opacity: currentPage === totalPages - 1 ? 0.5 : 1 }}
-              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base text-blue-300"
+              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base"
             >
               →
             </button>
@@ -84,7 +84,14 @@ export function CompositeCitation(props: CompositeCitationProps) {
       )}
       <span className="mb-2 flex items-center">
         <FaviconImage domain={getCleanDomain(currentSource.link || '')} className="mr-2" />
-        <strong>{currentSource.attribution}</strong>
+        <a
+          href={currentSource.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="not-prose cursor-pointer font-bold"
+        >
+          {currentSource.attribution}
+        </a>
       </span>
       <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{currentSource.title}</h4>
       <p className="my-2 text-sm text-text-secondary">{currentSource.snippet}</p>
@@ -116,7 +123,7 @@ export function Citation(props: CitationComponentProps) {
       case 'standalone':
         return refData.attribution || localize('com_citation_source');
       default:
-        return localize('com_citation_source');
+        return refData.attribution || localize('com_citation_source');
     }
   };
 

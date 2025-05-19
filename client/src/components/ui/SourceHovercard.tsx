@@ -3,6 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export interface SourceData {
   link: string;
@@ -33,7 +34,7 @@ export function getCleanDomain(url: string) {
 
 export function FaviconImage({ domain, className = '' }: { domain: string; className?: string }) {
   return (
-    <div className={`relative size-4 flex-shrink-0 overflow-hidden rounded-full ${className}`}>
+    <div className={cn('relative size-4 flex-shrink-0 overflow-hidden rounded-full', className)}>
       <div className="absolute inset-0 rounded-full bg-white" />
       <img src={getFaviconUrl(domain)} alt={domain} className="relative size-full" />
       <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
@@ -46,7 +47,7 @@ export function SourceHovercard({
   label,
   onMouseEnter,
   onMouseLeave,
-  anchorClassName = 'ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover',
+  anchorClassName = 'not-prose ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy dark:border-border-medium bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:hover:bg-surface-tertiary',
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -77,7 +78,7 @@ export function SourceHovercard({
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
+            className="dark:shadow-lg-dark z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
@@ -87,7 +88,14 @@ export function SourceHovercard({
               <>
                 <span className="mb-2 flex items-center">
                   <FaviconImage domain={domain} className="mr-2" />
-                  <strong>{source.attribution || domain}</strong>
+                  <a
+                    href={source.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="not-prose cursor-pointer font-bold"
+                  >
+                    {source.attribution || domain}
+                  </a>
                 </span>
 
                 <h4 className="mb-1.5 mt-0 text-sm text-text-primary">

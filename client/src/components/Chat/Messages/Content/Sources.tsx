@@ -30,7 +30,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
         href={source.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+        className="not-prose flex w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
       >
         <div className="flex items-center gap-2">
           <FaviconImage domain={domain} />
@@ -58,7 +58,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
                 href={source.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex h-full w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
+                className="not-prose flex h-full w-full flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary"
               >
                 <div className="flex items-center gap-2">
                   <FaviconImage domain={domain} />
@@ -86,13 +86,20 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
+            className="dark:shadow-lg-dark z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
             <div className="mb-2 flex items-center">
               <FaviconImage domain={domain} className="mr-2" />
-              <strong>{source.attribution || domain}</strong>
+              <a
+                href={source.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="not-prose cursor-pointer font-bold"
+              >
+                {source.attribution || domain}
+              </a>
             </div>
 
             <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{source.title || source.link}</h4>
@@ -113,7 +120,7 @@ function ImageItem({ image }: { image: ImageResult }) {
       href={image.imageUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="group overflow-hidden rounded-lg bg-surface-secondary transition-all duration-300 hover:bg-surface-tertiary"
+      className="not-prose group overflow-hidden rounded-lg bg-surface-secondary transition-all duration-300 hover:bg-surface-tertiary"
     >
       {image.imageUrl && (
         <div className="relative aspect-square w-full overflow-hidden">
@@ -174,7 +181,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
           </div>
         ))}
         {hasMoreSources && (
-          <OGDialogTrigger className="flex flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary">
+          <OGDialogTrigger className="not-prose flex flex-col rounded-lg bg-surface-primary-contrast px-3 py-2 text-sm transition-all duration-300 hover:bg-surface-tertiary">
             <div className="flex items-center gap-2">
               <StackedFavicons sources={remainingSources} />
               <span className="truncate text-xs font-medium text-text-secondary">
