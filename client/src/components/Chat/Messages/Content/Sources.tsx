@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
+import type { ValidSource, ImageResult } from 'librechat-data-provider';
+import { FaviconImage, getCleanDomain } from '~/components/ui/SourceHovercard';
 import { useSearchContext } from '~/Providers';
 import { AnimatedTabs } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -11,33 +13,11 @@ import {
   OGDialogContent,
   OGDialogTrigger,
 } from '~/components/ui/OriginalDialog';
-import type { ValidSource, ImageResult } from 'librechat-data-provider';
 
 interface SourceItemProps {
   source: ValidSource;
   isNews?: boolean;
   expanded?: boolean;
-}
-
-/** Helper to get domain favicon */
-function getFaviconUrl(domain: string) {
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-}
-
-/** Helper to get clean domain name */
-export function getCleanDomain(url: string) {
-  const domain = url.replace(/(^\w+:|^)\/\//, '').split('/')[0];
-  return domain.startsWith('www.') ? domain.substring(4) : domain;
-}
-
-export function FaviconImage({ domain, className = '' }: { domain: string; className?: string }) {
-  return (
-    <div className={`relative size-4 flex-shrink-0 overflow-hidden rounded-full ${className}`}>
-      <div className="absolute inset-0 rounded-full bg-white" />
-      <img src={getFaviconUrl(domain)} alt={domain} className="relative size-full" />
-      <div className="border-border-light/10 absolute inset-0 rounded-full border dark:border-transparent"></div>
-    </div>
-  );
 }
 
 function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
