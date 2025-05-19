@@ -9,6 +9,7 @@ import { CONSTANTS } from './enum';
 
 export interface CallToolOptions extends RequestOptions {
   userId?: string;
+  userEmail?: string;
 }
 
 export class MCPManager {
@@ -180,8 +181,42 @@ export class MCPManager {
     );
   }
 
+  /** Checks if a user has access to a specific MCP server */
+  private hasAccessToServer(serverName: string, userEmail?: string): boolean {
+    // If userEmail is not provided, we can't verify access - deny if server has restrictions
+    if (!userEmail) {
+      // If server has allowedUsers, deny access without email
+      return !this.mcpConfigs[serverName]?.allowedUsers;
+    }
+
+    const allowedUsers = this.mcpConfigs[serverName]?.allowedUsers;
+
+    // If no restrictions are set, allow access
+    if (!allowedUsers) {
+      return true;
+    }
+
+    // Check if allowedUsers is an array (list of emails)
+    if (Array.isArray(allowedUsers)) {
+      return allowedUsers.includes(userEmail);
+    }
+
+    // Otherwise, it's a regex pattern string
+    try {
+      const regex = new RegExp(allowedUsers);
+      return regex.test(userEmail);
+    } catch (error) {
+      this.logger.error(`[MCP][${serverName}] Invalid regex pattern in allowedUsers: ${error}`);
+      return false; // If the regex is invalid, deny access
+    }
+  }
+
   /** Gets or creates a connection for a specific user */
-  public async getUserConnection(userId: string, serverName: string): Promise<MCPConnection> {
+  public async getUserConnection(
+    userId: string,
+    serverName: string,
+    userEmail?: string,
+  ): Promise<MCPConnection> {
     const userServerMap = this.userConnections.get(userId);
     let connection = userServerMap?.get(serverName);
     const now = Date.now();
@@ -225,6 +260,13 @@ export class MCPManager {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Configuration for server "${serverName}" not found.`,
+      );
+    }
+
+    if (!this.hasAccessToServer(serverName, userEmail)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${userId}] Access denied to server "${serverName}". User email not in allowed list.`,
       );
     }
 
@@ -335,6 +377,11 @@ export class MCPManager {
     return this.connections;
   }
 
+  /** Checks if a user has access to a specific MCP server */
+  public checkUserServerAccess(serverName: string, userEmail?: string): boolean {
+    return this.hasAccessToServer(serverName, userEmail);
+  }
+
   /**
    * Maps available tools from all app-level connections into the provided object.
    * The object is modified in place.
@@ -424,14 +471,14 @@ export class MCPManager {
     options?: CallToolOptions;
   }): Promise<t.FormattedToolResponse> {
     let connection: MCPConnection | undefined;
-    const { userId, ...callOptions } = options ?? {};
+    const { userId, userEmail, ...callOptions } = options ?? {};
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
     try {
       if (userId) {
         this.updateUserLastActivity(userId);
         // Get or create user-specific connection
-        connection = await this.getUserConnection(userId, serverName);
+        connection = await this.getUserConnection(userId, serverName, userEmail);
       } else {
         // Use app-level connection
         connection = this.connections.get(serverName);

@@ -61,6 +61,7 @@ async function createMCPTool({ req, toolKey, provider: _provider }) {
         toolArguments,
         options: {
           userId: config?.configurable?.user_id,
+          userEmail: config?.configurable?.user_email,
           signal: derivedSignal,
         },
       });

@@ -1,4 +1,4 @@
-const { CacheKeys, AuthType } = require('librechat-data-provider');
+const { CacheKeys, AuthType, Constants } = require('librechat-data-provider');
 const { getToolkitKey } = require('~/server/services/ToolService');
 const { getCustomConfig } = require('~/server/services/Config');
 const { availableTools } = require('~/app/clients/tools');
@@ -98,8 +98,10 @@ const getAvailablePluginsController = async (req, res) => {
  */
 const getAvailableTools = async (req, res) => {
   try {
+    const userEmail = req.user?.email;
+    const userCacheKey = userEmail ? `${CacheKeys.TOOLS}_${userEmail}` : CacheKeys.TOOLS;
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    const cachedTools = await cache.get(CacheKeys.TOOLS);
+    const cachedTools = await cache.get(userCacheKey);
     if (cachedTools) {
       res.status(200).json(cachedTools);
       return;
@@ -107,8 +109,8 @@ const getAvailableTools = async (req, res) => {
 
     let pluginManifest = availableTools;
     const customConfig = await getCustomConfig();
-    if (customConfig?.mcpServers != null) {
-      const mcpManager = getMCPManager();
+    const mcpManager = customConfig?.mcpServers != null ? getMCPManager() : null;
+    if (mcpManager) {
       pluginManifest = await mcpManager.loadManifestTools(pluginManifest);
     }
 
@@ -124,14 +126,26 @@ const getAvailableTools = async (req, res) => {
     });
 
     const toolDefinitions = req.app.locals.availableTools;
-    const tools = authenticatedPlugins.filter(
+    let tools = authenticatedPlugins.filter(
       (plugin) =>
         toolDefinitions[plugin.pluginKey] !== undefined ||
         (plugin.toolkit === true &&
           Object.keys(toolDefinitions).some((key) => getToolkitKey(key) === plugin.pluginKey)),
     );
 
-    await cache.set(CacheKeys.TOOLS, tools);
+    // Filter MCP tools based on user access
+    if (mcpManager && userEmail) {
+      tools = tools.filter((plugin) => {
+        // Check if this is an MCP tool
+        if (plugin.pluginKey && plugin.pluginKey.includes(Constants.mcp_delimiter)) {
+          const [_, serverName] = plugin.pluginKey.split(Constants.mcp_delimiter);
+          return mcpManager.checkUserServerAccess(serverName, userEmail);
+        }
+        return true;
+      });
+    }
+
+    await cache.set(userCacheKey, tools);
     res.status(200).json(tools);
   } catch (error) {
     res.status(500).json({ message: error.message });

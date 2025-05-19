@@ -65,6 +65,22 @@ const AppService = async (app) => {
     directory: paths.structuredTools,
   });
 
+  // Filter function to track MCP server for tools
+  app.locals.filterMCPToolsByUser = (userEmail, tools) => {
+    if (!userEmail || !config.mcpServers || !tools) {
+      return tools;
+    }
+    const mcpManager = getMCPManager();
+    return tools.filter((tool) => {
+      // If not an MCP tool or no pluginKey, keep it
+      if (!tool.pluginKey || !tool.pluginKey.includes('__mcp_')) {
+        return true;
+      }
+      const [_, serverName] = tool.pluginKey.split('__mcp_');
+      return mcpManager.checkUserServerAccess(serverName, userEmail);
+    });
+  };
+
   if (config.mcpServers != null) {
     const mcpManager = getMCPManager();
     await mcpManager.initializeMCP(config.mcpServers, processMCPEnv);

@@ -649,6 +649,7 @@ class AgentClient extends BaseClient {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
+          user_email: this.options.req.user?.email,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
         recursionLimit: agentsEConfig?.recursionLimit,
@@ -656,6 +657,18 @@ class AgentClient extends BaseClient {
         streamMode: 'values',
         version: 'v2',
       };
+
+      // Filter MCP tools based on user access
+      if (
+        this.options.req.app.locals.filterMCPToolsByUser &&
+        this.options.agent.tools &&
+        this.options.req.user?.email
+      ) {
+        this.options.agent.tools = this.options.req.app.locals.filterMCPToolsByUser(
+          this.options.req.user.email,
+          this.options.agent.tools,
+        );
+      }
 
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(

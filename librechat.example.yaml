@@ -141,6 +141,8 @@ actions:
 #       - -y
 #       - "@modelcontextprotocol/server-puppeteer"
 #     timeout: 300000  # 5 minutes timeout for this server
+#     # Restrict access to specific users by email
+#     allowedUsers: ["admin@example.com", "developer@example.com"]
 #   filesystem:
 #     # type: stdio
 #     command: npx
@@ -149,12 +151,15 @@ actions:
 #       - "@modelcontextprotocol/server-filesystem"
 #       - /home/user/LibreChat/
 #     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#     # Restrict access using a regex pattern (all users with company.com email domain)
+#     allowedUsers: ".*@company\\.com$"
 #   mcp-obsidian:
 #     command: npx
 #     args:
 #       - -y
 #       - "mcp-obsidian"
 #       - /path/to/obsidian/vault
+#     # This MCP server has no allowedUsers restriction, so all users can access it
 
 # Definition of custom endpoints
 endpoints:

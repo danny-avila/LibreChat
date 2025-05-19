@@ -7,6 +7,13 @@ const BaseOptionsSchema = z.object({
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
+  /** Restricts access to specific users by email */
+  allowedUsers: z
+    .union([
+      z.array(z.string().email()), // List of specific email addresses
+      z.string(), // Regular expression pattern for matching emails
+    ])
+    .optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
