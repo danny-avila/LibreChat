@@ -30,7 +30,7 @@ function getCleanDomain(url: string) {
   return domain.startsWith('www.') ? domain.substring(4) : domain;
 }
 
-function FaviconImage({ domain, className = '' }: { domain: string; className?: string }) {
+export function FaviconImage({ domain, className = '' }: { domain: string; className?: string }) {
   return (
     <div className={`relative size-4 flex-shrink-0 overflow-hidden rounded-full ${className}`}>
       <div className="absolute inset-0 rounded-full bg-white" />
