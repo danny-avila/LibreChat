@@ -83,7 +83,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-lg border border-border-heavy bg-surface-secondary p-3 shadow-lg"
+            className="z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
@@ -208,7 +208,7 @@ export function Citation(props: CitationComponentProps) {
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-lg border border-border-heavy bg-surface-secondary p-3 text-text-primary shadow-lg"
+            className="z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
