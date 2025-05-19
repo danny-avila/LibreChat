@@ -903,6 +903,7 @@ export const visionModels = [
   'llama-3-2-11b-vision',
   'llama-3.2-90b-vision',
   'llama-3-2-90b-vision',
+  'llama-4',
 ];
 export enum VisionModes {
   generative = 'generative',
