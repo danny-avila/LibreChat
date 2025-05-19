@@ -14,6 +14,7 @@ export type AgentState = {
   name: string | null;
   description: string | null;
   instructions: string | null;
+  artifacts?: string | null;
   capabilities?: string[];
   tools?: string[];
 } | null;
@@ -80,6 +81,7 @@ export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: V
       name: agentWithVersions.name,
       description: agentWithVersions.description,
       instructions: agentWithVersions.instructions,
+      artifacts: agentWithVersions.artifacts,
       capabilities: agentWithVersions.capabilities,
       tools: agentWithVersions.tools,
     };

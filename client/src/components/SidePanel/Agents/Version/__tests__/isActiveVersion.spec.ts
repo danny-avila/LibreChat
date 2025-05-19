@@ -6,10 +6,9 @@ describe('isActiveVersion', () => {
     name: 'Test Agent',
     description: 'Test Description',
     instructions: 'Test Instructions',
+    artifacts: 'default',
     tools: ['tool1', 'tool2'],
     capabilities: ['capability1', 'capability2'],
-    createdAt: '2023-01-01T00:00:00Z',
-    updatedAt: '2023-01-02T00:00:00Z',
     ...overrides,
   });
 
@@ -17,6 +16,7 @@ describe('isActiveVersion', () => {
     name: 'Test Agent',
     description: 'Test Description',
     instructions: 'Test Instructions',
+    artifacts: 'default',
     tools: ['tool1', 'tool2'],
     capabilities: ['capability1', 'capability2'],
     ...overrides,
@@ -59,6 +59,14 @@ describe('isActiveVersion', () => {
   test('returns false when instructions do not match', () => {
     const version = createVersion();
     const currentAgent = createAgentState({ instructions: 'Different Instructions' });
+    const versions = [version];
+
+    expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
+  });
+
+  test('returns false when artifacts do not match', () => {
+    const version = createVersion();
+    const currentAgent = createAgentState({ artifacts: 'different_artifacts' });
     const versions = [version];
 
     expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
@@ -190,6 +198,38 @@ describe('isActiveVersion', () => {
     test('handles empty arrays for capabilities', () => {
       const version = createVersion({ capabilities: [] });
       const currentAgent = createAgentState({ capabilities: [] });
+      const versions = [version];
+
+      expect(isActiveVersion(version, currentAgent, versions)).toBe(true);
+    });
+
+    test('handles missing artifacts field', () => {
+      const version = createVersion({ artifacts: undefined });
+      const currentAgent = createAgentState({ artifacts: undefined });
+      const versions = [version];
+
+      expect(isActiveVersion(version, currentAgent, versions)).toBe(true);
+    });
+
+    test('handles when version has artifacts but agent does not', () => {
+      const version = createVersion();
+      const currentAgent = createAgentState({ artifacts: undefined });
+      const versions = [version];
+
+      expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
+    });
+
+    test('handles when agent has artifacts but version does not', () => {
+      const version = createVersion({ artifacts: undefined });
+      const currentAgent = createAgentState();
+      const versions = [version];
+
+      expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
+    });
+
+    test('handles empty string for artifacts', () => {
+      const version = createVersion({ artifacts: '' });
+      const currentAgent = createAgentState({ artifacts: '' });
       const versions = [version];
 
       expect(isActiveVersion(version, currentAgent, versions)).toBe(true);

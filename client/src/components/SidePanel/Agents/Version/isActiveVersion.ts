@@ -12,10 +12,9 @@ export const isActiveVersion = (
   if (!currentAgent) {
     const versionIndex = versions.findIndex(
       (v) =>
-        v.updatedAt === version.updatedAt &&
-        v.createdAt === version.createdAt &&
         v.name === version.name &&
-        v.instructions === version.instructions,
+        v.instructions === version.instructions &&
+        v.artifacts === version.artifacts,
     );
     return versionIndex === 0;
   }
@@ -23,6 +22,7 @@ export const isActiveVersion = (
   const matchesName = version.name === currentAgent.name;
   const matchesDescription = version.description === currentAgent.description;
   const matchesInstructions = version.instructions === currentAgent.instructions;
+  const matchesArtifacts = version.artifacts === currentAgent.artifacts;
 
   const toolsMatch = () => {
     if (!version.tools && !currentAgent.tools) return true;
@@ -49,6 +49,11 @@ export const isActiveVersion = (
   };
 
   return (
-    matchesName && matchesDescription && matchesInstructions && toolsMatch() && capabilitiesMatch()
+    matchesName &&
+    matchesDescription &&
+    matchesInstructions &&
+    matchesArtifacts &&
+    toolsMatch() &&
+    capabilitiesMatch()
   );
 };
