@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-// --- Types ---
 export type TFeedbackRating = 'thumbsUp' | 'thumbsDown';
 export const FEEDBACK_RATINGS = ['thumbsUp', 'thumbsDown'] as const;
 
@@ -107,11 +106,9 @@ export function getTagsForRating(rating: TFeedbackRating): TFeedbackTag[] {
   return FEEDBACK_TAGS.filter((tag) => tag.direction === rating);
 }
 
-// --- Schemas ---
 export const feedbackTagKeySchema = z.enum(FEEDBACK_REASON_KEYS);
 export const feedbackRatingSchema = z.enum(FEEDBACK_RATINGS);
 
-// This is the minimal, normalized saved form!
 export const feedbackSchema = z.object({
   rating: feedbackRatingSchema,
   tag: feedbackTagKeySchema,
@@ -119,15 +116,12 @@ export const feedbackSchema = z.object({
 });
 export type TMinimalFeedback = z.infer<typeof feedbackSchema>;
 
-// This is your *local UI* model (for the current design)
-// (but only TMinimalFeedback is saved/transported!).
 export type TFeedback = {
   rating: TFeedbackRating;
   tag: TFeedbackTag | undefined;
   text?: string;
 };
 
-// Map UI model to minimal saved payload
 export function toMinimalFeedback(feedback: TFeedback | undefined): TMinimalFeedback | undefined {
   if (!feedback?.rating || !feedback?.tag || !feedback.tag.key) {
     return undefined;

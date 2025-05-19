@@ -291,8 +291,7 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
     return res.status(200).json({
       messageId: updatedMessage.messageId,
       conversationId: updatedMessage.conversationId,
-      rating: updatedMessage.rating,
-      ratingContent: updatedMessage.ratingContent,
+      feedback: updatedMessage.feedback,
     });
   } catch (error) {
     logger.error('Error updating message feedback:', error);
