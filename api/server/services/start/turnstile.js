@@ -26,7 +26,16 @@ function loadTurnstileConfig(config, configDefaults) {
     options: customTurnstile.options ?? defaults.options,
   });
 
-  logger.info('Turnstile configuration loaded:\n' + JSON.stringify(loadedTurnstile, null, 2));
+  const enabled = Boolean(loadedTurnstile.siteKey);
+
+  if (enabled) {
+    logger.info(
+      'Turnstile is ENABLED with configuration:\n' + JSON.stringify(loadedTurnstile, null, 2),
+    );
+  } else {
+    logger.info('Turnstile is DISABLED (no siteKey provided).');
+  }
+
   return loadedTurnstile;
 }
 

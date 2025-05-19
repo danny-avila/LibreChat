@@ -259,35 +259,6 @@ export default function useQueryParams({
   }, [methods, submitMessage, conversation]);
 
   useEffect(() => {
-    // Only proceed if we've already processed URL parameters but haven't yet handled submission
-    if (
-      !processedRef.current ||
-      submissionHandledRef.current ||
-      settingsAppliedRef.current ||
-      !validSettingsRef.current ||
-      !conversation
-    ) {
-      return;
-    }
-
-    const allSettingsApplied = areSettingsApplied();
-
-    if (allSettingsApplied) {
-      settingsAppliedRef.current = true;
-
-      if (pendingSubmitRef.current) {
-        if (settingsTimeoutRef.current) {
-          clearTimeout(settingsTimeoutRef.current);
-          settingsTimeoutRef.current = null;
-        }
-
-        console.log('Settings fully applied, processing submission');
-        processSubmission();
-      }
-    }
-  }, [conversation, processSubmission, areSettingsApplied]);
-
-  useEffect(() => {
     const processQueryParams = () => {
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
@@ -332,14 +303,15 @@ export default function useQueryParams({
 
       /** Mark processing as complete and clean up as needed */
       const success = () => {
-        const currentParams = new URLSearchParams(searchParams.toString());
+        const paramString = searchParams.toString();
+        const currentParams = new URLSearchParams(paramString);
         currentParams.delete('prompt');
         currentParams.delete('q');
         currentParams.delete('submit');
 
         setSearchParams(currentParams, { replace: true });
         processedRef.current = true;
-        console.log('Parameters processed successfully');
+        console.log('Parameters processed successfully', paramString);
         clearInterval(intervalId);
 
         // Only clean URL if there's no pending submission
@@ -417,4 +389,33 @@ export default function useQueryParams({
     queryClient,
     processSubmission,
   ]);
+
+  useEffect(() => {
+    // Only proceed if we've already processed URL parameters but haven't yet handled submission
+    if (
+      !processedRef.current ||
+      submissionHandledRef.current ||
+      settingsAppliedRef.current ||
+      !validSettingsRef.current ||
+      !conversation
+    ) {
+      return;
+    }
+
+    const allSettingsApplied = areSettingsApplied();
+
+    if (allSettingsApplied) {
+      settingsAppliedRef.current = true;
+
+      if (pendingSubmitRef.current) {
+        if (settingsTimeoutRef.current) {
+          clearTimeout(settingsTimeoutRef.current);
+          settingsTimeoutRef.current = null;
+        }
+
+        console.log('Settings fully applied, processing submission');
+        processSubmission();
+      }
+    }
+  }, [conversation, processSubmission, areSettingsApplied]);
 }

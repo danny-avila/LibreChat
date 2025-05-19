@@ -52,6 +52,7 @@ export const excludedKeys = new Set([
   'model',
   'files',
   'spec',
+  'disableParams',
 ]);
 
 export enum SettingsViews {
