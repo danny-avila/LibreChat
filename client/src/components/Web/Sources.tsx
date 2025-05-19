@@ -3,7 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
 import type { ValidSource, ImageResult } from 'librechat-data-provider';
-import { FaviconImage, getCleanDomain } from '~/components/ui/SourceHovercard';
+import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { useSearchContext } from '~/Providers';
 import { AnimatedTabs } from '~/components/ui';
 import { useLocalize } from '~/hooks';

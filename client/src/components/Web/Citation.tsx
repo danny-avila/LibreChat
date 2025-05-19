@@ -1,6 +1,6 @@
 import { memo, useState, useContext } from 'react';
 import type { CitationProps } from './types';
-import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/ui/SourceHovercard';
+import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
 import { useLocalize } from '~/hooks';
 

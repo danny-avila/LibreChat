@@ -7,7 +7,7 @@ import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { MessageContext, SearchContext } from '~/Providers';
-import Sources from './Sources';
+import Sources from '~/components/Web/Sources';
 import { EditTextPart } from './Parts';
 import store from '~/store';
 import Part from './Part';

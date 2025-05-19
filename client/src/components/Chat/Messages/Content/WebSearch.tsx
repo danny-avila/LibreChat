@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { TAttachment } from 'librechat-data-provider';
+import { StackedFavicons } from '~/components/Web/Sources';
 import { useSearchContext } from '~/Providers';
-import { StackedFavicons } from './Sources';
 import ProgressText from './ProgressText';
 import { useLocalize } from '~/hooks';
 
