@@ -86,26 +86,40 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
 
           <Ariakit.Hovercard
             gutter={16}
-            className="dark:shadow-lg-dark z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
+            className="dark:shadow-lg-dark z-[999] w-[400px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
-            <div className="mb-2 flex items-center">
-              <FaviconImage domain={domain} className="mr-2" />
-              <a
-                href={source.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="cursor-pointer"
-              >
-                {source.attribution || domain}
-              </a>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <div className="mb-2 flex items-center">
+                  <FaviconImage domain={domain} className="mr-2" />
+                  <a
+                    href={source.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cursor-pointer font-bold"
+                  >
+                    {source.attribution || domain}
+                  </a>
+                </div>
+                <h4 className="mb-1.5 mt-0 text-sm text-text-primary">
+                  {source.title || source.link}
+                </h4>
+                {'snippet' in source && source.snippet && (
+                  <span className="my-2 text-sm text-text-secondary">{source.snippet}</span>
+                )}
+              </div>
+              {'imageUrl' in source && source.imageUrl && (
+                <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md">
+                  <img
+                    src={source.imageUrl}
+                    alt={source.title || localize('com_sources_image_alt')}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              )}
             </div>
-
-            <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{source.title || source.link}</h4>
-            {'snippet' in source && source.snippet && (
-              <span className="my-2 text-sm text-text-secondary">{source.snippet}</span>
-            )}
           </Ariakit.Hovercard>
         </div>
       </Ariakit.HovercardProvider>
@@ -228,32 +242,53 @@ export default function Sources() {
       };
     }
 
-    const organicSources: ValidSource[] = [];
-    const topStories: ValidSource[] = [];
-    const images: ImageResult[] = [];
+    const organicSourcesMap = new Map<string, ValidSource>();
+    const topStoriesMap = new Map<string, ValidSource>();
+    const imagesMap = new Map<string, ImageResult>();
     let hasAnswerBox = false;
 
     Object.values(searchResults).forEach((result) => {
       if (!result) return;
 
       if (result.organic?.length) {
-        organicSources.push(...result.organic);
+        result.organic.forEach((source) => {
+          if (source.link) {
+            organicSourcesMap.set(source.link, source);
+          }
+        });
       }
       if (result.references?.length) {
-        organicSources.push(...result.references);
+        result.references.forEach((source) => {
+          if (source.link) {
+            organicSourcesMap.set(source.link, source);
+          }
+        });
       }
       if (result.topStories?.length) {
-        topStories.push(...result.topStories);
+        result.topStories.forEach((source) => {
+          if (source.link) {
+            topStoriesMap.set(source.link, source);
+          }
+        });
       }
       if (result.images?.length) {
-        images.push(...result.images);
+        result.images.forEach((image) => {
+          if (image.imageUrl) {
+            imagesMap.set(image.imageUrl, image);
+          }
+        });
       }
       if (result.answerBox) {
         hasAnswerBox = true;
       }
     });
 
-    return { organicSources, topStories, images, hasAnswerBox };
+    return {
+      organicSources: Array.from(organicSourcesMap.values()),
+      topStories: Array.from(topStoriesMap.values()),
+      images: Array.from(imagesMap.values()),
+      hasAnswerBox,
+    };
   }, [searchResults]);
 
   const tabs = useMemo(() => {
