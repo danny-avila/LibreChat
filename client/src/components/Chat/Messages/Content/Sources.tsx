@@ -25,7 +25,7 @@ function getFaviconUrl(domain: string) {
 }
 
 /** Helper to get clean domain name */
-function getCleanDomain(url: string) {
+export function getCleanDomain(url: string) {
   const domain = url.replace(/(^\w+:|^)\/\//, '').split('/')[0];
   return domain.startsWith('www.') ? domain.substring(4) : domain;
 }
@@ -106,14 +106,12 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
 
           <Ariakit.Hovercard
             gutter={16}
-            className="z-[999] w-[300px] rounded-lg border border-border-heavy bg-surface-secondary p-3 text-text-primary shadow-lg"
+            className="z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
             <div className="mb-2 flex items-center">
-              <div className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
-                {domain[0].toUpperCase()}
-              </div>
+              <FaviconImage domain={domain} className="mr-2" />
               <strong>{source.attribution || domain}</strong>
             </div>
 

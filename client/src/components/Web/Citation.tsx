@@ -2,6 +2,7 @@ import { memo, useState, useContext } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
+import { FaviconImage, getCleanDomain } from '~/components/Chat/Messages/Content/Sources';
 import type { CitationProps } from './types';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
 import { useLocalize } from '~/hooks';
@@ -22,10 +23,6 @@ export function CompositeCitation(props: CompositeCitationProps) {
 
   if (!sources || sources.length === 0) return null;
   const totalPages = sources.length;
-
-  const getInitial = (attribution: string) => {
-    return (attribution || 'S')[0].toUpperCase();
-  };
 
   const getCitationLabel = () => {
     if (!sources || sources.length === 0) return localize('com_citation_source');
@@ -114,9 +111,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
             )}
 
             <span className="mb-2 flex items-center">
-              <span className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
-                {getInitial(currentSource.attribution || '')}
-              </span>
+              <FaviconImage domain={getCleanDomain(currentSource.link || '')} className="mr-2" />
               <strong>{currentSource.attribution}</strong>
             </span>
 
@@ -168,10 +163,6 @@ export function Citation(props: CitationComponentProps) {
   });
   if (!refData) return null;
 
-  const getInitial = () => {
-    return (refData.attribution || 'S')[0].toUpperCase();
-  };
-
   const getCitationLabel = () => {
     switch (citationType) {
       case 'standalone':
@@ -213,9 +204,7 @@ export function Citation(props: CitationComponentProps) {
             unmountOnHide={true}
           >
             <span className="mb-2 flex items-center">
-              <span className="mr-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-300 text-[10px] text-neutral-800">
-                {getInitial()}
-              </span>
+              <FaviconImage domain={getCleanDomain(refData.link || '')} className="mr-2" />
               <strong>{refData.attribution}</strong>
             </span>
 
