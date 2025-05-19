@@ -157,14 +157,16 @@ function ImageItem({ image }: { image: ImageResult }) {
 
 export function StackedFavicons({
   sources,
-  limit = 3,
+  start = 0,
+  end = 3,
 }: {
   sources: ValidSource[];
-  limit?: number;
+  start?: number;
+  end?: number;
 }) {
   return (
     <div className="relative flex">
-      {sources.slice(0, limit).map((source, i) => (
+      {sources.slice(start, end).map((source, i) => (
         <FaviconImage
           key={`icon-${i}`}
           domain={getCleanDomain(source.link)}

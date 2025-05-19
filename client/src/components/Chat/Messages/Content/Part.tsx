@@ -115,6 +115,7 @@ const Part = memo(
             initialProgress={toolCall.progress ?? 0.1}
             isSubmitting={isSubmitting}
             attachments={attachments}
+            isLast={isLast}
           />
         );
       } else if (isToolCall) {
