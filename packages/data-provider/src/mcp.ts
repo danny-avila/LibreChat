@@ -53,9 +53,10 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('websocket').optional(),
   url: z
     .string()
-    .url()
+    .transform((val: string) => extractEnvVariable(val))
+    .pipe(z.string().url())
     .refine(
-      (val) => {
+      (val: string) => {
         const protocol = new URL(val).protocol;
         return protocol === 'ws:' || protocol === 'wss:';
       },
@@ -70,9 +71,10 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
   headers: z.record(z.string(), z.string()).optional(),
   url: z
     .string()
-    .url()
+    .transform((val: string) => extractEnvVariable(val))
+    .pipe(z.string().url())
     .refine(
-      (val) => {
+      (val: string) => {
         const protocol = new URL(val).protocol;
         return protocol !== 'ws:' && protocol !== 'wss:';
       },
@@ -87,9 +89,10 @@ export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
   headers: z.record(z.string(), z.string()).optional(),
   url: z
     .string()
-    .url()
+    .transform((val: string) => extractEnvVariable(val))
+    .pipe(z.string().url())
     .refine(
-      (val) => {
+      (val: string) => {
         const protocol = new URL(val).protocol;
         return protocol !== 'ws:' && protocol !== 'wss:';
       },
@@ -139,6 +142,10 @@ export function processMCPEnv(obj: Readonly<MCPOptions>, userId?: string): MCPOp
       processedHeaders[key] = extractEnvVariable(value);
     }
     newObj.headers = processedHeaders;
+  }
+
+  if ('url' in newObj && newObj.url) {
+    newObj.url = extractEnvVariable(newObj.url);
   }
 
   return newObj;
