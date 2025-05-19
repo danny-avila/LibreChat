@@ -1,5 +1,3 @@
-Azure/actions-workflow-samples
-
 name: Build and deploy a container to an Azure Web App Dev
 
 env:
