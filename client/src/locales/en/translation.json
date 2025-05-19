@@ -485,7 +485,7 @@
   "com_ui_agent_version_history": "Version History",
   "com_ui_agent_version_error": "Error fetching versions",
   "com_ui_agent_version_empty": "No versions available",
-  "com_ui_agent_version_title": "Version",
+  "com_ui_agent_version_title": "Version {{versionNumber}}",
   "com_ui_agent_version_restore": "Restore",
   "com_ui_agent_version_restore_confirm": "Are you sure you want to restore this version?",
   "com_ui_agent_version_restore_success": "Version restored successfully",
