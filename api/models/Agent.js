@@ -158,10 +158,13 @@ const updateAgent = async (searchParameter, updateData) => {
   const currentAgent = await Agent.findOne(searchParameter);
   if (currentAgent) {
     const { __v, _id, id, versions, ...versionData } = currentAgent.toObject();
+    const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+
     updateData.$push = {
-      ...(updateData.$push || {}),
+      ...($push || {}),
       versions: {
         ...versionData,
+        ...directUpdates,
         updatedAt: new Date(),
       },
     };

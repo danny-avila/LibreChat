@@ -729,16 +729,16 @@ describe('Agent Version History', () => {
     expect(finalAgent.versions[0].description).toBe('First description');
     expect(finalAgent.versions[0].model).toBe('test-model');
 
-    expect(finalAgent.versions[1].name).toBe('First Name');
-    expect(finalAgent.versions[1].description).toBe('First description');
+    expect(finalAgent.versions[1].name).toBe('Second Name');
+    expect(finalAgent.versions[1].description).toBe('Second description');
     expect(finalAgent.versions[1].model).toBe('test-model');
 
-    expect(finalAgent.versions[2].name).toBe('Second Name');
+    expect(finalAgent.versions[2].name).toBe('Third Name');
     expect(finalAgent.versions[2].description).toBe('Second description');
-    expect(finalAgent.versions[2].model).toBe('test-model');
+    expect(finalAgent.versions[2].model).toBe('new-model');
 
     expect(finalAgent.versions[3].name).toBe('Third Name');
-    expect(finalAgent.versions[3].description).toBe('Second description');
+    expect(finalAgent.versions[3].description).toBe('Final description');
     expect(finalAgent.versions[3].model).toBe('new-model');
 
     expect(finalAgent.name).toBe('Third Name');
@@ -787,5 +787,44 @@ describe('Agent Version History', () => {
     finalAgent.versions.forEach((version) => {
       expect(version.versions).toBeUndefined();
     });
+  });
+
+  test('should properly handle updates with different update operators', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+    const projectId = new mongoose.Types.ObjectId();
+    
+    const agent = await createAgent({
+      id: agentId,
+      name: 'Operator Test Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+      tools: ['tool1'],
+    });
+
+    const updatedAgent = await updateAgent(
+      { id: agentId },
+      {
+        description: 'Updated description',
+        $push: { tools: 'tool2' },
+        $addToSet: { projectIds: projectId },
+        $pull: { someArray: 'value' }
+      }
+    );
+
+    expect(updatedAgent.versions).toHaveLength(2);
+    expect(updatedAgent.versions[0].name).toBe('Operator Test Agent');
+    expect(updatedAgent.versions[0].description).toBeUndefined();
+    expect(updatedAgent.versions[0].tools).toEqual(['tool1']);
+    
+    expect(updatedAgent.description).toBe('Updated description');
+    expect(updatedAgent.tools).toContain('tool1');
+    expect(updatedAgent.tools).toContain('tool2');
+    expect(updatedAgent.projectIds.map(id => id.toString())).toContain(projectId.toString());
+    
+    expect(updatedAgent.versions[1].name).toBe('Operator Test Agent');
+    expect(updatedAgent.versions[1].description).toBe('Updated description');
+    expect(updatedAgent.versions[1].tools).toEqual(['tool1']);
   });
 });
