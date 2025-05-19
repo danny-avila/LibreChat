@@ -97,7 +97,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
 
             <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{source.title || source.link}</h4>
             {'snippet' in source && source.snippet && (
-              <p className="my-2 text-sm text-text-secondary">{source.snippet}</p>
+              <span className="my-2 text-sm text-text-secondary">{source.snippet}</span>
             )}
           </Ariakit.Hovercard>
         </div>
@@ -124,7 +124,7 @@ function ImageItem({ image }: { image: ImageResult }) {
           />
           {image.title && (
             <div className="absolute bottom-0 left-0 right-0 w-full border-none bg-gray-900/80 p-1 text-xs font-medium text-white backdrop-blur-sm">
-              <p className="truncate">{image.title}</p>
+              <span className="truncate">{image.title}</span>
             </div>
           )}
         </div>

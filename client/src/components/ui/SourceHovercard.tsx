@@ -94,7 +94,7 @@ export function SourceHovercard({
                   {source.title || source.link}
                 </h4>
                 {source.snippet && (
-                  <p className="my-2 text-sm text-text-secondary">{source.snippet}</p>
+                  <span className="my-2 text-sm text-text-secondary">{source.snippet}</span>
                 )}
               </>
             )}
