@@ -190,6 +190,14 @@ const updateAgentHandler = async (req, res) => {
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/Agents/:id] Error updating Agent', error);
+    
+    if (error.statusCode === 409) {
+      return res.status(409).json({ 
+        error: error.message,
+        details: error.details
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 };
