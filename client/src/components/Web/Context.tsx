@@ -27,6 +27,7 @@ export type CitationSource = (ValidSource | ResultReference) & {
 const refTypeMap: Record<string | SearchRefType, string> = {
   search: 'organic',
   ref: 'references',
+  news: 'topStories',
 };
 
 export function useCitation({
