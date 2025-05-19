@@ -1,67 +1,325 @@
-import React, { useState } from 'react';
-import FeedbackButtons from './FeedbackButtons';
-import FeedbackTagOptions from './FeedbackTagOptions';
-import { TFeedbackRating, TFeedbackContent, TMessageFeedback } from 'librechat-data-provider';
+import React, { useState, useCallback, useMemo } from 'react';
+import * as Ariakit from '@ariakit/react';
+import {
+  TFeedback,
+  TFeedbackTag,
+  getTagsForRating,
+  toMinimalFeedback,
+  TMinimalFeedback,
+} from 'librechat-data-provider';
+import {
+  Button,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTitle,
+  ThumbUpIcon,
+  ThumbDownIcon,
+} from '~/components';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 interface FeedbackProps {
   isLast?: boolean;
-  handleFeedback: (rating: TFeedbackRating, content?: TFeedbackContent) => void;
-  rating: TFeedbackRating;
-  feedback?: TFeedbackContent;
+  handleFeedback: (feedback: TMinimalFeedback | undefined) => void;
+  feedback?: TFeedback;
+}
+
+const ICONS = {
+  ThumbUpIcon,
+  ThumbDownIcon,
+};
+
+function FeedbackOptionButton({
+  tag,
+  active,
+  onClick,
+}: {
+  tag: TFeedbackTag;
+  active?: boolean;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const localize = useLocalize();
+  const Icon = ICONS[tag.icon];
+  const label = localize(tag.label as Parameters<typeof localize>[0]);
+
+  return (
+    <button
+      className={cn(
+        'flex w-full items-center gap-3 rounded-xl p-2 text-text-secondary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary',
+        active && 'bg-surface-hover font-semibold text-text-primary',
+      )}
+      onClick={onClick}
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+    >
+      <Icon size="19" bold={active} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function FeedbackButtons({
+  isLast,
+  feedback,
+  onFeedback,
+  onOther,
+}: {
+  isLast: boolean;
+  feedback?: TFeedback;
+  onFeedback: (fb: TFeedback | undefined) => void;
+  onOther?: () => void;
+}) {
+  const localize = useLocalize();
+  const upStore = Ariakit.usePopoverStore({ placement: 'bottom' });
+  const downStore = Ariakit.usePopoverStore({ placement: 'bottom' });
+
+  const positiveTags = useMemo(() => getTagsForRating('thumbsUp'), []);
+  const negativeTags = useMemo(() => getTagsForRating('thumbsDown'), []);
+
+  const upActive = feedback?.rating === 'thumbsUp' ? feedback.tag?.key : undefined;
+  const downActive = feedback?.rating === 'thumbsDown' ? feedback.tag?.key : undefined;
+
+  const handleThumbsUpClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      if (feedback?.rating !== 'thumbsUp') {
+        upStore.toggle();
+        return;
+      }
+      onFeedback(undefined);
+    },
+    [feedback, onFeedback, upStore],
+  );
+
+  const handleUpOption = useCallback(
+    (tag: TFeedbackTag) => (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      upStore.hide();
+      onFeedback({ rating: 'thumbsUp', tag });
+      if (tag.key === 'other') {
+        onOther?.();
+      }
+    },
+    [onFeedback, onOther, upStore],
+  );
+
+  const handleThumbsDownClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      if (feedback?.rating !== 'thumbsDown') {
+        downStore.toggle();
+        return;
+      }
+      if (feedback?.tag?.key === 'other') {
+        onOther?.();
+      } else {
+        onFeedback(undefined);
+      }
+    },
+    [feedback, onFeedback, onOther, downStore],
+  );
+
+  const handleDownOption = useCallback(
+    (tag: TFeedbackTag) => (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      downStore.hide();
+      onFeedback({ rating: 'thumbsDown', tag });
+      if (tag.key === 'other') {
+        onOther?.();
+      }
+    },
+    [onFeedback, onOther, downStore],
+  );
+
+  return (
+    <>
+      <Ariakit.PopoverAnchor
+        store={upStore}
+        render={
+          <button
+            className={buttonClasses(feedback?.rating === 'thumbsUp', isLast)}
+            onClick={handleThumbsUpClick}
+            type="button"
+            title={localize('com_ui_feedback_positive')}
+            aria-pressed={feedback?.rating === 'thumbsUp'}
+            aria-haspopup="menu"
+          >
+            <ThumbUpIcon size="19" bold={feedback?.rating === 'thumbsUp'} />
+          </button>
+        }
+      />
+      <Ariakit.Popover
+        store={upStore}
+        gutter={8}
+        portal
+        unmountOnHide
+        className="popover-animate flex w-auto flex-col gap-1.5 overflow-hidden rounded-2xl border border-border-medium bg-surface-secondary p-1.5 shadow-lg"
+      >
+        <div className="flex flex-col items-stretch justify-center">
+          {positiveTags.map((tag) => (
+            <FeedbackOptionButton
+              key={tag.key}
+              tag={tag}
+              active={upActive === tag.key}
+              onClick={handleUpOption(tag)}
+            />
+          ))}
+        </div>
+      </Ariakit.Popover>
+
+      <Ariakit.PopoverAnchor
+        store={downStore}
+        render={
+          <button
+            className={buttonClasses(feedback?.rating === 'thumbsDown', isLast)}
+            onClick={handleThumbsDownClick}
+            type="button"
+            title={localize('com_ui_feedback_negative')}
+            aria-pressed={feedback?.rating === 'thumbsDown'}
+            aria-haspopup="menu"
+          >
+            <ThumbDownIcon size="19" bold={feedback?.rating === 'thumbsDown'} />
+          </button>
+        }
+      />
+      <Ariakit.Popover
+        store={downStore}
+        gutter={8}
+        portal
+        unmountOnHide
+        className="popover-animate flex w-auto flex-col gap-1.5 overflow-hidden rounded-2xl border border-border-medium bg-surface-secondary p-1.5 shadow-lg"
+      >
+        <div className="flex flex-col items-stretch justify-center">
+          {negativeTags.map((tag) => (
+            <FeedbackOptionButton
+              key={tag.key}
+              tag={tag}
+              active={downActive === tag.key}
+              onClick={handleDownOption(tag)}
+            />
+          ))}
+        </div>
+      </Ariakit.Popover>
+    </>
+  );
+}
+
+function buttonClasses(isActive: boolean, isLast: boolean) {
+  return cn(
+    'hover-button rounded-lg p-1.5',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+    'hover:bg-gray-100 hover:text-gray-500',
+    'data-[state=open]:active data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500',
+    isActive ? 'text-gray-500 dark:text-gray-200 font-bold' : 'dark:text-gray-400/70',
+    'dark:hover:bg-gray-700 dark:hover:text-gray-200',
+    'data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+    'disabled:dark:hover:text-gray-400',
+    isLast
+      ? ''
+      : 'data-[state=open]:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100',
+    'md:group-focus-within:visible md:group-hover:visible md:group-[.final-completion]:visible',
+  );
 }
 
 export default function Feedback({
   isLast = false,
   handleFeedback,
-  rating,
-  feedback: feedbackContent,
+  feedback: initialFeedback,
 }: FeedbackProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [feedback, setFeedback] = useState<TMessageFeedback>({
-    rating: rating,
-    ratingContent: feedbackContent
-      ? {
-          tags: feedbackContent.tags,
-          text: feedbackContent.text,
-        }
-      : undefined,
-  });
+  const localize = useLocalize();
+  const [openDialog, setOpenDialog] = useState(false);
+  const [feedback, setFeedback] = useState<TFeedback | undefined>(initialFeedback);
 
-  // Update parent and local state when feedback changes.
-  const handleChange = (newFeedback: TMessageFeedback) => {
-    setFeedback(newFeedback);
-    handleFeedback(newFeedback.rating, newFeedback.ratingContent);
+  const propagateMinimal = useCallback(
+    (fb: TFeedback | undefined) => {
+      setFeedback(fb);
+      handleFeedback(toMinimalFeedback(fb));
+    },
+    [handleFeedback],
+  );
+
+  const handleButtonFeedback = useCallback(
+    (fb: TFeedback | undefined) => {
+      if (fb?.tag?.key === 'other') setOpenDialog(true);
+      else setOpenDialog(false);
+      propagateMinimal(fb);
+    },
+    [propagateMinimal],
+  );
+
+  const handleOtherOpen = useCallback(() => setOpenDialog(true), []);
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFeedback((prev) => (prev ? { ...prev, text: e.target.value } : undefined));
   };
 
-  // Toggling logic:
-  // - If the same rating is clicked, clear feedback (reset ratingContent to undefined) and do not open the dialog.
-  // - If a different rating is selected, update rating and (for thumbsDown) open the dialog for tag options.
-  const handleRatingClick = (newRating: TFeedbackRating) => {
-    if (newRating === feedback.rating) {
-      // Reset feedback when clicking the active button.
-      handleFeedback(undefined, undefined);
-      handleChange({ rating: undefined, ratingContent: undefined });
-      setIsOpen(false);
-    } else {
-      handleChange({ rating: newRating, ratingContent: undefined });
-      if (newRating === 'thumbsDown') {
-        setIsOpen(true);
-      } else {
-        setIsOpen(false);
-      }
-    }
+  const handleDialogSave = useCallback(() => {
+    propagateMinimal(feedback);
+    setOpenDialog(false);
+  }, [feedback, propagateMinimal]);
+
+  const handleDialogClear = useCallback(() => {
+    setFeedback(undefined);
+    propagateMinimal(undefined);
+    setOpenDialog(false);
+  }, [propagateMinimal]);
+
+  const renderSingleFeedbackButton = () => {
+    if (!feedback) return null;
+    const isThumbsUp = feedback.rating === 'thumbsUp';
+    const Icon = isThumbsUp ? ThumbUpIcon : ThumbDownIcon;
+    const label = isThumbsUp
+      ? localize('com_ui_feedback_positive')
+      : localize('com_ui_feedback_negative');
+    return (
+      <button
+        className={buttonClasses(true, isLast)}
+        onClick={() => handleButtonFeedback(undefined)}
+        type="button"
+        title={label}
+        aria-pressed="true"
+      >
+        <Icon size="19" bold />
+      </button>
+    );
   };
 
   return (
     <>
-      <FeedbackTagOptions
-        key={feedback.rating || 'none'}
-        open={isOpen}
-        onOpenChange={setIsOpen}
-        feedback={feedback}
-        onChange={handleChange}
-      />
-      <FeedbackButtons isLast={isLast} rating={feedback.rating} onFeedback={handleRatingClick} />
+      {feedback ? (
+        renderSingleFeedbackButton()
+      ) : (
+        <FeedbackButtons
+          isLast={isLast}
+          feedback={feedback}
+          onFeedback={handleButtonFeedback}
+          onOther={handleOtherOpen}
+        />
+      )}
+      <OGDialog open={openDialog} onOpenChange={setOpenDialog}>
+        <OGDialogContent className="w-11/12 max-w-lg">
+          <OGDialogTitle className="text-token-text-primary text-lg font-semibold leading-6">
+            {localize('com_ui_feedback_more_information')}
+          </OGDialogTitle>
+          <textarea
+            className="w-full rounded-xl border border-border-light bg-transparent p-2 text-text-primary"
+            value={feedback?.text || ''}
+            onChange={handleTextChange}
+            rows={4}
+            placeholder={localize('com_ui_feedback_placeholder')}
+            maxLength={500}
+          />
+          <div className="mt-4 flex items-end justify-end gap-2">
+            <Button variant="destructive" onClick={handleDialogClear}>
+              {localize('com_ui_delete')}
+            </Button>
+            <Button variant="submit" onClick={handleDialogSave} disabled={!feedback?.text?.trim()}>
+              {localize('com_ui_save')}
+            </Button>
+          </div>
+        </OGDialogContent>
+      </OGDialog>
     </>
   );
 }
