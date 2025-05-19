@@ -52,6 +52,7 @@ export const excludedKeys = new Set([
   'model',
   'files',
   'spec',
+  'disableParams',
 ]);
 
 export enum SettingsViews {
@@ -505,10 +506,28 @@ export const intefaceSchema = z
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 
+export const turnstileOptionsSchema = z
+  .object({
+    language: z.string().default('auto'),
+    size: z.enum(['normal', 'compact', 'flexible', 'invisible']).default('normal'),
+  })
+  .default({
+    language: 'auto',
+    size: 'normal',
+  });
+
+export const turnstileSchema = z.object({
+  siteKey: z.string(),
+  options: turnstileOptionsSchema.optional(),
+});
+
+export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
+  turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
@@ -578,6 +597,7 @@ export const configSchema = z.object({
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
   interface: intefaceSchema,
+  turnstile: turnstileSchema.optional(),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   actions: z
     .object({
