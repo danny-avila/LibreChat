@@ -163,9 +163,6 @@ const isDuplicateVersion = (updateData, currentData, versions) => {
     'updated_at',
     '__v',
     'agent_ids',
-    'projectIds',
-    'conversation_starters',
-    'tool_kwargs',
     'versions',
   ];
 
@@ -194,12 +191,33 @@ const isDuplicateVersion = (updateData, currentData, versions) => {
         break;
       }
 
-      const sortedWouldBe = [...wouldBeVersion[field]].sort();
-      const sortedVersion = [...lastVersion[field]].sort();
+      // Special handling for projectIds (MongoDB ObjectIds)
+      if (field === 'projectIds') {
+        const wouldBeIds = wouldBeVersion[field].map((id) => id.toString()).sort();
+        const versionIds = lastVersion[field].map((id) => id.toString()).sort();
 
-      if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
-        isMatch = false;
-        break;
+        if (!wouldBeIds.every((id, i) => id === versionIds[i])) {
+          isMatch = false;
+          break;
+        }
+      }
+      // Handle arrays of objects like tool_kwargs
+      else if (typeof wouldBeVersion[field][0] === 'object' && wouldBeVersion[field][0] !== null) {
+        const sortedWouldBe = [...wouldBeVersion[field]].map((item) => JSON.stringify(item)).sort();
+        const sortedVersion = [...lastVersion[field]].map((item) => JSON.stringify(item)).sort();
+
+        if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
+          isMatch = false;
+          break;
+        }
+      } else {
+        const sortedWouldBe = [...wouldBeVersion[field]].sort();
+        const sortedVersion = [...lastVersion[field]].sort();
+
+        if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
+          isMatch = false;
+          break;
+        }
       }
     } else if (field === 'model_parameters') {
       const wouldBeParams = wouldBeVersion[field] || {};
@@ -237,12 +255,7 @@ const updateAgent = async (searchParameter, updateData) => {
     const { __v, _id, id, versions, ...versionData } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
-    const inTest = process.env.NODE_ENV === 'test';
-    const isProjectUpdate = updateData.projectIds !== undefined;
-    const isMongoOperator = Object.keys(updateData).some((k) => k.startsWith('$'));
-    const skipCheck = inTest && (isProjectUpdate || isMongoOperator);
-
-    if (!skipCheck && Object.keys(directUpdates).length > 0 && versions && versions.length > 0) {
+    if (Object.keys(directUpdates).length > 0 && versions && versions.length > 0) {
       const duplicateVersion = isDuplicateVersion(updateData, versionData, versions);
       if (duplicateVersion) {
         const error = new Error(
@@ -488,6 +501,16 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
   return await getAgent({ id: agentId });
 };
 
+/**
+ * Reverts an agent to a specific version in its version history.
+ *
+ * @param {Object} searchParameter - The search parameters to find the agent to revert.
+ * @param {string} searchParameter.id - The ID of the agent to revert.
+ * @param {string} [searchParameter.author] - The user ID of the agent's author.
+ * @param {number} versionIndex - The index of the version to revert to in the versions array.
+ * @returns {Promise<MongoAgent>} The updated agent document after reverting.
+ * @throws {Error} If the agent is not found or the specified version does not exist.
+ */
 const revertAgentVersion = async (searchParameter, versionIndex) => {
   const agent = await Agent.findOne(searchParameter);
   if (!agent) {

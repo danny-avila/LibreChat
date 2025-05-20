@@ -190,14 +190,14 @@ const updateAgentHandler = async (req, res) => {
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/Agents/:id] Error updating Agent', error);
-    
+
     if (error.statusCode === 409) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: error.message,
-        details: error.details
+        details: error.details,
       });
     }
-    
+
     res.status(500).json({ error: error.message });
   }
 };
@@ -422,6 +422,25 @@ const uploadAgentAvatarHandler = async (req, res) => {
   }
 };
 
+/**
+ * Reverts an agent to a previous version from its version history.
+ *
+ * @route PATCH /agents/:id/revert
+ * @param {object} req - Express Request object
+ * @param {object} req.params - Request parameters
+ * @param {string} req.params.id - The ID of the agent to revert
+ * @param {object} req.body - Request body
+ * @param {number} req.body.version_index - The index of the version to revert to
+ * @param {object} req.user - Authenticated user information
+ * @param {string} req.user.id - User ID
+ * @param {string} req.user.role - User role
+ * @param {ServerResponse} res - Express Response object
+ * @returns {Promise<Agent>} 200 - The updated agent after reverting to the specified version
+ * @throws {Error} 400 - If version_index is missing
+ * @throws {Error} 403 - If user doesn't have permission to modify the agent
+ * @throws {Error} 404 - If agent not found
+ * @throws {Error} 500 - If there's an internal server error during the reversion process
+ */
 const revertAgentVersionHandler = async (req, res) => {
   try {
     const { id } = req.params;

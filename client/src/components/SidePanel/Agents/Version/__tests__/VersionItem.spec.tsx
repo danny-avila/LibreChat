@@ -5,9 +5,11 @@ import VersionItem from '../VersionItem';
 import { VersionRecord } from '../VersionPanel';
 
 jest.mock('~/hooks', () => ({
-  useLocalize: jest.fn().mockImplementation(() => (key) => {
+  useLocalize: jest.fn().mockImplementation(() => (key, params) => {
     const translations = {
-      com_ui_agent_version_title: 'Version',
+      com_ui_agent_version_title: params?.versionNumber
+        ? `Version ${params.versionNumber}`
+        : 'Version',
       com_ui_agent_version_active: 'Active Version',
       com_ui_agent_version_restore: 'Restore',
       com_ui_agent_version_restore_confirm: 'Are you sure you want to restore this version?',
