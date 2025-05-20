@@ -10,11 +10,12 @@ import {
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
-import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
-import { useLocalize, useHasAccess, useCodeApiKeyForm } from '~/hooks';
+import ApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
+import useWebSearchApiKeyForm from '~/hooks/Plugins/useWebSearchApiKeyForm';
 import CheckboxButton from '~/components/ui/CheckboxButton';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import { useLocalize, useHasAccess } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
 
 const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
@@ -53,7 +54,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
   const authType = useMemo(() => data?.message ?? false, [data?.message]);
   const isAuthenticated = useMemo(() => data?.authenticated ?? false, [data?.authenticated]);
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
-    useCodeApiKeyForm({});
+    useWebSearchApiKeyForm({});
 
   const setValue = useCallback(
     (isChecked: boolean) => {
