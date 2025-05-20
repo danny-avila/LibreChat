@@ -1,17 +1,11 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import * as Menu from '@ariakit/react/menu';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import type { WebSearchApiKeyFormData } from '~/hooks/Plugins/useSearchApiKeyForm';
-import {
-  Input,
-  Button,
-  OGDialog,
-  Label,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '~/components/ui';
+import type { MenuItemProps } from '~/common';
+import { Input, Button, OGDialog, Label } from '~/components/ui';
+import DropdownPopup from '~/components/ui/DropdownPopup';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize } from '~/hooks';
 
@@ -37,6 +31,37 @@ export default function ApiKeyDialog({
   const localize = useLocalize();
   const [selectedReranker, setSelectedReranker] = useState<'jina' | 'cohere'>('jina');
 
+  // Dropdown open states
+  const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
+  const [scraperDropdownOpen, setScraperDropdownOpen] = useState(false);
+  const [rerankerDropdownOpen, setRerankerDropdownOpen] = useState(false);
+
+  // Dropdown items
+  const engineItems: MenuItemProps[] = [
+    {
+      label: localize('com_ui_web_search_engine_serper'),
+      onClick: () => {},
+    },
+  ];
+
+  const scraperItems: MenuItemProps[] = [
+    {
+      label: localize('com_ui_web_search_scraper_firecrawl'),
+      onClick: () => {},
+    },
+  ];
+
+  const rerankerItems: MenuItemProps[] = [
+    {
+      label: localize('com_ui_web_search_reranker_jina'),
+      onClick: () => setSelectedReranker('jina'),
+    },
+    {
+      label: localize('com_ui_web_search_reranker_cohere'),
+      onClick: () => setSelectedReranker('cohere'),
+    },
+  ];
+
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
       <OGDialogTemplate
@@ -52,19 +77,24 @@ export default function ApiKeyDialog({
               {/* Search Engine Section */}
               <div className="mb-6">
                 <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-md font-medium">
+                  <Label className="text-md w-fit font-medium">
                     {localize('com_ui_web_search_engine')}
                   </Label>
-                  <div className="relative inline-block">
-                    <button
-                      type="button"
-                      disabled
-                      className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary opacity-70"
-                    >
-                      {localize('com_ui_web_search_engine_serper')}
-                      <ChevronDown className="ml-1 h-4 w-4" />
-                    </button>
-                  </div>
+                  <DropdownPopup
+                    menuId="search-engine-dropdown"
+                    items={engineItems}
+                    isOpen={engineDropdownOpen}
+                    setIsOpen={setEngineDropdownOpen}
+                    trigger={
+                      <Menu.MenuButton
+                        onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
+                        className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                      >
+                        {localize('com_ui_web_search_engine_serper')}
+                        <ChevronDown className="ml-1 h-4 w-4" />
+                      </Menu.MenuButton>
+                    }
+                  />
                 </div>
                 <Input
                   type="password"
@@ -89,19 +119,24 @@ export default function ApiKeyDialog({
               {/* Scraper Section */}
               <div className="mb-6">
                 <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-md font-medium">
+                  <Label className="text-md w-fit font-medium">
                     {localize('com_ui_web_search_scraper')}
                   </Label>
-                  <div className="relative inline-block">
-                    <button
-                      type="button"
-                      disabled
-                      className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary opacity-70"
-                    >
-                      {localize('com_ui_web_search_scraper_firecrawl')}
-                      <ChevronDown className="ml-1 h-4 w-4" />
-                    </button>
-                  </div>
+                  <DropdownPopup
+                    menuId="scraper-dropdown"
+                    items={scraperItems}
+                    isOpen={scraperDropdownOpen}
+                    setIsOpen={setScraperDropdownOpen}
+                    trigger={
+                      <Menu.MenuButton
+                        onClick={() => setScraperDropdownOpen(!scraperDropdownOpen)}
+                        className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                      >
+                        {localize('com_ui_web_search_scraper_firecrawl')}
+                        <ChevronDown className="ml-1 h-4 w-4" />
+                      </Menu.MenuButton>
+                    }
+                  />
                 </div>
                 <Input
                   type="password"
@@ -123,32 +158,26 @@ export default function ApiKeyDialog({
               {/* Reranker Section */}
               <div className="mb-6">
                 <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-md font-medium">
+                  <Label className="text-md w-fit font-medium">
                     {localize('com_ui_web_search_reranker')}
                   </Label>
-                  <div className="relative inline-block">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
-                        >
-                          {selectedReranker === 'jina'
-                            ? localize('com_ui_web_search_reranker_jina')
-                            : localize('com_ui_web_search_reranker_cohere')}
-                          <ChevronDown className="ml-1 h-4 w-4" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => setSelectedReranker('jina')}>
-                          {localize('com_ui_web_search_reranker_jina')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setSelectedReranker('cohere')}>
-                          {localize('com_ui_web_search_reranker_cohere')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                  <DropdownPopup
+                    menuId="reranker-dropdown"
+                    isOpen={rerankerDropdownOpen}
+                    setIsOpen={setRerankerDropdownOpen}
+                    items={rerankerItems}
+                    trigger={
+                      <Menu.MenuButton
+                        onClick={() => setRerankerDropdownOpen(!rerankerDropdownOpen)}
+                        className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                      >
+                        {selectedReranker === 'jina'
+                          ? localize('com_ui_web_search_reranker_jina')
+                          : localize('com_ui_web_search_reranker_cohere')}
+                        <ChevronDown className="ml-1 h-4 w-4" />
+                      </Menu.MenuButton>
+                    }
+                  />
                 </div>
                 {selectedReranker === 'jina' ? (
                   <Input
