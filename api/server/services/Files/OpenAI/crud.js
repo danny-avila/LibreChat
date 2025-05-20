@@ -54,7 +54,7 @@ async function deleteOpenAIFile(req, file, openai) {
       throw new Error('OpenAI returned `false` for deleted status');
     }
     logger.debug(
-      `[deleteOpenAIFile] User ${req.user.id} successfully deleted ${file.file_id} from OpenAI`,
+      `[deleteOpenAIFile] User ${req.user.id} successfully deleted file "${file.file_id}" from OpenAI`,
     );
   } catch (error) {
     logger.error('[deleteOpenAIFile] Error deleting file from OpenAI: ' + error.message);
