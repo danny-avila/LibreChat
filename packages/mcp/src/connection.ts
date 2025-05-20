@@ -567,8 +567,14 @@ export class MCPConnection extends EventEmitter {
     return this.connectionState;
   }
 
-  public isConnected(): boolean {
-    return this.connectionState === 'connected';
+  public async isConnected(): Promise<boolean> {
+    try {
+      await this.client.ping();
+      return this.connectionState === 'connected';
+    } catch (error) {
+      this.logger?.error(`${this.getLogPrefix()} Ping failed:`, error);
+      return false;
+    }
   }
 
   public getLastError(): Error | null {
