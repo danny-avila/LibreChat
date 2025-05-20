@@ -580,8 +580,8 @@ export enum OCRStrategy {
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
-  apiKey: z.string().optional().default('OCR_API_KEY'),
-  baseURL: z.string().optional().default('OCR_BASEURL'),
+  apiKey: z.string().optional().default('${OCR_API_KEY}'),
+  baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
