@@ -1,7 +1,17 @@
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import type { WebSearchApiKeyFormData } from '~/hooks/Plugins/useSearchApiKeyForm';
-import { Input, Button, OGDialog, Label } from '~/components/ui';
+import {
+  Input,
+  Button,
+  OGDialog,
+  Label,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize } from '~/hooks';
 
@@ -25,6 +35,7 @@ export default function ApiKeyDialog({
   handleSubmit: UseFormHandleSubmit<WebSearchApiKeyFormData>;
 }) {
   const localize = useLocalize();
+  const [selectedReranker, setSelectedReranker] = useState<'jina' | 'cohere'>('jina');
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
@@ -116,33 +127,48 @@ export default function ApiKeyDialog({
                     {localize('com_ui_web_search_reranker')}
                   </Label>
                   <div className="relative inline-block">
-                    <button
-                      type="button"
-                      disabled
-                      className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary opacity-70"
-                    >
-                      {localize('com_ui_web_search_reranker_jina_cohere')}
-                      <ChevronDown className="ml-1 h-4 w-4" />
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                        >
+                          {selectedReranker === 'jina'
+                            ? localize('com_ui_web_search_reranker_jina')
+                            : localize('com_ui_web_search_reranker_cohere')}
+                          <ChevronDown className="ml-1 h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => setSelectedReranker('jina')}>
+                          {localize('com_ui_web_search_reranker_jina')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setSelectedReranker('cohere')}>
+                          {localize('com_ui_web_search_reranker_cohere')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
-                <Input
-                  type="password"
-                  placeholder={localize('com_ui_web_search_jina_key')}
-                  autoComplete="one-time-code"
-                  readOnly={true}
-                  onFocus={(e) => (e.target.readOnly = false)}
-                  className="mb-2"
-                  {...register('jinaApiKey')}
-                />
-                <Input
-                  type="password"
-                  placeholder={localize('com_ui_web_search_cohere_key')}
-                  autoComplete="one-time-code"
-                  readOnly={true}
-                  onFocus={(e) => (e.target.readOnly = false)}
-                  {...register('cohereApiKey')}
-                />
+                {selectedReranker === 'jina' ? (
+                  <Input
+                    type="password"
+                    placeholder={localize('com_ui_web_search_jina_key')}
+                    autoComplete="one-time-code"
+                    readOnly={true}
+                    onFocus={(e) => (e.target.readOnly = false)}
+                    {...register('jinaApiKey')}
+                  />
+                ) : (
+                  <Input
+                    type="password"
+                    placeholder={localize('com_ui_web_search_cohere_key')}
+                    autoComplete="one-time-code"
+                    readOnly={true}
+                    onFocus={(e) => (e.target.readOnly = false)}
+                    {...register('cohereApiKey')}
+                  />
+                )}
               </div>
             </form>
           </>
