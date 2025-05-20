@@ -13,7 +13,6 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
     filename: attachment.filename ?? '',
   });
   const extension = attachment.filename?.split('.').pop();
-  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
