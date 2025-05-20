@@ -108,7 +108,7 @@ describe('TikaOCR Service', () => {
     it('should resolve baseURL from environment variables when configured', async () => {
       const { loadAuthValues } = require('~/server/services/Tools/credentials');
       loadAuthValues.mockResolvedValue({
-        OCR_BASEURL: 'http://env-tika:9998',
+        OCR_BASEURL: 'http://tika:9998',
       });
 
       const result = await uploadTikaOCR({
@@ -136,7 +136,7 @@ describe('TikaOCR Service', () => {
         optional: expect.any(Set),
       });
       expect(mockAxios.put).toHaveBeenCalledWith(
-        'http://env-tika:9998/tika',
+        'http://tika:9998/tika',
         expect.any(Buffer),
         expect.any(Object),
       );
