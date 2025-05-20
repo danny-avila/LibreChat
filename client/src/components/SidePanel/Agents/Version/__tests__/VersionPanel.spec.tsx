@@ -58,7 +58,6 @@ jest.mock('~/hooks', () => ({
   })),
 }));
 
-
 describe('VersionPanel', () => {
   const mockSetActivePanel = jest.fn();
 
@@ -115,7 +114,7 @@ describe('VersionPanel', () => {
 
   describe('edge cases', () => {
     const mockUseGetAgentByIdQuery = jest.requireMock('~/data-provider').useGetAgentByIdQuery;
-    
+
     beforeEach(() => {
       jest.clearAllMocks();
     });

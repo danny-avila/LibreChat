@@ -44,7 +44,7 @@ export const useCreateAgentMutation = (
 export const useUpdateAgentMutation = (
   options?: t.UpdateAgentMutationOptions,
 ): UseMutationResult<
-  t.Agent, 
+  t.Agent,
   t.DuplicateVersionError,
   { agent_id: string; data: t.AgentUpdateParams }
 > => {
