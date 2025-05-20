@@ -330,7 +330,7 @@ const chatV1 = async (req, res) => {
         if (endpoint === EModelEndpoint.azureAssistants) {
           userMessage.attachments = Array.from(attachedFileIds).map((file_id) => ({
             file_id,
-            tools: [{ type: 'file_search'}],
+            tools: [{ type: 'file_search' }],
           }));
         } else {
           userMessage.file_ids = Array.from(attachedFileIds);
