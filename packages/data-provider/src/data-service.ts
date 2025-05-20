@@ -431,6 +431,14 @@ export const listAgents = (params: a.AgentListParams): Promise<a.AgentListRespon
   );
 };
 
+export const revertAgentVersion = ({
+  agent_id,
+  version_index,
+}: {
+  agent_id: string;
+  version_index: number;
+}): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
+
 /* Tools */
 
 export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
