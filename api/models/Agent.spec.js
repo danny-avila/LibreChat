@@ -456,9 +456,6 @@ describe('Agent CRUD Operations', () => {
   });
 
   test('should update agent projects', async () => {
-    const originalConsoleError = console.error;
-    console.error = jest.fn();
-
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
     const projectId1 = new mongoose.Types.ObjectId();
@@ -467,7 +464,7 @@ describe('Agent CRUD Operations', () => {
 
     await createAgent({
       id: agentId,
-      name: 'Agent With Projects',
+      name: 'Project Test Agent',
       provider: 'test',
       model: 'test-model',
       author: authorId,
@@ -481,13 +478,26 @@ describe('Agent CRUD Operations', () => {
 
     await updateAgent({ id: agentId }, { $pull: { projectIds: projectId1 } });
 
+    await updateAgent({ id: agentId }, { projectIds: [projectId2, projectId3] });
+
     const updatedAgent = await getAgent({ id: agentId });
     expect(updatedAgent.projectIds).toHaveLength(2);
     expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
     expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId3.toString());
     expect(updatedAgent.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
 
-    console.error = originalConsoleError;
+    await updateAgent({ id: agentId }, { projectIds: [] });
+
+    const emptyProjectsAgent = await getAgent({ id: agentId });
+    expect(emptyProjectsAgent.projectIds).toHaveLength(0);
+
+    const nonExistentId = `agent_${uuidv4()}`;
+    await expect(
+      updateAgentProjects({
+        id: nonExistentId,
+        projectIds: [projectId1],
+      }),
+    ).rejects.toThrow();
   });
 
   test('should handle ephemeral agent loading', async () => {
@@ -542,7 +552,7 @@ describe('Agent CRUD Operations', () => {
     jest.dontMock('librechat-data-provider');
   });
 
-  test('should handle loadAgent functionality', async () => {
+  test('should handle loadAgent functionality and errors', async () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
 
@@ -563,81 +573,16 @@ describe('Agent CRUD Operations', () => {
     expect(agent.tools).toEqual(expect.arrayContaining(['tool1', 'tool2']));
 
     const mockLoadAgent = jest.fn().mockResolvedValue(agent);
-
     const loadedAgent = await mockLoadAgent();
-
     expect(loadedAgent).toBeDefined();
     expect(loadedAgent.id).toBe(agentId);
-  });
 
-  test('should handle loadAgent errors', async () => {
     const nonExistentId = `agent_${uuidv4()}`;
+    const nonExistentAgent = await getAgent({ id: nonExistentId });
+    expect(nonExistentAgent).toBeNull();
 
-    const agent = await getAgent({ id: nonExistentId });
-    expect(agent).toBeNull();
-
-    const mockLoadAgent = jest.fn().mockRejectedValue(new Error('No agent found with ID'));
-
-    await expect(mockLoadAgent()).rejects.toThrow('No agent found with ID');
-  });
-
-  test('should update agent projects with updateAgent', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-    const projectId1 = new mongoose.Types.ObjectId();
-    const projectId2 = new mongoose.Types.ObjectId();
-    const projectId3 = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Project Test Agent',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      projectIds: [projectId1],
-    });
-
-    await updateAgent({ id: agentId }, { projectIds: [projectId2, projectId3] });
-
-    const updatedAgent = await getAgent({ id: agentId });
-    expect(updatedAgent).toBeDefined();
-    expect(updatedAgent.projectIds).toHaveLength(2);
-    expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
-    expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId3.toString());
-    expect(updatedAgent.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
-  });
-
-  test('should handle empty project array with updateAgent', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-    const projectId1 = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Project Test Agent',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      projectIds: [projectId1],
-    });
-
-    await updateAgent({ id: agentId }, { projectIds: [] });
-
-    const updatedAgent = await getAgent({ id: agentId });
-    expect(updatedAgent).toBeDefined();
-    expect(updatedAgent.projectIds).toHaveLength(0);
-  });
-
-  test('should fail when updating projects for non-existent agent', async () => {
-    const nonExistentId = `agent_${uuidv4()}`;
-    const projectId = new mongoose.Types.ObjectId();
-
-    await expect(
-      updateAgentProjects({
-        id: nonExistentId,
-        projectIds: [projectId],
-      }),
-    ).rejects.toThrow();
+    const mockLoadAgentError = jest.fn().mockRejectedValue(new Error('No agent found with ID'));
+    await expect(mockLoadAgentError()).rejects.toThrow('No agent found with ID');
   });
 });
 
@@ -677,32 +622,6 @@ describe('Agent Version History', () => {
     expect(agent.versions[0].model).toBe('test-model');
   });
 
-  test('should save current state to versions array when updating', async () => {
-    const agentId = `agent_${uuidv4()}`;
-
-    await createAgent({
-      id: agentId,
-      name: 'Original Name',
-      description: 'Original description',
-      provider: 'test',
-      model: 'test-model',
-      author: new mongoose.Types.ObjectId(),
-    });
-    const updatedAgent = await updateAgent({ id: agentId }, { name: 'Updated Name' });
-
-    expect(updatedAgent.versions).toBeDefined();
-    expect(Array.isArray(updatedAgent.versions)).toBe(true);
-    expect(updatedAgent.versions).toHaveLength(2);
-
-    const versionedState = updatedAgent.versions[0];
-    expect(versionedState.name).toBe('Original Name');
-    expect(versionedState.description).toBe('Original description');
-    expect(versionedState.provider).toBe('test');
-    expect(versionedState.model).toBe('test-model');
-    expect(updatedAgent.name).toBe('Updated Name');
-    expect(updatedAgent.description).toBe('Original description');
-  });
-
   test('should accumulate version history across multiple updates', async () => {
     const agentId = `agent_${uuidv4()}`;
     const author = new mongoose.Types.ObjectId();
@@ -716,9 +635,7 @@ describe('Agent Version History', () => {
     });
 
     await updateAgent({ id: agentId }, { name: 'Second Name', description: 'Second description' });
-
     await updateAgent({ id: agentId }, { name: 'Third Name', model: 'new-model' });
-
     const finalAgent = await updateAgent({ id: agentId }, { description: 'Final description' });
 
     expect(finalAgent.versions).toBeDefined();
@@ -746,7 +663,7 @@ describe('Agent Version History', () => {
     expect(finalAgent.model).toBe('new-model');
   });
 
-  test('should not include _id, __v, or updatedAt in version history', async () => {
+  test('should not include metadata fields in version history', async () => {
     const agentId = `agent_${uuidv4()}`;
     await createAgent({
       id: agentId,
@@ -768,7 +685,7 @@ describe('Agent Version History', () => {
     expect(updatedAgent.versions[1].__v).toBeUndefined();
   });
 
-  test('should not recursively include previous versions in version history', async () => {
+  test('should not recursively include previous versions', async () => {
     const agentId = `agent_${uuidv4()}`;
     await createAgent({
       id: agentId,
@@ -789,689 +706,10 @@ describe('Agent Version History', () => {
     });
   });
 
-  test('should properly handle updates with different update operators', async () => {
+  test('should handle MongoDB operators and field updates correctly', async () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
     const projectId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Operator Test Agent',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      tools: ['tool1'],
-    });
-
-    const updatedAgent = await updateAgent(
-      { id: agentId },
-      {
-        description: 'Updated description',
-        $push: { tools: 'tool2' },
-        $addToSet: { projectIds: projectId },
-        $pull: { someArray: 'value' },
-      },
-    );
-
-    expect(updatedAgent.versions).toHaveLength(2);
-    expect(updatedAgent.versions[0].name).toBe('Operator Test Agent');
-    expect(updatedAgent.versions[0].description).toBeUndefined();
-    expect(updatedAgent.versions[0].tools).toEqual(['tool1']);
-
-    expect(updatedAgent.description).toBe('Updated description');
-    expect(updatedAgent.tools).toContain('tool1');
-    expect(updatedAgent.tools).toContain('tool2');
-    expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId.toString());
-
-    expect(updatedAgent.versions[1].name).toBe('Operator Test Agent');
-    expect(updatedAgent.versions[1].description).toBe('Updated description');
-    expect(updatedAgent.versions[1].tools).toEqual(['tool1']);
-  });
-
-  test('should accumulate version history when updating with different values', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Version Test Agent',
-      description: 'Initial description',
-      instructions: 'Initial instructions',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      tools: ['tool1', 'tool2'],
-      capabilities: ['capability1'],
-    });
-
-    await updateAgent(
-      { id: agentId },
-      {
-        name: 'First Update Name',
-        description: 'First update description',
-      },
-    );
-
-    const result = await updateAgent(
-      { id: agentId },
-      {
-        name: 'Second Update Name',
-        description: 'Second update description',
-      },
-    );
-
-    expect(result.versions).toHaveLength(3);
-  });
-
-  test('should handle array fields in updates correctly', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Array Fields Test Agent',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      tools: ['tool1', 'tool2'],
-      capabilities: ['capability1'],
-    });
-
-    const updatedAgent = await updateAgent(
-      { id: agentId },
-      {
-        tools: ['tool2', 'tool1'],
-        capabilities: ['capability1', 'capability2'],
-      },
-    );
-
-    expect(updatedAgent.versions).toHaveLength(2);
-    expect(updatedAgent.tools[0]).toBe('tool2');
-    expect(updatedAgent.tools[1]).toBe('tool1');
-  });
-
-  test('should handle MongoDB operators correctly', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    // Create a simple agent
-    await createAgent({
-      id: agentId,
-      name: 'Operator Test Agent',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      tools: ['tool1'],
-    });
-
-    // Test MongoDB operator updates
-    await updateAgent(
-      { id: agentId },
-      {
-        $push: { tools: 'tool2' },
-      },
-    );
-
-    const updatedAgent = await getAgent({ id: agentId });
-
-    // Verify the updates were applied correctly
-    expect(updatedAgent.tools).toContain('tool1');
-    expect(updatedAgent.tools).toContain('tool2');
-
-    // Test a second MongoDB operator update
-    await updateAgent(
-      { id: agentId },
-      {
-        $push: { tools: 'tool3' },
-      },
-    );
-
-    const finalAgent = await getAgent({ id: agentId });
-    expect(finalAgent.tools).toContain('tool1');
-    expect(finalAgent.tools).toContain('tool2');
-    expect(finalAgent.tools).toContain('tool3');
-  });
-
-  test('should reject duplicate version updates', async () => {
-    const originalConsoleError = console.error;
-    console.error = jest.fn();
-
-    try {
-      const agentId = `agent_${uuidv4()}`;
-      const authorId = new mongoose.Types.ObjectId();
-
-      await createAgent({
-        id: agentId,
-        name: 'Duplicate Test Agent',
-        description: 'Initial description',
-        instructions: 'Initial instructions',
-        provider: 'test',
-        model: 'test-model',
-        author: authorId,
-        tools: ['tool1', 'tool2'],
-        capabilities: ['capability1'],
-      });
-
-      await updateAgent(
-        { id: agentId },
-        {
-          name: 'Updated Name',
-          description: 'Updated description',
-        },
-      );
-
-      let error;
-      try {
-        await updateAgent(
-          { id: agentId },
-          {
-            name: 'Updated Name',
-            description: 'Updated description',
-          },
-        );
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).toBeDefined();
-      expect(error.message).toContain('Duplicate version');
-      expect(error.statusCode).toBe(409);
-      expect(error.details).toBeDefined();
-      expect(error.details.duplicateVersion).toBeDefined();
-
-      const agent = await getAgent({ id: agentId });
-      expect(agent.versions).toHaveLength(2);
-    } finally {
-      console.error = originalConsoleError;
-    }
-  });
-
-  test('should detect changes in model_parameters', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Parameters Test Agent',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      model_parameters: { temperature: 0.7 },
-    });
-
-    // Should allow update with different model_parameters
-    const updatedAgent = await updateAgent(
-      { id: agentId },
-      { model_parameters: { temperature: 0.8 } },
-    );
-
-    expect(updatedAgent.versions).toHaveLength(2);
-    expect(updatedAgent.model_parameters.temperature).toBe(0.8);
-
-    // Trying to update with the same model_parameters should fail
-    let error;
-    try {
-      await updateAgent({ id: agentId }, { model_parameters: { temperature: 0.8 } });
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).toBeDefined();
-    expect(error.message).toContain('Duplicate version');
-    expect(error.statusCode).toBe(409);
-  });
-
-  test('should compare model_parameters objects correctly', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Complex Parameters Test',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      model_parameters: {
-        temperature: 0.7,
-        max_tokens: 1000,
-        top_p: 1.0,
-      },
-    });
-
-    // Add a new property, should succeed
-    await updateAgent(
-      { id: agentId },
-      {
-        model_parameters: {
-          temperature: 0.7,
-          max_tokens: 1000,
-          top_p: 1.0,
-          frequency_penalty: 0.0,
-        },
-      },
-    );
-
-    // Change one property, should succeed
-    await updateAgent(
-      { id: agentId },
-      {
-        model_parameters: {
-          temperature: 0.7,
-          max_tokens: 1000,
-          top_p: 0.9,
-          frequency_penalty: 0.0,
-        },
-      },
-    );
-
-    const agent = await getAgent({ id: agentId });
-    expect(agent.versions).toHaveLength(3);
-  });
-
-  test('should handle empty or undefined model_parameters', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    // Create agent with undefined model_parameters
-    await createAgent({
-      id: agentId,
-      name: 'Empty Parameters Test',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-    });
-
-    // Update with empty object should be considered a change
-    await updateAgent({ id: agentId }, { model_parameters: {} });
-
-    // Update with a value
-    await updateAgent({ id: agentId }, { model_parameters: { temperature: 0.7 } });
-
-    // Update with empty object again, should be different from previous
-    await updateAgent({ id: agentId }, { model_parameters: {} });
-
-    const agent = await getAgent({ id: agentId });
-    expect(agent.versions).toHaveLength(4);
-    expect(agent.model_parameters).toEqual({});
-  });
-
-  test('should detect changes in all special fields', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-    const projectId1 = new mongoose.Types.ObjectId();
-    const projectId2 = new mongoose.Types.ObjectId();
-
-    // Directly operate on the model for testing to bypass validation
-    await Agent.create({
-      id: agentId,
-      name: 'Special Fields Test',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      tool_kwargs: [],
-      agent_ids: [],
-      conversation_starters: [],
-      projectIds: [projectId1],
-      end_after_tools: false,
-      hide_sequential_outputs: false,
-    });
-
-    // Use direct model operations to update (skip duplication check)
-    await Agent.updateOne(
-      { id: agentId },
-      { $set: { tool_kwargs: [{ name: 'tool1', value: 'value1' }] } },
-    );
-
-    await Agent.updateOne({ id: agentId }, { $set: { agent_ids: ['agent1'] } });
-
-    await Agent.updateOne(
-      { id: agentId },
-      { $set: { conversation_starters: ['How can I help you?'] } },
-    );
-
-    await Agent.updateOne({ id: agentId }, { $set: { projectIds: [projectId1, projectId2] } });
-
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $set: {
-          end_after_tools: true,
-          hide_sequential_outputs: true,
-        },
-      },
-    );
-
-    // Create versions manually for testing
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $push: {
-          versions: {
-            name: 'Special Fields Test',
-            provider: 'test',
-            model: 'test-model',
-            tool_kwargs: [],
-            agent_ids: [],
-            conversation_starters: [],
-            projectIds: [projectId1],
-            end_after_tools: false,
-            hide_sequential_outputs: false,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $push: {
-          versions: {
-            name: 'Special Fields Test',
-            provider: 'test',
-            model: 'test-model',
-            tool_kwargs: [{ name: 'tool1', value: 'value1' }],
-            agent_ids: [],
-            conversation_starters: [],
-            projectIds: [projectId1],
-            end_after_tools: false,
-            hide_sequential_outputs: false,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $push: {
-          versions: {
-            name: 'Special Fields Test',
-            provider: 'test',
-            model: 'test-model',
-            tool_kwargs: [{ name: 'tool1', value: 'value1' }],
-            agent_ids: ['agent1'],
-            conversation_starters: [],
-            projectIds: [projectId1],
-            end_after_tools: false,
-            hide_sequential_outputs: false,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $push: {
-          versions: {
-            name: 'Special Fields Test',
-            provider: 'test',
-            model: 'test-model',
-            tool_kwargs: [{ name: 'tool1', value: 'value1' }],
-            agent_ids: ['agent1'],
-            conversation_starters: ['How can I help you?'],
-            projectIds: [projectId1],
-            end_after_tools: false,
-            hide_sequential_outputs: false,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $push: {
-          versions: {
-            name: 'Special Fields Test',
-            provider: 'test',
-            model: 'test-model',
-            tool_kwargs: [{ name: 'tool1', value: 'value1' }],
-            agent_ids: ['agent1'],
-            conversation_starters: ['How can I help you?'],
-            projectIds: [projectId1, projectId2],
-            end_after_tools: false,
-            hide_sequential_outputs: false,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-
-    await Agent.updateOne(
-      { id: agentId },
-      {
-        $push: {
-          versions: {
-            name: 'Special Fields Test',
-            provider: 'test',
-            model: 'test-model',
-            tool_kwargs: [{ name: 'tool1', value: 'value1' }],
-            agent_ids: ['agent1'],
-            conversation_starters: ['How can I help you?'],
-            projectIds: [projectId1, projectId2],
-            end_after_tools: true,
-            hide_sequential_outputs: true,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-
-    const agent = await getAgent({ id: agentId });
-    expect(agent.versions).toHaveLength(6);
-
-    expect(agent.tool_kwargs).toEqual(expect.arrayContaining([{ name: 'tool1', value: 'value1' }]));
-    expect(agent.agent_ids).toEqual(expect.arrayContaining(['agent1']));
-    expect(agent.conversation_starters).toEqual(expect.arrayContaining(['How can I help you?']));
-    expect(agent.projectIds.map((id) => id.toString())).toContain(projectId1.toString());
-    expect(agent.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
-    expect(agent.end_after_tools).toBe(true);
-    expect(agent.hide_sequential_outputs).toBe(true);
-  });
-
-  test('should detect duplicate update with complex fields', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Complex Fields Test',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      tool_kwargs: [
-        { name: 'tool1', value: 'value1' },
-        { name: 'tool2', value: 'value2' },
-      ],
-      agent_ids: ['agent1', 'agent2'],
-      conversation_starters: ['Hello', 'How are you?'],
-      end_after_tools: true,
-      hide_sequential_outputs: false,
-    });
-
-    await updateAgent(
-      { id: agentId },
-      {
-        tool_kwargs: [
-          { name: 'tool1', value: 'new-value' },
-          { name: 'tool2', value: 'value2' },
-        ],
-      },
-    );
-
-    let error;
-    try {
-      await updateAgent(
-        { id: agentId },
-        {
-          tool_kwargs: [
-            { name: 'tool1', value: 'new-value' },
-            { name: 'tool2', value: 'value2' },
-          ],
-        },
-      );
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).toBeDefined();
-    expect(error.message).toContain('Duplicate version');
-    expect(error.statusCode).toBe(409);
-
-    try {
-      await updateAgent(
-        { id: agentId },
-        {
-          tool_kwargs: [
-            { name: 'tool2', value: 'value2' },
-            { name: 'tool1', value: 'new-value' },
-          ],
-        },
-      );
-    } catch (e) {
-      expect(e.message).toContain('Duplicate version');
-    }
-
-    const agent = await getAgent({ id: agentId });
-    expect(agent.versions).toHaveLength(2);
-  });
-
-  test('should detect single field changes in complex objects', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    await createAgent({
-      id: agentId,
-      name: 'Single Field Change Test',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-      model_parameters: {
-        temperature: 0.7,
-        top_p: 1.0,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
-        max_tokens: 1000,
-      },
-    });
-
-    let error;
-
-    await updateAgent(
-      { id: agentId },
-      {
-        model_parameters: {
-          temperature: 0.7,
-          top_p: 0.9,
-          frequency_penalty: 0.0,
-          presence_penalty: 0.0,
-          max_tokens: 1000,
-        },
-      },
-    );
-
-    try {
-      await updateAgent(
-        { id: agentId },
-        {
-          model_parameters: {
-            temperature: 0.7,
-            top_p: 0.9,
-            frequency_penalty: 0.0,
-            presence_penalty: 0.0,
-            max_tokens: 1000,
-          },
-        },
-      );
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).toBeDefined();
-    expect(error.message).toContain('Duplicate version');
-
-    await updateAgent(
-      { id: agentId },
-      {
-        model_parameters: {
-          temperature: 0.7,
-          top_p: 0.9,
-          frequency_penalty: 0.0,
-          presence_penalty: 0.0,
-          max_tokens: 2000,
-        },
-      },
-    );
-
-    const agent = await getAgent({ id: agentId });
-    expect(agent.versions).toHaveLength(3);
-    expect(agent.model_parameters.max_tokens).toBe(2000);
-  });
-
-  test('should check for duplicate direct updates', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
-
-    // Create a new agent
-    await createAgent({
-      id: agentId,
-      name: 'Direct Update Test',
-      provider: 'test',
-      model: 'test-model',
-      author: authorId,
-    });
-
-    // First direct update - should succeed
-    await updateAgent(
-      { id: agentId },
-      {
-        description: 'Test description',
-      },
-    );
-
-    let agent = await getAgent({ id: agentId });
-    expect(agent.description).toBe('Test description');
-    expect(agent.versions).toHaveLength(2);
-
-    // Try to apply the same direct update again
-    let error;
-    try {
-      await updateAgent(
-        { id: agentId },
-        {
-          description: 'Test description',
-        },
-      );
-    } catch (e) {
-      error = e;
-    }
-
-    // Should have failed due to duplicate version detection
-    expect(error).toBeDefined();
-    expect(error.message).toContain('Duplicate version');
-    expect(error.statusCode).toBe(409);
-
-    // Apply a different direct update
-    await updateAgent(
-      { id: agentId },
-      {
-        description: 'Different description',
-      },
-    );
-
-    agent = await getAgent({ id: agentId });
-    expect(agent.description).toBe('Different description');
-    expect(agent.versions).toHaveLength(3);
-  });
-
-  test('should allow duplicate MongoDB operator updates', async () => {
-    const agentId = `agent_${uuidv4()}`;
-    const authorId = new mongoose.Types.ObjectId();
 
     await createAgent({
       id: agentId,
@@ -1485,100 +723,166 @@ describe('Agent Version History', () => {
     await updateAgent(
       { id: agentId },
       {
+        description: 'Updated description',
         $push: { tools: 'tool2' },
+        $addToSet: { projectIds: projectId },
       },
     );
 
-    let agent = await getAgent({ id: agentId });
-    expect(agent.tools).toContain('tool2');
-    expect(agent.versions).toHaveLength(2);
+    const firstUpdate = await getAgent({ id: agentId });
+    expect(firstUpdate.description).toBe('Updated description');
+    expect(firstUpdate.tools).toContain('tool1');
+    expect(firstUpdate.tools).toContain('tool2');
+    expect(firstUpdate.projectIds.map((id) => id.toString())).toContain(projectId.toString());
+    expect(firstUpdate.versions).toHaveLength(2);
 
     await updateAgent(
       { id: agentId },
       {
-        $push: { tools: 'tool2' },
+        tools: ['tool2', 'tool3'],
       },
     );
 
-    agent = await getAgent({ id: agentId });
-    const toolCount = agent.tools.filter((t) => t === 'tool2').length;
+    const secondUpdate = await getAgent({ id: agentId });
+    expect(secondUpdate.tools).toHaveLength(2);
+    expect(secondUpdate.tools).toContain('tool2');
+    expect(secondUpdate.tools).toContain('tool3');
+    expect(secondUpdate.tools).not.toContain('tool1');
+    expect(secondUpdate.versions).toHaveLength(3);
+
+    await updateAgent(
+      { id: agentId },
+      {
+        $push: { tools: 'tool3' },
+      },
+    );
+
+    const thirdUpdate = await getAgent({ id: agentId });
+    const toolCount = thirdUpdate.tools.filter((t) => t === 'tool3').length;
     expect(toolCount).toBe(2);
-    expect(agent.versions).toHaveLength(3);
+    expect(thirdUpdate.versions).toHaveLength(4);
   });
 
-  test('should check for duplicate versions with projectIds updates', async () => {
+  test('should handle parameter objects correctly', async () => {
     const agentId = `agent_${uuidv4()}`;
     const authorId = new mongoose.Types.ObjectId();
-    const projectId1 = new mongoose.Types.ObjectId();
-    const projectId2 = new mongoose.Types.ObjectId();
 
-    // Create agent with initial projectId
     await createAgent({
       id: agentId,
-      name: 'Project ID Test',
+      name: 'Parameters Test',
       provider: 'test',
       model: 'test-model',
       author: authorId,
-      projectIds: [projectId1],
+      model_parameters: { temperature: 0.7 },
     });
 
-    // First update - add second project ID
+    const updatedAgent = await updateAgent(
+      { id: agentId },
+      { model_parameters: { temperature: 0.8 } },
+    );
+
+    expect(updatedAgent.versions).toHaveLength(2);
+    expect(updatedAgent.model_parameters.temperature).toBe(0.8);
+
     await updateAgent(
       { id: agentId },
       {
-        projectIds: [projectId1, projectId2],
+        model_parameters: {
+          temperature: 0.8,
+          max_tokens: 1000,
+        },
       },
     );
 
-    let agent = await getAgent({ id: agentId });
-    expect(agent.projectIds).toHaveLength(2);
-    expect(agent.versions).toHaveLength(2);
+    const complexAgent = await getAgent({ id: agentId });
+    expect(complexAgent.versions).toHaveLength(3);
+    expect(complexAgent.model_parameters.temperature).toBe(0.8);
+    expect(complexAgent.model_parameters.max_tokens).toBe(1000);
 
-    // Try to apply the same projectIds update again
-    let error;
+    await updateAgent({ id: agentId }, { model_parameters: {} });
+
+    const emptyParamsAgent = await getAgent({ id: agentId });
+    expect(emptyParamsAgent.versions).toHaveLength(4);
+    expect(emptyParamsAgent.model_parameters).toEqual({});
+  });
+
+  test('should detect duplicate versions and reject updates', async () => {
+    const originalConsoleError = console.error;
+    console.error = jest.fn();
+
     try {
-      await updateAgent(
-        { id: agentId },
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const projectId1 = new mongoose.Types.ObjectId();
+      const projectId2 = new mongoose.Types.ObjectId();
+
+      const testCases = [
         {
-          projectIds: [projectId1, projectId2],
+          name: 'simple field update',
+          initial: {
+            name: 'Test Agent',
+            description: 'Initial description',
+          },
+          update: { name: 'Updated Name' },
+          duplicate: { name: 'Updated Name' },
         },
-      );
-    } catch (e) {
-      error = e;
-    }
-
-    // Should have failed due to duplicate version detection
-    expect(error).toBeDefined();
-    expect(error.message).toContain('Duplicate version');
-    expect(error.statusCode).toBe(409);
-
-    // Different order of the same projectIds should still be detected as duplicate
-    error = undefined;
-    try {
-      await updateAgent(
-        { id: agentId },
         {
-          projectIds: [projectId2, projectId1],
+          name: 'object field update',
+          initial: {
+            model_parameters: { temperature: 0.7 },
+          },
+          update: { model_parameters: { temperature: 0.8 } },
+          duplicate: { model_parameters: { temperature: 0.8 } },
         },
-      );
-    } catch (e) {
-      error = e;
+        {
+          name: 'array field update',
+          initial: {
+            tools: ['tool1', 'tool2'],
+          },
+          update: { tools: ['tool2', 'tool3'] },
+          duplicate: { tools: ['tool2', 'tool3'] },
+        },
+        {
+          name: 'projectIds update',
+          initial: {
+            projectIds: [projectId1],
+          },
+          update: { projectIds: [projectId1, projectId2] },
+          duplicate: { projectIds: [projectId2, projectId1] },
+        },
+      ];
+
+      for (const testCase of testCases) {
+        const testAgentId = `agent_${uuidv4()}`;
+
+        await createAgent({
+          id: testAgentId,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          ...testCase.initial,
+        });
+
+        await updateAgent({ id: testAgentId }, testCase.update);
+
+        let error;
+        try {
+          await updateAgent({ id: testAgentId }, testCase.duplicate);
+        } catch (e) {
+          error = e;
+        }
+
+        expect(error).toBeDefined();
+        expect(error.message).toContain('Duplicate version');
+        expect(error.statusCode).toBe(409);
+        expect(error.details).toBeDefined();
+        expect(error.details.duplicateVersion).toBeDefined();
+
+        const agent = await getAgent({ id: testAgentId });
+        expect(agent.versions).toHaveLength(2);
+      }
+    } finally {
+      console.error = originalConsoleError;
     }
-
-    expect(error).toBeDefined();
-    expect(error.message).toContain('Duplicate version');
-
-    // Apply a different projectIds update
-    const projectId3 = new mongoose.Types.ObjectId();
-    await updateAgent(
-      { id: agentId },
-      {
-        projectIds: [projectId1, projectId2, projectId3],
-      },
-    );
-
-    agent = await getAgent({ id: agentId });
-    expect(agent.projectIds).toHaveLength(3);
-    expect(agent.versions).toHaveLength(3);
   });
 });

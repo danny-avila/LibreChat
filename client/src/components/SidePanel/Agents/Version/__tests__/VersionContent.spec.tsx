@@ -1,14 +1,23 @@
 import '@testing-library/jest-dom/extend-expect';
-import { render, screen } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import VersionContent from '../VersionContent';
 import { VersionContext } from '../VersionPanel';
 
-jest.mock('../VersionItem', () => {
-  return {
-    __esModule: true,
-    default: jest.fn(() => <div data-testid="version-item" />),
-  };
-});
+const mockRestore = 'Restore';
+
+jest.mock('../VersionItem', () => ({
+  __esModule: true,
+  default: jest.fn(({ version, isActive, onRestore, index }) => (
+    <div data-testid="version-item">
+      <div>{version.name}</div>
+      {!isActive && (
+        <button data-testid={`restore-button-${index}`} onClick={() => onRestore(index)}>
+          {mockRestore}
+        </button>
+      )}
+    </div>
+  )),
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: jest.fn().mockImplementation(() => (key) => {
@@ -16,6 +25,8 @@ jest.mock('~/hooks', () => ({
       com_ui_agent_version_no_agent: 'No agent selected',
       com_ui_agent_version_error: 'Error loading versions',
       com_ui_agent_version_empty: 'No versions available',
+      com_ui_agent_version_restore_confirm: 'Are you sure you want to restore this version?',
+      com_ui_agent_version_restore: 'Restore',
     };
     return translations[key] || key;
   }),
@@ -24,6 +35,8 @@ jest.mock('~/hooks', () => ({
 jest.mock('~/components/svg', () => ({
   Spinner: () => <div data-testid="spinner" />,
 }));
+
+const mockVersionItem = jest.requireMock('../VersionItem').default;
 
 describe('VersionContent', () => {
   const mockVersionIds = [
@@ -48,93 +61,82 @@ describe('VersionContent', () => {
     onRestore: jest.fn(),
   };
 
-  test('renders loading spinner when isLoading is true', () => {
-    render(<VersionContent {...defaultProps} isLoading={true} />);
-
-    expect(screen.getByTestId('spinner')).toBeInTheDocument();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.confirm = jest.fn(() => true);
   });
 
-  test('renders error message when error is present', () => {
-    render(<VersionContent {...defaultProps} error={new Error('Test error')} />);
-
-    expect(screen.getByText('Error loading versions')).toBeInTheDocument();
-  });
-
-  test('renders no agent selected message when selectedAgentId is empty', () => {
-    render(<VersionContent {...defaultProps} selectedAgentId="" />);
-
-    expect(screen.getByText('No agent selected')).toBeInTheDocument();
-  });
-
-  test('renders empty state when no versions are available', () => {
-    const emptyContext = {
-      ...mockContext,
-      versions: [],
-      versionIds: [],
+  test('renders different UI states correctly', () => {
+    const renderTest = (props) => {
+      const result = render(<VersionContent {...defaultProps} {...props} />);
+      return result;
     };
 
-    render(<VersionContent {...defaultProps} versionContext={emptyContext} />);
+    const { getByTestId, unmount: unmount1 } = renderTest({ isLoading: true });
+    expect(getByTestId('spinner')).toBeInTheDocument();
+    unmount1();
 
-    expect(screen.getByText('No versions available')).toBeInTheDocument();
+    const { getByText: getText1, unmount: unmount2 } = renderTest({
+      error: new Error('Test error'),
+    });
+    expect(getText1('Error loading versions')).toBeInTheDocument();
+    unmount2();
+
+    const { getByText: getText2, unmount: unmount3 } = renderTest({ selectedAgentId: '' });
+    expect(getText2('No agent selected')).toBeInTheDocument();
+    unmount3();
+
+    const emptyContext = { ...mockContext, versions: [], versionIds: [] };
+    const { getByText: getText3, unmount: unmount4 } = renderTest({ versionContext: emptyContext });
+    expect(getText3('No versions available')).toBeInTheDocument();
+    unmount4();
+
+    mockVersionItem.mockClear();
+
+    const { getAllByTestId } = renderTest({});
+    expect(getAllByTestId('version-item')).toHaveLength(3);
+    expect(mockVersionItem).toHaveBeenCalledTimes(3);
   });
 
-  test('renders version items when versions are available', () => {
-    render(<VersionContent {...defaultProps} />);
+  test('restore functionality works correctly', () => {
+    const onRestoreMock = jest.fn();
+    const { getByTestId, queryByTestId } = render(
+      <VersionContent {...defaultProps} onRestore={onRestoreMock} />,
+    );
 
-    const versionItems = screen.getAllByTestId('version-item');
-    expect(versionItems).toHaveLength(3);
+    fireEvent.click(getByTestId('restore-button-1'));
+    expect(onRestoreMock).toHaveBeenCalledWith(1);
+
+    expect(queryByTestId('restore-button-0')).not.toBeInTheDocument();
+    expect(queryByTestId('restore-button-1')).toBeInTheDocument();
+    expect(queryByTestId('restore-button-2')).toBeInTheDocument();
   });
 
-  describe('edge cases', () => {
-    test('handles when versionContext has empty versions array but has versionIds', () => {
-      const incompleteContext = {
-        ...mockContext,
-        versions: [],
-      };
+  test('handles edge cases in data', () => {
+    const { getAllByTestId, getByText, queryByTestId, queryByText, rerender } = render(
+      <VersionContent {...defaultProps} versionContext={{ ...mockContext, versions: [] }} />,
+    );
+    expect(getAllByTestId('version-item')).toHaveLength(mockVersionIds.length);
 
-      render(<VersionContent {...defaultProps} versionContext={incompleteContext} />);
+    rerender(
+      <VersionContent {...defaultProps} versionContext={{ ...mockContext, versionIds: [] }} />,
+    );
+    expect(getByText('No versions available')).toBeInTheDocument();
 
-      expect(screen.getAllByTestId('version-item')).toHaveLength(mockVersionIds.length);
-    });
+    rerender(
+      <VersionContent
+        {...defaultProps}
+        selectedAgentId=""
+        isLoading={true}
+        error={new Error('Test')}
+      />,
+    );
+    expect(getByText('No agent selected')).toBeInTheDocument();
+    expect(queryByTestId('spinner')).not.toBeInTheDocument();
+    expect(queryByText('Error loading versions')).not.toBeInTheDocument();
 
-    test('handles when versionContext has empty versionIds array', () => {
-      const incompleteContext = {
-        ...mockContext,
-        versionIds: [],
-      };
-
-      render(<VersionContent {...defaultProps} versionContext={incompleteContext} />);
-
-      expect(screen.getByText('No versions available')).toBeInTheDocument();
-    });
-
-    test('handles error with specific error message', () => {
-      const specificError = new Error('Something went wrong');
-      render(<VersionContent {...defaultProps} error={specificError} />);
-
-      expect(screen.getByText('Error loading versions')).toBeInTheDocument();
-    });
-
-    test('prioritizes loading state over error state', () => {
-      render(<VersionContent {...defaultProps} isLoading={true} error={new Error('Test')} />);
-
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Error loading versions')).not.toBeInTheDocument();
-    });
-
-    test('prioritizes empty selectedAgentId over other states', () => {
-      render(
-        <VersionContent
-          {...defaultProps}
-          selectedAgentId=""
-          isLoading={true}
-          error={new Error('Test')}
-        />,
-      );
-
-      expect(screen.getByText('No agent selected')).toBeInTheDocument();
-      expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
-      expect(screen.queryByText('Error loading versions')).not.toBeInTheDocument();
-    });
+    rerender(<VersionContent {...defaultProps} isLoading={true} error={new Error('Test')} />);
+    expect(queryByTestId('spinner')).toBeInTheDocument();
+    expect(queryByText('Error loading versions')).not.toBeInTheDocument();
   });
 });

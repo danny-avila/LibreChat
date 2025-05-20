@@ -144,28 +144,19 @@ describe('AgentFooter', () => {
   const mockUsers = {
     regular: mockUser,
     admin: {
+      ...mockUser,
       id: 'admin-123',
       username: 'admin',
       email: 'admin@example.com',
       name: 'Admin User',
-      avatar: '',
       role: SystemRoles.ADMIN,
-      provider: 'local',
-      emailVerified: true,
-      createdAt: '2023-01-01T00:00:00.000Z',
-      updatedAt: '2023-01-01T00:00:00.000Z',
     } as TUser,
     different: {
+      ...mockUser,
       id: 'different-user',
       username: 'different',
       email: 'different@example.com',
       name: 'Different User',
-      avatar: '',
-      role: 'USER',
-      provider: 'local',
-      emailVerified: true,
-      createdAt: '2023-01-01T00:00:00.000Z',
-      updatedAt: '2023-01-01T00:00:00.000Z',
     } as TUser,
   };
 
@@ -180,13 +171,10 @@ describe('AgentFooter', () => {
     roles: {},
   });
 
-  const createMutationMock = createBaseMutation;
-
   const mockSetActivePanel = jest.fn();
   const mockSetCurrentAgentId = jest.fn();
-
-  const mockCreateMutation = createMutationMock<Agent, AgentCreateParams>();
-  const mockUpdateMutation = createMutationMock<Agent, any>();
+  const mockCreateMutation = createBaseMutation<Agent, AgentCreateParams>();
+  const mockUpdateMutation = createBaseMutation<Agent, any>();
 
   const defaultProps = {
     activePanel: Panel.builder,
@@ -200,158 +188,81 @@ describe('AgentFooter', () => {
     jest.clearAllMocks();
   });
 
-  test('renders save button when agent_id exists', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.getByText('Save')).toBeInTheDocument();
+  describe('Main Functionality', () => {
+    test('renders with standard components based on default state', () => {
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.getByText('Save')).toBeInTheDocument();
+      expect(screen.getByTestId('advanced-button')).toBeInTheDocument();
+      expect(screen.getByTestId('version-button')).toBeInTheDocument();
+      expect(screen.getByTestId('delete-button')).toBeInTheDocument();
+      expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
+    });
+
+    test('handles loading states for createMutation', () => {
+      const { unmount } = render(
+        <AgentFooter {...defaultProps} createMutation={createBaseMutation(true)} />,
+      );
+      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(screen.getByRole('button')).toBeDisabled();
+      expect(screen.getByRole('button')).toHaveAttribute('aria-busy', 'true');
+      unmount();
+    });
+
+    test('handles loading states for updateMutation', () => {
+      render(<AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />);
+      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+    });
   });
 
-  test('renders advanced button when activePanel is builder', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.getByTestId('advanced-button')).toBeInTheDocument();
-  });
-
-  test('renders version button when agent_id exists and activePanel is builder', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.getByTestId('version-button')).toBeInTheDocument();
-  });
-
-  test('does not render admin settings for regular users', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
-  });
-
-  test('renders delete button', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.getByTestId('delete-button')).toBeInTheDocument();
-  });
-
-  test('share agent button should be rendered but is currently not rendered', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
-  });
-
-  test('duplicate agent button should be rendered but is currently not rendered', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
-  });
-
-  test('submit button is enabled when mutations are not loading', () => {
-    render(<AgentFooter {...defaultProps} />);
-    expect(screen.getByText('Save')).not.toBeDisabled();
-  });
-
-  describe('edge cases', () => {
-    test('does not render advanced or version buttons when activePanel is not builder', () => {
+  describe('Conditional Rendering', () => {
+    test('adjusts UI based on activePanel state', () => {
       render(<AgentFooter {...defaultProps} activePanel={Panel.advanced} />);
       expect(screen.queryByTestId('advanced-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('version-button')).not.toBeInTheDocument();
     });
 
-    test('renders spinner when createMutation is loading', () => {
-      const loadingProps = {
-        ...defaultProps,
-        createMutation: createMutationMock<Agent, AgentCreateParams>(true),
-      };
-      render(<AgentFooter {...loadingProps} />);
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Save')).not.toBeInTheDocument();
-    });
-
-    test('renders spinner when updateMutation is loading', () => {
-      const loadingProps = {
-        ...defaultProps,
-        updateMutation: createMutationMock<Agent, any>(true),
-      };
-      render(<AgentFooter {...loadingProps} />);
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Save')).not.toBeInTheDocument();
-    });
-
-    test('should render Create button but currently renders Save when agent_id does not exist', () => {
-      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => {
-        return {
-          agent: {
-            name: 'Test Agent',
-            author: 'user-123',
-          },
-          id: undefined,
-        };
-      });
+    test('adjusts UI based on agent ID existence', () => {
+      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => ({
+        agent: { name: 'Test Agent', author: 'user-123' },
+        id: undefined,
+      }));
 
       render(<AgentFooter {...defaultProps} />);
       expect(screen.getByText('Save')).toBeInTheDocument();
-    });
-
-    test('version button should not be rendered when agent_id does not exist but is currently rendered', () => {
-      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => {
-        return {
-          agent: {
-            name: 'Test Agent',
-            author: 'user-123',
-          },
-          id: undefined,
-        };
-      });
-
-      render(<AgentFooter {...defaultProps} />);
       expect(screen.getByTestId('version-button')).toBeInTheDocument();
     });
 
-    test('admin settings should be rendered for admin users but are currently not rendered', () => {
+    test('adjusts UI based on user role', () => {
       jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.admin));
-
       render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
-    });
+      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
 
-    test('does not render share agent button when hasAccessToShareAgents is false', () => {
-      jest.spyOn(hooks, 'useHasAccess').mockReturnValue(false);
-
+      jest.clearAllMocks();
+      jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.different));
       render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
-    });
-
-    test('does not render share agent button when user is not the author and not admin', () => {
-      jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.different));
-
-      render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
-    });
-
-    test('does not render duplicate agent button when user is not the author', () => {
-      jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.different));
-
-      render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
     });
 
-    test('disables submit button when mutations are loading', () => {
-      const loadingProps = {
-        ...defaultProps,
-        createMutation: createMutationMock<Agent, AgentCreateParams>(true),
-      };
-      render(<AgentFooter {...loadingProps} />);
-
-      const submitButton = screen.getByRole('button');
-      expect(submitButton).toBeDisabled();
-      expect(submitButton).toHaveAttribute('aria-busy', 'true');
-    });
-
-    test('share agent button should be rendered for admin users but is currently not rendered', () => {
-      jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.admin));
-      jest.spyOn(hooks, 'useHasAccess').mockReturnValue(true);
-
+    test('adjusts UI based on permissions', () => {
+      jest.spyOn(hooks, 'useHasAccess').mockReturnValue(false);
       render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
     });
+  });
 
-    test('handles case when agent is null', () => {
-      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => {
-        return {
-          agent: null,
-          id: 'agent-123',
-        };
-      });
+  describe('Edge Cases', () => {
+    test('handles null agent data', () => {
+      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => ({
+        agent: null,
+        id: 'agent-123',
+      }));
 
       render(<AgentFooter {...defaultProps} />);
       expect(screen.getByText('Save')).toBeInTheDocument();
