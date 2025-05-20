@@ -1,14 +1,14 @@
-import debounce from 'lodash/debounce';
 import React, { memo, useMemo, useCallback } from 'react';
+import { Globe } from 'lucide-react';
+import debounce from 'lodash/debounce';
 import { useRecoilState } from 'recoil';
-import { SearchIcon } from 'lucide-react';
 import {
   Tools,
   AuthType,
   Constants,
-  LocalStorageKeys,
-  PermissionTypes,
   Permissions,
+  PermissionTypes,
+  LocalStorageKeys,
 } from 'librechat-data-provider';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
 import { useLocalize, useHasAccess, useSearchApiKeyForm } from '~/hooks';
@@ -98,9 +98,9 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
         className="max-w-fit"
         defaultChecked={webSearch}
         setValue={debouncedChange}
-        label={localize('com_ui_web_search')}
+        label={localize('com_ui_search')}
         isCheckedClassName="border-blue-600/40 bg-blue-500/10 hover:bg-blue-700/10"
-        icon={<SearchIcon className="icon-md" />}
+        icon={<Globe className="icon-md" />}
       />
       <ApiKeyDialog
         onSubmit={onSubmit}
