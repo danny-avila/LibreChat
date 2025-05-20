@@ -68,7 +68,7 @@ jobs:
                   -d '{"ref":"main"}'
 
     build-and-push-test:
-        needs : build-and-push-test
+        needs : build-and-push-dev
         runs-on: ubuntu-latest
         environment:
           name: test
@@ -127,7 +127,7 @@ jobs:
                   -d '{"ref":"main"}'
 
     build-and-push-prod:
-        needs : build-and-push-prod
+        needs : build-and-push-test
         runs-on: ubuntu-latest
         environment:
           name: prod
