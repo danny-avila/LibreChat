@@ -8,7 +8,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
         showCloseButton={false}
         className="h-full w-full rounded-none bg-transparent"
         disableScroll={false}
-        overlayClassName="bg-surface-secondary"
+        overlayClassName="bg-surface-primary opacity-95 z-50"
       >
         <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-4">
           <Button

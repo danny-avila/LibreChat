@@ -350,12 +350,13 @@ export default function PixelCard({
     >
       <div
         className={cn(
-          'ease-[cubic-bezier(0.5,1,0.89,1)] relative isolate grid select-none place-items-center overflow-hidden rounded-lg border border-border-light shadow-md transition-colors duration-200',
+          'relative isolate grid select-none place-items-center overflow-hidden rounded-lg border border-border-light shadow-md transition-colors duration-200 ease-in-out',
           className,
         )}
         style={{
           width: '100%',
           height: '100%',
+          transitionTimingFunction: 'cubic-bezier(0.5, 1, 0.89, 1)',
         }}
         onMouseEnter={hoverIn}
         onMouseLeave={hoverOut}
