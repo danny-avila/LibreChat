@@ -143,7 +143,6 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
 
 /**
  * Check if a version already exists in the versions array, excluding timestamp and author fields
- *
  * @param {Object} updateData - The update data to compare
  * @param {Array} versions - The existing versions array
  * @returns {Object|null} - The matching version if found, null otherwise
@@ -503,7 +502,6 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
 
 /**
  * Reverts an agent to a specific version in its version history.
- *
  * @param {Object} searchParameter - The search parameters to find the agent to revert.
  * @param {string} searchParameter.id - The ID of the agent to revert.
  * @param {string} [searchParameter.author] - The user ID of the agent's author.

@@ -1,8 +1,7 @@
-import React from 'react';
 import { History } from 'lucide-react';
+import { Panel } from '~/common';
 import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
-import { Panel } from '~/common';
 
 interface VersionButtonProps {
   setActivePanel: (panel: Panel) => void;

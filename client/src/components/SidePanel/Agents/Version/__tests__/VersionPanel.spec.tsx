@@ -1,9 +1,8 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import VersionPanel from '../VersionPanel';
-import VersionContent from '../VersionContent';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { Panel } from '~/common/types';
+import VersionContent from '../VersionContent';
+import VersionPanel from '../VersionPanel';
 
 jest.mock('~/data-provider', () => ({
   useGetAgentByIdQuery: jest.fn(() => ({

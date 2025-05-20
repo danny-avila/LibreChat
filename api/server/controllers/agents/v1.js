@@ -23,6 +23,7 @@ const { updateAction, getActions } = require('~/models/Action');
 const { updateAgentProjects } = require('~/models/Agent');
 const { getProjectByName } = require('~/models/Project');
 const { deleteFileByFilter } = require('~/models/File');
+const { revertAgentVersion } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const systemTools = {
@@ -424,7 +425,6 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
 /**
  * Reverts an agent to a previous version from its version history.
- *
  * @route PATCH /agents/:id/revert
  * @param {object} req - Express Request object
  * @param {object} req.params - Request parameters
@@ -466,7 +466,6 @@ const revertAgentVersionHandler = async (req, res) => {
       });
     }
 
-    const { revertAgentVersion } = require('~/models/Agent');
     const updatedAgent = await revertAgentVersion({ id }, version_index);
 
     if (updatedAgent.author) {
