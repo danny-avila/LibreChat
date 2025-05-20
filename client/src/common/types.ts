@@ -142,6 +142,7 @@ export enum Panel {
   builder = 'builder',
   actions = 'actions',
   model = 'model',
+  version = 'version',
 }
 
 export type FileSetter =
