@@ -16,17 +16,17 @@ const FinalizationRegistry = global.FinalizationRegistry || null;
  */
 const clientRegistry = FinalizationRegistry
   ? new FinalizationRegistry((heldValue) => {
-    try {
-      // This will run when the client is garbage collected
-      if (heldValue && heldValue.userId) {
-        logger.debug(`[FinalizationRegistry] Cleaning up client for user ${heldValue.userId}`);
-      } else {
-        logger.debug('[FinalizationRegistry] Cleaning up client');
+      try {
+        // This will run when the client is garbage collected
+        if (heldValue && heldValue.userId) {
+          logger.debug(`[FinalizationRegistry] Cleaning up client for user ${heldValue.userId}`);
+        } else {
+          logger.debug('[FinalizationRegistry] Cleaning up client');
+        }
+      } catch (e) {
+        // Ignore errors
       }
-    } catch (e) {
-      // Ignore errors
-    }
-  })
+    })
   : null;
 
 /**

@@ -228,7 +228,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     // Save user message if needed
     if (!client.skipSaveUserMessage) {
       await saveMessage(req, userMessage, {
-        context: 'api/server/controllers/agents/request.js - don\'t skip saving user message',
+        context: "api/server/controllers/agents/request.js - don't skip saving user message",
       });
     }
 

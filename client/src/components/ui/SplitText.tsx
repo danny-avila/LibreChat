@@ -40,12 +40,12 @@ const SplitText: React.FC<SplitTextProps> = ({
       from: animationFrom,
       to: inView
         ? async (next: (props: any) => Promise<void>) => {
-          await next(animationTo);
-          animatedCount.current += 1;
-          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
-            onLetterAnimationComplete();
+            await next(animationTo);
+            animatedCount.current += 1;
+            if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+              onLetterAnimationComplete();
+            }
           }
-        }
         : animationFrom,
       delay: i * delay,
       config: { easing },

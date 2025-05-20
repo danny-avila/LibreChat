@@ -52,7 +52,7 @@ const messageHistory = [
   {
     role: 'user',
     isCreatedByUser: true,
-    text: 'What\'s up',
+    text: "What's up",
     messageId: '3',
     parentMessageId: '2',
   },
@@ -456,7 +456,7 @@ describe('BaseClient', () => {
 
       const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
       expect(TestClient.currentMessages).toHaveLength(3);
-      expect(chatMessages2[chatMessages2.length - 1].text).toEqual('What\'s up');
+      expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
     });
 
     /* Most of the new sendMessage logic revolving around edited/continued AI messages

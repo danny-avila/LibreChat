@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
 import type { FileConfig, EndpointFileConfig } from './types/files';

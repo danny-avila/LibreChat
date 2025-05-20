@@ -253,6 +253,52 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
+router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (req, res) => {
+  try {
+    const { conversationId, messageId } = req.params;
+    const { rating, ratingContent } = req.body;
+
+    // Build update parameters including conversationId and messageId
+    const updateParams = { conversationId, messageId };
+
+    if (rating === undefined || rating === null) {
+      // Remove rating and ratingContent by setting them to null
+      updateParams.rating = null;
+      updateParams.ratingContent = null;
+    } else {
+      // Set rating
+      updateParams.rating = rating;
+
+      // Ensure ratingContent is properly structured
+      if (ratingContent) {
+        updateParams.ratingContent = {
+          tags: Array.isArray(ratingContent.tags) ? ratingContent.tags : [],
+          text: typeof ratingContent.text === 'string' ? ratingContent.text : '',
+        };
+      } else {
+        updateParams.ratingContent = null;
+      }
+    }
+
+    // Update the message using updateMessage to ensure consistency
+    const updatedMessage = await updateMessage(req, updateParams);
+
+    if (!updatedMessage) {
+      return res.status(400).json({ error: 'Failed to update feedback' });
+    }
+
+    // Return all the feedback details, including rating and ratingContent
+    return res.status(200).json({
+      messageId: updatedMessage.messageId,
+      conversationId: updatedMessage.conversationId,
+      feedback: updatedMessage.feedback,
+    });
+  } catch (error) {
+    logger.error('Error updating message feedback:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { messageId } = req.params;

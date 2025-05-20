@@ -255,6 +255,7 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
+      feedback: updatedMessage.feedback,
     };
   } catch (err) {
     logger.error('Error updating message:', err);

@@ -236,11 +236,11 @@ class GoogleClient extends BaseClient {
       msg.content = (
         !Array.isArray(msg.content)
           ? [
-            {
-              type: ContentTypes.TEXT,
-              [ContentTypes.TEXT]: msg.content,
-            },
-          ]
+              {
+                type: ContentTypes.TEXT,
+                [ContentTypes.TEXT]: msg.content,
+              },
+            ]
           : msg.content
       ).concat(message.image_urls);
 
