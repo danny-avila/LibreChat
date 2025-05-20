@@ -7,6 +7,7 @@ const facebookLogin = require('./facebookStrategy');
 const setupOpenId = require('./openidStrategy');
 const jwtLogin = require('./jwtStrategy');
 const ldapLogin = require('./ldapStrategy');
+const { setupSaml } = require('./samlStrategy');
 
 module.exports = {
   appleLogin,
@@ -18,4 +19,5 @@ module.exports = {
   facebookLogin,
   setupOpenId,
   ldapLogin,
+  setupSaml,
 };
