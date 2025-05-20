@@ -21,6 +21,7 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
+const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
@@ -94,7 +95,7 @@ router.delete('/', async (req, res) => {
       });
     }
 
-    /* Handle entity unlinking even if no valid files to delete */
+    /* Handle agent unlinking even if no valid files to delete */
     if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
       const agent = await getAgent({
         id: req.body.agent_id,
@@ -104,8 +105,30 @@ router.delete('/', async (req, res) => {
       const agentFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
       await processDeleteRequest({ req, files: agentFiles });
-      res.status(200).json({ message: 'File associations removed successfully' });
+      res.status(200).json({ message: 'File associations removed successfully from agent' });
       return;
+    }
+
+    /* Handle assistant unlinking even if no valid files to delete */
+    if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
+      const assistant = await getAssistant({
+        id: req.body.assistant_id,
+      });
+
+      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
+
+      await processDeleteRequest({ req, files: assistantFiles });
+      res.status(200).json({ message: 'File associations removed successfully from assistant' });
+      return;
+    } else if (
+      req.body.assistant_id &&
+      req.body.files?.[0]?.filepath === EModelEndpoint.azureAssistants
+    ) {
+      await processDeleteRequest({ req, files: req.body.files });
+      return res
+        .status(200)
+        .json({ message: 'File associations removed successfully from Azure Assistant' });
     }
 
     await processDeleteRequest({ req, files: dbFiles });

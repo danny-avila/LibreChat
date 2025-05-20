@@ -41,7 +41,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
           onRename();
         }}
         role="button"
-        aria-label={isSmallScreen ? undefined : localize('com_ui_double_click_to_rename')}
+        aria-label={isSmallScreen ? undefined : title || localize('com_ui_untitled')}
       >
         {title || localize('com_ui_untitled')}
       </div>

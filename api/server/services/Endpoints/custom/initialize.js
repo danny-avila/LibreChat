@@ -105,6 +105,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     headers: resolvedHeaders,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
+    customParams: endpointConfig.customParams,
     titleConvo: endpointConfig.titleConvo,
     titleModel: endpointConfig.titleModel,
     forcePrompt: endpointConfig.forcePrompt,

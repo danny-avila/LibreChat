@@ -157,6 +157,7 @@ const AdminSettings = () => {
           <div className="flex items-center gap-2">
             <span className="font-medium">{localize('com_ui_role_select')}:</span>
             <DropdownPopup
+              unmountOnHide={true}
               menuId="role-dropdown"
               isOpen={isRoleMenuOpen}
               setIsOpen={setIsRoleMenuOpen}

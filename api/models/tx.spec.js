@@ -488,6 +488,9 @@ describe('getCacheMultiplier', () => {
 
 describe('Google Model Tests', () => {
   const googleModels = [
+    'gemini-2.5-pro-preview-05-06',
+    'gemini-2.5-flash-preview-04-17',
+    'gemini-2.5-exp',
     'gemini-2.0-flash-lite-preview-02-05',
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
@@ -525,6 +528,9 @@ describe('Google Model Tests', () => {
 
   it('should map to the correct model keys', () => {
     const expected = {
+      'gemini-2.5-pro-preview-05-06': 'gemini-2.5-pro',
+      'gemini-2.5-flash-preview-04-17': 'gemini-2.5-flash',
+      'gemini-2.5-exp': 'gemini-2.5',
       'gemini-2.0-flash-lite-preview-02-05': 'gemini-2.0-flash-lite',
       'gemini-2.0-flash-001': 'gemini-2.0-flash',
       'gemini-2.0-flash-exp': 'gemini-2.0-flash',

@@ -52,6 +52,7 @@ export const excludedKeys = new Set([
   'model',
   'files',
   'spec',
+  'disableParams',
 ]);
 
 export enum SettingsViews {
@@ -278,6 +279,12 @@ export const endpointSchema = baseEndpointSchema.merge(
     headers: z.record(z.any()).optional(),
     addParams: z.record(z.any()).optional(),
     dropParams: z.array(z.string()).optional(),
+    customParams: z
+      .object({
+        defaultParamsEndpoint: z.string().default('custom'),
+        paramDefinitions: z.array(z.record(z.any())).optional(),
+      })
+      .strict(),
     customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
@@ -505,10 +512,28 @@ export const intefaceSchema = z
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 
+export const turnstileOptionsSchema = z
+  .object({
+    language: z.string().default('auto'),
+    size: z.enum(['normal', 'compact', 'flexible', 'invisible']).default('normal'),
+  })
+  .default({
+    language: 'auto',
+    size: 'normal',
+  });
+
+export const turnstileSchema = z.object({
+  siteKey: z.string(),
+  options: turnstileOptionsSchema.optional(),
+});
+
+export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
+  turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
@@ -578,6 +603,7 @@ export const configSchema = z.object({
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
   interface: intefaceSchema,
+  turnstile: turnstileSchema.optional(),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   actions: z
     .object({
@@ -877,6 +903,7 @@ export const visionModels = [
   'llama-3-2-11b-vision',
   'llama-3.2-90b-vision',
   'llama-3-2-90b-vision',
+  'llama-4',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -1232,9 +1259,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.8-rc1',
+  VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.4',
+  CONFIG_VERSION = '1.2.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

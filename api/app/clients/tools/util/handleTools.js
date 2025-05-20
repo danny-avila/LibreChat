@@ -24,7 +24,6 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { createMCPTool } = require('~/server/services/MCP');
-const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
 const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -232,7 +231,6 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
-  const remainingTools = [];
   const appTools = options.req?.app?.locals?.availableTools ?? {};
 
   for (const tool of tools) {
@@ -291,30 +289,6 @@ const loadTools = async ({
       );
       requestedTools[tool] = toolInstance;
       continue;
-    }
-
-    if (functions === true) {
-      remainingTools.push(tool);
-    }
-  }
-
-  let specs = null;
-  if (useSpecs === true && functions === true && remainingTools.length > 0) {
-    specs = await loadSpecs({
-      llm: model,
-      user,
-      message: options.message,
-      memory: options.memory,
-      signal: options.signal,
-      tools: remainingTools,
-      map: true,
-      verbose: false,
-    });
-  }
-
-  for (const tool of remainingTools) {
-    if (specs && specs[tool]) {
-      requestedTools[tool] = specs[tool];
     }
   }
 

@@ -233,6 +233,13 @@ const initializeAgentOptions = async ({
     endpointOption: _endpointOption,
   });
 
+  if (
+    agent.endpoint === EModelEndpoint.azureOpenAI &&
+    options.llmConfig?.azureOpenAIApiInstanceName == null
+  ) {
+    agent.provider = Providers.OPENAI;
+  }
+
   if (options.provider != null) {
     agent.provider = options.provider;
   }

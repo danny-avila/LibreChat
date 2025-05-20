@@ -417,6 +417,7 @@ export const tPluginSchema = z.object({
   icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
+  chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
   toolkit: z.boolean().optional(),
 });
@@ -744,6 +745,7 @@ export type TSetOption = (
 
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
+  disableParams?: boolean;
 };
 
 export const tSharedLinkSchema = z.object({
