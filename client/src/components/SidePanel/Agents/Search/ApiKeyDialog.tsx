@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
-import type { WebSearchApiKeyFormData } from '~/hooks/Plugins/useSearchApiKeyForm';
+import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { MenuItemProps } from '~/common';
 import { Input, Button, OGDialog, Label } from '~/components/ui';
-import DropdownPopup from '~/components/ui/DropdownPopup';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import DropdownPopup from '~/components/ui/DropdownPopup';
 import { useLocalize } from '~/hooks';
 
 export default function ApiKeyDialog({
@@ -21,12 +21,12 @@ export default function ApiKeyDialog({
 }: {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: WebSearchApiKeyFormData) => void;
+  onSubmit: (data: SearchApiKeyFormData) => void;
   onRevoke: () => void;
   isUserProvided: boolean;
   isToolAuthenticated: boolean;
-  register: UseFormRegister<WebSearchApiKeyFormData>;
-  handleSubmit: UseFormHandleSubmit<WebSearchApiKeyFormData>;
+  register: UseFormRegister<SearchApiKeyFormData>;
+  handleSubmit: UseFormHandleSubmit<SearchApiKeyFormData>;
 }) {
   const localize = useLocalize();
   const [selectedReranker, setSelectedReranker] = useState<'jina' | 'cohere'>('jina');

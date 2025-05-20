@@ -1301,6 +1301,8 @@ export enum Constants {
   mcp_delimiter = '_mcp_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
+  /** Prefix for LC Dynamic Env. Variables */
+  LC_VAR_PREFIX = 'LC_VAR_',
 }
 
 export enum LocalStorageKeys {
