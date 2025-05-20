@@ -16,7 +16,6 @@ type TLoginFormProps = {
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
-
   const {
     register,
     getValues,
@@ -149,6 +148,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             {localize('com_auth_password_forgot')}
           </a>
         )}
+
 
         {requireCaptcha && (
           <div className="my-4 flex justify-center">
