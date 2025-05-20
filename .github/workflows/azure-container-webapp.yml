@@ -38,7 +38,7 @@ jobs:
             uses: tibdex/github-app-token@v2
             with:
               app_id: 1295399
-              private_key: ${{ secrets.PEM_TO_BOOKINGS_INFRA }}
+              private_key: ${{ secrets.PEM_TO_LIBRE_CHAT_INFRA }}
               installation_retrieval_mode: repository
               installation_retrieval_payload: businessfinland/libre-chat-infra
               revoke: true
