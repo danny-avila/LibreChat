@@ -111,6 +111,9 @@ auth.json
 # User uploads
 uploads/
 
+# Ollama
+ollama/
+
 # owner
 release/
 

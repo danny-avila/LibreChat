@@ -572,6 +572,7 @@ export type TStartupConfig = {
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
   CUSTOM_OCR = 'custom_ocr',
+  TIKA_OCR = 'tika_ocr',
 }
 
 export const ocrSchema = z.object({
