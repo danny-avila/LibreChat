@@ -222,6 +222,7 @@ export type Agent = {
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
+  version?: number;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;

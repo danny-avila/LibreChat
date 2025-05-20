@@ -79,6 +79,15 @@ router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
 router.delete('/:id', checkAgentCreate, v1.deleteAgent);
 
 /**
+ * Reverts an agent to a previous version.
+ * @route POST /agents/:id/revert
+ * @param {string} req.params.id - Agent identifier.
+ * @param {number} req.body.version_index - Index of the version to revert to.
+ * @returns {Agent} 200 - success response - application/json
+ */
+router.post('/:id/revert', checkGlobalAgentShare, v1.revertAgentVersion);
+
+/**
  * Returns a list of agents.
  * @route GET /agents
  * @param {AgentListParams} req.query - The agent list parameters for pagination and sorting.
