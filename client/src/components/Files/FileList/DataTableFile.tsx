@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { ListFilter } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
 import {
   flexRender,
   getCoreRowModel,
@@ -36,6 +37,7 @@ import { useDeleteFilesFromTable } from '~/hooks/Files';
 import { TrashIcon, Spinner } from '~/components/svg';
 import UploadFileButton from './UploadFileButton';
 import useLocalize from '~/hooks/useLocalize';
+import store from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -57,12 +59,14 @@ export default function DataTableFile<TData, TValue>({
   data,
 }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
+  const setFiles = useSetRecoilState(store.filesByIndex(0));
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
+
   const [rowSelection, setRowSelection] = React.useState({});
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
-  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
 
   const table = useReactTable({
     data,
@@ -103,7 +107,7 @@ export default function DataTableFile<TData, TValue>({
                 const filesToDelete = table
                   .getFilteredSelectedRowModel()
                   .rows.map((row) => row.original);
-                deleteFiles({ files: filesToDelete as TFile[] });
+                deleteFiles({ files: filesToDelete as TFile[], setFiles });
                 setRowSelection({});
               }}
               className="ml-1 gap-2 dark:hover:bg-gray-850/25 sm:ml-0"
