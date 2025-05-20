@@ -6,12 +6,12 @@ import Image from '~/components/Chat/Messages/Content/Image';
 import { useAttachmentLink } from './LogLink';
 import { cn } from '~/utils';
 
-const FileAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
+const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const { handleDownload } = useAttachmentLink({
-    href: attachment.filepath,
-    filename: attachment.filename,
+    href: attachment.filepath ?? '',
+    filename: attachment.filename ?? '',
   });
-  const extension = attachment.filename.split('.').pop();
+  const extension = attachment.filename?.split('.').pop();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -19,6 +19,9 @@ const FileAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
     return () => clearTimeout(timer);
   }, []);
 
+  if (!attachment.filepath) {
+    return null;
+  }
   return (
     <div
       className={cn(
@@ -88,6 +91,8 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
 
   if (isImage) {
     return <ImageAttachment attachment={attachment} />;
+  } else if (!attachment.filepath) {
+    return null;
   }
   return <FileAttachment attachment={attachment} />;
 }
@@ -119,9 +124,11 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     <>
       {fileAttachments.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2.5">
-          {fileAttachments.map((attachment, index) => (
-            <FileAttachment attachment={attachment} key={`file-${index}`} />
-          ))}
+          {fileAttachments.map((attachment, index) =>
+            attachment.filepath ? (
+              <FileAttachment attachment={attachment} key={`file-${index}`} />
+            ) : null,
+          )}
         </div>
       )}
       {imageAttachments.length > 0 && (
