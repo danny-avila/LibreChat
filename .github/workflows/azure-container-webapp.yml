@@ -55,17 +55,17 @@ jobs:
                 -d "{\"value\":\"${{ github.sha }}\"}" \
                 || { echo "Failed to update variable"; exit 1; }
 
-          - name: Trigger Deployment Workflow
-            env:
-              INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
-              TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
-            run: |
-              # Trigger the deployment workflow
-                curl -X POST \
-                  -H "Authorization: Bearer $INSTALLATION_TOKEN" \
-                  -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/$TARGET_REPO_NAME/actions/workflows/dev-deploy-infra.yml/dispatches" \
-                  -d '{"ref":"main"}'
+         # - name: Trigger Deployment Workflow
+         #   env:
+         #     INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
+         #     TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
+         #   run: |
+         #     # Trigger the deployment workflow
+         #       curl -X POST \
+         #         -H "Authorization: Bearer $INSTALLATION_TOKEN" \
+         #         -H "Accept: application/vnd.github+json" \
+         #         "https://api.github.com/repos/$TARGET_REPO_NAME/actions/workflows/dev-deploy-infra.yml/dispatches" \
+         #         -d '{"ref":"main"}'
 
     build-and-push-test:
         needs : build-and-push-dev
