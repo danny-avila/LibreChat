@@ -578,6 +578,14 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
 }
 
+export const webSearchSchema = z.object({
+  serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+});
+
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
@@ -601,6 +609,7 @@ export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
+  webSearch: webSearchSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
