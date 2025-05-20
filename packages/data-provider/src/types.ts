@@ -44,6 +44,7 @@ export type TEndpointOption = {
 
 export type TEphemeralAgent = {
   mcp?: string[];
+  web_search?: boolean;
   execute_code?: boolean;
 };
 
