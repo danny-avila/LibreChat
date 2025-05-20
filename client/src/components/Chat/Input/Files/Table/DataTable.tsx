@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ListFilter } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
 import {
   flexRender,
   getCoreRowModel,
@@ -36,6 +37,7 @@ import { TrashIcon, Spinner } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
 import { useMediaQuery } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -60,12 +62,14 @@ type Style = {
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const [isDeleting, setIsDeleting] = useState(false);
+  const setFiles = useSetRecoilState(store.filesByIndex(0));
+  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
+
   const [rowSelection, setRowSelection] = useState({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
 
   const table = useReactTable({
     data,
@@ -96,7 +100,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             const filesToDelete = table
               .getFilteredSelectedRowModel()
               .rows.map((row) => row.original);
-            deleteFiles({ files: filesToDelete as TFile[] });
+            deleteFiles({ files: filesToDelete as TFile[], setFiles });
             setRowSelection({});
           }}
           disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
