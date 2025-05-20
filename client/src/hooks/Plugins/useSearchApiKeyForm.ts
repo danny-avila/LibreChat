@@ -12,7 +12,7 @@ export type WebSearchApiKeyFormData = {
   cohereApiKey: string;
 };
 
-export default function useWebSearchApiKeyForm({
+export default function useSearchApiKeyForm({
   onSubmit,
   onRevoke,
 }: {

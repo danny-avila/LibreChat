@@ -9,7 +9,7 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
 } from '~/components/ui';
-import { useLocalize, useCodeApiKeyForm } from '~/hooks';
+import { useLocalize, useSearchApiKeyForm } from '~/hooks';
 import { CircleHelpIcon } from '~/components/svg';
 import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
@@ -24,7 +24,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
     setIsDialogOpen,
     handleRevokeApiKey,
     methods: keyFormMethods,
-  } = useCodeApiKeyForm({
+  } = useSearchApiKeyForm({
     onSubmit: () => {
       setValue(AgentCapabilities.web_search, true, { shouldDirty: true });
     },
@@ -33,13 +33,13 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
     },
   });
 
-  const searchIsEnabled = useWatch({ control, name: AgentCapabilities.web_search });
+  const webSearchIsEnabled = useWatch({ control, name: AgentCapabilities.web_search });
   const isUserProvided = authType === AuthType.USER_PROVIDED;
 
   const handleCheckboxChange = (checked: boolean) => {
     if (isToolAuthenticated) {
       setValue(AgentCapabilities.web_search, checked, { shouldDirty: true });
-    } else if (searchIsEnabled) {
+    } else if (webSearchIsEnabled) {
       setValue(AgentCapabilities.web_search, false, { shouldDirty: true });
     } else {
       setIsDialogOpen(true);
@@ -56,11 +56,13 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             render={({ field }) => (
               <Checkbox
                 {...field}
-                checked={searchIsEnabled ? searchIsEnabled : isToolAuthenticated && field.value}
+                checked={
+                  webSearchIsEnabled ? webSearchIsEnabled : isToolAuthenticated && field.value
+                }
                 onCheckedChange={handleCheckboxChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
-                disabled={searchIsEnabled ? false : !isToolAuthenticated}
+                disabled={webSearchIsEnabled ? false : !isToolAuthenticated}
               />
             )}
           />
@@ -80,7 +82,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             </label>
           </button>
           <div className="ml-2 flex gap-2">
-            {isUserProvided && (isToolAuthenticated || searchIsEnabled) && (
+            {isUserProvided && (isToolAuthenticated || webSearchIsEnabled) && (
               <button type="button" onClick={() => setIsDialogOpen(true)}>
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>

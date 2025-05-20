@@ -8,9 +8,7 @@ export default function SearchForm() {
   const { data } = useVerifyAgentToolAuth(
     { toolId: Tools.web_search },
     {
-      // WIP, for testing purposes
-      // enabled: true
-      enabled: false,
+      retry: 1,
     },
   );
 
@@ -22,16 +20,14 @@ export default function SearchForm() {
             <span className="text-token-text-primary block font-medium">
               {localize('com_ui_web_search')}
             </span>
+            <span className="text-xs text-text-secondary">
+              {localize('com_agents_by_librechat')}
+            </span>
           </div>
         </div>
       </div>
       <div className="flex flex-col items-start gap-2">
-        <Action
-          authType={data?.message}
-          // isToolAuthenticated={data?.authenticated}
-          // WIP, for testing purposes
-          isToolAuthenticated={true}
-        />
+        <Action authType={data?.message} isToolAuthenticated={data?.authenticated} />
       </div>
     </div>
   );

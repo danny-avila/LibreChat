@@ -1,9 +1,9 @@
-import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
-import type { WebSearchApiKeyFormData } from '~/hooks/Plugins/useWebSearchApiKeyForm';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { Input, Button, OGDialog, Label } from '~/components/ui';
-import { useLocalize } from '~/hooks';
 import { ChevronDown } from 'lucide-react';
+import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
+import type { WebSearchApiKeyFormData } from '~/hooks/Plugins/useSearchApiKeyForm';
+import { Input, Button, OGDialog, Label } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useLocalize } from '~/hooks';
 
 export default function ApiKeyDialog({
   isOpen,
