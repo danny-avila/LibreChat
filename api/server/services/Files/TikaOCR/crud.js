@@ -9,6 +9,11 @@ const { logAxiosError } = require('~/utils/axios');
 
 const axios = createAxiosInstance();
 
+function extractVariableName(str) {
+  const match = str.match(envVarRegex);
+  return match ? match[1] : null;
+}
+
 /**
  * Uploads a document to Tika. DOES NOT FILE STREAM.
  *

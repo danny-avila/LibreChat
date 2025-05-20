@@ -1,6 +1,6 @@
 const fs = require('fs');
 const mockAxios = {
-  put: jest.fn().mockResolvedValue({ data: {} }),
+  put: jest.fn().mockResolvedValue({ data: 'Extracted text from Tika' }),
   interceptors: {
     response: {
       use: jest.fn(),
