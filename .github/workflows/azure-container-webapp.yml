@@ -55,20 +55,20 @@ jobs:
                 -d "{\"value\":\"${{ github.sha }}\"}" \
                 || { echo "Failed to update variable"; exit 1; }
 
-         # - name: Trigger Deployment Workflow
-         #   env:
-         #     INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
-         #     TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
-         #   run: |
-         #     # Trigger the deployment workflow
-         #       curl -X POST \
-         #         -H "Authorization: Bearer $INSTALLATION_TOKEN" \
-         #         -H "Accept: application/vnd.github+json" \
-         #         "https://api.github.com/repos/$TARGET_REPO_NAME/actions/workflows/dev-deploy-infra.yml/dispatches" \
-         #         -d '{"ref":"main"}'
+          - name: Trigger Deployment Workflow
+            env:
+              INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
+              TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
+            run: |
+              # Trigger the deployment workflow
+                curl -X POST \
+                  -H "Authorization: Bearer $INSTALLATION_TOKEN" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/$TARGET_REPO_NAME/actions/workflows/dev-deploy-infra.yml/dispatches" \
+                  -d '{"ref":"main"}'
 
     build-and-push-test:
-        needs : build-and-push-dev
+        needs : build-and-push-test
         runs-on: ubuntu-latest
         environment:
           name: test
@@ -92,8 +92,42 @@ jobs:
               docker build . -t creuwbfcommonst.azurecr.io/sharedservices/librechat:${{ github.sha }}
               docker push creuwbfcommonst.azurecr.io/sharedservices/librechat:${{ github.sha }}
 
+          - name: Generate Token
+            id: create_token
+            uses: tibdex/github-app-token@v2
+            with:
+              app_id: 1295399
+              private_key: ${{ secrets.PEM_TO_LIBRE_CHAT_INFRA }}
+              installation_retrieval_mode: repository
+              installation_retrieval_payload: businessfinland/libre-chat-infra
+              revoke: true
+
+          - name: Update CONTAINER_IMAGE_NAME_TEST variable
+            env:
+              INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
+              TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
+            run: |
+                curl -X PATCH \
+                -H "Authorization: Bearer $INSTALLATION_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$TARGET_REPO_NAME/actions/variables/CONTAINER_IMAGE_NAME_TEST" \
+                -d "{\"value\":\"${{ github.sha }}\"}" \
+                || { echo "Failed to update variable"; exit 1; }
+
+          - name: Trigger Deployment Workflow
+            env:
+              INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
+              TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
+            run: |
+              # Trigger the deployment workflow
+                curl -X POST \
+                  -H "Authorization: Bearer $INSTALLATION_TOKEN" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/$TARGET_REPO_NAME/actions/workflows/test-deploy-infra.yml/dispatches" \
+                  -d '{"ref":"main"}'
+
     build-and-push-prod:
-        needs : build-and-push-test
+        needs : build-and-push-prod
         runs-on: ubuntu-latest
         environment:
           name: prod
@@ -116,3 +150,38 @@ jobs:
             run: |
               docker build . -t creuwbfcommonsp.azurecr.io/sharedservices/librechat:${{ github.sha }}
 
+          - name: Generate Token
+            id: create_token
+            uses: tibdex/github-app-token@v2
+            with:
+              app_id: 1295399
+              private_key: ${{ secrets.PEM_TO_LIBRE_CHAT_INFRA }}
+              installation_retrieval_mode: repository
+              installation_retrieval_payload: businessfinland/libre-chat-infra
+              revoke: true
+
+          - name: Update CONTAINER_IMAGE_NAME_PROD variable
+            env:
+              INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
+              TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
+            run: |
+                curl -X PATCH \
+                -H "Authorization: Bearer $INSTALLATION_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$TARGET_REPO_NAME/actions/variables/CONTAINER_IMAGE_NAME_PROD" \
+                -d "{\"value\":\"${{ github.sha }}\"}" \
+                || { echo "Failed to update variable"; exit 1; }
+
+          - name: Trigger Deployment Workflow
+            env:
+              INSTALLATION_TOKEN: ${{ steps.create_token.outputs.token }}
+              TARGET_REPO_NAME: 'businessfinland/libre-chat-infra'
+            run: |
+              # Trigger the deployment workflow
+                curl -X POST \
+                  -H "Authorization: Bearer $INSTALLATION_TOKEN" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/$TARGET_REPO_NAME/actions/workflows/prod-deploy-infra.yml/dispatches" \
+                  -d '{"ref":"main"}'
+
+ 
