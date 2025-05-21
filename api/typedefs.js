@@ -1024,6 +1024,12 @@
  */
 
 /**
+ * @exports TEphemeralAgent
+ * @typedef {import('librechat-data-provider').TEphemeralAgent} TEphemeralAgent
+ * @memberof typedefs
+ */
+
+/**
  * @exports AgentToolResources
  * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs
