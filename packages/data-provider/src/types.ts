@@ -80,7 +80,7 @@ export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialRe
 export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';
-  auth?: unknown;
+  auth?: Partial<Record<string, string>>;
   isEntityTool?: boolean;
 };
 
@@ -90,7 +90,7 @@ export type TUpdateUserPlugins = {
   isEntityTool?: boolean;
   pluginKey: string;
   action: string;
-  auth?: unknown;
+  auth?: Partial<Record<string, string>>;
 };
 
 // TODO `label` needs to be changed to the proper `TranslationKeys`
