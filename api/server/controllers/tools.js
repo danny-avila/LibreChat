@@ -4,8 +4,10 @@ const {
   Tools,
   AuthType,
   Permissions,
+  webSearchAuth,
   ToolCallTypes,
   PermissionTypes,
+  extractWebSearchEnvVars,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
@@ -25,6 +27,125 @@ const toolAccessPermType = {
 };
 
 /**
+ * Verifies web search authentication, ensuring each category has at least
+ * one fully authenticated service.
+ *
+ * @param {ServerRequest} req - The request object
+ * @param {ServerResponse} res - The response object
+ * @returns {Promise<void>} A promise that resolves when the function has completed
+ */
+const verifyWebSearchAuth = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    /** @type {TCustomConfig['webSearch']} */
+    const webSearchConfig = req.app.locals?.webSearch || {};
+
+    // Initialize result
+    let isAuthenticated = true;
+    let isUserProvided = false;
+
+    // Process each category sequentially
+    for (const category in webSearchAuth) {
+      let categoryAuthenticated = false;
+
+      // Get all services for this category
+      const services = Object.keys(webSearchAuth[category]);
+
+      // Try each service until we find an authenticated one
+      for (let i = 0; i < services.length && !categoryAuthenticated; i++) {
+        const service = services[i];
+        const serviceConfig = webSearchAuth[category][service];
+
+        // Split keys into required and optional
+        const allKeys = Object.keys(serviceConfig);
+        const requiredKeys = allKeys.filter((key) => serviceConfig[key] === 1);
+        const optionalKeys = allKeys.filter((key) => serviceConfig[key] === 0);
+
+        // Skip if no required keys (unlikely but defensive)
+        if (requiredKeys.length === 0) {
+          continue;
+        }
+
+        // Get environment variables for all keys
+        const allKeyFields = extractWebSearchEnvVars({
+          keys: allKeys,
+          config: webSearchConfig,
+        });
+
+        // Map keys to their auth fields
+        const keyToFieldMap = {};
+        for (let j = 0; j < allKeys.length; j++) {
+          if (j < allKeyFields.length) {
+            keyToFieldMap[allKeys[j]] = allKeyFields[j];
+          }
+        }
+
+        // Get auth fields for required keys
+        const requiredAuthFields = requiredKeys.map((key) => keyToFieldMap[key]).filter(Boolean); // Remove undefined fields
+
+        // Skip if any required keys don't have auth fields
+        if (requiredAuthFields.length !== requiredKeys.length) {
+          continue;
+        }
+
+        // Get auth fields for optional keys
+        const optionalAuthFields = new Set(
+          optionalKeys.map((key) => keyToFieldMap[key]).filter(Boolean), // Remove undefined fields
+        );
+
+        try {
+          // Load authentication values
+          const authValues = await loadAuthValues({
+            userId,
+            authFields: allKeyFields,
+            optional: optionalAuthFields,
+            throwError: false,
+          });
+
+          // Check if all required fields are authenticated
+          const serviceAuthenticated = requiredAuthFields.every((field) => !!authValues[field]);
+
+          if (serviceAuthenticated) {
+            // Mark this category as authenticated
+            categoryAuthenticated = true;
+
+            // Check if any auth value is user-provided
+            for (const field of requiredAuthFields) {
+              const value = authValues[field];
+              if (value && process.env[field] && value !== process.env[field]) {
+                isUserProvided = true;
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          // Continue to next service on error
+          continue;
+        }
+      }
+
+      // If no service in this category is authenticated, the overall result is false
+      if (!categoryAuthenticated) {
+        isAuthenticated = false;
+        // Can break early since we need ALL categories to be authenticated
+        break;
+      }
+    }
+
+    /** @type {AuthType} */
+    const message = isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED;
+
+    return res.status(200).json({
+      authenticated: isAuthenticated,
+      message,
+    });
+  } catch (error) {
+    console.error('Error in verifyWebSearchAuth:', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * @param {ServerRequest} req - The request object, containing information about the HTTP request.
  * @param {ServerResponse} res - The response object, used to send back the desired HTTP response.
  * @returns {Promise<void>} A promise that resolves when the function has completed.
@@ -32,6 +153,9 @@ const toolAccessPermType = {
 const verifyToolAuth = async (req, res) => {
   try {
     const { toolId } = req.params;
+    if (toolId === Tools.web_search) {
+      return await verifyWebSearchAuth(req, res);
+    }
     const authFields = fieldsMap[toolId];
     if (!authFields) {
       res.status(404).json({ message: 'Tool not found' });
