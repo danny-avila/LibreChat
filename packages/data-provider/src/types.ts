@@ -90,7 +90,7 @@ export type TUpdateUserPlugins = {
   isEntityTool?: boolean;
   pluginKey: string;
   action: string;
-  auth?: Partial<Record<string, string>>;
+  auth?: Partial<Record<string, string | null>>;
 };
 
 // TODO `label` needs to be changed to the proper `TranslationKeys`

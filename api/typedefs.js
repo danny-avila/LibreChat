@@ -1030,6 +1030,12 @@
  */
 
 /**
+ * @exports TWebSearchKeys
+ * @typedef {import('librechat-data-provider').TWebSearchKeys} TWebSearchKeys
+ * @memberof typedefs
+ */
+
+/**
  * @exports AgentToolResources
  * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs

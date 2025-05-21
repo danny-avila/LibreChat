@@ -4,10 +4,9 @@ const {
   Tools,
   AuthType,
   Permissions,
-  webSearchAuth,
   ToolCallTypes,
   PermissionTypes,
-  extractWebSearchEnvVars,
+  loadWebSearchAuth,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
@@ -39,104 +38,15 @@ const verifyWebSearchAuth = async (req, res) => {
     const userId = req.user.id;
     /** @type {TCustomConfig['webSearch']} */
     const webSearchConfig = req.app.locals?.webSearch || {};
-
-    // Initialize result
-    let isAuthenticated = true;
-    let isUserProvided = false;
-
-    // Process each category sequentially
-    for (const category in webSearchAuth) {
-      let categoryAuthenticated = false;
-
-      // Get all services for this category
-      const services = Object.keys(webSearchAuth[category]);
-
-      // Try each service until we find an authenticated one
-      for (let i = 0; i < services.length && !categoryAuthenticated; i++) {
-        const service = services[i];
-        const serviceConfig = webSearchAuth[category][service];
-
-        // Split keys into required and optional
-        const requiredKeys = [];
-        const optionalKeys = [];
-        for (const key in serviceConfig) {
-          if (serviceConfig[key] === 1) {
-            requiredKeys.push(key);
-          } else if (serviceConfig[key] === 0) {
-            optionalKeys.push(key);
-          }
-        }
-
-        // Skip if no required keys (unlikely but defensive)
-        if (requiredKeys.length === 0) {
-          continue;
-        }
-
-        // Get environment variables for all keys
-        const requiredAuthFields = extractWebSearchEnvVars({
-          keys: requiredKeys,
-          config: webSearchConfig,
-        });
-        const optionalAuthFields = extractWebSearchEnvVars({
-          keys: optionalKeys,
-          config: webSearchConfig,
-        });
-
-        // Skip if any required keys don't have auth fields
-        if (requiredAuthFields.length !== requiredKeys.length) {
-          continue;
-        }
-
-        try {
-          // Load authentication values
-          const authValues = await loadAuthValues({
-            userId,
-            authFields: requiredAuthFields.concat(optionalAuthFields),
-            optional: new Set(optionalAuthFields),
-            throwError: false,
-          });
-
-          // Combined check - check authentication and user-provided status in one loop
-          let allFieldsAuthenticated = true;
-
-          for (const field of requiredAuthFields) {
-            const value = authValues[field];
-
-            // If any required field is missing, service is not authenticated
-            if (!value) {
-              allFieldsAuthenticated = false;
-              break;
-            }
-
-            // Check if user-provided while we're already looping
-            if (!isUserProvided && process.env[field] && value !== process.env[field]) {
-              isUserProvided = true;
-            }
-          }
-
-          // If all fields are authenticated, mark this category as authenticated
-          if (allFieldsAuthenticated) {
-            categoryAuthenticated = true;
-          }
-        } catch (error) {
-          // Continue to next service on error
-          continue;
-        }
-      }
-
-      // If no service in this category is authenticated, the overall result is false
-      if (!categoryAuthenticated) {
-        isAuthenticated = false;
-        // Can break early since we need ALL categories to be authenticated
-        break;
-      }
-    }
-
-    const message = isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED;
+    const result = await loadWebSearchAuth({
+      userId,
+      loadAuthValues,
+      webSearchConfig,
+    });
 
     return res.status(200).json({
-      authenticated: isAuthenticated,
-      message: isAuthenticated ? message : 'not_authenticated',
+      authenticated: result.authenticated,
+      message: result.authenticated ? result.authType : 'not_authenticated',
     });
   } catch (error) {
     console.error('Error in verifyWebSearchAuth:', error);

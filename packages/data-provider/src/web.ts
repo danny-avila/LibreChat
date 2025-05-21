@@ -1,5 +1,6 @@
 import type { TCustomConfig } from './config';
 import { extractVariableName } from './utils';
+import { AuthType } from './schemas';
 
 export function loadWebSearchConfig(
   config: TCustomConfig['webSearch'],
@@ -19,12 +20,14 @@ export function loadWebSearchConfig(
   };
 }
 
-type TWebSearchKeys =
+export type TWebSearchKeys =
   | 'serperApiKey'
   | 'firecrawlApiKey'
   | 'firecrawlApiUrl'
   | 'jinaApiKey'
   | 'cohereApiKey';
+
+export type TWebSearchCategories = 'engines' | 'scrapers' | 'rerankers';
 
 export const webSearchAuth = {
   engines: {
@@ -45,8 +48,6 @@ export const webSearchAuth = {
   },
 };
 
-type TSearchComponents = keyof typeof webSearchAuth;
-
 /**
  * Extracts all API keys from the webSearchAuth configuration object
  */
@@ -54,7 +55,7 @@ export const webSearchKeys: TWebSearchKeys[] = [];
 
 // Iterate through each category (engines, scrapers, rerankers)
 for (const category of Object.keys(webSearchAuth)) {
-  const categoryObj = webSearchAuth[category as TSearchComponents];
+  const categoryObj = webSearchAuth[category as TWebSearchCategories];
 
   // Iterate through each service within the category
   for (const service of Object.keys(categoryObj)) {
@@ -92,4 +93,131 @@ export function extractWebSearchEnvVars({
   }
 
   return authFields;
+}
+
+/**
+ * Type for web search authentication result
+ */
+export interface WebSearchAuthResult {
+  /** Whether all required categories have at least one authenticated service */
+  authenticated: boolean;
+  /** Authentication type (user_provided or system_defined) by category */
+  authTypes: [TWebSearchCategories, AuthType][];
+  /** Original authentication values mapped to their respective keys */
+  authResult: Partial<Record<TWebSearchKeys, string | undefined>>;
+}
+
+/**
+ * Loads and verifies web search authentication values
+ * @param params - Authentication parameters
+ * @returns Authentication result
+ */
+export async function loadWebSearchAuth({
+  userId,
+  webSearchConfig,
+  loadAuthValues,
+  throwError = true,
+}: {
+  userId: string;
+  webSearchConfig: TCustomConfig['webSearch'];
+  loadAuthValues: (params: {
+    userId: string;
+    authFields: string[];
+    optional?: Set<string>;
+    throwError?: boolean;
+  }) => Promise<Record<string, string>>;
+  throwError?: boolean;
+}): Promise<WebSearchAuthResult> {
+  let authenticated = true;
+  const authResult: Partial<Record<TWebSearchKeys, string | undefined>> = {};
+
+  /** Type-safe iterator for the category-service combinations */
+  async function checkAuth<C extends TWebSearchCategories>(
+    category: C,
+  ): Promise<[boolean, boolean]> {
+    type ServiceType = keyof (typeof webSearchAuth)[C];
+    let isUserProvided = false;
+    const services = Object.keys(webSearchAuth[category]) as ServiceType[];
+
+    for (const service of services) {
+      const serviceConfig = webSearchAuth[category][service];
+
+      // Split keys into required and optional
+      const requiredKeys: TWebSearchKeys[] = [];
+      const optionalKeys: TWebSearchKeys[] = [];
+
+      for (const key in serviceConfig) {
+        const typedKey = key as TWebSearchKeys;
+        if (serviceConfig[typedKey as keyof typeof serviceConfig] === 1) {
+          requiredKeys.push(typedKey);
+        } else if (serviceConfig[typedKey as keyof typeof serviceConfig] === 0) {
+          optionalKeys.push(typedKey);
+        }
+      }
+
+      if (requiredKeys.length === 0) continue;
+
+      const requiredAuthFields = extractWebSearchEnvVars({
+        keys: requiredKeys,
+        config: webSearchConfig,
+      });
+      const optionalAuthFields = extractWebSearchEnvVars({
+        keys: optionalKeys,
+        config: webSearchConfig,
+      });
+      if (requiredAuthFields.length !== requiredKeys.length) continue;
+
+      const allKeys = [...requiredKeys, ...optionalKeys];
+      const allAuthFields = [...requiredAuthFields, ...optionalAuthFields];
+      const optionalSet = new Set(optionalAuthFields);
+
+      try {
+        const authValues = await loadAuthValues({
+          userId,
+          authFields: allAuthFields,
+          optional: optionalSet,
+          throwError,
+        });
+
+        let allFieldsAuthenticated = true;
+        for (let j = 0; j < allAuthFields.length; j++) {
+          const field = allAuthFields[j];
+          const value = authValues[field];
+          const originalKey = allKeys[j];
+          if (originalKey) authResult[originalKey] = value;
+          if (!optionalSet.has(field) && !value) {
+            allFieldsAuthenticated = false;
+            break;
+          }
+          if (!isUserProvided && process.env[field] !== value) {
+            isUserProvided = true;
+          }
+        }
+
+        if (allFieldsAuthenticated) {
+          return [true, isUserProvided];
+        }
+      } catch {
+        continue;
+      }
+    }
+    return [false, isUserProvided];
+  }
+
+  const categories = ['engines', 'scrapers', 'rerankers'] as const;
+  const authTypes: [TWebSearchCategories, AuthType][] = [];
+  for (const category of categories) {
+    const [isCategoryAuthenticated, isUserProvided] = await checkAuth(category);
+    authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
+    if (!isCategoryAuthenticated) {
+      authenticated = false;
+      break;
+    }
+  }
+
+  return {
+    authTypes,
+    authResult,
+    authenticated,
+  };
 }
