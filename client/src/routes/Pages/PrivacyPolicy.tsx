@@ -29,7 +29,7 @@ export default function PrivacyPolicy() {
           <ul className="mb-4 list-disc space-y-3 pl-6">
             <li>
               <span className="font-medium">Account Information.</span> We collect your email
-              address and phone number to create an account and verify your identity. We also create
+              address to create an account and verify your identity. We also create
               a user ID for your Omnexio account. If you are an existing Omnexio user, your name,
               Omnexio-associated email address, profile photo, and Omnexio user ID will be used to
               link your Omnexio account to your Omnexio account. Depending on your location, we may
@@ -37,12 +37,6 @@ export default function PrivacyPolicy() {
               to communicate with you, troubleshoot issues, and provide updates on the latest
               Omnexio features. This processing is necessary to comply with our legal and
               contractual obligations to you.
-            </li>
-            <li>
-              <span className="font-medium">Contact List.</span> With your consent, Omnexio may
-              access and periodically sync your phone's contact list to make it easy for you to find
-              and connect with your friends on Omnexio. It is in our legitimate business interests
-              to provide you with a customized experience.
             </li>
             <li>
               <span className="font-medium">Device Information.</span> We collect your device type
@@ -60,7 +54,7 @@ export default function PrivacyPolicy() {
               <span className="font-medium">Subscription Billing Data.</span> We use a third-party
               service provider to collect and process your billing information when you subscribe to
               Omnexio. The information our billing provider collects may include your name, billing
-              address, your credit or debit card details, phone number, and email address. This
+              address, your credit or debit card details, and email address. This
               processing is necessary to comply with our contractual obligations to you.
             </li>
             <li>
