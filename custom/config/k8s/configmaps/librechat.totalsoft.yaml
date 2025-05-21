@@ -32,9 +32,15 @@ actions:
 
 
 mcpServers:
-  mcp-figma:
-    url: http://10.1.48.107:3333/sse
-    
+  #mcp-figma:
+  #  url: http://10.1.48.107:3333/sse
+  figma:
+    command: npx
+    args:
+      - -y
+      - "figma-developer-mcp"
+      - "--figma-api-key=${MCP_FIGMA_API_KEY}"
+      - "--stdio"
 
   #atlassian:
   #  type: sse
@@ -54,9 +60,9 @@ mcpServers:
       - -y
       - "mcp-remote"
       - "https://mcp.atlassian.com/v1/sse"
-      - "--jira-url=${MCP_ATLASSIAN_URL}"
-      - "--jira-username=${MCP_ATLASSIAN_USERNAME}"
-      - "--jira-token=${MCP_ATLASSIAN_TOKEN}"
+      - "--jira-url=${MCP_ATLASSIAN_JIRA_URL}"
+      - "--jira-username=${MCP_ATLASSIAN_JIRA_USERNAME}"
+      - "--jira-token=${MCP_ATLASSIAN_JIRA_TOKEN}"
 
 
 # Example MCP Servers Object Structure
