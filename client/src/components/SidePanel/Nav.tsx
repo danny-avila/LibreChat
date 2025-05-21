@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
@@ -9,6 +9,11 @@ import { cn } from '~/utils';
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
   const localize = useLocalize();
   const [active, _setActive] = useState<string | undefined>(defaultActive);
+  useEffect(() => {
+    if (defaultActive !== undefined) {
+      _setActive(defaultActive);
+    }
+  }, [defaultActive]);
   const getVariant = (link: NavLink) => (link.id === active ? 'default' : 'ghost');
 
   const setActive = (id: string) => {
