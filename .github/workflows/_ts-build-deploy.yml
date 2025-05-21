@@ -71,6 +71,7 @@ jobs:
           "REGISTRY_PASSWORD" = "${{ secrets.REGISTRY_PASSWORD }}"
           "GOOGLE_SEARCH_API_KEY" = "${{ secrets.GOOGLE_SEARCH_API_KEY }}"
           "GOOGLE_CSE_ID" = "${{ secrets.GOOGLE_CSE_ID }}"
+          "MCP_ATLASSIAN_TOKEN" = "${{ vars.MCP_ATLASSIAN_TOKEN }}"
         }
 
         $envVarsHashtable = @{
@@ -84,6 +85,8 @@ jobs:
           "DOMAIN_SERVER" = "${{ vars.DOMAIN_SERVER }}"
           "AZURE_OPENAI_INSTANCE" = "${{ vars.AZURE_OPENAI_INSTANCE }}"
           "ENDPOINTS" = "${{ vars.ENDPOINTS }}"
+          "MCP_ATLASSIAN_URL" = "${{ vars.MCP_ATLASSIAN_URL }}"
+          "MCP_ATLASSIAN_USERNAME" = "${{ vars.MCP_ATLASSIAN_USERNAME }}"
         }
 
         ./custom/scripts/build-and-deploy.ps1 `
