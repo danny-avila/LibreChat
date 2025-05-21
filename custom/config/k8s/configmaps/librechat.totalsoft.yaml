@@ -2,10 +2,10 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.2.4
+version: 1.2.5
 
 # Cache settings: Set to true to enable caching
-cache: true
+cache: false
 
 # File strategy s3/firebase
 # fileStrategy: "s3"
@@ -32,27 +32,14 @@ actions:
 
 
 mcpServers:
-  #mcp-figma:
-  #  url: http://10.1.48.107:3333/sse
   figma:
     command: npx
     args:
       - -y
       - "figma-developer-mcp"
-      - "--figma-api-key=${MCP_FIGMA_API_KEY}"
+      - "--figma-api-key"
+      - "${MCP_FIGMA_API_KEY}"
       - "--stdio"
-
-  #atlassian:
-  #  type: sse
-  #  url: https://mcp.atlassian.com/v1/sse
-  #  auth:
-  #    type: "oauth2"
-  #    clientId: "${ATLASSIAN_CLIENT_ID}"
-  #    clientSecret: "${ATLASSIAN_CLIENT_SECRET}"
-  #    authorizationEndpoint: "https://auth.atlassian.com/authorize"
-  #    tokenEndpoint: "https://auth.atlassian.com/token"
-  #    redirectUri: "http://localhost:3080"
-  #    scope: "read:jira-user read:jira-work" 
   
   atlassian:
     command: npx
@@ -63,35 +50,6 @@ mcpServers:
       - "--jira-url=${MCP_ATLASSIAN_JIRA_URL}"
       - "--jira-username=${MCP_ATLASSIAN_JIRA_USERNAME}"
       - "--jira-token=${MCP_ATLASSIAN_JIRA_TOKEN}"
-
-
-# Example MCP Servers Object Structure
-# mcpServers:
-#   everything:
-#     # type: sse # type can optionally be omitted
-#     url: http://localhost:3001/sse
-#     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-#   puppeteer:
-#     type: stdio
-#     command: npx
-#     args:
-#       - -y
-#       - "@modelcontextprotocol/server-puppeteer"
-#     timeout: 300000  # 5 minutes timeout for this server
-#   filesystem:
-#     # type: stdio
-#     command: npx
-#     args:
-#       - -y
-#       - "@modelcontextprotocol/server-filesystem"
-#       - /home/user/LibreChat/
-#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
-#   mcp-obsidian:
-#     command: npx
-#     args:
-#       - -y
-#       - "mcp-obsidian"
-#       - /path/to/obsidian/vault
 
 # Definition of custom endpoints
 endpoints:
