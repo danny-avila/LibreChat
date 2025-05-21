@@ -467,7 +467,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     /* Default value checks */
-    if (setting.type === SettingTypes.Number && isNaN(setting.default as number)) {
+    if (setting.type === SettingTypes.Number && isNaN(setting.default as number)  && setting.default != null) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a number.`,
@@ -475,7 +475,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       });
     }
 
-    if (setting.type === SettingTypes.Boolean && typeof setting.default !== 'boolean') {
+    if (setting.type === SettingTypes.Boolean && typeof setting.default !== 'boolean' && setting.default != null) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a boolean.`,
@@ -485,7 +485,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     if (
       (setting.type === SettingTypes.String || setting.type === SettingTypes.Enum) &&
-      typeof setting.default !== 'string'
+      typeof setting.default !== 'string' && setting.default != null
     ) {
       errors.push({
         code: ZodIssueCode.custom,
