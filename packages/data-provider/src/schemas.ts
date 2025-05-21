@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
+import type { SearchResultData } from './types/web';
 import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
-import type { SearchResultData } from './web';
 
 export const isUUID = z.string().uuid();
 

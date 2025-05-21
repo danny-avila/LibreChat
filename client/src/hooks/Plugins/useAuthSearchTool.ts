@@ -32,11 +32,11 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   const installTool = useCallback(
     (data: SearchApiKeyFormData) => {
       const auth = Object.entries({
-        [Constants.LC_VAR_PREFIX + 'SERPER_API_KEY']: data.serperApiKey,
-        [Constants.LC_VAR_PREFIX + 'FIRECRAWL_API_KEY']: data.firecrawlApiKey,
-        [Constants.LC_VAR_PREFIX + 'FIRECRAWL_API_URL']: data.firecrawlApiUrl,
-        [Constants.LC_VAR_PREFIX + 'JINA_API_KEY']: data.jinaApiKey,
-        [Constants.LC_VAR_PREFIX + 'COHERE_API_KEY']: data.cohereApiKey,
+        serperApiKey: data.serperApiKey,
+        firecrawlApiKey: data.firecrawlApiKey,
+        firecrawlApiUrl: data.firecrawlApiUrl,
+        jinaApiKey: data.jinaApiKey,
+        cohereApiKey: data.cohereApiKey,
       }).reduce(
         (acc, [key, value]) => {
           if (value) {
