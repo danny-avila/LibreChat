@@ -41,25 +41,27 @@ module.exports = {
     clientSecret: 'fake_client_secret',
     issuer: 'https://fake-issuer.com',
     Client: jest.fn().mockImplementation(() => ({
-        authorizationUrl: jest.fn().mockReturnValue('mock_auth_url'),
-        callback: jest.fn().mockResolvedValue({
-          access_token: 'mock_access_token',
-          id_token: 'mock_id_token',
-          claims: () => ({
-            sub: 'mock_sub',
-            email: 'mock@example.com',
-          }),
-        }),
-        userinfo: jest.fn().mockResolvedValue({
+      authorizationUrl: jest.fn().mockReturnValue('mock_auth_url'),
+      callback: jest.fn().mockResolvedValue({
+        access_token: 'mock_access_token',
+        id_token: 'mock_id_token',
+        claims: () => ({
           sub: 'mock_sub',
           email: 'mock@example.com',
         }),
-        grant: jest.fn().mockResolvedValue({ access_token: 'mock_grant_token' }), // For genericGrantRequest
-      })),
+      }),
+      userinfo: jest.fn().mockResolvedValue({
+        sub: 'mock_sub',
+        email: 'mock@example.com',
+      }),
+      grant: jest.fn().mockResolvedValue({ access_token: 'mock_grant_token' }), // For genericGrantRequest
+    })),
   }),
   fetchUserInfo: jest.fn().mockResolvedValue({
     preferred_username: 'preferred_username',
   }),
-  genericGrantRequest: jest.fn().mockResolvedValue({ access_token: 'mock_grant_access_token', expires_in: 3600 }),
+  genericGrantRequest: jest
+    .fn()
+    .mockResolvedValue({ access_token: 'mock_grant_access_token', expires_in: 3600 }),
   customFetch: Symbol('customFetch'),
 };
