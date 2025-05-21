@@ -35,25 +35,6 @@ mcpServers:
   mcp-figma:
     url: http://10.1.48.107:3333/sse
     
-#  mcp-atlassian:
-#    url: https://mcp-atlassian.totalsoft.local/sse
-#    url: https://mcp-atlassian.totalsoft.local/sse
-    # command: npx
-    # args:
-    #   - "mcp-remote"
-    #   - "https://mcp.atlassian.com/v1/sse"
-    #   - "--jira-url=https://douacreioane.atlassian.net/jira/projects"
-    #   - "--jira-username=radu.urdea@hotmail.com"
-    #   - "--jira-token=ATATT3xFfGF04zJXz72CG-6GHEMV2Bd2eyaISqpV9qoCW6DhSejBU2VuGEaTAYE8J9zzzYHdfsis0i9sFFnJPrCIBN_7ZaDh1tyA_Vh4r4qN_4vy0QeoDYRSuEtP0VDif6hP2vNIdEfVh5w_1QAr5_PGWj_0LkYKQA-WOjVSzpNvznWUT7FpM9w=D272DF87"
-  #atlassian:
-  #  command: npx
-  #  args:
-  #    - "-y"
-  #    - "https://mcp.atlassian.com/v1/sse"
-  #    - "--jira-url=https://douacreioane.atlassian.net/jira/projects"
-  #    - "--jira-username=radu.urdea@hotmail.com"
-  #    - "--jira-token=ATATT3xFfGF04zJXz72CG-6GHEMV2Bd2eyaISqpV9qoCW6DhSejBU2VuGEaTAYE8J9zzzYHdfsis0i9sFFnJPrCIBN_7ZaDh1tyA_Vh4r4qN_4vy0QeoDYRSuEtP0VDif6hP2vNIdEfVh5w_1QAr5_PGWj_0LkYKQA-WOjVSzpNvznWUT7FpM9w=D272DF87"
-  
 
   #atlassian:
   #  type: sse
