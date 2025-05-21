@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, memo } from 'react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel } from '~/components/ui/Resizable';
@@ -53,15 +54,21 @@ const SidePanel = ({
   const { endpoint } = conversation ?? {};
   const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
 
-  const defaultActive = useMemo(() => {
-    const activePanel = localStorage.getItem('side:active-panel');
-    return typeof activePanel === 'string' ? activePanel : undefined;
-  }, []);
-
   const endpointType = useMemo(
     () => getEndpointField(endpointsConfig, endpoint, 'type'),
     [endpoint, endpointsConfig],
   );
+
+  const defaultActive = useMemo(() => {
+    const activePanel = localStorage.getItem('side:active-panel');
+    if (typeof activePanel === 'string') {
+      return activePanel;
+    }
+    if (isAgentsEndpoint(endpoint) || isAgentsEndpoint(endpointType)) {
+      return 'agents';
+    }
+    return undefined;
+  }, [endpoint, endpointType]);
   const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
   const agents = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
 
