@@ -70,6 +70,8 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  # Recommended: Set to true to display all agents directly
+  agentsStandalone: true
 
 # Example Registration Object Structure (optional)
 registration:
