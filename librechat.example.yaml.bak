@@ -23,13 +23,13 @@ interface:
     externalUrl: 'https://librechat.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: "Terms of Service for LibreChat"
+    modalTitle: "Terms of Service for Digital Digging"
     modalContent: |
-      # Terms and Conditions for LibreChat
+      # Terms and Conditions for Digital Digging 
 
       *Effective Date: February 18, 2024*
 
-      Welcome to LibreChat, the informational website for the open-source AI chat platform, available at https://librechat.ai. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://librechat.ai//privacy.
+      These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://librechat.ai//privacy.
 
       ## 1. Ownership
 
@@ -64,14 +64,20 @@ interface:
   endpointsMenu: true
   modelSelect: true
   parameters: true
-  sidePanel: false
+  sidePanel: true
   presets: true
   prompts: true
   bookmarks: true
-  multiConvo: false
+  multiConvo: true
   agents: true
-  # Recommended: Set to true to display all agents directly
   agentsStandalone: true
+
+# Example Cloudflare turnstile (optional)
+#turnstile:
+#  siteKey: "your-site-key-here"
+#  options:
+#    language: "auto"    # "auto" or an ISO 639-1 language code (e.g. en)
+#    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
 
 # Example Registration Object Structure (optional)
 registration:
@@ -289,5 +295,8 @@ endpoints:
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
+#   imageGeneration: # Image Gen settings, either percentage or px
+#     percentage: 100
+#     px: 1024
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint

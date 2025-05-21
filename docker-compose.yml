@@ -2,6 +2,9 @@
 # Refer to `docker-compose.override.yaml.example’ for some sample configurations.
 
 services:
+  redis:
+    image: redis:6.2
+    restart: always
   api:
     container_name: LibreChat
     ports:
