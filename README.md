@@ -171,6 +171,13 @@ Keep up with the latest updates by visiting the releases page and notes:
   </a>
 </p>
 
+## 🗂️ `agentsStandalone` Option
+
+Setting `agentsStandalone: true` removes the "Agents" group from the endpoint
+menu and lists each agent individually. Configure this in `librechat.yaml` or
+set the `AGENTS_STANDALONE` environment variable so all agents appear directly
+in the dropdown.
+
 ---
 
 ## ✨ Contributions
