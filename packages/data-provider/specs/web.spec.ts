@@ -1,4 +1,10 @@
-import type { TCustomConfig, SearchProviders, ScraperTypes, TWebSearchConfig } from '../src/config';
+import type {
+  ScraperTypes,
+  TCustomConfig,
+  RerankerTypes,
+  SearchProviders,
+  TWebSearchConfig,
+} from '../src/config';
 import { webSearchAuth, loadWebSearchAuth, extractWebSearchEnvVars } from '../src/web';
 import { AuthType } from '../src/schemas';
 
@@ -315,6 +321,257 @@ describe('web.ts', () => {
     it('should mark optional keys with value 0', () => {
       // Keys with value 0 are optional
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiUrl).toBe(0);
+    });
+  });
+  describe('loadWebSearchAuth with specific services', () => {
+    // Common test variables
+    const userId = 'test-user-id';
+    let mockLoadAuthValues: jest.Mock;
+
+    beforeEach(() => {
+      // Reset mocks before each test
+      jest.clearAllMocks();
+
+      // Initialize the mock function
+      mockLoadAuthValues = jest.fn();
+    });
+
+    it('should only check the specified searchProvider', async () => {
+      // Initialize a webSearchConfig with a specific searchProvider
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+        searchProvider: 'serper' as SearchProviders,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('serper');
+
+      // Verify that only SERPER_API_KEY was requested for the providers category
+      const providerCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('SERPER_API_KEY'),
+      );
+      expect(providerCalls.length).toBe(1);
+    });
+
+    it('should only check the specified scraperType', async () => {
+      // Initialize a webSearchConfig with a specific scraperType
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+        scraperType: 'firecrawl' as ScraperTypes,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperType).toBe('firecrawl');
+
+      // Verify that only FIRECRAWL_API_KEY and FIRECRAWL_API_URL were requested for the scrapers category
+      const scraperCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('FIRECRAWL_API_KEY'),
+      );
+      expect(scraperCalls.length).toBe(1);
+    });
+
+    it('should only check the specified rerankerType', async () => {
+      // Initialize a webSearchConfig with a specific rerankerType
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+        rerankerType: 'jina' as RerankerTypes,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.rerankerType).toBe('jina');
+
+      // Verify that only JINA_API_KEY was requested for the rerankers category
+      const rerankerCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('JINA_API_KEY'),
+      );
+      expect(rerankerCalls.length).toBe(1);
+
+      // Verify that COHERE_API_KEY was not requested
+      const cohereCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('COHERE_API_KEY'),
+      );
+      expect(cohereCalls.length).toBe(0);
+    });
+
+    it('should handle invalid specified service gracefully', async () => {
+      // Initialize a webSearchConfig with an invalid searchProvider
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+        searchProvider: 'invalid-provider' as SearchProviders,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      // Should fail because the specified provider doesn't exist
+      expect(result.authenticated).toBe(false);
+    });
+
+    it('should fail authentication when specified service is not authenticated but others are', async () => {
+      // Initialize a webSearchConfig with a specific rerankerType (jina)
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+        rerankerType: 'jina' as RerankerTypes,
+      };
+
+      // Mock authentication where cohere is authenticated but jina is not
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          // Authenticate all fields except JINA_API_KEY
+          if (field !== 'JINA_API_KEY') {
+            result[field] =
+              field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      // Should fail because the specified reranker (jina) is not authenticated
+      // even though another reranker (cohere) might be authenticated
+      expect(result.authenticated).toBe(false);
+
+      // Verify that JINA_API_KEY was requested
+      const jinaApiKeyCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('JINA_API_KEY'),
+      );
+      expect(jinaApiKeyCalls.length).toBe(1);
+
+      // Verify that COHERE_API_KEY was not requested since we specified jina
+      const cohereApiKeyCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('COHERE_API_KEY'),
+      );
+      expect(cohereApiKeyCalls.length).toBe(0);
+    });
+
+    it('should check all services if none are specified', async () => {
+      // Initialize a webSearchConfig without specific services
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+
+      // Should have checked all categories
+      expect(result.authTypes).toHaveLength(3);
+
+      // Should have set values for all categories
+      expect(result.authResult.searchProvider).toBeDefined();
+      expect(result.authResult.scraperType).toBeDefined();
+      expect(result.authResult.rerankerType).toBeDefined();
     });
   });
 });

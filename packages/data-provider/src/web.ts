@@ -146,9 +146,28 @@ export async function loadWebSearchAuth({
   ): Promise<[boolean, boolean]> {
     type ServiceType = keyof (typeof webSearchAuth)[C];
     let isUserProvided = false;
-    const services = Object.keys(webSearchAuth[category]) as ServiceType[];
+
+    // Check if a specific service is specified in the config
+    let specificService: ServiceType | undefined;
+    if (category === 'providers' && webSearchConfig?.searchProvider) {
+      specificService = webSearchConfig.searchProvider as unknown as ServiceType;
+    } else if (category === 'scrapers' && webSearchConfig?.scraperType) {
+      specificService = webSearchConfig.scraperType as unknown as ServiceType;
+    } else if (category === 'rerankers' && webSearchConfig?.rerankerType) {
+      specificService = webSearchConfig.rerankerType as unknown as ServiceType;
+    }
+
+    // If a specific service is specified, only check that one
+    const services = specificService
+      ? [specificService]
+      : (Object.keys(webSearchAuth[category]) as ServiceType[]);
 
     for (const service of services) {
+      // Skip if the service doesn't exist in the webSearchAuth config
+      if (!webSearchAuth[category][service]) {
+        continue;
+      }
+
       const serviceConfig = webSearchAuth[category][service];
 
       // Split keys into required and optional
