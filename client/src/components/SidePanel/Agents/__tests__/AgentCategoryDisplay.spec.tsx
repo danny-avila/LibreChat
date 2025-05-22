@@ -9,34 +9,34 @@ jest.mock('~/hooks/Agents', () => ({
       {
         value: 'general',
         label: 'General',
-        icon: <span data-testid="icon-general">Icon</span>,
-        className: 'w-full'
+        icon: <span data-testid="icon-general">{''}</span>,
+        className: 'w-full',
       },
       {
         value: 'hr',
         label: 'HR',
-        icon: <span data-testid="icon-hr">Icon</span>,
-        className: 'w-full'
+        icon: <span data-testid="icon-hr">{''}</span>,
+        className: 'w-full',
       },
       {
         value: 'rd',
         label: 'R&D',
-        icon: <span data-testid="icon-rd">Icon</span>,
-        className: 'w-full'
+        icon: <span data-testid="icon-rd">{''}</span>,
+        className: 'w-full',
       },
       {
         value: 'finance',
         label: 'Finance',
-        icon: <span data-testid="icon-finance">Icon</span>,
-        className: 'w-full'
+        icon: <span data-testid="icon-finance">{''}</span>,
+        className: 'w-full',
       },
     ],
     emptyCategory: {
       value: '',
       label: 'General',
-      className: 'w-full'
-    }
-  })
+      className: 'w-full',
+    },
+  }),
 }));
 
 describe('AgentCategoryDisplay', () => {
