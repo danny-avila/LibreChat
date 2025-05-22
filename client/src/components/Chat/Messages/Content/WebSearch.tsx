@@ -7,6 +7,7 @@ import { useLocalize } from '~/hooks';
 
 type ProgressKeys =
   | 'com_ui_web_searching'
+  | 'com_ui_web_searching_again'
   | 'com_ui_web_search_processing'
   | 'com_ui_web_search_reading';
 
@@ -44,6 +45,10 @@ export default function WebSearch({
       (source) => source.processed === true,
     );
   }, [searchResults, complete, finalizing]);
+  const turns = useMemo(() => {
+    if (!searchResults) return 0;
+    return Object.values(searchResults).length;
+  }, [searchResults]);
 
   const clampedProgress = useMemo(() => {
     return Math.min(progress, 0.99);
@@ -51,16 +56,15 @@ export default function WebSearch({
 
   const showSources = processedSources.length > 0;
   const progressText = useMemo(() => {
-    let text: ProgressKeys = 'com_ui_web_searching';
+    let text: ProgressKeys = turns > 1 ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
       text = 'com_ui_web_search_processing';
     }
     if (finalizing) {
       text = 'com_ui_web_search_reading';
     }
-
     return localize(text);
-  }, [localize, showSources, finalizing]);
+  }, [turns, localize, showSources, finalizing]);
 
   if (complete || cancelled) {
     return null;
@@ -75,6 +79,7 @@ export default function WebSearch({
         )}
         <ProgressText
           finishedText=""
+          hasInput={false}
           error={cancelled}
           isExpanded={false}
           progress={clampedProgress}
