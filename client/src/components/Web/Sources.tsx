@@ -323,6 +323,13 @@ export default function Sources() {
       }
       if (result.references?.length) {
         result.references.forEach((source) => {
+          if (source.type === 'image') {
+            imagesMap.set(source.link, {
+              ...source,
+              imageUrl: source.link,
+            });
+            return;
+          }
           if (source.link) {
             organicSourcesMap.set(source.link, source);
           }
