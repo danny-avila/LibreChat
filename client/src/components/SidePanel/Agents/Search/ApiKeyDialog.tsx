@@ -32,14 +32,14 @@ export default function ApiKeyDialog({
   const [selectedReranker, setSelectedReranker] = useState<'jina' | 'cohere'>('jina');
 
   // Dropdown open states
-  const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
+  const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
   const [scraperDropdownOpen, setScraperDropdownOpen] = useState(false);
   const [rerankerDropdownOpen, setRerankerDropdownOpen] = useState(false);
 
   // Dropdown items
-  const engineItems: MenuItemProps[] = [
+  const providerItems: MenuItemProps[] = [
     {
-      label: localize('com_ui_web_search_engine_serper'),
+      label: localize('com_ui_web_search_provider_serper'),
       onClick: () => {},
     },
   ];
@@ -74,23 +74,23 @@ export default function ApiKeyDialog({
               {localize('com_ui_web_search_api_subtitle')}
             </div>
             <form onSubmit={handleSubmit(onSubmit)}>
-              {/* Search Engine Section */}
+              {/* Search Provider Section */}
               <div className="mb-6">
                 <div className="mb-2 flex items-center justify-between">
                   <Label className="text-md w-fit font-medium">
-                    {localize('com_ui_web_search_engine')}
+                    {localize('com_ui_web_search_provider')}
                   </Label>
                   <DropdownPopup
-                    menuId="search-engine-dropdown"
-                    items={engineItems}
-                    isOpen={engineDropdownOpen}
-                    setIsOpen={setEngineDropdownOpen}
+                    menuId="search-provider-dropdown"
+                    items={providerItems}
+                    isOpen={providerDropdownOpen}
+                    setIsOpen={setProviderDropdownOpen}
                     trigger={
                       <Menu.MenuButton
-                        onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
+                        onClick={() => setProviderDropdownOpen(!providerDropdownOpen)}
                         className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
                       >
-                        {localize('com_ui_web_search_engine_serper')}
+                        {localize('com_ui_web_search_provider_serper')}
                         <ChevronDown className="ml-1 h-4 w-4" />
                       </Menu.MenuButton>
                     }
@@ -111,7 +111,7 @@ export default function ApiKeyDialog({
                     rel="noopener noreferrer"
                     className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
                   >
-                    {localize('com_ui_web_search_engine_serper_key')}
+                    {localize('com_ui_web_search_provider_serper_key')}
                   </a>
                 </div>
               </div>
