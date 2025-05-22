@@ -26,6 +26,7 @@ function loadTurnstileConfig(config, configDefaults) {
     options: customTurnstile.options ?? defaults.options,
   });
 
+
   const enabled = Boolean(loadedTurnstile.siteKey);
 
   if (enabled) {
@@ -35,6 +36,7 @@ function loadTurnstileConfig(config, configDefaults) {
   } else {
     logger.info('Turnstile is DISABLED (no siteKey provided).');
   }
+
 
   return loadedTurnstile;
 }
