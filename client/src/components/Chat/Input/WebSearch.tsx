@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback } from 'react';
+import React, { memo, useRef, useMemo, useCallback } from 'react';
 import { Globe } from 'lucide-react';
 import debounce from 'lodash/debounce';
 import { useRecoilState } from 'recoil';
@@ -32,6 +32,7 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
 };
 
 function WebSearch({ conversationId }: { conversationId?: string | null }) {
+  const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
 
@@ -73,9 +74,10 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
   );
 
   const handleChange = useCallback(
-    (isChecked: boolean) => {
+    (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => {
       if (!isAuthenticated) {
         setIsDialogOpen(true);
+        e.preventDefault();
         return;
       }
       setWebSearch(isChecked);
@@ -95,6 +97,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
   return (
     <>
       <CheckboxButton
+        ref={triggerRef}
         className="max-w-fit"
         defaultChecked={webSearch}
         setValue={debouncedChange}
@@ -106,6 +109,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
         onSubmit={onSubmit}
         authTypes={authTypes}
         isOpen={isDialogOpen}
+        triggerRef={triggerRef}
         register={methods.register}
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}
