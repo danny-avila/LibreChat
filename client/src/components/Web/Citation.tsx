@@ -91,13 +91,15 @@ export function CompositeCitation(props: CompositeCitationProps) {
           href={currentSource.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="cursor-pointer"
+          className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400"
         >
           {currentSource.attribution}
         </a>
       </span>
-      <h4 className="mb-1.5 mt-0 text-sm text-text-primary">{currentSource.title}</h4>
-      <p className="my-2 text-sm text-text-secondary">{currentSource.snippet}</p>
+      <h4 className="mb-1.5 mt-0 text-xs text-text-primary md:text-sm">{currentSource.title}</h4>
+      <p className="my-2 text-ellipsis break-all text-xs text-text-secondary md:text-sm">
+        {currentSource.snippet}
+      </p>
     </SourceHovercard>
   );
 }

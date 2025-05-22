@@ -76,12 +76,11 @@ export function SourceHovercard({
 
           <Ariakit.Hovercard
             gutter={16}
-            className="dark:shadow-lg-dark z-[999] w-[300px] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
+            className="dark:shadow-lg-dark z-[999] w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg"
             portal={true}
             unmountOnHide={true}
           >
             {children}
-
             {!children && (
               <>
                 <span className="mb-2 flex items-center">
@@ -90,17 +89,19 @@ export function SourceHovercard({
                     href={source.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="cursor-pointer font-bold text-[#0066cc] hover:underline dark:text-blue-400"
+                    className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400"
                   >
                     {source.attribution || domain}
                   </a>
                 </span>
 
-                <h4 className="mb-1.5 mt-0 text-sm text-text-primary">
+                <h4 className="mb-1.5 mt-0 text-xs text-text-primary md:text-sm">
                   {source.title || source.link}
                 </h4>
                 {source.snippet && (
-                  <span className="my-2 text-sm text-text-secondary">{source.snippet}</span>
+                  <span className="my-2 text-ellipsis break-all text-xs text-text-secondary md:text-sm">
+                    {source.snippet}
+                  </span>
                 )}
               </>
             )}
