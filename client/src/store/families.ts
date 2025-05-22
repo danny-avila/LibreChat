@@ -355,7 +355,8 @@ function useConversationParamsSync(index: string | number) {
     }
 
     const disableParams = conversation.disableParams === true;
-    const shouldUpdateParams = index === 0 && !disableParams && conversation.createdAt === '';
+    const shouldUpdateParams =
+      Number(index) === 0 && !disableParams && conversation.createdAt === '';
 
     if (shouldUpdateParams) {
       const newParams = createChatSearchParams(conversation);
