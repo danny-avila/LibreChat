@@ -27,18 +27,12 @@ const AgentCategorySelector: React.FC = () => {
     agent_id: string | null,
   ) => {
     useEffect(() => {
-      if (agent_id === '') {
-        // Form has been reset, ensure field is set to default
-        if (field.value !== 'general') {
-          field.onChange('general');
-        }
-      }
-      // If value is empty or undefined, default to 'general'
-      if (!field.value) {
+      // Only set default value on new agent creation or if field is completely empty
+      if (agent_id === '' && !field.value) {
         field.onChange('general');
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [field]); // Removing agent_id from dependencies as suggested by ESLint
+    }, [agent_id]); // Only run when agent_id changes
   };
 
   const getCategoryDisplayValue = (value: string) => {
@@ -73,11 +67,11 @@ const AgentCategorySelector: React.FC = () => {
 
         return (
           <ControlCombobox
-            selectedValue={field.value || 'general'}
+            selectedValue={field.value}
             displayValue={displayValue}
             searchPlaceholder={searchPlaceholder}
             setValue={(value) => {
-              field.onChange(value || 'general');
+              field.onChange(value);
             }}
             items={comboboxItems}
             className=""
