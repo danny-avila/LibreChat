@@ -571,6 +571,11 @@ export type TStartupConfig = {
   instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
+  webSearch?: {
+    searchProvider?: SearchProviders;
+    scraperType?: ScraperTypes;
+    rerankerType?: RerankerTypes;
+  };
 };
 
 export enum OCRStrategy {
