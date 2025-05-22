@@ -133,6 +133,10 @@ actions:
 #       - -y
 #       - "mcp-obsidian"
 #       - /path/to/obsidian/vault
+mcpServers:
+  openapi:
+    type: sse
+    url: http://mcp-openapi:3000/mcp
 
 # Definition of custom endpoints
 endpoints:
