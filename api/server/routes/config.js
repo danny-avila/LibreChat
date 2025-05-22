@@ -86,7 +86,7 @@ router.get('/', async function (req, res) {
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
     };
     /** @type {TCustomConfig['webSearch']} */
-    const webSearchConfig = req.app.locals.webSearchConfig;
+    const webSearchConfig = req.app.locals.webSearch;
     if (
       webSearchConfig != null &&
       (webSearchConfig.searchProvider ||
@@ -100,7 +100,7 @@ router.get('/', async function (req, res) {
       payload.webSearch.searchProvider = webSearchConfig.searchProvider;
     }
     if (webSearchConfig?.scraperType) {
-      payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+      payload.webSearch.scraperType = webSearchConfig.scraperType;
     }
     if (webSearchConfig?.rerankerType) {
       payload.webSearch.rerankerType = webSearchConfig.rerankerType;
