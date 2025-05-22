@@ -29,7 +29,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = theme === 'dark' ? 'dark' : 'light';
+
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
+
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -149,6 +151,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             {localize('com_auth_password_forgot')}
           </a>
         )}
+
 
         {requireCaptcha && (
           <div className="my-4 flex justify-center">

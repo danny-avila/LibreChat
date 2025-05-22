@@ -33,6 +33,7 @@ const Registration: React.FC = () => {
   const token = queryParams.get('token');
   const validTheme = theme === 'dark' ? 'dark' : 'light';
 
+
   // only require captcha if we have a siteKey
   const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
 
@@ -179,6 +180,7 @@ const Registration: React.FC = () => {
             })}
 
             {startupConfig?.turnstile?.siteKey && (
+
               <div className="my-4 flex justify-center">
                 <Turnstile
                   siteKey={startupConfig.turnstile.siteKey}
@@ -198,6 +200,7 @@ const Registration: React.FC = () => {
                 disabled={
                   Object.keys(errors).length > 0 ||
                   isSubmitting ||
+
                   (requireCaptcha && !turnstileToken)
                 }
                 type="submit"

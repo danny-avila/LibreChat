@@ -53,6 +53,7 @@ export default function AgentFooter({
   const showButtons = activePanel === Panel.builder;
 
   return (
+
     <div className="mb-1 flex w-full flex-col gap-2">
       {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
       {showButtons && agent_id && <VersionButton setActivePanel={setActivePanel} />}

@@ -36,6 +36,7 @@ function loadTurnstileConfig(config, configDefaults) {
     logger.info('Turnstile is DISABLED (no siteKey provided).');
   }
 
+
   return loadedTurnstile;
 }
 
