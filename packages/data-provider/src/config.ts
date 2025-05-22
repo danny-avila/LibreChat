@@ -735,6 +735,10 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-20250514',
+  'claude-sonnet-4-latest',
+  'claude-opus-4-20250514',
+  'claude-opus-4-latest',
   'claude-3-7-sonnet-latest',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
@@ -904,6 +908,9 @@ export const visionModels = [
   'llama-3.2-90b-vision',
   'llama-3-2-90b-vision',
   'llama-4',
+  'claude-opus-4',
+  'claude-sonnet-4',
+  'claude-haiku-4',
 ];
 export enum VisionModes {
   generative = 'generative',
