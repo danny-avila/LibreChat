@@ -229,7 +229,6 @@ export default function AgentConfig({
             )}
           />
         </div>
-        
         {/* Category */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="category-selector">
@@ -351,7 +350,10 @@ export default function AgentConfig({
           <div className="space-y-3">
             {/* Support Contact Name */}
             <div className="flex flex-col">
-              <label className="flex items-center justify-between mb-1" htmlFor="support-contact-name">
+              <label
+                className="mb-1 flex items-center justify-between"
+                htmlFor="support-contact-name"
+              >
                 <span className="text-sm">{localize('com_ui_support_contact_name')}</span>
               </label>
               <Controller
@@ -383,10 +385,12 @@ export default function AgentConfig({
                 )}
               />
             </div>
-            
             {/* Support Contact Email */}
             <div className="flex flex-col">
-              <label className="flex items-center justify-between mb-1" htmlFor="support-contact-email">
+              <label
+                className="mb-1 flex items-center justify-between"
+                htmlFor="support-contact-email"
+              >
                 <span className="text-sm">{localize('com_ui_support_contact_email')}</span>
               </label>
               <Controller
