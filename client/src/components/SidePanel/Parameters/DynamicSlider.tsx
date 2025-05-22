@@ -33,7 +33,7 @@ function DynamicSlider({
   );
 
   const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
-    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    optionKey: settingKey,
     initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
     setOption,
