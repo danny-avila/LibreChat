@@ -113,7 +113,7 @@ export interface WebSearchAuthResult {
   /** Authentication type (user_provided or system_defined) by category */
   authTypes: [TWebSearchCategories, AuthType][];
   /** Original authentication values mapped to their respective keys */
-  authResult: Partial<Record<TWebSearchKeys, string | undefined>>;
+  authResult: Partial<TWebSearchConfig>;
 }
 
 /**
