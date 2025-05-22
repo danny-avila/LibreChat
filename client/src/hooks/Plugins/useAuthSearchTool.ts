@@ -16,14 +16,19 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   const isEntityTool = options?.isEntityTool ?? true;
   const updateUserPlugins = useUpdateUserPluginsMutation({
     onMutate: (vars) => {
-      queryClient.setQueryData([QueryKeys.toolAuth, Tools.web_search], () => ({
-        authenticated: vars.action === 'install',
-        authTypes: [
-          ['providers', AuthType.USER_PROVIDED],
-          ['scrapers', AuthType.USER_PROVIDED],
-          ['rerankers', AuthType.USER_PROVIDED],
-        ],
-      }));
+      queryClient.setQueryData([QueryKeys.toolAuth, Tools.web_search], () => {
+        return {
+          authenticated: vars.action === 'install',
+          authTypes:
+            vars.action === 'install'
+              ? [
+                  ['providers', AuthType.USER_PROVIDED],
+                  ['scrapers', AuthType.USER_PROVIDED],
+                  ['rerankers', AuthType.USER_PROVIDED],
+                ]
+              : [],
+        };
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.toolAuth, Tools.web_search]);

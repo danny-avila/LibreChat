@@ -2,6 +2,7 @@ const {
   Tools,
   Constants,
   FileSources,
+  webSearchKeys,
   extractWebSearchEnvVars,
 } = require('librechat-data-provider');
 const {
@@ -104,7 +105,7 @@ const updateUserPluginsController = async (req, res) => {
     }
 
     let keys = Object.keys(auth);
-    if (keys.length === 0) {
+    if (keys.length === 0 && pluginKey !== Tools.web_search) {
       return res.status(200).send();
     }
     const values = Object.values(auth);
@@ -119,7 +120,10 @@ const updateUserPluginsController = async (req, res) => {
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
       const webSearchConfig = req.app.locals?.webSearch;
-      keys = extractWebSearchEnvVars({ keys, config: webSearchConfig });
+      keys = extractWebSearchEnvVars({
+        keys: action === 'install' ? keys : webSearchKeys,
+        config: webSearchConfig,
+      });
     }
 
     if (action === 'install') {
