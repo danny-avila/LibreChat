@@ -93,4 +93,52 @@ describe('ApiKeyDialog', () => {
     fireEvent.click(screen.getByText('com_ui_web_search_reranker_cohere'));
     expect(screen.getByText('com_ui_web_search_reranker_cohere_key')).toBeInTheDocument();
   });
+
+  it('does not render provider section if SYSTEM_DEFINED', () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    const props = {
+      ...defaultProps,
+      authTypes: [
+        ['providers', AuthType.SYSTEM_DEFINED],
+        ['scrapers', AuthType.USER_PROVIDED],
+        ['rerankers', AuthType.USER_PROVIDED],
+      ] as [string, AuthType][],
+    };
+    render(<ApiKeyDialog {...props} />);
+    expect(screen.queryByText('com_ui_web_search_provider')).not.toBeInTheDocument();
+    expect(screen.getByText('com_ui_web_search_scraper')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_web_search_reranker')).toBeInTheDocument();
+  });
+
+  it('does not render scraper section if SYSTEM_DEFINED', () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    const props = {
+      ...defaultProps,
+      authTypes: [
+        ['providers', AuthType.USER_PROVIDED],
+        ['scrapers', AuthType.SYSTEM_DEFINED],
+        ['rerankers', AuthType.USER_PROVIDED],
+      ] as [string, AuthType][],
+    };
+    render(<ApiKeyDialog {...props} />);
+    expect(screen.getByText('com_ui_web_search_provider')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_web_search_scraper')).not.toBeInTheDocument();
+    expect(screen.getByText('com_ui_web_search_reranker')).toBeInTheDocument();
+  });
+
+  it('does not render reranker section if SYSTEM_DEFINED', () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    const props = {
+      ...defaultProps,
+      authTypes: [
+        ['providers', AuthType.USER_PROVIDED],
+        ['scrapers', AuthType.USER_PROVIDED],
+        ['rerankers', AuthType.SYSTEM_DEFINED],
+      ] as [string, AuthType][],
+    };
+    render(<ApiKeyDialog {...props} />);
+    expect(screen.getByText('com_ui_web_search_provider')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_web_search_scraper')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_web_search_reranker')).not.toBeInTheDocument();
+  });
 });

@@ -47,7 +47,7 @@ const verifyWebSearchAuth = async (req, res) => {
 
     return res.status(200).json({
       authenticated: result.authenticated,
-      authTypes: result.authenticated ? result.authTypes : [],
+      authTypes: result.authTypes,
     });
   } catch (error) {
     console.error('Error in verifyWebSearchAuth:', error);

@@ -244,11 +244,12 @@ export async function loadWebSearchAuth({
   const authTypes: [TWebSearchCategories, AuthType][] = [];
   for (const category of categories) {
     const [isCategoryAuthenticated, isUserProvided] = await checkAuth(category);
-    authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
     if (!isCategoryAuthenticated) {
       authenticated = false;
-      break;
+      authTypes.push([category, AuthType.USER_PROVIDED]);
+      continue;
     }
+    authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
   }
 
   authResult.safeSearch = webSearchConfig?.safeSearch ?? true;

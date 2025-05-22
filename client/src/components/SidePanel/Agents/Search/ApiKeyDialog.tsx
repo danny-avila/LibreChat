@@ -71,6 +71,11 @@ export default function ApiKeyDialog({
   const showScraperDropdown = !config?.webSearch?.scraperType;
   const showRerankerDropdown = !config?.webSearch?.rerankerType;
 
+  // Determine which categories are SYSTEM_DEFINED
+  const providerAuthType = authTypes.find(([cat]) => cat === 'providers')?.[1];
+  const scraperAuthType = authTypes.find(([cat]) => cat === 'scrapers')?.[1];
+  const rerankerAuthType = authTypes.find(([cat]) => cat === 'rerankers')?.[1];
+
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       <OGDialogTemplate
@@ -84,142 +89,190 @@ export default function ApiKeyDialog({
             </div>
             <form onSubmit={handleSubmit(onSubmit)}>
               {/* Search Provider Section */}
-              <div className="mb-6">
-                <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-md w-fit font-medium">
-                    {localize('com_ui_web_search_provider')}
-                  </Label>
-                  {showProviderDropdown ? (
-                    <DropdownPopup
-                      menuId="search-provider-dropdown"
-                      items={providerItems}
-                      isOpen={providerDropdownOpen}
-                      setIsOpen={setProviderDropdownOpen}
-                      trigger={
-                        <Menu.MenuButton
-                          onClick={() => setProviderDropdownOpen(!providerDropdownOpen)}
-                          className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
-                        >
-                          {localize('com_ui_web_search_provider_serper')}
-                          <ChevronDown className="ml-1 h-4 w-4" />
-                        </Menu.MenuButton>
-                      }
-                    />
-                  ) : (
-                    <div className="text-sm text-text-secondary">
-                      {localize('com_ui_web_search_provider_serper')}
-                    </div>
-                  )}
+              {providerAuthType !== AuthType.SYSTEM_DEFINED && (
+                <div className="mb-6">
+                  <div className="mb-2 flex items-center justify-between">
+                    <Label className="text-md w-fit font-medium">
+                      {localize('com_ui_web_search_provider')}
+                    </Label>
+                    {showProviderDropdown ? (
+                      <DropdownPopup
+                        menuId="search-provider-dropdown"
+                        items={providerItems}
+                        isOpen={providerDropdownOpen}
+                        setIsOpen={setProviderDropdownOpen}
+                        trigger={
+                          <Menu.MenuButton
+                            onClick={() => setProviderDropdownOpen(!providerDropdownOpen)}
+                            className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                          >
+                            {localize('com_ui_web_search_provider_serper')}
+                            <ChevronDown className="ml-1 h-4 w-4" />
+                          </Menu.MenuButton>
+                        }
+                      />
+                    ) : (
+                      <div className="text-sm text-text-secondary">
+                        {localize('com_ui_web_search_provider_serper')}
+                      </div>
+                    )}
+                  </div>
+                  <Input
+                    type="password"
+                    placeholder={`${localize('com_ui_enter_api_key')}`}
+                    autoComplete="one-time-code"
+                    readOnly={true}
+                    onFocus={(e) => (e.target.readOnly = false)}
+                    {...register('serperApiKey', { required: true })}
+                  />
+                  <div className="mt-1 text-xs text-text-secondary">
+                    <a
+                      href="https://serper.dev/api-key"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      {localize('com_ui_web_search_provider_serper_key')}
+                    </a>
+                  </div>
                 </div>
-                <Input
-                  type="password"
-                  placeholder={`${localize('com_ui_enter_api_key')}`}
-                  autoComplete="one-time-code"
-                  readOnly={true}
-                  onFocus={(e) => (e.target.readOnly = false)}
-                  {...register('serperApiKey', { required: true })}
-                />
-                <div className="mt-1 text-xs text-text-secondary">
-                  <a
-                    href="https://serper.dev/api-key"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                  >
-                    {localize('com_ui_web_search_provider_serper_key')}
-                  </a>
-                </div>
-              </div>
+              )}
 
               {/* Scraper Section */}
-              <div className="mb-6">
-                <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-md w-fit font-medium">
-                    {localize('com_ui_web_search_scraper')}
-                  </Label>
-                  {showScraperDropdown ? (
-                    <DropdownPopup
-                      menuId="scraper-dropdown"
-                      items={scraperItems}
-                      isOpen={scraperDropdownOpen}
-                      setIsOpen={setScraperDropdownOpen}
-                      trigger={
-                        <Menu.MenuButton
-                          onClick={() => setScraperDropdownOpen(!scraperDropdownOpen)}
-                          className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
-                        >
-                          {localize('com_ui_web_search_scraper_firecrawl')}
-                          <ChevronDown className="ml-1 h-4 w-4" />
-                        </Menu.MenuButton>
-                      }
-                    />
-                  ) : (
-                    <div className="text-sm text-text-secondary">
-                      {localize('com_ui_web_search_scraper_firecrawl')}
-                    </div>
-                  )}
+              {scraperAuthType !== AuthType.SYSTEM_DEFINED && (
+                <div className="mb-6">
+                  <div className="mb-2 flex items-center justify-between">
+                    <Label className="text-md w-fit font-medium">
+                      {localize('com_ui_web_search_scraper')}
+                    </Label>
+                    {showScraperDropdown ? (
+                      <DropdownPopup
+                        menuId="scraper-dropdown"
+                        items={scraperItems}
+                        isOpen={scraperDropdownOpen}
+                        setIsOpen={setScraperDropdownOpen}
+                        trigger={
+                          <Menu.MenuButton
+                            onClick={() => setScraperDropdownOpen(!scraperDropdownOpen)}
+                            className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                          >
+                            {localize('com_ui_web_search_scraper_firecrawl')}
+                            <ChevronDown className="ml-1 h-4 w-4" />
+                          </Menu.MenuButton>
+                        }
+                      />
+                    ) : (
+                      <div className="text-sm text-text-secondary">
+                        {localize('com_ui_web_search_scraper_firecrawl')}
+                      </div>
+                    )}
+                  </div>
+                  <Input
+                    type="password"
+                    placeholder={`${localize('com_ui_enter_api_key')}`}
+                    autoComplete="one-time-code"
+                    readOnly={true}
+                    onFocus={(e) => (e.target.readOnly = false)}
+                    className="mb-2"
+                    {...register('firecrawlApiKey')}
+                  />
+                  <Input
+                    type="text"
+                    placeholder={localize('com_ui_web_search_firecrawl_url')}
+                    className="mb-1"
+                    {...register('firecrawlApiUrl')}
+                  />
+                  <div className="mt-1 text-xs text-text-secondary">
+                    <a
+                      href="https://docs.firecrawl.dev/introduction#api-key"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      {localize('com_ui_web_search_scraper_firecrawl_key')}
+                    </a>
+                  </div>
                 </div>
-                <Input
-                  type="password"
-                  placeholder={`${localize('com_ui_enter_api_key')}`}
-                  autoComplete="one-time-code"
-                  readOnly={true}
-                  onFocus={(e) => (e.target.readOnly = false)}
-                  className="mb-2"
-                  {...register('firecrawlApiKey')}
-                />
-                <Input
-                  type="text"
-                  placeholder={localize('com_ui_web_search_firecrawl_url')}
-                  className="mb-1"
-                  {...register('firecrawlApiUrl')}
-                />
-                <div className="mt-1 text-xs text-text-secondary">
-                  <a
-                    href="https://docs.firecrawl.dev/introduction#api-key"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                  >
-                    {localize('com_ui_web_search_scraper_firecrawl_key')}
-                  </a>
-                </div>
-              </div>
+              )}
 
               {/* Reranker Section */}
-              <div className="mb-6">
-                <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-md w-fit font-medium">
-                    {localize('com_ui_web_search_reranker')}
-                  </Label>
-                  {showRerankerDropdown ? (
-                    <DropdownPopup
-                      menuId="reranker-dropdown"
-                      isOpen={rerankerDropdownOpen}
-                      setIsOpen={setRerankerDropdownOpen}
-                      items={rerankerItems}
-                      trigger={
-                        <Menu.MenuButton
-                          onClick={() => setRerankerDropdownOpen(!rerankerDropdownOpen)}
-                          className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
-                        >
-                          {selectedReranker === 'jina'
-                            ? localize('com_ui_web_search_reranker_jina')
-                            : localize('com_ui_web_search_reranker_cohere')}
-                          <ChevronDown className="ml-1 h-4 w-4" />
-                        </Menu.MenuButton>
-                      }
-                    />
-                  ) : (
-                    <div className="text-sm text-text-secondary">
-                      {config?.webSearch?.rerankerType === 'cohere'
-                        ? localize('com_ui_web_search_reranker_cohere')
-                        : localize('com_ui_web_search_reranker_jina')}
-                    </div>
-                  )}
-                </div>
-                {!config?.webSearch?.rerankerType ? (
-                  selectedReranker === 'jina' ? (
+              {rerankerAuthType !== AuthType.SYSTEM_DEFINED && (
+                <div className="mb-6">
+                  <div className="mb-2 flex items-center justify-between">
+                    <Label className="text-md w-fit font-medium">
+                      {localize('com_ui_web_search_reranker')}
+                    </Label>
+                    {showRerankerDropdown ? (
+                      <DropdownPopup
+                        menuId="reranker-dropdown"
+                        isOpen={rerankerDropdownOpen}
+                        setIsOpen={setRerankerDropdownOpen}
+                        items={rerankerItems}
+                        trigger={
+                          <Menu.MenuButton
+                            onClick={() => setRerankerDropdownOpen(!rerankerDropdownOpen)}
+                            className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
+                          >
+                            {selectedReranker === 'jina'
+                              ? localize('com_ui_web_search_reranker_jina')
+                              : localize('com_ui_web_search_reranker_cohere')}
+                            <ChevronDown className="ml-1 h-4 w-4" />
+                          </Menu.MenuButton>
+                        }
+                      />
+                    ) : (
+                      <div className="text-sm text-text-secondary">
+                        {config?.webSearch?.rerankerType === 'cohere'
+                          ? localize('com_ui_web_search_reranker_cohere')
+                          : localize('com_ui_web_search_reranker_jina')}
+                      </div>
+                    )}
+                  </div>
+                  {!config?.webSearch?.rerankerType ? (
+                    selectedReranker === 'jina' ? (
+                      <>
+                        <Input
+                          type="password"
+                          placeholder={localize('com_ui_web_search_jina_key')}
+                          autoComplete="one-time-code"
+                          readOnly={true}
+                          onFocus={(e) => (e.target.readOnly = false)}
+                          {...register('jinaApiKey')}
+                        />
+                        <div className="mt-1 text-xs text-text-secondary">
+                          <a
+                            href="https://jina.ai/api-dashboard/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            {localize('com_ui_web_search_reranker_jina_key')}
+                          </a>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          type="password"
+                          placeholder={localize('com_ui_web_search_cohere_key')}
+                          autoComplete="one-time-code"
+                          readOnly={true}
+                          onFocus={(e) => (e.target.readOnly = false)}
+                          {...register('cohereApiKey')}
+                        />
+                        <div className="mt-1 text-xs text-text-secondary">
+                          <a
+                            href="https://dashboard.cohere.com/welcome/login"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            {localize('com_ui_web_search_reranker_cohere_key')}
+                          </a>
+                        </div>
+                      </>
+                    )
+                  ) : config.webSearch.rerankerType === 'jina' ? (
                     <>
                       <Input
                         type="password"
@@ -240,7 +293,7 @@ export default function ApiKeyDialog({
                         </a>
                       </div>
                     </>
-                  ) : (
+                  ) : config.webSearch.rerankerType === 'cohere' ? (
                     <>
                       <Input
                         type="password"
@@ -261,51 +314,9 @@ export default function ApiKeyDialog({
                         </a>
                       </div>
                     </>
-                  )
-                ) : config.webSearch.rerankerType === 'jina' ? (
-                  <>
-                    <Input
-                      type="password"
-                      placeholder={localize('com_ui_web_search_jina_key')}
-                      autoComplete="one-time-code"
-                      readOnly={true}
-                      onFocus={(e) => (e.target.readOnly = false)}
-                      {...register('jinaApiKey')}
-                    />
-                    <div className="mt-1 text-xs text-text-secondary">
-                      <a
-                        href="https://jina.ai/api-dashboard/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                      >
-                        {localize('com_ui_web_search_reranker_jina_key')}
-                      </a>
-                    </div>
-                  </>
-                ) : config.webSearch.rerankerType === 'cohere' ? (
-                  <>
-                    <Input
-                      type="password"
-                      placeholder={localize('com_ui_web_search_cohere_key')}
-                      autoComplete="one-time-code"
-                      readOnly={true}
-                      onFocus={(e) => (e.target.readOnly = false)}
-                      {...register('cohereApiKey')}
-                    />
-                    <div className="mt-1 text-xs text-text-secondary">
-                      <a
-                        href="https://dashboard.cohere.com/welcome/login"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                      >
-                        {localize('com_ui_web_search_reranker_cohere_key')}
-                      </a>
-                    </div>
-                  </>
-                ) : null}
-              </div>
+                  ) : null}
+                </div>
+              )}
             </form>
           </>
         }
