@@ -26,6 +26,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   conversation_starters?: string[];
   tool_resources?: unknown;
   projectIds?: Types.ObjectId[];
+  versions?: Omit<IAgent, 'versions'>[];
 }
 
 const agentSchema = new Schema<IAgent>(
@@ -114,6 +115,10 @@ const agentSchema = new Schema<IAgent>(
       type: [Schema.Types.ObjectId],
       ref: 'Project',
       index: true,
+    },
+    versions: {
+      type: [Schema.Types.Mixed],
+      default: [],
     },
   },
   {

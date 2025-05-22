@@ -1,11 +1,10 @@
 export default function FinishedIcon() {
   return (
     <div
-      className="absolute left-0 top-0 flex h-full w-full items-center justify-center rounded-full bg-brand-purple text-white"
-      style={{ opacity: 1, transform: 'none' }}
+      className="flex size-4 items-center justify-center rounded-full bg-brand-purple text-white"
       data-projection-id="162"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 9" fill="none" width="8" height="9">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8" fill="none" width="8" height="8">
         <path
           fillRule="evenodd"
           clipRule="evenodd"
