@@ -37,11 +37,13 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
           <span className="truncate text-xs font-medium text-text-secondary">{domain}</span>
         </div>
         <div className="mt-1">
-          <span className="line-clamp-2 text-sm font-medium text-text-primary">
+          <span className="line-clamp-2 text-sm font-medium text-text-primary md:line-clamp-3">
             {source.title || source.link}
           </span>
           {'snippet' in source && source.snippet && (
-            <span className="mt-1 line-clamp-2 text-xs text-text-secondary">{source.snippet}</span>
+            <span className="mt-1 line-clamp-2 text-xs text-text-secondary md:line-clamp-3">
+              {source.snippet}
+            </span>
           )}
         </div>
       </a>
@@ -65,11 +67,11 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
                   <span className="truncate text-xs font-medium text-text-secondary">{domain}</span>
                 </div>
                 <div className="mt-1">
-                  <span className="line-clamp-2 text-sm font-medium text-text-primary">
+                  <span className="line-clamp-2 text-sm font-medium text-text-primary md:line-clamp-3">
                     {source.title || source.link}
                   </span>
                   {/* {'snippet' in source && source.snippet && (
-                    <span className="mt-1 line-clamp-2 text-xs text-text-secondary">
+                    <span className="mt-1 line-clamp-2 md:line-clamp-3 text-xs text-text-secondary">
                       {source.snippet}
                     </span>
                   )} */}
@@ -98,7 +100,7 @@ function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
                     href={source.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400"
+                    className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400 md:line-clamp-3"
                   >
                     {source.attribution || domain}
                   </a>
@@ -254,7 +256,7 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
                       {source.title || source.link}
                     </h3>
                     {'snippet' in source && source.snippet && (
-                      <p className="mb-1 line-clamp-2 text-xs text-text-secondary">
+                      <p className="mb-1 line-clamp-2 text-xs text-text-secondary md:line-clamp-3">
                         {source.snippet}
                       </p>
                     )}

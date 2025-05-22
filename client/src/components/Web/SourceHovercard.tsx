@@ -89,7 +89,7 @@ export function SourceHovercard({
                     href={source.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400"
+                    className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400 md:line-clamp-3"
                   >
                     {source.attribution || domain}
                   </a>
