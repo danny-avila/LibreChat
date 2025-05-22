@@ -15,6 +15,17 @@ interface SplitTextProps {
   onLineCountChange?: (lineCount: number) => void;
 }
 
+const splitGraphemes = (text: string): string[] => {
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = segmenter.segment(text);
+    return Array.from(segments).map((s) => s.segment);
+  } else {
+    // Fallback for browsers without Intl.Segmenter
+    return [...text];
+  }
+};
+
 const SplitText: React.FC<SplitTextProps> = ({
   text = '',
   className = '',
@@ -28,7 +39,7 @@ const SplitText: React.FC<SplitTextProps> = ({
   onLetterAnimationComplete,
   onLineCountChange,
 }) => {
-  const words = text.split(' ').map((word) => word.split(''));
+  const words = text.split(' ').map(splitGraphemes);
   const letters = words.flat();
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
@@ -40,12 +51,12 @@ const SplitText: React.FC<SplitTextProps> = ({
       from: animationFrom,
       to: inView
         ? async (next: (props: any) => Promise<void>) => {
-          await next(animationTo);
-          animatedCount.current += 1;
-          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
-            onLetterAnimationComplete();
+            await next(animationTo);
+            animatedCount.current += 1;
+            if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+              onLetterAnimationComplete();
+            }
           }
-        }
         : animationFrom,
       delay: i * delay,
       config: { easing },

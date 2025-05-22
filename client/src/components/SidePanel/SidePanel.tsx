@@ -9,7 +9,6 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
 import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
-
 import Nav from './Nav';
 
 const defaultMinSize = 20;
