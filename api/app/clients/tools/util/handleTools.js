@@ -1,7 +1,7 @@
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const { Tools, Constants, EToolResources } = require('librechat-data-provider');
+const { Tools, Constants, EToolResources, loadWebSearchAuth } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -263,6 +263,12 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.web_search) {
+      const webSearchConfig = options?.req?.app?.locals?.[Tools.web_search];
+      const result = await loadWebSearchAuth({
+        userId: user,
+        loadAuthValues,
+        webSearchConfig,
+      });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
         // const { files, toolContext } = await primeSearchFiles(options);
@@ -280,6 +286,7 @@ const loadTools = async ({
 `.trim();
         return createSearchTool({
           // rerankerType: 'jina',
+          ...result,
           onSearchResults,
           onGetHighlights,
         });

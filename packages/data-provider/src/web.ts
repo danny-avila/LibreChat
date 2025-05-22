@@ -1,4 +1,10 @@
-import type { TCustomConfig } from './config';
+import type {
+  ScraperTypes,
+  RerankerTypes,
+  TCustomConfig,
+  SearchProviders,
+  TWebSearchConfig,
+} from './config';
 import { extractVariableName } from './utils';
 import { AuthType } from './schemas';
 
@@ -10,13 +16,16 @@ export function loadWebSearchConfig(
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
+  const safeSearch = config?.safeSearch ?? true;
 
   return {
+    ...config,
+    safeSearch,
+    jinaApiKey,
+    cohereApiKey,
     serperApiKey,
     firecrawlApiKey,
     firecrawlApiUrl,
-    jinaApiKey,
-    cohereApiKey,
   };
 }
 
@@ -27,10 +36,10 @@ export type TWebSearchKeys =
   | 'jinaApiKey'
   | 'cohereApiKey';
 
-export type TWebSearchCategories = 'engines' | 'scrapers' | 'rerankers';
+export type TWebSearchCategories = 'providers' | 'scrapers' | 'rerankers';
 
 export const webSearchAuth = {
-  engines: {
+  providers: {
     serper: {
       serperApiKey: 1 as const,
     },
@@ -53,7 +62,7 @@ export const webSearchAuth = {
  */
 export const webSearchKeys: TWebSearchKeys[] = [];
 
-// Iterate through each category (engines, scrapers, rerankers)
+// Iterate through each category (providers, scrapers, rerankers)
 for (const category of Object.keys(webSearchAuth)) {
   const categoryObj = webSearchAuth[category as TWebSearchCategories];
 
@@ -129,7 +138,7 @@ export async function loadWebSearchAuth({
   throwError?: boolean;
 }): Promise<WebSearchAuthResult> {
   let authenticated = true;
-  const authResult: Partial<Record<TWebSearchKeys, string | undefined>> = {};
+  const authResult: Partial<TWebSearchConfig> = {};
 
   /** Type-safe iterator for the category-service combinations */
   async function checkAuth<C extends TWebSearchCategories>(
@@ -194,9 +203,17 @@ export async function loadWebSearchAuth({
           }
         }
 
-        if (allFieldsAuthenticated) {
-          return [true, isUserProvided];
+        if (!allFieldsAuthenticated) {
+          continue;
         }
+        if (category === 'providers') {
+          authResult.searchProvider = service as SearchProviders;
+        } else if (category === 'scrapers') {
+          authResult.scraperType = service as ScraperTypes;
+        } else if (category === 'rerankers') {
+          authResult.rerankerType = service as RerankerTypes;
+        }
+        return [true, isUserProvided];
       } catch {
         continue;
       }
@@ -204,7 +221,7 @@ export async function loadWebSearchAuth({
     return [false, isUserProvided];
   }
 
-  const categories = ['engines', 'scrapers', 'rerankers'] as const;
+  const categories = ['providers', 'scrapers', 'rerankers'] as const;
   const authTypes: [TWebSearchCategories, AuthType][] = [];
   for (const category of categories) {
     const [isCategoryAuthenticated, isUserProvided] = await checkAuth(category);
@@ -214,6 +231,8 @@ export async function loadWebSearchAuth({
       break;
     }
   }
+
+  authResult.safeSearch = webSearchConfig?.safeSearch ?? true;
 
   return {
     authTypes,

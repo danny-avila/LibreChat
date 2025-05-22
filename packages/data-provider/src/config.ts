@@ -578,13 +578,34 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
 }
 
+export enum SearchProviders {
+  SERPER = 'serper',
+  SEARXNG = 'searxng',
+}
+
+export enum ScraperTypes {
+  FIRECRAWL = 'firecrawl',
+  SERPER = 'serper',
+}
+
+export enum RerankerTypes {
+  JINA = 'jina',
+  COHERE = 'cohere',
+}
+
 export const webSearchSchema = z.object({
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  searchProvider: z.nativeEnum(SearchProviders).optional(),
+  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  rerankerType: z.nativeEnum(RerankerTypes).optional(),
+  safeSearch: z.boolean().default(true),
 });
+
+export type TWebSearchConfig = z.infer<typeof webSearchSchema>;
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
