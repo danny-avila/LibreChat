@@ -745,6 +745,7 @@ export type TSetOption = (
 
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
+  disableParams?: boolean;
 };
 
 export const tSharedLinkSchema = z.object({

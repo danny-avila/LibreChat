@@ -2,7 +2,7 @@ import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
-import { cn, defaultTextProps } from '~/utils';
+import { cn } from '~/utils';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -27,7 +27,7 @@ function DynamicTextarea({
   const { preset } = useChatContext();
 
   const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | null>({
-    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    optionKey: settingKey,
     initialValue:
       optionType !== OptionTypes.Custom
         ? (conversation?.[settingKey] as string)

@@ -43,7 +43,11 @@ export const useCreateAgentMutation = (
  */
 export const useUpdateAgentMutation = (
   options?: t.UpdateAgentMutationOptions,
-): UseMutationResult<t.Agent, Error, { agent_id: string; data: t.AgentUpdateParams }> => {
+): UseMutationResult<
+  t.Agent,
+  t.DuplicateVersionError,
+  { agent_id: string; data: t.AgentUpdateParams }
+> => {
   const queryClient = useQueryClient();
   return useMutation(
     ({ agent_id, data }: { agent_id: string; data: t.AgentUpdateParams }) => {
@@ -54,7 +58,10 @@ export const useUpdateAgentMutation = (
     },
     {
       onMutate: (variables) => options?.onMutate?.(variables),
-      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onError: (error, variables, context) => {
+        const typedError = error as t.DuplicateVersionError;
+        return options?.onError?.(typedError, variables, context);
+      },
       onSuccess: (updatedAgent, variables, context) => {
         const listRes = queryClient.getQueryData<t.AgentListResponse>([
           QueryKeys.agents,
@@ -170,7 +177,6 @@ export const useUploadAgentAvatarMutation = (
   unknown // context
 > => {
   return useMutation([MutationKeys.agentAvatarUpload], {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     mutationFn: ({ postCreation, ...variables }: t.AgentAvatarVariables) =>
       dataService.uploadAgentAvatar(variables),
     ...(options || {}),
@@ -299,4 +305,47 @@ export const useDeleteAgentAction = (
       return options?.onSuccess?.(_data, variables, context);
     },
   });
+};
+
+/**
+ * Hook for reverting an agent to a previous version
+ */
+export const useRevertAgentVersionMutation = (
+  options?: t.RevertAgentVersionOptions,
+): UseMutationResult<t.Agent, Error, { agent_id: string; version_index: number }> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id, version_index }: { agent_id: string; version_index: number }) => {
+      return dataService.revertAgentVersion({
+        agent_id,
+        version_index,
+      });
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (revertedAgent, variables, context) => {
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], revertedAgent);
+
+        const listRes = queryClient.getQueryData<t.AgentListResponse>([
+          QueryKeys.agents,
+          defaultOrderQuery,
+        ]);
+
+        if (listRes) {
+          queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+            ...listRes,
+            data: listRes.data.map((agent) => {
+              if (agent.id === variables.agent_id) {
+                return revertedAgent;
+              }
+              return agent;
+            }),
+          });
+        }
+
+        return options?.onSuccess?.(revertedAgent, variables, context);
+      },
+    },
+  );
 };

@@ -139,9 +139,9 @@
     z-index: 66;
     top: 0;
     max-width: 320px;
-  
+
     /* max-width: 260px; */
-  
+
     bottom: 0;
     right: 0
     /* opacity: 0; */
@@ -341,7 +341,7 @@
 
 div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"] {
   scrollbar-gutter: stable !important;
-  background-color: rgba(21, 21, 21, 0.5) !important;
+  background-color: rgba(205, 205, 205, 0.66) !important;
 }
 
 div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar {
