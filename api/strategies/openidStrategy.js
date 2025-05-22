@@ -29,6 +29,7 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
 }
+
 /**
  * Exchange the access token for a new access token using the on-behalf-of flow if required.
  * @param {Configuration} config
@@ -56,7 +57,7 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
         requested_token_use: 'on_behalf_of',
       },
     );
-    tokensCache.set(
+    await tokensCache.set(
       sub,
       {
         access_token: grantResponse.access_token,
@@ -67,6 +68,7 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
   }
   return accessToken;
 };
+
 /**
  * get user info from openid provider
  * @param {Configuration} config
@@ -210,11 +212,13 @@ async function setupOpenId() {
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
+        usePKCE,
       },
       async (tokenset, done) => {
         try {
@@ -362,6 +366,7 @@ function getOpenIdConfig() {
   }
   return openidConfig;
 }
+
 module.exports = {
   setupOpenId,
   getOpenIdConfig,

@@ -127,6 +127,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
+    delete process.env.OPENID_USE_PKCE;
 
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
@@ -330,5 +331,16 @@ describe('setupOpenId', () => {
     // Assert – fetch should not be called and avatar should remain undefined or empty
     expect(fetch).not.toHaveBeenCalled();
     // Depending on your implementation, user.avatar may be undefined or an empty string.
+  });
+
+  it('should default to usePKCE false when OPENID_USE_PKCE is not defined', async () => {
+    const OpenIDStrategy = require('openid-client/passport').Strategy;
+
+    delete process.env.OPENID_USE_PKCE;
+    await setupOpenId();
+
+    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
+    expect(callOptions.usePKCE).toBe(false);
+    expect(callOptions.params?.code_challenge_method).toBeUndefined();
   });
 });
