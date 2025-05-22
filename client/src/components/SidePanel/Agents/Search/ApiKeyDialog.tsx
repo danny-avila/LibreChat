@@ -156,6 +156,16 @@ export default function ApiKeyDialog({
                   className="mb-1"
                   {...register('firecrawlApiUrl')}
                 />
+                <div className="mt-1 text-xs text-text-secondary">
+                  <a
+                    href="https://docs.firecrawl.dev/introduction#api-key"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    {localize('com_ui_web_search_scraper_firecrawl_key')}
+                  </a>
+                </div>
               </div>
 
               {/* Reranker Section */}
@@ -183,23 +193,47 @@ export default function ApiKeyDialog({
                   />
                 </div>
                 {selectedReranker === 'jina' ? (
-                  <Input
-                    type="password"
-                    placeholder={localize('com_ui_web_search_jina_key')}
-                    autoComplete="one-time-code"
-                    readOnly={true}
-                    onFocus={(e) => (e.target.readOnly = false)}
-                    {...register('jinaApiKey')}
-                  />
+                  <>
+                    <Input
+                      type="password"
+                      placeholder={localize('com_ui_web_search_jina_key')}
+                      autoComplete="one-time-code"
+                      readOnly={true}
+                      onFocus={(e) => (e.target.readOnly = false)}
+                      {...register('jinaApiKey')}
+                    />
+                    <div className="mt-1 text-xs text-text-secondary">
+                      <a
+                        href="https://jina.ai/api-dashboard/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        {localize('com_ui_web_search_reranker_jina_key')}
+                      </a>
+                    </div>
+                  </>
                 ) : (
-                  <Input
-                    type="password"
-                    placeholder={localize('com_ui_web_search_cohere_key')}
-                    autoComplete="one-time-code"
-                    readOnly={true}
-                    onFocus={(e) => (e.target.readOnly = false)}
-                    {...register('cohereApiKey')}
-                  />
+                  <>
+                    <Input
+                      type="password"
+                      placeholder={localize('com_ui_web_search_cohere_key')}
+                      autoComplete="one-time-code"
+                      readOnly={true}
+                      onFocus={(e) => (e.target.readOnly = false)}
+                      {...register('cohereApiKey')}
+                    />
+                    <div className="mt-1 text-xs text-text-secondary">
+                      <a
+                        href="https://dashboard.cohere.com/welcome/login"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        {localize('com_ui_web_search_reranker_cohere_key')}
+                      </a>
+                    </div>
+                  </>
                 )}
               </div>
             </form>

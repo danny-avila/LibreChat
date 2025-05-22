@@ -729,12 +729,14 @@
   "com_ui_web_search_api_subtitle": "Search the web for up-to-date information",
   "com_ui_web_search_provider": "Search Provider",
   "com_ui_web_search_provider_serper": "Serper API",
-  "com_ui_web_search_provider_serper_key": "Get a Serper API Key",
+  "com_ui_web_search_provider_serper_key": "Get your Serper API key",
   "com_ui_web_search_scraper": "Scraper",
   "com_ui_web_search_scraper_firecrawl": "Firecrawl API",
+  "com_ui_web_search_scraper_firecrawl_key": "Get your Firecrawl API key",
   "com_ui_web_search_reranker": "Reranker",
   "com_ui_web_search_reranker_jina": "Jina AI",
   "com_ui_web_search_reranker_cohere": "Cohere",
+  "com_ui_web_search_reranker_cohere_key": "Get your Cohere API key",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",
   "com_ui_web_search_jina_key": "Enter Jina API Key",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",
@@ -922,5 +924,6 @@
   "com_sources_tab_images": "Images",
   "com_sources_more_sources": "+{{count}} sources",
   "com_sources_title": "Sources",
-  "com_sources_image_alt": "Search result image"
+  "com_sources_image_alt": "Search result image",
+  "com_ui_web_search_reranker_jina_key": "Get your Jina API key"
 }
