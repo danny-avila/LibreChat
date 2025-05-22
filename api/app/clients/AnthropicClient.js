@@ -70,7 +70,7 @@ class AnthropicClient extends BaseClient {
     this.message_delta;
     /** Whether the model is part of the Claude 3 Family
      * @type {boolean} */
-    this.isClaude3;
+    this.isClaudeLatest;
     /** Whether to use Messages API or Completions API
      * @type {boolean} */
     this.useMessages;
@@ -116,7 +116,8 @@ class AnthropicClient extends BaseClient {
     );
 
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
-    this.isClaude3 = modelMatch.includes('claude-3');
+    this.isClaudeLatest =
+      /claude-[3-9]/.test(modelMatch) || /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch);
     this.isLegacyOutput = !(
       /claude-3[-.]5-sonnet/.test(modelMatch) || /claude-3[-.]7/.test(modelMatch)
     );
@@ -130,7 +131,7 @@ class AnthropicClient extends BaseClient {
       this.modelOptions.maxOutputTokens = legacy.maxOutputTokens.default;
     }
 
-    this.useMessages = this.isClaude3 || !!this.options.attachments;
+    this.useMessages = this.isClaudeLatest || !!this.options.attachments;
 
     this.defaultVisionModel = this.options.visionModel ?? 'claude-3-sonnet-20240229';
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
@@ -654,7 +655,10 @@ class AnthropicClient extends BaseClient {
       );
     };
 
-    if (this.modelOptions.model.includes('claude-3')) {
+    if (
+      /claude-[3-9]/.test(this.modelOptions.model) ||
+      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(this.modelOptions.model)
+    ) {
       await buildMessagesPayload();
       processTokens();
       return {
