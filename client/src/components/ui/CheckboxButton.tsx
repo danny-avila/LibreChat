@@ -13,7 +13,7 @@ export default function CheckboxButton({
   label: string;
   className?: string;
   icon?: React.ReactNode;
-  defaultChecked?: boolean;
+  defaultChecked: boolean;
   isCheckedClassName?: string;
   setValue?: (isChecked: boolean) => void;
 }) {
@@ -27,9 +27,7 @@ export default function CheckboxButton({
     setValue?.(!isChecked);
   };
   useEffect(() => {
-    if (defaultChecked) {
-      checkbox.setValue(defaultChecked);
-    }
+    checkbox.setValue(defaultChecked);
   }, [defaultChecked, checkbox]);
 
   return (
