@@ -9,6 +9,8 @@ const prompts = require('./prompts');
 const balance = require('./balance');
 const plugins = require('./plugins');
 const bedrock = require('./bedrock');
+const actions = require('./actions');
+const banner = require('./banner');
 const search = require('./search');
 const models = require('./models');
 const convos = require('./convos');
@@ -24,7 +26,6 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
-const banner = require('./banner');
 const apiKeys = require('./apiKeys');
 const completions = require('./completions');
 
@@ -39,14 +40,16 @@ module.exports = {
   oauth,
   files,
   share,
+  banner,
   agents,
-  bedrock,
   convos,
   search,
-  prompts,
   config,
   models,
+  bedrock,
+  prompts,
   plugins,
+  actions,
   presets,
   balance,
   messages,
@@ -55,7 +58,6 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
-  banner,
   apiKeys,
   completions,
 };

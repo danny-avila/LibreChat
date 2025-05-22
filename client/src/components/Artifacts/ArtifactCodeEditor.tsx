@@ -5,11 +5,12 @@ import {
   SandpackCodeEditor,
   SandpackProvider as StyledProvider,
 } from '@codesandbox/sandpack-react';
-import { SandpackProviderProps } from '@codesandbox/sandpack-react/unstyled';
+import type { SandpackProviderProps } from '@codesandbox/sandpack-react/unstyled';
+import type { SandpackBundlerFile } from '@codesandbox/sandpack-client';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { ArtifactFiles, Artifact } from '~/common';
+import { useEditArtifact, useGetStartupConfig } from '~/data-provider';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
-import { useEditArtifact } from '~/data-provider';
 import { useEditorContext } from '~/Providers';
 
 const createDebouncedMutation = (
@@ -65,8 +66,11 @@ const CodeEditor = ({
     if (isMutating) {
       return;
     }
+    if (artifact.index == null) {
+      return;
+    }
 
-    const currentCode = sandpack.files['/' + fileKey].code;
+    const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
 
     if (currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim()) {
       setCurrentCode(currentCode);
@@ -124,6 +128,17 @@ export const ArtifactCodeEditor = memo(function ({
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) {
+  const { data: config } = useGetStartupConfig();
+  const options: typeof sharedOptions = useMemo(() => {
+    if (!config) {
+      return sharedOptions;
+    }
+    return {
+      ...sharedOptions,
+      bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
+    };
+  }, [config, template]);
+
   if (Object.keys(files).length === 0) {
     return null;
   }
@@ -135,7 +150,7 @@ export const ArtifactCodeEditor = memo(function ({
         ...files,
         ...sharedFiles,
       }}
-      options={{ ...sharedOptions }}
+      options={options}
       {...sharedProps}
       template={template}
     >

@@ -32,13 +32,28 @@ export const currentArtifactId = atom<string | null>({
   ] as const,
 });
 
-export const artifactsVisible = atom<boolean>({
-  key: 'artifactsVisible',
+export const artifactsVisibility = atom<boolean>({
+  key: 'artifactsVisibility',
   default: true,
   effects: [
     ({ onSet, node }) => {
       onSet(async (newValue) => {
-        logger.log('artifacts', 'Recoil Effect: Setting artifactsVisible', {
+        logger.log('artifacts', 'Recoil Effect: Setting artifactsVisibility', {
+          key: node.key,
+          newValue,
+        });
+      });
+    },
+  ] as const,
+});
+
+export const visibleArtifacts = atom<Record<string, Artifact | undefined> | null>({
+  key: 'visibleArtifacts',
+  default: null,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        logger.log('artifacts', 'Recoil Effect: Setting `visibleArtifacts`', {
           key: node.key,
           newValue,
         });

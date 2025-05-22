@@ -66,7 +66,6 @@ export default function EndpointIcon({
         isCreatedByUser={false}
         chatGptLabel={undefined}
         modelLabel={undefined}
-        jailbreak={undefined}
       />
     );
   }

@@ -1,6 +1,6 @@
 const { model } = require('mongoose');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
-const projectSchema = require('~/models/schema/projectSchema');
+const { projectSchema } = require('@librechat/data-schemas');
 
 const Project = model('Project', projectSchema);
 
@@ -9,7 +9,7 @@ const Project = model('Project', projectSchema);
  *
  * @param {string} projectId - The ID of the project to find and return as a plain object.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<MongoProject>} A plain object representing the project document, or `null` if no project is found.
+ * @returns {Promise<IMongoProject>} A plain object representing the project document, or `null` if no project is found.
  */
 const getProjectById = async function (projectId, fieldsToSelect = null) {
   const query = Project.findById(projectId);
@@ -27,7 +27,7 @@ const getProjectById = async function (projectId, fieldsToSelect = null) {
  *
  * @param {string} projectName - The name of the project to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<MongoProject>} A plain object representing the project document.
+ * @returns {Promise<IMongoProject>} A plain object representing the project document.
  */
 const getProjectByName = async function (projectName, fieldsToSelect = null) {
   const query = { name: projectName };
@@ -47,7 +47,7 @@ const getProjectByName = async function (projectName, fieldsToSelect = null) {
  *
  * @param {string} projectId - The ID of the project to update.
  * @param {string[]} promptGroupIds - The array of prompt group IDs to add to the project.
- * @returns {Promise<MongoProject>} The updated project document.
+ * @returns {Promise<IMongoProject>} The updated project document.
  */
 const addGroupIdsToProject = async function (projectId, promptGroupIds) {
   return await Project.findByIdAndUpdate(
@@ -62,7 +62,7 @@ const addGroupIdsToProject = async function (projectId, promptGroupIds) {
  *
  * @param {string} projectId - The ID of the project to update.
  * @param {string[]} promptGroupIds - The array of prompt group IDs to remove from the project.
- * @returns {Promise<MongoProject>} The updated project document.
+ * @returns {Promise<IMongoProject>} The updated project document.
  */
 const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
   return await Project.findByIdAndUpdate(
@@ -87,7 +87,7 @@ const removeGroupFromAllProjects = async (promptGroupId) => {
  *
  * @param {string} projectId - The ID of the project to update.
  * @param {string[]} agentIds - The array of agent IDs to add to the project.
- * @returns {Promise<MongoProject>} The updated project document.
+ * @returns {Promise<IMongoProject>} The updated project document.
  */
 const addAgentIdsToProject = async function (projectId, agentIds) {
   return await Project.findByIdAndUpdate(
@@ -102,7 +102,7 @@ const addAgentIdsToProject = async function (projectId, agentIds) {
  *
  * @param {string} projectId - The ID of the project to update.
  * @param {string[]} agentIds - The array of agent IDs to remove from the project.
- * @returns {Promise<MongoProject>} The updated project document.
+ * @returns {Promise<IMongoProject>} The updated project document.
  */
 const removeAgentIdsFromProject = async function (projectId, agentIds) {
   return await Project.findByIdAndUpdate(

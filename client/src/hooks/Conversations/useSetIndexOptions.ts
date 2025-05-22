@@ -42,7 +42,7 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
   const setExample: TSetExample = (i, type, newValue = null) => {
     const update = {};
     const current = conversation?.examples?.slice() || [];
-    const currentExample = { ...current[i] } || {};
+    const currentExample = { ...current[i] };
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update['examples'] = current;
@@ -138,7 +138,7 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
           }
           return tool;
         })
-        ?.filter((el) => !!el) || [];
+        .filter((el) => !!el) || [];
     const isSelected = checkPluginSelection(newValue);
     const tool = availableTools[newValue];
     if (isSelected || remove) {

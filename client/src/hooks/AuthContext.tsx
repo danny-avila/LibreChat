@@ -6,9 +6,10 @@ import {
   useContext,
   useCallback,
   createContext,
+  useRef,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import {
@@ -35,6 +36,8 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const logoutRedirectRef = useRef<string | undefined>(undefined);
+
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
     enabled: !!(isAuthenticated && (user?.role ?? '')),
   });
@@ -52,16 +55,17 @@ const AuthContextProvider = ({
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
-      if (redirect == null) {
+      // Use a custom redirect if set
+      const finalRedirect = logoutRedirectRef.current || redirect;
+      // Clear the stored redirect
+      logoutRedirectRef.current = undefined;
+      if (finalRedirect == null) {
         return;
       }
-      if (redirect.startsWith('http://') || redirect.startsWith('https://')) {
-        // For external links, use window.location
-        window.location.href = redirect;
-        // Or if you want to open in a new tab:
-        // window.open(redirect, '_blank');
+      if (finalRedirect.startsWith('http://') || finalRedirect.startsWith('https://')) {
+        window.location.href = finalRedirect;
       } else {
-        navigate(redirect, { replace: true });
+        navigate(finalRedirect, { replace: true });
       }
     },
     [navigate, setUser],
@@ -70,7 +74,12 @@ const AuthContextProvider = ({
 
   const loginUser = useLoginUserMutation({
     onSuccess: (data: t.TLoginResponse) => {
-      const { user, token } = data;
+      const { user, token, twoFAPending, tempToken } = data;
+      if (twoFAPending) {
+        // Redirect to the two-factor authentication route.
+        navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
+        return;
+      }
       setError(undefined);
       setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
     },
@@ -101,7 +110,16 @@ const AuthContextProvider = ({
   });
   const refreshToken = useRefreshTokenMutation();
 
-  const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
+  const logout = useCallback(
+    (redirect?: string) => {
+      if (redirect) {
+        logoutRedirectRef.current = redirect;
+      }
+      logoutUser.mutate(undefined);
+    },
+    [logoutUser],
+  );
+
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
   const login = (data: t.TLoginUser) => {
@@ -195,7 +213,7 @@ const AuthContextProvider = ({
       },
       isAuthenticated,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     [user, error, isAuthenticated, token, userRole, adminRole],
   );
 
@@ -212,4 +230,4 @@ const useAuthContext = () => {
   return context;
 };
 
-export { AuthContextProvider, useAuthContext };
+export { AuthContextProvider, useAuthContext, AuthContext };

@@ -112,7 +112,7 @@ export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-csharp|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv))$/;
+  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv))$/;
 
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
@@ -149,6 +149,10 @@ export const codeTypeMapping: { [key: string]: string } = {
   ts: 'application/typescript',
   tar: 'application/x-tar',
   zip: 'application/zip',
+  yml: 'application/x-yaml',
+  yaml: 'application/x-yaml',
+  log: 'text/plain',
+  tsv: 'text/tab-separated-values',
 };
 
 export const retrievalMimeTypes = [
@@ -218,6 +222,12 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
+  imageGeneration: z
+    .object({
+      percentage: z.number().min(0).max(100).optional(),
+      px: z.number().min(0).optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -227,7 +237,7 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
       const regex = new RegExp(pattern);
       acc.push(regex);
     } catch (error) {
-      console.error(`Invalid regex pattern "${pattern}" skipped.`);
+      console.error(`Invalid regex pattern "${pattern}" skipped.`, error);
     }
     return acc;
   }, []);

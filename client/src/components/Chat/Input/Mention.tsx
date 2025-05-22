@@ -6,7 +6,7 @@ import type { MentionOption, ConvoGenerator } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
-import { useLocalize, useCombobox } from '~/hooks';
+import { useLocalize, useCombobox, TranslationKeys } from '~/hooks';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 
@@ -24,11 +24,11 @@ export default function Mention({
   newConversation: ConvoGenerator;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   commandChar?: string;
-  placeholder?: string;
+  placeholder?: TranslationKeys;
   includeAssistants?: boolean;
 }) {
   const localize = useLocalize();
-  const assistantMap = useAssistantsMapContext();
+  const assistantsMap = useAssistantsMapContext();
   const {
     options,
     presets,
@@ -37,11 +37,11 @@ export default function Mention({
     modelsConfig,
     endpointsConfig,
     assistantListMap,
-  } = useMentions({ assistantMap: assistantMap || {}, includeAssistants });
+  } = useMentions({ assistantMap: assistantsMap || {}, includeAssistants });
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
-    assistantMap,
+    assistantsMap,
     endpointsConfig,
     newConversation,
   });
@@ -65,7 +65,7 @@ export default function Mention({
       setSearchValue('');
       setOpen(false);
       setShowMentionPopover(false);
-      onSelectMention(mention);
+      onSelectMention?.(mention);
 
       if (textAreaRef.current) {
         removeCharIfLast(textAreaRef.current, commandChar);
@@ -158,7 +158,7 @@ export default function Mention({
   };
 
   return (
-    <div className="absolute bottom-14 z-10 w-full space-y-2">
+    <div className="absolute bottom-28 z-10 w-full space-y-2">
       <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
           // The user expects focus to transition to the input field when the popover is opened

@@ -7,6 +7,11 @@
  * @typedef {import('openai').OpenAI} OpenAI
  * @memberof typedefs
  */
+/**
+ * @exports OpenAIImagesResponse
+ * @typedef {Promise<import('openai').OpenAI.ImagesResponse>} OpenAIImagesResponse
+ * @memberof typedefs
+ */
 
 /**
  * @exports ServerRequest
@@ -15,8 +20,80 @@
  */
 
 /**
+ * @template T
+ * @typedef {ReadableStream<T> | NodeJS.ReadableStream} NodeStream
+ * @memberof typedefs
+ */
+
+/**
+ * @template T
+ * @typedef {(req: ServerRequest, filepath: string) => Promise<NodeStream<T>>} NodeStreamDownloader
+ * @memberof typedefs
+ */
+
+/**
  * @exports ServerResponse
  * @typedef {import('express').Response} ServerResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports NextFunction
+ * @typedef {import('express').NextFunction} NextFunction
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Graph
+ * @typedef {import('@librechat/agents').Graph} Graph
+ * @memberof typedefs
+ */
+
+/**
+ * @exports StandardGraph
+ * @typedef {import('@librechat/agents').StandardGraph} StandardGraph
+ * @memberof typedefs
+ */
+
+/**
+ * @exports EventHandler
+ * @typedef {import('@librechat/agents').EventHandler} EventHandler
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ModelEndData
+ * @typedef {import('@librechat/agents').ModelEndData} ModelEndData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolEndData
+ * @typedef {import('@librechat/agents').ToolEndData} ToolEndData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolEndCallback
+ * @typedef {import('@librechat/agents').ToolEndCallback} ToolEndCallback
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatModelStreamHandler
+ * @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ContentAggregator
+ * @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GraphEvents
+ * @typedef {import('@librechat/agents').GraphEvents} GraphEvents
  * @memberof typedefs
  */
 
@@ -75,12 +152,6 @@
  */
 
 /**
- * @exports ToolEndData
- * @typedef {import('@librechat/agents').ToolEndData} ToolEndData
- * @memberof typedefs
- */
-
-/**
  * @exports BaseMessage
  * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
  * @memberof typedefs
@@ -99,6 +170,12 @@
  */
 
 /**
+ * @exports LangChainToolCall
+ * @typedef {import('@langchain/core/messages/tool').ToolCall} LangChainToolCall
+ * @memberof typedefs
+ */
+
+/**
  * @exports GraphRunnableConfig
  * @typedef {import('@langchain/core/runnables').RunnableConfig<{
  *  req: ServerRequest;
@@ -109,7 +186,9 @@
  * agent_index: number;
  * last_agent_index: number;
  * hide_sequential_outputs: boolean;
- * }>} GraphRunnableConfig
+ * }> & {
+ * toolCall?: LangChainToolCall & { stepId?: string };
+ * }} GraphRunnableConfig
  * @memberof typedefs
  */
 
@@ -380,6 +459,18 @@
 /**
  * @exports ToolCallDelta
  * @typedef {import('openai').default.Beta.Threads.Runs.Steps.ToolCallDelta} ToolCallDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentToolCallDelta
+ * @typedef {import('librechat-data-provider').Agents.ToolCallDelta} AgentToolCallDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MessageContentImageUrl
+ * @typedef {import('librechat-data-provider').Agents.MessageContentImageUrl} MessageContentImageUrl
  * @memberof typedefs
  */
 
@@ -741,38 +832,25 @@
  */
 
 /**
- * @exports ObjectId
- * @typedef {import('mongoose').Types.ObjectId} ObjectId
- * @memberof typedefs
- */
-
-/**
  * @exports MongoFile
- * @typedef {import('~/models/schema/fileSchema.js').MongoFile} MongoFile
+ * @typedef {import('@librechat/data-schemas').IMongoFile} MongoFile
  * @memberof typedefs
  */
-
 /**
- * @exports ToolCallData
- * @typedef {import('~/models/schema/toolCallSchema.js').ToolCallData} ToolCallData
+ * @exports IBalance
+ * @typedef {import('@librechat/data-schemas').IBalance} IBalance
  * @memberof typedefs
  */
 
 /**
  * @exports MongoUser
- * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
+ * @typedef {import('@librechat/data-schemas').IUser} MongoUser
  * @memberof typedefs
  */
 
 /**
- * @exports MongoProject
- * @typedef {import('~/models/schema/projectSchema.js').MongoProject} MongoProject
- * @memberof typedefs
- */
-
-/**
- * @exports MongoPromptGroup
- * @typedef {import('~/models/schema/promptSchema.js').MongoPromptGroup} MongoPromptGroup
+ * @exports ObjectId
+ * @typedef {import('mongoose').Types.ObjectId} ObjectId
  * @memberof typedefs
  */
 
@@ -803,8 +881,9 @@
 /**
  * @typedef {Partial<ImageGenOptions> & {
  *   message?: string,
- *   signal?: AbortSignal
- *   memory?: ConversationSummaryBufferMemory
+ *   signal?: AbortSignal,
+ *   memory?: ConversationSummaryBufferMemory,
+ *   tool_resources?: AgentToolResources,
  * }} LoadToolOptions
  * @memberof typedefs
  */
@@ -812,6 +891,12 @@
 /**
  * @exports EModelEndpoint
  * @typedef {import('librechat-data-provider').EModelEndpoint} EModelEndpoint
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TEndpointOption
+ * @typedef {import('librechat-data-provider').TEndpointOption} TEndpointOption
  * @memberof typedefs
  */
 
@@ -948,8 +1033,20 @@
  */
 
 /**
+ * @exports Keyv
+ * @typedef {import('keyv')} Keyv
+ * @memberof typedefs
+ */
+
+/**
  * @exports MCPManager
  * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FlowStateManager
+ * @typedef {import('librechat-mcp').FlowStateManager} FlowStateManager
  * @memberof typedefs
  */
 
@@ -1783,5 +1880,53 @@
 
 /**
  * @typedef {Promise<{ message: TMessage, conversation: TConversation }> | undefined} ClientDatabaseSavePromise
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRImage
+ * @typedef {Object} OCRImage
+ * @property {string} id - The identifier of the image.
+ * @property {number} top_left_x - X-coordinate of the top left corner of the image.
+ * @property {number} top_left_y - Y-coordinate of the top left corner of the image.
+ * @property {number} bottom_right_x - X-coordinate of the bottom right corner of the image.
+ * @property {number} bottom_right_y - Y-coordinate of the bottom right corner of the image.
+ * @property {string} image_base64 - Base64-encoded image data.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports PageDimensions
+ * @typedef {Object} PageDimensions
+ * @property {number} dpi - The dots per inch resolution of the page.
+ * @property {number} height - The height of the page in pixels.
+ * @property {number} width - The width of the page in pixels.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRPage
+ * @typedef {Object} OCRPage
+ * @property {number} index - The index of the page in the document.
+ * @property {string} markdown - The extracted text content of the page in markdown format.
+ * @property {OCRImage[]} images - Array of images found on the page.
+ * @property {PageDimensions} dimensions - The dimensions of the page.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRUsageInfo
+ * @typedef {Object} OCRUsageInfo
+ * @property {number} pages_processed - Number of pages processed in the document.
+ * @property {number} doc_size_bytes - Size of the document in bytes.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OCRResult
+ * @typedef {Object} OCRResult
+ * @property {OCRPage[]} pages - Array of pages extracted from the document.
+ * @property {string} model - The model used for OCR processing.
+ * @property {OCRUsageInfo} usage_info - Usage information for the OCR operation.
  * @memberof typedefs
  */

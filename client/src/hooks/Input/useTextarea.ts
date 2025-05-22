@@ -101,10 +101,9 @@ export default function useTextarea({
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
-      return `${localize(
-        'com_endpoint_message_new',
-        sender ? sender : localize('com_endpoint_ai'),
-      )}`;
+      return `${localize('com_endpoint_message_new', {
+        0: sender ? sender : localize('com_endpoint_ai'),
+      })}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -239,7 +238,8 @@ export default function useTextarea({
     textAreaRef,
     handlePaste,
     handleKeyDown,
-    handleCompositionStart,
+    isNotAppendable,
     handleCompositionEnd,
+    handleCompositionStart,
   };
 }

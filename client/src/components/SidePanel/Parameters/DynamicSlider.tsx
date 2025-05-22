@@ -2,7 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
-import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
+import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
 import { cn, defaultTextProps, optionText } from '~/utils';
 import { ESide, defaultDebouncedDelay } from '~/common';
 import { useChatContext } from '~/Providers';
@@ -33,7 +33,7 @@ function DynamicSlider({
   );
 
   const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
-    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    optionKey: settingKey,
     initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
     setOption,
@@ -117,7 +117,7 @@ function DynamicSlider({
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label) ?? label : label || settingKey}{' '}
+              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -176,7 +176,7 @@ function DynamicSlider({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) ?? description : description}
+            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
             side={ESide.Left}
           />
         )}

@@ -18,11 +18,12 @@ const {
   LDAP_USERNAME,
   LDAP_EMAIL,
   LDAP_TLS_REJECT_UNAUTHORIZED,
+  LDAP_STARTTLS,
 } = process.env;
 
 // Check required environment variables
 if (!LDAP_URL || !LDAP_USER_SEARCH_BASE) {
-  return null;
+  module.exports = null;
 }
 
 const searchAttributes = [
@@ -50,6 +51,7 @@ if (LDAP_EMAIL) {
   searchAttributes.push(LDAP_EMAIL);
 }
 const rejectUnauthorized = isEnabled(LDAP_TLS_REJECT_UNAUTHORIZED);
+const startTLS = isEnabled(LDAP_STARTTLS);
 
 const ldapOptions = {
   server: {
@@ -72,6 +74,7 @@ const ldapOptions = {
         })(),
       },
     }),
+    ...(startTLS && { starttls: true }),
   },
   usernameField: 'email',
   passwordField: 'password',

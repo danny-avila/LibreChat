@@ -1,11 +1,12 @@
 import { RefObject } from 'react';
-import { FileSources } from 'librechat-data-provider';
-import type * as InputNumberPrimitive from 'rc-input-number';
-import type { ColumnDef } from '@tanstack/react-table';
-import type { SetterOrUpdater } from 'recoil';
-import type * as t from 'librechat-data-provider';
+import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type * as InputNumberPrimitive from 'rc-input-number';
+import type { SetterOrUpdater, RecoilState } from 'recoil';
+import type { ColumnDef } from '@tanstack/react-table';
+import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
+import type { TranslationKeys } from '~/hooks';
 
 export type CodeBarProps = {
   lang: string;
@@ -28,7 +29,6 @@ export enum STTEndpoints {
 
 export enum TTSEndpoints {
   browser = 'browser',
-  edge = 'edge',
   external = 'external',
 }
 
@@ -45,6 +45,14 @@ export type AudioChunk = {
     chars_durations_ms: number[];
     chars: string[];
   };
+};
+
+export type BadgeItem = {
+  id: string;
+  icon: React.ComponentType<any>;
+  label: string;
+  atom: RecoilState<boolean>;
+  isAvailable: boolean;
 };
 
 export type AssistantListItem = {
@@ -66,7 +74,10 @@ export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<t.EModelEndpoint, string>;
 
-export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
+export type LocalizeFunction = (
+  phraseKey: TranslationKeys,
+  options?: Record<string, string | number>,
+) => string;
 
 export type ChatFormValues = { text: string };
 
@@ -85,6 +96,7 @@ export type IconMapProps = {
   iconURL?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   endpoint?: string | null;
+  endpointType?: string;
   assistantName?: string;
   agentName?: string;
   avatar?: string;
@@ -101,7 +113,7 @@ export type IconsRecord = {
 export type AgentIconMapProps = IconMapProps & { agentName?: string };
 
 export type NavLink = {
-  title: string;
+  title: TranslationKeys;
   label?: string;
   icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
@@ -126,6 +138,7 @@ export interface DataColumnMeta {
 }
 
 export enum Panel {
+  advanced = 'advanced',
   builder = 'builder',
   actions = 'actions',
   model = 'model',
@@ -176,6 +189,7 @@ export type AgentPanelProps = {
   activePanel?: string;
   action?: t.Action;
   actions?: t.Action[];
+  createMutation: UseMutationResult<t.Agent, Error, t.AgentCreateParams>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   endpointsConfig?: t.TEndpointsConfig;
@@ -292,11 +306,14 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
-  resubmitFiles?: boolean;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
+  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
+  isResubmission?: boolean;
+  /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
+  overrideFiles?: t.TMessage['files'];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -365,12 +382,12 @@ export type TDangerButtonProps = {
   showText?: boolean;
   mutation?: UseMutationResult<unknown>;
   onClick: () => void;
-  infoTextCode: string;
-  actionTextCode: string;
+  infoTextCode: TranslationKeys;
+  actionTextCode: TranslationKeys;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
-  infoDescriptionCode?: string;
-  confirmActionTextCode?: string;
+  infoDescriptionCode?: TranslationKeys;
+  confirmActionTextCode?: TranslationKeys;
 };
 
 export type TDialogProps = {
@@ -394,7 +411,7 @@ export type TAuthContext = {
   isAuthenticated: boolean;
   error: string | undefined;
   login: (data: t.TLoginUser) => void;
-  logout: () => void;
+  logout: (redirect?: string) => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
   roles?: Record<string, t.TRole | null | undefined>;
 };
@@ -478,9 +495,23 @@ export interface ExtendedFile {
   attached?: boolean;
   embedded?: boolean;
   tool_resource?: string;
+  metadata?: t.TFile['metadata'];
 }
 
-export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
+export interface ModelItemProps {
+  modelName: string;
+  endpoint: EModelEndpoint;
+  isSelected: boolean;
+  onSelect: () => void;
+  onNavigateBack: () => void;
+  icon?: JSX.Element;
+  className?: string;
+}
+
+export type ContextType = {
+  navVisible: boolean;
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+};
 
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;
@@ -504,6 +535,7 @@ export type NewConversationParams = {
   buildDefault?: boolean;
   keepLatestMessage?: boolean;
   keepAddedConvos?: boolean;
+  disableParams?: boolean;
 };
 
 export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;
@@ -523,7 +555,8 @@ export type TResData = TBaseResData & {
   responseMessage: t.TMessage;
 };
 
-export type TFinalResData = TBaseResData & {
+export type TFinalResData = Omit<TBaseResData, 'conversation'> & {
+  conversation: Partial<t.TConversation> & Pick<t.TConversation, 'conversationId'>;
   requestMessage?: t.TMessage;
   responseMessage?: t.TMessage;
 };

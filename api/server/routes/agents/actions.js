@@ -1,6 +1,6 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { actionDelimiter, SystemRoles } = require('librechat-data-provider');
+const { actionDelimiter, SystemRoles, removeNullishValues } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
@@ -51,14 +51,14 @@ router.post('/:agent_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    let metadata = await encryptMetadata(_metadata);
+    let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
     const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
     if (!isDomainAllowed) {
       return res.status(400).json({ message: 'Domain not allowed' });
     }
 
     let { domain } = metadata;
-    domain = await domainParser(req, domain, true);
+    domain = await domainParser(domain, true);
 
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });
@@ -117,10 +117,7 @@ router.post('/:agent_id', async (req, res) => {
     }
 
     /** @type {[Action]} */
-    const updatedAction = await updateAction(
-      { action_id },
-      actionUpdateData,
-    );
+    const updatedAction = await updateAction({ action_id }, actionUpdateData);
 
     const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
     for (let field of sensitiveFields) {
@@ -167,7 +164,7 @@ router.delete('/:agent_id/:action_id', async (req, res) => {
       return true;
     });
 
-    domain = await domainParser(req, domain, true);
+    domain = await domainParser(domain, true);
 
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });

@@ -84,7 +84,7 @@ function RequestPasswordReset() {
       </h1>
       {countdown > 0 && (
         <p className="text-center text-lg text-gray-600 dark:text-gray-400">
-          {localize('com_auth_email_verification_redirecting', countdown.toString())}
+          {localize('com_auth_email_verification_redirecting', { 0: countdown.toString() })}
         </p>
       )}
       {showResendLink && countdown === 0 && (

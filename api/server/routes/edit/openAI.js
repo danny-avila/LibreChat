@@ -2,7 +2,6 @@ const express = require('express');
 const EditController = require('~/server/controllers/EditController');
 const { initializeClient } = require('~/server/services/Endpoints/openAI');
 const {
-  handleAbort,
   setHeaders,
   validateModel,
   validateEndpoint,
@@ -12,7 +11,6 @@ const {
 
 const router = express.Router();
 router.use(moderateText);
-router.post('/abort', handleAbort());
 
 router.post(
   '/',

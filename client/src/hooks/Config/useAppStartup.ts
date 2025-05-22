@@ -76,7 +76,6 @@ export default function useAppStartup({
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const userPlugins = user.plugins ?? [];
 
     if (userPlugins.length === 0) {

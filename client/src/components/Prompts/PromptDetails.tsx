@@ -5,13 +5,13 @@ import rehypeKatex from 'rehype-katex';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import rehypeHighlight from 'rehype-highlight';
+import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
 import { PromptVariableGfm } from './Markdown';
-import { replaceSpecialVars } from '~/utils';
 import { Label } from '~/components/ui';
 import Description from './Description';
 import Command from './Command';
@@ -46,7 +46,7 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
       <div className="flex h-full max-h-screen flex-col overflow-y-auto md:flex-row">
         <div className="flex flex-1 flex-col gap-4 p-0 md:max-h-[calc(100vh-150px)] md:p-2">
           <div>
-            <h2 className="flex items-center justify-between rounded-t-lg border border-border-light py-2 pl-4 text-base font-semibold text-text-primary ">
+            <h2 className="flex items-center justify-between rounded-t-lg border border-border-light py-2 pl-4 text-base font-semibold text-text-primary">
               {localize('com_ui_prompt_text')}
             </h2>
             <div className="group relative min-h-32 rounded-b-lg border border-border-light p-4 transition-all duration-150">
@@ -59,13 +59,13 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
                 ]}
                 rehypePlugins={[
                   /** @ts-ignore */
-                  [rehypeKatex, { output: 'mathml' }],
+                  [rehypeKatex],
                   /** @ts-ignore */
                   [rehypeHighlight, { ignoreMissing: true }],
                 ]}
                 /** @ts-ignore */
                 components={{ p: PromptVariableGfm, code: codeNoExecution }}
-                className="prose dark:prose-invert light dark:text-gray-70 my-1"
+                className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 break-words"
               >
                 {mainText}
               </ReactMarkdown>
