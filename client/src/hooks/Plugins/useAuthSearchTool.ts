@@ -18,7 +18,11 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
     onMutate: (vars) => {
       queryClient.setQueryData([QueryKeys.toolAuth, Tools.web_search], () => ({
         authenticated: vars.action === 'install',
-        message: AuthType.USER_PROVIDED,
+        authTypes: [
+          ['providers', AuthType.USER_PROVIDED],
+          ['scrapers', AuthType.USER_PROVIDED],
+          ['rerankers', AuthType.USER_PROVIDED],
+        ],
       }));
     },
     onSuccess: () => {

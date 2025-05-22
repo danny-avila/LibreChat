@@ -14,7 +14,13 @@ import { CircleHelpIcon } from '~/components/svg';
 import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
 
-export default function Action({ authType = '', isToolAuthenticated = false }) {
+export default function Action({
+  authTypes = [],
+  isToolAuthenticated = false,
+}: {
+  authTypes?: [string, AuthType][];
+  isToolAuthenticated?: boolean;
+}) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
@@ -34,7 +40,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
   });
 
   const webSearchIsEnabled = useWatch({ control, name: AgentCapabilities.web_search });
-  const isUserProvided = authType === AuthType.USER_PROVIDED;
+  const isUserProvided = authTypes?.some(([, authType]) => authType === AuthType.USER_PROVIDED);
 
   const handleCheckboxChange = (checked: boolean) => {
     if (isToolAuthenticated) {
@@ -101,14 +107,14 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
         </div>
       </HoverCard>
       <ApiKeyDialog
-        isOpen={isDialogOpen}
         onSubmit={onSubmit}
+        authTypes={authTypes}
+        isOpen={isDialogOpen}
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}
         register={keyFormMethods.register}
         isToolAuthenticated={isToolAuthenticated}
         handleSubmit={keyFormMethods.handleSubmit}
-        isUserProvided={authType === AuthType.USER_PROVIDED}
       />
     </>
   );
