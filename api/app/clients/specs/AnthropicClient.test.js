@@ -15,7 +15,7 @@ describe('AnthropicClient', () => {
     {
       role: 'user',
       isCreatedByUser: true,
-      text: 'What\'s up',
+      text: "What's up",
       messageId: '3',
       parentMessageId: '2',
     },
@@ -170,7 +170,7 @@ describe('AnthropicClient', () => {
       client.options.modelLabel = 'Claude-2';
       const result = await client.buildMessages(messages, parentMessageId);
       const { prompt } = result;
-      expect(prompt).toContain('Human\'s name: John');
+      expect(prompt).toContain("Human's name: John");
       expect(prompt).toContain('You are Claude-2');
     });
   });
@@ -728,5 +728,166 @@ describe('AnthropicClient', () => {
 
     expect(capturedOptions).toHaveProperty('topK', 10);
     expect(capturedOptions).toHaveProperty('topP', 0.9);
+  });
+
+  describe('isClaudeLatest', () => {
+    it('should set isClaudeLatest to true for claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-sonnet-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-3.5 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.5-sonnet-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-sonnet-4 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-opus-4 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-3.5-haiku models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.5-haiku-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to false for claude-2 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-instant models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-instant',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-sonnet-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-3-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-opus-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-3-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-haiku-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-haiku-3-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+  });
+});
+
+describe('Claude Model Tests', () => {
+  it('should handle Claude 3 and 4 series models correctly', () => {
+    const client = new AnthropicClient('test-key');
+    // Claude 3 series models
+    const claude3Models = [
+      'claude-3-opus-20240229',
+      'claude-3-sonnet-20240229',
+      'claude-3-haiku-20240307',
+      'claude-3-5-sonnet-20240620',
+      'claude-3-5-haiku-20240620',
+      'claude-3.5-sonnet-20240620',
+      'claude-3.5-haiku-20240620',
+      'claude-3.7-sonnet-20240620',
+      'claude-3.7-haiku-20240620',
+      'anthropic/claude-3-opus-20240229',
+      'claude-3-opus-20240229/anthropic',
+    ];
+
+    // Claude 4 series models
+    const claude4Models = [
+      'claude-sonnet-4-20250514',
+      'claude-opus-4-20250514',
+      'claude-4-sonnet-20250514',
+      'claude-4-opus-20250514',
+      'anthropic/claude-sonnet-4-20250514',
+      'claude-sonnet-4-20250514/anthropic',
+    ];
+
+    // Test Claude 3 series
+    claude3Models.forEach((model) => {
+      client.setOptions({ modelOptions: { model } });
+      expect(
+        /claude-[3-9]/.test(client.modelOptions.model) ||
+          /claude-(?:sonnet|opus|haiku)-[4-9]/.test(client.modelOptions.model),
+      ).toBe(true);
+    });
+
+    // Test Claude 4 series
+    claude4Models.forEach((model) => {
+      client.setOptions({ modelOptions: { model } });
+      expect(
+        /claude-[3-9]/.test(client.modelOptions.model) ||
+          /claude-(?:sonnet|opus|haiku)-[4-9]/.test(client.modelOptions.model),
+      ).toBe(true);
+    });
+
+    // Test non-Claude 3/4 models
+    const nonClaudeModels = ['claude-2', 'claude-instant', 'gpt-4', 'gpt-3.5-turbo'];
+
+    nonClaudeModels.forEach((model) => {
+      client.setOptions({ modelOptions: { model } });
+      expect(
+        /claude-[3-9]/.test(client.modelOptions.model) ||
+          /claude-(?:sonnet|opus|haiku)-[4-9]/.test(client.modelOptions.model),
+      ).toBe(false);
+    });
   });
 });

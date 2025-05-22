@@ -116,7 +116,8 @@ class AnthropicClient extends BaseClient {
     );
 
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
-    this.isClaudeLatest = /claude-[3-9]/.test(modelMatch);
+    this.isClaudeLatest =
+      /claude-[3-9]/.test(modelMatch) || /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch);
     this.isLegacyOutput = !(
       /claude-3[-.]5-sonnet/.test(modelMatch) || /claude-3[-.]7/.test(modelMatch)
     );
@@ -654,7 +655,10 @@ class AnthropicClient extends BaseClient {
       );
     };
 
-    if (this.modelOptions.model.includes('claude-3')) {
+    if (
+      /claude-[3-9]/.test(this.modelOptions.model) ||
+      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(this.modelOptions.model)
+    ) {
       await buildMessagesPayload();
       processTokens();
       return {
