@@ -50,7 +50,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
       retry: 1,
     },
   );
-  const authType = useMemo(() => data?.message ?? false, [data?.message]);
+  const authTypes = useMemo(() => data?.authTypes ?? [], [data?.authTypes]);
   const isAuthenticated = useMemo(() => data?.authenticated ?? false, [data?.authenticated]);
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
     useSearchApiKeyForm({});
@@ -104,13 +104,13 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
       />
       <ApiKeyDialog
         onSubmit={onSubmit}
+        authTypes={authTypes}
         isOpen={isDialogOpen}
         register={methods.register}
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}
         handleSubmit={methods.handleSubmit}
         isToolAuthenticated={isAuthenticated}
-        isUserProvided={authType === AuthType.USER_PROVIDED}
       />
     </>
   );

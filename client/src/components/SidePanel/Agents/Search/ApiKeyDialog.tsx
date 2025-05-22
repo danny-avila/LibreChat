@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
+import { AuthType } from 'librechat-data-provider';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { MenuItemProps } from '~/common';
@@ -14,7 +15,7 @@ export default function ApiKeyDialog({
   onSubmit,
   onRevoke,
   onOpenChange,
-  isUserProvided,
+  authTypes,
   isToolAuthenticated,
   register,
   handleSubmit,
@@ -23,7 +24,7 @@ export default function ApiKeyDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: SearchApiKeyFormData) => void;
   onRevoke: () => void;
-  isUserProvided: boolean;
+  authTypes: [string, AuthType][];
   isToolAuthenticated: boolean;
   register: UseFormRegister<SearchApiKeyFormData>;
   handleSubmit: UseFormHandleSubmit<SearchApiKeyFormData>;
@@ -208,7 +209,6 @@ export default function ApiKeyDialog({
           selectText: localize('com_ui_save'),
         }}
         buttons={
-          isUserProvided &&
           isToolAuthenticated && (
             <Button
               onClick={onRevoke}
