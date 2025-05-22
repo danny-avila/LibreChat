@@ -19,6 +19,7 @@ export default function ApiKeyDialog({
   isToolAuthenticated,
   register,
   handleSubmit,
+  triggerRef,
 }: {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -28,6 +29,7 @@ export default function ApiKeyDialog({
   isToolAuthenticated: boolean;
   register: UseFormRegister<SearchApiKeyFormData>;
   handleSubmit: UseFormHandleSubmit<SearchApiKeyFormData>;
+  triggerRef?: React.RefObject<HTMLInputElement>;
 }) {
   const localize = useLocalize();
   const [selectedReranker, setSelectedReranker] = useState<'jina' | 'cohere'>('jina');
@@ -64,7 +66,7 @@ export default function ApiKeyDialog({
   ];
 
   return (
-    <OGDialog open={isOpen} onOpenChange={onOpenChange}>
+    <OGDialog open={isOpen} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       <OGDialogTemplate
         className="w-11/12 sm:w-[500px]"
         title=""
