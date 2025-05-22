@@ -263,7 +263,7 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.web_search) {
-      const webSearchConfig = options?.req?.app?.locals?.[Tools.web_search];
+      const webSearchConfig = options?.req?.app?.locals?.webSearch;
       const result = await loadWebSearchAuth({
         userId: user,
         loadAuthValues,
@@ -286,7 +286,7 @@ const loadTools = async ({
 `.trim();
         return createSearchTool({
           // rerankerType: 'jina',
-          ...result,
+          ...result.authResult,
           onSearchResults,
           onGetHighlights,
         });
