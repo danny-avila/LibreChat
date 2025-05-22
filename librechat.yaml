@@ -135,7 +135,7 @@ actions:
 #       - /path/to/obsidian/vault
 mcpServers:
   openapi:
-    type: sse
+    type: streamable-http
     url: http://mcp-openapi:3000/mcp
 
 # Definition of custom endpoints
