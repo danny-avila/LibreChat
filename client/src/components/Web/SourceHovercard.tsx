@@ -17,7 +17,6 @@ interface SourceHovercardProps {
   label: string;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
-  anchorClassName?: string;
   children?: ReactNode;
 }
 
@@ -47,7 +46,6 @@ export function SourceHovercard({
   label,
   onMouseEnter,
   onMouseLeave,
-  anchorClassName = 'ml-1 inline-flex h-[18px] cursor-pointer items-center rounded-xl border border-border-heavy dark:border-border-medium bg-surface-secondary px-2 py-0.5 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:hover:bg-surface-tertiary',
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -63,7 +61,7 @@ export function SourceHovercard({
                 href={source.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={anchorClassName}
+                className="ml-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:hover:bg-surface-tertiary"
                 onMouseEnter={onMouseEnter}
                 onMouseLeave={onMouseLeave}
               >

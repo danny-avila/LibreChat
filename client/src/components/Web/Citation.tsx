@@ -26,10 +26,13 @@ export function CompositeCitation(props: CompositeCitationProps) {
 
     const firstSource = sources[0];
     const remainingCount = sources.length - 1;
+    const attribution =
+      firstSource.attribution ||
+      firstSource.title ||
+      getCleanDomain(firstSource.link || '') ||
+      localize('com_citation_source');
 
-    return remainingCount > 0
-      ? `${firstSource.attribution || localize('com_citation_source')} +${remainingCount}`
-      : firstSource.attribution || localize('com_citation_source');
+    return remainingCount > 0 ? `${attribution} +${remainingCount}` : attribution;
   };
 
   const handlePrevPage = (e: React.MouseEvent) => {
@@ -109,7 +112,7 @@ interface CitationComponentProps {
 
 export function Citation(props: CitationComponentProps) {
   const localize = useLocalize();
-  const { citation, citationId, citationType } = props.node?.properties ?? {};
+  const { citation, citationId } = props.node?.properties ?? {};
   const { setHoveredCitationId } = useContext(CitationContext);
   const refData = useCitation({
     turn: citation?.turn || 0,
@@ -119,12 +122,12 @@ export function Citation(props: CitationComponentProps) {
   if (!refData) return null;
 
   const getCitationLabel = () => {
-    switch (citationType) {
-      case 'standalone':
-        return refData.attribution || localize('com_citation_source');
-      default:
-        return refData.attribution || localize('com_citation_source');
-    }
+    return (
+      refData.attribution ||
+      refData.title ||
+      getCleanDomain(refData.link || '') ||
+      localize('com_citation_source')
+    );
   };
 
   return (

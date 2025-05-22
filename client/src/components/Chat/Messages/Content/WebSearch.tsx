@@ -74,7 +74,7 @@ export default function WebSearch({
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         {showSources && (
           <div className="mr-2">
-            <StackedFavicons sources={processedSources} end={processedSources.length} />
+            <StackedFavicons sources={processedSources} start={-5} />
           </div>
         )}
         <ProgressText
