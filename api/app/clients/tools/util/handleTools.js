@@ -1,7 +1,13 @@
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const { Tools, Constants, EToolResources, loadWebSearchAuth } = require('librechat-data-provider');
+const {
+  Tools,
+  Constants,
+  EToolResources,
+  loadWebSearchAuth,
+  replaceSpecialVars,
+} = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -276,6 +282,7 @@ const loadTools = async ({
         //   toolContextMap[tool] = toolContext;
         // }
         toolContextMap[tool] = `# \`${tool}\`:
+Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
 1. **Execute immediately without preface** when using \`${tool}\`.
 2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
 3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).
@@ -285,10 +292,10 @@ const loadTools = async ({
 7. **Avoid moralizing language.**
 `.trim();
         return createSearchTool({
-          // rerankerType: 'jina',
           ...result.authResult,
           onSearchResults,
           onGetHighlights,
+          logger,
         });
       };
       continue;
