@@ -33,6 +33,15 @@ jest.mock('~/config', () => ({
   },
 }));
 
+// IMPORTANT: Mock the openid helper to return our desired tenant configuration.
+jest.mock('~/server/utils/openidHelper', () => ({
+  getOpenIdTenants: jest.fn(),
+  chooseOpenIdStrategy: jest.fn(), // Not used in these tests.
+}));
+
+// Import our mocked helper so we can set its return value.
+const { getOpenIdTenants } = require('~/server/utils/openidHelper');
+
 // Mock Issuer.discover so that setupOpenId gets a fake issuer and client
 Issuer.discover = jest.fn().mockResolvedValue({
   id_token_signing_alg_values_supported: ['RS256'],
@@ -96,6 +105,21 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
+
+    // Set up our mocked tenant configuration.
+    // Here we simulate a single tenant with an empty domains field.
+    // (Our updated multi-tenant code uses the tenant name to build the strategy.)
+    getOpenIdTenants.mockResolvedValue([
+      {
+        name: 'tenant1',
+        domains: '', // Using an empty string so the single-tenant branch is taken.
+        openid: {
+          issuer: process.env.OPENID_ISSUER,
+          clientId: process.env.OPENID_CLIENT_ID,
+          clientSecret: process.env.OPENID_CLIENT_SECRET,
+        },
+      },
+    ]);
 
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
