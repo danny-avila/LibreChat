@@ -15,7 +15,7 @@ import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-da
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
 import { storeEndpointSettings, logger, createChatSearchParams } from '~/utils';
-import { createSearchParams } from 'react-router-dom';
+import { createSearchParams, useLocation, useNavigate } from 'react-router-dom';
 
 const latestMessageKeysAtom = atom<(string | number)[]>({
   key: 'latestMessageKeys',
@@ -105,21 +105,6 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
           `${LocalStorageKeys.LAST_CONVO_SETUP}_${index}`,
           JSON.stringify(newValue),
         );
-
-        const disableParams = newValue.disableParams === true;
-        const shouldUpdateParams =
-          index === 0 &&
-          !disableParams &&
-          newValue.createdAt === '' &&
-          JSON.stringify(newValue) !== JSON.stringify(oldValue) &&
-          (oldValue as TConversation)?.conversationId === Constants.NEW_CONVO;
-
-        if (shouldUpdateParams) {
-          const newParams = createChatSearchParams(newValue);
-          const searchParams = createSearchParams(newParams);
-          const url = `${window.location.pathname}?${searchParams.toString()}`;
-          window.history.pushState({}, '', url);
-        }
       });
     },
   ] as const,
@@ -359,6 +344,27 @@ function useClearLatestMessages(context?: string) {
   return clearAllLatestMessages;
 }
 
+function useConversationParamsSync(index: string | number) {
+  const conversation = useRecoilValue(conversationByIndex(index));
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!conversation) {
+      return;
+    }
+
+    const disableParams = conversation.disableParams === true;
+    const shouldUpdateParams = index === 0 && !disableParams && conversation.createdAt === '';
+
+    if (shouldUpdateParams) {
+      const newParams = createChatSearchParams(conversation);
+      const searchParams = createSearchParams(newParams);
+      navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
+    }
+  }, [conversation, index, location.pathname, navigate]);
+}
+
 const updateConversationSelector = selectorFamily({
   key: 'updateConversationSelector',
   get: () => () => null as Partial<TConversation> | null,
@@ -403,6 +409,7 @@ export default {
   conversationByKeySelector,
   useClearConvoState,
   useCreateConversationAtom,
+  useConversationParamsSync,
   showMentionPopoverFamily,
   globalAudioURLFamily,
   activeRunFamily,
