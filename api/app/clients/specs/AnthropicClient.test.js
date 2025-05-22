@@ -244,6 +244,64 @@ describe('AnthropicClient', () => {
       );
     });
 
+    describe('Claude 4 model headers', () => {
+      it('should add "prompt-caching" beta header for claude-sonnet-4 model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-sonnet-4-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+
+      it('should add "prompt-caching" beta header for claude-opus-4 model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-opus-4-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+
+      it('should add "prompt-caching" beta header for claude-4-sonnet model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-4-sonnet-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+
+      it('should add "prompt-caching" beta header for claude-4-opus model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-4-opus-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+    });
+
     it('should not add beta header for claude-3-5-sonnet-latest model', () => {
       const client = new AnthropicClient('test-api-key');
       const modelOptions = {
@@ -829,6 +887,64 @@ describe('AnthropicClient', () => {
         },
       });
       expect(client.isClaudeLatest).toBe(false);
+    });
+  });
+
+  describe('configureReasoning', () => {
+    it('should enable thinking for claude-opus-4 and claude-sonnet-4 models', async () => {
+      const client = new AnthropicClient('test-api-key');
+      // Create a mock async generator function
+      async function* mockAsyncGenerator() {
+        yield { type: 'message_start', message: { usage: {} } };
+        yield { delta: { text: 'Test response' } };
+        yield { type: 'message_delta', usage: {} };
+      }
+
+      // Mock createResponse to return the async generator
+      jest.spyOn(client, 'createResponse').mockImplementation(() => {
+        return mockAsyncGenerator();
+      });
+
+      // Test claude-opus-4
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20250514',
+        },
+        thinking: true,
+        thinkingBudget: 2000,
+      });
+
+      let capturedOptions = null;
+      jest.spyOn(client, 'getClient').mockImplementation((options) => {
+        capturedOptions = options;
+        return {};
+      });
+
+      const payload = [{ role: 'user', content: 'Test message' }];
+      await client.sendCompletion(payload, {});
+
+      expect(capturedOptions).toHaveProperty('thinking');
+      expect(capturedOptions.thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 2000,
+      });
+
+      // Test claude-sonnet-4
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20250514',
+        },
+        thinking: true,
+        thinkingBudget: 2000,
+      });
+
+      await client.sendCompletion(payload, {});
+
+      expect(capturedOptions).toHaveProperty('thinking');
+      expect(capturedOptions.thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 2000,
+      });
     });
   });
 });

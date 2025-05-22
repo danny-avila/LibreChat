@@ -15,20 +15,14 @@ function checkPromptCacheSupport(modelName) {
     return false;
   }
 
-  if (
-    modelMatch === 'claude-3-7-sonnet' ||
-    modelMatch === 'claude-3-5-sonnet' ||
-    modelMatch === 'claude-3-5-haiku' ||
-    modelMatch === 'claude-3-haiku' ||
-    modelMatch === 'claude-3-opus' ||
-    modelMatch === 'claude-3.7-sonnet' ||
-    modelMatch === 'claude-3.5-sonnet' ||
-    modelMatch === 'claude-3.5-haiku'
-  ) {
-    return true;
-  }
-
-  return false;
+  return (
+    /claude-3[-.]7/.test(modelMatch) ||
+    /claude-3[-.]5-(?:sonnet|haiku)/.test(modelMatch) ||
+    /claude-3-(?:sonnet|haiku|opus)?/.test(modelMatch) ||
+    /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch) ||
+    /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(modelMatch) ||
+    /claude-4(?:-(?:sonnet|opus|haiku))?/.test(modelMatch)
+  );
 }
 
 /**
@@ -51,6 +45,14 @@ function getClaudeHeaders(model, supportsCacheControl) {
       'anthropic-beta':
         'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
     };
+  } else if (
+    /claude-(?:sonnet|opus|haiku)-[4-9]/.test(model) ||
+    /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(model) ||
+    /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model)
+  ) {
+    return {
+      'anthropic-beta': 'prompt-caching-2024-07-31',
+    };
   } else {
     return {
       'anthropic-beta': 'prompt-caching-2024-07-31',
@@ -72,7 +74,8 @@ function configureReasoning(anthropicInput, extendedOptions = {}) {
   if (
     extendedOptions.thinking &&
     updatedOptions?.model &&
-    /claude-3[-.]7/.test(updatedOptions.model)
+    (/claude-3[-.]7/.test(updatedOptions.model) ||
+      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
   ) {
     updatedOptions.thinking = {
       type: 'enabled',
