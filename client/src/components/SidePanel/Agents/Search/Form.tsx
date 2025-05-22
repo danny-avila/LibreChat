@@ -20,9 +20,6 @@ export default function SearchForm() {
             <span className="text-token-text-primary block font-medium">
               {localize('com_ui_web_search')}
             </span>
-            <span className="text-xs text-text-secondary">
-              {localize('com_agents_by_librechat')}
-            </span>
           </div>
         </div>
       </div>
