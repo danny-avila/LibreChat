@@ -101,7 +101,11 @@ export type AllPromptGroupsResponse = t.TPromptGroup[];
 export type ConversationTagsResponse = s.TConversationTag[];
 
 export type VerifyToolAuthParams = { toolId: string };
-export type VerifyToolAuthResponse = { authenticated: boolean; message?: string | s.AuthType };
+export type VerifyToolAuthResponse = {
+  authenticated: boolean;
+  message?: string | s.AuthType;
+  authTypes?: [string, s.AuthType][];
+};
 
 export type GetToolCallParams = { conversationId: string };
 export type ToolCallResults = a.ToolCallResult[];

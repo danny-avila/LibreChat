@@ -162,6 +162,9 @@ export default function AgentPanel({
       if (data.file_search === true) {
         tools.push(Tools.file_search);
       }
+      if (data.web_search === true) {
+        tools.push(Tools.web_search);
+      }
 
       const {
         name,
