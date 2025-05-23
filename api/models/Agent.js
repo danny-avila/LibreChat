@@ -60,11 +60,16 @@ const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) =
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
   const availableTools = req.app.locals.availableTools;
-  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  /** @type {TEphemeralAgent | null} */
+  const ephemeralAgent = req.body.ephemeralAgent;
+  const mcpServers = new Set(ephemeralAgent?.mcp);
   /** @type {string[]} */
   const tools = [];
-  if (req.body.ephemeralAgent?.execute_code === true) {
+  if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
+  }
+  if (ephemeralAgent?.web_search === true) {
+    tools.push(Tools.web_search);
   }
 
   if (mcpServers.size > 0) {

@@ -3,7 +3,12 @@ const fs = require('fs');
 const fas = require('fs').promises;
 const path = require('path');
 const FormData = require('form-data');
-const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
+const {
+  FileSources,
+  envVarRegex,
+  extractEnvVariable,
+  extractVariableName,
+} = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { logger, createAxiosInstance } = require('~/config');
 const { logAxiosError } = require('~/utils/axios');
@@ -107,11 +112,6 @@ async function performOCR({
       logger.error('Error performing OCR:', error.message);
       throw error;
     });
-}
-
-function extractVariableName(str) {
-  const match = str.match(envVarRegex);
-  return match ? match[1] : null;
 }
 
 /**
