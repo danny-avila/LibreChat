@@ -12,6 +12,7 @@ import type { Pluggable } from 'unified';
 import {
   useToastContext,
   ArtifactProvider,
+  useSearchContext,
   CodeBlockProvider,
   useCodeBlockContext,
 } from '~/Providers';
@@ -174,6 +175,7 @@ type TContentProps = {
 };
 
 const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
+  const { searchResults } = useSearchContext();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -199,17 +201,22 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     [],
   );
 
-  const remarkPlugins: Pluggable[] = useMemo(
-    () => [
+  const searchTurns = useMemo(() => Object.keys(searchResults ?? {}).length, [searchResults]);
+  const remarkPlugins: Pluggable[] = useMemo(() => {
+    const plugins: Pluggable[] = [
       supersub,
       remarkGfm,
-      unicodeCitation,
       remarkDirective,
       artifactPlugin,
       [remarkMath, { singleDollarTextMath: true }],
-    ],
-    [],
-  );
+    ];
+
+    if (searchTurns > 0) {
+      plugins.push(unicodeCitation);
+    }
+
+    return plugins;
+  }, [searchTurns]);
 
   if (isInitializing) {
     return (
