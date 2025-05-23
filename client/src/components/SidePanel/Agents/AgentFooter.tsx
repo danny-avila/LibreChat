@@ -53,7 +53,7 @@ export default function AgentFooter({
   const showButtons = activePanel === Panel.builder;
 
   return (
-    <div className="mx-1 mb-1 flex w-full flex-col gap-2">
+    <div className="mb-1 flex w-full flex-col gap-2">
       {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
       {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
       {/* Context Button */}
