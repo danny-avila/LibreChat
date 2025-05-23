@@ -62,6 +62,7 @@
   "com_assistants_non_retrieval_model": "File search is not enabled on this model. Please select another model.",
   "com_assistants_retrieval": "Retrieval",
   "com_assistants_running_action": "Running action",
+  "com_assistants_running_var": "Running {{0}}",
   "com_assistants_search_name": "Search assistants by name",
   "com_assistants_update_actions_error": "There was an error creating or updating the action.",
   "com_assistants_update_actions_success": "Successfully created or updated Action",
