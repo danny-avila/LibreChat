@@ -285,6 +285,331 @@ describe('web.ts', () => {
       // One of the rerankers should be set
       expect(['jina', 'cohere']).toContain(result.authResult.rerankerType as string);
     });
+
+    it('should check all services if none are specified', async () => {
+      // Initialize a webSearchConfig without specific services
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+
+      // Should have checked all categories
+      expect(result.authTypes).toHaveLength(3);
+
+      // Should have set values for all categories
+      expect(result.authResult.searchProvider).toBeDefined();
+      expect(result.authResult.scraperType).toBeDefined();
+      expect(result.authResult.rerankerType).toBeDefined();
+    });
+
+    it('should correctly identify authTypes based on specific configurations', async () => {
+      // Set up environment variables for system-defined auth
+      const originalEnv = process.env;
+      process.env = {
+        ...originalEnv,
+        SERPER_API_KEY: 'system-serper-key',
+        FIRECRAWL_API_KEY: 'system-firecrawl-key',
+        FIRECRAWL_API_URL: 'https://api.firecrawl.dev',
+        JINA_API_KEY: 'system-jina-key',
+        COHERE_API_KEY: 'system-cohere-key',
+      };
+
+      // Initialize webSearchConfig with environment variable references
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+        // Specify which services to use
+        searchProvider: 'serper' as SearchProviders,
+        scraperType: 'firecrawl' as ScraperTypes,
+        rerankerType: 'jina' as RerankerTypes,
+      };
+
+      // Mock loadAuthValues to return the actual values
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          if (field === 'SERPER_API_KEY') {
+            result[field] = 'system-serper-key';
+          } else if (field === 'FIRECRAWL_API_KEY') {
+            result[field] = 'system-firecrawl-key';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else if (field === 'JINA_API_KEY') {
+            result[field] = 'system-jina-key';
+          } else if (field === 'COHERE_API_KEY') {
+            result[field] = 'system-cohere-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      // Log the result for debugging
+      console.log('Auth Result:', JSON.stringify(result, null, 2));
+
+      // Verify that all required fields are present in the authResult
+      expect(result.authResult).toHaveProperty('serperApiKey');
+      expect(result.authResult).toHaveProperty('firecrawlApiKey');
+      expect(result.authResult).toHaveProperty('firecrawlApiUrl');
+      expect(result.authResult).toHaveProperty('jinaApiKey');
+      expect(result.authResult).toHaveProperty('searchProvider');
+      expect(result.authResult).toHaveProperty('scraperType');
+      expect(result.authResult).toHaveProperty('rerankerType');
+
+      expect(result.authenticated).toBe(true);
+
+      // Verify authTypes for each category
+      const providersAuthType = result.authTypes.find(
+        ([category]) => category === 'providers',
+      )?.[1];
+      const scrapersAuthType = result.authTypes.find(([category]) => category === 'scrapers')?.[1];
+      const rerankersAuthType = result.authTypes.find(
+        ([category]) => category === 'rerankers',
+      )?.[1];
+
+      // All should be system-defined since we're using environment variables
+      expect(providersAuthType).toBe(AuthType.SYSTEM_DEFINED);
+      expect(scrapersAuthType).toBe(AuthType.SYSTEM_DEFINED);
+      expect(rerankersAuthType).toBe(AuthType.SYSTEM_DEFINED);
+
+      // Verify the authResult contains the correct values
+      expect(result.authResult).toHaveProperty('serperApiKey', 'system-serper-key');
+      expect(result.authResult).toHaveProperty('firecrawlApiKey', 'system-firecrawl-key');
+      expect(result.authResult).toHaveProperty('firecrawlApiUrl', 'https://api.firecrawl.dev');
+      expect(result.authResult).toHaveProperty('jinaApiKey', 'system-jina-key');
+      expect(result.authResult).toHaveProperty('searchProvider', 'serper');
+      expect(result.authResult).toHaveProperty('scraperType', 'firecrawl');
+      expect(result.authResult).toHaveProperty('rerankerType', 'jina');
+
+      // Restore original env
+      process.env = originalEnv;
+    });
+
+    it('should handle custom variable names in environment variables', async () => {
+      // Set up environment variables with custom names
+      const originalEnv = process.env;
+      process.env = {
+        ...originalEnv,
+        CUSTOM_SERPER_KEY: 'custom-serper-key',
+        CUSTOM_FIRECRAWL_KEY: 'custom-firecrawl-key',
+        CUSTOM_FIRECRAWL_URL: 'https://custom.firecrawl.dev',
+        CUSTOM_JINA_KEY: 'custom-jina-key',
+        CUSTOM_COHERE_KEY: 'custom-cohere-key',
+      };
+
+      // Initialize webSearchConfig with custom variable names
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${CUSTOM_SERPER_KEY}',
+        firecrawlApiKey: '${CUSTOM_FIRECRAWL_KEY}',
+        firecrawlApiUrl: '${CUSTOM_FIRECRAWL_URL}',
+        jinaApiKey: '${CUSTOM_JINA_KEY}',
+        cohereApiKey: '${CUSTOM_COHERE_KEY}',
+        safeSearch: true,
+        // Specify which services to use
+        searchProvider: 'serper' as SearchProviders,
+        scraperType: 'firecrawl' as ScraperTypes,
+        rerankerType: 'jina' as RerankerTypes, // Only Jina will be checked
+      };
+
+      // Mock loadAuthValues to return the actual values
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          if (field === 'CUSTOM_SERPER_KEY') {
+            result[field] = 'custom-serper-key';
+          } else if (field === 'CUSTOM_FIRECRAWL_KEY') {
+            result[field] = 'custom-firecrawl-key';
+          } else if (field === 'CUSTOM_FIRECRAWL_URL') {
+            result[field] = 'https://custom.firecrawl.dev';
+          } else if (field === 'CUSTOM_JINA_KEY') {
+            result[field] = 'custom-jina-key';
+          }
+          // Note: CUSTOM_COHERE_KEY is not checked because we specified jina as rerankerType
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+
+      // Verify the authResult contains the correct values from custom variables
+      expect(result.authResult).toHaveProperty('serperApiKey', 'custom-serper-key');
+      expect(result.authResult).toHaveProperty('firecrawlApiKey', 'custom-firecrawl-key');
+      expect(result.authResult).toHaveProperty('firecrawlApiUrl', 'https://custom.firecrawl.dev');
+      expect(result.authResult).toHaveProperty('jinaApiKey', 'custom-jina-key');
+      // cohereApiKey should not be in the result since we specified jina as rerankerType
+      expect(result.authResult).not.toHaveProperty('cohereApiKey');
+
+      // Verify the service types are set correctly
+      expect(result.authResult).toHaveProperty('searchProvider', 'serper');
+      expect(result.authResult).toHaveProperty('scraperType', 'firecrawl');
+      expect(result.authResult).toHaveProperty('rerankerType', 'jina');
+
+      // Restore original env
+      process.env = originalEnv;
+    });
+
+    it('should always return authTypes array with exactly 3 categories', async () => {
+      // Set up environment variables
+      const originalEnv = process.env;
+      process.env = {
+        ...originalEnv,
+        SERPER_API_KEY: 'test-key',
+        FIRECRAWL_API_KEY: 'test-key',
+        FIRECRAWL_API_URL: 'https://api.firecrawl.dev',
+        JINA_API_KEY: 'test-key',
+      };
+
+      // Initialize webSearchConfig with environment variable references
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+      };
+
+      // Mock loadAuthValues to return values
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          result[field] = field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      // Get the number of categories from webSearchAuth
+      const expectedCategoryCount = Object.keys(webSearchAuth).length;
+
+      // Verify authTypes array structure
+      expect(result.authTypes).toHaveLength(expectedCategoryCount);
+
+      // Verify each category exists exactly once
+      const categories = result.authTypes.map(([category]) => category);
+      Object.keys(webSearchAuth).forEach((category) => {
+        expect(categories).toContain(category);
+      });
+
+      // Verify no duplicate categories
+      expect(new Set(categories).size).toBe(expectedCategoryCount);
+
+      // Verify each entry has the correct format [category, AuthType]
+      result.authTypes.forEach(([category, authType]) => {
+        expect(typeof category).toBe('string');
+        expect([AuthType.SYSTEM_DEFINED, AuthType.USER_PROVIDED]).toContain(authType);
+      });
+
+      // Restore original env
+      process.env = originalEnv;
+    });
+
+    it('should maintain authTypes array structure even when authentication fails', async () => {
+      // Set up environment variables
+      const originalEnv = process.env;
+      process.env = {
+        ...originalEnv,
+        SERPER_API_KEY: 'test-key',
+        // Missing other keys to force authentication failure
+      };
+
+      // Initialize webSearchConfig with environment variable references
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: true,
+      };
+
+      // Mock loadAuthValues to return partial values
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field) => {
+          if (field === 'SERPER_API_KEY') {
+            result[field] = 'test-key';
+          }
+          // Other fields are intentionally missing
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      // Get the number of categories from webSearchAuth
+      const expectedCategoryCount = Object.keys(webSearchAuth).length;
+
+      // Verify authentication failed
+      expect(result.authenticated).toBe(false);
+
+      // Verify authTypes array structure is maintained
+      expect(result.authTypes).toHaveLength(expectedCategoryCount);
+
+      // Verify each category exists exactly once
+      const categories = result.authTypes.map(([category]) => category);
+      Object.keys(webSearchAuth).forEach((category) => {
+        expect(categories).toContain(category);
+      });
+
+      // Verify no duplicate categories
+      expect(new Set(categories).size).toBe(expectedCategoryCount);
+
+      // Verify each entry has the correct format [category, AuthType]
+      result.authTypes.forEach(([category, authType]) => {
+        expect(typeof category).toBe('string');
+        expect([AuthType.SYSTEM_DEFINED, AuthType.USER_PROVIDED]).toContain(authType);
+      });
+
+      // Restore original env
+      process.env = originalEnv;
+    });
   });
 
   describe('webSearchAuth', () => {
