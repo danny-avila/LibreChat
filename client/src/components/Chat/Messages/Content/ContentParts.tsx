@@ -102,25 +102,25 @@ const ContentParts = memo(
 
     return (
       <>
-        {hasReasoningParts && (
-          <div className="mb-5">
-            <ThinkingButton
-              isExpanded={isExpanded}
-              onClick={() =>
-                setIsExpanded((prev) => {
-                  const val = !prev;
-                  setShowThinking(val);
-                  return val;
-                })
-              }
-              label={
-                isSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts')
-              }
-            />
-          </div>
-        )}
         <SearchContext.Provider value={{ searchResults }}>
           <Sources />
+          {hasReasoningParts && (
+            <div className="mb-5">
+              <ThinkingButton
+                isExpanded={isExpanded}
+                onClick={() =>
+                  setIsExpanded((prev) => {
+                    const val = !prev;
+                    setShowThinking(val);
+                    return val;
+                  })
+                }
+                label={
+                  isSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts')
+                }
+              />
+            </div>
+          )}
           {content
             .filter((part) => part)
             .map((part, idx) => {
