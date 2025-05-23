@@ -7,8 +7,9 @@ services:
     links:
       - mongodb
       - meilisearch
-    # ports:
-    #   - 3080:3080               # Change it to 9000:3080 to use nginx
+    container_name: chat-app-lcdev
+    ports:
+      - 80:80               # Change it to 9000:3080 to use nginx
     extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
     - "host.docker.internal:host-gateway"
 
@@ -39,7 +40,7 @@ services:
     command: /bin/sh -c "while sleep 1000; do :; done"  
 
   mongodb:
-    container_name: chat-mongodb
+    container_name: chat-mongodb-lcdev
     expose:
       - 27017
     # ports:
@@ -50,7 +51,7 @@ services:
       - ./data-node:/data/db
     command: mongod --noauth
   meilisearch:
-    container_name: chat-meilisearch
+    container_name: chat-meilisearch-lcdev
     image: getmeili/meilisearch:v1.5
     # restart: always
     expose:
