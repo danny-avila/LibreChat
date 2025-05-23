@@ -1,4 +1,9 @@
 import { Schema, Document, Types } from 'mongoose';
+export interface ISupportContact {
+  name?: string;
+  email?: string;
+}
+
 export interface IAgent extends Omit<Document, 'model'> {
   id: string;
   name?: string;
@@ -26,6 +31,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   conversation_starters?: string[];
   tool_resources?: unknown;
   projectIds?: Types.ObjectId[];
+  category: string;
+  support_contact?: ISupportContact;
 }
 
 const agentSchema = new Schema<IAgent>(

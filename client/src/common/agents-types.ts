@@ -16,6 +16,11 @@ export type TAgentCapabilities = {
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
 };
 
+export type SupportContact = {
+  name?: string;
+  email?: string;
+};
+
 export type AgentForm = {
   agent?: TAgentOption;
   id: string;
@@ -29,4 +34,5 @@ export type AgentForm = {
   agent_ids?: string[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
+  support_contact?: SupportContact;
 } & TAgentCapabilities;
