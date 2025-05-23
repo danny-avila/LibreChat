@@ -2570,7 +2570,7 @@ html {
   gap: 0.5rem;
   border-radius: 0.5rem;
   padding: 0.5rem;
-  outline: none !important;
+  /*outline: none !important;*/
 }
 
 .select-item[aria-disabled='true'] {
@@ -2580,6 +2580,15 @@ html {
 .select-item[data-active-item] {
   background-color: var(--surface-hover);
   color: var(--text-primary);
+  outline: visible;
+  outline: 1px solid black;
+  outline-offset: -1px;
+}
+
+.select-item[data-active-item]:where(.dark, .dark *) {
+  outline: visible;
+  outline: 1px solid white;
+  outline-offset: -1px;
 }
 
 .popover-ui[data-enter] {
