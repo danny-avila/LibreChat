@@ -1,5 +1,15 @@
 export const envVarRegex = /^\${(.+)}$/;
 
+/** Extracts the environment variable name from a template literal string */
+export function extractVariableName(value: string): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.trim().match(envVarRegex);
+  return match ? match[1] : null;
+}
+
 /** Extracts the value of an environment variable from a string. */
 export function extractEnvVariable(value: string) {
   if (!value) {

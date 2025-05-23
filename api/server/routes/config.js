@@ -85,6 +85,26 @@ router.get('/', async function (req, res) {
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
     };
+    /** @type {TCustomConfig['webSearch']} */
+    const webSearchConfig = req.app.locals.webSearch;
+    if (
+      webSearchConfig != null &&
+      (webSearchConfig.searchProvider ||
+        webSearchConfig.scraperType ||
+        webSearchConfig.rerankerType)
+    ) {
+      payload.webSearch = {};
+    }
+
+    if (webSearchConfig?.searchProvider) {
+      payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+    }
+    if (webSearchConfig?.scraperType) {
+      payload.webSearch.scraperType = webSearchConfig.scraperType;
+    }
+    if (webSearchConfig?.rerankerType) {
+      payload.webSearch.rerankerType = webSearchConfig.rerankerType;
+    }
 
     if (ldap) {
       payload.ldap = ldap;

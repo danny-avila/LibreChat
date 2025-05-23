@@ -1,3 +1,4 @@
+export * from './AnimatedTabs';
 export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';

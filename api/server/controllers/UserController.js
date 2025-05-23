@@ -1,4 +1,10 @@
-const { FileSources } = require('librechat-data-provider');
+const {
+  Tools,
+  Constants,
+  FileSources,
+  webSearchKeys,
+  extractWebSearchEnvVars,
+} = require('librechat-data-provider');
 const {
   Balance,
   getFiles,
@@ -83,7 +89,6 @@ const deleteUserFiles = async (req) => {
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
-  let authService;
   try {
     if (!isEntityTool) {
       const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
@@ -95,32 +100,55 @@ const updateUserPluginsController = async (req, res) => {
       }
     }
 
-    if (auth) {
-      const keys = Object.keys(auth);
-      const values = Object.values(auth);
-      if (action === 'install' && keys.length > 0) {
-        for (let i = 0; i < keys.length; i++) {
-          authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
-          if (authService instanceof Error) {
-            logger.error('[authService]', authService);
-            const { status, message } = authService;
-            res.status(status).send({ message });
-          }
+    if (auth == null) {
+      return res.status(200).send();
+    }
+
+    let keys = Object.keys(auth);
+    if (keys.length === 0 && pluginKey !== Tools.web_search) {
+      return res.status(200).send();
+    }
+    const values = Object.values(auth);
+
+    /** @type {number} */
+    let status = 200;
+    /** @type {string} */
+    let message;
+    /** @type {IPluginAuth | Error} */
+    let authService;
+
+    if (pluginKey === Tools.web_search) {
+      /** @type  {TCustomConfig['webSearch']} */
+      const webSearchConfig = req.app.locals?.webSearch;
+      keys = extractWebSearchEnvVars({
+        keys: action === 'install' ? keys : webSearchKeys,
+        config: webSearchConfig,
+      });
+    }
+
+    if (action === 'install') {
+      for (let i = 0; i < keys.length; i++) {
+        authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
+        if (authService instanceof Error) {
+          logger.error('[authService]', authService);
+          ({ status, message } = authService);
         }
       }
-      if (action === 'uninstall' && keys.length > 0) {
-        for (let i = 0; i < keys.length; i++) {
-          authService = await deleteUserPluginAuth(user.id, keys[i]);
-          if (authService instanceof Error) {
-            logger.error('[authService]', authService);
-            const { status, message } = authService;
-            res.status(status).send({ message });
-          }
+    } else if (action === 'uninstall') {
+      for (let i = 0; i < keys.length; i++) {
+        authService = await deleteUserPluginAuth(user.id, keys[i]);
+        if (authService instanceof Error) {
+          logger.error('[authService]', authService);
+          ({ status, message } = authService);
         }
       }
     }
 
-    res.status(200).send();
+    if (status === 200) {
+      return res.status(status).send();
+    }
+
+    res.status(status).send({ message });
   } catch (err) {
     logger.error('[updateUserPluginsController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
