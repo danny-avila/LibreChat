@@ -129,18 +129,18 @@ export type UpdateAgentVariables = {
   data: AgentUpdateParams;
 };
 
-export type DuplicateVersionError = Error & { 
-  statusCode?: number; 
-  details?: { 
-    duplicateVersion?: any; 
-    versionIndex?: number 
-  } 
+export type DuplicateVersionError = Error & {
+  statusCode?: number;
+  details?: {
+    duplicateVersion?: unknown;
+    versionIndex?: number;
+  };
 };
 
 export type UpdateAgentMutationOptions = MutationOptions<
-  Agent, 
-  UpdateAgentVariables, 
-  unknown, 
+  Agent,
+  UpdateAgentVariables,
+  unknown,
   DuplicateVersionError
 >;
 
