@@ -613,6 +613,7 @@ export const webSearchSchema = z.object({
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperType: z.nativeEnum(ScraperTypes).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
+  scraperTimeout: z.number().optional(),
   safeSearch: z.boolean().default(true),
 });
 
