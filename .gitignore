@@ -52,8 +52,9 @@ bower_components/
 *.d.ts
 !vite-env.d.ts
 
-# Cline
+# AI
 .clineignore
+.cursor
 
 # Floobits
 .floo
