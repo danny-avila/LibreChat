@@ -375,9 +375,6 @@ describe('web.ts', () => {
         loadAuthValues: mockLoadAuthValues,
       });
 
-      // Log the result for debugging
-      console.log('Auth Result:', JSON.stringify(result, null, 2));
-
       // Verify that all required fields are present in the authResult
       expect(result.authResult).toHaveProperty('serperApiKey');
       expect(result.authResult).toHaveProperty('firecrawlApiKey');
