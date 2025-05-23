@@ -91,7 +91,7 @@ export default function Message(props: TMessageProps) {
       >
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
           <div
-            id={messageId}
+            id={messageId ?? ''}
             aria-label={`message-${message.depth}-${messageId}`}
             className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
           >

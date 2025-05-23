@@ -91,10 +91,10 @@ const ContentRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-            logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
-            logger.dir(msg);
-            setLatestMessage(msg!);
-          }
+              logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
+              logger.dir(msg);
+              setLatestMessage(msg!);
+            }
           : undefined,
       [showCardRender, isLatestMessage, msg, setLatestMessage],
     );
