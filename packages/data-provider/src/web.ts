@@ -261,6 +261,7 @@ export async function loadWebSearchAuth({
   }
 
   authResult.safeSearch = webSearchConfig?.safeSearch ?? true;
+  authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? 7500;
 
   return {
     authTypes,
