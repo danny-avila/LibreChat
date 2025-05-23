@@ -172,6 +172,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -188,6 +189,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -204,6 +206,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -229,6 +232,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -255,6 +259,32 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
+    });
+  });
+
+  it('should call updateAccessPermissions with the correct parameters when WEB_SEARCH is undefined', async () => {
+    const config = {
+      interface: {
+        prompts: true,
+        bookmarks: false,
+        multiConvo: true,
+        agents: false,
+        temporaryChat: true,
+        runCode: false,
+      },
+    };
+    const configDefaults = { interface: {} };
+
+    await loadDefaultInterface(config, configDefaults);
+
+    expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
+      [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
+      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
+      [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
+      [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
