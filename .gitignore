@@ -120,3 +120,5 @@ release/
 .devcontainer/.claude/config.json
 files-changed.txt
 merge-files.sh
+wordpress/*
+.claude/*
