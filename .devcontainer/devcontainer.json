@@ -4,7 +4,23 @@
   "workspaceFolder": "/workspaces",
   "customizations": {
     "vscode": {
-      "extensions": [],
+      "extensions": [
+        "saoudrizwan.claude-dev",
+        "ms-vscode-remote.remote-containers",
+        "GitHub.copilot-chat",
+        "RooVeterinaryInc.roo-cline",
+        "mhutchie.git-graph",
+        "donjayamanne.githistory",
+        "github.vscode-github-actions",
+        "me-dutour-mathieu.vscode-github-actions",
+        "GitHub.codespaces",
+        "GitHub.copilot",
+        "GitHub.vscode-pull-request-github",
+        "DavidAnson.vscode-markdownlint",
+        "christian-kohler.npm-intellisense",
+        "mechatroner.rainbow-csv",
+        "redhat.vscode-yaml"
+      ],
       "settings": {
         "terminal.integrated.profiles.linux": {
           "bash": null
