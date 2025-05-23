@@ -157,7 +157,11 @@ export default function ToolCall({
         <ProgressText
           progress={progress}
           onClick={() => setShowInfo((prev) => !prev)}
-          inProgressText={localize('com_assistants_running_action')}
+          inProgressText={
+            function_name
+              ? localize('com_assistants_running_var', { 0: function_name })
+              : localize('com_assistants_running_action')
+          }
           authText={
             !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }
