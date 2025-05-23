@@ -10,7 +10,7 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
   return ({ data }: { data: TAttachment; submission: EventSubmission }) => {
     const { messageId } = data;
 
-    if (queryClient && !data?.filepath?.startsWith('/api/files')) {
+    if (queryClient && data?.filepath && !data.filepath.startsWith('/api/files')) {
       queryClient.setQueryData([QueryKeys.files], (oldData: TAttachment[] | undefined) => {
         return [data, ...(oldData || [])];
       });

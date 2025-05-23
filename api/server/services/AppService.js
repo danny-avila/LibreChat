@@ -1,9 +1,10 @@
 const {
   FileSources,
-  EModelEndpoint,
   loadOCRConfig,
   processMCPEnv,
+  EModelEndpoint,
   getConfigDefaults,
+  loadWebSearchConfig,
 } = require('librechat-data-provider');
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
@@ -35,6 +36,7 @@ const AppService = async (app) => {
   const configDefaults = getConfigDefaults();
 
   const ocr = loadOCRConfig(config.ocr);
+  const webSearch = loadWebSearchConfig(config.webSearch);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
@@ -79,6 +81,7 @@ const AppService = async (app) => {
   const defaultLocals = {
     ocr,
     paths,
+    webSearch,
     fileStrategy,
     socialLogins,
     filteredTools,

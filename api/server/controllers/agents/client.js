@@ -39,9 +39,6 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { logger, sendEvent } = require('~/config');
 const { createRun } = require('./run');
 
-/** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
-/** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
-
 /**
  * @param {ServerRequest} req
  * @param {Agent} agent
@@ -543,7 +540,7 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, abortController = null }) {
-    /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
+    /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
     let run;

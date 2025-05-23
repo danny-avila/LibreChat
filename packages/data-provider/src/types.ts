@@ -44,6 +44,7 @@ export type TEndpointOption = {
 
 export type TEphemeralAgent = {
   mcp?: string[];
+  web_search?: boolean;
   execute_code?: boolean;
 };
 
@@ -79,7 +80,7 @@ export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialRe
 export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';
-  auth?: unknown;
+  auth?: Partial<Record<string, string>>;
   isEntityTool?: boolean;
 };
 
@@ -89,7 +90,7 @@ export type TUpdateUserPlugins = {
   isEntityTool?: boolean;
   pluginKey: string;
   action: string;
-  auth?: unknown;
+  auth?: Partial<Record<string, string | null>>;
 };
 
 // TODO `label` needs to be changed to the proper `TranslationKeys`
