@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ApiKeyDialog from './ApiKeyDialog';
-import { AuthType } from 'librechat-data-provider';
+import { AuthType, SearchCategories, RerankerTypes } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 
 // Mock useLocalize to just return the key
@@ -26,9 +26,9 @@ const defaultProps = {
   onSubmit: jest.fn(),
   onRevoke: jest.fn(),
   authTypes: [
-    ['providers', AuthType.USER_PROVIDED] as [string, AuthType],
-    ['scrapers', AuthType.USER_PROVIDED] as [string, AuthType],
-    ['rerankers', AuthType.USER_PROVIDED] as [string, AuthType],
+    [SearchCategories.PROVIDERS, AuthType.USER_PROVIDED] as [string, AuthType],
+    [SearchCategories.SCRAPERS, AuthType.USER_PROVIDED] as [string, AuthType],
+    [SearchCategories.RERANKERS, AuthType.USER_PROVIDED] as [string, AuthType],
   ],
   isToolAuthenticated: false,
   register: mockRegister as any,
@@ -71,14 +71,18 @@ describe('ApiKeyDialog', () => {
   });
 
   it('shows only Jina reranker field if rerankerType is set to jina', () => {
-    mockUseGetStartupConfig.mockReturnValue({ data: { webSearch: { rerankerType: 'jina' } } });
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { webSearch: { rerankerType: RerankerTypes.JINA } },
+    });
     render(<ApiKeyDialog {...defaultProps} />);
     expect(screen.getByPlaceholderText('com_ui_web_search_jina_key')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('com_ui_web_search_cohere_key')).not.toBeInTheDocument();
   });
 
   it('shows only Cohere reranker field if rerankerType is set to cohere', () => {
-    mockUseGetStartupConfig.mockReturnValue({ data: { webSearch: { rerankerType: 'cohere' } } });
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { webSearch: { rerankerType: RerankerTypes.COHERE } },
+    });
     render(<ApiKeyDialog {...defaultProps} />);
     expect(screen.getByPlaceholderText('com_ui_web_search_cohere_key')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
@@ -99,9 +103,9 @@ describe('ApiKeyDialog', () => {
     const props = {
       ...defaultProps,
       authTypes: [
-        ['providers', AuthType.SYSTEM_DEFINED],
-        ['scrapers', AuthType.USER_PROVIDED],
-        ['rerankers', AuthType.USER_PROVIDED],
+        [SearchCategories.PROVIDERS, AuthType.SYSTEM_DEFINED],
+        [SearchCategories.SCRAPERS, AuthType.USER_PROVIDED],
+        [SearchCategories.RERANKERS, AuthType.USER_PROVIDED],
       ] as [string, AuthType][],
     };
     render(<ApiKeyDialog {...props} />);
@@ -115,9 +119,9 @@ describe('ApiKeyDialog', () => {
     const props = {
       ...defaultProps,
       authTypes: [
-        ['providers', AuthType.USER_PROVIDED],
-        ['scrapers', AuthType.SYSTEM_DEFINED],
-        ['rerankers', AuthType.USER_PROVIDED],
+        [SearchCategories.PROVIDERS, AuthType.USER_PROVIDED],
+        [SearchCategories.SCRAPERS, AuthType.SYSTEM_DEFINED],
+        [SearchCategories.RERANKERS, AuthType.USER_PROVIDED],
       ] as [string, AuthType][],
     };
     render(<ApiKeyDialog {...props} />);
@@ -131,9 +135,9 @@ describe('ApiKeyDialog', () => {
     const props = {
       ...defaultProps,
       authTypes: [
-        ['providers', AuthType.USER_PROVIDED],
-        ['scrapers', AuthType.USER_PROVIDED],
-        ['rerankers', AuthType.SYSTEM_DEFINED],
+        [SearchCategories.PROVIDERS, AuthType.USER_PROVIDED],
+        [SearchCategories.SCRAPERS, AuthType.USER_PROVIDED],
+        [SearchCategories.RERANKERS, AuthType.SYSTEM_DEFINED],
       ] as [string, AuthType][],
     };
     render(<ApiKeyDialog {...props} />);

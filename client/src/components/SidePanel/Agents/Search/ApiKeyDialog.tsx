@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
-import { AuthType } from 'librechat-data-provider';
+import { AuthType, SearchCategories, RerankerTypes } from 'librechat-data-provider';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { MenuItemProps } from '~/common';
@@ -34,8 +34,12 @@ export default function ApiKeyDialog({
 }) {
   const localize = useLocalize();
   const { data: config } = useGetStartupConfig();
-  const [selectedReranker, setSelectedReranker] = useState<'jina' | 'cohere'>(
-    config?.webSearch?.rerankerType === 'cohere' ? 'cohere' : 'jina',
+  const [selectedReranker, setSelectedReranker] = useState<
+    RerankerTypes.JINA | RerankerTypes.COHERE
+  >(
+    config?.webSearch?.rerankerType === RerankerTypes.COHERE
+      ? RerankerTypes.COHERE
+      : RerankerTypes.JINA,
   );
 
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
@@ -59,11 +63,11 @@ export default function ApiKeyDialog({
   const rerankerItems: MenuItemProps[] = [
     {
       label: localize('com_ui_web_search_reranker_jina'),
-      onClick: () => setSelectedReranker('jina'),
+      onClick: () => setSelectedReranker(RerankerTypes.JINA),
     },
     {
       label: localize('com_ui_web_search_reranker_cohere'),
-      onClick: () => setSelectedReranker('cohere'),
+      onClick: () => setSelectedReranker(RerankerTypes.COHERE),
     },
   ];
 
@@ -72,9 +76,109 @@ export default function ApiKeyDialog({
   const showRerankerDropdown = !config?.webSearch?.rerankerType;
 
   // Determine which categories are SYSTEM_DEFINED
-  const providerAuthType = authTypes.find(([cat]) => cat === 'providers')?.[1];
-  const scraperAuthType = authTypes.find(([cat]) => cat === 'scrapers')?.[1];
-  const rerankerAuthType = authTypes.find(([cat]) => cat === 'rerankers')?.[1];
+  const providerAuthType = authTypes.find(([cat]) => cat === SearchCategories.PROVIDERS)?.[1];
+  const scraperAuthType = authTypes.find(([cat]) => cat === SearchCategories.SCRAPERS)?.[1];
+  const rerankerAuthType = authTypes.find(([cat]) => cat === SearchCategories.RERANKERS)?.[1];
+
+  function renderRerankerInput() {
+    if (config?.webSearch?.rerankerType === RerankerTypes.JINA) {
+      return (
+        <>
+          <Input
+            type="password"
+            placeholder={localize('com_ui_web_search_jina_key')}
+            autoComplete="one-time-code"
+            readOnly={true}
+            onFocus={(e) => (e.target.readOnly = false)}
+            {...register('jinaApiKey')}
+          />
+          <div className="mt-1 text-xs text-text-secondary">
+            <a
+              href="https://jina.ai/api-dashboard/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {localize('com_ui_web_search_reranker_jina_key')}
+            </a>
+          </div>
+        </>
+      );
+    }
+    if (config?.webSearch?.rerankerType === RerankerTypes.COHERE) {
+      return (
+        <>
+          <Input
+            type="password"
+            placeholder={localize('com_ui_web_search_cohere_key')}
+            autoComplete="one-time-code"
+            readOnly={true}
+            onFocus={(e) => (e.target.readOnly = false)}
+            {...register('cohereApiKey')}
+          />
+          <div className="mt-1 text-xs text-text-secondary">
+            <a
+              href="https://dashboard.cohere.com/welcome/login"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {localize('com_ui_web_search_reranker_cohere_key')}
+            </a>
+          </div>
+        </>
+      );
+    }
+    if (!config?.webSearch?.rerankerType && selectedReranker === RerankerTypes.JINA) {
+      return (
+        <>
+          <Input
+            type="password"
+            placeholder={localize('com_ui_web_search_jina_key')}
+            autoComplete="one-time-code"
+            readOnly={true}
+            onFocus={(e) => (e.target.readOnly = false)}
+            {...register('jinaApiKey')}
+          />
+          <div className="mt-1 text-xs text-text-secondary">
+            <a
+              href="https://jina.ai/api-dashboard/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {localize('com_ui_web_search_reranker_jina_key')}
+            </a>
+          </div>
+        </>
+      );
+    }
+    if (!config?.webSearch?.rerankerType && selectedReranker === RerankerTypes.COHERE) {
+      return (
+        <>
+          <Input
+            type="password"
+            placeholder={localize('com_ui_web_search_cohere_key')}
+            autoComplete="one-time-code"
+            readOnly={true}
+            onFocus={(e) => (e.target.readOnly = false)}
+            {...register('cohereApiKey')}
+          />
+          <div className="mt-1 text-xs text-text-secondary">
+            <a
+              href="https://dashboard.cohere.com/welcome/login"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {localize('com_ui_web_search_reranker_cohere_key')}
+            </a>
+          </div>
+        </>
+      );
+    }
+    return null;
+  }
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange} triggerRef={triggerRef}>
@@ -202,7 +306,7 @@ export default function ApiKeyDialog({
                     <Label className="text-md w-fit font-medium">
                       {localize('com_ui_web_search_reranker')}
                     </Label>
-                    {showRerankerDropdown ? (
+                    {showRerankerDropdown && (
                       <DropdownPopup
                         menuId="reranker-dropdown"
                         isOpen={rerankerDropdownOpen}
@@ -213,108 +317,23 @@ export default function ApiKeyDialog({
                             onClick={() => setRerankerDropdownOpen(!rerankerDropdownOpen)}
                             className="flex items-center rounded-md border border-border-light px-3 py-1 text-sm text-text-secondary"
                           >
-                            {selectedReranker === 'jina'
+                            {selectedReranker === RerankerTypes.JINA
                               ? localize('com_ui_web_search_reranker_jina')
                               : localize('com_ui_web_search_reranker_cohere')}
                             <ChevronDown className="ml-1 h-4 w-4" />
                           </Menu.MenuButton>
                         }
                       />
-                    ) : (
+                    )}
+                    {!showRerankerDropdown && (
                       <div className="text-sm text-text-secondary">
-                        {config?.webSearch?.rerankerType === 'cohere'
+                        {config?.webSearch?.rerankerType === RerankerTypes.COHERE
                           ? localize('com_ui_web_search_reranker_cohere')
                           : localize('com_ui_web_search_reranker_jina')}
                       </div>
                     )}
                   </div>
-                  {!config?.webSearch?.rerankerType ? (
-                    selectedReranker === 'jina' ? (
-                      <>
-                        <Input
-                          type="password"
-                          placeholder={localize('com_ui_web_search_jina_key')}
-                          autoComplete="one-time-code"
-                          readOnly={true}
-                          onFocus={(e) => (e.target.readOnly = false)}
-                          {...register('jinaApiKey')}
-                        />
-                        <div className="mt-1 text-xs text-text-secondary">
-                          <a
-                            href="https://jina.ai/api-dashboard/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            {localize('com_ui_web_search_reranker_jina_key')}
-                          </a>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <Input
-                          type="password"
-                          placeholder={localize('com_ui_web_search_cohere_key')}
-                          autoComplete="one-time-code"
-                          readOnly={true}
-                          onFocus={(e) => (e.target.readOnly = false)}
-                          {...register('cohereApiKey')}
-                        />
-                        <div className="mt-1 text-xs text-text-secondary">
-                          <a
-                            href="https://dashboard.cohere.com/welcome/login"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            {localize('com_ui_web_search_reranker_cohere_key')}
-                          </a>
-                        </div>
-                      </>
-                    )
-                  ) : config.webSearch.rerankerType === 'jina' ? (
-                    <>
-                      <Input
-                        type="password"
-                        placeholder={localize('com_ui_web_search_jina_key')}
-                        autoComplete="one-time-code"
-                        readOnly={true}
-                        onFocus={(e) => (e.target.readOnly = false)}
-                        {...register('jinaApiKey')}
-                      />
-                      <div className="mt-1 text-xs text-text-secondary">
-                        <a
-                          href="https://jina.ai/api-dashboard/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          {localize('com_ui_web_search_reranker_jina_key')}
-                        </a>
-                      </div>
-                    </>
-                  ) : config.webSearch.rerankerType === 'cohere' ? (
-                    <>
-                      <Input
-                        type="password"
-                        placeholder={localize('com_ui_web_search_cohere_key')}
-                        autoComplete="one-time-code"
-                        readOnly={true}
-                        onFocus={(e) => (e.target.readOnly = false)}
-                        {...register('cohereApiKey')}
-                      />
-                      <div className="mt-1 text-xs text-text-secondary">
-                        <a
-                          href="https://dashboard.cohere.com/welcome/login"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          {localize('com_ui_web_search_reranker_cohere_key')}
-                        </a>
-                      </div>
-                    </>
-                  ) : null}
+                  {renderRerankerInput()}
                 </div>
               )}
             </form>

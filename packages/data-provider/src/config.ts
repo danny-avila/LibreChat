@@ -583,6 +583,12 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
 }
 
+export enum SearchCategories {
+  PROVIDERS = 'providers',
+  SCRAPERS = 'scrapers',
+  RERANKERS = 'rerankers',
+}
+
 export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
