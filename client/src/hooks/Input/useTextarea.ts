@@ -19,6 +19,7 @@ import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
 import { globalAudioId } from '~/common';
 import store from '~/store';
+import getPlaceholder from '~/utils/getPlaceholder';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
@@ -56,9 +57,7 @@ export default function useTextarea({
   });
   const entityName = entity?.name ?? '';
 
-  const isNotAppendable =
-    (((latestMessage?.unfinished ?? false) && !isSubmitting)) &&
-    !isAssistant;
+  const isNotAppendable = (latestMessage?.unfinished ?? false) && !isSubmitting && !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   useEffect(() => {
@@ -99,7 +98,7 @@ export default function useTextarea({
       const sender =
         isAssistant || isAgent
           ? getEntityName({ name: entityName, isAgent, localize })
-          : getSender(conversation as TEndpointOption);
+          : getPlaceholder(conversation?.model, localize);
 
       return `${localize('com_endpoint_message_new', {
         0: sender ? sender : localize('com_endpoint_ai'),
