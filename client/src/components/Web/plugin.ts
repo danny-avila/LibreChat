@@ -1,11 +1,7 @@
 import { visit } from 'unist-util-visit';
 import type { Node } from 'unist';
 import type { Citation, CitationNode } from './types';
-
-const SPAN_REGEX = /(\\ue203.*?\\ue204)/g;
-const COMPOSITE_REGEX = /(\\ue200.*?\\ue201)/g;
-const STANDALONE_PATTERN = /\\ue202turn(\d+)(search|image|news|video|ref)(\d+)/g;
-const CLEANUP_REGEX = /\\ue200|\\ue201|\\ue202|\\ue203|\\ue204|\\ue206/g;
+import { SPAN_REGEX, STANDALONE_PATTERN, CLEANUP_REGEX, COMPOSITE_REGEX } from '~/utils/citations';
 
 /**
  * Checks if a standalone marker is truly standalone (not inside a composite block)

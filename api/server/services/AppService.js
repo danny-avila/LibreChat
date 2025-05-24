@@ -6,7 +6,13 @@ const {
   getConfigDefaults,
   loadWebSearchConfig,
 } = require('librechat-data-provider');
-const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
+const {
+  checkHealth,
+  checkConfig,
+  checkVariables,
+  checkAzureVariables,
+  checkWebSearchConfig,
+} = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
@@ -37,6 +43,7 @@ const AppService = async (app) => {
 
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
+  checkWebSearchConfig(webSearch);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;

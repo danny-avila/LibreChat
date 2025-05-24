@@ -6,7 +6,7 @@ import type {
   TWebSearchConfig,
 } from './config';
 import { extractVariableName } from './utils';
-import { SearchCategories } from './config';
+import { SearchCategories, SafeSearchTypes } from './config';
 import { AuthType } from './schemas';
 
 export function loadWebSearchConfig(
@@ -17,7 +17,7 @@ export function loadWebSearchConfig(
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
-  const safeSearch = config?.safeSearch ?? true;
+  const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
 
   return {
     ...config,
@@ -260,7 +260,8 @@ export async function loadWebSearchAuth({
     authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
   }
 
-  authResult.safeSearch = webSearchConfig?.safeSearch ?? true;
+  authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
+  authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? 7500;
 
   return {
     authTypes,

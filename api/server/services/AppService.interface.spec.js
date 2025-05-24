@@ -25,6 +25,7 @@ jest.mock('./start/checks', () => ({
   checkHealth: jest.fn(),
   checkConfig: jest.fn(),
   checkAzureVariables: jest.fn(),
+  checkWebSearchConfig: jest.fn(),
 }));
 
 const AppService = require('./AppService');

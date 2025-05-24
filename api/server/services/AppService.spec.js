@@ -146,7 +146,7 @@ describe('AppService', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
-        safeSearch: true,
+        safeSearch: 1,
         serperApiKey: '${SERPER_API_KEY}',
       },
     });

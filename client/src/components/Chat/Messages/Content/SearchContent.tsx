@@ -1,26 +1,40 @@
 import { Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
-import type { Agents, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  Agents,
+  TMessage,
+  TAttachment,
+  SearchResultData,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import { UnfinishedMessage } from './MessageContent';
 import { DelayedRender } from '~/components/ui';
-import MarkdownLite from './MarkdownLite';
+import Sources from '~/components/Web/Sources';
 import { cn, mapAttachments } from '~/utils';
+import { SearchContext } from '~/Providers';
+import MarkdownLite from './MarkdownLite';
 import store from '~/store';
 import Part from './Part';
 
-const SearchContent = ({ message }: { message: TMessage }) => {
+const SearchContent = ({
+  message,
+  attachments,
+  searchResults,
+}: {
+  message: TMessage;
+  attachments?: TAttachment[];
+  searchResults?: { [key: string]: SearchResultData };
+}) => {
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const { messageId } = message;
-  const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
-  const attachmentMap = useMemo(
-    () => mapAttachments(message?.attachments ?? messageAttachmentsMap[messageId] ?? []),
-    [message?.attachments, messageAttachmentsMap, messageId],
-  );
+
+  const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
   if (Array.isArray(message.content) && message.content.length > 0) {
     return (
-      <>
+      <SearchContext.Provider value={{ searchResults }}>
+        <Sources />
         {message.content
           .filter((part: TMessageContentParts | undefined) => part)
           .map((part: TMessageContentParts | undefined, idx: number) => {
@@ -49,7 +63,7 @@ const SearchContent = ({ message }: { message: TMessage }) => {
             </DelayedRender>
           </Suspense>
         )}
-      </>
+      </SearchContext.Provider>
     );
   }
 
