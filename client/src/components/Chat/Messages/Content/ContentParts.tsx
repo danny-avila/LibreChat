@@ -1,12 +1,17 @@
 import { memo, useMemo, useState } from 'react';
 import { useRecoilState } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
-import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  SearchResultData,
+  TAttachment,
+  Agents,
+} from 'librechat-data-provider';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
-import useLocalize from '~/hooks/useLocalize';
-import { mapAttachments } from '~/utils/map';
 import { MessageContext, SearchContext } from '~/Providers';
 import Sources from '~/components/Web/Sources';
+import useLocalize from '~/hooks/useLocalize';
+import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
 import store from '~/store';
 import Part from './Part';
@@ -16,7 +21,7 @@ type ContentPartsProps = {
   messageId: string;
   conversationId?: string | null;
   attachments?: TAttachment[];
-  searchResults?: { [key: string]: any };
+  searchResults?: { [key: string]: SearchResultData };
   isCreatedByUser: boolean;
   isLast: boolean;
   isSubmitting: boolean;
