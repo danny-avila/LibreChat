@@ -278,7 +278,6 @@ const updateAgent = async (searchParameter, updateData, updatingUserId = null) =
       }
     }
 
-
     const versionEntry = {
       ...versionData,
       ...directUpdates,

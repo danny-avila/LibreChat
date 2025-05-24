@@ -1,5 +1,5 @@
 const axios = require('axios');
-const fs = require('fs'); 
+const fs = require('fs');
 const { logger } = require('~/config');
 
 /**
@@ -17,14 +17,18 @@ async function uploadAzureDocumentIntelligence({ filePath, apiKey, endpoint, mod
   const base64Source = fileBuffer.toString('base64');
 
   try {
-    const response = await axios.post(`${endpoint}/documentModels/${modelId}/analyze?outputContentFormat=markdown`, {
-      base64Source,
-    }, {
-      headers: {
-        'Ocp-Apim-Subscription-Key': apiKey,
-        'Content-Type': 'application/json',
+    const response = await axios.post(
+      `${endpoint}/documentModels/${modelId}/analyze?outputContentFormat=markdown`,
+      {
+        base64Source,
       },
-    });
+      {
+        headers: {
+          'Ocp-Apim-Subscription-Key': apiKey,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
     const operationLocation = response.headers['Operation-Location'];
 
     // Polling for the result
