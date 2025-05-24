@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { logger } from '~/utils';
 
 export default function useFocusChatEffect(textAreaRef: React.RefObject<HTMLTextAreaElement>) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   useEffect(() => {
     if (textAreaRef?.current && location.state?.focusChat) {
       logger.log(
@@ -17,10 +18,11 @@ export default function useFocusChatEffect(textAreaRef: React.RefObject<HTMLText
         textAreaRef.current?.focus();
       }
 
-      navigate(`${location.pathname}${window.location.search ?? ''}`, {
+      const searchString = searchParams?.toString() || '';
+      navigate(`${location.pathname}${searchString ? `?${searchString}` : ''}`, {
         replace: true,
         state: {},
       });
     }
-  }, [navigate, textAreaRef, location.pathname, location.state?.focusChat]);
+  }, [navigate, textAreaRef, location.pathname, location.state?.focusChat, searchParams]);
 }
