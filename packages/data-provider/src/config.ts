@@ -581,6 +581,7 @@ export type TStartupConfig = {
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
   CUSTOM_OCR = 'custom_ocr',
+  AZURE_DOCUMENT_INTELLIGENCE = 'azure_document_intelligence',
 }
 
 export enum SearchCategories {
