@@ -1,9 +1,9 @@
-import path, { resolve } from 'path';
+import path from 'path';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig } from 'vite';
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { compression } from 'vite-plugin-compression2';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
@@ -128,6 +128,28 @@ export default defineConfig({
               return 'security-ui';
             }
 
+            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-')) {
+              return 'markdown-processing';
+            }
+            if (id.includes('monaco-editor') || id.includes('@monaco-editor')) {
+              return 'code-editor';
+            }
+            if (id.includes('react-window') || id.includes('react-virtual')) {
+              return 'virtualization';
+            }
+            if (id.includes('zod') || id.includes('yup') || id.includes('joi')) {
+              return 'validation';
+            }
+            if (id.includes('axios') || id.includes('ky') || id.includes('fetch')) {
+              return 'http-client';
+            }
+            if (id.includes('react-spring') || id.includes('react-transition-group')) {
+              return 'animations';
+            }
+            if (id.includes('react-select') || id.includes('downshift')) {
+              return 'advanced-inputs';
+            }
+
             // Existing chunks
             if (id.includes('@radix-ui')) {
               return 'radix-ui';
@@ -138,7 +160,10 @@ export default defineConfig({
             if (id.includes('node_modules/highlight.js')) {
               return 'markdown_highlight';
             }
-            if (id.includes('node_modules/hast-util-raw') || id.includes('node_modules/katex')) {
+            if (id.includes('katex') || id.includes('node_modules/katex')) {
+              return 'math-katex';
+            }
+            if (id.includes('node_modules/hast-util-raw')) {
               return 'markdown_large';
             }
             if (id.includes('@tanstack')) {
