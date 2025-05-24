@@ -7,8 +7,8 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { useAttachments, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -34,6 +34,10 @@ const ContentRender = memo(
     setCurrentEditId,
     isSubmittingFamily = false,
   }: ContentRenderProps) => {
+    const { attachments, searchResults } = useAttachments({
+      messageId: msg?.messageId,
+      attachments: msg?.attachments,
+    });
     const {
       edit,
       index,
@@ -50,6 +54,7 @@ const ContentRender = memo(
       regenerateMessage,
     } = useMessageActions({
       message: msg,
+      searchResults,
       currentEditId,
       isMultiMessage,
       setCurrentEditId,
@@ -164,9 +169,10 @@ const ContentRender = memo(
                 enterEdit={enterEdit}
                 siblingIdx={siblingIdx}
                 messageId={msg.messageId}
+                attachments={attachments}
+                searchResults={searchResults}
                 isSubmitting={isSubmitting}
                 setSiblingIdx={setSiblingIdx}
-                attachments={msg.attachments}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}
