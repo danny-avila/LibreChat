@@ -30,6 +30,9 @@ const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
     // Only chatGptLabel exists: migrate to modelLabel
     preset.modelLabel = preset.chatGptLabel;
     delete preset.chatGptLabel;
+  } else if ('chatGptLabel' in preset) {
+    // chatGptLabel exists but is empty/falsy: remove it
+    delete preset.chatGptLabel;
   }
 
   /* @ts-ignore: endpoint can be a custom defined name */
