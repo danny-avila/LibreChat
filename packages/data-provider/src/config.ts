@@ -604,6 +604,12 @@ export enum RerankerTypes {
   COHERE = 'cohere',
 }
 
+export enum SafeSearchTypes {
+  OFF = 0,
+  MODERATE = 1,
+  STRICT = 2,
+}
+
 export const webSearchSchema = z.object({
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
@@ -613,7 +619,8 @@ export const webSearchSchema = z.object({
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperType: z.nativeEnum(ScraperTypes).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
-  safeSearch: z.boolean().default(true),
+  scraperTimeout: z.number().optional(),
+  safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
 });
 
 export type TWebSearchConfig = z.infer<typeof webSearchSchema>;

@@ -277,10 +277,6 @@ const loadTools = async ({
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
-        // const { files, toolContext } = await primeSearchFiles(options);
-        // if (toolContext) {
-        //   toolContextMap[tool] = toolContext;
-        // }
         toolContextMap[tool] = `# \`${tool}\`:
 Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
 1. **Execute immediately without preface** when using \`${tool}\`.

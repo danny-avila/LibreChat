@@ -1,13 +1,17 @@
 import { memo, useMemo, useState } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
-import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
-import { useSearchResultsByTurn } from '~/hooks/Messages/useSearchResultsByTurn';
+import type {
+  TMessageContentParts,
+  SearchResultData,
+  TAttachment,
+  Agents,
+} from 'librechat-data-provider';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
-import useLocalize from '~/hooks/useLocalize';
-import { mapAttachments } from '~/utils/map';
 import { MessageContext, SearchContext } from '~/Providers';
 import Sources from '~/components/Web/Sources';
+import useLocalize from '~/hooks/useLocalize';
+import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
 import store from '~/store';
 import Part from './Part';
@@ -17,6 +21,7 @@ type ContentPartsProps = {
   messageId: string;
   conversationId?: string | null;
   attachments?: TAttachment[];
+  searchResults?: { [key: string]: SearchResultData };
   isCreatedByUser: boolean;
   isLast: boolean;
   isSubmitting: boolean;
@@ -35,6 +40,7 @@ const ContentParts = memo(
     messageId,
     conversationId,
     attachments,
+    searchResults,
     isCreatedByUser,
     isLast,
     isSubmitting,
@@ -44,15 +50,9 @@ const ContentParts = memo(
     setSiblingIdx,
   }: ContentPartsProps) => {
     const localize = useLocalize();
-    const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
     const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
     const [isExpanded, setIsExpanded] = useState(showThinking);
-    const messageAttachments = useMemo(
-      () => attachments ?? messageAttachmentsMap[messageId] ?? [],
-      [attachments, messageAttachmentsMap, messageId],
-    );
-    const searchResults = useSearchResultsByTurn(messageAttachments);
-    const attachmentMap = useMemo(() => mapAttachments(messageAttachments), [messageAttachments]);
+    const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
     const hasReasoningParts = useMemo(() => {
       const hasThinkPart = content?.some((part) => part?.type === ContentTypes.THINK) ?? false;
