@@ -47,6 +47,7 @@ const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./O
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
 const { uploadMistralOCR } = require('./MistralOCR');
+const { uploadTikaOCR } = require('./TikaOCR');
 
 /**
  * Firebase Storage Strategy Functions
@@ -202,6 +203,26 @@ const mistralOCRStrategy = () => ({
   handleFileUpload: uploadMistralOCR,
 });
 
+const tikaOCRStrategy = () => ({ 
+  /** @type {typeof saveFileFromURL | null} */ 
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */ // I am not sure if this is correct
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadTikaOCR,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -222,6 +243,8 @@ const getStrategyFunctions = (fileSource) => {
     return codeOutputStrategy();
   } else if (fileSource === FileSources.mistral_ocr) {
     return mistralOCRStrategy();
+  } else if (fileSource === FileSources.tika_ocr) {
+    return tikaOCRStrategy();
   } else {
     throw new Error('Invalid file source');
   }

@@ -156,6 +156,14 @@ actions:
 #       - "mcp-obsidian"
 #       - /path/to/obsidian/vault
 
+# Example Tika OCR configuration
+
+# ocr:
+#   apiKey: "none"
+#   baseURL: "http://tika:9998"
+#   strategy: "tika_ocr"
+
+
 # Definition of custom endpoints
 endpoints:
   # assistants:
@@ -181,6 +189,22 @@ endpoints:
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
   custom:
+    # Ollama example
+    - name: "ollama"
+      apiKey: "ollama"
+      baseURL: "http://ollama:11434/v1/"
+      models:
+        default:
+          [
+            "llama3.2:3b",
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Ollama"
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'
