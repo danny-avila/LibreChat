@@ -143,14 +143,14 @@ const EditPresetDialog = ({
 
   return (
     <OGDialog open={presetModalVisible} onOpenChange={handleOpenChange}>
-      <OGDialogContent className="max-h-[90vh] max-w-full overflow-y-auto bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 md:max-w-[75vw] lg:max-w-[950px]">
+      <OGDialogContent className="h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-y-auto bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 md:h-auto md:max-h-[90vh] md:max-w-[75vw] md:rounded-lg lg:max-w-[950px]">
         <OGDialogTitle>
           {`${localize('com_ui_edit')} ${localize('com_endpoint_preset')} - ${preset?.title}`}
         </OGDialogTitle>
 
-        <div className="flex w-full flex-col gap-4 px-1">
+        <div className="flex w-full flex-col gap-2 px-1 pb-4 md:gap-4">
           {/* Header section with preset name and endpoint */}
-          <div className="grid w-full gap-4 md:grid-cols-2">
+          <div className="grid w-full gap-2 md:grid-cols-2 md:gap-4">
             <div className="flex w-full flex-col">
               <Label htmlFor="preset-name" className="mb-1 text-left text-sm font-medium">
                 {localize('com_endpoint_preset_name')}
@@ -197,7 +197,7 @@ const EditPresetDialog = ({
           <div className="w-full border-t border-border-medium" />
 
           {/* Settings section */}
-          <div className="w-full">
+          <div className="w-full flex-1">
             <EndpointSettings
               conversation={preset}
               setOption={setOption}
@@ -207,16 +207,16 @@ const EditPresetDialog = ({
           </div>
 
           {/* Action buttons */}
-          <div className="flex justify-end gap-2 border-t border-border-medium pt-4">
+          <div className="flex justify-end gap-2 border-t border-border-medium pt-2 md:pt-4">
             <button
               onClick={exportPreset}
-              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 md:px-4"
             >
               {localize('com_endpoint_export')}
             </button>
             <button
               onClick={submitPreset}
-              className="rounded-md bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+              className="rounded-md bg-green-500 px-3 py-2 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 md:px-4"
             >
               {localize('com_ui_save')}
             </button>
