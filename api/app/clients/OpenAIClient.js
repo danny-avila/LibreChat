@@ -737,13 +737,17 @@ class OpenAIClient extends BaseClient {
       model = this.modelOptions.model;
     }
 
-    const modelOptions = {
+    const modelOptions = model.includes('gpt-')?{
       // TODO: remove the gpt fallback and make it specific to endpoint
       model,
       temperature: 0.2,
       presence_penalty: 0,
       frequency_penalty: 0,
-      max_tokens: 16,
+      stream:false
+    }:{      
+      model,     
+      temperature: 0.2,
+      stream:false
     };
 
     /** @type {TAzureConfig | undefined} */
