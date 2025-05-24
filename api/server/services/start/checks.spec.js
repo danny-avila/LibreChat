@@ -155,7 +155,7 @@ describe('checkWebSearchConfig', () => {
     it('should only process string values and ignore non-string values', () => {
       const config = {
         serperApiKey: '${SERPER_API_KEY}',
-        safeSearch: true,
+        safeSearch: 1,
         scraperTimeout: 7500,
         jinaApiKey: 'actual-key',
       };
