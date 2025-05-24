@@ -21,7 +21,7 @@ const Agent = mongoose.model('agent', agentSchema);
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  const { versions, ...versionData } = agentData;
+  const { author, ...versionData } = agentData;
   const timestamp = new Date();
   const initialAgentData = {
     ...agentData,
@@ -60,11 +60,16 @@ const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) =
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
   const availableTools = req.app.locals.availableTools;
-  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  /** @type {TEphemeralAgent | null} */
+  const ephemeralAgent = req.body.ephemeralAgent;
+  const mcpServers = new Set(ephemeralAgent?.mcp);
   /** @type {string[]} */
   const tools = [];
-  if (req.body.ephemeralAgent?.execute_code === true) {
+  if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
+  }
+  if (ephemeralAgent?.web_search === true) {
+    tools.push(Tools.web_search);
   }
 
   if (mcpServers.size > 0) {
@@ -158,6 +163,7 @@ const isDuplicateVersion = (updateData, currentData, versions) => {
     'createdAt',
     'updatedAt',
     'author',
+    'updatedBy',
     'created_at',
     'updated_at',
     '__v',
@@ -243,15 +249,16 @@ const isDuplicateVersion = (updateData, currentData, versions) => {
  * @param {string} searchParameter.id - The ID of the agent to update.
  * @param {string} [searchParameter.author] - The user ID of the agent's author.
  * @param {Object} updateData - An object containing the properties to update.
+ * @param {string} [updatingUserId] - The ID of the user performing the update (used for tracking non-author updates).
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
  * @throws {Error} If the update would create a duplicate version
  */
-const updateAgent = async (searchParameter, updateData) => {
+const updateAgent = async (searchParameter, updateData, updatingUserId = null) => {
   const options = { new: true, upsert: false };
 
   const currentAgent = await Agent.findOne(searchParameter);
   if (currentAgent) {
-    const { __v, _id, id, versions, ...versionData } = currentAgent.toObject();
+    const { __v, _id, id, versions, author, ...versionData } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
     if (Object.keys(directUpdates).length > 0 && versions && versions.length > 0) {
@@ -271,13 +278,21 @@ const updateAgent = async (searchParameter, updateData) => {
       }
     }
 
+
+    const versionEntry = {
+      ...versionData,
+      ...directUpdates,
+      updatedAt: new Date(),
+    };
+
+    // Always store updatedBy field to track who made the change
+    if (updatingUserId) {
+      versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
+    }
+
     updateData.$push = {
       ...($push || {}),
-      versions: {
-        ...versionData,
-        ...directUpdates,
-        updatedAt: new Date(),
-      },
+      versions: versionEntry,
     };
   }
 
@@ -293,7 +308,7 @@ const updateAgent = async (searchParameter, updateData) => {
  * @param {string} params.file_id
  * @returns {Promise<Agent>} The updated agent.
  */
-const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
   let agent = await getAgent(searchParameter);
   if (!agent) {
@@ -319,7 +334,7 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
     },
   };
 
-  const updatedAgent = await updateAgent(searchParameter, updateData);
+  const updatedAgent = await updateAgent(searchParameter, updateData, req?.user?.id);
   if (updatedAgent) {
     return updatedAgent;
   } else {
@@ -483,7 +498,7 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
     delete updateQuery.author;
   }
 
-  const updatedAgent = await updateAgent(updateQuery, updateOps);
+  const updatedAgent = await updateAgent(updateQuery, updateOps, user.id);
   if (updatedAgent) {
     return updatedAgent;
   }
@@ -528,6 +543,8 @@ const revertAgentVersion = async (searchParameter, versionIndex) => {
   delete updateData._id;
   delete updateData.id;
   delete updateData.versions;
+  delete updateData.author;
+  delete updateData.updatedBy;
 
   return Agent.findOneAndUpdate(searchParameter, updateData, { new: true }).lean();
 };

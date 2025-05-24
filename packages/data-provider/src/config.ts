@@ -167,6 +167,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
+  web_search = 'web_search',
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
@@ -245,11 +246,12 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
       .default([
         AgentCapabilities.execute_code,
         AgentCapabilities.file_search,
+        AgentCapabilities.web_search,
         AgentCapabilities.artifacts,
         AgentCapabilities.actions,
         AgentCapabilities.tools,
-        AgentCapabilities.ocr,
         AgentCapabilities.chain,
+        AgentCapabilities.ocr,
       ]),
   }),
 );
@@ -494,6 +496,7 @@ export const intefaceSchema = z
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
     runCode: z.boolean().optional(),
+    webSearch: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -507,6 +510,7 @@ export const intefaceSchema = z
     agents: true,
     temporaryChat: true,
     runCode: true,
+    webSearch: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
@@ -567,6 +571,11 @@ export type TStartupConfig = {
   instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
+  webSearch?: {
+    searchProvider?: SearchProviders;
+    scraperType?: ScraperTypes;
+    rerankerType?: RerankerTypes;
+  };
 };
 
 export enum OCRStrategy {
@@ -575,11 +584,52 @@ export enum OCRStrategy {
   AZURE_DOCUMENT_INTELLIGENCE = 'azure_document_intelligence',
 }
 
+export enum SearchCategories {
+  PROVIDERS = 'providers',
+  SCRAPERS = 'scrapers',
+  RERANKERS = 'rerankers',
+}
+
+export enum SearchProviders {
+  SERPER = 'serper',
+  SEARXNG = 'searxng',
+}
+
+export enum ScraperTypes {
+  FIRECRAWL = 'firecrawl',
+  SERPER = 'serper',
+}
+
+export enum RerankerTypes {
+  JINA = 'jina',
+  COHERE = 'cohere',
+}
+
+export enum SafeSearchTypes {
+  OFF = 0,
+  MODERATE = 1,
+  STRICT = 2,
+}
+
+export const webSearchSchema = z.object({
+  serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  searchProvider: z.nativeEnum(SearchProviders).optional(),
+  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  rerankerType: z.nativeEnum(RerankerTypes).optional(),
+  scraperTimeout: z.number().optional(),
+  safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
+});
+
+export type TWebSearchConfig = z.infer<typeof webSearchSchema>;
+
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
-  documentIntelligenceModel: z.string().optional(),
-  apiKey: z.string().optional().default('OCR_API_KEY'),
-  baseURL: z.string().optional().default('OCR_BASEURL'),
+  apiKey: z.string().optional().default('${OCR_API_KEY}'),
+  baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
@@ -599,6 +649,7 @@ export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
+  webSearch: webSearchSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -737,6 +788,10 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-20250514',
+  'claude-sonnet-4-latest',
+  'claude-opus-4-20250514',
+  'claude-opus-4-latest',
   'claude-3-7-sonnet-latest',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
@@ -906,6 +961,9 @@ export const visionModels = [
   'llama-3.2-90b-vision',
   'llama-3-2-90b-vision',
   'llama-4',
+  'claude-opus-4',
+  'claude-sonnet-4',
+  'claude-haiku-4',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -1051,6 +1109,10 @@ export enum CacheKeys {
    * Key for s3 check intervals per user
    */
   S3_EXPIRY_INTERVAL = 'S3_EXPIRY_INTERVAL',
+  /**
+   * key for open id exchanged tokens
+   */
+  OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
 }
 
 /**
@@ -1259,7 +1321,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.5',
+  CONFIG_VERSION = '1.2.6',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1327,6 +1389,8 @@ export enum LocalStorageKeys {
   LAST_MCP_ = 'LAST_MCP_',
   /** Last checked toggle for Code Interpreter API per conversation ID */
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
+  /** Last checked toggle for Web Search per conversation ID */
+  LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
 }
 
 export enum ForkOptions {

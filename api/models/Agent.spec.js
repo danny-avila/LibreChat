@@ -679,7 +679,7 @@ describe('Agent Version History', () => {
     expect(updatedAgent.versions[0]._id).toBeUndefined();
     expect(updatedAgent.versions[0].__v).toBeUndefined();
     expect(updatedAgent.versions[0].name).toBe('Test Agent');
-    expect(updatedAgent.versions[0].author).toBeDefined();
+    expect(updatedAgent.versions[0].author).toBeUndefined();
 
     expect(updatedAgent.versions[1]._id).toBeUndefined();
     expect(updatedAgent.versions[1].__v).toBeUndefined();
@@ -884,5 +884,142 @@ describe('Agent Version History', () => {
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  test('should track updatedBy when a different user updates an agent', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const originalAuthor = new mongoose.Types.ObjectId();
+    const updatingUser = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Original Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: originalAuthor,
+      description: 'Original description',
+    });
+
+    const updatedAgent = await updateAgent(
+      { id: agentId },
+      { name: 'Updated Agent', description: 'Updated description' },
+      updatingUser.toString(),
+    );
+
+    expect(updatedAgent.versions).toHaveLength(2);
+    expect(updatedAgent.versions[1].updatedBy.toString()).toBe(updatingUser.toString());
+    expect(updatedAgent.author.toString()).toBe(originalAuthor.toString());
+  });
+
+  test('should include updatedBy even when the original author updates the agent', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const originalAuthor = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Original Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: originalAuthor,
+      description: 'Original description',
+    });
+
+    const updatedAgent = await updateAgent(
+      { id: agentId },
+      { name: 'Updated Agent', description: 'Updated description' },
+      originalAuthor.toString(),
+    );
+
+    expect(updatedAgent.versions).toHaveLength(2);
+    expect(updatedAgent.versions[1].updatedBy.toString()).toBe(originalAuthor.toString());
+    expect(updatedAgent.author.toString()).toBe(originalAuthor.toString());
+  });
+
+  test('should track multiple different users updating the same agent', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const originalAuthor = new mongoose.Types.ObjectId();
+    const user1 = new mongoose.Types.ObjectId();
+    const user2 = new mongoose.Types.ObjectId();
+    const user3 = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Original Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: originalAuthor,
+      description: 'Original description',
+    });
+
+    // User 1 makes an update
+    await updateAgent(
+      { id: agentId },
+      { name: 'Updated by User 1', description: 'First update' },
+      user1.toString(),
+    );
+
+    // Original author makes an update
+    await updateAgent(
+      { id: agentId },
+      { description: 'Updated by original author' },
+      originalAuthor.toString(),
+    );
+
+    // User 2 makes an update
+    await updateAgent(
+      { id: agentId },
+      { name: 'Updated by User 2', model: 'new-model' },
+      user2.toString(),
+    );
+
+    // User 3 makes an update
+    const finalAgent = await updateAgent(
+      { id: agentId },
+      { description: 'Final update by User 3' },
+      user3.toString(),
+    );
+
+    expect(finalAgent.versions).toHaveLength(5);
+    expect(finalAgent.author.toString()).toBe(originalAuthor.toString());
+
+    // Check that each version has the correct updatedBy
+    expect(finalAgent.versions[0].updatedBy).toBeUndefined(); // Initial creation has no updatedBy
+    expect(finalAgent.versions[1].updatedBy.toString()).toBe(user1.toString());
+    expect(finalAgent.versions[2].updatedBy.toString()).toBe(originalAuthor.toString());
+    expect(finalAgent.versions[3].updatedBy.toString()).toBe(user2.toString());
+    expect(finalAgent.versions[4].updatedBy.toString()).toBe(user3.toString());
+
+    // Verify the final state
+    expect(finalAgent.name).toBe('Updated by User 2');
+    expect(finalAgent.description).toBe('Final update by User 3');
+    expect(finalAgent.model).toBe('new-model');
+  });
+
+  test('should preserve original author during agent restoration', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const originalAuthor = new mongoose.Types.ObjectId();
+    const updatingUser = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Original Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: originalAuthor,
+      description: 'Original description',
+    });
+
+    await updateAgent(
+      { id: agentId },
+      { name: 'Updated Agent', description: 'Updated description' },
+      updatingUser.toString(),
+    );
+
+    const { revertAgentVersion } = require('./Agent');
+    const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+    expect(revertedAgent.author.toString()).toBe(originalAuthor.toString());
+    expect(revertedAgent.name).toBe('Original Agent');
+    expect(revertedAgent.description).toBe('Original description');
   });
 });

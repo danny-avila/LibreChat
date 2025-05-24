@@ -237,6 +237,30 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       return;
     }
 
+    if (output.artifact[Tools.web_search]) {
+      artifactPromises.push(
+        (async () => {
+          const name = `${output.name}_${output.tool_call_id}_${nanoid()}`;
+          const attachment = {
+            name,
+            type: Tools.web_search,
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+            [Tools.web_search]: { ...output.artifact[Tools.web_search] },
+          };
+          if (!res.headersSent) {
+            return attachment;
+          }
+          res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
     if (output.artifact.content) {
       /** @type {FormattedContent[]} */
       const content = output.artifact.content;
