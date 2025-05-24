@@ -71,6 +71,11 @@
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
   - Use LibreChat Agents and OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
 
+- 🔍 **Web Search**:  
+  - Search the internet and retrieve relevant information to enhance your AI context
+  - Combines search providers, content scrapers, and result rerankers for optimal results
+  - **[Learn More →](https://www.librechat.ai/docs/features/web_search)**
+
 - 🪄 **Generative UI with Code Artifacts**:  
   - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
 

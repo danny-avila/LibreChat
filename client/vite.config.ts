@@ -38,7 +38,7 @@ export default defineConfig({
       useCredentials: true,
       workbox: {
         globPatterns: ['**/*'],
-        globIgnores: ['images/**/*'],
+        globIgnores: ['images/**/*', '**/*.map'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
@@ -96,26 +96,54 @@ export default defineConfig({
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
-            // Group Radix UI libraries together.
+            // High-impact chunking for large libraries
+            if (id.includes('@codesandbox/sandpack')) {
+              return 'sandpack';
+            }
+            if (id.includes('react-virtualized')) {
+              return 'virtualization';
+            }
+            if (id.includes('i18next') || id.includes('react-i18next')) {
+              return 'i18n';
+            }
+            if (id.includes('lodash')) {
+              return 'utilities';
+            }
+            if (id.includes('date-fns')) {
+              return 'date-utils';
+            }
+            if (id.includes('@dicebear')) {
+              return 'avatars';
+            }
+            if (id.includes('react-dnd') || id.includes('react-flip-toolkit')) {
+              return 'react-interactions';
+            }
+            if (id.includes('react-hook-form')) {
+              return 'forms';
+            }
+            if (id.includes('react-router-dom')) {
+              return 'routing';
+            }
+            if (id.includes('qrcode.react') || id.includes('@marsidev/react-turnstile')) {
+              return 'security-ui';
+            }
+
+            // Existing chunks
             if (id.includes('@radix-ui')) {
               return 'radix-ui';
             }
-            // Group framer-motion separately.
             if (id.includes('framer-motion')) {
               return 'framer-motion';
             }
-            // Group markdown-related libraries.
             if (id.includes('node_modules/highlight.js')) {
               return 'markdown_highlight';
             }
             if (id.includes('node_modules/hast-util-raw') || id.includes('node_modules/katex')) {
               return 'markdown_large';
             }
-            // Group TanStack libraries together.
             if (id.includes('@tanstack')) {
               return 'tanstack-vendor';
             }
-            // Additional grouping for other node_modules:
             if (id.includes('@headlessui')) {
               return 'headlessui';
             }
@@ -133,7 +161,7 @@ export default defineConfig({
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: (assetInfo) => {
-          if (assetInfo.names && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)) {
+          if (assetInfo.names?.[0] && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names[0])) {
             return 'assets/fonts/[name][extname]';
           }
           return 'assets/[name].[hash][extname]';
@@ -150,12 +178,12 @@ export default defineConfig({
         warn(warning);
       },
     },
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 1500,
   },
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: resolve('public/fonts'),
+      $fonts: '/fonts',
     },
   },
 });
