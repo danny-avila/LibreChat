@@ -6,9 +6,7 @@ const mockAxios = {
     response: { use: jest.fn(), eject: jest.fn() },
   },
   create: jest.fn().mockReturnValue({
-    defaults: {
-      proxy: null,
-    },
+    defaults: { proxy: null },
     get: jest.fn().mockResolvedValue({ data: {} }),
     post: jest.fn().mockResolvedValue({ data: {} }),
     put: jest.fn().mockResolvedValue({ data: {} }),
@@ -30,46 +28,52 @@ const mockAxios = {
 jest.mock('axios', () => mockAxios);
 jest.mock('fs');
 jest.mock('~/config', () => ({
-  logger: {
-    error: jest.fn(),
-  },
-  createAxiosInstance: () => mockAxios,
-}));
-jest.mock('~/server/services/Tools/credentials', () => ({
-  loadAuthValues: jest.fn(),
+  logger: { error: jest.fn() },
 }));
 
 const { uploadAzureDocumentIntelligence } = require('./crud');
 
 describe('AzureDocumentIntelligence Service', () => {
-  it('should upload a document and process the result using Azure Document Intelligence API', async () => {
-    const mockFileBuffer = Buffer.from('test file content');
-    const mockBase64Source = mockFileBuffer.toString('base64');
-    const mockOperationLocation = 'https://azure-ocr-endpoint.com/operation';
-    const mockResultUrl = 'https://azure-ocr-endpoint.com/result';
-    const mockFinalResult = { analyzeResult: { content: 'Final analysis result' } };
+  beforeEach(() => {
+    mockAxios.reset();
+    fs.readFileSync.mockReset();
+  });
 
+  it('should upload and poll until it gets the Markdown result', async () => {
+    const mockFileBuffer = Buffer.from('test file content');
+    const mockBase64 = mockFileBuffer.toString('base64');
+    const mockOpLocation = 'https://azure-ocr-endpoint.com/operations/123';
+    const mockResultUrl = 'https://azure-ocr-endpoint.com/results/123';
+    const mockFinal = { analyzeResult: { content: 'Final analysis result' } };
+
+    // fs.readFileSync returns our buffer
     fs.readFileSync.mockReturnValue(mockFileBuffer);
 
-    mockAxios.post
-      .mockResolvedValueOnce({ headers: { 'Operation-Location': mockOperationLocation } }) // Initial upload
-      .mockResolvedValueOnce({ data: { status: 'succeeded', resultUrl: mockResultUrl } }); // Polling success
+    // First axios.post => returns Operation-Location header
+    mockAxios.post.mockResolvedValueOnce({
+      headers: { 'Operation-Location': mockOpLocation },
+    });
 
+    // First axios.get => poll success, returns status + resultUrl
+    // Second axios.get => fetch final result
     mockAxios.get
-      .mockResolvedValueOnce({ data: { status: 'succeeded', resultUrl: mockResultUrl } }) // Polling
-      .mockResolvedValueOnce({ data: mockFinalResult }); // Final result fetch
+      .mockResolvedValueOnce({ data: { status: 'succeeded', resultUrl: mockResultUrl } })
+      .mockResolvedValueOnce({ data: mockFinal });
 
     const result = await uploadAzureDocumentIntelligence({
       filePath: '/path/to/test.pdf',
       apiKey: 'azure-api-key',
-      endpoint: 'https://azure-ocr-endpoint.com',
+      endpoint: 'https://azure-ocr-endpoint.com/',
       modelId: 'prebuilt-layout',
     });
 
+    // Validate read
     expect(fs.readFileSync).toHaveBeenCalledWith('/path/to/test.pdf');
+
+    // Validate initial POST
     expect(mockAxios.post).toHaveBeenCalledWith(
-      'https://azure-ocr-endpoint.com/documentModels/prebuilt-invoice:analyze',
-      { base64Source: mockBase64Source },
+      'https://azure-ocr-endpoint.com/documentModels/prebuilt-layout:analyze?outputContentFormat=markdown',
+      { base64Source: mockBase64 },
       expect.objectContaining({
         headers: expect.objectContaining({
           'Ocp-Apim-Subscription-Key': 'azure-api-key',
@@ -77,8 +81,23 @@ describe('AzureDocumentIntelligence Service', () => {
         }),
       }),
     );
-    expect(mockAxios.get).toHaveBeenCalledWith(mockOperationLocation, expect.any(Object));
-    expect(mockAxios.get).toHaveBeenCalledWith(mockResultUrl, expect.any(Object));
-    expect(result).toEqual(mockFinalResult.analyzeResult.content);
+
+    // Validate polling GET
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      mockOpLocation,
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Ocp-Apim-Subscription-Key': 'azure-api-key' }),
+      }),
+    );
+
+    // Validate final fetch GET
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      mockResultUrl,
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Ocp-Apim-Subscription-Key': 'azure-api-key' }),
+      }),
+    );
+
+    expect(result).toEqual('Final analysis result');
   });
 });

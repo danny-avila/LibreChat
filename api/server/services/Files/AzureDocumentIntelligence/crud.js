@@ -3,7 +3,7 @@ const fs = require('fs');
 const { logger } = require('~/config');
 
 /**
- * Uploads a document to Azure Document Intelligence API and processes the result.
+ * Uploads a document to Azure Document Intelligence API and returns the Markdown result.
  *
  * @param {Object} params - The parameters for the Azure Document Intelligence request.
  * @param {string} params.filePath - The path to the file on disk.
@@ -13,15 +13,18 @@ const { logger } = require('~/config');
  * @returns {Promise<Object>} - The Document Intelligence result.
  */
 async function uploadAzureDocumentIntelligence({ filePath, apiKey, endpoint, modelId }) {
+  // Read and encode file
   const fileBuffer = fs.readFileSync(filePath);
   const base64Source = fileBuffer.toString('base64');
 
+  // Build URL (ensure no trailing slash on endpoint)
+  const url = `${endpoint.replace(/\/+$/, '')}/documentModels/${modelId}:analyze?outputContentFormat=markdown`;
+
   try {
+    // Kick off the analysis
     const response = await axios.post(
-      `${endpoint}/documentModels/${modelId}/analyze?outputContentFormat=markdown`,
-      {
-        base64Source,
-      },
+      url,
+      { base64Source },
       {
         headers: {
           'Ocp-Apim-Subscription-Key': apiKey,
@@ -29,32 +32,37 @@ async function uploadAzureDocumentIntelligence({ filePath, apiKey, endpoint, mod
         },
       },
     );
-    const operationLocation = response.headers['Operation-Location'];
 
-    // Polling for the result
-    let result;
-    while (true) {
-      const pollResponse = await axios.get(operationLocation, {
-        headers: {
-          'Ocp-Apim-Subscription-Key': apiKey,
-        },
-      });
-      if (pollResponse.data.status === 'succeeded') {
-        const resultUrl = pollResponse.data.resultUrl; // URL to fetch the analysis result
-        const resultResponse = await axios.get(resultUrl, {
-          headers: {
-            'Ocp-Apim-Subscription-Key': apiKey,
-          },
-        });
-        result = resultResponse.data.analyzeResult.content; // Final analysis result
-        break;
-      } else if (pollResponse.data.status === 'failed') {
-        throw new Error('Azure Document Intelligence processing failed.');
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds before polling again
+    // Axios lower-cases header keys, but allow either form
+    const headers = response.headers || {};
+    const operationLocation = headers['operation-location'] || headers['Operation-Location'];
+    if (!operationLocation) {
+      throw new Error('Missing Operation-Location header in Azure response.');
     }
 
-    return result;
+    // Poll until done
+    let resultContent;
+    while (true) {
+      const pollResponse = await axios.get(operationLocation, {
+        headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+      });
+
+      const { status, resultUrl } = pollResponse.data;
+      if (status === 'succeeded') {
+        const final = await axios.get(resultUrl, {
+          headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+        });
+        resultContent = final.data.analyzeResult.content;
+        break;
+      }
+      if (status === 'failed') {
+        throw new Error('Azure Document Intelligence processing failed.');
+      }
+      // Wait 2s before retry
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    return resultContent;
   } catch (error) {
     logger.error('Error performing Azure Document Intelligence:', error.message);
     throw error;
