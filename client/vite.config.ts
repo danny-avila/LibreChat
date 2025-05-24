@@ -2,6 +2,7 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
@@ -84,7 +85,15 @@ export default defineConfig({
     compression({
       threshold: 10240,
     }),
-  ],
+    process.env.VITE_BUNDLE_ANALYSIS === 'true' &&
+      visualizer({
+        filename: 'dist/bundle-analysis.html',
+        open: true,
+        gzipSize: true,
+        brotliSize: true,
+        template: 'treemap', // 'treemap' | 'sunburst' | 'network'
+      }),
+  ].filter(Boolean),
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
@@ -126,6 +135,19 @@ export default defineConfig({
             }
             if (id.includes('qrcode.react') || id.includes('@marsidev/react-turnstile')) {
               return 'security-ui';
+            }
+
+            if (id.includes('@codemirror/view')) {
+              return 'codemirror-view';
+            }
+            if (id.includes('@codemirror/state')) {
+              return 'codemirror-state';
+            }
+            if (id.includes('@codemirror/language')) {
+              return 'codemirror-language';
+            }
+            if (id.includes('@codemirror')) {
+              return 'codemirror-core';
             }
 
             if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-')) {
