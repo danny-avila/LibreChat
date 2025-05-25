@@ -132,6 +132,7 @@ export default function Conversation({
     conversationId,
     isPopoverActive,
     setIsPopoverActive,
+    conversation,
   };
 
   return (
