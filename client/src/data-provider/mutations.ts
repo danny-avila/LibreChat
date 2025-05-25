@@ -63,6 +63,32 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const usePinConversationMutation = (): UseMutationResult<
+  t.TUpdateConversationResponse,
+  unknown,
+  { conversationId: string; isPinned: boolean },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ conversationId, isPinned }) =>
+      dataService.updateConversation({
+        conversationId,
+        isPinned,
+        pinnedAt: isPinned ? new Date().toISOString() : undefined,
+      }),
+    {
+      onSuccess: (updatedConvo) => {
+        queryClient.setQueryData(
+          [QueryKeys.conversation, updatedConvo.conversationId],
+          updatedConvo,
+        );
+        updateConvoInAllQueries(queryClient, updatedConvo.conversationId, () => updatedConvo);
+      },
+    },
+  );
+};
+
 export const useTagConversationMutation = (
   conversationId: string,
   options?: t.updateTagsInConvoOptions,
@@ -98,7 +124,13 @@ export const useArchiveConvoMutation = (
   const { onMutate, onError, onSettled, onSuccess, ..._options } = options || {};
 
   return useMutation(
-    (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
+    (payload: t.TArchiveConversationRequest) => {
+      // When archiving, also unpin the conversation
+      const updatePayload = payload.isArchived
+        ? { ...payload, isPinned: false, pinnedAt: null }
+        : payload;
+      return dataService.archiveConversation(updatePayload);
+    },
     {
       onMutate,
       onSuccess: (_data, vars, context) => {

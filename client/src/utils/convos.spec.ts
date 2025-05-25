@@ -97,6 +97,86 @@ describe('Conversation Utilities', () => {
       expect(new Date(grouped[1][1][0].updatedAt).getFullYear()).toBe(2022);
     });
 
+    it('handles pinned conversations correctly', () => {
+      const conversations = [
+        {
+          conversationId: '1',
+          updatedAt: '2023-06-01T12:00:00Z',
+          isPinned: true,
+          pinnedAt: '2023-06-01T12:00:00Z',
+        },
+        { conversationId: '2', updatedAt: new Date().toISOString() },
+        {
+          conversationId: '3',
+          updatedAt: new Date(Date.now() - 86400000).toISOString(),
+          isPinned: true,
+          pinnedAt: '2023-06-02T12:00:00Z',
+        },
+        { conversationId: '4', updatedAt: '2023-05-01T12:00:00Z' },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // Pinned conversations should be first
+      expect(grouped[0][0]).toBe(dateKeys.pinned);
+      expect(grouped[0][1]).toHaveLength(2);
+
+      // First pinned should be at top
+      expect(grouped[0][1][0].conversationId).toBe('1');
+      expect(grouped[0][1][1].conversationId).toBe('3');
+
+      // Regular grouping should follow
+      expect(grouped[1][0]).toBe(dateKeys.today);
+      expect(grouped[1][1]).toHaveLength(1);
+      expect(grouped[1][1][0].conversationId).toBe('2');
+    });
+
+    it('handles conversations with no pinned conversations', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: new Date().toISOString() },
+        { conversationId: '2', updatedAt: new Date(Date.now() - 86400000).toISOString() },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // Should not have pinned section
+      expect(grouped[0][0]).toBe(dateKeys.today);
+      expect(grouped.some(([key]) => key === dateKeys.pinned)).toBe(false);
+    });
+
+    it('sorts pinned conversations by pinnedAt date', () => {
+      const conversations = [
+        {
+          conversationId: '1',
+          updatedAt: '2023-06-01T12:00:00Z',
+          isPinned: true,
+          pinnedAt: '2023-06-01T10:00:00Z',
+        },
+        {
+          conversationId: '2',
+          updatedAt: '2023-06-01T12:00:00Z',
+          isPinned: true,
+          pinnedAt: '2023-06-01T15:00:00Z',
+        },
+        {
+          conversationId: '3',
+          updatedAt: '2023-06-01T12:00:00Z',
+          isPinned: true,
+          pinnedAt: '2023-06-01T12:00:00Z',
+        },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped[0][0]).toBe(dateKeys.pinned);
+      expect(grouped[0][1]).toHaveLength(3);
+
+      // Should be sorted by pinnedAt ascending (first pinned at top)
+      expect(grouped[0][1][0].conversationId).toBe('1'); // 10:00
+      expect(grouped[0][1][1].conversationId).toBe('3'); // 12:00
+      expect(grouped[0][1][2].conversationId).toBe('2'); // 15:00
+    });
+
     it('handles conversations from multiple years correctly', () => {
       const conversations = [
         { conversationId: '1', updatedAt: '2023-01-01T12:00:00Z' },
