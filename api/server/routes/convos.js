@@ -10,6 +10,7 @@ const {
   configMiddleware,
 } = require('~/server/middleware');
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const { Conversation } = require('~/db/models');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
@@ -236,6 +237,44 @@ router.post('/duplicate', async (req, res) => {
   } catch (error) {
     logger.error('Error duplicating conversation:', error);
     res.status(500).send('Error duplicating conversation');
+  }
+});
+
+/**
+ * PUT /reorder-pinned
+ * Reorders pinned conversations by updating their pinnedOrder values
+ * @route PUT /reorder-pinned
+ * @param {string[]} req.body.conversationIds - Array of conversation IDs in the new order
+ * @returns {object} 200 - success response - application/json
+ */
+router.put('/reorder-pinned', async (req, res) => {
+  const { conversationIds } = req.body;
+
+  if (!Array.isArray(conversationIds)) {
+    return res.status(400).json({ error: 'conversationIds must be an array' });
+  }
+
+  try {
+    const bulkOps = conversationIds.map((conversationId, index) => ({
+      updateOne: {
+        filter: { conversationId, user: req.user.id, isPinned: true },
+        update: { pinnedOrder: index },
+      },
+    }));
+
+    const result = await Conversation.bulkWrite(bulkOps);
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ error: 'No pinned conversations found to reorder' });
+    }
+
+    res.status(200).json({
+      message: 'Pinned conversations reordered successfully',
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    logger.error('Error reordering pinned conversations', error);
+    res.status(500).send('Error reordering pinned conversations');
   }
 });
 
