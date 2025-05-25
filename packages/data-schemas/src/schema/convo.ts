@@ -34,6 +34,15 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: [],
       meiliIndex: true,
     },
+    isPinned: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    pinnedOrder: {
+      type: Number,
+      index: true,
+    },
     files: {
       type: [String],
     },

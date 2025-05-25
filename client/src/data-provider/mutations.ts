@@ -64,6 +64,94 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const usePinConversationMutation = (): UseMutationResult<
+  t.TUpdateConversationResponse,
+  unknown,
+  { conversationId: string; isPinned: boolean; pinnedOrder?: number },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ conversationId, isPinned, pinnedOrder }) =>
+      dataService.updateConversation({
+        conversationId,
+        isPinned,
+        pinnedOrder: isPinned && pinnedOrder !== undefined ? pinnedOrder : undefined,
+      }),
+    {
+      onSuccess: (updatedConvo) => {
+        if (updatedConvo.conversationId) {
+          queryClient.setQueryData(
+            [QueryKeys.conversation, updatedConvo.conversationId],
+            updatedConvo,
+          );
+          updateConvoInAllQueries(queryClient, updatedConvo.conversationId, () => updatedConvo);
+        }
+      },
+    },
+  );
+};
+
+export const useReorderPinnedConversationsMutation = (): UseMutationResult<
+  { message: string; modifiedCount: number },
+  unknown,
+  { conversationIds: string[] },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ conversationIds }) => dataService.reorderPinnedConversations({ conversationIds }),
+    {
+      onMutate: async ({ conversationIds }) => {
+        // Cancel outgoing refetches for all conversation queries
+        await queryClient.cancelQueries([QueryKeys.allConversations]);
+        await queryClient.cancelQueries([QueryKeys.archivedConversations]);
+
+        // Get all active conversation queries and update them
+        const allQueriesData = queryClient.getQueriesData([QueryKeys.allConversations]);
+        const archivedQueriesData = queryClient.getQueriesData([QueryKeys.archivedConversations]);
+
+        // Update all conversation queries (both allConversations and archivedConversations)
+        [...allQueriesData, ...archivedQueriesData].forEach(([queryKey, data]) => {
+          if (data) {
+            queryClient.setQueryData(queryKey, (oldData: any) => {
+              if (!oldData?.pages) return oldData;
+
+              return {
+                ...oldData,
+                pages: oldData.pages.map((page: any) => ({
+                  ...page,
+                  conversations: page.conversations.map((convo: any) => {
+                    if (convo.isPinned) {
+                      const newOrder = conversationIds.indexOf(convo.conversationId);
+                      if (newOrder !== -1) {
+                        return { ...convo, pinnedOrder: newOrder };
+                      }
+                    }
+                    return convo;
+                  }),
+                })),
+              };
+            });
+          }
+        });
+
+        return { allQueriesData, archivedQueriesData };
+      },
+      onError: (_) => {
+        // Revert optimistic update on error by invalidating queries
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+        queryClient.invalidateQueries([QueryKeys.archivedConversations]);
+      },
+      onSettled: () => {
+        // Always refetch after either success or error
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+        queryClient.invalidateQueries([QueryKeys.archivedConversations]);
+      },
+    },
+  );
+};
+
 export const useTagConversationMutation = (
   conversationId: string,
   options?: t.updateTagsInConvoOptions,
@@ -99,7 +187,13 @@ export const useArchiveConvoMutation = (
   const { onMutate, onError, onSuccess, ..._options } = options || {};
 
   return useMutation(
-    (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
+    (payload: t.TArchiveConversationRequest) => {
+      // When archiving, also unpin the conversation
+      const updatePayload = payload.isArchived
+        ? { ...payload, isPinned: false, pinnedOrder: undefined }
+        : payload;
+      return dataService.archiveConversation(updatePayload);
+    },
     {
       onMutate,
       onSuccess: (_data, vars, context) => {

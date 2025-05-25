@@ -15,6 +15,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 
 // Date group helpers
 export const dateKeys = {
+  pinned: 'com_ui_pinned',
   today: 'com_ui_date_today',
   yesterday: 'com_ui_date_yesterday',
   previous7Days: 'com_ui_date_previous_7_days',
@@ -86,12 +87,35 @@ export const groupConversationsByDate = (
   const groups = new Map();
   const now = new Date(Date.now());
 
+  // Separate pinned and unpinned conversations
+  const pinnedConversations: TConversation[] = [];
+  const unpinnedConversations: TConversation[] = [];
+
   conversations.forEach((conversation) => {
     if (!conversation || seenConversationIds.has(conversation.conversationId)) {
       return;
     }
     seenConversationIds.add(conversation.conversationId);
 
+    if (conversation.isPinned) {
+      pinnedConversations.push(conversation);
+    } else {
+      unpinnedConversations.push(conversation);
+    }
+  });
+
+  // Sort pinned conversations by pinnedOrder (lowest order first)
+  if (pinnedConversations.length > 0) {
+    pinnedConversations.sort((a: TConversation, b: TConversation) => {
+      const orderA = a.pinnedOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.pinnedOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+    groups.set(dateKeys.pinned, pinnedConversations);
+  }
+
+  // Group unpinned conversations by date
+  unpinnedConversations.forEach((conversation) => {
     let date: Date;
     if (conversation.updatedAt) {
       date = parseISO(conversation.updatedAt);
@@ -106,6 +130,13 @@ export const groupConversationsByDate = (
   });
 
   const sortedGroups = new Map();
+
+  // Add pinned conversations first
+  if (groups.has(dateKeys.pinned)) {
+    sortedGroups.set(dateKeys.pinned, groups.get(dateKeys.pinned));
+  }
+
+  // Add date groups in order
   dateGroupsSet.forEach((group) => {
     if (groups.has(group)) {
       sortedGroups.set(group, groups.get(group));
@@ -113,7 +144,7 @@ export const groupConversationsByDate = (
   });
 
   const yearMonthGroups = Array.from(groups.keys())
-    .filter((group) => !dateGroupsSet.has(group))
+    .filter((group) => !dateGroupsSet.has(group) && group !== dateKeys.pinned)
     .sort((a, b) => {
       const [yearA, yearB] = [parseInt(a.trim()), parseInt(b.trim())];
       if (yearA !== yearB) {
@@ -128,11 +159,14 @@ export const groupConversationsByDate = (
     sortedGroups.set(group, groups.get(group));
   });
 
-  sortedGroups.forEach((conversations) => {
-    conversations.sort(
-      (a: TConversation, b: TConversation) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    );
+  // Sort conversations within each group (except pinned, which is already sorted)
+  sortedGroups.forEach((conversations, groupName) => {
+    if (groupName !== dateKeys.pinned) {
+      conversations.sort(
+        (a: TConversation, b: TConversation) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+    }
   });
   return Array.from(sortedGroups, ([key, value]) => [key, value]);
 };

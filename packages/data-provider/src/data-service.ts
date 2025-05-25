@@ -657,6 +657,12 @@ export function updateConversation(
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 
+export function reorderPinnedConversations(
+  payload: { conversationIds: string[] },
+): Promise<{ message: string; modifiedCount: number }> {
+  return request.put(endpoints.reorderPinnedConversations(), payload);
+}
+
 export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {

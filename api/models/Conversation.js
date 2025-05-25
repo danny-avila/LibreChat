@@ -112,6 +112,22 @@ module.exports = {
         update.expiredAt = null;
       }
 
+      // Auto-assign pinnedOrder when pinning a conversation
+      if (update.isPinned === true && update.pinnedOrder === undefined) {
+        const maxOrder = await Conversation.findOne(
+          { user: req.user.id, isPinned: true },
+          'pinnedOrder',
+        )
+          .sort({ pinnedOrder: -1 })
+          .lean();
+        update.pinnedOrder = (maxOrder?.pinnedOrder ?? -1) + 1;
+      }
+
+      // Clear pinnedOrder when unpinning
+      if (update.isPinned === false) {
+        update.pinnedOrder = undefined;
+      }
+
       /** @type {{ $set: Partial<TConversation>; $unset?: Record<keyof TConversation, number> }} */
       const updateOperation = { $set: update };
       if (metadata && metadata.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
@@ -197,7 +213,7 @@ module.exports = {
     try {
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
+          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL tags isPinned pinnedOrder',
         )
         .sort({ updatedAt: order === 'asc' ? 1 : -1 })
         .limit(limit + 1)
