@@ -570,8 +570,35 @@ describe('AnthropicClient', () => {
         anthropicSettings.legacy.maxOutputTokens.default,
       );
     });
-  });
 
+    it('should not cap maxOutputTokens for Claude 4 Sonnet models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 10; // 40,960 tokens
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20250514',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should not cap maxOutputTokens for Claude 4 Opus models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 6; // 24,576 tokens (under 32K limit)
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20250514',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+  });
   describe('topK/topP parameters for different models', () => {
     beforeEach(() => {
       // Mock the SplitStreamHandler

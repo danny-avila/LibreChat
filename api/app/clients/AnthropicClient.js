@@ -119,7 +119,10 @@ class AnthropicClient extends BaseClient {
     this.isClaudeLatest =
       /claude-[3-9]/.test(modelMatch) || /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch);
     this.isLegacyOutput = !(
-      /claude-3[-.]5-sonnet/.test(modelMatch) || /claude-3[-.]7/.test(modelMatch)
+      /claude-3[-.]5-sonnet/.test(modelMatch) ||
+      /claude-3[-.]7/.test(modelMatch) ||
+      /claude-sonnet-4/.test(modelMatch) ||
+      /claude-opus-4/.test(modelMatch)
     );
     this.supportsCacheControl = this.options.promptCache && checkPromptCacheSupport(modelMatch);
 
