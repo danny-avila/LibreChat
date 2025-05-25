@@ -1,5 +1,6 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const client = require('openid-client');
 const {
@@ -19,6 +20,8 @@ const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
+
+const JWT_SECRET = process.env.JWT_SECRET || process.env.OPENID_SESSION_SECRET;
 
 router.use(logHeaders);
 router.use(loginLimiter);
@@ -104,22 +107,71 @@ router.get(
 /**
  * OpenID Routes
  */
-router.get(
-  '/openid',
-  passport.authenticate('openid', {
-    session: false,
-    state: client.randomState(),
-  }),
-);
+router.get('/openid', (req, res, next) => {
+  const state = client.randomState();
+
+  try {
+    const stateToken = jwt.sign(
+      {
+        state: state,
+        timestamp: Date.now(),
+      },
+      JWT_SECRET,
+      { expiresIn: '10m' },
+    );
+
+    res.cookie('oauth_state', stateToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      signed: false,
+      maxAge: 10 * 60 * 1000,
+      sameSite: 'lax',
+    });
+    passport.authenticate('openid', {
+      session: false,
+      state: state,
+    })(req, res, next);
+  } catch (error) {
+    logger.error('Error creating state token for OpenID authentication', error);
+    return res.redirect(`${domains.client}/oauth/error`);
+  }
+});
 
 router.get(
   '/openid/callback',
-  passport.authenticate('openid', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    state: client.randomState(),
-    session: false,
-  }),
+  (req, res, next) => {
+    if (!req.query.state) {
+      logger.error('Missing state parameter in OpenID callback');
+      return res.redirect(`${domains.client}/oauth/error`);
+    }
+
+    const stateToken = req.cookies.oauth_state;
+    if (!stateToken) {
+      logger.error('No state cookie found for OpenID callback');
+      return res.redirect(`${domains.client}/oauth/error`);
+    }
+
+    try {
+      const decodedState = jwt.verify(stateToken, JWT_SECRET);
+      if (req.query.state !== decodedState.state) {
+        logger.error('Invalid state parameter in OpenID callback', {
+          received: req.query.state,
+          expected: decodedState.state,
+        });
+        return res.redirect(`${domains.client}/oauth/error`);
+      }
+      res.clearCookie('oauth_state');
+      passport.authenticate('openid', {
+        failureRedirect: `${domains.client}/oauth/error`,
+        failureMessage: true,
+        session: false,
+      })(req, res, next);
+    } catch (error) {
+      logger.error('Invalid or expired state token in OpenID callback', error);
+      res.clearCookie('oauth_state');
+      return res.redirect(`${domains.client}/oauth/error`);
+    }
+  },
   setBalanceConfig,
   oauthHandler,
 );
