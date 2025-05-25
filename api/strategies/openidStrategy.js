@@ -28,6 +28,17 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     const hostAndProtocol = process.env.DOMAIN_SERVER;
     return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
+
+  /**
+   * Override to ensure proper authorization request parameters
+   */
+  authorizationRequestParams(req, options) {
+    const params = super.authorizationRequestParams?.(req, options) || {};
+    if (options?.state != null && options.state && !params.has('state')) {
+      params.set('state', options.state);
+    }
+    return params;
+  }
 }
 
 /**
