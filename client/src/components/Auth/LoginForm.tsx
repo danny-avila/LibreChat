@@ -149,7 +149,6 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           </a>
         )}
 
-
         {requireCaptcha && (
           <div className="my-4 flex justify-center">
             <Turnstile
