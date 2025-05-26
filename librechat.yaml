@@ -1,0 +1,165 @@
+# Configuration version (required)
+version: 1.2.1
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# Custom interface configuration
+interface:
+  customWelcome: "Welcome to AI Business Automation OS - your suite of specialized AI assistants designed to streamline business processes."
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+  prompts: true
+  bookmarks: true
+  multiConvo: true
+  agents: true
+
+# Registration settings
+registration:
+  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
+
+# Speech settings for voice input/output
+speech:
+  tts:
+    openai:
+      url: 'https://api.openai.com/v1/audio/speech'
+      apiKey: '${OPENAI_API_KEY}'
+      model: 'tts-1'
+      voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+  
+  stt:
+    openai:
+      url: 'https://api.openai.com/v1/audio/transcriptions'
+      apiKey: '${OPENAI_API_KEY}'
+      model: 'whisper-1'
+
+# Rate limits for file uploads and imports
+rateLimits:
+  fileUploads:
+    ipMax: 50
+    ipWindowInMinutes: 60
+    userMax: 25
+    userWindowInMinutes: 60
+  conversationsImport:
+    ipMax: 20
+    ipWindowInMinutes: 60
+    userMax: 10
+    userWindowInMinutes: 60
+
+# MCP Servers for extended AI capabilities
+mcpServers:
+  filesystem:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-filesystem"
+      - /Users/oskolamicheal/Documents/
+    timeout: 60000
+  
+  puppeteer:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-puppeteer"
+    timeout: 300000
+
+# Actions security settings
+actions:
+  allowedDomains:
+    - "github.com"
+    - "api.github.com"
+    - "google.com"
+    - "googleapis.com"
+    - "openai.com"
+    - "anthropic.com"
+
+# Definition of custom endpoints
+endpoints:
+  assistants:
+    disableBuilder: false
+    pollIntervalMs: 3000
+    timeoutMs: 180000
+    retrievalModels: ["gpt-4o", "gpt-4-turbo"]
+    capabilities: ["code_interpreter", "file_search", "actions", "tools", "image_vision"]
+  
+  agents:
+    recursionLimit: 50
+    maxRecursionLimit: 100
+    disableBuilder: false
+    capabilities: ["execute_code", "file_search", "actions", "tools"]
+  
+  custom:
+    - name: 'openai'
+      apiKey: '${OPENAI_API_KEY}'
+      baseURL: 'https://api.openai.com/v1/'
+      models:
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'OpenAI'
+    
+    - name: 'anthropic'
+      apiKey: '${ANTHROPIC_API_KEY}'
+      baseURL: 'https://api.anthropic.com/v1/'
+      models:
+        default: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514']
+        fetch: false
+      titleConvo: true
+      titleModel: 'claude-sonnet-4-20250514'
+      modelDisplayLabel: 'Anthropic'
+    
+    - name: 'groq'
+      apiKey: '${GROQ_API_KEY}'
+      baseURL: 'https://api.groq.com/openai/v1/'
+      models:
+        fetch: true
+      titleConvo: true
+      titleModel: 'llama-3.1-70b-versatile'
+      modelDisplayLabel: 'Groq'
+    
+    - name: 'mistral'
+      apiKey: '${MISTRAL_API_KEY}'
+      baseURL: 'https://api.mistral.ai/v1'
+      models:
+        fetch: true
+      titleConvo: true
+      titleModel: 'mistral-small-latest'
+      modelDisplayLabel: 'Mistral'
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+    
+    - name: 'openrouter'
+      apiKey: '${OPENROUTER_API_KEY}'
+      baseURL: 'https://openrouter.ai/api/v1'
+      models:
+        fetch: true
+      titleConvo: true
+      titleModel: 'anthropic/claude-sonnet-4'
+      modelDisplayLabel: 'OpenRouter'
+      dropParams: ['stop']
+
+# File configuration settings
+fileConfig:
+  endpoints:
+    openAI:
+      fileLimit: 10
+      fileSizeLimit: 20
+      totalSizeLimit: 100
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+        - "text/.*"
+        - "application/json"
+    default:
+      fileLimit: 5
+      fileSizeLimit: 10
+      totalSizeLimit: 50
+  serverFileSizeLimit: 200
+  avatarSizeLimit: 5
+  imageGeneration:
+    percentage: 100
+    px: 1024
