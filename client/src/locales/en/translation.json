@@ -305,6 +305,7 @@
   "com_nav_balance": "Balance",
   "com_nav_balance_auto_refill_settings": "Auto-Refill Settings",
   "com_nav_balance_auto_refill_disabled": "Auto-Refill is disabled.",
+  "com_nav_balance_auto_refill_error": "Error loading auto-refill settings.",
   "com_nav_balance_last_refill": "Last Refill:",
   "com_nav_balance_refill_amount": "Refill Amount:",
   "com_nav_balance_interval": "Interval:",
