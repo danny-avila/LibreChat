@@ -9,7 +9,7 @@ const CheckboxButton = React.forwardRef<
     icon?: React.ReactNode;
     label: string;
     className?: string;
-    defaultChecked?: boolean;
+    defaultChecked: boolean;
     isCheckedClassName?: string;
     setValue?: (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => void;
   }
