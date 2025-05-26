@@ -104,12 +104,12 @@ export const groupConversationsByDate = (
     }
   });
 
-  // Sort pinned conversations by pinnedAt date (first pinned at top)
+  // Sort pinned conversations by pinnedOrder (lowest order first)
   if (pinnedConversations.length > 0) {
     pinnedConversations.sort((a: TConversation, b: TConversation) => {
-      const dateA = a.pinnedAt ? parseISO(a.pinnedAt) : new Date(0);
-      const dateB = b.pinnedAt ? parseISO(b.pinnedAt) : new Date(0);
-      return dateA.getTime() - dateB.getTime();
+      const orderA = a.pinnedOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.pinnedOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
     });
     groups.set(dateKeys.pinned, pinnedConversations);
   }

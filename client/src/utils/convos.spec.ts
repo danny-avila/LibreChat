@@ -103,14 +103,14 @@ describe('Conversation Utilities', () => {
           conversationId: '1',
           updatedAt: '2023-06-01T12:00:00Z',
           isPinned: true,
-          pinnedAt: '2023-06-01T12:00:00Z',
+          pinnedOrder: 0,
         },
         { conversationId: '2', updatedAt: new Date().toISOString() },
         {
           conversationId: '3',
           updatedAt: new Date(Date.now() - 86400000).toISOString(),
           isPinned: true,
-          pinnedAt: '2023-06-02T12:00:00Z',
+          pinnedOrder: 1,
         },
         { conversationId: '4', updatedAt: '2023-05-01T12:00:00Z' },
       ];
@@ -121,7 +121,7 @@ describe('Conversation Utilities', () => {
       expect(grouped[0][0]).toBe(dateKeys.pinned);
       expect(grouped[0][1]).toHaveLength(2);
 
-      // First pinned should be at top
+      // Should be sorted by pinnedOrder ascending
       expect(grouped[0][1][0].conversationId).toBe('1');
       expect(grouped[0][1][1].conversationId).toBe('3');
 
@@ -144,25 +144,25 @@ describe('Conversation Utilities', () => {
       expect(grouped.some(([key]) => key === dateKeys.pinned)).toBe(false);
     });
 
-    it('sorts pinned conversations by pinnedAt date', () => {
+    it('sorts pinned conversations by pinnedOrder', () => {
       const conversations = [
         {
           conversationId: '1',
           updatedAt: '2023-06-01T12:00:00Z',
           isPinned: true,
-          pinnedAt: '2023-06-01T10:00:00Z',
+          pinnedOrder: 0,
         },
         {
           conversationId: '2',
           updatedAt: '2023-06-01T12:00:00Z',
           isPinned: true,
-          pinnedAt: '2023-06-01T15:00:00Z',
+          pinnedOrder: 2,
         },
         {
           conversationId: '3',
           updatedAt: '2023-06-01T12:00:00Z',
           isPinned: true,
-          pinnedAt: '2023-06-01T12:00:00Z',
+          pinnedOrder: 1,
         },
       ];
 
@@ -171,10 +171,10 @@ describe('Conversation Utilities', () => {
       expect(grouped[0][0]).toBe(dateKeys.pinned);
       expect(grouped[0][1]).toHaveLength(3);
 
-      // Should be sorted by pinnedAt ascending (first pinned at top)
-      expect(grouped[0][1][0].conversationId).toBe('1'); // 10:00
-      expect(grouped[0][1][1].conversationId).toBe('3'); // 12:00
-      expect(grouped[0][1][2].conversationId).toBe('2'); // 15:00
+      // Should be sorted by pinnedOrder ascending (lowest order first)
+      expect(grouped[0][1][0].conversationId).toBe('1'); // order 0
+      expect(grouped[0][1][1].conversationId).toBe('3'); // order 1
+      expect(grouped[0][1][2].conversationId).toBe('2'); // order 2
     });
 
     it('handles conversations from multiple years correctly', () => {

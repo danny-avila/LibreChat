@@ -784,6 +784,7 @@
   "com_ui_pin": "Pin",
   "com_ui_pin_error": "Failed to pin/unpin conversation",
   "com_ui_pinned": "Pinned",
+  "com_ui_reorder_error": "Failed to reorder conversations",
   "com_ui_unpin": "Unpin",
   "com_ui_unpinned": "Unpinned",
   "com_ui_prompts": "Prompts",

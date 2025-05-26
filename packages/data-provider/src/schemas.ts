@@ -607,7 +607,7 @@ export const tConversationSchema = z.object({
   /* DB */
   tags: z.array(z.string()).optional(),
   isPinned: z.boolean().optional(),
-  pinnedAt: z.string().optional(),
+  pinnedOrder: z.number().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
