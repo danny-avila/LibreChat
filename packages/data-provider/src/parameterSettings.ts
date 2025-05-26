@@ -682,9 +682,9 @@ const bedrockGeneralColumns = {
 export const presetSettings: Record<
   string,
   | {
-  col1: SettingsConfiguration;
-  col2: SettingsConfiguration;
-}
+      col1: SettingsConfiguration;
+      col2: SettingsConfiguration;
+    }
   | undefined
 > = {
   [EModelEndpoint.openAI]: openAIColumns,

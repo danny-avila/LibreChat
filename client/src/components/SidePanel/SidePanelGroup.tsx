@@ -60,11 +60,12 @@ const SidePanelGroup = ({
 
   const currentLayout = useMemo(() => normalizeLayout(calculateLayout()), [calculateLayout]);
 
-  const throttledSaveLayout = useCallback(
-    throttle((sizes: number[]) => {
-      const normalizedSizes = normalizeLayout(sizes);
-      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
-    }, 350),
+  const throttledSaveLayout = useMemo(
+    () =>
+      throttle((sizes: number[]) => {
+        const normalizedSizes = normalizeLayout(sizes);
+        localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
+      }, 350),
     [],
   );
 

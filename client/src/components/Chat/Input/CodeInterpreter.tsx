@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import React, { memo, useMemo, useCallback } from 'react';
+import React, { memo, useMemo, useCallback, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { TerminalSquareIcon } from 'lucide-react';
 import {
@@ -32,6 +32,7 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
 };
 
 function CodeInterpreter({ conversationId }: { conversationId?: string | null }) {
+  const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
 
@@ -73,9 +74,10 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
   );
 
   const handleChange = useCallback(
-    (isChecked: boolean) => {
+    (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => {
       if (!isAuthenticated) {
         setIsDialogOpen(true);
+        e.preventDefault();
         return;
       }
       setRunCode(isChecked);
@@ -95,6 +97,7 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
   return (
     <>
       <CheckboxButton
+        ref={triggerRef}
         className="max-w-fit"
         defaultChecked={runCode}
         setValue={debouncedChange}
@@ -105,6 +108,7 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
       <ApiKeyDialog
         onSubmit={onSubmit}
         isOpen={isDialogOpen}
+        triggerRef={triggerRef}
         register={methods.register}
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}

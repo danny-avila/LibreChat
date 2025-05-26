@@ -1,9 +1,10 @@
-import path, { resolve } from 'path';
+import path from 'path';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig } from 'vite';
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
@@ -38,7 +39,7 @@ export default defineConfig({
       useCredentials: true,
       workbox: {
         globPatterns: ['**/*'],
-        globIgnores: ['images/**/*'],
+        globIgnores: ['images/**/*', '**/*.map'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
@@ -84,7 +85,15 @@ export default defineConfig({
     compression({
       threshold: 10240,
     }),
-  ],
+    process.env.VITE_BUNDLE_ANALYSIS === 'true' &&
+      visualizer({
+        filename: 'dist/bundle-analysis.html',
+        open: true,
+        gzipSize: true,
+        brotliSize: true,
+        template: 'treemap', // 'treemap' | 'sunburst' | 'network'
+      }),
+  ].filter(Boolean),
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
@@ -96,26 +105,92 @@ export default defineConfig({
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
-            // Group Radix UI libraries together.
+            // High-impact chunking for large libraries
+            if (id.includes('@codesandbox/sandpack')) {
+              return 'sandpack';
+            }
+            if (id.includes('react-virtualized')) {
+              return 'virtualization';
+            }
+            if (id.includes('i18next') || id.includes('react-i18next')) {
+              return 'i18n';
+            }
+            if (id.includes('lodash')) {
+              return 'utilities';
+            }
+            if (id.includes('date-fns')) {
+              return 'date-utils';
+            }
+            if (id.includes('@dicebear')) {
+              return 'avatars';
+            }
+            if (id.includes('react-dnd') || id.includes('react-flip-toolkit')) {
+              return 'react-interactions';
+            }
+            if (id.includes('react-hook-form')) {
+              return 'forms';
+            }
+            if (id.includes('react-router-dom')) {
+              return 'routing';
+            }
+            if (id.includes('qrcode.react') || id.includes('@marsidev/react-turnstile')) {
+              return 'security-ui';
+            }
+
+            if (id.includes('@codemirror/view')) {
+              return 'codemirror-view';
+            }
+            if (id.includes('@codemirror/state')) {
+              return 'codemirror-state';
+            }
+            if (id.includes('@codemirror/language')) {
+              return 'codemirror-language';
+            }
+            if (id.includes('@codemirror')) {
+              return 'codemirror-core';
+            }
+
+            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-')) {
+              return 'markdown-processing';
+            }
+            if (id.includes('monaco-editor') || id.includes('@monaco-editor')) {
+              return 'code-editor';
+            }
+            if (id.includes('react-window') || id.includes('react-virtual')) {
+              return 'virtualization';
+            }
+            if (id.includes('zod') || id.includes('yup') || id.includes('joi')) {
+              return 'validation';
+            }
+            if (id.includes('axios') || id.includes('ky') || id.includes('fetch')) {
+              return 'http-client';
+            }
+            if (id.includes('react-spring') || id.includes('react-transition-group')) {
+              return 'animations';
+            }
+            if (id.includes('react-select') || id.includes('downshift')) {
+              return 'advanced-inputs';
+            }
+
+            // Existing chunks
             if (id.includes('@radix-ui')) {
               return 'radix-ui';
             }
-            // Group framer-motion separately.
             if (id.includes('framer-motion')) {
               return 'framer-motion';
             }
-            // Group markdown-related libraries.
             if (id.includes('node_modules/highlight.js')) {
               return 'markdown_highlight';
             }
-            if (id.includes('node_modules/hast-util-raw') || id.includes('node_modules/katex')) {
+            if (id.includes('katex') || id.includes('node_modules/katex')) {
+              return 'math-katex';
+            }
+            if (id.includes('node_modules/hast-util-raw')) {
               return 'markdown_large';
             }
-            // Group TanStack libraries together.
             if (id.includes('@tanstack')) {
               return 'tanstack-vendor';
             }
-            // Additional grouping for other node_modules:
             if (id.includes('@headlessui')) {
               return 'headlessui';
             }
@@ -133,7 +208,7 @@ export default defineConfig({
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: (assetInfo) => {
-          if (assetInfo.names && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names)) {
+          if (assetInfo.names?.[0] && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.names[0])) {
             return 'assets/fonts/[name][extname]';
           }
           return 'assets/[name].[hash][extname]';
@@ -150,12 +225,12 @@ export default defineConfig({
         warn(warning);
       },
     },
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 1500,
   },
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: resolve('public/fonts'),
+      $fonts: '/fonts',
     },
   },
 });

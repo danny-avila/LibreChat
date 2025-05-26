@@ -1,22 +1,19 @@
 import { useEffect } from 'react';
 import { Checkbox, useStoreState, useCheckboxStore } from '@ariakit/react';
 import { cn } from '~/utils';
+import * as React from 'react';
 
-export default function CheckboxButton({
-  label,
-  icon,
-  setValue,
-  className,
-  defaultChecked,
-  isCheckedClassName,
-}: {
-  label: string;
-  className?: string;
-  icon?: React.ReactNode;
-  defaultChecked: boolean;
-  isCheckedClassName?: string;
-  setValue?: (isChecked: boolean) => void;
-}) {
+const CheckboxButton = React.forwardRef<
+  HTMLInputElement,
+  {
+    icon?: React.ReactNode;
+    label: string;
+    className?: string;
+    defaultChecked?: boolean;
+    isCheckedClassName?: string;
+    setValue?: (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => void;
+  }
+>(({ icon, label, setValue, className, defaultChecked, isCheckedClassName }, ref) => {
   const checkbox = useCheckboxStore();
   const isChecked = useStoreState(checkbox, (state) => state?.value);
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -24,7 +21,7 @@ export default function CheckboxButton({
     if (typeof isChecked !== 'boolean') {
       return;
     }
-    setValue?.(!isChecked);
+    setValue?.(e, !isChecked);
   };
   useEffect(() => {
     checkbox.setValue(defaultChecked);
@@ -32,6 +29,7 @@ export default function CheckboxButton({
 
   return (
     <Checkbox
+      ref={ref}
       store={checkbox}
       onChange={onChange}
       defaultChecked={defaultChecked}
@@ -57,4 +55,8 @@ export default function CheckboxButton({
       <span className="hidden truncate md:block">{label}</span>
     </Checkbox>
   );
-}
+});
+
+CheckboxButton.displayName = 'CheckboxButton';
+
+export default CheckboxButton;

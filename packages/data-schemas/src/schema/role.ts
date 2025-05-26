@@ -26,6 +26,9 @@ export interface IRole extends Document {
     [PermissionTypes.RUN_CODE]?: {
       [Permissions.USE]?: boolean;
     };
+    [PermissionTypes.WEB_SEARCH]?: {
+      [Permissions.USE]?: boolean;
+    };
   };
 }
 
@@ -54,6 +57,9 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.RUN_CODE]: {
       [Permissions.USE]: { type: Boolean, default: true },
     },
+    [PermissionTypes.WEB_SEARCH]: {
+      [Permissions.USE]: { type: Boolean, default: true },
+    },
   },
   { _id: false },
 );
@@ -77,6 +83,7 @@ const roleSchema: Schema<IRole> = new Schema({
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
     }),
   },
 });
