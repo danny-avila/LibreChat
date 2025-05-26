@@ -2,10 +2,10 @@ import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import {
-  getSettingsKeys,
   alternateName,
-  agentParamSettings,
+  getSettingsKeys,
   SettingDefinition,
+  agentParamSettings,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
@@ -211,7 +211,7 @@ export default function ModelPanel({
       {/* Model Parameters */}
       {parameters && (
         <div className="h-auto max-w-full overflow-x-hidden p-2">
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             {/* This is the parent element containing all settings */}
             {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
             {parameters.map((setting) => {
