@@ -85,7 +85,7 @@ endpoints:
     pollIntervalMs: 3000
     timeoutMs: 180000
     retrievalModels: ["gpt-4o", "gpt-4-turbo"]
-    capabilities: ["code_interpreter", "file_search", "actions", "tools", "image_vision"]
+    capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   
   agents:
     recursionLimit: 50
@@ -98,12 +98,13 @@ endpoints:
       apiKey: '${OPENAI_API_KEY}'
       baseURL: 'https://api.openai.com/v1/'
       models:
+        default: []
         fetch: true
       titleConvo: true
       titleModel: 'gpt-4o-mini'
       modelDisplayLabel: 'OpenAI'
     
-    - name: 'anthropic'
+    - name: 'custom_anthropic'
       apiKey: '${ANTHROPIC_API_KEY}'
       baseURL: 'https://api.anthropic.com/v1/'
       models:
@@ -117,6 +118,7 @@ endpoints:
       apiKey: '${GROQ_API_KEY}'
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
+        default: []
         fetch: true
       titleConvo: true
       titleModel: 'llama-3.1-70b-versatile'
@@ -126,6 +128,7 @@ endpoints:
       apiKey: '${MISTRAL_API_KEY}'
       baseURL: 'https://api.mistral.ai/v1'
       models:
+        default: []
         fetch: true
       titleConvo: true
       titleModel: 'mistral-small-latest'
@@ -136,6 +139,7 @@ endpoints:
       apiKey: '${OPENROUTER_API_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       models:
+        default: []
         fetch: true
       titleConvo: true
       titleModel: 'anthropic/claude-sonnet-4'
