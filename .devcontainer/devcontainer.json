@@ -2,6 +2,9 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces",
+  "remoteEnv": {
+    "IS_DEV_CONTAINER": "true"
+  },
   "customizations": {
     "vscode": {
       "extensions": [],
