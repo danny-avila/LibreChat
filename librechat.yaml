@@ -1,5 +1,5 @@
 # Configuration version (required)
-version: 1.2.1
+version: 1.2.6
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -57,7 +57,7 @@ mcpServers:
     args:
       - -y
       - "@modelcontextprotocol/server-filesystem"
-      - /Users/oskolamicheal/Documents/
+      - /app/data/
     timeout: 60000
   
   puppeteer:
@@ -98,7 +98,7 @@ endpoints:
       apiKey: '${OPENAI_API_KEY}'
       baseURL: 'https://api.openai.com/v1/'
       models:
-        default: []
+        default: ['gpt-4o-mini']
         fetch: true
       titleConvo: true
       titleModel: 'gpt-4o-mini'
@@ -118,7 +118,7 @@ endpoints:
       apiKey: '${GROQ_API_KEY}'
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
-        default: []
+        default: ['llama-3.1-70b-versatile']
         fetch: true
       titleConvo: true
       titleModel: 'llama-3.1-70b-versatile'
@@ -128,7 +128,7 @@ endpoints:
       apiKey: '${MISTRAL_API_KEY}'
       baseURL: 'https://api.mistral.ai/v1'
       models:
-        default: []
+        default: ['mistral-small-latest']
         fetch: true
       titleConvo: true
       titleModel: 'mistral-small-latest'
@@ -139,10 +139,10 @@ endpoints:
       apiKey: '${OPENROUTER_API_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       models:
-        default: []
+        default: ['anthropic/claude-3.5-sonnet']
         fetch: true
       titleConvo: true
-      titleModel: 'anthropic/claude-sonnet-4'
+      titleModel: 'anthropic/claude-3.5-sonnet'
       modelDisplayLabel: 'OpenRouter'
       dropParams: ['stop']
 
