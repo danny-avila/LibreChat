@@ -1,7 +1,7 @@
 import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
-import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '~/components';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize, useFileHandling } from '~/hooks';
@@ -22,6 +22,10 @@ const AttachFile = ({ disabled }: AttachFileProps) => {
     overrideEndpoint: EModelEndpoint.agents,
   });
 
+  /** TODO: Ephemeral Agent Capabilities
+   * Allow defining agent capabilities on a per-endpoint basis
+   * Use definition for agents endpoint for ephemeral agents
+   * */
   const capabilities = useMemo(
     () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
     [endpointsConfig],

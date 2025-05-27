@@ -233,6 +233,17 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
+export const defaultAgentCapabilities = [
+  AgentCapabilities.execute_code,
+  AgentCapabilities.file_search,
+  AgentCapabilities.web_search,
+  AgentCapabilities.artifacts,
+  AgentCapabilities.actions,
+  AgentCapabilities.tools,
+  AgentCapabilities.chain,
+  AgentCapabilities.ocr,
+];
+
 export const agentsEndpointSChema = baseEndpointSchema.merge(
   z.object({
     /* agents specific */
@@ -243,16 +254,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
       .optional()
-      .default([
-        AgentCapabilities.execute_code,
-        AgentCapabilities.file_search,
-        AgentCapabilities.web_search,
-        AgentCapabilities.artifacts,
-        AgentCapabilities.actions,
-        AgentCapabilities.tools,
-        AgentCapabilities.chain,
-        AgentCapabilities.ocr,
-      ]),
+      .default(defaultAgentCapabilities),
   }),
 );
 
@@ -950,8 +952,7 @@ export const visionModels = [
   'gemma',
   'gemini-exp',
   'gemini-1.5',
-  'gemini-2.0',
-  'gemini-2.5',
+  'gemini-2',
   'gemini-3',
   'moondream',
   'llama3.2-vision',
