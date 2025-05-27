@@ -5,16 +5,16 @@
   "type": "module",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
-    "build:file": "../node_modules/.bin/cross-env NODE_ENV=production ../node_modules/.bin/vite build --debug > vite-output.log 2>&1",
-    "build": "../node_modules/.bin/cross-env NODE_ENV=production ../node_modules/.bin/vite build",
-    "build:ci": "../node_modules/.bin/cross-env NODE_ENV=development ../node_modules/.bin/vite build --mode ci",
-    "dev": "../node_modules/.bin/cross-env NODE_ENV=development ../node_modules/.bin/vite",
-    "preview-prod": "../node_modules/.bin/cross-env NODE_ENV=development ../node_modules/.bin/vite preview",
-    "test": "../node_modules/.bin/cross-env NODE_ENV=development jest --watch",
-    "test:ci": "../node_modules/.bin/cross-env NODE_ENV=development jest --ci",
+    "build:file": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=production node ../node_modules/vite/bin/vite.js build --debug > vite-output.log 2>&1",
+    "build": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=production node ../node_modules/vite/bin/vite.js build",
+    "build:ci": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development node ../node_modules/vite/bin/vite.js build --mode ci",
+    "dev": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development node ../node_modules/vite/bin/vite.js",
+    "preview-prod": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development node ../node_modules/vite/bin/vite.js preview",
+    "test": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development jest --watch",
+    "test:ci": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development jest --ci",
     "b:test": "NODE_ENV=test bunx jest --watch",
-    "b:build": "NODE_ENV=production bun --bun ../node_modules/.bin/vite build",
-    "b:dev": "NODE_ENV=development bunx ../node_modules/.bin/vite"
+    "b:build": "NODE_ENV=production bun --bun npx vite build",
+    "b:dev": "NODE_ENV=development bunx npx vite"
   },
   "repository": {
     "type": "git",

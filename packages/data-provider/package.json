@@ -19,14 +19,14 @@
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && ../../node_modules/.bin/rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "../../node_modules/.bin/rollup -c -w",
-    "rollup:api": "../../node_modules/.bin/rollup -c server-rollup.config.js --bundleConfigAsCjs",
+    "build": "npm run clean && node ../../node_modules/rollup/dist/bin/rollup -c --silent --bundleConfigAsCjs",
+    "build:watch": "node ../../node_modules/rollup/dist/bin/rollup -c -w",
+    "rollup:api": "node ../../node_modules/rollup/dist/bin/rollup -c server-rollup.config.js --bundleConfigAsCjs",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
     "verify": "npm run test:ci",
     "b:clean": "rm -rf dist",
-    "b:build": "npm run b:clean && bun run ../../node_modules/.bin/rollup -c --silent --bundleConfigAsCjs"
+    "b:build": "npm run b:clean && bun run node ../../node_modules/rollup/dist/bin/rollup -c --silent --bundleConfigAsCjs"
   },
   "repository": {
     "type": "git",
