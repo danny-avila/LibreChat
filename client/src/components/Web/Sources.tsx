@@ -190,12 +190,8 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
   const remainingSources = sources.slice(limit);
   const hasMoreSources = remainingSources.length > 0;
 
-  /** Calculate grid columns based on number of items (including the +X sources button if present) */
-  const totalItems = hasMoreSources ? visibleSources.length + 1 : visibleSources.length;
-  const gridCols = `grid-cols-${Math.min(totalItems, 4)}`;
-
   return (
-    <div className={`grid ${gridCols} scrollbar-none w-full gap-2 overflow-x-auto`}>
+    <div className="scrollbar-none grid w-full grid-cols-4 gap-2 overflow-x-auto">
       <OGDialog>
         {visibleSources.map((source, i) => (
           <div key={`source-${i}`} className="w-full min-w-[120px]">
