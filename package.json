@@ -141,5 +141,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "rimraf": "^6.0.1"
   }
 }
