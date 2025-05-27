@@ -31,7 +31,7 @@ RUN \
     npm config set fetch-retry-mintimeout 15000 ; \
     npm install --no-audit; \
     # React client build
-    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
+    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend:docker; \
     # Keep the built packages before pruning
     mkdir -p /tmp/packages-dist ; \
     cp -r packages/data-provider/dist /tmp/packages-dist/data-provider-dist || true ; \

@@ -41,6 +41,7 @@
     "build:mcp": "npm --workspace=packages/mcp run build",
     "build:data-schemas": "npm --workspace=packages/data-schemas run build",
     "frontend": "npm run build:data-provider && npm run build:mcp && npm run build:data-schemas && cd client && npm run build",
+    "frontend:docker": "npm run build:data-provider && npm run build:mcp && npm run build:data-schemas && cd client && npm run build:docker",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
