@@ -21,21 +21,6 @@ interface:
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
 
-# Speech settings for voice input/output
-speech:
-  tts:
-    openai:
-      url: 'https://api.openai.com/v1/audio/speech'
-      apiKey: '${OPENAI_API_KEY}'
-      model: 'tts-1'
-      voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
-  
-  stt:
-    openai:
-      url: 'https://api.openai.com/v1/audio/transcriptions'
-      apiKey: '${OPENAI_API_KEY}'
-      model: 'whisper-1'
-
 # Rate limits for file uploads and imports
 rateLimits:
   fileUploads:
@@ -49,25 +34,6 @@ rateLimits:
     userMax: 10
     userWindowInMinutes: 60
 
-# MCP Servers for extended AI capabilities
-mcpServers:
-  filesystem:
-    type: stdio
-    command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-filesystem"
-      - /app/data/
-    timeout: 60000
-  
-  puppeteer:
-    type: stdio
-    command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-puppeteer"
-    timeout: 300000
-
 # Actions security settings
 actions:
   allowedDomains:
@@ -77,58 +43,52 @@ actions:
     - "googleapis.com"
     - "openai.com"
     - "anthropic.com"
+    - "fireworks.ai"
+    - "deepseek.com"
+    - "together.ai"
 
-# Definition of custom endpoints
+# Definition of endpoints
 endpoints:
-  assistants:
-    disableBuilder: false
-    pollIntervalMs: 3000
-    timeoutMs: 180000
-    retrievalModels: ["gpt-4o", "gpt-4-turbo"]
-    capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
+  # Встроенный OpenAI endpoint
+  openAI:
+    models:
+      default: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']
+      fetch: true
+    titleConvo: true
+    titleModel: 'gpt-4o-mini'
   
+  # Встроенный Anthropic endpoint
+  anthropic:
+    models:
+      default: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022']
+      fetch: false
+    titleConvo: true
+    titleModel: 'claude-sonnet-4-20250514'
+  
+  # Agents endpoint
   agents:
     recursionLimit: 50
     maxRecursionLimit: 100
     disableBuilder: false
     capabilities: ["execute_code", "file_search", "actions", "tools"]
   
+  # Custom endpoints с User Provided Keys
   custom:
-    - name: 'openai'
-      apiKey: '${OPENAI_API_KEY}'
-      baseURL: 'https://api.openai.com/v1/'
-      models:
-        default: ['gpt-4o-mini']
-        fetch: true
-      titleConvo: true
-      titleModel: 'gpt-4o-mini'
-      modelDisplayLabel: 'OpenAI'
-    
-    - name: 'custom_anthropic'
-      apiKey: '${ANTHROPIC_API_KEY}'
-      baseURL: 'https://api.anthropic.com/v1/'
-      models:
-        default: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514']
-        fetch: false
-      titleConvo: true
-      titleModel: 'claude-sonnet-4-20250514'
-      modelDisplayLabel: 'Anthropic'
-    
     - name: 'groq'
-      apiKey: '${GROQ_API_KEY}'
+      userProvided: true
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
-        default: ['llama-3.1-70b-versatile']
+        default: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
         fetch: true
       titleConvo: true
       titleModel: 'llama-3.1-70b-versatile'
       modelDisplayLabel: 'Groq'
     
     - name: 'mistral'
-      apiKey: '${MISTRAL_API_KEY}'
+      userProvided: true
       baseURL: 'https://api.mistral.ai/v1'
       models:
-        default: ['mistral-small-latest']
+        default: ['mistral-small-latest', 'mistral-medium-latest', 'mistral-large-latest']
         fetch: true
       titleConvo: true
       titleModel: 'mistral-small-latest'
@@ -136,15 +96,75 @@ endpoints:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
     
     - name: 'openrouter'
-      apiKey: '${OPENROUTER_API_KEY}'
+      userProvided: true
       baseURL: 'https://openrouter.ai/api/v1'
       models:
-        default: ['anthropic/claude-3.5-sonnet']
+        default: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'meta-llama/llama-3.1-70b-instruct']
         fetch: true
       titleConvo: true
       titleModel: 'anthropic/claude-3.5-sonnet'
       modelDisplayLabel: 'OpenRouter'
       dropParams: ['stop']
+    
+    - name: 'deepseek'
+      userProvided: true
+      baseURL: 'https://api.deepseek.com/v1'
+      models:
+        default: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner']
+        fetch: true
+      titleConvo: true
+      titleModel: 'deepseek-chat'
+      modelDisplayLabel: 'DeepSeek'
+    
+    - name: 'fireworks'
+      userProvided: true
+      baseURL: 'https://api.fireworks.ai/inference/v1'
+      models:
+        default: ['accounts/fireworks/models/llama-v3p1-70b-instruct', 'accounts/fireworks/models/mixtral-8x7b-instruct']
+        fetch: true
+      titleConvo: true
+      titleModel: 'accounts/fireworks/models/llama-v3p1-70b-instruct'
+      modelDisplayLabel: 'Fireworks'
+    
+    - name: 'together'
+      userProvided: true
+      baseURL: 'https://api.together.xyz/v1'
+      models:
+        default: ['meta-llama/Llama-3-70b-chat-hf', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
+        fetch: true
+      titleConvo: true
+      titleModel: 'meta-llama/Llama-3-70b-chat-hf'
+      modelDisplayLabel: 'Together AI'
+    
+    - name: 'huggingface'
+      userProvided: true
+      baseURL: 'https://api-inference.huggingface.co/v1'
+      models:
+        default: ['meta-llama/Llama-3.1-70B-Instruct', 'microsoft/DialoGPT-medium']
+        fetch: false
+      titleConvo: true
+      titleModel: 'meta-llama/Llama-3.1-70B-Instruct'
+      modelDisplayLabel: 'HuggingFace'
+    
+    - name: 'cohere'
+      userProvided: true
+      baseURL: 'https://api.cohere.ai/v1'
+      models:
+        default: ['command-r-plus', 'command-r', 'command-light']
+        fetch: true
+      titleConvo: true
+      titleModel: 'command-r-plus'
+      modelDisplayLabel: 'Cohere'
+    
+    - name: 'perplexity'
+      userProvided: true
+      baseURL: 'https://api.perplexity.ai'
+      models:
+        default: ['llama-3.1-sonar-large-128k-online', 'llama-3.1-sonar-small-128k-online']
+        fetch: true
+      titleConvo: true
+      titleModel: 'llama-3.1-sonar-large-128k-online'
+      modelDisplayLabel: 'Perplexity'
 
 # File configuration settings
 fileConfig:
