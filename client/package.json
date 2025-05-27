@@ -13,8 +13,8 @@
     "test": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development jest --watch",
     "test:ci": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development jest --ci",
     "b:test": "NODE_ENV=test bunx jest --watch",
-    "b:build": "NODE_ENV=production bun --bun npx vite build",
-    "b:dev": "NODE_ENV=development bunx npx vite"
+    "b:build": "NODE_ENV=production bun --bun node ../node_modules/vite/bin/vite.js build",
+    "b:dev": "NODE_ENV=development bunx node ../node_modules/vite/bin/vite.js"
   },
   "repository": {
     "type": "git",
