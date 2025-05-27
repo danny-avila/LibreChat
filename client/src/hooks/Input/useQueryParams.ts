@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
@@ -96,6 +96,8 @@ export default function useQueryParams({
 
   const methods = useChatFormContext();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
@@ -250,8 +252,7 @@ export default function useQueryParams({
       if (data.text?.trim()) {
         submitMessage(data);
 
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
+        navigate(location.pathname, { replace: true });
 
         console.log('Message submitted with conversation state:', conversation);
       }
@@ -316,8 +317,7 @@ export default function useQueryParams({
 
         // Only clean URL if there's no pending submission
         if (!pendingSubmitRef.current) {
-          const newUrl = window.location.pathname;
-          window.history.replaceState({}, '', newUrl);
+          navigate(location.pathname, { replace: true });
         }
       };
 
@@ -388,6 +388,8 @@ export default function useQueryParams({
     setSearchParams,
     queryClient,
     processSubmission,
+    location.pathname,
+    navigate,
   ]);
 
   useEffect(() => {

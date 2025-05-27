@@ -31,6 +31,7 @@ export default function ChatRoute() {
   const { conversationId = '' } = useParams();
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
+  store.useConversationParamsSync(index);
   const { newConversation } = useNewConvo();
 
   const modelsQuery = useGetModelsQuery({
