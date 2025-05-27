@@ -17,6 +17,7 @@ const plugins = [
   typescript({
     tsconfig: './tsconfig.json',
     useTsconfigDeclarationDir: true,
+    exclude: ['**/*.spec.ts', '**/*.test.ts'],
   }),
   terser(),
 ];

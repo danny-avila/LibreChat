@@ -27,6 +27,7 @@ const plugins = [
     outDir: './dist',
     sourceMap: true,
     inlineSourceMap: true,
+    exclude: ['**/*.spec.ts', '**/*.test.ts'],
   }),
   terser(),
 ];

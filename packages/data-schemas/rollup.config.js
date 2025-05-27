@@ -33,6 +33,7 @@ export default {
       declaration: true,
       declarationDir: 'dist/types',
       rootDir: 'src',
+      exclude: ['**/*.spec.ts', '**/*.test.ts'],
     }),
   ],
   // Do not bundle these external dependencies

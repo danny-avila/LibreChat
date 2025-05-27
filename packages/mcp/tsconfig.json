@@ -25,6 +25,6 @@
     "transpileOnly": true,
     "esm": true
   },
-  "exclude": ["node_modules", "dist", "types"],
+  "exclude": ["node_modules", "dist", "types", "**/*.spec.ts", "**/*.test.ts"],
   "include": ["src/**/*", "types/index.d.ts", "types/react-query/index.d.ts"]
 }
