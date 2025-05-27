@@ -19,14 +19,14 @@
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && npx rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "npx rollup -c -w",
-    "rollup:api": "npx rollup -c server-rollup.config.js --bundleConfigAsCjs",
+    "build": "npm run clean && ../../node_modules/.bin/rollup -c --silent --bundleConfigAsCjs",
+    "build:watch": "../../node_modules/.bin/rollup -c -w",
+    "rollup:api": "../../node_modules/.bin/rollup -c server-rollup.config.js --bundleConfigAsCjs",
     "test": "npx jest --coverage --watch",
     "test:ci": "npx jest --coverage --ci",
     "verify": "npm run test:ci",
     "b:clean": "rm -rf dist",
-    "b:build": "npm run b:clean && npx rollup -c --silent --bundleConfigAsCjs"
+    "b:build": "npm run b:clean && ../../node_modules/.bin/rollup -c --silent --bundleConfigAsCjs"
   },
   "repository": {
     "type": "git",
@@ -53,7 +53,8 @@
     "rollup-plugin-generate-package-json": "^3.2.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-typescript2": "^0.35.0",
-    "typescript": "^5.0.4"
+    "typescript": "^5.0.4",
+    "@types/js-yaml": "^4.0.9"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.21.5",
@@ -61,7 +62,6 @@
     "@babel/preset-typescript": "^7.21.0",
     "@langchain/core": "^0.3.57",
     "@types/jest": "^29.5.2",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.18",
     "@types/winston": "^2.4.4",
