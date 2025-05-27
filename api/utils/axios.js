@@ -29,7 +29,7 @@ const logAxiosError = ({ message, error }) => {
         requestInfo: { method, url },
         stack,
       });
-    } else if (error?.message?.includes('Cannot read properties of undefined (reading \'status\')')) {
+    } else if (error?.message?.includes("Cannot read properties of undefined (reading 'status')")) {
       logMessage = `${message} It appears the request timed out or was unsuccessful: ${error.message}`;
       logger.error(logMessage, { stack });
     } else {
