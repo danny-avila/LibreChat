@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import type { Plugin } from 'vite';
+import type { Plugin, PluginOption } from 'vite';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -29,7 +29,7 @@ export default defineConfig({
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
     react(),
-    nodePolyfills(),
+    nodePolyfills() as any,
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
@@ -81,19 +81,20 @@ export default defineConfig({
         ],
       },
     }),
-    sourcemapExclude({ excludeNodeModules: true }),
+    sourcemapExclude({ excludeNodeModules: true }) as any,
     compression({
       threshold: 10240,
-    }),
-    process.env.VITE_BUNDLE_ANALYSIS === 'true' &&
+    }) as any,
+    ...(process.env.VITE_BUNDLE_ANALYSIS === 'true' ? [
       visualizer({
         filename: 'dist/bundle-analysis.html',
         open: true,
         gzipSize: true,
         brotliSize: true,
         template: 'treemap', // 'treemap' | 'sunburst' | 'network'
-      }),
-  ].filter(Boolean),
+      }) as PluginOption,
+    ] : []),
+  ],
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
