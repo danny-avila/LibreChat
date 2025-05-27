@@ -1,0 +1,6 @@
+{
+  "build_command": "npm ci --no-audit --frozen-lockfile && npm run build:docker",
+  "start_command": "npm run preview",
+  "output_dir": "dist",
+  "cache_dependencies": false
+}

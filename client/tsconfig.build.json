@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "outDir": "dist"
+  },
+  "include": [
+    "vite.config.ts"
+  ],
+  "exclude": []
+}

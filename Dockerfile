@@ -29,9 +29,9 @@ RUN \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
-    npm install --no-audit; \
+    npm install --no-audit --frozen-lockfile; \
     # React client build
-    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend:docker; \
+    NODE_OPTIONS="--max-old-space-size=3072" npm run frontend:docker; \
     # Keep the built packages before pruning
     mkdir -p /tmp/packages-dist ; \
     cp -r packages/data-provider/dist /tmp/packages-dist/data-provider-dist || true ; \

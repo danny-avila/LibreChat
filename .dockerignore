@@ -12,6 +12,19 @@ meili_data*
 # librechat*
 Dockerfile*
 docs
+*.log
+logs
+api/logs
+client/dist
+client/build
+e2e/test-results
+e2e/playwright-report
+.temp
+.tmp
+.cache
+coverage
+.nyc_output
 
-# Ignore all hidden files
+# Ignore all hidden files except .env.example
 .*
+!.env.example

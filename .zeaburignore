@@ -1,0 +1,26 @@
+# Zeabur ignore file
+node_modules/
+*.log
+logs/
+api/logs/
+.git/
+.DS_Store
+.vscode/
+.idea/
+coverage/
+.nyc_output/
+dist/
+build/
+client/dist/
+client/build/
+e2e/test-results/
+e2e/playwright-report/
+meili_data*/
+data-node/
+uploads/
+.cache/
+.temp/
+.tmp/
+*.map
+*.tgz
+*.tar.gz

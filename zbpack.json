@@ -1,0 +1,6 @@
+{
+  "build_command": "npm ci --no-audit --frozen-lockfile && NODE_OPTIONS='--max-old-space-size=3072' npm run frontend:docker",
+  "start_command": "npm run backend",
+  "cache_dependencies": false,
+  "output_dir": "client/dist"
+}

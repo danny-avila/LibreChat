@@ -71,7 +71,8 @@
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
     "b:list-balances": "bun config/list-balances.js",
-    "reset-terms": "node config/reset-terms.js"
+    "reset-terms": "node config/reset-terms.js",
+    "test:build": "bash scripts/test-build.sh"
   },
   "repository": {
     "type": "git",
@@ -143,6 +144,11 @@
       "packages/"
     ]
   },
+  "engines": {
+    "node": ">=18.17.0",
+    "npm": ">=9.0.0"
+  },
+  "packageManager": "npm@10.2.4",
   "dependencies": {
     "rimraf": "^6.0.1"
   }
