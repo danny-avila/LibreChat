@@ -91,7 +91,6 @@ Changes from v0.7.8-rc1 to v0.7.8.
 
 ---
 ## [v0.7.8-rc1] - 
-## [v0.7.8-rc1] - 
 
 Changes from v0.7.7 to v0.7.8-rc1.
 
