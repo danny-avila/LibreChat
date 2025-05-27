@@ -124,13 +124,7 @@ describe('MistralOCR Service', () => {
           fileName: 'test.pdf',
           apiKey: 'test-api-key',
         }),
-      ).rejects.toThrow();
-
-      const { logger } = require('~/config');
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Error uploading document to Mistral:'),
-        expect.any(String),
-      );
+      ).rejects.toThrow(errorMessage);
     });
   });
 
