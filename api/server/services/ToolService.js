@@ -510,7 +510,15 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       req.app?.locals?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
     );
   }
-  const checkCapability = (capability) => enabledCapabilities.has(capability);
+  const checkCapability = (capability) => {
+    const enabled = enabledCapabilities.has(capability);
+    if (!enabled) {
+      logger.warn(
+        `Capability "${capability}" disabled${capability === AgentCapabilities.tools ? '.' : ' despite configured tool.'} User: ${req.user.id} | Agent: ${agent.id}`,
+      );
+    }
+    return enabled;
+  };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
   let includesWebSearch = false;
