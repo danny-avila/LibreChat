@@ -6,9 +6,6 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME;
 if (!MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
 }
-if (!MONGO_DB_NAME) {
-    MONGO_DB_NAME = null
-}
 
 /**
  * Global is used here to maintain a cached connection across hot reloads
