@@ -30,10 +30,11 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai",
-  "devDependencies": {
-    "@babel/preset-env": "^7.21.5",
-    "@babel/preset-react": "^7.18.6",
-    "@babel/preset-typescript": "^7.21.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.2",
+    "diff": "^7.0.0",
+    "eventsource": "^3.0.2",
+    "express": "^4.21.2",
     "@rollup/plugin-alias": "^5.1.0",
     "@rollup/plugin-commonjs": "^25.0.2",
     "@rollup/plugin-json": "^6.1.0",
@@ -41,6 +42,15 @@
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.2",
+    "rollup": "^4.22.4",
+    "rollup-plugin-generate-package-json": "^3.2.0",
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "typescript": "^5.0.4"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.21.5",
+    "@babel/preset-react": "^7.18.6",
+    "@babel/preset-typescript": "^7.21.0",
     "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
@@ -51,20 +61,7 @@
     "jest-junit": "^16.0.0",
     "librechat-data-provider": "*",
     "rimraf": "^5.0.1",
-    "rollup": "^4.22.4",
-    "rollup-plugin-generate-package-json": "^3.2.0",
-    "rollup-plugin-peer-deps-external": "^2.2.4",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.0.4"
-  },
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.11.2",
-    "diff": "^7.0.0",
-    "eventsource": "^3.0.2",
-    "express": "^4.21.2"
+    "ts-node": "^10.9.2"
   },
   "peerDependencies": {
     "keyv": "^5.3.2"

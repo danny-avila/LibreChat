@@ -34,7 +34,8 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai",
-  "devDependencies": {
+  "dependencies": {
+    "mongoose": "^8.12.1",
     "@rollup/plugin-alias": "^5.1.0",
     "@rollup/plugin-commonjs": "^25.0.2",
     "@rollup/plugin-json": "^6.1.0",
@@ -42,6 +43,13 @@
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.2",
+    "rollup": "^4.22.4",
+    "rollup-plugin-generate-package-json": "^3.2.0",
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "rollup-plugin-typescript2": "^0.35.0",
+    "typescript": "^5.0.4"
+  },
+  "devDependencies": {
     "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
@@ -49,15 +57,7 @@
     "jest": "^29.5.0",
     "jest-junit": "^16.0.0",
     "rimraf": "^5.0.1",
-    "rollup": "^4.22.4",
-    "rollup-plugin-generate-package-json": "^3.2.0",
-    "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-typescript2": "^0.35.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.0.4"
-  },
-  "dependencies": {
-    "mongoose": "^8.12.1"
+    "ts-node": "^10.9.2"
   },
   "peerDependencies": {
     "keyv": "^5.3.2"
