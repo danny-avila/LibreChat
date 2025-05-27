@@ -1,10 +1,6 @@
-# Configuration version (required)
 version: 1.2.6
-
-# Cache settings: Set to true to enable caching
 cache: true
 
-# Custom interface configuration
 interface:
   customWelcome: "Welcome to AI Business Automation OS - your suite of specialized AI assistants designed to streamline business processes."
   endpointsMenu: true
@@ -17,11 +13,9 @@ interface:
   multiConvo: true
   agents: true
 
-# Registration settings
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
 
-# Rate limits for file uploads and imports
 rateLimits:
   fileUploads:
     ipMax: 50
@@ -34,7 +28,6 @@ rateLimits:
     userMax: 10
     userWindowInMinutes: 60
 
-# Actions security settings
 actions:
   allowedDomains:
     - "github.com"
@@ -47,9 +40,7 @@ actions:
     - "deepseek.com"
     - "together.ai"
 
-# Definition of endpoints
 endpoints:
-  # Встроенный OpenAI endpoint
   openAI:
     models:
       default: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']
@@ -57,7 +48,6 @@ endpoints:
     titleConvo: true
     titleModel: 'gpt-4o-mini'
   
-  # Встроенный Anthropic endpoint
   anthropic:
     models:
       default: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022']
@@ -65,14 +55,12 @@ endpoints:
     titleConvo: true
     titleModel: 'claude-sonnet-4-20250514'
   
-  # Agents endpoint
   agents:
     recursionLimit: 50
     maxRecursionLimit: 100
     disableBuilder: false
     capabilities: ["execute_code", "file_search", "actions", "tools"]
   
-  # Custom endpoints с User Provided Keys
   custom:
     - name: 'groq'
       userProvided: true
@@ -125,48 +113,7 @@ endpoints:
       titleConvo: true
       titleModel: 'accounts/fireworks/models/llama-v3p1-70b-instruct'
       modelDisplayLabel: 'Fireworks'
-    
-    - name: 'together'
-      userProvided: true
-      baseURL: 'https://api.together.xyz/v1'
-      models:
-        default: ['meta-llama/Llama-3-70b-chat-hf', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
-        fetch: true
-      titleConvo: true
-      titleModel: 'meta-llama/Llama-3-70b-chat-hf'
-      modelDisplayLabel: 'Together AI'
-    
-    - name: 'huggingface'
-      userProvided: true
-      baseURL: 'https://api-inference.huggingface.co/v1'
-      models:
-        default: ['meta-llama/Llama-3.1-70B-Instruct', 'microsoft/DialoGPT-medium']
-        fetch: false
-      titleConvo: true
-      titleModel: 'meta-llama/Llama-3.1-70B-Instruct'
-      modelDisplayLabel: 'HuggingFace'
-    
-    - name: 'cohere'
-      userProvided: true
-      baseURL: 'https://api.cohere.ai/v1'
-      models:
-        default: ['command-r-plus', 'command-r', 'command-light']
-        fetch: true
-      titleConvo: true
-      titleModel: 'command-r-plus'
-      modelDisplayLabel: 'Cohere'
-    
-    - name: 'perplexity'
-      userProvided: true
-      baseURL: 'https://api.perplexity.ai'
-      models:
-        default: ['llama-3.1-sonar-large-128k-online', 'llama-3.1-sonar-small-128k-online']
-        fetch: true
-      titleConvo: true
-      titleModel: 'llama-3.1-sonar-large-128k-online'
-      modelDisplayLabel: 'Perplexity'
 
-# File configuration settings
 fileConfig:
   endpoints:
     openAI:
