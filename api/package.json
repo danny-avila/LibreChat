@@ -5,9 +5,9 @@
   "scripts": {
     "start": "echo 'please run this from the root directory'",
     "server-dev": "echo 'please run this from the root directory'",
-    "test": "cross-env NODE_ENV=test jest",
+    "test": "../node_modules/.bin/cross-env NODE_ENV=test jest",
     "b:test": "NODE_ENV=test bun jest",
-    "test:ci": "jest --ci",
+    "test:ci": "../node_modules/.bin/jest --ci",
     "add-balance": "node ./add-balance.js",
     "list-balances": "node ./list-balances.js",
     "user-stats": "node ./user-stats.js",

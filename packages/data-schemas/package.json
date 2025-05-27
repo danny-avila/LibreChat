@@ -17,14 +17,14 @@
     "dist"
   ],
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "rollup -c -w",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && ../../node_modules/.bin/rollup -c --silent --bundleConfigAsCjs",
+    "build:watch": "../../node_modules/.bin/rollup -c -w --bundleConfigAsCjs",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
     "verify": "npm run test:ci",
-    "b:clean": "bun run rimraf dist",
-    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs"
+    "b:clean": "rm -rf dist",
+    "b:build": "npm run b:clean && bun run ../../node_modules/.bin/rollup -c --silent --bundleConfigAsCjs"
   },
   "repository": {
     "type": "git",

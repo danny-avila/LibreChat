@@ -5,16 +5,16 @@
   "type": "module",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
-    "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
-    "build": "cross-env NODE_ENV=production vite build",
-    "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
-    "dev": "cross-env NODE_ENV=development vite",
-    "preview-prod": "cross-env NODE_ENV=development vite preview",
-    "test": "cross-env NODE_ENV=development jest --watch",
-    "test:ci": "cross-env NODE_ENV=development jest --ci",
+    "build:file": "../node_modules/.bin/cross-env NODE_ENV=production ../node_modules/.bin/vite build --debug > vite-output.log 2>&1",
+    "build": "../node_modules/.bin/cross-env NODE_ENV=production ../node_modules/.bin/vite build",
+    "build:ci": "../node_modules/.bin/cross-env NODE_ENV=development ../node_modules/.bin/vite build --mode ci",
+    "dev": "../node_modules/.bin/cross-env NODE_ENV=development ../node_modules/.bin/vite",
+    "preview-prod": "../node_modules/.bin/cross-env NODE_ENV=development ../node_modules/.bin/vite preview",
+    "test": "../node_modules/.bin/cross-env NODE_ENV=development jest --watch",
+    "test:ci": "../node_modules/.bin/cross-env NODE_ENV=development jest --ci",
     "b:test": "NODE_ENV=test bunx jest --watch",
-    "b:build": "NODE_ENV=production bun --bun vite build",
-    "b:dev": "NODE_ENV=development bunx vite"
+    "b:build": "NODE_ENV=production bun --bun ../node_modules/.bin/vite build",
+    "b:dev": "NODE_ENV=development bunx ../node_modules/.bin/vite"
   },
   "repository": {
     "type": "git",

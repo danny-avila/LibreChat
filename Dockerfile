@@ -32,7 +32,18 @@ RUN \
     npm install --no-audit; \
     # React client build
     NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
+    # Keep the built packages before pruning
+    mkdir -p /tmp/packages-dist ; \
+    cp -r packages/data-provider/dist /tmp/packages-dist/data-provider-dist || true ; \
+    cp -r packages/data-schemas/dist /tmp/packages-dist/data-schemas-dist || true ; \
+    cp -r packages/mcp/dist /tmp/packages-dist/mcp-dist || true ; \
     npm prune --production; \
+    # Restore the built packages
+    mkdir -p packages/data-provider/dist packages/data-schemas/dist packages/mcp/dist ; \
+    cp -r /tmp/packages-dist/data-provider-dist/* packages/data-provider/dist/ || true ; \
+    cp -r /tmp/packages-dist/data-schemas-dist/* packages/data-schemas/dist/ || true ; \
+    cp -r /tmp/packages-dist/mcp-dist/* packages/mcp/dist/ || true ; \
+    rm -rf /tmp/packages-dist ; \
     npm cache clean --force
 
 RUN mkdir -p /app/client/public/images /app/api/logs
