@@ -5,9 +5,11 @@
   "scripts": {
     "start": "echo 'please run this from the root directory'",
     "server-dev": "echo 'please run this from the root directory'",
-    "test": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=test node ../node_modules/jest/bin/jest.js",
+    "test": "jest --setupFiles dotenv/config --detectOpenHandles --maxWorkers=1 --forceExit",
     "b:test": "NODE_ENV=test bun jest",
-    "test:ci": "node ../node_modules/jest/bin/jest.js --ci",
+    "test:ci": "jest --ci",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch",
     "add-balance": "node ./add-balance.js",
     "list-balances": "node ./list-balances.js",
     "user-stats": "node ./user-stats.js",
@@ -25,9 +27,6 @@
   "license": "ISC",
   "_moduleAliases": {
     "~": "."
-  },
-  "imports": {
-    "~/*": "./*"
   },
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"

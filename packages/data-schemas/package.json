@@ -18,13 +18,11 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && node ../../node_modules/rollup/dist/bin/rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "node ../../node_modules/rollup/dist/bin/rollup -c -w --bundleConfigAsCjs",
+    "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
+    "build:watch": "rollup -c -w",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
-    "verify": "npm run test:ci",
-    "b:clean": "rm -rf dist",
-    "b:build": "npm run b:clean && bun run node ../../node_modules/rollup/dist/bin/rollup -c --silent --bundleConfigAsCjs"
+    "verify": "npm run test:ci"
   },
   "repository": {
     "type": "git",

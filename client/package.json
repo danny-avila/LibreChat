@@ -4,17 +4,14 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "data-provider": "cd .. && npm run build:data-provider",
-    "build:file": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=production node ../node_modules/vite/bin/vite.js build --debug > vite-output.log 2>&1",
-    "build": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=production node ../node_modules/vite/bin/vite.js build",
-    "build:ci": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development node ../node_modules/vite/bin/vite.js build --mode ci",
-    "dev": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development node ../node_modules/vite/bin/vite.js",
-    "preview-prod": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development node ../node_modules/vite/bin/vite.js preview",
-    "test": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development jest --watch",
-    "test:ci": "node ../node_modules/cross-env/src/bin/cross-env.js NODE_ENV=development jest --ci",
-    "b:test": "NODE_ENV=test bunx jest --watch",
-    "b:build": "NODE_ENV=production bun --bun node ../node_modules/vite/bin/vite.js build",
-    "b:dev": "NODE_ENV=development bunx node ../node_modules/vite/bin/vite.js"
+    "dev": "vite",
+    "build": "cross-env NODE_ENV=production vite build",
+    "serve": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "jest",
+    "test:ci": "jest --ci",
+    "test:e2e": "playwright test --config=e2e/playwright.config.local.ts --workers=2",
+    "test:e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed --workers=1"
   },
   "repository": {
     "type": "git",
