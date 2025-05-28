@@ -1,11 +1,6 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
-import type {
-  TConversation,
-  TFeedbackRating,
-  TMessage,
-  TMessageFeedback,
-} from 'librechat-data-provider';
+import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
@@ -26,8 +21,7 @@ type THoverButtons = {
   latestMessage: TMessage | null;
   isLast: boolean;
   index: number;
-  handleFeedback: (rating: TFeedbackRating, payload?: any) => void;
-  // rated: TMessageFeedback | undefined;
+  handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
 };
 
 type HoverButtonProps = {
@@ -262,12 +256,7 @@ const HoverButtons = ({
 
       {/* Feedback Buttons */}
       {!isCreatedByUser && (
-        <Feedback
-          isLast={isLast}
-          handleFeedback={handleFeedback}
-          rating={message.rating}
-          feedback={message.ratingContent}
-        />
+        <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
       )}
 
       {/* Regenerate Button */}

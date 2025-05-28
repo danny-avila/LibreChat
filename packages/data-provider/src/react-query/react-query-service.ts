@@ -351,7 +351,7 @@ export const useGetCustomConfigSpeechQuery = (
 export const useUpdateFeedbackMutation = (
   conversationId: string,
   messageId: string,
-): UseMutationResult<t.TUpdateFeedbackResponse, unknown, t.TUpdateFeedbackRequest, unknown> => {
+): UseMutationResult<t.TUpdateFeedbackResponse, Error, t.TUpdateFeedbackRequest> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateFeedbackRequest) =>

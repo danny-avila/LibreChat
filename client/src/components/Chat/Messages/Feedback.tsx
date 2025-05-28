@@ -1,12 +1,16 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
+import { TFeedback, TFeedbackTag, getTagsForRating } from 'librechat-data-provider';
 import {
-  TFeedback,
-  TFeedbackTag,
-  getTagsForRating,
-  toMinimalFeedback,
-  TMinimalFeedback,
-} from 'librechat-data-provider';
+  AlertCircle,
+  PenTool,
+  ImageOff,
+  Ban,
+  HelpCircle,
+  CheckCircle,
+  Lightbulb,
+  Search,
+} from 'lucide-react';
 import {
   Button,
   OGDialog,
@@ -19,14 +23,22 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface FeedbackProps {
-  isLast?: boolean;
-  handleFeedback: (feedback: TMinimalFeedback | undefined) => void;
+  handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
   feedback?: TFeedback;
+  isLast?: boolean;
 }
 
 const ICONS = {
-  ThumbUpIcon,
-  ThumbDownIcon,
+  AlertCircle,
+  PenTool,
+  ImageOff,
+  Ban,
+  HelpCircle,
+  CheckCircle,
+  Lightbulb,
+  Search,
+  ThumbsUp: ThumbUpIcon,
+  ThumbsDown: ThumbDownIcon,
 };
 
 function FeedbackOptionButton({
@@ -39,7 +51,7 @@ function FeedbackOptionButton({
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const localize = useLocalize();
-  const Icon = ICONS[tag.icon];
+  const Icon = ICONS[tag.icon as keyof typeof ICONS] || AlertCircle;
   const label = localize(tag.label as Parameters<typeof localize>[0]);
 
   return (
@@ -111,11 +123,8 @@ function FeedbackButtons({
         downStore.toggle();
         return;
       }
-      if (feedback?.tag?.key === 'other') {
-        onOther?.();
-      } else {
-        onFeedback(undefined);
-      }
+
+      onOther?.();
     },
     [feedback, onFeedback, onOther, downStore],
   );
@@ -231,10 +240,14 @@ export default function Feedback({
   const [openDialog, setOpenDialog] = useState(false);
   const [feedback, setFeedback] = useState<TFeedback | undefined>(initialFeedback);
 
+  useEffect(() => {
+    setFeedback(initialFeedback);
+  }, [initialFeedback]);
+
   const propagateMinimal = useCallback(
     (fb: TFeedback | undefined) => {
       setFeedback(fb);
-      handleFeedback(toMinimalFeedback(fb));
+      handleFeedback({ feedback: fb });
     },
     [handleFeedback],
   );
@@ -255,15 +268,18 @@ export default function Feedback({
   };
 
   const handleDialogSave = useCallback(() => {
+    if (feedback?.tag?.key === 'other' && !feedback?.text?.trim()) {
+      return;
+    }
     propagateMinimal(feedback);
     setOpenDialog(false);
   }, [feedback, propagateMinimal]);
 
   const handleDialogClear = useCallback(() => {
     setFeedback(undefined);
-    propagateMinimal(undefined);
+    handleFeedback({ feedback: undefined });
     setOpenDialog(false);
-  }, [propagateMinimal]);
+  }, [handleFeedback]);
 
   const renderSingleFeedbackButton = () => {
     if (!feedback) return null;
@@ -275,7 +291,13 @@ export default function Feedback({
     return (
       <button
         className={buttonClasses(true, isLast)}
-        onClick={() => handleButtonFeedback(undefined)}
+        onClick={() => {
+          if (isThumbsUp) {
+            handleButtonFeedback(undefined);
+          } else {
+            setOpenDialog(true);
+          }
+        }}
         type="button"
         title={label}
         aria-pressed="true"

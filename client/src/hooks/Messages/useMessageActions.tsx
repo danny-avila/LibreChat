@@ -1,12 +1,13 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, useState } from 'react';
+import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
 import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
-  TMessageFeedback,
   TUpdateFeedbackRequest,
-  TFeedbackRating,
-  TFeedbackContent,
+  getTagByKey,
+  TFeedback,
+  toMinimalFeedback,
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import {
@@ -17,9 +18,8 @@ import {
 } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
 
 export type TMessageActions = Pick<
   TMessageProps,
@@ -27,6 +27,7 @@ export type TMessageActions = Pick<
 > & {
   isMultiMessage?: boolean;
 };
+
 export default function useMessageActions(props: TMessageActions) {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -54,7 +55,18 @@ export default function useMessageActions(props: TMessageActions) {
 
   const { text, content, messageId = null, isCreatedByUser } = message ?? {};
   const edit = useMemo(() => messageId === currentEditId, [messageId, currentEditId]);
-  const [rated, setRated] = useState<TMessageFeedback>({ rating: undefined });
+
+  const [feedback, setFeedback] = useState<TFeedback | undefined>(() => {
+    if (message?.feedback) {
+      const tag = getTagByKey(message.feedback?.tag?.key);
+      return {
+        rating: message.feedback.rating,
+        tag,
+        text: message.feedback.text,
+      };
+    }
+    return undefined;
+  });
 
   const enterEdit = useCallback(
     (cancel?: boolean) => setCurrentEditId && setCurrentEditId(cancel === true ? -1 : messageId),
@@ -125,32 +137,30 @@ export default function useMessageActions(props: TMessageActions) {
   );
 
   const handleFeedback = useCallback(
-    (rating: TFeedbackRating, content?: TFeedbackContent) => {
-      if (!conversation?.conversationId || !message?.messageId || !feedbackMutation?.mutate) {
-        console.error('Feedback mutation is not available.');
-        return;
-      }
-      // Format the payload based on the direct content parameter
-      const formattedPayload: TUpdateFeedbackRequest = { rating };
+    ({ feedback: newFeedback }: { feedback: TFeedback | undefined }) => {
+      const payload: TUpdateFeedbackRequest = {
+        feedback: newFeedback ? toMinimalFeedback(newFeedback) : undefined,
+      };
 
-      if (content) {
-        formattedPayload.ratingContent = {
-          tags: Array.isArray(content.tags) ? content.tags : [],
-          text: typeof content.text === 'string' ? content.text : '',
-        };
-      }
-      feedbackMutation.mutate(formattedPayload, {
+      feedbackMutation.mutate(payload, {
         onSuccess: (data) => {
-          const convertedData: TMessageFeedback = {
-            rating: data.rating,
-            ratingContent: data.ratingContent as TFeedbackContent,
-          };
-
-          setRated(convertedData);
+          if (!data.feedback) {
+            setFeedback(undefined);
+          } else {
+            const tag = getTagByKey(data.feedback?.tag ?? undefined);
+            setFeedback({
+              rating: data.feedback.rating,
+              tag,
+              text: data.feedback.text,
+            });
+          }
+        },
+        onError: (error) => {
+          console.error('Failed to update feedback:', error);
         },
       });
     },
-    [conversation?.conversationId, message?.messageId, feedbackMutation],
+    [feedbackMutation],
   );
 
   return {
@@ -169,6 +179,6 @@ export default function useMessageActions(props: TMessageActions) {
     setLatestMessage,
     regenerateMessage,
     handleFeedback,
-    rated,
+    feedback,
   };
 }

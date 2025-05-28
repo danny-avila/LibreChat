@@ -247,19 +247,10 @@ async function updateMessage(req, message, metadata) {
       throw new Error('Message not found or user not authorized.');
     }
 
-    return {
-      messageId: updatedMessage.messageId,
-      conversationId: updatedMessage.conversationId,
-      parentMessageId: updatedMessage.parentMessageId,
-      sender: updatedMessage.sender,
-      text: updatedMessage.text,
-      isCreatedByUser: updatedMessage.isCreatedByUser,
-      tokenCount: updatedMessage.tokenCount,
-      feedback: updatedMessage.feedback,
-    };
+    return updatedMessage.toObject();
   } catch (err) {
     logger.error('Error updating message:', err);
-    if (metadata && metadata?.context) {
+    if (metadata?.context) {
       logger.info(`---\`updateMessage\` context: ${metadata.context}`);
     }
     throw err;
