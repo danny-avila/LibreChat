@@ -1,12 +1,7 @@
 {
   "build": {
-    "commands": [
-      "npm ci --no-audit --frozen-lockfile",
-      "NODE_OPTIONS='--max-old-space-size=3072' npm run frontend:docker"
-    ]
-  },
-  "start": {
-    "command": "npm run backend"
+    "type": "docker",
+    "dockerfile": "Dockerfile.multi"
   },
   "env": {
     "NODE_ENV": "production",
