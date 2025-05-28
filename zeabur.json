@@ -1,7 +1,6 @@
 {
   "build": {
-    "type": "docker",
-    "dockerfile": "Dockerfile.multi"
+    "type": "docker"
   },
   "env": {
     "NODE_ENV": "production",
