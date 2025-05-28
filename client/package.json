@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "cross-env NODE_ENV=production vite build",
-    "build:docker": "NODE_ENV=production node ../../node_modules/vite/bin/vite.js build",
+    "build:docker": "NODE_ENV=production vite build",
     "serve": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "jest",
