@@ -8,7 +8,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   server: {
     host: 'localhost',
     port: 3090,
@@ -37,13 +37,21 @@ export default defineConfig({
         enabled: false, // disable service worker registration in development mode
       },
       useCredentials: true,
+      includeManifestIcons: false,
       workbox: {
-        globPatterns: ['**/*'],
+        globPatterns: [
+          '**/*.{js,css,html}',
+          'assets/favicon*.png',
+          'assets/icon-*.png',
+          'assets/apple-touch-icon*.png',
+          'assets/maskable-icon.png',
+          'manifest.webmanifest',
+        ],
         globIgnores: ['images/**/*', '**/*.map'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
-      includeAssets: ['**/*'],
+      includeAssets: [],
       manifest: {
         name: 'LibreChat',
         short_name: 'LibreChat',
@@ -94,14 +102,13 @@ export default defineConfig({
         template: 'treemap', // 'treemap' | 'sunburst' | 'network'
       }),
   ].filter(Boolean),
-  publicDir: './public',
+  publicDir: command === 'serve' ? './public' : false,
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
     minify: 'terser',
     rollupOptions: {
       preserveEntrySignatures: 'strict',
-      // external: ['uuid'],
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
@@ -230,10 +237,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: '/fonts',
+      $fonts: path.resolve(__dirname, 'public/fonts'),
     },
   },
-});
+}));
 
 interface SourcemapExclude {
   excludeNodeModules?: boolean;
