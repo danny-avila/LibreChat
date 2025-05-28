@@ -37,13 +37,21 @@ export default defineConfig({
         enabled: false, // disable service worker registration in development mode
       },
       useCredentials: true,
+      includeManifestIcons: false,
       workbox: {
-        globPatterns: ['**/*'],
+        globPatterns: [
+          '**/*.{js,css,html}',
+          'assets/favicon*.png',
+          'assets/icon-*.png',
+          'assets/apple-touch-icon*.png',
+          'assets/maskable-icon.png',
+          'manifest.webmanifest',
+        ],
         globIgnores: ['images/**/*', '**/*.map'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/],
       },
-      includeAssets: ['**/*'],
+      includeAssets: [],
       manifest: {
         name: 'LibreChat',
         short_name: 'LibreChat',
@@ -101,7 +109,7 @@ export default defineConfig({
     minify: 'terser',
     rollupOptions: {
       preserveEntrySignatures: 'strict',
-      // external: ['uuid'],
+      external: [/\/images\//],
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
