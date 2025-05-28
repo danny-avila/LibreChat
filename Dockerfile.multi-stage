@@ -1,0 +1,105 @@
+# Multi-Stage Docker Build for LibreChat
+# Based on Docker best practices for Node.js applications
+# Solves the issue of Vite not being available after npm prune --production
+
+# Stage 1: Build Dependencies
+# This stage installs all dependencies and builds the application
+FROM node:20-alpine AS builder
+
+# Install system dependencies
+RUN apk add --no-cache jemalloc python3 py3-pip
+
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+
+# Create app directory and set proper ownership
+RUN mkdir -p /app && chown node:node /app
+WORKDIR /app
+
+# Switch to node user for security
+USER node
+
+# Copy package files first to leverage Docker cache
+COPY --chown=node:node package*.json ./
+COPY --chown=node:node packages/data-provider/package*.json ./packages/data-provider/
+COPY --chown=node:node packages/data-schemas/package*.json ./packages/data-schemas/
+COPY --chown=node:node packages/mcp/package*.json ./packages/mcp/
+COPY --chown=node:node client/package*.json ./client/
+
+# Install ALL dependencies (including devDependencies for building)
+RUN npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000 && \
+    npm install --no-audit --frozen-lockfile
+
+# Copy application source code
+COPY --chown=node:node . .
+
+# Build the application
+RUN \
+    # Create necessary directories
+    mkdir -p /app/client/public/images /app/api/logs && \
+    # Build the React client
+    NODE_OPTIONS="--max-old-space-size=3072" npm run frontend:docker && \
+    # Build packages if they exist
+    npm run build:packages || true
+
+# Stage 2: Production Runtime
+# This stage only contains production dependencies and built artifacts
+FROM node:20-alpine AS production
+
+# Install runtime system dependencies
+RUN apk add --no-cache jemalloc python3 py3-pip
+
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+
+# Create app directory and set proper ownership
+RUN mkdir -p /app && chown node:node /app
+WORKDIR /app
+
+# Switch to node user for security
+USER node
+
+# Copy package files for production install
+COPY --chown=node:node package*.json ./
+COPY --chown=node:node packages/data-provider/package*.json ./packages/data-provider/
+COPY --chown=node:node packages/data-schemas/package*.json ./packages/data-schemas/
+COPY --chown=node:node packages/mcp/package*.json ./packages/mcp/
+COPY --chown=node:node client/package*.json ./client/
+
+# Install only production dependencies
+RUN npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000 && \
+    npm ci --omit=dev --no-audit
+
+# Copy built application from builder stage
+COPY --from=builder --chown=node:node /app/client/dist ./client/dist
+COPY --from=builder --chown=node:node /app/packages ./packages
+
+# Copy necessary application files (excluding source code)
+COPY --chown=node:node api ./api
+COPY --chown=node:node .env* ./
+COPY --chown=node:node librechat.yaml ./
+
+# Create necessary directories and files
+RUN \
+    touch .env && \
+    mkdir -p /app/client/public/images /app/api/logs
+
+# Expose the port the app runs on
+EXPOSE 3080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node --version || exit 1
+
+# Start the application
+CMD ["npm", "start"]

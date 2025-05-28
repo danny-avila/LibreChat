@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # LibreChat API monitoring
+  - job_name: 'librechat-api'
+    static_configs:
+      - targets: ['api:3080']
+    metrics_path: '/api/metrics'
+    scrape_interval: 30s
+
+  # NGINX monitoring
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    metrics_path: '/nginx_status'
+    scrape_interval: 30s
+
+  # MongoDB monitoring
+  - job_name: 'mongodb'
+    static_configs:
+      - targets: ['mongodb:27017']
+    scrape_interval: 30s
+
+  # Node Exporter (if running on host)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+    scrape_interval: 30s
+
+  # Docker container metrics
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['host.docker.internal:9323']
+    scrape_interval: 30s
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Meilisearch monitoring
+  - job_name: 'meilisearch'
+    static_configs:
+      - targets: ['meilisearch:7700']
+    metrics_path: '/stats'
+    scrape_interval: 30s
+
+  # RAG API monitoring
+  - job_name: 'rag-api'
+    static_configs:
+      - targets: ['rag_api:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
