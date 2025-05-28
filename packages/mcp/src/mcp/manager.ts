@@ -2,7 +2,7 @@ import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { JsonSchemaType, MCPOptions } from 'librechat-data-provider';
 import type { Logger } from 'winston';
-import type * as t from './types/mcp';
+import type * as t from './types';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { CONSTANTS } from './enum';

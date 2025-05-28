@@ -1,4 +1,4 @@
-import type * as t from './types/mcp';
+import type * as t from './types';
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',

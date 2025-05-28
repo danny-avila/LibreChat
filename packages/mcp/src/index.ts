@@ -1,9 +1,9 @@
 /* MCP */
-export * from './manager';
+export * from './mcp/manager';
 /* Utilities */
-export * from './utils';
+export * from './mcp/utils';
 /* Flow */
 export * from './flow/manager';
 /* types */
-export type * from './types/mcp';
+export type * from './mcp/types';
 export type * from './flow/types';
