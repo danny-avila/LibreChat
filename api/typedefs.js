@@ -1073,7 +1073,7 @@
 
 /**
  * @exports MCPServers
- * @typedef {import('librechat-mcp').MCPServers} MCPServers
+ * @typedef {import('librechat-api').MCPServers} MCPServers
  * @memberof typedefs
  */
 
@@ -1085,31 +1085,31 @@
 
 /**
  * @exports MCPManager
- * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @typedef {import('librechat-api').MCPManager} MCPManager
  * @memberof typedefs
  */
 
 /**
  * @exports FlowStateManager
- * @typedef {import('librechat-mcp').FlowStateManager} FlowStateManager
+ * @typedef {import('librechat-api').FlowStateManager} FlowStateManager
  * @memberof typedefs
  */
 
 /**
  * @exports LCAvailableTools
- * @typedef {import('librechat-mcp').LCAvailableTools} LCAvailableTools
+ * @typedef {import('librechat-api').LCAvailableTools} LCAvailableTools
  * @memberof typedefs
  */
 
 /**
  * @exports LCTool
- * @typedef {import('librechat-mcp').LCTool} LCTool
+ * @typedef {import('librechat-api').LCTool} LCTool
  * @memberof typedefs
  */
 
 /**
  * @exports FormattedContent
- * @typedef {import('librechat-mcp').FormattedContent} FormattedContent
+ * @typedef {import('librechat-api').FormattedContent} FormattedContent
  * @memberof typedefs
  */
 
