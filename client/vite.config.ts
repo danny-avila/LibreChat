@@ -109,7 +109,6 @@ export default defineConfig(({ command }) => ({
     minify: 'terser',
     rollupOptions: {
       preserveEntrySignatures: 'strict',
-      external: [/\/images\//],
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
