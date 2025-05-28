@@ -799,3 +799,16 @@ export function verifyTwoFactorTemp(
 ): Promise<t.TVerify2FATempResponse> {
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }
+
+/* Memories */
+export const getMemories = (): Promise<q.TUserMemory[]> => {
+  return request.get(endpoints.memories());
+};
+
+export const deleteMemory = (key: string): Promise<void> => {
+  return request.delete(endpoints.memory(key));
+};
+
+export const updateMemory = (key: string, value: string): Promise<q.TUserMemory> => {
+  return request.patch(endpoints.memory(key), { value });
+};

@@ -109,3 +109,10 @@ export type VerifyToolAuthResponse = {
 
 export type GetToolCallParams = { conversationId: string };
 export type ToolCallResults = a.ToolCallResult[];
+
+/* Memories */
+export type TUserMemory = {
+  key: string;
+  value: string;
+  updated_at: string;
+};

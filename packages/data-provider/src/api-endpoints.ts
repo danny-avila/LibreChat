@@ -283,3 +283,7 @@ export const confirmTwoFactor = () => '/api/auth/2fa/confirm';
 export const disableTwoFactor = () => '/api/auth/2fa/disable';
 export const regenerateBackupCodes = () => '/api/auth/2fa/backup/regenerate';
 export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
+
+/* Memories */
+export const memories = () => '/api/memories';
+export const memory = (key: string) => `/api/memories/${encodeURIComponent(key)}`;
