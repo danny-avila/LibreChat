@@ -8,7 +8,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   server: {
     host: 'localhost',
     port: 3090,
@@ -102,7 +102,7 @@ export default defineConfig({
         template: 'treemap', // 'treemap' | 'sunburst' | 'network'
       }),
   ].filter(Boolean),
-  publicDir: './public',
+  publicDir: command === 'serve' ? './public' : false,
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
@@ -238,10 +238,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: '/fonts',
+      $fonts: path.resolve(__dirname, 'public/fonts'),
     },
   },
-});
+}));
 
 interface SourcemapExclude {
   excludeNodeModules?: boolean;

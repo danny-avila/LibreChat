@@ -1,17 +1,14 @@
-// scripts/remove-images.cjs
 const fs = require('fs-extra');
 
-async function removeImages() {
+async function postBuild() {
   try {
-    const imagesPath = './dist/images';
-    if (await fs.pathExists(imagesPath)) {
-      await fs.remove(imagesPath);
-      console.log('✅ Post-build completed successfully.');
-    }
+    await fs.copy('public/assets', 'dist/assets');
+    await fs.copy('public/robots.txt', 'dist/robots.txt');
+    console.log('✅ PWA icons and robots.txt copied successfully');
   } catch (err) {
-    console.error('❌ Error removing images:', err);
+    console.error('❌ Error copying files:', err);
     process.exit(1);
   }
 }
 
-removeImages();
+postBuild();
