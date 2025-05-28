@@ -1,0 +1,10 @@
+{
+  "build": {
+    "type": "docker",
+    "dockerfile": "Dockerfile"
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "HOST": "0.0.0.0"
+  }
+}
