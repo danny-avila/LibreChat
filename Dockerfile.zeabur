@@ -1,0 +1,37 @@
+# Zeabur Build Configuration
+# Оптимизированные настройки для развертывания на Zeabur
+
+FROM node:18-alpine
+
+# Установка зависимостей для сборки
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Копируем файлы зависимостей
+COPY package*.json ./
+COPY client/package*.json ./client/
+COPY api/package*.json ./api/
+COPY packages/data-provider/package*.json ./packages/data-provider/
+COPY packages/data-schemas/package*.json ./packages/data-schemas/
+COPY packages/mcp/package*.json ./packages/mcp/
+
+# Устанавливаем зависимости
+RUN npm ci --only=production
+
+# Копируем исходный код
+COPY . .
+
+# Применяем патчи для исправления проблем с react-virtualized
+RUN npm run postinstall
+
+# Собираем приложение с оптимизированными настройками
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
+# Увеличиваем лимиты для сборки
+RUN npm run frontend:zeabur
+
+EXPOSE 3080
+
+CMD ["npm", "run", "backend"]

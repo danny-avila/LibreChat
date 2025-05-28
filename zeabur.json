@@ -1,10 +1,13 @@
 {
   "build": {
     "type": "docker",
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile.zeabur"
   },
   "env": {
     "NODE_ENV": "production",
-    "HOST": "0.0.0.0"
-  }
+    "HOST": "0.0.0.0",
+    "NODE_OPTIONS": "--max-old-space-size=4096"
+  },
+  "memory": "4096Mi",
+  "cpu": "2"
 }

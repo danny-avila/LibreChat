@@ -29,7 +29,16 @@ export default defineConfig({
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
     react(),
-    nodePolyfills() as any,
+    nodePolyfills({
+      // Включаем полифилл для vm модуля
+      include: ['vm', 'util', 'process', 'buffer'],
+      // Отключаем глобальные полифиллы для уменьшения bundle size
+      globals: {
+        Buffer: false,
+        global: false,
+        process: false,
+      },
+    }) as any,
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
@@ -102,7 +111,13 @@ export default defineConfig({
     minify: 'terser',
     rollupOptions: {
       preserveEntrySignatures: 'strict',
-      // external: ['uuid'],
+      external: (id) => {
+        // Исключаем проблемные модули из сборки
+        if (id.includes('vm-browserify')) {
+          return true;
+        }
+        return false;
+      },
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
@@ -223,6 +238,16 @@ export default defineConfig({
         if (warning.message.includes('Error when using sourcemap')) {
           return;
         }
+        // Ignore react-virtualized module level directive warnings
+        if (warning.message.includes('Module level directives cause errors when bundled') && 
+            warning.message.includes('react-virtualized')) {
+          return;
+        }
+        // Ignore vm-browserify eval warnings
+        if (warning.message.includes('Use of eval') && 
+            warning.message.includes('vm-browserify')) {
+          return;
+        }
         warn(warning);
       },
     },
@@ -233,6 +258,22 @@ export default defineConfig({
       '~': path.join(__dirname, 'src/'),
       $fonts: '/fonts',
     },
+  },
+  define: {
+    global: 'globalThis',
+  },
+  optimizeDeps: {
+    include: ['react-virtualized'],
+    exclude: ['vm-browserify'],
+    esbuildOptions: {
+      define: {
+        global: 'globalThis'
+      },
+      // Игнорируем проблемные директивы
+      loader: {
+        '.js': 'jsx',
+      },
+    }
   },
 });
 
