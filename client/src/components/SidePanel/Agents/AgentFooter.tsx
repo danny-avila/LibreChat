@@ -1,4 +1,3 @@
-import React from 'react';
 import { useWatch, useFormContext } from 'react-hook-form';
 import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
@@ -11,6 +10,7 @@ import DeleteButton from './DeleteButton';
 import { Spinner } from '~/components';
 import ShareAgent from './ShareAgent';
 import { Panel } from '~/common';
+import VersionButton from './Version/VersionButton';
 
 export default function AgentFooter({
   activePanel,
@@ -50,10 +50,13 @@ export default function AgentFooter({
     return localize('com_ui_create');
   };
 
+  const showButtons = activePanel === Panel.builder;
+
   return (
-    <div className="mx-1 mb-1 flex w-full flex-col gap-2">
-      {activePanel !== Panel.advanced && <AdvancedButton setActivePanel={setActivePanel} />}
-      {user?.role === SystemRoles.ADMIN && <AdminSettings />}
+    <div className="mb-1 flex w-full flex-col gap-2">
+      {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
+      {showButtons && agent_id && <VersionButton setActivePanel={setActivePanel} />}
+      {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
         <DeleteButton
@@ -63,13 +66,13 @@ export default function AgentFooter({
         />
         {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
           hasAccessToShareAgents && (
-          <ShareAgent
-            agent_id={agent_id}
-            agentName={agent?.name ?? ''}
-            projectIds={agent?.projectIds ?? []}
-            isCollaborative={agent?.isCollaborative}
-          />
-        )}
+            <ShareAgent
+              agent_id={agent_id}
+              agentName={agent?.name ?? ''}
+              projectIds={agent?.projectIds ?? []}
+              isCollaborative={agent?.isCollaborative}
+            />
+          )}
         {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
         {/* Submit Button */}
         <button

@@ -1,22 +1,13 @@
-import { useMemo } from 'react';
-import * as Popover from '@radix-ui/react-popover';
-import { ShieldCheck, TriangleAlert } from 'lucide-react';
+import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
-import useLocalize from '~/hooks/useLocalize';
-import ProgressCircle from './ProgressCircle';
-import InProgressCall from './InProgressCall';
-import Attachment from './Parts/Attachment';
-import CancelledIcon from './CancelledIcon';
+import { useLocalize, useProgress } from '~/hooks';
+import { AttachmentGroup } from './Parts';
+import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import FinishedIcon from './FinishedIcon';
-import ToolPopover from './ToolPopover';
-import WrenchIcon from './WrenchIcon';
-import { useProgress } from '~/hooks';
-import { logger } from '~/utils';
-
-const radius = 56.08695652173913;
-const circumference = 2 * Math.PI * radius;
+import { Button } from '~/components';
+import { logger, cn } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -37,11 +28,16 @@ export default function ToolCall({
   expires_at?: number;
 }) {
   const localize = useLocalize();
+  const [showInfo, setShowInfo] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const prevShowInfoRef = useRef<boolean>(showInfo);
+
   const { function_name, domain, isMCPToolCall } = useMemo(() => {
     if (typeof name !== 'string') {
       return { function_name: '', domain: null, isMCPToolCall: false };
     }
-
     if (name.includes(Constants.mcp_delimiter)) {
       const [func, server] = name.split(Constants.mcp_delimiter);
       return {
@@ -50,7 +46,6 @@ export default function ToolCall({
         isMCPToolCall: true,
       };
     }
-
     const [func, _domain] = name.includes(actionDelimiter)
       ? name.split(actionDelimiter)
       : [name, ''];
@@ -68,7 +63,6 @@ export default function ToolCall({
     if (typeof _args === 'string') {
       return _args;
     }
-
     try {
       return JSON.stringify(_args, null, 2);
     } catch (e) {
@@ -98,42 +92,8 @@ export default function ToolCall({
     }
   }, [auth]);
 
-  const progress = useProgress(error === true ? 1 : initialProgress);
+  const progress = useProgress(initialProgress);
   const cancelled = (!isSubmitting && progress < 1) || error === true;
-  const offset = circumference - progress * circumference;
-
-  const renderIcon = () => {
-    if (progress < 1 && authDomain.length > 0) {
-      return (
-        <div
-          className="absolute left-0 top-0 flex h-full w-full items-center justify-center rounded-full bg-transparent text-text-secondary"
-          style={{ opacity: 1, transform: 'none' }}
-          data-projection-id="849"
-        >
-          <div>
-            <ShieldCheck />
-          </div>
-        </div>
-      );
-    } else if (progress < 1) {
-      return (
-        <InProgressCall progress={progress} isSubmitting={isSubmitting} error={error}>
-          <div
-            className="absolute left-0 top-0 flex h-full w-full items-center justify-center rounded-full bg-transparent text-white"
-            style={{ opacity: 1, transform: 'none' }}
-            data-projection-id="849"
-          >
-            <div>
-              <WrenchIcon />
-            </div>
-            <ProgressCircle radius={radius} circumference={circumference} offset={offset} />
-          </div>
-        </InProgressCall>
-      );
-    }
-
-    return cancelled ? <CancelledIcon /> : <FinishedIcon />;
-  };
 
   const getFinishedText = () => {
     if (cancelled) {
@@ -148,51 +108,129 @@ export default function ToolCall({
     return localize('com_assistants_completed_function', { 0: function_name });
   };
 
+  useLayoutEffect(() => {
+    if (showInfo !== prevShowInfoRef.current) {
+      prevShowInfoRef.current = showInfo;
+      setIsAnimating(true);
+
+      if (showInfo && contentRef.current) {
+        requestAnimationFrame(() => {
+          if (contentRef.current) {
+            const height = contentRef.current.scrollHeight;
+            setContentHeight(height + 4);
+          }
+        });
+      } else {
+        setContentHeight(0);
+      }
+
+      const timer = setTimeout(() => {
+        setIsAnimating(false);
+      }, 400);
+
+      return () => clearTimeout(timer);
+    }
+  }, [showInfo]);
+
+  useEffect(() => {
+    if (!contentRef.current) {
+      return;
+    }
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (showInfo && !isAnimating) {
+        for (const entry of entries) {
+          if (entry.target === contentRef.current) {
+            setContentHeight(entry.contentRect.height + 4);
+          }
+        }
+      }
+    });
+    resizeObserver.observe(contentRef.current);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [showInfo, isAnimating]);
+
   return (
-    <Popover.Root>
-      <div className="my-2.5 flex flex-wrap items-center gap-2.5">
-        <div className="flex w-full items-center gap-2.5">
-          <div className="relative h-5 w-5 shrink-0">{renderIcon()}</div>
-          <ProgressText
-            progress={cancelled ? 1 : progress}
-            inProgressText={localize('com_assistants_running_action')}
-            authText={
-              !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
-            }
-            finishedText={getFinishedText()}
-            hasInput={hasInfo}
-            popover={true}
-          />
-          {hasInfo && (
-            <ToolPopover
-              input={args ?? ''}
-              output={output}
-              domain={authDomain || (domain ?? '')}
-              function_name={function_name}
-              pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
-            />
-          )}
-        </div>
-        {auth != null && auth && progress < 1 && !cancelled && (
-          <div className="flex w-full flex-col gap-2.5">
-            <div className="mb-1 mt-2">
-              <a
-                className="inline-flex items-center justify-center gap-2 rounded-3xl bg-surface-tertiary px-4 py-2 text-sm font-medium hover:bg-surface-hover"
-                href={auth}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
-              </a>
-            </div>
-            <p className="flex items-center text-xs text-text-secondary">
-              <TriangleAlert className="mr-1.5 inline-block h-4 w-4" />
-              {localize('com_assistants_allow_sites_you_trust')}
-            </p>
-          </div>
-        )}
+    <>
+      <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
+        <ProgressText
+          progress={progress}
+          onClick={() => setShowInfo((prev) => !prev)}
+          inProgressText={
+            function_name
+              ? localize('com_assistants_running_var', { 0: function_name })
+              : localize('com_assistants_running_action')
+          }
+          authText={
+            !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
+          }
+          finishedText={getFinishedText()}
+          hasInput={hasInfo}
+          isExpanded={showInfo}
+          error={cancelled}
+        />
       </div>
-      {attachments?.map((attachment, index) => <Attachment attachment={attachment} key={index} />)}
-    </Popover.Root>
+      <div
+        className="relative"
+        style={{
+          height: showInfo ? contentHeight : 0,
+          overflow: 'hidden',
+          transition:
+            'height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          opacity: showInfo ? 1 : 0,
+          transformOrigin: 'top',
+          willChange: 'height, opacity',
+          perspective: '1000px',
+          backfaceVisibility: 'hidden',
+          WebkitFontSmoothing: 'subpixel-antialiased',
+        }}
+      >
+        <div
+          className={cn(
+            'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-md',
+            showInfo && 'shadow-lg',
+          )}
+          style={{
+            transform: showInfo ? 'translateY(0) scale(1)' : 'translateY(-8px) scale(0.98)',
+            opacity: showInfo ? 1 : 0,
+            transition:
+              'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          <div ref={contentRef}>
+            {showInfo && hasInfo && (
+              <ToolCallInfo
+                key="tool-call-info"
+                input={args ?? ''}
+                output={output}
+                domain={authDomain || (domain ?? '')}
+                function_name={function_name}
+                pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      {auth != null && auth && progress < 1 && !cancelled && (
+        <div className="flex w-full flex-col gap-2.5">
+          <div className="mb-1 mt-2">
+            <Button
+              className="font-mediu inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm"
+              variant="default"
+              rel="noopener noreferrer"
+              onClick={() => window.open(auth, '_blank', 'noopener,noreferrer')}
+            >
+              {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
+            </Button>
+          </div>
+          <p className="flex items-center text-xs text-text-warning">
+            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" />
+            {localize('com_assistants_allow_sites_you_trust')}
+          </p>
+        </div>
+      )}
+      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+    </>
   );
 }

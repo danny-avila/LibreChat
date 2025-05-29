@@ -1,17 +1,25 @@
 const {
   FileSources,
-  EModelEndpoint,
   loadOCRConfig,
   processMCPEnv,
+  EModelEndpoint,
   getConfigDefaults,
+  loadWebSearchConfig,
 } = require('librechat-data-provider');
-const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
+const {
+  checkHealth,
+  checkConfig,
+  checkVariables,
+  checkAzureVariables,
+  checkWebSearchConfig,
+} = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
+const { loadTurnstileConfig } = require('./start/turnstile');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
@@ -23,7 +31,6 @@ const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
 /**
- *
  * Loads custom config and initializes app-wide variables.
  * @function AppService
  * @param {Express.Application} app - The Express application object.
@@ -35,6 +42,8 @@ const AppService = async (app) => {
   const configDefaults = getConfigDefaults();
 
   const ocr = loadOCRConfig(config.ocr);
+  const webSearch = loadWebSearchConfig(config.webSearch);
+  checkWebSearchConfig(webSearch);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
@@ -74,10 +83,12 @@ const AppService = async (app) => {
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+  const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
   const defaultLocals = {
     ocr,
     paths,
+    webSearch,
     fileStrategy,
     socialLogins,
     filteredTools,
@@ -85,6 +96,7 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    turnstileConfig,
     balance,
   };
 

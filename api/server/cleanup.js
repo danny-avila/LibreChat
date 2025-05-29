@@ -134,14 +134,11 @@ function disposeClient(client) {
     if (client.message_delta) {
       client.message_delta = null;
     }
-    if (client.isClaude3 !== undefined) {
-      client.isClaude3 = null;
+    if (client.isClaudeLatest !== undefined) {
+      client.isClaudeLatest = null;
     }
     if (client.useMessages !== undefined) {
       client.useMessages = null;
-    }
-    if (client.isLegacyOutput !== undefined) {
-      client.isLegacyOutput = null;
     }
     if (client.supportsCacheControl !== undefined) {
       client.supportsCacheControl = null;

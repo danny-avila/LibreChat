@@ -8,6 +8,7 @@ import {
   getTagByKey,
   TFeedback,
   toMinimalFeedback,
+  SearchResultData,
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import {
@@ -26,13 +27,14 @@ export type TMessageActions = Pick<
   'message' | 'currentEditId' | 'setCurrentEditId'
 > & {
   isMultiMessage?: boolean;
+  searchResults?: { [key: string]: SearchResultData };
 };
 
 export default function useMessageActions(props: TMessageActions) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
-  const { message, currentEditId, setCurrentEditId, isMultiMessage } = props;
+  const { message, currentEditId, setCurrentEditId, isMultiMessage, searchResults } = props;
 
   const {
     ask,
@@ -117,7 +119,7 @@ export default function useMessageActions(props: TMessageActions) {
     regenerate(message);
   }, [isSubmitting, isCreatedByUser, message, regenerate]);
 
-  const copyToClipboard = useCopyToClipboard({ text, content });
+  const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {

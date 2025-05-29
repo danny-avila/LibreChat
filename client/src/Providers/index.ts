@@ -20,3 +20,4 @@ export * from './ArtifactContext';
 export * from './CodeBlockContext';
 export * from './ToolCallsMapContext';
 export * from './SetConvoContext';
+export * from './SearchContext';

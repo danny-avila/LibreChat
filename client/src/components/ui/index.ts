@@ -1,3 +1,4 @@
+export * from './AnimatedTabs';
 export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';
@@ -31,8 +32,9 @@ export { default as MCPIcon } from './MCPIcon';
 export { default as Combobox } from './Combobox';
 export { default as Dropdown } from './Dropdown';
 export { default as SplitText } from './SplitText';
-export { default as FileUpload } from './FileUpload';
 export { default as FormInput } from './FormInput';
+export { default as PixelCard } from './PixelCard';
+export { default as FileUpload } from './FileUpload';
 export { default as DropdownPopup } from './DropdownPopup';
 export { default as DelayedRender } from './DelayedRender';
 export { default as ThemeSelector } from './ThemeSelector';

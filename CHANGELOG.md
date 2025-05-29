@@ -4,12 +4,72 @@ All notable changes to this project will be documented in this file.
 
 
 
+
+
+
 ## [Unreleased]
+
+### ✨ New Features
+
+- ✨ feat: implement search parameter updates by **@mawburn** in [#7151](https://github.com/danny-avila/LibreChat/pull/7151)
+- 🎏 feat: Add MCP support for Streamable HTTP Transport by **@benverhees** in [#7353](https://github.com/danny-avila/LibreChat/pull/7353)
+- 🔒 feat: Add Content Security Policy using Helmet middleware by **@rubentalstra** in [#7377](https://github.com/danny-avila/LibreChat/pull/7377)
+- ✨ feat: Add Normalization for MCP Server Names by **@danny-avila** in [#7421](https://github.com/danny-avila/LibreChat/pull/7421)
+- 📊 feat: Improve Helm Chart by **@hofq** in [#3638](https://github.com/danny-avila/LibreChat/pull/3638)
+- 🦾 feat: Claude-4 Support by **@danny-avila** in [#7509](https://github.com/danny-avila/LibreChat/pull/7509)
+- 🪨 feat: Bedrock Support for Claude-4 Reasoning by **@danny-avila** in [#7517](https://github.com/danny-avila/LibreChat/pull/7517)
+
+### 🌍 Internationalization
+
+- 🌍 i18n: Add `Danish` and `Czech` and `Catalan` localization support by **@rubentalstra** in [#7373](https://github.com/danny-avila/LibreChat/pull/7373)
+- 🌍 i18n: Update translation.json with latest translations by **@github-actions[bot]** in [#7375](https://github.com/danny-avila/LibreChat/pull/7375)
+- 🌍 i18n: Update translation.json with latest translations by **@github-actions[bot]** in [#7468](https://github.com/danny-avila/LibreChat/pull/7468)
+
+### 🔧 Fixes
+
+- 💬 fix: update aria-label for accessibility in ConvoLink component by **@berry-13** in [#7320](https://github.com/danny-avila/LibreChat/pull/7320)
+- 🔑 fix: use `apiKey` instead of `openAIApiKey` in OpenAI-like Config by **@danny-avila** in [#7337](https://github.com/danny-avila/LibreChat/pull/7337)
+- 🔄 fix: update navigation logic in `useFocusChatEffect` to ensure correct search parameters are used by **@mawburn** in [#7340](https://github.com/danny-avila/LibreChat/pull/7340)
+- 🔄 fix: Improve MCP Connection Cleanup by **@danny-avila** in [#7400](https://github.com/danny-avila/LibreChat/pull/7400)
+- 🛡️ fix: Preset and Validation Logic for URL Query Params by **@danny-avila** in [#7407](https://github.com/danny-avila/LibreChat/pull/7407)
+- 🌘 fix: artifact of preview text is illegible in dark mode by **@nhtruong** in [#7405](https://github.com/danny-avila/LibreChat/pull/7405)
+- 🛡️ fix: Temporarily Remove CSP until Configurable by **@danny-avila** in [#7419](https://github.com/danny-avila/LibreChat/pull/7419)
+- 💽 fix: Exclude index page `/` from static cache settings by **@sbruel** in [#7382](https://github.com/danny-avila/LibreChat/pull/7382)
+
+### ⚙️ Other Changes
+
+- 📜 docs: CHANGELOG for release v0.7.8 by **@github-actions[bot]** in [#7290](https://github.com/danny-avila/LibreChat/pull/7290)
+- 📦 chore: Update API Package Dependencies by **@danny-avila** in [#7359](https://github.com/danny-avila/LibreChat/pull/7359)
+- 📜 docs: Unreleased Changelog by **@github-actions[bot]** in [#7321](https://github.com/danny-avila/LibreChat/pull/7321)
+- 📜 docs: Unreleased Changelog by **@github-actions[bot]** in [#7434](https://github.com/danny-avila/LibreChat/pull/7434)
+- 🛡️ chore: `multer` v2.0.0 for CVE-2025-47935 and CVE-2025-47944 by **@danny-avila** in [#7454](https://github.com/danny-avila/LibreChat/pull/7454)
+- 📂 refactor: Improve `FileAttachment` & File Form Deletion by **@danny-avila** in [#7471](https://github.com/danny-avila/LibreChat/pull/7471)
+- 📊 chore: Remove Old Helm Chart by **@hofq** in [#7512](https://github.com/danny-avila/LibreChat/pull/7512)
+- 🪖 chore: bump helm app version to v0.7.8 by **@austin-barrington** in [#7524](https://github.com/danny-avila/LibreChat/pull/7524)
+
+
+
+---
+## [v0.7.8] - 
+
+Changes from v0.7.8-rc1 to v0.7.8.
+
+### ✨ New Features
+
+- ✨ feat: Enhance form submission for touch screens by **@berry-13** in [#7198](https://github.com/danny-avila/LibreChat/pull/7198)
+- 🔍 feat: Additional Tavily API Tool Parameters by **@glowforge-opensource** in [#7232](https://github.com/danny-avila/LibreChat/pull/7232)
+- 🐋 feat: Add python to Dockerfile for increased MCP compatibility by **@technicalpickles** in [#7270](https://github.com/danny-avila/LibreChat/pull/7270)
 
 ### 🔧 Fixes
 
 - 🔧 fix: Google Gemma Support & OpenAI Reasoning Instructions by **@danny-avila** in [#7196](https://github.com/danny-avila/LibreChat/pull/7196)
 - 🛠️ fix: Conversation Navigation State by **@danny-avila** in [#7210](https://github.com/danny-avila/LibreChat/pull/7210)
+- 🔄 fix: o-Series Model Regex for System Messages by **@danny-avila** in [#7245](https://github.com/danny-avila/LibreChat/pull/7245)
+- 🔖 fix: Custom Headers for Initial MCP SSE Connection by **@danny-avila** in [#7246](https://github.com/danny-avila/LibreChat/pull/7246)
+- 🛡️ fix: Deep Clone `MCPOptions` for User MCP Connections by **@danny-avila** in [#7247](https://github.com/danny-avila/LibreChat/pull/7247)
+- 🔄 fix: URL Param Race Condition and File Draft Persistence by **@danny-avila** in [#7257](https://github.com/danny-avila/LibreChat/pull/7257)
+- 🔄 fix: Assistants Endpoint & Minor Issues by **@danny-avila** in [#7274](https://github.com/danny-avila/LibreChat/pull/7274)
+- 🔄 fix: Ollama Think Tag Edge Case with Tools by **@danny-avila** in [#7275](https://github.com/danny-avila/LibreChat/pull/7275)
 
 ### ⚙️ Other Changes
 
@@ -18,8 +78,16 @@ All notable changes to this project will be documented in this file.
 - 📦 chore: Bump Package Security by **@danny-avila** in [#7183](https://github.com/danny-avila/LibreChat/pull/7183)
 - 🌿 refactor: Unmount Fork Popover on Hide for Better Performance by **@danny-avila** in [#7189](https://github.com/danny-avila/LibreChat/pull/7189)
 - 🧰 chore: ESLint configuration to enforce Prettier formatting rules by **@mawburn** in [#7186](https://github.com/danny-avila/LibreChat/pull/7186)
+- 🎨 style: Improve KaTeX Rendering for LaTeX Equations by **@andresgit** in [#7223](https://github.com/danny-avila/LibreChat/pull/7223)
+- 📝 docs: Update `.env.example` Google models by **@marlonka** in [#7254](https://github.com/danny-avila/LibreChat/pull/7254)
+- 💬 refactor: MCP Chat Visibility Option, Google Rates, Remove OpenAPI Plugins by **@danny-avila** in [#7286](https://github.com/danny-avila/LibreChat/pull/7286)
+- 📜 docs: Unreleased Changelog by **@github-actions[bot]** in [#7214](https://github.com/danny-avila/LibreChat/pull/7214)
 
 
+
+[See full release details][release-v0.7.8]
+
+[release-v0.7.8]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.8
 
 ---
 ## [v0.7.8-rc1] - 

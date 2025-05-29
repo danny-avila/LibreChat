@@ -21,7 +21,19 @@ const Agent = mongoose.model('agent', agentSchema);
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  return (await Agent.create(agentData)).toObject();
+  const { author, ...versionData } = agentData;
+  const timestamp = new Date();
+  const initialAgentData = {
+    ...agentData,
+    versions: [
+      {
+        ...versionData,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+  };
+  return (await Agent.create(initialAgentData)).toObject();
 };
 
 /**
@@ -48,11 +60,16 @@ const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) =
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
   const availableTools = req.app.locals.availableTools;
-  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  /** @type {TEphemeralAgent | null} */
+  const ephemeralAgent = req.body.ephemeralAgent;
+  const mcpServers = new Set(ephemeralAgent?.mcp);
   /** @type {string[]} */
   const tools = [];
-  if (req.body.ephemeralAgent?.execute_code === true) {
+  if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
+  }
+  if (ephemeralAgent?.web_search === true) {
+    tools.push(Tools.web_search);
   }
 
   if (mcpServers.size > 0) {
@@ -103,6 +120,8 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
     return null;
   }
 
+  agent.version = agent.versions ? agent.versions.length : 0;
+
   if (agent.author.toString() === req.user.id) {
     return agent;
   }
@@ -128,17 +147,154 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
 };
 
 /**
+ * Check if a version already exists in the versions array, excluding timestamp and author fields
+ * @param {Object} updateData - The update data to compare
+ * @param {Array} versions - The existing versions array
+ * @returns {Object|null} - The matching version if found, null otherwise
+ */
+const isDuplicateVersion = (updateData, currentData, versions) => {
+  if (!versions || versions.length === 0) {
+    return null;
+  }
+
+  const excludeFields = [
+    '_id',
+    'id',
+    'createdAt',
+    'updatedAt',
+    'author',
+    'updatedBy',
+    'created_at',
+    'updated_at',
+    '__v',
+    'agent_ids',
+    'versions',
+  ];
+
+  const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+
+  if (Object.keys(directUpdates).length === 0) {
+    return null;
+  }
+
+  const wouldBeVersion = { ...currentData, ...directUpdates };
+  const lastVersion = versions[versions.length - 1];
+
+  const allFields = new Set([...Object.keys(wouldBeVersion), ...Object.keys(lastVersion)]);
+
+  const importantFields = Array.from(allFields).filter((field) => !excludeFields.includes(field));
+
+  let isMatch = true;
+  for (const field of importantFields) {
+    if (!wouldBeVersion[field] && !lastVersion[field]) {
+      continue;
+    }
+
+    if (Array.isArray(wouldBeVersion[field]) && Array.isArray(lastVersion[field])) {
+      if (wouldBeVersion[field].length !== lastVersion[field].length) {
+        isMatch = false;
+        break;
+      }
+
+      // Special handling for projectIds (MongoDB ObjectIds)
+      if (field === 'projectIds') {
+        const wouldBeIds = wouldBeVersion[field].map((id) => id.toString()).sort();
+        const versionIds = lastVersion[field].map((id) => id.toString()).sort();
+
+        if (!wouldBeIds.every((id, i) => id === versionIds[i])) {
+          isMatch = false;
+          break;
+        }
+      }
+      // Handle arrays of objects like tool_kwargs
+      else if (typeof wouldBeVersion[field][0] === 'object' && wouldBeVersion[field][0] !== null) {
+        const sortedWouldBe = [...wouldBeVersion[field]].map((item) => JSON.stringify(item)).sort();
+        const sortedVersion = [...lastVersion[field]].map((item) => JSON.stringify(item)).sort();
+
+        if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
+          isMatch = false;
+          break;
+        }
+      } else {
+        const sortedWouldBe = [...wouldBeVersion[field]].sort();
+        const sortedVersion = [...lastVersion[field]].sort();
+
+        if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
+          isMatch = false;
+          break;
+        }
+      }
+    } else if (field === 'model_parameters') {
+      const wouldBeParams = wouldBeVersion[field] || {};
+      const lastVersionParams = lastVersion[field] || {};
+      if (JSON.stringify(wouldBeParams) !== JSON.stringify(lastVersionParams)) {
+        isMatch = false;
+        break;
+      }
+    } else if (wouldBeVersion[field] !== lastVersion[field]) {
+      isMatch = false;
+      break;
+    }
+  }
+
+  return isMatch ? lastVersion : null;
+};
+
+/**
  * Update an agent with new data without overwriting existing
  *  properties, or create a new agent if it doesn't exist.
+ * When an agent is updated, a copy of the current state will be saved to the versions array.
  *
  * @param {Object} searchParameter - The search parameters to find the agent to update.
  * @param {string} searchParameter.id - The ID of the agent to update.
  * @param {string} [searchParameter.author] - The user ID of the agent's author.
  * @param {Object} updateData - An object containing the properties to update.
+ * @param {string} [updatingUserId] - The ID of the user performing the update (used for tracking non-author updates).
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
+ * @throws {Error} If the update would create a duplicate version
  */
-const updateAgent = async (searchParameter, updateData) => {
+const updateAgent = async (searchParameter, updateData, updatingUserId = null) => {
   const options = { new: true, upsert: false };
+
+  const currentAgent = await Agent.findOne(searchParameter);
+  if (currentAgent) {
+    const { __v, _id, id, versions, author, ...versionData } = currentAgent.toObject();
+    const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+
+    if (Object.keys(directUpdates).length > 0 && versions && versions.length > 0) {
+      const duplicateVersion = isDuplicateVersion(updateData, versionData, versions);
+      if (duplicateVersion) {
+        const error = new Error(
+          'Duplicate version: This would create a version identical to an existing one',
+        );
+        error.statusCode = 409;
+        error.details = {
+          duplicateVersion,
+          versionIndex: versions.findIndex(
+            (v) => JSON.stringify(duplicateVersion) === JSON.stringify(v),
+          ),
+        };
+        throw error;
+      }
+    }
+
+    const versionEntry = {
+      ...versionData,
+      ...directUpdates,
+      updatedAt: new Date(),
+    };
+
+    // Always store updatedBy field to track who made the change
+    if (updatingUserId) {
+      versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
+    }
+
+    updateData.$push = {
+      ...($push || {}),
+      versions: versionEntry,
+    };
+  }
+
   return Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
 };
 
@@ -151,7 +307,7 @@ const updateAgent = async (searchParameter, updateData) => {
  * @param {string} params.file_id
  * @returns {Promise<Agent>} The updated agent.
  */
-const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
   let agent = await getAgent(searchParameter);
   if (!agent) {
@@ -177,7 +333,7 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
     },
   };
 
-  const updatedAgent = await updateAgent(searchParameter, updateData);
+  const updatedAgent = await updateAgent(searchParameter, updateData, req?.user?.id);
   if (updatedAgent) {
     return updatedAgent;
   } else {
@@ -341,7 +497,7 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
     delete updateQuery.author;
   }
 
-  const updatedAgent = await updateAgent(updateQuery, updateOps);
+  const updatedAgent = await updateAgent(updateQuery, updateOps, user.id);
   if (updatedAgent) {
     return updatedAgent;
   }
@@ -358,6 +514,40 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
   return await getAgent({ id: agentId });
 };
 
+/**
+ * Reverts an agent to a specific version in its version history.
+ * @param {Object} searchParameter - The search parameters to find the agent to revert.
+ * @param {string} searchParameter.id - The ID of the agent to revert.
+ * @param {string} [searchParameter.author] - The user ID of the agent's author.
+ * @param {number} versionIndex - The index of the version to revert to in the versions array.
+ * @returns {Promise<MongoAgent>} The updated agent document after reverting.
+ * @throws {Error} If the agent is not found or the specified version does not exist.
+ */
+const revertAgentVersion = async (searchParameter, versionIndex) => {
+  const agent = await Agent.findOne(searchParameter);
+  if (!agent) {
+    throw new Error('Agent not found');
+  }
+
+  if (!agent.versions || !agent.versions[versionIndex]) {
+    throw new Error(`Version ${versionIndex} not found`);
+  }
+
+  const revertToVersion = agent.versions[versionIndex];
+
+  const updateData = {
+    ...revertToVersion,
+  };
+
+  delete updateData._id;
+  delete updateData.id;
+  delete updateData.versions;
+  delete updateData.author;
+  delete updateData.updatedBy;
+
+  return Agent.findOneAndUpdate(searchParameter, updateData, { new: true }).lean();
+};
+
 module.exports = {
   Agent,
   getAgent,
@@ -369,4 +559,5 @@ module.exports = {
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
+  revertAgentVersion,
 };

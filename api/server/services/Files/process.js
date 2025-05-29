@@ -137,11 +137,13 @@ const processDeleteRequest = async ({ req, files }) => {
   /** @type {Record<string, OpenAI | undefined>} */
   const client = { [FileSources.openai]: undefined, [FileSources.azure]: undefined };
   const initializeClients = async () => {
-    const openAIClient = await getOpenAIClient({
-      req,
-      overrideEndpoint: EModelEndpoint.assistants,
-    });
-    client[FileSources.openai] = openAIClient.openai;
+    if (req.app.locals[EModelEndpoint.assistants]) {
+      const openAIClient = await getOpenAIClient({
+        req,
+        overrideEndpoint: EModelEndpoint.assistants,
+      });
+      client[FileSources.openai] = openAIClient.openai;
+    }
 
     if (!req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
       return;
@@ -693,7 +695,7 @@ const processOpenAIFile = async ({
 const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileExt }) => {
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
-  const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+  const _file = await convertImage(req, buffer, undefined, `${file_id}${fileExt}`);
   const file = {
     ..._file,
     usage: 1,
@@ -838,8 +840,9 @@ function base64ToBuffer(base64String) {
 
 async function saveBase64Image(
   url,
-  { req, file_id: _file_id, filename: _filename, endpoint, context, resolution = 'high' },
+  { req, file_id: _file_id, filename: _filename, endpoint, context, resolution },
 ) {
+  const effectiveResolution = resolution ?? req.app.locals.fileConfig?.imageGeneration ?? 'high';
   const file_id = _file_id ?? v4();
   let filename = `${file_id}-${_filename}`;
   const { buffer: inputBuffer, type } = base64ToBuffer(url);
@@ -852,7 +855,7 @@ async function saveBase64Image(
     }
   }
 
-  const image = await resizeImageBuffer(inputBuffer, resolution, endpoint);
+  const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
   const source = req.app.locals.fileStrategy;
   const { saveBuffer } = getStrategyFunctions(source);
   const filepath = await saveBuffer({
