@@ -31,7 +31,7 @@ function OmnexioSearch({ conversationId }: { conversationId?: string | null }) {
   );
 
   const handleChange = useCallback(
-    (isChecked: boolean) => {
+    (_e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => {
       setOmnexioSearch(isChecked);
     },
     [setOmnexioSearch],
