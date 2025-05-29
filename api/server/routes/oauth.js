@@ -189,4 +189,24 @@ router.post(
   oauthHandler,
 );
 
+/**
+ * SAML Routes
+ */
+router.get(
+  '/saml',
+  passport.authenticate('saml', {
+    session: false,
+  }),
+);
+
+router.post(
+  '/saml/callback',
+  passport.authenticate('saml', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
+  }),
+  oauthHandler,
+);
+
 module.exports = router;
