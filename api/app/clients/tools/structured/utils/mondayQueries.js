@@ -143,18 +143,6 @@ module.exports = {
     }
   `,
 
-  GET_USERS: `
-    query getUsers($limit: Int!) {
-      users(limit: $limit) {
-        id
-        name
-        email
-        created_at
-        enabled
-      }
-    }
-  `,
-
   GET_COLUMNS_INFO: `
     query getColumnsInfo($boardId: [ID!]!) {
       boards(ids: $boardId) {

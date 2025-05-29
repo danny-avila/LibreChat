@@ -4,9 +4,11 @@ const fetch = require('node-fetch');
 const { logger } = require('../../../../config');
 
 // Импорт всех модулей для расширенных возможностей
+const mondayQueries = require('./utils/mondayQueries');
 const webhookQueries = require('./utils/mondayWebhooks');
 const updateQueries = require('./utils/mondayUpdates');
 const teamQueries = require('./utils/mondayTeams');
+const userQueries = require('./utils/mondayUsers');
 const workspaceQueries = require('./utils/mondayWorkspaces');
 const assetQueries = require('./utils/mondayAssets');
 const advancedQueries = require('./utils/mondayAdvanced');
@@ -49,8 +51,6 @@ class MondayTool extends Tool {
         'createWebhook',
         'getWebhooks',
         'deleteWebhook',
-        'getWebhookLogs',
-        'testWebhook',
         'createUpdate',
         'getUpdates',
         'getBoardUpdates',
@@ -59,8 +59,7 @@ class MondayTool extends Tool {
         'likeUpdate',
         'unlikeUpdate',
         'getUserNotifications',
-        'markNotificationRead',
-        'markAllNotificationsRead',
+        'createNotification',
         
         // ФАЗА 2: Teams и Users Management
         'createTeam',
@@ -68,7 +67,6 @@ class MondayTool extends Tool {
         'getTeam',
         'addUserToTeam',
         'removeUserFromTeam',
-        'updateTeam',
         'deleteTeam',
         'getUsersExtended',
         'inviteUser',
@@ -87,36 +85,30 @@ class MondayTool extends Tool {
         'createFolder',
         'updateFolder',
         'deleteFolder',
-        'moveBoardToFolder',
         'archiveBoard',
-        'unarchiveBoard',
         'duplicateBoard',
-        'getBoardTemplates',
-        'createBoardFromTemplate',
         
         // Assets и файлы
         'addFileToUpdate',
         'addFileToColumn',
-        'getUpdateAssets',
-        'getItemAssets',
-        'deleteAsset',
-        'getWorkspaceAssets',
-        'createAssetPublicUrl',
-        'searchAssets',
+        'getAssets',
+        'getBoardAssets',
+        'getAssetPublicUrl',
+        'searchBoardAssets',
         'getAssetThumbnail',
         
         // Расширенные операции с колонками и группами
         'createColumn',
-        'updateColumnAdvanced',
+        'updateColumnTitle',
         'deleteColumn',
-        'duplicateColumn',
-        'moveColumn',
+        'changeColumnValue',
+        'changeSimpleColumnValue',
+        'changeMultipleColumnValues',
         'createGroupAdvanced',
         'updateGroup',
         'deleteGroup',
         'duplicateGroup',
         'archiveGroup',
-        'moveGroup',
         'moveItemToGroup',
         'getGroupsExtended',
         'getColumnSettings',
@@ -298,10 +290,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
           return await this.getWebhooks(parsedInput);
         case 'deleteWebhook':
           return await this.deleteWebhook(parsedInput);
-        case 'getWebhookLogs':
-          return await this.getWebhookLogs(parsedInput);
-        case 'testWebhook':
-          return await this.testWebhook(parsedInput);
 
         // ФАЗА 1: Updates и уведомления
         case 'createUpdate':
@@ -320,10 +308,8 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
           return await this.unlikeUpdate(parsedInput);
         case 'getUserNotifications':
           return await this.getUserNotifications(parsedInput);
-        case 'markNotificationRead':
-          return await this.markNotificationRead(parsedInput);
-        case 'markAllNotificationsRead':
-          return await this.markAllNotificationsRead(parsedInput);
+        case 'createNotification':
+          return await this.createNotification(parsedInput);
 
         // ФАЗА 2: Teams и Users
         case 'createTeam':
@@ -336,8 +322,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
           return await this.addUserToTeam(parsedInput);
         case 'removeUserFromTeam':
           return await this.removeUserFromTeam(parsedInput);
-        case 'updateTeam':
-          return await this.updateTeam(parsedInput);
         case 'deleteTeam':
           return await this.deleteTeam(parsedInput);
         case 'getUsersExtended':
@@ -372,50 +356,40 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
           return await this.updateFolder(parsedInput);
         case 'deleteFolder':
           return await this.deleteFolder(parsedInput);
-        case 'moveBoardToFolder':
-          return await this.moveBoardToFolder(parsedInput);
         case 'archiveBoard':
           return await this.archiveBoard(parsedInput);
-        case 'unarchiveBoard':
-          return await this.unarchiveBoard(parsedInput);
         case 'duplicateBoard':
           return await this.duplicateBoard(parsedInput);
-        case 'getBoardTemplates':
-          return await this.getBoardTemplates(parsedInput);
-        case 'createBoardFromTemplate':
-          return await this.createBoardFromTemplate(parsedInput);
 
         // Assets и файлы
         case 'addFileToUpdate':
           return await this.addFileToUpdate(parsedInput);
         case 'addFileToColumn':
           return await this.addFileToColumn(parsedInput);
-        case 'getUpdateAssets':
-          return await this.getUpdateAssets(parsedInput);
-        case 'getItemAssets':
-          return await this.getItemAssets(parsedInput);
-        case 'deleteAsset':
-          return await this.deleteAsset(parsedInput);
-        case 'getWorkspaceAssets':
-          return await this.getWorkspaceAssets(parsedInput);
-        case 'createAssetPublicUrl':
-          return await this.createAssetPublicUrl(parsedInput);
-        case 'searchAssets':
-          return await this.searchAssets(parsedInput);
+        case 'getAssets':
+          return await this.getAssets(parsedInput);
+        case 'getBoardAssets':
+          return await this.getBoardAssets(parsedInput);
+        case 'getAssetPublicUrl':
+          return await this.getAssetPublicUrl(parsedInput);
+        case 'searchBoardAssets':
+          return await this.searchBoardAssets(parsedInput);
         case 'getAssetThumbnail':
           return await this.getAssetThumbnail(parsedInput);
 
         // Расширенные операции с колонками и группами
         case 'createColumn':
           return await this.createColumn(parsedInput);
-        case 'updateColumnAdvanced':
-          return await this.updateColumnAdvanced(parsedInput);
+        case 'updateColumnTitle':
+          return await this.updateColumnTitle(parsedInput);
         case 'deleteColumn':
           return await this.deleteColumn(parsedInput);
-        case 'duplicateColumn':
-          return await this.duplicateColumn(parsedInput);
-        case 'moveColumn':
-          return await this.moveColumn(parsedInput);
+        case 'changeColumnValue':
+          return await this.changeColumnValue(parsedInput);
+        case 'changeSimpleColumnValue':
+          return await this.changeSimpleColumnValue(parsedInput);
+        case 'changeMultipleColumnValues':
+          return await this.changeMultipleColumnValues(parsedInput);
         case 'createGroupAdvanced':
           return await this.createGroupAdvanced(parsedInput);
         case 'updateGroup':
@@ -426,8 +400,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
           return await this.duplicateGroup(parsedInput);
         case 'archiveGroup':
           return await this.archiveGroup(parsedInput);
-        case 'moveGroup':
-          return await this.moveGroup(parsedInput);
         case 'moveItemToGroup':
           return await this.moveItemToGroup(parsedInput);
         case 'getGroupsExtended':
@@ -485,11 +457,10 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы для работы с досками
-  async getBoards({ limit = 25, page = 1, workspaceId }) {
-    const offset = (page - 1) * limit;
+  async getBoards({ limit = 25, workspaceId, boardKind, state = 'active' }) {
     const query = `
-      query getBoards($limit: Int!, $page: Int!, $workspaceIds: [ID]) {
-        boards(limit: $limit, page: $page, workspace_ids: $workspaceIds) {
+      query getBoards($limit: Int!, $workspaceIds: [ID], $boardKind: BoardKind, $state: State!) {
+        boards(limit: $limit, workspace_ids: $workspaceIds, board_kind: $boardKind, state: $state) {
           id
           name
           description
@@ -517,8 +488,9 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     
     const variables = { 
       limit, 
-      page,
-      workspaceIds: workspaceId ? [workspaceId] : null
+      workspaceIds: workspaceId ? [workspaceId] : null,
+      boardKind: boardKind || null,
+      state
     };
 
     const data = await this.makeGraphQLRequest(query, variables);
@@ -620,7 +592,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     const data = await this.makeGraphQLRequest(mutation, {
       boardName,
       boardKind,
-      workspaceId: workspaceId ? parseInt(workspaceId) : null
+      workspaceId: workspaceId || null
     });
 
     return JSON.stringify({
@@ -716,7 +688,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
-      boardId: parseInt(boardId),
+      boardId,
       itemName,
       groupId,
       columnValues: columnValues ? JSON.stringify(columnValues) : null
@@ -754,8 +726,8 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
-      boardId: parseInt(boardId),
-      itemId: parseInt(itemId),
+      boardId,
+      itemId,
       columnValues: JSON.stringify(columnValues)
     });
 
@@ -780,7 +752,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
-      itemId: parseInt(itemId)
+      itemId
     });
 
     return JSON.stringify({
@@ -934,6 +906,22 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
+  async getColumnsInfo({ boardId }) {
+    if (!boardId) {
+      throw new Error('boardId is required for getColumnsInfo action');
+    }
+
+    const data = await this.makeGraphQLRequest(mondayQueries.GET_COLUMNS_INFO, {
+      boardId: [boardId]
+    });
+
+    return JSON.stringify({
+      success: true,
+      action: 'getColumnsInfo',
+      data: data.boards[0]?.columns || []
+    });
+  }
+
   // ============ ФАЗА 1: WEBHOOKS МЕТОДЫ ============
 
   async createWebhook({ boardId, url, event, config }) {
@@ -987,38 +975,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async getWebhookLogs({ webhookId, limit = 25 }) {
-    if (!webhookId) {
-      throw new Error('webhookId is required for getWebhookLogs action');
-    }
 
-    const data = await this.makeGraphQLRequest(webhookQueries.GET_WEBHOOK_LOGS, {
-      webhookId,
-      limit
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'getWebhookLogs',
-      data: data.webhook_logs
-    });
-  }
-
-  async testWebhook({ webhookId }) {
-    if (!webhookId) {
-      throw new Error('webhookId is required for testWebhook action');
-    }
-
-    const data = await this.makeGraphQLRequest(webhookQueries.TEST_WEBHOOK, {
-      webhookId
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'testWebhook',
-      data: data.test_webhook
-    });
-  }
 
   // ============ ФАЗА 1: UPDATES И УВЕДОМЛЕНИЯ МЕТОДЫ ============
 
@@ -1028,7 +985,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     }
 
     const data = await this.makeGraphQLRequest(updateQueries.CREATE_UPDATE, {
-      itemId,
+      itemId: itemId,
       body
     });
 
@@ -1153,29 +1110,23 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async markNotificationRead({ notificationId }) {
-    if (!notificationId) {
-      throw new Error('notificationId is required for markNotificationRead action');
+  // Создание уведомления (единственная доступная функция notifications API)
+  async createNotification({ userId, targetId, text, targetType }) {
+    if (!userId || !targetId || !text || !targetType) {
+      throw new Error('userId, targetId, text, and targetType are required for createNotification action');
     }
 
-    const data = await this.makeGraphQLRequest(updateQueries.MARK_NOTIFICATION_READ, {
-      id: notificationId
+    const data = await this.makeGraphQLRequest(updateQueries.CREATE_NOTIFICATION, {
+      userId,
+      targetId,
+      text,
+      targetType
     });
 
     return JSON.stringify({
       success: true,
-      action: 'markNotificationRead',
-      data: data.mark_notification_as_read
-    });
-  }
-
-  async markAllNotificationsRead() {
-    const data = await this.makeGraphQLRequest(updateQueries.MARK_ALL_NOTIFICATIONS_READ);
-
-    return JSON.stringify({
-      success: true,
-      action: 'markAllNotificationsRead',
-      data: data.mark_all_notifications_as_read
+      action: 'createNotification',
+      data: data.create_notification
     });
   }
 
@@ -1187,10 +1138,19 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('teamName or name is required for createTeam action');
     }
 
-    const data = await this.makeGraphQLRequest(teamQueries.CREATE_TEAM, {
+    const input = {
       name: teamNameToUse,
-      description,
-      picture_url: pictureUrl
+      ...(description && { description }),
+      ...(pictureUrl && { picture_url: pictureUrl })
+    };
+
+    const options = {
+      allow_empty_team: false
+    };
+
+    const data = await this.makeGraphQLRequest(teamQueries.CREATE_TEAM, {
+      input,
+      options
     });
 
     return JSON.stringify({
@@ -1200,10 +1160,9 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async getTeams({ limit = 25, page = 1 }) {
+  async getTeams({ ids }) {
     const data = await this.makeGraphQLRequest(teamQueries.GET_TEAMS, {
-      limit,
-      page
+      ids
     });
 
     return JSON.stringify({
@@ -1219,7 +1178,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     }
 
     const data = await this.makeGraphQLRequest(teamQueries.GET_TEAM, {
-      id: teamId
+      ids: [teamId]
     });
 
     return JSON.stringify({
@@ -1229,14 +1188,16 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async addUserToTeam({ teamId, userId }) {
-    if (!teamId || !userId) {
-      throw new Error('teamId and userId are required for addUserToTeam action');
+  async addUserToTeam({ teamId, userId, userIds }) {
+    if (!teamId || (!userId && !userIds)) {
+      throw new Error('teamId and userId (or userIds) are required for addUserToTeam action');
     }
+
+    const userIdsToAdd = userIds || [userId];
 
     const data = await this.makeGraphQLRequest(teamQueries.ADD_USER_TO_TEAM, {
       teamId,
-      userId
+      userIds: userIdsToAdd
     });
 
     return JSON.stringify({
@@ -1246,39 +1207,22 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async removeUserFromTeam({ teamId, userId }) {
-    if (!teamId || !userId) {
-      throw new Error('teamId and userId are required for removeUserFromTeam action');
+  async removeUserFromTeam({ teamId, userId, userIds }) {
+    if (!teamId || (!userId && !userIds)) {
+            throw new Error('teamId and userId (or userIds) are required for removeUserFromTeam action');
     }
+
+    const userIdsToRemove = userIds || [userId];
 
     const data = await this.makeGraphQLRequest(teamQueries.REMOVE_USER_FROM_TEAM, {
       teamId,
-      userId
+      userIds: userIdsToRemove
     });
 
     return JSON.stringify({
       success: true,
       action: 'removeUserFromTeam',
       data: data.remove_users_from_team
-    });
-  }
-
-  async updateTeam({ teamId, name, description, pictureUrl }) {
-    if (!teamId) {
-      throw new Error('teamId is required for updateTeam action');
-    }
-
-    const data = await this.makeGraphQLRequest(teamQueries.UPDATE_TEAM, {
-      teamId,
-      name,
-      description,
-      picture_url: pictureUrl
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'updateTeam',
-      data: data.update_team
     });
   }
 
@@ -1298,8 +1242,20 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
+  async getUsers({ limit = 25 }) {
+    const data = await this.makeGraphQLRequest(teamQueries.GET_USERS, {
+      limit
+    });
+
+    return JSON.stringify({
+      success: true,
+      action: 'getUsers',
+      data: data.users
+    });
+  }
+
   async getUsersExtended({ limit = 25, page = 1, emails, ids }) {
-    const data = await this.makeGraphQLRequest(teamQueries.GET_USERS_EXTENDED, {
+    const data = await this.makeGraphQLRequest(userQueries.GET_USERS_EXTENDED, {
       limit,
       page,
       emails,
@@ -1318,16 +1274,16 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('email is required for inviteUser action');
     }
 
-    const data = await this.makeGraphQLRequest(teamQueries.INVITE_USER, {
-      email,
+    const data = await this.makeGraphQLRequest(userQueries.INVITE_USER, {
+      emails: [email],
       kind: userKind,
-      teamIds
+      team_ids: teamIds
     });
 
     return JSON.stringify({
       success: true,
       action: 'inviteUser',
-      data: data.add_users_to_workspace
+      data: data.invite_users
     });
   }
 
@@ -1336,8 +1292,8 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('userId is required for updateUser action');
     }
 
-    const data = await this.makeGraphQLRequest(teamQueries.UPDATE_USER, {
-      userId,
+    const data = await this.makeGraphQLRequest(userQueries.UPDATE_USER, {
+      user_ids: [userId],
       name,
       title,
       phone,
@@ -1347,7 +1303,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     return JSON.stringify({
       success: true,
       action: 'updateUser',
-      data: data.update_user
+      data: data.update_multiple_users
     });
   }
 
@@ -1356,19 +1312,19 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('userId is required for deactivateUser action');
     }
 
-    const data = await this.makeGraphQLRequest(teamQueries.DEACTIVATE_USER, {
-      userId
+    const data = await this.makeGraphQLRequest(userQueries.DEACTIVATE_USER, {
+      user_ids: [userId]
     });
 
     return JSON.stringify({
       success: true,
       action: 'deactivateUser',
-      data: data.delete_users_from_workspace
+      data: data.deactivate_users
     });
   }
 
   async getAccount() {
-    const data = await this.makeGraphQLRequest(teamQueries.GET_ACCOUNT);
+    const data = await this.makeGraphQLRequest(userQueries.GET_ACCOUNT);
 
     return JSON.stringify({
       success: true,
@@ -1398,10 +1354,9 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async getWorkspacesExtended({ limit = 25, page = 1, ids }) {
+  async getWorkspacesExtended({ limit = 25, ids }) {
     const data = await this.makeGraphQLRequest(workspaceQueries.GET_WORKSPACES_EXTENDED, {
       limit,
-      page,
       ids
     });
 
@@ -1551,23 +1506,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async moveBoardToFolder({ boardId, folderId }) {
-    if (!boardId) {
-      throw new Error('boardId is required for moveBoardToFolder action');
-    }
-
-    const data = await this.makeGraphQLRequest(workspaceQueries.MOVE_BOARD_TO_FOLDER, {
-      boardId,
-      folderId
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'moveBoardToFolder',
-      data: data.move_board_to_folder
-    });
-  }
-
   async archiveBoard({ boardId }) {
     if (!boardId) {
       throw new Error('boardId is required for archiveBoard action');
@@ -1581,22 +1519,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       success: true,
       action: 'archiveBoard',
       data: data.archive_board
-    });
-  }
-
-  async unarchiveBoard({ boardId }) {
-    if (!boardId) {
-      throw new Error('boardId is required for unarchiveBoard action');
-    }
-
-    const data = await this.makeGraphQLRequest(workspaceQueries.UNARCHIVE_BOARD, {
-      boardId
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'unarchiveBoard',
-      data: data.unarchive_board
     });
   }
 
@@ -1618,18 +1540,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       success: true,
       action: 'duplicateBoard',
       data: data.duplicate_board
-    });
-  }
-
-  async getBoardTemplates({ limit = 25 }) {
-    const data = await this.makeGraphQLRequest(workspaceQueries.GET_BOARD_TEMPLATES, {
-      limit
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'getBoardTemplates',
-      data: data.board_templates
     });
   }
 
@@ -1721,83 +1631,83 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async deleteAsset({ assetId }) {
-    if (!assetId) {
-      throw new Error('assetId is required for deleteAsset action');
+  // Получение assets по ID
+  async getAssets({ ids }) {
+    if (!ids || !Array.isArray(ids)) {
+      throw new Error('ids array is required for getAssets action');
     }
 
-    const data = await this.makeGraphQLRequest(assetQueries.DELETE_ASSET, {
-      assetId
+    const data = await this.makeGraphQLRequest(assetQueries.GET_ASSETS, {
+      ids
     });
 
     return JSON.stringify({
       success: true,
-      action: 'deleteAsset',
-      data: data.delete_asset
-    });
-  }
-
-  async getWorkspaceAssets({ workspaceId, limit = 25, page = 1 }) {
-    if (!workspaceId) {
-      throw new Error('workspaceId is required for getWorkspaceAssets action');
-    }
-
-    const data = await this.makeGraphQLRequest(assetQueries.GET_WORKSPACE_ASSETS, {
-      workspaceId,
-      limit,
-      page
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'getWorkspaceAssets',
+      action: 'getAssets',
       data: data.assets
     });
   }
 
-  async createAssetPublicUrl({ assetId }) {
-    if (!assetId) {
-      throw new Error('assetId is required for createAssetPublicUrl action');
+  // Получение assets для доски
+  async getBoardAssets({ boardId, limit = 25 }) {
+    if (!boardId) {
+      throw new Error('boardId is required for getBoardAssets action');
     }
 
-    const data = await this.makeGraphQLRequest(assetQueries.CREATE_ASSET_PUBLIC_URL, {
-      assetId
-    });
-
-    return JSON.stringify({
-      success: true,
-      action: 'createAssetPublicUrl',
-      data: data.create_asset_public_url
-    });
-  }
-
-  async searchAssets({ query, workspaceId, limit = 25 }) {
-    if (!query) {
-      throw new Error('query is required for searchAssets action');
-    }
-
-    const data = await this.makeGraphQLRequest(assetQueries.SEARCH_ASSETS, {
-      query,
-      workspaceId,
+    const data = await this.makeGraphQLRequest(assetQueries.GET_BOARD_ASSETS, {
+      boardId: [boardId],
       limit
     });
 
     return JSON.stringify({
       success: true,
-      action: 'searchAssets',
-      data: data.assets
+      action: 'getBoardAssets',
+      data: data.boards[0]?.items_page?.items || []
     });
   }
 
-  async getAssetThumbnail({ assetId, width, height }) {
+  // Получение публичного URL для asset
+  async getAssetPublicUrl({ assetId }) {
+    if (!assetId) {
+      throw new Error('assetId is required for getAssetPublicUrl action');
+    }
+
+    const data = await this.makeGraphQLRequest(assetQueries.GET_ASSET_PUBLIC_URL, {
+      assetId: [assetId]
+    });
+
+    return JSON.stringify({
+      success: true,
+      action: 'getAssetPublicUrl',
+      data: data.assets[0]
+    });
+  }
+
+  // Поиск assets в рамках доски
+  async searchBoardAssets({ boardId, limit = 25 }) {
+    if (!boardId) {
+      throw new Error('boardId is required for searchBoardAssets action');
+    }
+
+    const data = await this.makeGraphQLRequest(assetQueries.SEARCH_BOARD_ASSETS, {
+      boardId: [boardId],
+      limit
+    });
+
+    return JSON.stringify({
+      success: true,
+      action: 'searchBoardAssets',
+      data: data.boards[0]?.items_page?.items || []
+    });
+  }
+
+  async getAssetThumbnail({ assetId }) {
     if (!assetId) {
       throw new Error('assetId is required for getAssetThumbnail action');
     }
 
     const data = await this.makeGraphQLRequest(assetQueries.GET_ASSET_THUMBNAIL, {
-      assetId,
-      width,
-      height
+      assetId: [assetId]
     });
 
     return JSON.stringify({
@@ -1828,21 +1738,21 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async updateColumnAdvanced({ boardId, columnId, title, description }) {
-    if (!boardId || !columnId) {
-      throw new Error('boardId and columnId are required for updateColumnAdvanced action');
+  // Обновление заголовка колонки
+  async updateColumnTitle({ boardId, columnId, title }) {
+    if (!boardId || !columnId || !title) {
+      throw new Error('boardId, columnId, and title are required for updateColumnTitle action');
     }
 
-    const data = await this.makeGraphQLRequest(advancedQueries.UPDATE_COLUMN, {
+    const data = await this.makeGraphQLRequest(advancedQueries.UPDATE_COLUMN_TITLE, {
       boardId,
       columnId,
-      title,
-      description
+      title
     });
 
     return JSON.stringify({
       success: true,
-      action: 'updateColumnAdvanced',
+      action: 'updateColumnTitle',
       data: data.change_column_title
     });
   }
@@ -1864,39 +1774,65 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async duplicateColumn({ boardId, columnId, title }) {
-    if (!boardId || !columnId || !title) {
-      throw new Error('boardId, columnId, and title are required for duplicateColumn action');
+  // Изменение значения колонки
+  async changeColumnValue({ boardId, itemId, columnId, value, createLabelsIfMissing = false }) {
+    if (!boardId || !itemId || !columnId || !value) {
+      throw new Error('boardId, itemId, columnId, and value are required for changeColumnValue action');
     }
 
-    const data = await this.makeGraphQLRequest(advancedQueries.DUPLICATE_COLUMN, {
+    const data = await this.makeGraphQLRequest(advancedQueries.CHANGE_COLUMN_VALUE, {
       boardId,
+      itemId,
       columnId,
-      title
+      value: JSON.stringify(value),
+      createLabelsIfMissing
     });
 
     return JSON.stringify({
       success: true,
-      action: 'duplicateColumn',
-      data: data.duplicate_column
+      action: 'changeColumnValue',
+      data: data.change_column_value
     });
   }
 
-  async moveColumn({ boardId, columnId, afterColumnId }) {
-    if (!boardId || !columnId) {
-      throw new Error('boardId and columnId are required for moveColumn action');
+  // Изменение простого значения колонки
+  async changeSimpleColumnValue({ boardId, itemId, columnId, value, createLabelsIfMissing = false }) {
+    if (!boardId || !itemId || !columnId || !value) {
+      throw new Error('boardId, itemId, columnId, and value are required for changeSimpleColumnValue action');
     }
 
-    const data = await this.makeGraphQLRequest(advancedQueries.MOVE_COLUMN, {
+    const data = await this.makeGraphQLRequest(advancedQueries.CHANGE_SIMPLE_COLUMN_VALUE, {
       boardId,
+      itemId,
       columnId,
-      afterColumnId
+      value,
+      createLabelsIfMissing
     });
 
     return JSON.stringify({
       success: true,
-      action: 'moveColumn',
-      data: data.move_column_to
+      action: 'changeSimpleColumnValue',
+      data: data.change_simple_column_value
+    });
+  }
+
+  // Изменение нескольких значений колонок
+  async changeMultipleColumnValues({ boardId, itemId, columnValues, createLabelsIfMissing = false }) {
+    if (!boardId || !itemId || !columnValues) {
+      throw new Error('boardId, itemId, and columnValues are required for changeMultipleColumnValues action');
+    }
+
+    const data = await this.makeGraphQLRequest(advancedQueries.CHANGE_MULTIPLE_COLUMN_VALUES, {
+      boardId,
+      itemId,
+      columnValues: JSON.stringify(columnValues),
+      createLabelsIfMissing
+    });
+
+    return JSON.stringify({
+      success: true,
+      action: 'changeMultipleColumnValues',
+      data: data.change_multiple_column_values
     });
   }
 

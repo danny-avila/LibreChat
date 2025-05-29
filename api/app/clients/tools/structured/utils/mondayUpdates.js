@@ -96,7 +96,7 @@ module.exports = {
     }
   `,
 
-  // Ответ на обновление
+  // Ответ на обновление (используем create_update с parent_id)
   CREATE_UPDATE_REPLY: `
     mutation createUpdateReply($updateId: ID!, $body: String!) {
       create_update(parent_id: $updateId, body: $body) {
@@ -140,35 +140,28 @@ module.exports = {
     }
   `,
 
-  // Получение уведомлений для пользователя
+  // Получение уведомлений для пользователя (через me query)
   GET_USER_NOTIFICATIONS: `
-    query getUserNotifications($limit: Int, $page: Int) {
-      notifications(limit: $limit, page: $page) {
+    query getUserNotifications {
+      me {
         id
+        name
+        # Примечание: Уведомления доступны только через интерфейс monday.com
+        # API не предоставляет прямого доступа к уведомлениям пользователя
+      }
+    }
+  `,
+
+  // Создание уведомления (единственная доступная функция для notifications)
+  CREATE_NOTIFICATION: `
+    mutation createNotification($userId: ID!, $targetId: ID!, $text: String!, $targetType: NotificationTargetType!) {
+      create_notification(
+        user_id: $userId,
+        target_id: $targetId,
+        text: $text,
+        target_type: $targetType
+      ) {
         text
-        created_at
-        read_at
-        target_id
-        target_type
-      }
-    }
-  `,
-
-  // Отметка уведомления как прочитанного
-  MARK_NOTIFICATION_READ: `
-    mutation markNotificationRead($id: ID!) {
-      mark_notification_as_read(id: $id) {
-        id
-        read_at
-      }
-    }
-  `,
-
-  // Отметка всех уведомлений как прочитанных
-  MARK_ALL_NOTIFICATIONS_READ: `
-    mutation markAllNotificationsRead {
-      mark_all_notifications_as_read {
-        success
       }
     }
   `

@@ -21,9 +21,7 @@
 | `getBoard` | Детали конкретной доски | `boardId`, `includeItems` |
 | `createBoard` | Создание новой доски | `boardName`, `boardKind` |
 | `archiveBoard` | Архивирование доски | `boardId` |
-| `unarchiveBoard` | Восстановление доски | `boardId` |
 | `duplicateBoard` | Дублирование доски | `boardId`, `duplicateType` |
-| `moveBoardToFolder` | Перемещение в папку | `boardId`, `folderId` |
 
 ### 📝 УПРАВЛЕНИЕ ЭЛЕМЕНТАМИ (6 функций)
 | Действие | Описание | Ключевые параметры |
@@ -66,7 +64,6 @@
 | `getTeam` | Детали команды | `teamId` |
 | `addUserToTeam` | Добавить в команду | `teamId`, `userId` |
 | `removeUserFromTeam` | Удалить из команды | `teamId`, `userId` |
-| `updateTeam` | Обновление команды | `teamId`, `name` |
 | `deleteTeam` | Удаление команды | `teamId` |
 | `getUsersExtended` | Расширенная информация | `limit`, `emails`, `ids` |
 | `inviteUser` | Приглашение пользователя | `email`, `userKind` |
@@ -87,7 +84,6 @@
 | `createFolder` | Создание папки | `name`, `workspaceId` |
 | `updateFolder` | Обновление папки | `folderId`, `name` |
 | `deleteFolder` | Удаление папки | `folderId` |
-| `getBoardTemplates` | Шаблоны досок | `limit` |
 | `createBoardFromTemplate` | Доска из шаблона | `templateId`, `boardName` |
 
 ### 📎 ASSETS И ФАЙЛЫ (9 функций)

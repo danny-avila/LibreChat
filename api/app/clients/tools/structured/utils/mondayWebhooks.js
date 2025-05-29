@@ -11,7 +11,6 @@ module.exports = {
       ) {
         id
         board_id
-        url
         event
         config
       }
@@ -24,7 +23,6 @@ module.exports = {
       webhooks(board_id: $boardId) {
         id
         board_id
-        url
         event
         config
       }
@@ -36,31 +34,7 @@ module.exports = {
     mutation deleteWebhook($id: ID!) {
       delete_webhook(id: $id) {
         id
-      }
-    }
-  `,
-
-  // Получение истории webhook'ов
-  GET_WEBHOOK_LOGS: `
-    query getWebhookLogs($webhookId: ID!, $limit: Int) {
-      webhook_logs(webhook_id: $webhookId, limit: $limit) {
-        id
-        webhook_id
-        request_body
-        response_status_code
-        created_at
-        event_type
-      }
-    }
-  `,
-
-  // Тестирование webhook
-  TEST_WEBHOOK: `
-    mutation testWebhook($webhookId: ID!) {
-      test_webhook(webhook_id: $webhookId) {
-        id
-        status
-        response
+        board_id
       }
     }
   `

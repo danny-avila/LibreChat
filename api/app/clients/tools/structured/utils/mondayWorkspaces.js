@@ -15,24 +15,25 @@ module.exports = {
 
   // Получение расширенной информации о workspaces
   GET_WORKSPACES_EXTENDED: `
-    query getWorkspacesExtended($limit: Int, $page: Int, $ids: [ID]) {
-      workspaces(limit: $limit, page: $page, ids: $ids) {
+    query getWorkspacesExtended($limit: Int, $ids: [ID]) {
+      workspaces(limit: $limit, ids: $ids) {
         id
         name
         kind
         description
         created_at
         state
+        is_default_workspace
         settings {
           product_id
         }
-        users {
+        users_subscribers {
           id
           name
           email
           enabled
         }
-        teams {
+        teams_subscribers {
           id
           name
         }
@@ -47,11 +48,13 @@ module.exports = {
 
   // Обновление workspace
   UPDATE_WORKSPACE: `
-    mutation updateWorkspace($workspaceId: ID!, $name: String, $description: String) {
-      update_workspace(workspace_id: $workspaceId, name: $name, description: $description) {
+    mutation updateWorkspace($workspaceId: ID!, $attributes: WorkspaceAttributesInput!) {
+      update_workspace(id: $workspaceId, attributes: $attributes) {
         id
         name
         description
+        kind
+        state
       }
     }
   `,
@@ -59,7 +62,7 @@ module.exports = {
   // Удаление workspace
   DELETE_WORKSPACE: `
     mutation deleteWorkspace($workspaceId: ID!) {
-      delete_workspace(workspace_id: $workspaceId) {
+      delete_workspace(id: $workspaceId) {
         id
       }
     }
@@ -67,7 +70,7 @@ module.exports = {
 
   // Добавление пользователей к workspace
   ADD_USERS_TO_WORKSPACE: `
-    mutation addUsersToWorkspace($workspaceId: ID!, $userIds: [ID!]!, $kind: UserKind!) {
+    mutation addUsersToWorkspace($workspaceId: ID!, $userIds: [ID!]!, $kind: WorkspaceSubscriberKind!) {
       add_users_to_workspace(
         workspace_id: $workspaceId,
         user_ids: $userIds,
@@ -155,19 +158,7 @@ module.exports = {
     }
   `,
 
-  // Перемещение доски в папку
-  MOVE_BOARD_TO_FOLDER: `
-    mutation moveBoardToFolder($boardId: ID!, $folderId: ID) {
-      move_board_to_folder(board_id: $boardId, folder_id: $folderId) {
-        id
-        name
-        folder {
-          id
-          name
-        }
-      }
-    }
-  `,
+
 
   // Архивирование доски
   ARCHIVE_BOARD: `
@@ -179,15 +170,7 @@ module.exports = {
     }
   `,
 
-  // Восстановление доски
-  UNARCHIVE_BOARD: `
-    mutation unarchiveBoard($boardId: ID!) {
-      unarchive_board(board_id: $boardId) {
-        id
-        state
-      }
-    }
-  `,
+
 
   // Дублирование доски
   DUPLICATE_BOARD: `
@@ -216,18 +199,7 @@ module.exports = {
     }
   `,
 
-  // Получение шаблонов досок
-  GET_BOARD_TEMPLATES: `
-    query getBoardTemplates($limit: Int) {
-      board_templates(limit: $limit) {
-        id
-        name
-        description
-        category
-        preview_image_url
-      }
-    }
-  `,
+
 
   // Создание доски из шаблона
   CREATE_BOARD_FROM_TEMPLATE: `

@@ -2,25 +2,29 @@
 module.exports = {
   // Создание колонки
   CREATE_COLUMN: `
-    mutation createColumn($boardId: ID!, $title: String!, $columnType: ColumnType!, $defaults: JSON) {
+    mutation createColumn($boardId: ID!, $title: String!, $columnType: ColumnType!, $defaults: JSON, $description: String, $id: String, $afterColumnId: ID) {
       create_column(
         board_id: $boardId,
         title: $title,
         column_type: $columnType,
-        defaults: $defaults
+        defaults: $defaults,
+        description: $description,
+        id: $id,
+        after_column_id: $afterColumnId
       ) {
         id
         title
         type
         settings_str
         description
+        width
       }
     }
   `,
 
-  // Обновление колонки
-  UPDATE_COLUMN: `
-    mutation updateColumn($boardId: ID!, $columnId: String!, $title: String, $description: String) {
+  // Обновление заголовка колонки
+  UPDATE_COLUMN_TITLE: `
+    mutation updateColumnTitle($boardId: ID!, $columnId: String!, $title: String!) {
       change_column_title(
         board_id: $boardId,
         column_id: $columnId,
@@ -42,44 +46,77 @@ module.exports = {
     }
   `,
 
-  // Дублирование колонки
-  DUPLICATE_COLUMN: `
-    mutation duplicateColumn($boardId: ID!, $columnId: String!, $title: String) {
-      duplicate_column(
+  // Изменение значения колонки
+  CHANGE_COLUMN_VALUE: `
+    mutation changeColumnValue($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!, $createLabelsIfMissing: Boolean) {
+      change_column_value(
         board_id: $boardId,
+        item_id: $itemId,
         column_id: $columnId,
-        title: $title
+        value: $value,
+        create_labels_if_missing: $createLabelsIfMissing
       ) {
         id
-        title
-        type
-        settings_str
+        name
+        column_values {
+          id
+          value
+          text
+        }
       }
     }
   `,
 
-  // Перемещение колонки
-  MOVE_COLUMN: `
-    mutation moveColumn($boardId: ID!, $columnId: String!, $afterColumnId: String) {
-      move_column_to(
+  // Изменение простого значения колонки
+  CHANGE_SIMPLE_COLUMN_VALUE: `
+    mutation changeSimpleColumnValue($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String, $createLabelsIfMissing: Boolean) {
+      change_simple_column_value(
         board_id: $boardId,
+        item_id: $itemId,
         column_id: $columnId,
-        after_column_id: $afterColumnId
+        value: $value,
+        create_labels_if_missing: $createLabelsIfMissing
       ) {
         id
-        title
+        name
+        column_values {
+          id
+          value
+          text
+        }
+      }
+    }
+  `,
+
+  // Изменение нескольких значений колонок
+  CHANGE_MULTIPLE_COLUMN_VALUES: `
+    mutation changeMultipleColumnValues($boardId: ID!, $itemId: ID!, $columnValues: JSON!, $createLabelsIfMissing: Boolean) {
+      change_multiple_column_values(
+        board_id: $boardId,
+        item_id: $itemId,
+        column_values: $columnValues,
+        create_labels_if_missing: $createLabelsIfMissing
+      ) {
+        id
+        name
+        column_values {
+          id
+          value
+          text
+        }
       }
     }
   `,
 
   // Создание группы с настройками
   CREATE_GROUP_ADVANCED: `
-    mutation createGroupAdvanced($boardId: ID!, $groupName: String!, $color: String, $position: String) {
+    mutation createGroupAdvanced($boardId: ID!, $groupName: String!, $groupColor: String, $relativeTo: String, $positionRelativeMethod: PositionRelative) {
       create_group(
         board_id: $boardId,
         group_name: $groupName,
-        group_color: $color,
-        position_relative_method: $position
+        group_color: $groupColor,
+        relative_to: $relativeTo,
+        position_relative_method: $positionRelativeMethod
       ) {
         id
         title
@@ -92,16 +129,17 @@ module.exports = {
 
   // Обновление группы
   UPDATE_GROUP: `
-    mutation updateGroup($boardId: ID!, $groupId: String!, $groupName: String, $color: String) {
+    mutation updateGroup($boardId: ID!, $groupId: String!, $groupAttribute: GroupAttributes!, $newValue: String!) {
       update_group(
         board_id: $boardId,
         group_id: $groupId,
-        group_name: $groupName,
-        group_color: $color
+        group_attribute: $groupAttribute,
+        new_value: $newValue
       ) {
         id
         title
         color
+        position
       }
     }
   `,
@@ -118,16 +156,17 @@ module.exports = {
 
   // Дублирование группы
   DUPLICATE_GROUP: `
-    mutation duplicateGroup($boardId: ID!, $groupId: String!, $groupName: String, $addToTop: Boolean) {
+    mutation duplicateGroup($boardId: ID!, $groupId: String!, $groupTitle: String, $addToTop: Boolean) {
       duplicate_group(
         board_id: $boardId,
         group_id: $groupId,
-        group_title: $groupName,
+        group_title: $groupTitle,
         add_to_top: $addToTop
       ) {
         id
         title
         color
+        position
       }
     }
   `,
@@ -138,21 +177,6 @@ module.exports = {
       archive_group(board_id: $boardId, group_id: $groupId) {
         id
         archived
-      }
-    }
-  `,
-
-  // Перемещение группы
-  MOVE_GROUP: `
-    mutation moveGroup($boardId: ID!, $groupId: String!, $afterGroupId: String) {
-      move_group_to(
-        board_id: $boardId,
-        group_id: $groupId,
-        after_group_id: $afterGroupId
-      ) {
-        id
-        title
-        position
       }
     }
   `,
@@ -199,9 +223,9 @@ module.exports = {
 
   // Получение настроек колонки
   GET_COLUMN_SETTINGS: `
-    query getColumnSettings($boardId: [ID!]!, $columnId: String!) {
+    query getColumnSettings($boardId: [ID!]!, $columnIds: [String!]) {
       boards(ids: $boardId) {
-        columns(ids: [$columnId]) {
+        columns(ids: $columnIds) {
           id
           title
           type
@@ -214,7 +238,7 @@ module.exports = {
     }
   `,
 
-  // Изменение настроек колонки
+  // Изменение метаданных колонки
   CHANGE_COLUMN_METADATA: `
     mutation changeColumnMetadata($boardId: ID!, $columnId: String!, $columnProperty: ColumnProperty!, $value: String!) {
       change_column_metadata(
@@ -225,6 +249,7 @@ module.exports = {
       ) {
         id
         title
+        description
         settings_str
       }
     }

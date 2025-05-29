@@ -73,26 +73,17 @@ module.exports = {
     }
   `,
 
-  // Удаление asset
-  DELETE_ASSET: `
-    mutation deleteAsset($assetId: ID!) {
-      delete_asset(asset_id: $assetId) {
-        id
-      }
-    }
-  `,
-
-  // Получение всех assets workspace
-  GET_WORKSPACE_ASSETS: `
-    query getWorkspaceAssets($workspaceId: ID!, $limit: Int, $page: Int) {
-      assets(workspace_id: $workspaceId, limit: $limit, page: $page) {
+  // Получение assets для обновления или элемента (delete_asset не существует в API)
+  GET_ASSETS: `
+    query getAssets($ids: [ID!]!) {
+      assets(ids: $ids) {
         id
         name
         url
         file_extension
         file_size
         created_at
-        created_by {
+        uploaded_by {
           id
           name
         }
@@ -102,49 +93,76 @@ module.exports = {
     }
   `,
 
-  // Создание публичной ссылки на файл
-  CREATE_ASSET_PUBLIC_URL: `
-    mutation createAssetPublicUrl($assetId: ID!) {
-      create_asset_public_url(asset_id: $assetId) {
-        public_url
-        expires_at
+  // Получение всех assets через items/updates (workspace assets не поддерживается напрямую)
+  GET_BOARD_ASSETS: `
+    query getBoardAssets($boardId: [ID!]!, $limit: Int) {
+      boards(ids: $boardId) {
+        items_page(limit: $limit) {
+          items {
+            assets {
+              id
+              name
+              url
+              file_extension
+              file_size
+              created_at
+              uploaded_by {
+                id
+                name
+              }
+            }
+          }
+        }
       }
     }
   `,
 
-  // Поиск assets по имени
-  SEARCH_ASSETS: `
-    query searchAssets($query: String!, $workspaceId: ID, $limit: Int) {
-      assets(
-        query: $query,
-        workspace_id: $workspaceId,
-        limit: $limit
-      ) {
+  // Получение публичного URL (используется через поле public_url)
+  GET_ASSET_PUBLIC_URL: `
+    query getAssetPublicUrl($assetId: [ID!]!) {
+      assets(ids: $assetId) {
+        id
+        name
+        public_url
+        url
+      }
+    }
+  `,
+
+  // Поиск assets через items (прямой поиск assets не поддерживается)
+  SEARCH_BOARD_ASSETS: `
+    query searchBoardAssets($boardId: [ID!]!, $limit: Int) {
+      boards(ids: $boardId) {
+        items_page(limit: $limit) {
+          items {
+            name
+            assets {
+              id
+              name
+              url
+              file_extension
+              file_size
+              created_at
+              uploaded_by {
+                id
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  `,
+
+  // Получение thumbnail через url_thumbnail поле
+  GET_ASSET_THUMBNAIL: `
+    query getAssetThumbnail($assetId: [ID!]!) {
+      assets(ids: $assetId) {
         id
         name
         url
-        file_extension
-        file_size
-        created_at
-        created_by {
-          id
-          name
-        }
-      }
-    }
-  `,
-
-  // Получение превью изображения
-  GET_ASSET_THUMBNAIL: `
-    query getAssetThumbnail($assetId: ID!, $width: Int, $height: Int) {
-      assets(ids: [$assetId]) {
-        id
-        name
-        thumbnail(width: $width, height: $height) {
-          url
-          width
-          height
-        }
+        url_thumbnail
+        original_geometry
       }
     }
   `
