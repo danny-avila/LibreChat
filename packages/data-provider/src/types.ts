@@ -557,4 +557,14 @@ export type TUpdateFeedbackResponse = {
   messageId: string;
   conversationId: string;
   feedback?: TMinimalFeedback;
+}
+
+export type TBalanceResponse = {
+  tokenCredits: number;
+  // Automatic refill settings
+  autoRefillEnabled: boolean;
+  refillIntervalValue?: number;
+  refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
+  lastRefill?: Date;
+  refillAmount?: number;
 };
