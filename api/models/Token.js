@@ -1,39 +1,5 @@
 const { encryptV2 } = require('~/server/utils/crypto');
-const { logger } = require('~/config');
 const db = require('~/lib/db/connectDb');
-/**
- * Fixes the indexes for the Token collection from legacy TTL indexes to the new expiresAt index.
- */
-async function fixIndexes() {
-  try {
-    if (
-      process.env.NODE_ENV === 'CI' ||
-      process.env.NODE_ENV === 'development' ||
-      process.env.NODE_ENV === 'test'
-    ) {
-      return;
-    }
-    const indexes = await db.models.Token.collection.indexes();
-    logger.debug('Existing Token Indexes:', JSON.stringify(indexes, null, 2));
-    const unwantedTTLIndexes = indexes.filter(
-      (index) => index.key.createdAt === 1 && index.expireAfterSeconds !== undefined,
-    );
-    if (unwantedTTLIndexes.length === 0) {
-      logger.debug('No unwanted Token indexes found.');
-      return;
-    }
-    for (const index of unwantedTTLIndexes) {
-      logger.debug(`Dropping unwanted Token index: ${index.name}`);
-      await db.models.Token.collection.dropIndex(index.name);
-      logger.debug(`Dropped Token index: ${index.name}`);
-    }
-    logger.debug('Token index cleanup completed successfully.');
-  } catch (error) {
-    logger.error('An error occurred while fixing Token indexes:', error);
-  }
-}
-
-fixIndexes();
 
 /**
  * Handles the OAuth token by creating or updating the token.
@@ -63,7 +29,7 @@ async function handleOAuthToken({
     expiresIn: parseInt(expiresIn, 10) || 3600,
   };
 
-  const {Token} = db.models;
+  const { Token } = db.models;
   const existingToken = await Token.findToken({ userId, identifier });
   if (existingToken) {
     return await Token.updateToken({ identifier }, tokenData);
