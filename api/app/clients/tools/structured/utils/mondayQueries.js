@@ -53,13 +53,16 @@ module.exports = {
           settings_str
         }
         items_count
-        items(limit: 10) @include(if: $includeItems) {
-          id
-          name
-          state
-          group {
+        items_page(limit: 10) @include(if: $includeItems) {
+          cursor
+          items {
             id
-            title
+            name
+            state
+            group {
+              id
+              title
+            }
           }
         }
       }
@@ -69,22 +72,25 @@ module.exports = {
   GET_ITEMS: `
     query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!) {
       boards(ids: $boardId) {
-        items(limit: $limit) {
-          id
-          name
-          state
-          created_at
-          updated_at
-          group {
+        items_page(limit: $limit) {
+          cursor
+          items {
             id
-            title
-          }
-          column_values @include(if: $columnValues) {
-            id
-            title
-            type
-            text
-            value
+            name
+            state
+            created_at
+            updated_at
+            group {
+              id
+              title
+            }
+            column_values @include(if: $columnValues) {
+              id
+              title
+              type
+              text
+              value
+            }
           }
         }
       }
@@ -92,26 +98,34 @@ module.exports = {
   `,
   
   SEARCH_ITEMS: `
-    query searchItems($query: String!, $boardIds: [ID]) {
-      items_by_column_values(
-        board_ids: $boardIds,
-        column_id: "name",
-        column_value: $query
+    query searchItems($boardId: ID!, $query: String!) {
+      items_page_by_column_values(
+        limit: 25,
+        board_id: $boardId,
+        columns: [
+          {
+            column_id: "name",
+            column_values: [$query]
+          }
+        ]
       ) {
-        id
-        name
-        board {
+        cursor
+        items {
           id
           name
-        }
-        group {
-          id
-          title
-        }
-        column_values {
-          id
-          title
-          text
+          board {
+            id
+            name
+          }
+          group {
+            id
+            title
+          }
+          column_values {
+            id
+            title
+            text
+          }
         }
       }
     }

@@ -246,13 +246,16 @@ class MondayTool extends Tool {
             settings_str
           }
           items_count
-          items(limit: 10) @include(if: $includeItems) {
-            id
-            name
-            state
-            group {
+          items_page(limit: 10) @include(if: $includeItems) {
+            cursor
+            items {
               id
-              title
+              name
+              state
+              group {
+                id
+                title
+              }
             }
           }
         }
@@ -322,22 +325,25 @@ class MondayTool extends Tool {
     const query = `
       query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!) {
         boards(ids: $boardId) {
-          items(limit: $limit) {
-            id
-            name
-            state
-            created_at
-            updated_at
-            group {
+          items_page(limit: $limit) {
+            cursor
+            items {
               id
-              title
-            }
-            column_values @include(if: $columnValues) {
-              id
-              title
-              type
-              text
-              value
+              name
+              state
+              created_at
+              updated_at
+              group {
+                id
+                title
+              }
+              column_values @include(if: $columnValues) {
+                id
+                title
+                type
+                text
+                value
+              }
             }
           }
         }
@@ -350,7 +356,7 @@ class MondayTool extends Tool {
       columnValues
     });
 
-    let items = data.boards[0]?.items || [];
+    let items = data.boards[0]?.items_page?.items || [];
     
     // Фильтрация по группе, если указана
     if (groupId) {
@@ -361,7 +367,8 @@ class MondayTool extends Tool {
       success: true,
       action: 'getItems',
       data: items,
-      total: items.length
+      total: items.length,
+      cursor: data.boards[0]?.items_page?.cursor
     });
   }
 
@@ -408,16 +415,16 @@ class MondayTool extends Tool {
     });
   }
 
-  async updateItem({ itemId, columnValues }) {
-    if (!itemId || !columnValues) {
-      throw new Error('itemId and columnValues are required for updateItem action');
+  async updateItem({ boardId, itemId, columnValues }) {
+    if (!boardId || !itemId || !columnValues) {
+      throw new Error('boardId, itemId and columnValues are required for updateItem action');
     }
 
     const mutation = `
-      mutation updateItem($itemId: ID!, $columnValues: JSON!) {
+      mutation updateItem($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
         change_multiple_column_values(
+          board_id: $boardId,
           item_id: $itemId,
-          board_id: 0,
           column_values: $columnValues
         ) {
           id
@@ -433,6 +440,7 @@ class MondayTool extends Tool {
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
+      boardId: parseInt(boardId),
       itemId: parseInt(itemId),
       columnValues: JSON.stringify(columnValues)
     });
@@ -559,47 +567,56 @@ class MondayTool extends Tool {
   }
 
   // Методы поиска
-  async searchItems({ query, boardIds }) {
-    if (!query) {
-      throw new Error('query is required for searchItems action');
+  async searchItems({ boardId, query }) {
+    if (!boardId || !query) {
+      throw new Error('boardId and query are required for searchItems action');
     }
 
     const searchQuery = `
-      query searchItems($query: String!, $boardIds: [ID]) {
-        items_by_column_values(
-          board_ids: $boardIds,
-          column_id: "name",
-          column_value: $query
+      query searchItems($boardId: ID!, $query: String!) {
+        items_page_by_column_values(
+          limit: 25,
+          board_id: $boardId,
+          columns: [
+            {
+              column_id: "name",
+              column_values: [$query]
+            }
+          ]
         ) {
-          id
-          name
-          board {
+          cursor
+          items {
             id
             name
-          }
-          group {
-            id
-            title
-          }
-          column_values {
-            id
-            title
-            text
+            board {
+              id
+              name
+            }
+            group {
+              id
+              title
+            }
+            column_values {
+              id
+              title
+              text
+            }
           }
         }
       }
     `;
 
     const data = await this.makeGraphQLRequest(searchQuery, {
-      query,
-      boardIds: boardIds ? boardIds.map(id => parseInt(id)) : null
+      boardId: parseInt(boardId),
+      query
     });
 
     return JSON.stringify({
       success: true,
       action: 'searchItems',
-      data: data.items_by_column_values,
-      total: data.items_by_column_values.length
+      data: data.items_page_by_column_values?.items || [],
+      total: data.items_page_by_column_values?.items?.length || 0,
+      cursor: data.items_page_by_column_values?.cursor
     });
   }
 

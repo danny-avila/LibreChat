@@ -43,10 +43,10 @@ module.exports = {
   `,
   
   UPDATE_ITEM: `
-    mutation updateItem($itemId: ID!, $columnValues: JSON!) {
+    mutation updateItem($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
       change_multiple_column_values(
+        board_id: $boardId,
         item_id: $itemId,
-        board_id: 0,
         column_values: $columnValues
       ) {
         id

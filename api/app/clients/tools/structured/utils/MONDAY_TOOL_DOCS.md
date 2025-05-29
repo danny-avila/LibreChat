@@ -151,8 +151,8 @@
 ```javascript
 {
   "action": "searchItems",
-  "query": "важная задача",
-  "boardIds": ["1234567890", "0987654321"]
+  "boardId": "1234567890",
+  "query": "важная задача"
 }
 ```
 
