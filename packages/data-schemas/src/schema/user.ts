@@ -13,6 +13,7 @@ export interface IUser extends Document {
   googleId?: string;
   facebookId?: string;
   openidId?: string;
+  samlId?: string;
   ldapId?: string;
   githubId?: string;
   discordId?: string;
@@ -67,7 +68,7 @@ const User = new Schema<IUser>(
     },
     email: {
       type: String,
-      required: [true, 'can\'t be blank'],
+      required: [true, "can't be blank"],
       lowercase: true,
       unique: true,
       match: [/\S+@\S+\.\S+/, 'is invalid'],
@@ -108,6 +109,11 @@ const User = new Schema<IUser>(
       sparse: true,
     },
     openidId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    samlId: {
       type: String,
       unique: true,
       sparse: true,

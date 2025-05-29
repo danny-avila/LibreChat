@@ -7,6 +7,7 @@ const facebookLogin = require('./facebookStrategy');
 const { setupOpenId, getOpenIdConfig } = require('./openidStrategy');
 const jwtLogin = require('./jwtStrategy');
 const ldapLogin = require('./ldapStrategy');
+const { setupSaml } = require('./samlStrategy');
 const openIdJwtLogin = require('./openIdJwtStrategy');
 
 module.exports = {
@@ -20,5 +21,6 @@ module.exports = {
   setupOpenId,
   getOpenIdConfig,
   ldapLogin,
+  setupSaml,
   openIdJwtLogin,
 };
