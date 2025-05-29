@@ -111,7 +111,7 @@ const getAgentHandler = async (req, res) => {
       const originalUrl = agent.avatar.filepath;
       agent.avatar.filepath = await refreshS3Url(agent.avatar);
       if (originalUrl !== agent.avatar.filepath) {
-        await updateAgent({ id }, { avatar: agent.avatar }, req.user.id);
+        await updateAgent({ id }, { avatar: agent.avatar }, { updatingUserId: req.user.id });
       }
     }
 
@@ -170,7 +170,7 @@ const updateAgentHandler = async (req, res) => {
 
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, req.user.id)
+        ? await updateAgent({ id }, updateData, { updatingUserId: req.user.id })
         : existingAgent;
 
     if (projectIds || removeProjectIds) {
@@ -407,7 +407,11 @@ const uploadAgentAvatarHandler = async (req, res) => {
       },
     };
 
-    promises.push(await updateAgent({ id: agent_id, author: req.user.id }, data, req.user.id));
+    promises.push(
+      await updateAgent({ id: agent_id, author: req.user.id }, data, {
+        updatingUserId: req.user.id,
+      }),
+    );
 
     const resolved = await Promise.all(promises);
     res.status(201).json(resolved[0]);

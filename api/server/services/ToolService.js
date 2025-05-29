@@ -5,6 +5,7 @@ const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   Tools,
+  Constants,
   ErrorTypes,
   ContentTypes,
   imageGenTools,
@@ -14,6 +15,7 @@ const {
   ImageVisionTool,
   openapiToFunction,
   AgentCapabilities,
+  defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const {
@@ -501,8 +503,22 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   }
 
   const endpointsConfig = await getEndpointsConfig(req);
-  const enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-  const checkCapability = (capability) => enabledCapabilities.has(capability);
+  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
+  if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
+    enabledCapabilities = new Set(
+      req.app?.locals?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
+  }
+  const checkCapability = (capability) => {
+    const enabled = enabledCapabilities.has(capability);
+    if (!enabled) {
+      logger.warn(
+        `Capability "${capability}" disabled${capability === AgentCapabilities.tools ? '.' : ' despite configured tool.'} User: ${req.user.id} | Agent: ${agent.id}`,
+      );
+    }
+    return enabled;
+  };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
   let includesWebSearch = false;

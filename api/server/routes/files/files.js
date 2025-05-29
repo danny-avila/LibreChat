@@ -283,6 +283,10 @@ router.post('/', async (req, res) => {
       message += ': ' + error.message;
     }
 
+    if (error.message?.includes('Invalid file format')) {
+      message = error.message;
+    }
+
     // TODO: delete remote file if it exists
     try {
       await fs.unlink(req.file.path);
