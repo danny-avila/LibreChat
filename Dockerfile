@@ -30,6 +30,8 @@ RUN \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
     npm install --no-audit --frozen-lockfile; \
+    # Install client dependencies separately
+    cd client && npm install && cd .. ; \
     # React client build (before pruning dev dependencies)
     NODE_OPTIONS="--max-old-space-size=3072" npm run frontend:docker; \
     # Keep the built packages before pruning
