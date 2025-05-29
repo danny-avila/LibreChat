@@ -210,6 +210,9 @@ module.exports = {
         show_timeline_weekends
         slug
         tier
+        country_code
+        first_day_of_the_week
+        active_members_count
         plan {
           max_users
           period
@@ -220,11 +223,7 @@ module.exports = {
           id
           kind
         }
-        users_count
-        default_workspace {
-          id
-          name
-        }
+        sign_up_product_kind
       }
     }
   `,

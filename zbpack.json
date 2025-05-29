@@ -1,4 +1,4 @@
 {
-  "build_command": "NODE_ENV=development npm install && npm run frontend:docker && npm prune --production",
+  "build_command": "npm install && cd client && npm install && cd .. && npm run frontend:docker && npm prune --production",
   "start_command": "npm run backend"
 }
