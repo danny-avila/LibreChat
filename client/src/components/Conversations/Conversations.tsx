@@ -4,8 +4,9 @@ import { parseISO, isToday } from 'date-fns';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { useLocalize, TranslationKeys, useMediaQuery } from '~/hooks';
 import { TConversation } from 'librechat-data-provider';
-import { groupConversationsByDate } from '~/utils';
+import { groupConversationsByDate, dateKeys } from '~/utils';
 import { Spinner } from '~/components/svg';
+import PinnedConversations from './PinnedConversations';
 import Convo from './Convo';
 
 interface ConversationsProps {
@@ -105,9 +106,27 @@ const Conversations: FC<ConversationsProps> = ({
     [filteredConversations],
   );
 
+  const { pinnedConversations, nonPinnedGroupedConversations } = useMemo(() => {
+    const pinned: TConversation[] = [];
+    const nonPinned: [string, TConversation[]][] = [];
+
+    groupedConversations.forEach(([groupName, convos]) => {
+      if (groupName === dateKeys.pinned) {
+        pinned.push(...convos);
+      } else {
+        nonPinned.push([groupName, convos]);
+      }
+    });
+
+    return {
+      pinnedConversations: pinned,
+      nonPinnedGroupedConversations: nonPinned,
+    };
+  }, [groupedConversations]);
+
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
-    groupedConversations.forEach(([groupName, convos]) => {
+    nonPinnedGroupedConversations.forEach(([groupName, convos]) => {
       items.push({ type: 'header', groupName });
       items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
     });
@@ -116,7 +135,7 @@ const Conversations: FC<ConversationsProps> = ({
       items.push({ type: 'loading' } as any);
     }
     return items;
-  }, [groupedConversations, isLoading]);
+  }, [nonPinnedGroupedConversations, isLoading]);
 
   const cache = useMemo(
     () =>
@@ -203,27 +222,33 @@ const Conversations: FC<ConversationsProps> = ({
           <span className="ml-2 text-text-primary">Loading...</span>
         </div>
       ) : (
-        <div className="flex-1">
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={containerRef as React.RefObject<List>}
-                width={width}
-                height={height}
-                deferredMeasurementCache={cache}
-                rowCount={flattenedItems.length}
-                rowHeight={getRowHeight}
-                rowRenderer={rowRenderer}
-                overscanRowCount={10}
-                className="outline-none"
-                style={{ outline: 'none' }}
-                role="list"
-                aria-label="Conversations"
-                onRowsRendered={handleRowsRendered}
-                tabIndex={-1}
-              />
-            )}
-          </AutoSizer>
+        <div className="flex flex-1 flex-col">
+          {/* Pinned Conversations */}
+          <PinnedConversations pinnedConversations={pinnedConversations} toggleNav={toggleNav} />
+
+          {/* Regular Conversations */}
+          <div className="flex-1">
+            <AutoSizer>
+              {({ width, height }) => (
+                <List
+                  ref={containerRef as React.RefObject<List>}
+                  width={width}
+                  height={height}
+                  deferredMeasurementCache={cache}
+                  rowCount={flattenedItems.length}
+                  rowHeight={getRowHeight}
+                  rowRenderer={rowRenderer}
+                  overscanRowCount={10}
+                  className="outline-none"
+                  style={{ outline: 'none' }}
+                  role="list"
+                  aria-label="Conversations"
+                  onRowsRendered={handleRowsRendered}
+                  tabIndex={-1}
+                />
+              )}
+            </AutoSizer>
+          </div>
         </div>
       )}
     </div>
