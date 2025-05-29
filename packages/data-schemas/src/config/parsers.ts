@@ -59,9 +59,15 @@ function redactMessage(str: string, trimLength?: number): string {
  */
 const redactFormat = winston.format((info: winston.Logform.TransformableInfo) => {
   if (info.level === 'error') {
-    info.message = redactMessage(info.message);
-    if (info[MESSAGE_SYMBOL]) {
-      info[MESSAGE_SYMBOL] = redactMessage(info[MESSAGE_SYMBOL]);
+    // Type guard to ensure message is a string
+    if (typeof info.message === 'string') {
+      info.message = redactMessage(info.message);
+    }
+
+    // Handle MESSAGE_SYMBOL with type safety
+    const symbolValue = (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL];
+    if (typeof symbolValue === 'string') {
+      (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL] = redactMessage(symbolValue);
     }
   }
   return info;
@@ -74,7 +80,7 @@ const redactFormat = winston.format((info: winston.Logform.TransformableInfo) =>
  * @param length - The length at which to truncate the value. Default: 100.
  * @returns The truncated or original value.
  */
-const truncateLongStrings = (value: any, length = 100): any => {
+const truncateLongStrings = (value: unknown, length = 100): unknown => {
   if (typeof value === 'string') {
     return value.length > length ? value.substring(0, length) + '... [truncated]' : value;
   }
@@ -87,7 +93,7 @@ const truncateLongStrings = (value: any, length = 100): any => {
  * @param item - The item to be condensed.
  * @returns The condensed item.
  */
-const condenseArray = (item: any): any => {
+const condenseArray = (item: unknown): string | unknown => {
   if (typeof item === 'string') {
     return truncateLongStrings(JSON.stringify(item));
   } else if (typeof item === 'object') {
@@ -107,12 +113,13 @@ const condenseArray = (item: any): any => {
  * @returns The formatted log message.
  */
 const debugTraverse = winston.format.printf(
-  ({ level, message, timestamp, ...metadata }: Record<string, any>) => {
+  ({ level, message, timestamp, ...metadata }: Record<string, unknown>) => {
     if (!message) {
       return `${timestamp} ${level}`;
     }
 
-    if (!message?.trim || typeof message !== 'string') {
+    // Type-safe version of the CJS logic: !message?.trim || typeof message !== 'string'
+    if (typeof message !== 'string' || !message.trim) {
       return `${timestamp} ${level}: ${JSON.stringify(message)}`;
     }
 
@@ -127,26 +134,29 @@ const debugTraverse = winston.format.printf(
         return msg;
       }
 
-      const debugValue = metadata[SPLAT_SYMBOL]?.[0];
+      // Type-safe access to SPLAT_SYMBOL using bracket notation
+      const metadataRecord = metadata as Record<string | symbol, unknown>;
+      const splatArray = metadataRecord[SPLAT_SYMBOL];
+      const debugValue = Array.isArray(splatArray) ? splatArray[0] : undefined;
 
       if (!debugValue) {
         return msg;
       }
 
-      if (Array.isArray(debugValue)) {
+      if (debugValue && Array.isArray(debugValue)) {
         msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
         return msg;
       }
 
       if (typeof debugValue !== 'object') {
-        return `${msg} ${debugValue}`;
+        return (msg += ` ${debugValue}`);
       }
 
       msg += '\n{';
 
       const copy = klona(metadata);
 
-      traverse(copy).forEach(function (this: any, value: any) {
+      traverse(copy).forEach(function (this: traverse.TraverseContext, value: unknown) {
         if (typeof this?.key === 'symbol') {
           return;
         }
@@ -180,8 +190,9 @@ const debugTraverse = winston.format.printf(
 
       msg += '\n}';
       return msg;
-    } catch (e: any) {
-      return `${msg}\n[LOGGER PARSING ERROR] ${e.message}`;
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      return (msg += `\n[LOGGER PARSING ERROR] ${errorMessage}`);
     }
   },
 );
@@ -190,18 +201,18 @@ const debugTraverse = winston.format.printf(
  * Truncates long string values in JSON log objects.
  * Prevents outputting extremely long values (e.g., base64, blobs).
  */
-const jsonTruncateFormat = winston.format((info: any) => {
+const jsonTruncateFormat = winston.format((info: winston.Logform.TransformableInfo) => {
   const truncateLongStrings = (str: string, maxLength: number): string =>
     str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
 
-  const seen = new WeakSet();
+  const seen = new WeakSet<object>();
 
-  const truncateObject = (obj: any): any => {
+  const truncateObject = (obj: unknown): unknown => {
     if (typeof obj !== 'object' || obj === null) {
       return obj;
     }
 
-    // Handle circular references
+    // Handle circular references - now with proper object type
     if (seen.has(obj)) {
       return '[Circular]';
     }
@@ -211,8 +222,10 @@ const jsonTruncateFormat = winston.format((info: any) => {
       return obj.map((item) => truncateObject(item));
     }
 
-    const newObj: Record<string, any> = {};
-    Object.entries(obj).forEach(([key, value]) => {
+    // We know this is an object at this point
+    const objectRecord = obj as Record<string, unknown>;
+    const newObj: Record<string, unknown> = {};
+    Object.entries(objectRecord).forEach(([key, value]) => {
       if (typeof value === 'string') {
         newObj[key] = truncateLongStrings(value, CONSOLE_JSON_STRING_LENGTH);
       } else {
@@ -222,7 +235,7 @@ const jsonTruncateFormat = winston.format((info: any) => {
     return newObj;
   };
 
-  return truncateObject(info);
+  return truncateObject(info) as winston.Logform.TransformableInfo;
 });
 
 export { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat };
