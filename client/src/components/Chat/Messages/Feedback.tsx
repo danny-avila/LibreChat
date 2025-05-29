@@ -126,7 +126,7 @@ function FeedbackButtons({
 
       onOther?.();
     },
-    [feedback, onFeedback, onOther, downStore],
+    [feedback, onOther, downStore],
   );
 
   const handleDownOption = useCallback(
