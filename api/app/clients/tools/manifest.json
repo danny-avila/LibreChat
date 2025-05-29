@@ -192,5 +192,18 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "Monday.com",
+    "pluginKey": "monday-tool",
+    "description": "Полная интеграция с monday.com для управления проектами, задачами, досками и автоматизации рабочих процессов. Поддерживает создание и редактирование элементов, управление группами, добавление комментариев.",
+    "icon": "https://cdn.monday.com/images/logos/monday_logo_icon.png",
+    "authConfig": [
+      {
+        "authField": "MONDAY_API_KEY",
+        "label": "Monday.com API Key",
+        "description": "Ваш Personal API Token от monday.com. Получите его: Профиль → Admin → API → Personal API Token. Подробнее: <a href='https://monday.com/developers/v2#authentication-section' target='_blank'>Monday.com API Docs</a>"
+      }
+    ]
   }
 ]
