@@ -9,17 +9,11 @@ const logDir = path.join(__dirname, '..', 'logs');
 // Type-safe environment variables
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE } = process.env;
 
-const useConsoleJson =
-  (typeof CONSOLE_JSON === 'string' && CONSOLE_JSON.toLowerCase() === 'true') ||
-  CONSOLE_JSON === true;
+const useConsoleJson = typeof CONSOLE_JSON === 'string' && CONSOLE_JSON.toLowerCase() === 'true';
 
-const useDebugConsole =
-  (typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE.toLowerCase() === 'true') ||
-  DEBUG_CONSOLE === true;
+const useDebugConsole = typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE.toLowerCase() === 'true';
 
-const useDebugLogging =
-  (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLowerCase() === 'true') ||
-  DEBUG_LOGGING === true;
+const useDebugLogging = typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLowerCase() === 'true';
 
 // Define custom log levels
 const levels: winston.config.AbstractConfigSetLevels = {
