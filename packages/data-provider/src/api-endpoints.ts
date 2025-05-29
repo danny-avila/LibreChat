@@ -187,6 +187,8 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
+
 export const files = () => '/api/files';
 
 export const images = () => `${files()}/images`;

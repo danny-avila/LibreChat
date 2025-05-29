@@ -11,6 +11,7 @@ const {
   facebookLogin,
   appleLogin,
   setupSaml,
+  openIdJwtLogin,
 } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
@@ -20,7 +21,7 @@ const { logger } = require('~/config');
  *
  * @param {Express.Application} app
  */
-const configureSocialLogins = (app) => {
+const configureSocialLogins = async (app) => {
   logger.info('Configuring social logins...');
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -63,8 +64,11 @@ const configureSocialLogins = (app) => {
     }
     app.use(session(sessionOptions));
     app.use(passport.session());
-    setupOpenId();
-
+    const config = await setupOpenId();
+    if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      logger.info('OpenID token reuse is enabled.');
+      passport.use('openidJwt', openIdJwtLogin(config));
+    }
     logger.info('OpenID Connect configured.');
   }
   if (

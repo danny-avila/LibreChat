@@ -129,7 +129,20 @@ export type UpdateAgentVariables = {
   data: AgentUpdateParams;
 };
 
-export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
+export type DuplicateVersionError = Error & {
+  statusCode?: number;
+  details?: {
+    duplicateVersion?: unknown;
+    versionIndex?: number;
+  };
+};
+
+export type UpdateAgentMutationOptions = MutationOptions<
+  Agent,
+  UpdateAgentVariables,
+  unknown,
+  DuplicateVersionError
+>;
 
 export type DuplicateAgentBody = {
   agent_id: string;
@@ -158,6 +171,13 @@ export type DeleteAgentActionVariables = {
 };
 
 export type DeleteAgentActionOptions = MutationOptions<void, DeleteAgentActionVariables>;
+
+export type RevertAgentVersionVariables = {
+  agent_id: string;
+  version_index: number;
+};
+
+export type RevertAgentVersionOptions = MutationOptions<Agent, RevertAgentVersionVariables>;
 
 export type DeleteConversationOptions = MutationOptions<
   types.TDeleteConversationResponse,

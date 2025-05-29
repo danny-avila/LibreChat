@@ -7,7 +7,8 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
-// eslint-disable-next-line import/no-cycle
+import { useAttachments } from '~/hooks';
+
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -24,6 +25,11 @@ export default function Message(props: TMessageProps) {
     currentEditId,
     setCurrentEditId,
   } = props;
+
+  const { attachments, searchResults } = useAttachments({
+    messageId: message?.messageId,
+    attachments: message?.attachments,
+  });
 
   if (!message) {
     return null;
@@ -48,8 +54,8 @@ export default function Message(props: TMessageProps) {
   return (
     <>
       <div className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent">
-        <div className="m-auto justify-center p-4 py-2 md:gap-6 ">
-          <div className="final-completion group mx-auto flex flex-1 gap-3 md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
+        <div className="m-auto justify-center p-4 py-2 md:gap-6">
+          <div className="final-completion group mx-auto flex flex-1 gap-3 md:max-w-[47rem] md:px-5 lg:px-1 xl:max-w-[55rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
@@ -68,13 +74,18 @@ export default function Message(props: TMessageProps) {
                   <MessageContext.Provider
                     value={{
                       messageId,
+                      isExpanded: false,
                       conversationId: conversation?.conversationId,
                     }}
                   >
                     {/* Legacy Plugins */}
                     {message.plugin && <Plugin plugin={message.plugin} />}
                     {message.content ? (
-                      <SearchContent message={message} />
+                      <SearchContent
+                        message={message}
+                        attachments={attachments}
+                        searchResults={searchResults}
+                      />
                     ) : (
                       <MessageContent
                         edit={false}
@@ -100,7 +111,7 @@ export default function Message(props: TMessageProps) {
                   siblingCount={siblingCount}
                   setSiblingIdx={setSiblingIdx}
                 />
-                <MinimalHoverButtons message={message} />
+                <MinimalHoverButtons message={message} searchResults={searchResults} />
               </SubRow>
             </div>
           </div>

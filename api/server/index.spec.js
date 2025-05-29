@@ -4,6 +4,10 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
+jest.mock('~/server/services/Config/loadCustomConfig', () => {
+  return jest.fn(() => Promise.resolve({}));
+});
+
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
   jest.setTimeout(30_000);

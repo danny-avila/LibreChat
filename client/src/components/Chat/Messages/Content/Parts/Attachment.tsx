@@ -1,24 +1,27 @@
 import { memo, useState, useEffect } from 'react';
-import { imageExtRegex } from 'librechat-data-provider';
+import { imageExtRegex, Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useAttachmentLink } from './LogLink';
 import { cn } from '~/utils';
 
-const FileAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
-  const { handleDownload } = useAttachmentLink({
-    href: attachment.filepath,
-    filename: attachment.filename,
-  });
-  const extension = attachment.filename.split('.').pop();
+const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const { handleDownload } = useAttachmentLink({
+    href: attachment.filepath ?? '',
+    filename: attachment.filename ?? '',
+  });
+  const extension = attachment.filename?.split('.').pop();
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
     return () => clearTimeout(timer);
   }, []);
 
+  if (!attachment.filepath) {
+    return null;
+  }
   return (
     <div
       className={cn(
@@ -81,6 +84,9 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   if (!attachment) {
     return null;
   }
+  if (attachment.type === Tools.web_search) {
+    return null;
+  }
 
   const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
   const isImage =
@@ -88,6 +94,8 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
 
   if (isImage) {
     return <ImageAttachment attachment={attachment} />;
+  } else if (!attachment.filepath) {
+    return null;
   }
   return <FileAttachment attachment={attachment} />;
 }
@@ -110,7 +118,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
     if (isImage) {
       imageAttachments.push(attachment);
-    } else {
+    } else if (attachment.type !== Tools.web_search) {
       fileAttachments.push(attachment);
     }
   });
@@ -119,9 +127,11 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     <>
       {fileAttachments.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2.5">
-          {fileAttachments.map((attachment, index) => (
-            <FileAttachment attachment={attachment} key={`file-${index}`} />
-          ))}
+          {fileAttachments.map((attachment, index) =>
+            attachment.filepath ? (
+              <FileAttachment attachment={attachment} key={`file-${index}`} />
+            ) : null,
+          )}
         </div>
       )}
       {imageAttachments.length > 0 && (

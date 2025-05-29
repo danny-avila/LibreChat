@@ -4,10 +4,11 @@ const googleLogin = require('./googleStrategy');
 const githubLogin = require('./githubStrategy');
 const discordLogin = require('./discordStrategy');
 const facebookLogin = require('./facebookStrategy');
-const setupOpenId = require('./openidStrategy');
+const { setupOpenId, getOpenIdConfig } = require('./openidStrategy');
 const jwtLogin = require('./jwtStrategy');
 const ldapLogin = require('./ldapStrategy');
 const { setupSaml } = require('./samlStrategy');
+const openIdJwtLogin = require('./openIdJwtStrategy');
 
 module.exports = {
   appleLogin,
@@ -18,6 +19,8 @@ module.exports = {
   jwtLogin,
   facebookLogin,
   setupOpenId,
+  getOpenIdConfig,
   ldapLogin,
   setupSaml,
+  openIdJwtLogin,
 };

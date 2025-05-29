@@ -194,8 +194,8 @@ export default function OpenAIImageGen({
           <Image
             altText={filename}
             imagePath={filepath ?? ''}
-            width={dimensions.width}
-            height={dimensions.height}
+            width={Number(dimensions.width?.split('px')[0])}
+            height={Number(dimensions.height?.split('px')[0])}
             placeholderDimensions={{ width: dimensions.width, height: dimensions.height }}
           />
         </div>

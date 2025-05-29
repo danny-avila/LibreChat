@@ -56,6 +56,12 @@
  */
 
 /**
+ * @exports MessageContentComplex
+ * @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex
+ * @memberof typedefs
+ */
+
+/**
  * @exports EventHandler
  * @typedef {import('@librechat/agents').EventHandler} EventHandler
  * @memberof typedefs
@@ -186,6 +192,8 @@
  * agent_index: number;
  * last_agent_index: number;
  * hide_sequential_outputs: boolean;
+ * version?: 'v1' | 'v2';
+ * streamMode?: string
  * }> & {
  * toolCall?: LangChainToolCall & { stepId?: string };
  * }} GraphRunnableConfig
@@ -471,6 +479,25 @@
 /**
  * @exports MessageContentImageUrl
  * @typedef {import('librechat-data-provider').Agents.MessageContentImageUrl} MessageContentImageUrl
+ * @memberof typedefs
+ */
+/** Web Search */
+
+/**
+ * @exports SearchResult
+ * @typedef {import('@librechat/agents').SearchResult} SearchResult
+ * @memberof typedefs
+ */
+
+/**
+ * @exports SearchResultData
+ * @typedef {import('@librechat/agents').SearchResultData} SearchResultData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ValidSource
+ * @typedef {import('librechat-data-provider').ValidSource} ValidSource
  * @memberof typedefs
  */
 
@@ -849,6 +876,12 @@
  */
 
 /**
+ * @exports IPluginAuth
+ * @typedef {import('@librechat/data-schemas').IPluginAuth} IPluginAuth
+ * @memberof typedefs
+ */
+
+/**
  * @exports ObjectId
  * @typedef {import('mongoose').Types.ObjectId} ObjectId
  * @memberof typedefs
@@ -987,6 +1020,18 @@
 /**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TEphemeralAgent
+ * @typedef {import('librechat-data-provider').TEphemeralAgent} TEphemeralAgent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TWebSearchKeys
+ * @typedef {import('librechat-data-provider').TWebSearchKeys} TWebSearchKeys
  * @memberof typedefs
  */
 

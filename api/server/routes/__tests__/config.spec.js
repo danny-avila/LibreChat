@@ -1,11 +1,11 @@
 jest.mock('~/cache/getLogStores');
 const request = require('supertest');
 const express = require('express');
-const routes = require('../');
+const configRoute = require('../config');
 // file deepcode ignore UseCsurfForExpress/test: test
 const app = express();
 app.disable('x-powered-by');
-app.use('/api/config', routes.config);
+app.use('/api/config', configRoute);
 
 afterEach(() => {
   delete process.env.APP_TITLE;

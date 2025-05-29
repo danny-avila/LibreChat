@@ -93,7 +93,7 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
-export function getUserBalance(): Promise<string> {
+export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
 
@@ -430,6 +430,14 @@ export const listAgents = (params: a.AgentListParams): Promise<a.AgentListRespon
     }),
   );
 };
+
+export const revertAgentVersion = ({
+  agent_id,
+  version_index,
+}: {
+  agent_id: string;
+  version_index: number;
+}): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
 /* Tools */
 

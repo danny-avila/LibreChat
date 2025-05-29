@@ -649,3 +649,58 @@ describe('Grok Model Tests - Tokens', () => {
     });
   });
 });
+
+describe('Claude Model Tests', () => {
+  it('should return correct context length for Claude 4 models', () => {
+    expect(getModelMaxTokens('claude-sonnet-4')).toBe(200000);
+    expect(getModelMaxTokens('claude-opus-4')).toBe(200000);
+  });
+
+  it('should handle Claude 4 model name variations with different prefixes and suffixes', () => {
+    const modelVariations = [
+      'claude-sonnet-4',
+      'claude-sonnet-4-20240229',
+      'claude-sonnet-4-latest',
+      'anthropic/claude-sonnet-4',
+      'claude-sonnet-4/anthropic',
+      'claude-sonnet-4-preview',
+      'claude-sonnet-4-20240229-preview',
+      'claude-opus-4',
+      'claude-opus-4-20240229',
+      'claude-opus-4-latest',
+      'anthropic/claude-opus-4',
+      'claude-opus-4/anthropic',
+      'claude-opus-4-preview',
+      'claude-opus-4-20240229-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(getModelMaxTokens(model)).toBe(200000);
+    });
+  });
+
+  it('should match model names correctly for Claude 4 models', () => {
+    const modelVariations = [
+      'claude-sonnet-4',
+      'claude-sonnet-4-20240229',
+      'claude-sonnet-4-latest',
+      'anthropic/claude-sonnet-4',
+      'claude-sonnet-4/anthropic',
+      'claude-sonnet-4-preview',
+      'claude-sonnet-4-20240229-preview',
+      'claude-opus-4',
+      'claude-opus-4-20240229',
+      'claude-opus-4-latest',
+      'anthropic/claude-opus-4',
+      'claude-opus-4/anthropic',
+      'claude-opus-4-preview',
+      'claude-opus-4-20240229-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const isSonnet = model.includes('sonnet');
+      const expectedModel = isSonnet ? 'claude-sonnet-4' : 'claude-opus-4';
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe(expectedModel);
+    });
+  });
+});
