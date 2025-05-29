@@ -309,7 +309,7 @@ userSchema.statics.deleteUserById = async function (userId: string) {
  * @param {MongoUser} user - The user for whom the token is being generated.
  * @returns {Promise<string>} A promise that resolves to a JWT token.
  */
-userSchema.methods.generateToken = async function (user: IUser): Promise<string> {
+userSchema.statics.generateToken = async function (user: IUser): Promise<string> {
   if (!user) {
     throw new Error('No user provided');
   }
