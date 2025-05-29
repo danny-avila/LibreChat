@@ -63,7 +63,7 @@
     "jsonwebtoken": "^9.0.2",
     "klona": "^2.0.6",
     "lodash": "^4.17.21",
-    "meilisearch": "^0.50.0",
+    "meilisearch": "^0.38.0",
     "mongoose": "^8.12.1",
     "traverse": "^0.6.11",
     "winston": "^3.17.0",
