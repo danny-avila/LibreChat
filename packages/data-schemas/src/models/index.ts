@@ -1,27 +1,27 @@
 import type { Mongoose } from 'mongoose';
-import {
-  agentSchema,
-  assistantSchema,
-  balanceSchema,
-  categoriesSchema,
-  messageSchema,
-  sessionSchema,
-  tokenSchema,
-  userSchema,
-  conversationTagSchema,
-  convoSchema,
-  fileSchema,
-  keySchema,
-  presetSchema,
-  projectSchema,
-  promptSchema,
-  roleSchema,
-  shareSchema,
-  toolCallSchema,
-  transactionSchema,
-  bannerSchema,
-  promptGroupSchema,
-} from '..';
+import { default as actionSchema } from '../schema/action';
+import { default as agentSchema } from '../schema/agent';
+import { default as assistantSchema } from '../schema/assistant';
+import { default as balanceSchema } from '../schema/balance';
+import { default as bannerSchema } from '../schema/banner';
+import { default as categoriesSchema } from '../schema/categories';
+import { default as conversationTagSchema } from '../schema/conversationTag';
+import { default as convoSchema } from '../schema/convo';
+import { default as fileSchema } from '../schema/file';
+import { default as keySchema } from '../schema/key';
+import { default as messageSchema } from '../schema/message';
+import { default as pluginAuthSchema } from '../schema/pluginAuth';
+import { default as presetSchema } from '../schema/preset';
+import { default as projectSchema } from '../schema/project';
+import { default as promptSchema } from '../schema/prompt';
+import { default as promptGroupSchema } from '../schema/promptGroup';
+import { default as roleSchema } from '../schema/role';
+import { default as sessionSchema } from '../schema/session';
+import { default as shareSchema } from '../schema/share';
+import { default as tokenSchema } from '../schema/token';
+import { default as toolCallSchema } from '../schema/toolCall';
+import { default as transactionSchema } from '../schema/transaction';
+import { default as userSchema } from '../schema/user';
 import mongoMeili from './plugins/mongoMeili';
 
 export const registerModels = (mongoose: Mongoose) => {
@@ -29,6 +29,7 @@ export const registerModels = (mongoose: Mongoose) => {
   const Session = registerSessionModel(mongoose);
   const Token = registerTokenModel(mongoose);
   const Message = registerMessageModel(mongoose);
+  const Action = registerActionModel(mongoose);
   const Agent = registerAgentModel(mongoose);
   const Assistant = registerAssistantModel(mongoose);
   const Balance = registerBalanceModel(mongoose);
@@ -37,6 +38,7 @@ export const registerModels = (mongoose: Mongoose) => {
   const ConversationTag = registerConversationTagModel(mongoose);
   const File = registerFileModel(mongoose);
   const Key = registerKeyModel(mongoose);
+  const PluginAuth = registerPluginAuthModel(mongoose);
   const Preset = registerPresetModel(mongoose);
   const Project = registerProjectModel(mongoose);
   const Prompt = registerPromptModel(mongoose);
@@ -52,6 +54,7 @@ export const registerModels = (mongoose: Mongoose) => {
     Session,
     Token,
     Message,
+    Action,
     Agent,
     Assistant,
     Balance,
@@ -60,10 +63,11 @@ export const registerModels = (mongoose: Mongoose) => {
     ConversationTag,
     File,
     Key,
+    PluginAuth,
     Preset,
     Project,
     Prompt,
-    PromptGroup
+    PromptGroup,
     Role,
     SharedLink,
     ToolCall,
@@ -84,8 +88,11 @@ const registerTokenModel = (mongoose: Mongoose) => {
   return mongoose.models.Token || mongoose.model('Token', tokenSchema);
 };
 
-const registerMessageModel = (mongoose: Mongoose) => {
+const registerActionModel = (mongoose: Mongoose) => {
+  return mongoose.models.Action || mongoose.model('Action', actionSchema);
+};
 
+const registerMessageModel = (mongoose: Mongoose) => {
   if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
     messageSchema.plugin(mongoMeili, {
       host: process.env.MEILI_HOST,
@@ -130,6 +137,11 @@ const registerFileModel = (mongoose: Mongoose) => {
 const registerKeyModel = (mongoose: Mongoose) => {
   return mongoose.models.Key || mongoose.model('Key', keySchema);
 };
+
+const registerPluginAuthModel = (mongoose: Mongoose) => {
+  return mongoose.models.PluginAuth || mongoose.model('PluginAuth', pluginAuthSchema);
+};
+
 const registerPresetModel = (mongoose: Mongoose) => {
   return mongoose.models.Preset || mongoose.model('Preset', presetSchema);
 };
@@ -156,7 +168,7 @@ const registerToolCallModel = (mongoose: Mongoose) => {
 };
 
 const registerTransactionModel = (mongoose: Mongoose) => {
-  return mongoose.models.Transaction || mongoose.model('Trasaction', transactionSchema);
+  return mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
 };
 const registerConversationModel = (mongoose: Mongoose) => {
   if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
@@ -168,6 +180,6 @@ const registerConversationModel = (mongoose: Mongoose) => {
       primaryKey: 'conversationId',
     });
   }
-  
+
   return mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 };
