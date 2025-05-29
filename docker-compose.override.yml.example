@@ -123,6 +123,20 @@
 #    volumes:
 #      - ./ollama:/root/.ollama
 
+# # ADD TIKA
+#  tika:
+#    image: apache/tika:latest-full
+#    container_name: tika
+#    ports:
+#      - "${TIKA_PORT-9998}:9998"
+#    configs:
+#      - source: tika_config_3
+#        target: /tika-config.xml
+#
+# configs:
+#   tika_config_3:
+#     file: ./tika-config.xml
+
 # # ADD LITELLM BASIC - NEED TO CONFIGURE litellm-config.yaml, ONLY NEED ENV TO ENABLE REDIS FOR CACHING OR LANGFUSE FOR MONITORING
 #  litellm:
 #    image: ghcr.io/berriai/litellm:main-latest
