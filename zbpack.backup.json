@@ -1,0 +1,4 @@
+{
+  "build_command": "npm install && cd client && NODE_ENV=production npx vite build && cd .. && npm prune --production",
+  "start_command": "npm run backend"
+}
