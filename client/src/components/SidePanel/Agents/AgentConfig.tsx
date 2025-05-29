@@ -13,6 +13,7 @@ import { processAgentOption } from '~/utils';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
+import SearchForm from './Search/Form';
 import { useLocalize } from '~/hooks';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
@@ -71,6 +72,10 @@ export default function AgentConfig({
   );
   const fileSearchEnabled = useMemo(
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
+    [agentsConfig],
+  );
+  const webSearchEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.web_search) ?? false,
     [agentsConfig],
   );
   const codeEnabled = useMemo(
@@ -257,13 +262,19 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
-        {(codeEnabled || fileSearchEnabled || artifactsEnabled || ocrEnabled) && (
+        {(codeEnabled ||
+          fileSearchEnabled ||
+          artifactsEnabled ||
+          ocrEnabled ||
+          webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
               {localize('com_assistants_capabilities')}
             </label>
             {/* Code Execution */}
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
+            {/* Web Search */}
+            {webSearchEnabled && <SearchForm />}
             {/* File Context (OCR) */}
             {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
             {/* Artifacts */}

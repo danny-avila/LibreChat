@@ -121,6 +121,14 @@ router.delete('/', async (req, res) => {
       await processDeleteRequest({ req, files: assistantFiles });
       res.status(200).json({ message: 'File associations removed successfully from assistant' });
       return;
+    } else if (
+      req.body.assistant_id &&
+      req.body.files?.[0]?.filepath === EModelEndpoint.azureAssistants
+    ) {
+      await processDeleteRequest({ req, files: req.body.files });
+      return res
+        .status(200)
+        .json({ message: 'File associations removed successfully from Azure Assistant' });
     }
 
     await processDeleteRequest({ req, files: dbFiles });
@@ -273,6 +281,10 @@ router.post('/', async (req, res) => {
 
     if (error.message?.includes('file_ids')) {
       message += ': ' + error.message;
+    }
+
+    if (error.message?.includes('Invalid file format')) {
+      message = error.message;
     }
 
     // TODO: delete remote file if it exists

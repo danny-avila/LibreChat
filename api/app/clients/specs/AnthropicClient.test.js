@@ -15,7 +15,7 @@ describe('AnthropicClient', () => {
     {
       role: 'user',
       isCreatedByUser: true,
-      text: 'What\'s up',
+      text: "What's up",
       messageId: '3',
       parentMessageId: '2',
     },
@@ -170,7 +170,7 @@ describe('AnthropicClient', () => {
       client.options.modelLabel = 'Claude-2';
       const result = await client.buildMessages(messages, parentMessageId);
       const { prompt } = result;
-      expect(prompt).toContain('Human\'s name: John');
+      expect(prompt).toContain("Human's name: John");
       expect(prompt).toContain('You are Claude-2');
     });
   });
@@ -242,6 +242,64 @@ describe('AnthropicClient', () => {
       expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
         'prompt-caching-2024-07-31',
       );
+    });
+
+    describe('Claude 4 model headers', () => {
+      it('should add "prompt-caching" beta header for claude-sonnet-4 model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-sonnet-4-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+
+      it('should add "prompt-caching" beta header for claude-opus-4 model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-opus-4-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+
+      it('should add "prompt-caching" beta header for claude-4-sonnet model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-4-sonnet-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
+
+      it('should add "prompt-caching" beta header for claude-4-opus model', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelOptions = {
+          model: 'claude-4-opus-20250514',
+        };
+        client.setOptions({ modelOptions, promptCache: true });
+        const anthropicClient = client.getClient(modelOptions);
+        expect(anthropicClient._options.defaultHeaders).toBeDefined();
+        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+          'prompt-caching-2024-07-31',
+        );
+      });
     });
 
     it('should not add beta header for claude-3-5-sonnet-latest model', () => {
@@ -449,6 +507,34 @@ describe('AnthropicClient', () => {
       client.setOptions({
         modelOptions: {
           model: 'claude-3.7-sonnet',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should not cap maxOutputTokens for Claude 4 Sonnet models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 10; // 40,960 tokens
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20250514',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should not cap maxOutputTokens for Claude 4 Opus models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 6; // 24,576 tokens (under 32K limit)
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20250514',
           maxOutputTokens: highTokenValue,
         },
       });
@@ -728,5 +814,224 @@ describe('AnthropicClient', () => {
 
     expect(capturedOptions).toHaveProperty('topK', 10);
     expect(capturedOptions).toHaveProperty('topP', 0.9);
+  });
+
+  describe('isClaudeLatest', () => {
+    it('should set isClaudeLatest to true for claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-sonnet-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-3.5 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.5-sonnet-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-sonnet-4 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-opus-4 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to true for claude-3.5-haiku models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3.5-haiku-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(true);
+    });
+
+    it('should set isClaudeLatest to false for claude-2 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-instant models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-instant',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-sonnet-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-3-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-opus-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-3-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+
+    it('should set isClaudeLatest to false for claude-haiku-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-haiku-3-20240229',
+        },
+      });
+      expect(client.isClaudeLatest).toBe(false);
+    });
+  });
+
+  describe('configureReasoning', () => {
+    it('should enable thinking for claude-opus-4 and claude-sonnet-4 models', async () => {
+      const client = new AnthropicClient('test-api-key');
+      // Create a mock async generator function
+      async function* mockAsyncGenerator() {
+        yield { type: 'message_start', message: { usage: {} } };
+        yield { delta: { text: 'Test response' } };
+        yield { type: 'message_delta', usage: {} };
+      }
+
+      // Mock createResponse to return the async generator
+      jest.spyOn(client, 'createResponse').mockImplementation(() => {
+        return mockAsyncGenerator();
+      });
+
+      // Test claude-opus-4
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20250514',
+        },
+        thinking: true,
+        thinkingBudget: 2000,
+      });
+
+      let capturedOptions = null;
+      jest.spyOn(client, 'getClient').mockImplementation((options) => {
+        capturedOptions = options;
+        return {};
+      });
+
+      const payload = [{ role: 'user', content: 'Test message' }];
+      await client.sendCompletion(payload, {});
+
+      expect(capturedOptions).toHaveProperty('thinking');
+      expect(capturedOptions.thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 2000,
+      });
+
+      // Test claude-sonnet-4
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20250514',
+        },
+        thinking: true,
+        thinkingBudget: 2000,
+      });
+
+      await client.sendCompletion(payload, {});
+
+      expect(capturedOptions).toHaveProperty('thinking');
+      expect(capturedOptions.thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 2000,
+      });
+    });
+  });
+});
+
+describe('Claude Model Tests', () => {
+  it('should handle Claude 3 and 4 series models correctly', () => {
+    const client = new AnthropicClient('test-key');
+    // Claude 3 series models
+    const claude3Models = [
+      'claude-3-opus-20240229',
+      'claude-3-sonnet-20240229',
+      'claude-3-haiku-20240307',
+      'claude-3-5-sonnet-20240620',
+      'claude-3-5-haiku-20240620',
+      'claude-3.5-sonnet-20240620',
+      'claude-3.5-haiku-20240620',
+      'claude-3.7-sonnet-20240620',
+      'claude-3.7-haiku-20240620',
+      'anthropic/claude-3-opus-20240229',
+      'claude-3-opus-20240229/anthropic',
+    ];
+
+    // Claude 4 series models
+    const claude4Models = [
+      'claude-sonnet-4-20250514',
+      'claude-opus-4-20250514',
+      'claude-4-sonnet-20250514',
+      'claude-4-opus-20250514',
+      'anthropic/claude-sonnet-4-20250514',
+      'claude-sonnet-4-20250514/anthropic',
+    ];
+
+    // Test Claude 3 series
+    claude3Models.forEach((model) => {
+      client.setOptions({ modelOptions: { model } });
+      expect(
+        /claude-[3-9]/.test(client.modelOptions.model) ||
+          /claude-(?:sonnet|opus|haiku)-[4-9]/.test(client.modelOptions.model),
+      ).toBe(true);
+    });
+
+    // Test Claude 4 series
+    claude4Models.forEach((model) => {
+      client.setOptions({ modelOptions: { model } });
+      expect(
+        /claude-[3-9]/.test(client.modelOptions.model) ||
+          /claude-(?:sonnet|opus|haiku)-[4-9]/.test(client.modelOptions.model),
+      ).toBe(true);
+    });
+
+    // Test non-Claude 3/4 models
+    const nonClaudeModels = ['claude-2', 'claude-instant', 'gpt-4', 'gpt-3.5-turbo'];
+
+    nonClaudeModels.forEach((model) => {
+      client.setOptions({ modelOptions: { model } });
+      expect(
+        /claude-[3-9]/.test(client.modelOptions.model) ||
+          /claude-(?:sonnet|opus|haiku)-[4-9]/.test(client.modelOptions.model),
+      ).toBe(false);
+    });
   });
 });

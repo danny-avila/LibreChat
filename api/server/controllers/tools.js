@@ -6,6 +6,7 @@ const {
   Permissions,
   ToolCallTypes,
   PermissionTypes,
+  loadWebSearchAuth,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
@@ -25,6 +26,36 @@ const toolAccessPermType = {
 };
 
 /**
+ * Verifies web search authentication, ensuring each category has at least
+ * one fully authenticated service.
+ *
+ * @param {ServerRequest} req - The request object
+ * @param {ServerResponse} res - The response object
+ * @returns {Promise<void>} A promise that resolves when the function has completed
+ */
+const verifyWebSearchAuth = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    /** @type {TCustomConfig['webSearch']} */
+    const webSearchConfig = req.app.locals?.webSearch || {};
+    const result = await loadWebSearchAuth({
+      userId,
+      loadAuthValues,
+      webSearchConfig,
+      throwError: false,
+    });
+
+    return res.status(200).json({
+      authenticated: result.authenticated,
+      authTypes: result.authTypes,
+    });
+  } catch (error) {
+    console.error('Error in verifyWebSearchAuth:', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * @param {ServerRequest} req - The request object, containing information about the HTTP request.
  * @param {ServerResponse} res - The response object, used to send back the desired HTTP response.
  * @returns {Promise<void>} A promise that resolves when the function has completed.
@@ -32,6 +63,9 @@ const toolAccessPermType = {
 const verifyToolAuth = async (req, res) => {
   try {
     const { toolId } = req.params;
+    if (toolId === Tools.web_search) {
+      return await verifyWebSearchAuth(req, res);
+    }
     const authFields = fieldsMap[toolId];
     if (!authFields) {
       res.status(404).json({ message: 'Tool not found' });
