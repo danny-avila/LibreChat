@@ -1,10 +1,5 @@
-const mongoose = require('mongoose');
-const Conversation = require('./schema/convoSchema');
 const logger = require('~/config/winston');
-
-const { conversationTagSchema } = require('@librechat/data-schemas');
-
-const ConversationTag = mongoose.model('ConversationTag', conversationTagSchema);
+const db = require('~/lib/db/connectDb');
 
 /**
  * Retrieves all conversation tags for a user.
@@ -13,7 +8,7 @@ const ConversationTag = mongoose.model('ConversationTag', conversationTagSchema)
  */
 const getConversationTags = async (user) => {
   try {
-    return await ConversationTag.find({ user }).sort({ position: 1 }).lean();
+    return await db.models.ConversationTag.find({ user }).sort({ position: 1 }).lean();
   } catch (error) {
     logger.error('[getConversationTags] Error getting conversation tags', error);
     throw new Error('Error getting conversation tags');
@@ -34,6 +29,7 @@ const createConversationTag = async (user, data) => {
   try {
     const { tag, description, addToConversation, conversationId } = data;
 
+    const { ConversationTag, Conversation } = db.models;
     const existingTag = await ConversationTag.findOne({ user, tag }).lean();
     if (existingTag) {
       return existingTag;
@@ -88,6 +84,7 @@ const updateConversationTag = async (user, oldTag, data) => {
   try {
     const { tag: newTag, description, position } = data;
 
+    const { ConversationTag, Conversation } = db.models;
     const existingTag = await ConversationTag.findOne({ user, tag: oldTag }).lean();
     if (!existingTag) {
       return null;
@@ -140,15 +137,15 @@ const adjustPositions = async (user, oldPosition, newPosition) => {
   const position =
     oldPosition < newPosition
       ? {
-        $gt: Math.min(oldPosition, newPosition),
-        $lte: Math.max(oldPosition, newPosition),
-      }
+          $gt: Math.min(oldPosition, newPosition),
+          $lte: Math.max(oldPosition, newPosition),
+        }
       : {
-        $gte: Math.min(oldPosition, newPosition),
-        $lt: Math.max(oldPosition, newPosition),
-      };
+          $gte: Math.min(oldPosition, newPosition),
+          $lt: Math.max(oldPosition, newPosition),
+        };
 
-  await ConversationTag.updateMany(
+  await db.models.ConversationTag.updateMany(
     {
       user,
       position,
@@ -165,6 +162,7 @@ const adjustPositions = async (user, oldPosition, newPosition) => {
  */
 const deleteConversationTag = async (user, tag) => {
   try {
+    const { ConversationTag, Conversation } = db.models;
     const deletedTag = await ConversationTag.findOneAndDelete({ user, tag }).lean();
     if (!deletedTag) {
       return null;
@@ -193,6 +191,7 @@ const deleteConversationTag = async (user, tag) => {
  */
 const updateTagsForConversation = async (user, conversationId, tags) => {
   try {
+    const { ConversationTag, Conversation } = db.models;
     const conversation = await Conversation.findOne({ user, conversationId }).lean();
     if (!conversation) {
       throw new Error('Conversation not found');

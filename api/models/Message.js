@@ -1,7 +1,6 @@
 const { z } = require('zod');
-const Message = require('./schema/messageSchema');
 const { logger } = require('~/config');
-
+const db = require('~/lib/db/connectDb');
 const idSchema = z.string().uuid();
 
 /**
@@ -68,8 +67,7 @@ async function saveMessage(req, params, metadata) {
       logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
       update.tokenCount = 0;
     }
-
-    const message = await Message.findOneAndUpdate(
+    const message = await db.models.Message.findOneAndUpdate(
       { messageId: params.messageId, user: req.user.id },
       update,
       { upsert: true, new: true },
@@ -87,7 +85,7 @@ async function saveMessage(req, params, metadata) {
 
       try {
         // Try to find the existing message with this ID
-        const existingMessage = await Message.findOne({
+        const existingMessage = await db.models.Message.findOne({
           messageId: params.messageId,
           user: req.user.id,
         });
@@ -140,8 +138,7 @@ async function bulkSaveMessages(messages, overrideTimestamp = false) {
         upsert: true,
       },
     }));
-
-    const result = await Message.bulkWrite(bulkOps);
+    const result = await db.models.Message.bulkWrite(bulkOps);
     return result;
   } catch (err) {
     logger.error('Error saving messages in bulk:', err);
@@ -183,7 +180,7 @@ async function recordMessage({
       ...rest,
     };
 
-    return await Message.findOneAndUpdate({ user, messageId }, message, {
+    return await db.models.Message.findOneAndUpdate({ user, messageId }, message, {
       upsert: true,
       new: true,
     });
@@ -207,7 +204,7 @@ async function recordMessage({
  */
 async function updateMessageText(req, { messageId, text }) {
   try {
-    await Message.updateOne({ messageId, user: req.user.id }, { text });
+    await db.models?.Message.updateOne({ messageId, user: req.user.id }, { text });
   } catch (err) {
     logger.error('Error updating message text:', err);
     throw err;
@@ -235,7 +232,7 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
-    const updatedMessage = await Message.findOneAndUpdate(
+    const updatedMessage = await db.models.Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
       {
@@ -279,10 +276,10 @@ async function updateMessage(req, message, metadata) {
  */
 async function deleteMessagesSince(req, { messageId, conversationId }) {
   try {
-    const message = await Message.findOne({ messageId, user: req.user.id }).lean();
+    const message = await db.models.Message.findOne({ messageId, user: req.user.id }).lean();
 
     if (message) {
-      const query = Message.find({ conversationId, user: req.user.id });
+      const query = db.models.Message.find({ conversationId, user: req.user.id });
       return await query.deleteMany({
         createdAt: { $gt: message.createdAt },
       });
@@ -306,10 +303,10 @@ async function deleteMessagesSince(req, { messageId, conversationId }) {
 async function getMessages(filter, select) {
   try {
     if (select) {
-      return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+      return await db.models.Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
     }
 
-    return await Message.find(filter).sort({ createdAt: 1 }).lean();
+    return await db.models.Message.find(filter).sort({ createdAt: 1 }).lean();
   } catch (err) {
     logger.error('Error getting messages:', err);
     throw err;
@@ -326,7 +323,7 @@ async function getMessages(filter, select) {
  */
 async function getMessage({ user, messageId }) {
   try {
-    return await Message.findOne({
+    return await db.models.Message.findOne({
       user,
       messageId,
     }).lean();
@@ -347,7 +344,7 @@ async function getMessage({ user, messageId }) {
  */
 async function deleteMessages(filter) {
   try {
-    return await Message.deleteMany(filter);
+    return await db.models.Message.deleteMany(filter);
   } catch (err) {
     logger.error('Error deleting messages:', err);
     throw err;
@@ -355,7 +352,6 @@ async function deleteMessages(filter) {
 }
 
 module.exports = {
-  Message,
   saveMessage,
   bulkSaveMessages,
   recordMessage,

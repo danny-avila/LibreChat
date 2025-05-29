@@ -1,9 +1,7 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
-const Conversation = require('~/models/schema/convoSchema');
-const Message = require('~/models/schema/messageSchema');
-const User = require('~/models/User');
+const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -16,6 +14,7 @@ const connect = require('./connect');
   console.purple('Show the stats of all users');
   console.purple('-----------------------------');
 
+  const { User, Conversation, Message } = db.models;
   let users = await User.find({});
   let userData = [];
   for (const user of users) {

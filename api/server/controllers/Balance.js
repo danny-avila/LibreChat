@@ -1,7 +1,6 @@
-const Balance = require('~/models/Balance');
-
+const db = require('~/lib/db/connectDb');
 async function balanceController(req, res) {
-  const balanceData = await Balance.findOne(
+  const balanceData = await db.models.Balance.findOne(
     { user: req.user.id },
     '-_id tokenCredits autoRefillEnabled refillIntervalValue refillIntervalUnit lastRefill refillAmount',
   ).lean();

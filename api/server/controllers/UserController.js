@@ -8,15 +8,11 @@ const {
 const {
   Balance,
   getFiles,
-  updateUser,
   deleteFiles,
   deleteConvos,
   deletePresets,
   deleteMessages,
-  deleteUserById,
-  deleteAllUserSessions,
 } = require('~/models');
-const User = require('~/models/User');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
@@ -26,6 +22,7 @@ const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { Transaction } = require('~/models/Transaction');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */
@@ -39,7 +36,7 @@ const getUserController = async (req, res) => {
     const originalAvatar = userData.avatar;
     try {
       userData.avatar = await getNewS3URL(userData.avatar);
-      await updateUser(userData.id, { avatar: userData.avatar });
+      await db.models.User.updateUser(userData.id, { avatar: userData.avatar });
     } catch (error) {
       userData.avatar = originalAvatar;
       logger.error('Error getting new S3 URL for avatar:', error);
@@ -50,7 +47,7 @@ const getUserController = async (req, res) => {
 
 const getTermsStatusController = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await db.models.User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -63,7 +60,7 @@ const getTermsStatusController = async (req, res) => {
 
 const acceptTermsController = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
+    const user = await db.models.User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -160,7 +157,7 @@ const deleteUserController = async (req, res) => {
 
   try {
     await deleteMessages({ user: user.id }); // delete user messages
-    await deleteAllUserSessions({ userId: user.id }); // delete user sessions
+    await db.models.Session.deleteAllUserSessions({ userId: user.id }); // delete user sessions
     await Transaction.deleteMany({ user: user.id }); // delete user transactions
     await deleteUserKey({ userId: user.id, all: true }); // delete user keys
     await Balance.deleteMany({ user: user._id }); // delete user balances
@@ -168,7 +165,7 @@ const deleteUserController = async (req, res) => {
     /* TODO: Delete Assistant Threads */
     await deleteConvos(user.id); // delete user convos
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
-    await deleteUserById(user.id); // delete user
+    await db.models.User.deleteUserById(user.id); // delete user
     await deleteAllSharedLinks(user.id); // delete user shared links
     await deleteUserFiles(req); // delete user files
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps

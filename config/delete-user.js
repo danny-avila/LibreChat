@@ -1,7 +1,7 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const User = require('~/models/User');
+const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -20,10 +20,10 @@ const connect = require('./connect');
   } else {
     email = await askQuestion('Email:');
   }
-  let user = await User.findOne({ email: email });
+  let user = await db.models.User.findOne({ email: email });
   if (user !== null) {
     if ((await askQuestion(`Delete user ${user}?`)) === 'y') {
-      user = await User.findOneAndDelete({ _id: user._id });
+      user = await db.models.User.findOneAndDelete({ _id: user._id });
       if (user !== null) {
         console.yellow(`Deleted user ${user}`);
       } else {

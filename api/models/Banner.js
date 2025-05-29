@@ -1,8 +1,5 @@
-const mongoose = require('mongoose');
 const logger = require('~/config/winston');
-const { bannerSchema } = require('@librechat/data-schemas');
-
-const Banner = mongoose.model('Banner', bannerSchema);
+const db = require('~/lib/db/connectDb');
 
 /**
  * Retrieves the current active banner.
@@ -11,7 +8,7 @@ const Banner = mongoose.model('Banner', bannerSchema);
 const getBanner = async (user) => {
   try {
     const now = new Date();
-    const banner = await Banner.findOne({
+    const banner = await db.models.Banner.findOne({
       displayFrom: { $lte: now },
       $or: [{ displayTo: { $gte: now } }, { displayTo: null }],
       type: 'banner',
@@ -28,4 +25,4 @@ const getBanner = async (user) => {
   }
 };
 
-module.exports = { Banner, getBanner };
+module.exports = { getBanner };

@@ -1,6 +1,6 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const User = require('~/models/User');
+const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 const { askQuestion, silentExit } = require('./helpers');
 
@@ -20,7 +20,7 @@ const { askQuestion, silentExit } = require('./helpers');
   }
 
   try {
-    const result = await User.updateMany({}, { $set: { termsAccepted: false } });
+    const result = await db.models.User.updateMany({}, { $set: { termsAccepted: false } });
     console.green(`Updated ${result.modifiedCount} user(s).`);
   } catch (error) {
     console.red('Error resetting terms acceptance:', error);

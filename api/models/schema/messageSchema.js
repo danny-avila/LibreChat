@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const mongoMeili = require('~/models/plugins/mongoMeili');
 const { messageSchema } = require('@librechat/data-schemas');
 
@@ -11,6 +10,6 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   });
 }
 
-const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
+// const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = Message;

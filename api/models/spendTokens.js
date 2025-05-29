@@ -1,6 +1,6 @@
-const { Transaction } = require('./Transaction');
 const { logger } = require('~/config');
-
+const db = require('~/lib/db/connectDb');
+const { createTransaction, createStructuredTransaction } = require('./Transaction');
 /**
  * Creates up to two transactions to record the spending of tokens.
  *
@@ -33,7 +33,7 @@ const spendTokens = async (txData, tokenUsage) => {
   let prompt, completion;
   try {
     if (promptTokens !== undefined) {
-      prompt = await Transaction.create({
+      prompt = await createTransaction({
         ...txData,
         tokenType: 'prompt',
         rawAmount: promptTokens === 0 ? 0 : -Math.max(promptTokens, 0),
@@ -41,7 +41,7 @@ const spendTokens = async (txData, tokenUsage) => {
     }
 
     if (completionTokens !== undefined) {
-      completion = await Transaction.create({
+      completion = await createTransaction({
         ...txData,
         tokenType: 'completion',
         rawAmount: completionTokens === 0 ? 0 : -Math.max(completionTokens, 0),
@@ -101,7 +101,7 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   try {
     if (promptTokens) {
       const { input = 0, write = 0, read = 0 } = promptTokens;
-      prompt = await Transaction.createStructured({
+      prompt = await createStructuredTransaction({
         ...txData,
         tokenType: 'prompt',
         inputTokens: -input,
@@ -111,7 +111,7 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
     }
 
     if (completionTokens) {
-      completion = await Transaction.create({
+      completion = await createTransaction({
         ...txData,
         tokenType: 'completion',
         rawAmount: -completionTokens,

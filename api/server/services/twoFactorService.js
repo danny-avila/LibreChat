@@ -1,6 +1,7 @@
 const { webcrypto } = require('node:crypto');
 const { decryptV3, decryptV2 } = require('../utils/crypto');
 const { hashBackupCode } = require('~/server/utils/crypto');
+const db = require('~/lib/db/connectDb');
 
 // Base32 alphabet for TOTP secret encoding.
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -172,8 +173,7 @@ const verifyBackupCode = async ({ user, backupCode }) => {
         : codeObj,
     );
     // Update the user record with the marked backup code.
-    const { updateUser } = require('~/models');
-    await updateUser(user._id, { backupCodes: updatedBackupCodes });
+    await db.models.User.updateUser(user._id, { backupCodes: updatedBackupCodes });
     return true;
   }
   return false;

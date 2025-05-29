@@ -1,10 +1,10 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
 const { SystemRoles } = require('librechat-data-provider');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { countUsers } = require('~/models/userMethods');
 const { isEnabled } = require('~/server/utils');
 const logger = require('~/utils/logger');
+const db = require('~/lib/db/connectDb');
+const { getBalanceConfig } = require('~/server/services/Config');
 
 const {
   LDAP_URL,
@@ -81,6 +81,7 @@ const ldapOptions = {
 };
 
 const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
+  const { User } = db.models;
   if (!userinfo) {
     return done(null, false, { message: 'Invalid credentials' });
   }
@@ -89,7 +90,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const ldapId =
       (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
-    let user = await findUser({ ldapId });
+    let user = await User.findUser({ ldapId });
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
@@ -114,7 +115,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     }
 
     if (!user) {
-      const isFirstRegisteredUser = (await countUsers()) === 0;
+      const isFirstRegisteredUser = (await User.countUsers()) === 0;
       user = {
         provider: 'ldap',
         ldapId,
@@ -124,7 +125,9 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         name: fullName,
         role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       };
-      const userId = await createUser(user);
+      const balanceConfig = await getBalanceConfig();
+      
+      const userId = await User.createUser(user, balanceConfig);
       user._id = userId;
     } else {
       // Users registered in LDAP are assumed to have their user information managed in LDAP,
@@ -136,7 +139,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       user.name = fullName;
     }
 
-    user = await updateUser(user._id, user);
+    user = await User.updateUser(user._id, user);
     done(null, user);
   } catch (err) {
     logger.error('[ldapStrategy]', err);

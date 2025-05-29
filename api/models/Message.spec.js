@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const db = require('~/lib/db/connectDb');
 
 jest.mock('mongoose');
 
@@ -20,13 +21,27 @@ const mockSchema = {
   deleteMany: jest.fn(),
 };
 
-mongoose.model.mockReturnValue(mockSchema);
-
-jest.mock('~/models/schema/messageSchema', () => mockSchema);
-
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
 }));
+
+const mockModels = {
+  Message: {
+    findOneAndUpdate: mockSchema.findOneAndUpdate,
+    updateOne: mockSchema.updateOne,
+    findOne: mockSchema.findOne,
+    find: mockSchema.find,
+    deleteMany: mockSchema.deleteMany,
+  },
+};
+
+jest.mock('~/lib/db/connectDb', () => {
+  return {
+    get models() {
+      return mockModels;
+    },
+  };
+});
 
 const {
   saveMessage,
@@ -153,7 +168,7 @@ describe('Message Operations', () => {
   });
 
   describe('Conversation Hijacking Prevention', () => {
-    it('should not allow editing a message in another user\'s conversation', async () => {
+    it("should not allow editing a message in another user's conversation", async () => {
       const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = 'victim-convo-123';
       const victimMessageId = 'victim-msg-123';
@@ -175,7 +190,7 @@ describe('Message Operations', () => {
       );
     });
 
-    it('should not allow deleting messages from another user\'s conversation', async () => {
+    it("should not allow deleting messages from another user's conversation", async () => {
       const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = 'victim-convo-123';
       const victimMessageId = 'victim-msg-123';
@@ -193,7 +208,7 @@ describe('Message Operations', () => {
       });
     });
 
-    it('should not allow inserting a new message into another user\'s conversation', async () => {
+    it("should not allow inserting a new message into another user's conversation", async () => {
       const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = uuidv4(); // Use a valid UUID
 

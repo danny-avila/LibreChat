@@ -66,3 +66,4 @@ export type { ITransaction } from './schema/transaction';
 
 export { default as userSchema } from './schema/user';
 export type { IUser } from './schema/user';
+export { registerModels } from './models';

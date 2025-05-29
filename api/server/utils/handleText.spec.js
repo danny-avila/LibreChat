@@ -1,3 +1,9 @@
+jest.mock('~/models/Message', () => ({
+  Message: jest.fn(),
+}));
+jest.mock('~/models/Conversation', () => ({
+  Conversation: jest.fn(),
+}));
 const { isEnabled, sanitizeFilename } = require('./handleText');
 
 describe('isEnabled', () => {

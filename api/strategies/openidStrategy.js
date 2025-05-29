@@ -6,8 +6,6 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const client = require('openid-client');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 const getLogStores = require('~/cache/getLogStores');
@@ -35,6 +33,24 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     }
     return params;
   }
+}
+
+const db = require('~/lib/db/connectDb');
+const { getBalanceConfig } = require('~/server/services/Config');
+
+let crypto;
+let webcrypto;
+try {
+  crypto = require('node:crypto');
+  webcrypto = crypto;
+} catch (err) {
+  logger.error('[openidStrategy] crypto support is disabled!', err);
+}
+
+async function hashToken(str) {
+  const data = new TextEncoder().encode(str);
+  const hashBuffer = await webcrypto.subtle.digest('SHA-256', data);
+  return Buffer.from(hashBuffer).toString('hex');
 }
 
 /**
@@ -196,6 +212,7 @@ function convertToUsername(input, defaultValue = '') {
  * @throws {Error} If an error occurs during the setup process.
  */
 async function setupOpenId() {
+  const { User } = db.models;
   try {
     /** @type {ClientMetadata} */
     const clientMetadata = {
@@ -230,13 +247,13 @@ async function setupOpenId() {
       async (tokenset, done) => {
         try {
           const claims = tokenset.claims();
-          let user = await findUser({ openidId: claims.sub });
+          let user = await User.findUser({ openidId: claims.sub });
           logger.info(
             `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${claims.sub}`,
           );
 
           if (!user) {
-            user = await findUser({ email: claims.email });
+            user = await User.findUser({ email: claims.email });
             logger.info(
               `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
                 claims.email
@@ -297,7 +314,10 @@ async function setupOpenId() {
               emailVerified: userinfo.email_verified || false,
               name: fullName,
             };
-            user = await createUser(user, true, true);
+
+            const balanceConfig = await getBalanceConfig();
+
+            user = await User.createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
@@ -333,7 +353,7 @@ async function setupOpenId() {
             }
           }
 
-          user = await updateUser(user._id, user);
+          user = await User.updateUser(user._id, user);
 
           logger.info(
             `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,

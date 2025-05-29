@@ -17,9 +17,9 @@ const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
-const { findToken } = require('~/models/Token');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
+const db = require('~/lib/db/connectDb');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
@@ -231,9 +231,10 @@ async function createActionTool({
             };
 
             const tokenPromises = [];
-            tokenPromises.push(findToken({ userId, type: 'oauth', identifier }));
+            const { Token } = db.models;
+            tokenPromises.push(Token.findToken({ userId, type: 'oauth', identifier }));
             tokenPromises.push(
-              findToken({
+              Token.findToken({
                 userId,
                 type: 'oauth_refresh',
                 identifier: `${identifier}:refresh`,

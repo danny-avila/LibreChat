@@ -5,8 +5,8 @@ const {
   getTOTPSecret,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById } = require('~/models/userMethods');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 /**
  * Verifies the 2FA code during login using a temporary token.
@@ -25,7 +25,7 @@ const verify2FAWithTempToken = async (req, res) => {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await getUserById(payload.userId);
+    const user = await db.models.User.getUserById(payload.userId);
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }

@@ -1,9 +1,48 @@
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { setupOpenId } = require('./openidStrategy');
+const { getBalanceConfig } = require('~/server/services/Config');
 
 // --- Mocks ---
+const mockCreateUser = jest.fn();
+const mockFindUser = jest.fn();
+const mockUpdateUser = jest.fn();
+let User;
+
+jest.mock('@librechat/data-schemas', () => {
+  return {
+    registerModels: jest.fn().mockReturnValue({
+      User: {
+        createUser: mockCreateUser,
+        findUser: mockFindUser,
+        updateUser: mockUpdateUser,
+      },
+    }),
+  };
+});
+
+const mockModels = {
+  User: {
+    createUser: mockCreateUser,
+    findUser: mockFindUser,
+    updateUser: mockUpdateUser,
+  },
+};
+
+jest.mock('~/lib/db/connectDb', () => {
+  return {
+    getModels: jest.fn(() => mockModels),
+    connectDb: jest.fn(),
+    get models() {
+      return mockModels;
+    },
+  };
+});
+
+jest.mock('~/server/services/Config', () => ({
+  getBalanceConfig: jest.fn(),
+}));
+
 jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -11,11 +50,7 @@ jest.mock('~/server/services/Files/strategies', () => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
 }));
-jest.mock('~/models/userMethods', () => ({
-  findUser: jest.fn(),
-  createUser: jest.fn(),
-  updateUser: jest.fn(),
-}));
+
 jest.mock('~/server/utils/crypto', () => ({
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
@@ -109,7 +144,8 @@ describe('setupOpenId', () => {
       picture: 'https://example.com/avatar.png',
     }),
   };
-
+  const { registerModels } = require('@librechat/data-schemas');
+  User = registerModels().User;
   beforeEach(async () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();
@@ -134,13 +170,16 @@ describe('setupOpenId', () => {
       roles: ['requiredRole'],
     });
 
+    User.findUser = jest.fn();
     // By default, assume that no user is found, so createUser will be called
-    findUser.mockResolvedValue(null);
-    createUser.mockImplementation(async (userData) => {
+
+    const balance = await getBalanceConfig.mockResolvedValue({ enabled: false });
+    User.createUser.mockImplementation(async (userData, balance) => {
       // simulate created user with an _id property
       return { _id: 'newUserId', ...userData };
     });
-    updateUser.mockImplementation(async (id, userData) => {
+    // User.updateUser = jest.fn();
+    User.updateUser.mockImplementation(async (id, userData) => {
       return { _id: id, ...userData };
     });
 
@@ -166,7 +205,7 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(userinfo.username);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(User.createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
@@ -174,6 +213,7 @@ describe('setupOpenId', () => {
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
+      { enabled: false },
       true,
       true,
     );
@@ -191,8 +231,9 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(expectUsername);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(User.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
+      { enabled: false },
       true,
       true,
     );
@@ -210,8 +251,9 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(expectUsername);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(User.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
+      { enabled: false },
       true,
       true,
     );
@@ -227,8 +269,9 @@ describe('setupOpenId', () => {
 
     // Assert – username should equal the sub (converted as-is)
     expect(user.username).toBe(userinfo.sub);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(User.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: userinfo.sub }),
+      { enabled: false },
       true,
       true,
     );
@@ -268,11 +311,8 @@ describe('setupOpenId', () => {
       username: '',
       name: '',
     };
-    findUser.mockImplementation(async (query) => {
-      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
-        return existingUser;
-      }
-      return null;
+    mockFindUser.mockImplementation(async (query) => {
+      return existingUser;
     });
 
     const userinfo = tokenset.claims();
@@ -281,7 +321,7 @@ describe('setupOpenId', () => {
     await validate(tokenset);
 
     // Assert – updateUser should be called and the user object updated
-    expect(updateUser).toHaveBeenCalledWith(
+    expect(User.updateUser).toHaveBeenCalledWith(
       existingUser._id,
       expect.objectContaining({
         provider: 'openid',

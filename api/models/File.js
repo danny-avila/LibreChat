@@ -1,9 +1,7 @@
 const mongoose = require('mongoose');
 const { EToolResources } = require('librechat-data-provider');
-const { fileSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
-
-const File = mongoose.model('File', fileSchema);
+const db = require('~/lib/db/connectDb');
 
 /**
  * Finds a file by its file_id with additional query options.
@@ -12,7 +10,7 @@ const File = mongoose.model('File', fileSchema);
  * @returns {Promise<MongoFile>} A promise that resolves to the file document or null.
  */
 const findFileById = async (file_id, options = {}) => {
-  return await File.findOne({ file_id, ...options }).lean();
+  return await db.models.File.findOne({ file_id, ...options }).lean();
 };
 
 /**
@@ -25,7 +23,7 @@ const findFileById = async (file_id, options = {}) => {
  */
 const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
-  return await File.find(filter).select(selectFields).sort(sortOptions).lean();
+  return await db.models.File.find(filter).select(selectFields).sort(sortOptions).lean();
 };
 
 /**
@@ -81,7 +79,7 @@ const createFile = async (data, disableTTL) => {
     delete fileData.expiresAt;
   }
 
-  return await File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
+  return await db.models.File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
     new: true,
     upsert: true,
   }).lean();
@@ -98,7 +96,7 @@ const updateFile = async (data) => {
     $set: update,
     $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
   };
-  return await File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
+  return await db.models.File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
 };
 
 /**
@@ -112,7 +110,7 @@ const updateFileUsage = async (data) => {
     $inc: { usage: inc },
     $unset: { expiresAt: '', temp_file_id: '' },
   };
-  return await File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
+  return await db.models.File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
 };
 
 /**
@@ -121,7 +119,7 @@ const updateFileUsage = async (data) => {
  * @returns {Promise<MongoFile>} A promise that resolves to the deleted file document or null.
  */
 const deleteFile = async (file_id) => {
-  return await File.findOneAndDelete({ file_id }).lean();
+  return await db.models.File.findOneAndDelete({ file_id }).lean();
 };
 
 /**
@@ -130,7 +128,7 @@ const deleteFile = async (file_id) => {
  * @returns {Promise<MongoFile>} A promise that resolves to the deleted file document or null.
  */
 const deleteFileByFilter = async (filter) => {
-  return await File.findOneAndDelete(filter).lean();
+  return await db.models.File.findOneAndDelete(filter).lean();
 };
 
 /**
@@ -143,7 +141,7 @@ const deleteFiles = async (file_ids, user) => {
   if (user) {
     deleteQuery = { user: user };
   }
-  return await File.deleteMany(deleteQuery);
+  return await db.models.File.deleteMany(deleteQuery);
 };
 
 /**
@@ -169,7 +167,6 @@ async function batchUpdateFiles(updates) {
 }
 
 module.exports = {
-  File,
   findFileById,
   getFiles,
   getToolFilesByIds,

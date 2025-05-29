@@ -2,7 +2,7 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
 const Balance = require('~/models/Balance');
-const User = require('~/models/User');
+const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -15,7 +15,7 @@ const connect = require('./connect');
   console.purple('Show the balance of all users');
   console.purple('-----------------------------');
 
-  let users = await User.find({});
+  let users = await db.models.User.find({});
   for (const user of users) {
     let balance = await Balance.findOne({ user: user._id });
     if (balance !== null) {

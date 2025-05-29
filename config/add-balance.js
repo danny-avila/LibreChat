@@ -2,8 +2,8 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const { isEnabled } = require('~/server/utils/handleText');
-const { Transaction } = require('~/models/Transaction');
-const User = require('~/models/User');
+const { createTransaction } = require('~/models/Transaction');
+const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -65,7 +65,7 @@ const connect = require('./connect');
   }
 
   // Validate the user
-  const user = await User.findOne({ email }).lean();
+  const user = await db.models.User.findOne({ email }).lean();
   if (!user) {
     console.red('Error: No user with that email was found!');
     silentExit(1);
@@ -78,7 +78,7 @@ const connect = require('./connect');
    */
   let result;
   try {
-    result = await Transaction.create({
+    result = await createTransaction({
       user: user._id,
       tokenType: 'credits',
       context: 'admin',

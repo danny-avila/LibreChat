@@ -1,7 +1,40 @@
 const banViolation = require('./banViolation');
 
+jest.mock('@librechat/data-schemas', () => {
+  const sessionModelMock = {
+    deleteAllUserSessions: jest.fn(),
+  };
+
+  return {
+    registerModels: jest.fn().mockReturnValue({
+      Session: sessionModelMock,
+    }),
+  };
+});
+
+const mockModels = {
+  Session: {
+    deleteAllUserSessions: jest.fn(),
+  },
+};
+
+jest.mock('~/lib/db/connectDb', () => {
+  return {
+    connectDb: jest.fn(),
+    get models() {
+      return mockModels;
+    },
+  };
+});
+
+jest.mock('~/server/utils', () => ({
+  isEnabled: jest.fn(() => true), // default to false, override per test if needed
+  math: jest.fn(() => 20), // default to false, override per test if needed
+  removePorts: jest.fn(),
+}));
+
 jest.mock('keyv');
-jest.mock('../models/Session');
+// jest.mock('../models/Session');
 // Mocking the getLogStores function
 jest.mock('./getLogStores', () => {
   return jest.fn().mockImplementation(() => {

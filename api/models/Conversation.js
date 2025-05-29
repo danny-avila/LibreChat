@@ -1,7 +1,6 @@
-const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
-
+const db = require('~/lib/db/connectDb');
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
  * @param {string} conversationId - The conversation's ID.
@@ -9,7 +8,7 @@ const logger = require('~/config/winston');
  */
 const searchConversation = async (conversationId) => {
   try {
-    return await Conversation.findOne({ conversationId }, 'conversationId user').lean();
+    return await db.models.Conversation.findOne({ conversationId }, 'conversationId user').lean();
   } catch (error) {
     logger.error('[searchConversation] Error searching conversation', error);
     throw new Error('Error searching conversation');
@@ -24,7 +23,7 @@ const searchConversation = async (conversationId) => {
  */
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).lean();
+    return await db.models.Conversation.findOne({ user, conversationId }).lean();
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
     return { message: 'Error getting single conversation' };
@@ -41,7 +40,7 @@ const deleteNullOrEmptyConversations = async () => {
       ],
     };
 
-    const result = await Conversation.deleteMany(filter);
+    const result = await db.models.Conversation.deleteMany(filter);
 
     // Delete associated messages
     const messageDeleteResult = await deleteMessages(filter);
@@ -67,7 +66,7 @@ const deleteNullOrEmptyConversations = async () => {
  */
 const getConvoFiles = async (conversationId) => {
   try {
-    return (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
+    return (await db.models.Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
   } catch (error) {
     logger.error('[getConvoFiles] Error getting conversation files', error);
     throw new Error('Error getting conversation files');
@@ -75,7 +74,6 @@ const getConvoFiles = async (conversationId) => {
 };
 
 module.exports = {
-  Conversation,
   getConvoFiles,
   searchConversation,
   deleteNullOrEmptyConversations,
@@ -114,7 +112,7 @@ module.exports = {
       }
 
       /** Note: the resulting Model object is necessary for Meilisearch operations */
-      const conversation = await Conversation.findOneAndUpdate(
+      const conversation = await db.models.Conversation.findOneAndUpdate(
         { conversationId, user: req.user.id },
         updateOperation,
         {
@@ -143,7 +141,7 @@ module.exports = {
         },
       }));
 
-      const result = await Conversation.bulkWrite(bulkOps);
+      const result = await db.models.Conversation.bulkWrite(bulkOps);
       return result;
     } catch (error) {
       logger.error('[saveBulkConversations] Error saving conversations in bulk', error);
@@ -155,7 +153,7 @@ module.exports = {
     { cursor, limit = 25, isArchived = false, tags, search, order = 'desc' } = {},
   ) => {
     const filters = [{ user }];
-
+    const { Conversation } = db.models;
     if (isArchived) {
       filters.push({ isArchived: true });
     } else {
@@ -219,7 +217,7 @@ module.exports = {
 
       const conversationIds = convoIds.map((convo) => convo.conversationId);
 
-      const results = await Conversation.find({
+      const results = await db.models.Conversation.find({
         user,
         conversationId: { $in: conversationIds },
         $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
@@ -288,7 +286,7 @@ module.exports = {
   deleteConvos: async (user, filter) => {
     try {
       const userFilter = { ...filter, user };
-
+      const { Conversation } = db.models;
       const conversations = await Conversation.find(userFilter).select('conversationId');
       const conversationIds = conversations.map((c) => c.conversationId);
 

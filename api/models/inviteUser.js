@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { getRandomValues, hashToken } = require('~/server/utils/crypto');
-const { createToken, findToken } = require('./Token');
 const logger = require('~/config/winston');
+const db = require('~/lib/db/connectDb');
 
 /**
  * @module inviteUser
@@ -23,7 +23,7 @@ const createInvite = async (email) => {
 
     const fakeUserId = new mongoose.Types.ObjectId();
 
-    await createToken({
+    await db.models.Token.createToken({
       userId: fakeUserId,
       email,
       token: hash,
@@ -50,7 +50,7 @@ const getInvite = async (encodedToken, email) => {
   try {
     const token = decodeURIComponent(encodedToken);
     const hash = await hashToken(token);
-    const invite = await findToken({ token: hash, email });
+    const invite = await db.models.Token.findToken({ token: hash, email });
 
     if (!invite) {
       throw new Error('Invite not found or email does not match');

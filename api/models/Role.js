@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const {
   CacheKeys,
   SystemRoles,
@@ -8,10 +7,8 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
-const { roleSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
-
-const Role = mongoose.model('Role', roleSchema);
+const db = require('~/lib/db/connectDb');
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
@@ -24,6 +21,7 @@ const Role = mongoose.model('Role', roleSchema);
  */
 const getRoleByName = async function (roleName, fieldsToSelect = null) {
   const cache = getLogStores(CacheKeys.ROLES);
+  const { Role } = db.models;
   try {
     const cachedRole = await cache.get(roleName);
     if (cachedRole) {
@@ -57,7 +55,7 @@ const getRoleByName = async function (roleName, fieldsToSelect = null) {
 const updateRoleByName = async function (roleName, updates) {
   const cache = getLogStores(CacheKeys.ROLES);
   try {
-    const role = await Role.findOneAndUpdate(
+    const role = await db.models.Role.findOneAndUpdate(
       { name: roleName },
       { $set: updates },
       { new: true, lean: true },
@@ -78,6 +76,7 @@ const updateRoleByName = async function (roleName, updates) {
  * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
  */
 async function updateAccessPermissions(roleName, permissionsUpdate) {
+  const { Role } = db.models;
   // Filter and clean the permission updates based on our schema definition.
   const updates = {};
   for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -181,6 +180,7 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
  * @returns {Promise<void>}
  */
 const initializeRoles = async function () {
+  const { Role } = db.models;
   for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
     let role = await Role.findOne({ name: roleName });
     const defaultPerms = roleDefaults[roleName].permissions;
@@ -210,6 +210,7 @@ const initializeRoles = async function () {
  * @returns {Promise<number>} Number of roles migrated.
  */
 const migrateRoleSchema = async function (roleName) {
+  const { Role } = db.models;
   try {
     // Get roles to migrate
     let roles;
@@ -282,7 +283,6 @@ const migrateRoleSchema = async function (roleName) {
 };
 
 module.exports = {
-  Role,
   getRoleByName,
   initializeRoles,
   updateRoleByName,

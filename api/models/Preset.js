@@ -1,9 +1,9 @@
-const Preset = require('./schema/presetSchema');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 const getPreset = async (user, presetId) => {
   try {
-    return await Preset.findOne({ user, presetId }).lean();
+    return await db.models.Preset.findOne({ user, presetId }).lean();
   } catch (error) {
     logger.error('[getPreset] Error getting single preset', error);
     return { message: 'Error getting single preset' };
@@ -11,11 +11,10 @@ const getPreset = async (user, presetId) => {
 };
 
 module.exports = {
-  Preset,
   getPreset,
   getPresets: async (user, filter) => {
     try {
-      const presets = await Preset.find({ ...filter, user }).lean();
+      const presets = await db.models.Preset.find({ ...filter, user }).lean();
       const defaultValue = 10000;
 
       presets.sort((a, b) => {
@@ -40,6 +39,7 @@ module.exports = {
       const setter = { $set: {} };
       const { user: _, ...cleanPreset } = preset;
       const update = { presetId, ...cleanPreset };
+      const Preset = db.models.Preset;
       if (preset.tools && Array.isArray(preset.tools)) {
         update.tools =
           preset.tools
@@ -77,7 +77,7 @@ module.exports = {
   deletePresets: async (user, filter) => {
     // let toRemove = await Preset.find({ ...filter, user }).select('presetId');
     // const ids = toRemove.map((instance) => instance.presetId);
-    let deleteCount = await Preset.deleteMany({ ...filter, user });
+    let deleteCount = await db.models.Preset.deleteMany({ ...filter, user });
     return deleteCount;
   },
 };

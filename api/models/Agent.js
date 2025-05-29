@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
-const { agentSchema } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
@@ -15,7 +14,7 @@ const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 const { logger } = require('~/config');
 
-const Agent = mongoose.model('agent', agentSchema);
+const db = require('~/lib/db/connectDb');
 
 /**
  * Create an agent with the provided data.
@@ -36,7 +35,7 @@ const createAgent = async (agentData) => {
       },
     ],
   };
-  return (await Agent.create(initialAgentData)).toObject();
+  return (await db.models.Agent.create(initialAgentData)).toObject();
 };
 
 /**
@@ -47,7 +46,7 @@ const createAgent = async (agentData) => {
  * @param {string} searchParameter.author - The user ID of the agent's author.
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
+const getAgent = async (searchParameter) => await db.models.Agent.findOne(searchParameter).lean();
 
 /**
  * Load an agent based on the provided ID
@@ -269,6 +268,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
   const { updatingUserId = null, forceVersion = false } = options;
   const mongoOptions = { new: true, upsert: false };
 
+  const Agent = db.models?.Agent;
   const currentAgent = await Agent.findOne(searchParameter);
   if (currentAgent) {
     const { __v, _id, id, versions, author, ...versionData } = currentAgent.toObject();
@@ -362,6 +362,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
  * @returns {Promise<Agent>} The updated agent.
  */
 const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) => {
+  const Agent = db.models?.Agent;
   const searchParameter = { id: agent_id };
   let agent = await getAgent(searchParameter);
   if (!agent) {
@@ -427,7 +428,7 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
   }
 
   const updatePullData = { $pull: pullOps };
-  const agentAfterPull = await Agent.findOneAndUpdate(searchParameter, updatePullData, {
+  const agentAfterPull = await db.models.Agent.findOneAndUpdate(searchParameter, updatePullData, {
     new: true,
   }).lean();
 
@@ -457,7 +458,7 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
  * @returns {Promise<void>} Resolves when the agent has been successfully deleted.
  */
 const deleteAgent = async (searchParameter) => {
-  const agent = await Agent.findOneAndDelete(searchParameter);
+  const agent = await db.models.Agent.findOneAndDelete(searchParameter);
   if (agent) {
     await removeAgentFromAllProjects(agent.id);
   }
@@ -481,9 +482,8 @@ const getListAgents = async (searchParameter) => {
     delete globalQuery.author;
     query = { $or: [globalQuery, query] };
   }
-
   const agents = (
-    await Agent.find(query, {
+    await db.models.Agent.find(query, {
       id: 1,
       _id: 0,
       name: 1,
@@ -580,6 +580,7 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
  * @throws {Error} If the agent is not found or the specified version does not exist.
  */
 const revertAgentVersion = async (searchParameter, versionIndex) => {
+  const Agent = db.models?.Agent;
   const agent = await Agent.findOne(searchParameter);
   if (!agent) {
     throw new Error('Agent not found');
@@ -662,7 +663,6 @@ const generateActionMetadataHash = async (actionIds, actions) => {
  */
 
 module.exports = {
-  Agent,
   getAgent,
   loadAgent,
   createAgent,

@@ -1,9 +1,10 @@
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { findUser, comparePassword, updateUser } = require('~/models');
+const { comparePassword } = require('~/models');
 const { isEnabled, checkEmailConfig } = require('~/server/utils');
 const { loginSchema } = require('./validators');
 const logger = require('~/utils/logger');
+const db = require('~/lib/db/connectDb');
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;
@@ -14,6 +15,7 @@ async function validateLoginRequest(req) {
 }
 
 async function passportLogin(req, email, password, done) {
+  const {User} = db.models;
   try {
     const validationError = await validateLoginRequest(req);
     if (validationError) {
@@ -22,7 +24,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: validationError });
     }
 
-    const user = await findUser({ email: email.trim() });
+    const user = await User.findUser({ email: email.trim() });
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
@@ -44,13 +46,13 @@ async function passportLogin(req, email, password, done) {
       !user.emailVerified &&
       userCreatedAtTimestamp < verificationEnabledTimestamp
     ) {
-      await updateUser(user._id, { emailVerified: true });
+      await User.updateUser(user._id, { emailVerified: true });
       user.emailVerified = true;
     }
 
     const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
     if (user.expiresAt && unverifiedAllowed) {
-      await updateUser(user._id, {});
+      await User.updateUser(user._id, {});
     }
 
     if (!user.emailVerified && !unverifiedAllowed) {

@@ -1,7 +1,7 @@
 const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
-const { findUser } = require('~/models');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 const socialLogin =
   (provider, getProfileDetails) => async (accessToken, refreshToken, idToken, profile, cb) => {
@@ -11,7 +11,7 @@ const socialLogin =
         profile,
       });
 
-      const oldUser = await findUser({ email: email.trim() });
+      const oldUser = await db.models.User.findUser({ email: email.trim() });
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
 
       if (oldUser) {

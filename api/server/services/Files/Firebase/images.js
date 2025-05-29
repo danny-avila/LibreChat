@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
-const { updateUser } = require('~/models/userMethods');
 const { saveBufferToFirebase } = require('./crud');
 const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 /**
  * Converts an image file to the target format. The function first resizes the image based on the specified
@@ -99,7 +99,7 @@ async function processFirebaseAvatar({ buffer, userId, manual }) {
     const url = `${downloadURL}?manual=${isManual}`;
 
     if (isManual) {
-      await updateUser(userId, { avatar: url });
+      await db.models.User.updateUser(userId, { avatar: url });
     }
 
     return url;

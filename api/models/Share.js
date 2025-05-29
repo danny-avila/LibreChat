@@ -1,9 +1,6 @@
-const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { Constants } = require('librechat-data-provider');
-const { Conversation } = require('~/models/Conversation');
-const { shareSchema } = require('@librechat/data-schemas');
-const SharedLink = mongoose.model('SharedLink', shareSchema);
+const db = require('~/lib/db/connectDb');
 const { getMessages } = require('./Message');
 const logger = require('~/config/winston');
 
@@ -76,7 +73,7 @@ function anonymizeMessages(messages, newConvoId) {
 
 async function getSharedMessages(shareId) {
   try {
-    const share = await SharedLink.findOne({ shareId, isPublic: true })
+    const share = await db.models.SharedLink.findOne({ shareId, isPublic: true })
       .populate({
         path: 'messages',
         select: '-_id -__v -user',
@@ -151,7 +148,7 @@ async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortD
       query.conversationId = { $in: query.conversationId };
     }
 
-    const sharedLinks = await SharedLink.find(query)
+    const sharedLinks = await db.models.SharedLink.find(query)
       .sort(sort)
       .limit(pageSize + 1)
       .select('-__v -user')
@@ -184,7 +181,7 @@ async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortD
 
 async function deleteAllSharedLinks(user) {
   try {
-    const result = await SharedLink.deleteMany({ user });
+    const result = await db.models.SharedLink.deleteMany({ user });
     return {
       message: 'All shared links deleted successfully',
       deletedCount: result.deletedCount,
@@ -202,7 +199,7 @@ async function createSharedLink(user, conversationId) {
   if (!user || !conversationId) {
     throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
   }
-
+  const { SharedLink, Conversation } = db.models;
   try {
     const [existingShare, conversationMessages] = await Promise.all([
       SharedLink.findOne({ conversationId, isPublic: true }).select('-_id -__v -user').lean(),
@@ -244,7 +241,7 @@ async function getSharedLink(user, conversationId) {
   }
 
   try {
-    const share = await SharedLink.findOne({ conversationId, user, isPublic: true })
+    const share = await db.models.SharedLink.findOne({ conversationId, user, isPublic: true })
       .select('shareId -_id')
       .lean();
 
@@ -268,6 +265,7 @@ async function updateSharedLink(user, shareId) {
     throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
   }
 
+  const { SharedLink } = db.models;
   try {
     const share = await SharedLink.findOne({ shareId }).select('-_id -__v -user').lean();
 
@@ -318,7 +316,7 @@ async function deleteSharedLink(user, shareId) {
   }
 
   try {
-    const result = await SharedLink.findOneAndDelete({ shareId, user }).lean();
+    const result = await db.models.SharedLink.findOneAndDelete({ shareId, user }).lean();
 
     if (!result) {
       return null;
@@ -340,7 +338,6 @@ async function deleteSharedLink(user, shareId) {
 }
 
 module.exports = {
-  SharedLink,
   getSharedLink,
   getSharedLinks,
   createSharedLink,

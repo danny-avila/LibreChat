@@ -10,7 +10,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const { jwtLogin, passportLogin } = require('~/strategies');
-const { connectDb, indexSync } = require('~/lib/db');
+const { connectDb, indexSync, getModels } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
@@ -36,6 +36,7 @@ const startServer = async () => {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
   await connectDb();
+   
   logger.info('Connected to MongoDB');
   await indexSync();
 

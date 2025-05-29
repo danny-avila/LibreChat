@@ -1,4 +1,4 @@
-const connectDb = require('./connectDb');
+const { connectDb, getModels} = require('./connectDb');
 const indexSync = require('./indexSync');
 
-module.exports = { connectDb, indexSync };
+module.exports = { connectDb, getModels, indexSync };

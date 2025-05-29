@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
-const { updateUser } = require('~/models/userMethods');
 const { saveBufferToS3 } = require('./crud');
 const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 const defaultBasePath = 'images';
 
@@ -102,7 +102,7 @@ async function processS3Avatar({ buffer, userId, manual, basePath = defaultBaseP
   try {
     const downloadURL = await saveBufferToS3({ userId, buffer, fileName: 'avatar.png', basePath });
     if (manual === 'true') {
-      await updateUser(userId, { avatar: downloadURL });
+      await db.models?.User.updateUser(userId, { avatar: downloadURL });
     }
     return downloadURL;
   } catch (error) {

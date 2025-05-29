@@ -2,8 +2,8 @@ const path = require('path');
 const { v5: uuidv5 } = require('uuid');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, askMultiLineQuestion, silentExit } = require('./helpers');
-const { Banner } = require('~/models/Banner');
 const connect = require('./connect');
+const db = require('~/lib/db/connectDb');
 
 (async () => {
   await connect();
@@ -87,6 +87,7 @@ const connect = require('./connect');
 
   let result;
   try {
+    const { Banner } = db.models;
     // There is always only one Banner record in the DB.
     // If a Banner exists in the DB, it will be updated.
     // If it doesn't exist, a new one will be added.

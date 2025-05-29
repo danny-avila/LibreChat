@@ -10,7 +10,6 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
-  Agent,
   addAgentResourceFile,
   removeAgentResourceFiles,
   createAgent,
@@ -20,6 +19,9 @@ const {
   getListAgents,
   updateAgentProjects,
 } = require('./Agent');
+const db = require('~/lib/db/connectDb');
+
+let Agent;
 
 describe('Agent Resource File Operations', () => {
   let mongoServer;
@@ -27,7 +29,9 @@ describe('Agent Resource File Operations', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
-    await mongoose.connect(mongoUri);
+    await db.connectDb(mongoUri);
+
+    Agent = db.models.Agent;
   });
 
   afterAll(async () => {
@@ -55,6 +59,7 @@ describe('Agent Resource File Operations', () => {
 
   test('should add tool_resource to tools if missing', async () => {
     const agent = await createBasicAgent();
+
     const fileId = uuidv4();
     const toolResource = 'file_search';
 

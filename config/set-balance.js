@@ -2,9 +2,8 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const { isEnabled } = require('~/server/utils/handleText');
-const User = require('~/models/User');
+const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
-const Balance = require('~/models/Balance');
 
 (async () => {
   await connect();
@@ -57,7 +56,7 @@ const Balance = require('~/models/Balance');
   }
 
   // Validate the user
-  const user = await User.findOne({ email }).lean();
+  const user = await db.models.User.findOne({ email }).lean();
   if (!user) {
     console.red('Error: No user with that email was found!');
     silentExit(1);
@@ -65,7 +64,7 @@ const Balance = require('~/models/Balance');
     console.purple(`Found user: ${user.email}`);
   }
 
-  let balance = await Balance.findOne({ user: user._id }).lean();
+  let balance = await db.models.Balance.findOne({ user: user._id }).lean();
   if (!balance) {
     console.purple('User has no balance!');
   } else {
@@ -86,7 +85,7 @@ const Balance = require('~/models/Balance');
    */
   let result;
   try {
-    result = await Balance.findOneAndUpdate(
+    result = await db.models.Balance.findOneAndUpdate(
       { user: user._id },
       { tokenCredits: amount },
       { upsert: true, new: true },

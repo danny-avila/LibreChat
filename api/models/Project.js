@@ -1,8 +1,5 @@
-const { model } = require('mongoose');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
-const { projectSchema } = require('@librechat/data-schemas');
-
-const Project = model('Project', projectSchema);
+const db = require('~/lib/db/connectDb');
 
 /**
  * Retrieve a project by ID and convert the found project document to a plain object.
@@ -12,7 +9,7 @@ const Project = model('Project', projectSchema);
  * @returns {Promise<IMongoProject>} A plain object representing the project document, or `null` if no project is found.
  */
 const getProjectById = async function (projectId, fieldsToSelect = null) {
-  const query = Project.findById(projectId);
+  const query = db.models.Project.findById(projectId);
 
   if (fieldsToSelect) {
     query.select(fieldsToSelect);
@@ -39,7 +36,7 @@ const getProjectByName = async function (projectName, fieldsToSelect = null) {
     select: fieldsToSelect,
   };
 
-  return await Project.findOneAndUpdate(query, update, options);
+  return await db.models.Project.findOneAndUpdate(query, update, options);
 };
 
 /**
@@ -50,7 +47,7 @@ const getProjectByName = async function (projectName, fieldsToSelect = null) {
  * @returns {Promise<IMongoProject>} The updated project document.
  */
 const addGroupIdsToProject = async function (projectId, promptGroupIds) {
-  return await Project.findByIdAndUpdate(
+  return await db.models.Project.findByIdAndUpdate(
     projectId,
     { $addToSet: { promptGroupIds: { $each: promptGroupIds } } },
     { new: true },
@@ -65,7 +62,7 @@ const addGroupIdsToProject = async function (projectId, promptGroupIds) {
  * @returns {Promise<IMongoProject>} The updated project document.
  */
 const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
-  return await Project.findByIdAndUpdate(
+  return await db.models.Project.findByIdAndUpdate(
     projectId,
     { $pull: { promptGroupIds: { $in: promptGroupIds } } },
     { new: true },
@@ -79,7 +76,7 @@ const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
  * @returns {Promise<void>}
  */
 const removeGroupFromAllProjects = async (promptGroupId) => {
-  await Project.updateMany({}, { $pull: { promptGroupIds: promptGroupId } });
+  await db.models.Project.updateMany({}, { $pull: { promptGroupIds: promptGroupId } });
 };
 
 /**
@@ -90,7 +87,7 @@ const removeGroupFromAllProjects = async (promptGroupId) => {
  * @returns {Promise<IMongoProject>} The updated project document.
  */
 const addAgentIdsToProject = async function (projectId, agentIds) {
-  return await Project.findByIdAndUpdate(
+  return await db.models.Project.findByIdAndUpdate(
     projectId,
     { $addToSet: { agentIds: { $each: agentIds } } },
     { new: true },
@@ -105,7 +102,7 @@ const addAgentIdsToProject = async function (projectId, agentIds) {
  * @returns {Promise<IMongoProject>} The updated project document.
  */
 const removeAgentIdsFromProject = async function (projectId, agentIds) {
-  return await Project.findByIdAndUpdate(
+  return await db.models.Project.findByIdAndUpdate(
     projectId,
     { $pull: { agentIds: { $in: agentIds } } },
     { new: true },
@@ -119,7 +116,7 @@ const removeAgentIdsFromProject = async function (projectId, agentIds) {
  * @returns {Promise<void>}
  */
 const removeAgentFromAllProjects = async (agentId) => {
-  await Project.updateMany({}, { $pull: { agentIds: agentId } });
+  await db.models.Project.updateMany({}, { $pull: { agentIds: agentId } });
 };
 
 module.exports = {

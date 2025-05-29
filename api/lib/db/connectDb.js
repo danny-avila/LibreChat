@@ -1,8 +1,8 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
-const MONGO_URI = process.env.MONGO_URI;
+const { registerModels } = require('@librechat/data-schemas');
 
-if (!MONGO_URI) {
+if (!process.env.MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
 }
 
@@ -17,7 +17,7 @@ if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
 }
 
-async function connectDb() {
+async function connectDb(mongoUri = process.env.MONGO_URI) {
   if (cached.conn && cached.conn?._readyState === 1) {
     return cached.conn;
   }
@@ -34,12 +34,30 @@ async function connectDb() {
     };
 
     mongoose.set('strictQuery', true);
-    cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(mongoUri, opts).then((mongoose) => {
       return mongoose;
     });
   }
   cached.conn = await cached.promise;
+
+  // Register models once
+  if (!cached.models) {
+    cached.models = registerModels(mongoose);
+  }
+
   return cached.conn;
 }
 
-module.exports = connectDb;
+function getModels() {
+  return cached.models;
+}
+module.exports = {
+  connectDb,
+  getModels,
+  get models() {
+    if (!cached.models) {
+      throw new Error('Models not registered. ');
+    }
+    return cached.models;
+  },
+};

@@ -3,8 +3,8 @@ const crypto = require('node:crypto');
 const { webcrypto } = crypto;
 
 // Use hex decoding for both key and IV for legacy methods.
-const key = Buffer.from(process.env.CREDS_KEY, 'hex');
-const iv = Buffer.from(process.env.CREDS_IV, 'hex');
+const key = Buffer.from('f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0', 'hex');
+const iv = Buffer.from('e2341419ec3dd3d19b13a1a87fafcbfb', 'hex');
 const algorithm = 'AES-CBC';
 
 // --- Legacy v1/v2 Setup: AES-CBC with fixed key and IV ---

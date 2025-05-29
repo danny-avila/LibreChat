@@ -10,18 +10,45 @@ const mockPluginService = {
   getUserPluginAuthValue: jest.fn(),
 };
 
-jest.mock('~/models/User', () => {
-  return function () {
-    return mockUser;
+const mockModels = {
+  User: mockUser,
+};
+jest.mock('~/lib/db/connectDb', () => {
+  return {
+    connectDb: jest.fn(),
+    get models() {
+      return mockModels;
+    },
   };
 });
+jest.mock('@librechat/data-schemas', () => {
+  const userModelMock = {
+    createUser: jest.fn(() => mockUser),
+    findUser: jest.fn(),
+    updateUser: jest.fn(),
+  };
+  return {
+    registerModels: jest.fn().mockReturnValue({
+      User: userModelMock,
+    }),
+  };
+});
+
+jest.mock('~/models/Message', () => ({
+  Message: jest.fn(),
+}));
+jest.mock('~/models/Conversation', () => ({
+  Conversation: jest.fn(),
+}));
+jest.mock('~/models/File', () => ({
+  File: jest.fn(),
+}));
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
 const { BaseLLM } = require('@langchain/openai');
 const { Calculator } = require('@langchain/community/tools/calculator');
 
-const User = require('~/models/User');
 const PluginService = require('~/server/services/PluginService');
 const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
 const { StructuredSD, availableTools, DALLE3 } = require('../');
@@ -35,6 +62,9 @@ describe('Tool Handlers', () => {
   const mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
   const authConfigs = mainPlugin.authConfig;
+
+  const { registerModels } = require('@librechat/data-schemas');
+  let User = registerModels().User;
 
   beforeAll(async () => {
     mockUser.save.mockResolvedValue(undefined);
@@ -52,7 +82,7 @@ describe('Tool Handlers', () => {
       },
     );
 
-    fakeUser = new User({
+    fakeUser = await User.createUser({
       name: 'Fake User',
       username: 'fakeuser',
       email: 'fakeuser@example.com',

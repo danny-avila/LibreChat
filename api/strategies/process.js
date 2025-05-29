@@ -1,7 +1,8 @@
 const { FileSources } = require('librechat-data-provider');
-const { createUser, updateUser, getUserById } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
+const db = require('~/lib/db/connectDb');
+const { getBalanceConfig } = require('~/server/services/Config');
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
@@ -34,7 +35,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   }
 
   if (updatedAvatar) {
-    await updateUser(oldUser._id, { avatar: updatedAvatar });
+    await db.models.User.updateUser(oldUser._id, { avatar: updatedAvatar });
   }
 };
 
@@ -78,7 +79,8 @@ const createSocialUser = async ({
     emailVerified,
   };
 
-  const newUserId = await createUser(update);
+  const balanceConfig = await getBalanceConfig();
+  const newUserId = await db.models.User.createUser(update, balanceConfig);
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
@@ -89,10 +91,10 @@ const createSocialUser = async ({
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
     const avatar = await processAvatar({ buffer: resizedBuffer, userId: newUserId });
-    await updateUser(newUserId, { avatar });
+    await User.updateUser(newUserId, { avatar });
   }
 
-  return await getUserById(newUserId);
+  return await User.getUserById(newUserId);
 };
 
 module.exports = {

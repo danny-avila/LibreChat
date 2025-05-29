@@ -5,8 +5,9 @@ const { isEnabled, removePorts } = require('~/server/utils');
 const keyvMongo = require('~/cache/keyvMongo');
 const denyRequest = require('./denyRequest');
 const { getLogStores } = require('~/cache');
-const { findUser } = require('~/models');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
+
 
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';
@@ -57,7 +58,7 @@ const checkBan = async (req, res, next = () => {}) => {
     let userId = req.user?.id ?? req.user?._id ?? null;
 
     if (!userId && req?.body?.email) {
-      const user = await findUser({ email: req.body.email }, '_id');
+      const user = await db.models.User.findUser({ email: req.body.email }, '_id');
       userId = user?._id ? user._id.toString() : userId;
     }
 

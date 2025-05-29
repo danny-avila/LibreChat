@@ -1,8 +1,7 @@
 const { MeiliSearch } = require('meilisearch');
-const { Conversation } = require('~/models/Conversation');
-const { Message } = require('~/models/Message');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const db = require('~/lib/db/connectDb');
 
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
@@ -29,7 +28,7 @@ async function indexSync() {
   if (!searchEnabled) {
     return;
   }
-
+  const { Message, Conversation } = db.models;
   try {
     const client = MeiliSearchClient.getInstance();
 

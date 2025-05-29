@@ -2,11 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
-const { updateUser } = require('~/models/userMethods');
 const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
 const { saveBufferToAzure } = require('./crud');
-
+const db = require('~/lib/db/connectDb');
 /**
  * Uploads an image file to Azure Blob Storage.
  * It resizes and converts the image similar to your Firebase implementation.
@@ -108,7 +107,7 @@ async function processAzureAvatar({ buffer, userId, manual, basePath = 'images',
     const isManual = manual === 'true';
     const url = `${downloadURL}?manual=${isManual}`;
     if (isManual) {
-      await updateUser(userId, { avatar: url });
+      await db.models?.User.updateUser(userId, { avatar: url });
     }
     return url;
   } catch (error) {
