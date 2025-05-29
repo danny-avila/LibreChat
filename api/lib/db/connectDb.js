@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const MONGO_URI = process.env.MONGO_URI;
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME;
 
 if (!MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
@@ -26,6 +27,7 @@ async function connectDb() {
   if (!cached.promise || disconnected) {
     const opts = {
       bufferCommands: false,
+      dbName: MONGO_DB_NAME,
       // useNewUrlParser: true,
       // useUnifiedTopology: true,
       // bufferMaxEntries: 0,
