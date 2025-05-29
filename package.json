@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "patch-package",
+    "postinstall": "patch-package || true",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
