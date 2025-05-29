@@ -27,13 +27,16 @@ async function connectDb() {
   if (!cached.promise || disconnected) {
     const opts = {
       bufferCommands: false,
-      dbName: MONGO_DB_NAME,
       // useNewUrlParser: true,
       // useUnifiedTopology: true,
       // bufferMaxEntries: 0,
       // useFindAndModify: true,
       // useCreateIndex: true
     };
+
+    if (MONGO_DB_NAME) {
+      opts.dbName = MONGO_DB_NAME;
+    }
 
     mongoose.set('strictQuery', true);
     cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
