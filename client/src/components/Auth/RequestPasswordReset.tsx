@@ -5,7 +5,7 @@ import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-q
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
 import type { FC } from 'react';
 import type { TLoginLayoutContext } from '~/common';
-import { Spinner } from '~/components';
+import { Spinner, Button } from '~/components';
 import { useLocalize } from '~/hooks';
 
 const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
@@ -124,13 +124,15 @@ function RequestPasswordReset() {
         )}
       </div>
       <div className="space-y-4">
-        <button
+        <Button
+          aria-label="Continue with password reset"
           type="submit"
           disabled={!!errors.email || isLoading}
-          className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
+          variant="submit"
+          className="h-12 w-full rounded-2xl"
         >
           {isLoading ? <Spinner /> : localize('com_auth_continue')}
-        </button>
+        </Button>
         <a
           href="/login"
           className="block text-center text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
