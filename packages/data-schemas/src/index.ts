@@ -1,3 +1,20 @@
+// Export all types
+export * from './types';
+
+// Export all models
+export * from './models';
+
+// Export all methods
+export * from './methods';
+
+// Export schemas (if needed for direct access)
+export { default as userSchema } from './schema/user';
+export { default as sessionSchema } from './schema/session';
+export { default as tokenSchema } from './schema/token';
+
+// Export utility functions from schemas
+export { signPayload, hashToken } from './schema/session';
+
 export { default as actionSchema } from './schema/action';
 export type { IAction } from './schema/action';
 
@@ -49,21 +66,11 @@ export type { IPromptGroup, IPromptGroupDocument } from './schema/promptGroup';
 export { default as roleSchema } from './schema/role';
 export type { IRole } from './schema/role';
 
-export { default as sessionSchema } from './schema/session';
-export type { ISession } from './schema/session';
-
 export { default as shareSchema } from './schema/share';
 export type { ISharedLink } from './schema/share';
-
-export { default as tokenSchema } from './schema/token';
-export type { IToken } from './schema/token';
 
 export { default as toolCallSchema } from './schema/toolCall';
 export type { IToolCallData } from './schema/toolCall';
 
 export { default as transactionSchema } from './schema/transaction';
 export type { ITransaction } from './schema/transaction';
-
-export { default as userSchema } from './schema/user';
-export type { IUser } from './schema/user';
-export { registerModels } from './models';

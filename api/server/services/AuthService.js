@@ -1,12 +1,27 @@
 const bcrypt = require('bcryptjs');
 const { webcrypto } = require('node:crypto');
+const {
+  findUser,
+  createUser,
+  updateUser,
+  findToken,
+  countUsers,
+  getUserById,
+  findSession,
+  createToken,
+  deleteTokens,
+  deleteSession,
+  createSession,
+  generateToken,
+  deleteUserById,
+  generateRefreshToken,
+} = require('@librechat/data-schemas');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { registerSchema } = require('~/strategies/validators');
 const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
-const { getBalanceConfig } = require('~/server/services/Config');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -24,14 +39,13 @@ const genericVerificationMessage = 'Please check your email to verify your email
  * @returns
  */
 const logoutUser = async (req, refreshToken) => {
-  const { Session } = db.models;
   try {
     const userId = req.user._id;
-    const session = await Session.findSession({ userId: userId, refreshToken });
+    const session = await findSession({ userId: userId, refreshToken });
 
     if (session) {
       try {
-        await Session.deleteSession({ sessionId: session._id });
+        await deleteSession({ sessionId: session._id });
       } catch (deleteErr) {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
@@ -83,7 +97,7 @@ const sendVerificationEmail = async (user) => {
     template: 'verifyEmail.handlebars',
   });
 
-  await db.models.Token.createToken({
+  await createToken({
     userId: user._id,
     email: user.email,
     token: hash,
@@ -102,8 +116,7 @@ const verifyEmail = async (req) => {
   const { email, token } = req.body;
   const decodedEmail = decodeURIComponent(email);
 
-  const { User, Token } = db.models;
-  const user = await User.findUser({ email: decodedEmail }, 'email _id emailVerified');
+  const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
 
   if (!user) {
     logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
@@ -115,7 +128,7 @@ const verifyEmail = async (req) => {
     return { message: 'Email already verified', status: 'success' };
   }
 
-  let emailVerificationData = await Token.findToken({ email: decodedEmail });
+  let emailVerificationData = await findToken({ email: decodedEmail });
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
@@ -131,16 +144,18 @@ const verifyEmail = async (req) => {
     return new Error('Invalid or expired email verification token');
   }
 
-  const updatedUser = await User.updateUser(emailVerificationData.userId, { emailVerified: true });
+  const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
+
   if (!updatedUser) {
     logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
     return new Error('Failed to update user verification status');
   }
 
-  await Token.deleteTokens({ token: emailVerificationData.token });
+  await deleteTokens({ token: emailVerificationData.token });
   logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
+
 /**
  * Register a new user.
  * @param {MongoUser} user <email, password, name, username>
@@ -148,7 +163,6 @@ const verifyEmail = async (req) => {
  * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
-  const { User } = db.models;
   const { error } = registerSchema.safeParse(user);
   if (error) {
     const errorMessage = errorsToString(error.errors);
@@ -165,7 +179,7 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
-    const existingUser = await User.findUser({ email }, 'email _id');
+    const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
       logger.info(
@@ -187,7 +201,7 @@ const registerUser = async (user, additionalData = {}) => {
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = (await User.countUsers()) === 0;
+    const isFirstRegisteredUser = (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
     const newUserData = {
@@ -204,8 +218,8 @@ const registerUser = async (user, additionalData = {}) => {
     const emailEnabled = checkEmailConfig();
     const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
     const balanceConfig = await getBalanceConfig();
-    
-    const newUser = await User.createUser(newUserData, balanceConfig, disableTTL, true);
+
+    const newUser = await createUser(newUserData, balanceConfig, disableTTL, true);
     newUserId = newUser._id;
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
@@ -214,14 +228,14 @@ const registerUser = async (user, additionalData = {}) => {
         name,
       });
     } else {
-      await User.updateUser(newUserId, { emailVerified: true });
+      await updateUser(newUserId, { emailVerified: true });
     }
 
     return { status: 200, message: genericVerificationMessage };
   } catch (err) {
     logger.error('[registerUser] Error in registering user:', err);
     if (newUserId) {
-      const result = await User.deleteUserById(newUserId);
+      const result = await deleteUserById(newUserId);
       logger.warn(
         `[registerUser] [Email: ${email}] [Temporary User deleted: ${JSON.stringify(result)}]`,
       );
@@ -236,8 +250,7 @@ const registerUser = async (user, additionalData = {}) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const { User, Token } = db.models;
-  const user = await User.findUser({ email }, 'email _id');
+  const user = await findUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
@@ -249,11 +262,11 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  await Token.deleteTokens({ userId: user._id });
+  await deleteTokens({ userId: user._id });
 
   const [resetToken, hash] = createTokenHash();
 
-  await Token.createToken({
+  await createToken({
     userId: user._id,
     token: hash,
     createdAt: Date.now(),
@@ -298,8 +311,7 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  const { User, Token } = db.models;
-  let passwordResetToken = await Token.findToken({
+  let passwordResetToken = await findToken({
     userId,
   });
 
@@ -314,7 +326,7 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  const user = await User.updateUser(userId, { password: hash });
+  const user = await updateUser(userId, { password: hash });
 
   if (checkEmailConfig()) {
     await sendEmail({
@@ -329,7 +341,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await Token.deleteTokens({ token: passwordResetToken.token });
+  await deleteTokens({ token: passwordResetToken.token });
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
@@ -344,20 +356,19 @@ const resetPassword = async (userId, token, password) => {
  */
 const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
-    const { User, Session } = db.models;
-    const user = await User.getUserById(userId);
-    const token = await User.generateToken(user);
+    const user = await getUserById(userId);
+    const token = await generateToken(user);
 
     let session;
     let refreshToken;
     let refreshTokenExpires;
 
     if (sessionId) {
-      session = await Session.findSession({ sessionId: sessionId }, { lean: false });
+      session = await findSession({ sessionId: sessionId }, { lean: false });
       refreshTokenExpires = session.expiration.getTime();
-      refreshToken = await Session.generateRefreshToken(session);
+      refreshToken = await generateRefreshToken(session);
     } else {
-      const result = await Session.createSession(userId);
+      const result = await createSession(userId);
       session = result.session;
       refreshToken = result.refreshToken;
       refreshTokenExpires = session.expiration.getTime();
@@ -381,6 +392,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     throw error;
   }
 };
+
 /**
  * @function setOpenIDAuthTokens
  * Set OpenID Authentication Tokens
@@ -436,9 +448,8 @@ const setOpenIDAuthTokens = (tokenset, res) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    const { User, Token } = db.models;
-    await Token.deleteTokens(email);
-    const user = await User.findUser({ email }, 'email _id name');
+    await deleteTokens(email);
+    const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
       logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
@@ -463,7 +474,7 @@ const resendVerificationEmail = async (req) => {
       template: 'verifyEmail.handlebars',
     });
 
-    await Token.createToken({
+    await createToken({
       userId: user._id,
       email: user.email,
       token: hash,
