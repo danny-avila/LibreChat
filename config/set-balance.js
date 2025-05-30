@@ -1,5 +1,6 @@
 const path = require('path');
-const { User, Balance } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { User, Balance } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const { isEnabled } = require('~/server/utils/handleText');

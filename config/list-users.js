@@ -1,5 +1,6 @@
 const path = require('path');
-const { User } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
