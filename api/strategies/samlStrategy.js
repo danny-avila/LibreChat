@@ -5,8 +5,7 @@ const passport = require('passport');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { hashToken } = require('~/server/utils/crypto');
-const { logger } = require('~/config');
+const { hashToken, logger } = require('@librechat/data-schemas');
 const paths = require('~/config/paths');
 
 let crypto;

@@ -1,5 +1,5 @@
 import type * as t from '~/types/session';
-import { signPayload, hashToken } from '~/schema/session';
+import { signPayload, hashToken } from '~/crypto';
 import logger from '~/config/winston';
 
 export class SessionError extends Error {

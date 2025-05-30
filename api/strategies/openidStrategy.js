@@ -2,12 +2,13 @@ const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
-const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
+const { getBalanceConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
 
@@ -36,8 +37,6 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
   }
 }
 
-const { getBalanceConfig } = require('~/server/services/Config');
-
 let crypto;
 let webcrypto;
 try {
@@ -45,12 +44,6 @@ try {
   webcrypto = crypto;
 } catch (err) {
   logger.error('[openidStrategy] crypto support is disabled!', err);
-}
-
-async function hashToken(str) {
-  const data = new TextEncoder().encode(str);
-  const hashBuffer = await webcrypto.subtle.digest('SHA-256', data);
-  return Buffer.from(hashBuffer).toString('hex');
 }
 
 /**

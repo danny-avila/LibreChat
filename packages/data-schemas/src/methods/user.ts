@@ -1,6 +1,6 @@
 import mongoose, { FilterQuery } from 'mongoose';
-import { IUser, BalanceConfig, UserCreateData, UserUpdateResult } from '~/types';
-import { signPayload } from '~/schema/session';
+import type { IUser, BalanceConfig, UserCreateData, UserUpdateResult } from '~/types';
+import { signPayload } from '~/crypto';
 
 /** Factory function that takes mongoose instance and returns the methods */
 export function createUserMethods(mongoose: typeof import('mongoose')) {
