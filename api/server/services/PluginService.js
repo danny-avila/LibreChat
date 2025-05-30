@@ -1,5 +1,4 @@
-const mongoose = require('mongoose');
-const { encrypt, decrypt } = require('~/server/utils/');
+const { encrypt, decrypt } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
 const PluginAuth = require('~/db/models').PluginAuth;
