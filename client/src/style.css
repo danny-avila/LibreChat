@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom Logo Sizes */
+@layer utilities {
+  .logo-sm {
+    height: 3.5rem; /* 56px */
+  }
+  .logo-md {
+    height: 3.75rem; /* 60px */
+  }
+  .logo-lg {
+    height: 4.25rem; /* 68px */
+  }
+  .logo-xl {
+    height: 4.75rem; /* 76px */
+  }
+}
+
 /* Custom Variables */
 :root {
   --white: #fff;
@@ -1999,7 +2015,7 @@ html {
   left: 0;
   position: absolute;
   right: 0;
-  top: 0;
+   top: 0;
   box-shadow:
     0 0 transparent,
     0 0 transparent,

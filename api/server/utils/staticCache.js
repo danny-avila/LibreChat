@@ -11,7 +11,14 @@ const staticCache = (staticPath) =>
     orderPreference: ['gz'],
     setHeaders: (res, _path) => {
       if (process.env.NODE_ENV?.toLowerCase() === 'production') {
-        res.setHeader('Cache-Control', `public, max-age=${maxAge}, s-maxage=${sMaxAge}`);
+        const fileName = require('path').basename(_path);
+        
+        // Don't cache logo files to allow for easy updates
+        if (fileName.includes('logo.')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else {
+          res.setHeader('Cache-Control', `public, max-age=${maxAge}, s-maxage=${sMaxAge}`);
+        }
       }
     },
     index: false,
