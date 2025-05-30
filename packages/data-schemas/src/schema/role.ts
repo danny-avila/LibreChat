@@ -1,4 +1,4 @@
-import { Schema } from 'mongoose';
+import { Schema } from '~/mongoose';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { IRole } from '~/types';
 
