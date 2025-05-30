@@ -1,7 +1,8 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
+const MONGO_URI = process.env.MONGO_URI;
 
-if (!process.env.MONGO_URI) {
+if (!MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
 }
 
@@ -16,7 +17,7 @@ if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
 }
 
-async function connectDb(mongoUri = process.env.MONGO_URI) {
+async function connectDb() {
   if (cached.conn && cached.conn?._readyState === 1) {
     return cached.conn;
   }
@@ -33,7 +34,7 @@ async function connectDb(mongoUri = process.env.MONGO_URI) {
     };
 
     mongoose.set('strictQuery', true);
-    cached.promise = mongoose.connect(mongoUri, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
       return mongoose;
     });
   }
