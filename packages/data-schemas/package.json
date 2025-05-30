@@ -59,7 +59,10 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "keyv": "^5.3.2",
+    "mongoose": "^8.12.1",
+    "librechat-data-provider": "*",
     "jsonwebtoken": "^9.0.2",
     "klona": "^2.0.6",
     "lodash": "^4.17.21",
@@ -67,11 +70,6 @@
     "traverse": "^0.6.11",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0"
-  },
-  "peerDependencies": {
-    "keyv": "^5.3.2",
-    "mongoose": "^8.12.1",
-    "librechat-data-provider": "*"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
