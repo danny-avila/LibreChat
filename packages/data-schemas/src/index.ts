@@ -25,7 +25,6 @@ export { default as assistantSchema } from './schema/assistant';
 export type { IAssistant } from './schema/assistant';
 
 export { default as balanceSchema } from './schema/balance';
-export type { IBalance } from './schema/balance';
 
 export { default as bannerSchema } from './schema/banner';
 export type { IBanner } from './schema/banner';
@@ -37,7 +36,6 @@ export { default as conversationTagSchema } from './schema/conversationTag';
 export type { IConversationTag } from './schema/conversationTag';
 
 export { default as convoSchema } from './schema/convo';
-export type { IConversation } from './schema/convo';
 
 export { default as fileSchema } from './schema/file';
 export type { IMongoFile } from './schema/file';
