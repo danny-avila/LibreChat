@@ -1,5 +1,4 @@
 const { z } = require('zod');
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 
 const Message = require('~/db/models').Message;
