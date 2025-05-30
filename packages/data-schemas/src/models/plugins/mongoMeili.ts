@@ -1,7 +1,7 @@
 import _ from 'lodash';
 import mongoose, { Schema, Document, Model, Query } from 'mongoose';
 import { MeiliSearch, Index } from 'meilisearch';
-import logger from '../../config/meiliLogger';
+import logger from '~/config/meiliLogger';
 
 interface MongoMeiliOptions {
   host: string;
