@@ -30,8 +30,8 @@ RUN \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
     npm install --no-audit --frozen-lockfile; \
-    # Install client dependencies separately
-    cd client && npm install && cd .. ; \
+    # Install client dependencies with dev dependencies for build
+    cd client && npm install --include=dev && cd .. ; \
     # React client build (before pruning dev dependencies)
     NODE_OPTIONS="--max-old-space-size=3072" npm run frontend:docker; \
     # Keep the built packages before pruning
@@ -41,7 +41,9 @@ RUN \
     cp -r packages/mcp/dist /tmp/packages-dist/mcp-dist || true ; \
     # Keep the client build before pruning
     cp -r client/dist /tmp/client-dist || true ; \
+    # Prune dev dependencies after build
     npm prune --production; \
+    cd client && npm prune --production && cd .. ; \
     # Restore the built packages
     mkdir -p packages/data-provider/dist packages/data-schemas/dist packages/mcp/dist ; \
     cp -r /tmp/packages-dist/data-provider-dist/* packages/data-provider/dist/ || true ; \

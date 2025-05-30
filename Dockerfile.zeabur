@@ -31,7 +31,7 @@ RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 15000
 
-# Install dependencies
+# Install dependencies (including dev dependencies for build)
 RUN npm install --no-audit --frozen-lockfile
 
 # Copy source code
@@ -44,14 +44,15 @@ RUN npm run postinstall
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Install client dependencies separately
-RUN cd client && npm install && cd ..
+# Install client dependencies with dev dependencies for build
+RUN cd client && npm install --include=dev && cd ..
 
 # Build frontend with Zeabur-specific optimizations
 RUN npm run frontend:zeabur
 
-# Clean up
+# Clean up dev dependencies after build
 RUN npm prune --production && \
+    cd client && npm prune --production && cd .. && \
     npm cache clean --force
 
 # Create necessary directories
