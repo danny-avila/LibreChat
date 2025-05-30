@@ -5,7 +5,7 @@ async function omnexioBalanceController(req, res) {
   try {
     const { OMNEXIO_BASE_URL, OMNEXIO_API_KEY } = process.env;
 
-    const url = `${OMNEXIO_BASE_URL}/v1/chat-users/${req.user.id}`;
+    const url = `${OMNEXIO_BASE_URL}/v1/chat-users/${req.user.id}?name=${req.user.name}`;
     const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${OMNEXIO_API_KEY}`,
