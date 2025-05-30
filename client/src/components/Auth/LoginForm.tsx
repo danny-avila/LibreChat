@@ -5,6 +5,7 @@ import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
 import { ThemeContext, useLocalize } from '~/hooks';
+import { Spinner } from '~/components';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -21,7 +22,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     register,
     getValues,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -170,10 +171,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
             type="submit"
-            disabled={requireCaptcha && !turnstileToken}
+            disabled={(requireCaptcha && !turnstileToken) || isSubmitting}
             className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50 disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
           >
-            {localize('com_auth_continue')}
+            {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
           </button>
         </div>
       </form>
