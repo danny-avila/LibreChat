@@ -136,6 +136,10 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
+    },
+    "esbuild": "0.25.0",
+    "vite": {
+      "esbuild": "0.25.0"
     }
   },
   "nodemonConfig": {

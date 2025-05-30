@@ -26,6 +26,7 @@ const {
   TavilySearchResults,
   createOpenAIImageTools,
   MondayTool,
+  StripeAPITool,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -161,6 +162,7 @@ const loadTools = async ({
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
     'monday-tool': MondayTool,
+    'stripe-payment': StripeAPITool,
   };
 
   const customConstructors = {

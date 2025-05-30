@@ -196,13 +196,26 @@
   {
     "name": "Monday.com",
     "pluginKey": "monday-tool",
-    "description": "Полная интеграция с monday.com для управления проектами, задачами, досками и автоматизации рабочих процессов. Поддерживает создание и редактирование элементов, управление группами, добавление комментариев.",
+    "description": "Complete Monday.com integration for project management, tasks, boards and workflow automation. Supports item creation and editing, group management, and adding comments.",
     "icon": "https://cdn.monday.com/images/logos/monday_logo_icon.png",
     "authConfig": [
       {
         "authField": "MONDAY_API_KEY",
         "label": "Monday.com API Key",
-        "description": "Ваш Personal API Token от monday.com. Получите его: Профиль → Admin → API → Personal API Token. Подробнее: <a href='https://monday.com/developers/v2#authentication-section' target='_blank'>Monday.com API Docs</a>"
+        "description": "Your Personal API Token from Monday.com. Get it: Profile → Admin → API → Personal API Token. More info: <a href='https://monday.com/developers/v2#authentication-section' target='_blank'>Monday.com API Docs</a>"
+      }
+    ]
+  },
+  {
+    "name": "Stripe API",
+    "pluginKey": "stripe-payment",
+    "description": "Complete Stripe API integration for managing payments, customers, invoices, subscriptions, products and prices. Supports invoice creation and sending, payment processing and refunds.",
+    "icon": "https://assets.stripe.com/img/v3/home/twitter.png",
+    "authConfig": [
+      {
+        "authField": "STRIPE_API_KEY",
+        "label": "Stripe API Key",
+        "description": "Your Stripe API Key. Get it from Stripe Dashboard → Developers → API keys. Use 'sk_test_' for test mode or 'sk_live_' for production. More info: <a href='https://stripe.com/docs/keys' target='_blank'>Stripe API Keys</a>"
       }
     ]
   }

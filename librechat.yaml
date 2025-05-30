@@ -39,21 +39,44 @@ actions:
     - "fireworks.ai"
     - "deepseek.com"
     - "together.ai"
+    - "mistral.ai"
+    - "groq.com"
+    - "openrouter.ai"
 
 endpoints:
   openAI:
     models:
-      default: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']
+      default: [
+        'gpt-4o',
+        'gpt-4o-mini',
+        'gpt-4-turbo',
+        'gpt-4-turbo-2024-04-09',
+        'gpt-4-0125-preview',
+        'gpt-4-1106-preview',
+        'gpt-3.5-turbo-0125',
+        'gpt-3.5-turbo-1106',
+        'o1-preview',
+        'o1-mini'
+      ]
       fetch: true
     titleConvo: true
     titleModel: 'gpt-4o-mini'
   
   anthropic:
     models:
-      default: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022']
+      default: [
+        'claude-opus-4-20250514',
+        'claude-sonnet-4-20250514',
+        'claude-3-7-sonnet-20250219',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+        'claude-3-opus-20240229',
+        'claude-3-sonnet-20240229',
+        'claude-3-haiku-20240307'
+      ]
       fetch: false
     titleConvo: true
-    titleModel: 'claude-sonnet-4-20250514'
+    titleModel: 'claude-3-5-sonnet-20241022'
   
   agents:
     recursionLimit: 50
@@ -66,7 +89,15 @@ endpoints:
       userProvided: true
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
-        default: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+        default: [
+          'llama-3.1-70b-versatile',
+          'llama-3.1-8b-instant',
+          'llama3-70b-8192',
+          'llama3-8b-8192',
+          'mixtral-8x7b-32768',
+          'gemma-7b-it',
+          'gemma2-9b-it'
+        ]
         fetch: true
       titleConvo: true
       titleModel: 'llama-3.1-70b-versatile'
@@ -76,10 +107,20 @@ endpoints:
       userProvided: true
       baseURL: 'https://api.mistral.ai/v1'
       models:
-        default: ['mistral-small-latest', 'mistral-medium-latest', 'mistral-large-latest']
+        default: [
+          'mistral-medium-2505',
+          'mistral-large-2411',
+          'pixtral-large-2411',
+          'mistral-small-2503',
+          'ministral-8b-2410',
+          'ministral-3b-2410',
+          'codestral-2501',
+          'mistral-embed',
+          'open-mistral-nemo'
+        ]
         fetch: true
       titleConvo: true
-      titleModel: 'mistral-small-latest'
+      titleModel: 'mistral-small-2503'
       modelDisplayLabel: 'Mistral'
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
     
@@ -87,10 +128,23 @@ endpoints:
       userProvided: true
       baseURL: 'https://openrouter.ai/api/v1'
       models:
-        default: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'meta-llama/llama-3.1-70b-instruct']
+        default: [
+          'anthropic/claude-opus-4-20250514',
+          'anthropic/claude-sonnet-4-20250514',
+          'anthropic/claude-3-5-sonnet',
+          'openai/gpt-4o',
+          'openai/gpt-4o-mini',
+          'openai/o1-preview',
+          'openai/o1-mini',
+          'meta-llama/llama-3.1-405b-instruct',
+          'meta-llama/llama-3.1-70b-instruct',
+          'google/gemini-pro-1.5',
+          'google/gemini-flash-1.5',
+          'mistralai/pixtral-large-2411'
+        ]
         fetch: true
       titleConvo: true
-      titleModel: 'anthropic/claude-3.5-sonnet'
+      titleModel: 'anthropic/claude-3-5-sonnet'
       modelDisplayLabel: 'OpenRouter'
       dropParams: ['stop']
     
@@ -98,7 +152,11 @@ endpoints:
       userProvided: true
       baseURL: 'https://api.deepseek.com/v1'
       models:
-        default: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner']
+        default: [
+          'deepseek-chat',
+          'deepseek-coder',
+          'deepseek-reasoner'
+        ]
         fetch: true
       titleConvo: true
       titleModel: 'deepseek-chat'
@@ -108,7 +166,12 @@ endpoints:
       userProvided: true
       baseURL: 'https://api.fireworks.ai/inference/v1'
       models:
-        default: ['accounts/fireworks/models/llama-v3p1-70b-instruct', 'accounts/fireworks/models/mixtral-8x7b-instruct']
+        default: [
+          'accounts/fireworks/models/llama-v3p1-70b-instruct',
+          'accounts/fireworks/models/llama-v3p1-8b-instruct',
+          'accounts/fireworks/models/mixtral-8x7b-instruct',
+          'accounts/fireworks/models/gemma-7b-it'
+        ]
         fetch: true
       titleConvo: true
       titleModel: 'accounts/fireworks/models/llama-v3p1-70b-instruct'
@@ -134,3 +197,12 @@ fileConfig:
   imageGeneration:
     percentage: 100
     px: 1024
+
+# Balance configuration
+balance:
+  enabled: true
+  startBalance: 20000
+  autoRefillEnabled: false
+  refillIntervalValue: 30
+  refillIntervalUnit: 'days'
+  refillAmount: 10000
