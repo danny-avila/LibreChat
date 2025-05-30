@@ -17,7 +17,7 @@ const mockModels = {
   },
 };
 
-jest.mock('~/lib/db/connectDb', () => {
+jest.mock('~/db/connect', () => {
   return {
     getModels: jest.fn(() => mockModels),
     connectDb: jest.fn(),

@@ -13,12 +13,10 @@ const mockPluginService = {
 const mockModels = {
   User: mockUser,
 };
-jest.mock('~/lib/db/connectDb', () => {
+jest.mock('~/db/connect', () => {
   return {
     connectDb: jest.fn(),
-    get models() {
-      return mockModels;
-    },
+    User: mockModels.mockUser,
   };
 });
 jest.mock('~/models/File', () => ({
@@ -60,7 +58,7 @@ describe('Tool Handlers', () => {
       },
     );
 
-    fakeUser = await User.createUser({
+    fakeUser = await mockModels.User.createUser({
       name: 'Fake User',
       username: 'fakeuser',
       email: 'fakeuser@example.com',
@@ -226,7 +224,6 @@ describe('Tool Handlers', () => {
       try {
         await loadTool2();
       } catch (error) {
-        // eslint-disable-next-line jest/no-conditional-expect
         expect(error).toBeDefined();
       }
     });

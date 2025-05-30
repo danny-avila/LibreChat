@@ -38,7 +38,7 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
   }
 }
 
-const db = require('~/lib/db/connectDb');
+const db = require('db/connect');
 const { getBalanceConfig } = require('~/server/services/Config');
 
 let crypto;

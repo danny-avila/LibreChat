@@ -42,16 +42,6 @@ async function connectDb(mongoUri = process.env.MONGO_URI) {
   return cached.conn;
 }
 
-function getModels() {
-  return cached.models;
-}
 module.exports = {
   connectDb,
-  getModels,
-  get models() {
-    if (!cached.models) {
-      throw new Error('Models not registered. ');
-    }
-    return cached.models;
-  },
 };

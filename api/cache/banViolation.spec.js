@@ -6,7 +6,7 @@ const mockModels = {
   },
 };
 
-jest.mock('~/lib/db/connectDb', () => {
+jest.mock('~/db/connect', () => {
   return {
     connectDb: jest.fn(),
     get models() {

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const db = require('~/lib/db/connectDb');
+const db = require('db/connect');
 
 jest.mock('mongoose');
 
@@ -35,7 +35,7 @@ const mockModels = {
   },
 };
 
-jest.mock('~/lib/db/connectDb', () => {
+jest.mock('~/db/connect', () => {
   return {
     get models() {
       return mockModels;

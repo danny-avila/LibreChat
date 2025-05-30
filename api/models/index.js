@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
-const { createModels, createMethods } = require('@librechat/data-schemas');
-createModels(mongoose);
+const { createMethods } = require('@librechat/data-schemas');
 const methods = createMethods(mongoose);
 const { comparePassword } = require('./userMethods');
 const {
