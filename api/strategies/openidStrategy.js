@@ -1,5 +1,4 @@
 const fetch = require('node-fetch');
-const mongoose = require('mongoose');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
@@ -8,10 +7,9 @@ const { CacheKeys } = require('librechat-data-provider');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { findUser, createUser, updateUser } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
-
-const User = require('~/db/models').User;
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -248,13 +246,13 @@ async function setupOpenId() {
       async (tokenset, done) => {
         try {
           const claims = tokenset.claims();
-          let user = await User.findUser({ openidId: claims.sub });
+          let user = await findUser({ openidId: claims.sub });
           logger.info(
             `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${claims.sub}`,
           );
 
           if (!user) {
-            user = await User.findUser({ email: claims.email });
+            user = await findUser({ email: claims.email });
             logger.info(
               `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
                 claims.email
@@ -318,7 +316,7 @@ async function setupOpenId() {
 
             const balanceConfig = await getBalanceConfig();
 
-            user = await User.createUser(user, balanceConfig, true, true);
+            user = await createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
@@ -354,7 +352,7 @@ async function setupOpenId() {
             }
           }
 
-          user = await User.updateUser(user._id, user);
+          user = await updateUser(user._id, user);
 
           logger.info(
             `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,

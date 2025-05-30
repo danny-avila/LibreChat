@@ -1,6 +1,5 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -10,11 +9,11 @@ const {
   requestPasswordReset,
   setOpenIDAuthTokens,
 } = require('~/server/services/AuthService');
+const { findUser, getUserById } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
 
 const Session = require('~/db/models').Session;
-const User = require('~/db/models').User;
 
 const registrationController = async (req, res) => {
   try {
@@ -73,7 +72,7 @@ const refreshController = async (req, res) => {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
       const claims = tokenset.claims();
-      const user = await User.findUser({ email: claims.email });
+      const user = await findUser({ email: claims.email });
       if (!user) {
         return res.status(401).redirect('/login');
       }
@@ -86,7 +85,7 @@ const refreshController = async (req, res) => {
   }
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await User.getUserById(payload.id, '-password -__v -totpSecret');
+    const user = await getUserById(payload.id, '-password -__v -totpSecret');
     if (!user) {
       return res.status(401).redirect('/login');
     }
