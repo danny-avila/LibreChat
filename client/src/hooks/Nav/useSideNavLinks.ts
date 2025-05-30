@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark } from 'lucide-react';
+import {
+  MessageSquareQuote,
+  ArrowRightToLine,
+  Settings2,
+  Bookmark,
+  LayoutGrid,
+} from 'lucide-react';
 import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
@@ -18,6 +24,7 @@ import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useHasAccess } from '~/hooks';
+import { useNavigate } from 'react-router-dom';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -34,6 +41,7 @@ export default function useSideNavLinks({
   interfaceConfig: Partial<TInterfaceConfig>;
   endpointsConfig: TEndpointsConfig;
 }) {
+  const navigate = useNavigate();
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,

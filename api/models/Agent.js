@@ -4,6 +4,8 @@ const { SystemRoles, Tools } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
+// Default category value for new agents
+const AgentCategory = require('./AgentCategory');
 const {
   getProjectByName,
   addAgentIdsToProject,
@@ -12,18 +14,7 @@ const {
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
 
-// Category values - must match the frontend values in client/src/constants/agentCategories.ts
-const CATEGORY_VALUES = {
-  GENERAL: 'general',
-  HR: 'hr',
-  RD: 'rd',
-  FINANCE: 'finance',
-  IT: 'it',
-  SALES: 'sales',
-  AFTERSALES: 'aftersales',
-};
-
-const VALID_CATEGORIES = Object.values(CATEGORY_VALUES);
+// Category values are now imported from shared constants
 
 // Add category field to the Agent schema if it doesn't already exist
 if (!agentSchema.paths.category) {
@@ -31,15 +22,20 @@ if (!agentSchema.paths.category) {
     category: {
       type: String,
       trim: true,
-      enum: {
-        values: VALID_CATEGORIES,
-        message:
-          '"{VALUE}" is not a supported agent category. Valid categories are: ' +
-          VALID_CATEGORIES.join(', ') +
-          '.',
+      validate: {
+        validator: async function (value) {
+          if (!value) return true; // Allow empty values (will use default)
+
+          // Check if category exists in database
+          const validCategories = await AgentCategory.getValidCategoryValues();
+          return validCategories.includes(value);
+        },
+        message: function (props) {
+          return `"${props.value}" is not a valid agent category. Please check available categories.`;
+        },
       },
       index: true,
-      default: CATEGORY_VALUES.GENERAL,
+      default: 'general',
     },
   });
 }
@@ -66,6 +62,33 @@ if (!agentSchema.paths.support_contact) {
     },
   });
 }
+
+// Add promotion field to the Agent schema if it doesn't already exist
+if (!agentSchema.paths.is_promoted) {
+  agentSchema.add({
+    is_promoted: {
+      type: Boolean,
+      default: false,
+      index: true, // Index for efficient promoted agent queries
+    },
+  });
+}
+
+// Add additional indexes for marketplace functionality
+agentSchema.index({ projectIds: 1, is_promoted: 1, updatedAt: -1 }); // Optimize promoted agents query
+agentSchema.index({ category: 1, projectIds: 1, updatedAt: -1 }); // Optimize category filtering
+agentSchema.index({ projectIds: 1, category: 1 }); // Optimize aggregation pipeline
+
+// Text indexes for search functionality
+agentSchema.index(
+  { name: 'text', description: 'text' },
+  {
+    weights: {
+      name: 3, // Name matches are 3x more important than description matches
+      description: 1,
+    },
+  },
+);
 
 const Agent = mongoose.model('agent', agentSchema);
 
