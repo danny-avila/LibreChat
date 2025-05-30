@@ -31,7 +31,6 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
     }
 
     try {
-      // Create a proper Mongoose document like the original
       const session = new Session({
         user: userId,
         expiration: options.expiration || new Date(Date.now() + expires),
@@ -184,7 +183,6 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
 
       const result = await Session.deleteMany(query);
 
-      // Match original logging logic exactly
       if (result.deletedCount && result.deletedCount > 0) {
         logger.debug(
           `[deleteAllUserSessions] Deleted ${result.deletedCount} sessions for user ${userIdString}.`,
@@ -251,7 +249,6 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
-  // Return all methods - match original exports exactly
   return {
     findSession,
     SessionError,
