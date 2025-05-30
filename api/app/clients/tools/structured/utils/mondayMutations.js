@@ -16,7 +16,6 @@ module.exports = {
           name
         }
         state
-        created_at
       }
     }
   `,
@@ -32,24 +31,6 @@ module.exports = {
       ) {
         id
         name
-        state
-        created_at
-        updated_at
-        group {
-          id
-          title
-        }
-        column_values {
-          id
-          title
-          type
-          text
-          value
-        }
-        board {
-          id
-          name
-        }
       }
     }
   `,
@@ -64,15 +45,6 @@ module.exports = {
       ) {
         id
         name
-        state
-        updated_at
-        column_values {
-          id
-          title
-          type
-          text
-          value
-        }
       }
     }
   `,
@@ -81,8 +53,6 @@ module.exports = {
     mutation deleteItem($itemId: ID!) {
       delete_item(item_id: $itemId) {
         id
-        state
-        deleted_at
       }
     }
   `,
@@ -98,32 +68,21 @@ module.exports = {
       ) {
         id
         name
-        state
-        updated_at
-        column_values {
-          id
-          title
-          type
-          text
-          value
-        }
       }
     }
   `,
   
   CREATE_GROUP: `
-    mutation createGroup($boardId: ID!, $groupName: String!, $color: String, $position: String) {
+    mutation createGroup($boardId: ID!, $groupName: String!, $groupColor: String, $position: String) {
       create_group(
         board_id: $boardId,
         group_name: $groupName,
-        color: $color,
+        group_color: $groupColor,
         position: $position
       ) {
         id
         title
         color
-        position
-        items_count
       }
     }
   `,
@@ -151,6 +110,32 @@ module.exports = {
             id
             name
           }
+        }
+      }
+    }
+  `,
+
+  ARCHIVE_BOARD: `
+    mutation archiveBoard($boardId: ID!) {
+      archive_board(board_id: $boardId) {
+        id
+        name
+        state
+      }
+    }
+  `,
+
+  DUPLICATE_BOARD: `
+    mutation duplicateBoard($board_id: ID!, $duplicate_type: DuplicateBoardType!, $board_name: String, $keep_subscribers: Boolean) {
+      duplicate_board(
+        board_id: $board_id,
+        duplicate_type: $duplicate_type,
+        board_name: $board_name,
+        keep_subscribers: $keep_subscribers
+      ) {
+        board {
+          id
+          name
         }
       }
     }

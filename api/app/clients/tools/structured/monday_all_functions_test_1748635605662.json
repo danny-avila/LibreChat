@@ -1,0 +1,249 @@
+{
+  "timestamp": "2025-05-30T20:06:45.662Z",
+  "total_tests": 48,
+  "successful": 8,
+  "errors": 13,
+  "warnings": 0,
+  "results": [
+    {
+      "timestamp": "2025-05-30T20:06:41.219Z",
+      "status": "info",
+      "message": "🚀 Запуск комплексного тестирования Monday.com API...\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:41.220Z",
+      "status": "info",
+      "message": "\n📋 === ТЕСТИРОВАНИЕ ОПЕРАЦИЙ С ДОСКАМИ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:41.220Z",
+      "status": "info",
+      "message": "Тестируем: getBoards..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.263Z",
+      "status": "success",
+      "message": "✅ getBoards: Успешно"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.263Z",
+      "status": "info",
+      "message": "   Получено записей: 5"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.263Z",
+      "status": "info",
+      "message": "Тестируем: getBoard..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.370Z",
+      "status": "error",
+      "message": "❌ getBoard: Неуспешно - HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.371Z",
+      "status": "info",
+      "message": "Тестируем: getWorkspaces..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.692Z",
+      "status": "success",
+      "message": "✅ getWorkspaces: Успешно"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.692Z",
+      "status": "info",
+      "message": "   Получено записей: 5"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:42.692Z",
+      "status": "info",
+      "message": "Тестируем: getColumnsInfo..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.205Z",
+      "status": "success",
+      "message": "✅ getColumnsInfo: Успешно"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.205Z",
+      "status": "info",
+      "message": "   Получено записей: 2"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.205Z",
+      "status": "info",
+      "message": "\n📋 === ТЕСТИРОВАНИЕ ОПЕРАЦИЙ С ЭЛЕМЕНТАМИ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.205Z",
+      "status": "info",
+      "message": "Тестируем: createItem (простое)..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.332Z",
+      "status": "error",
+      "message": "❌ createItem (простое): Неуспешно - Failed to create item: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.332Z",
+      "status": "info",
+      "message": "Тестируем: createItem (с данными)..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.715Z",
+      "status": "error",
+      "message": "❌ createItem (с данными): Неуспешно - Failed to create item: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:43.716Z",
+      "status": "info",
+      "message": "Тестируем: getItems..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.027Z",
+      "status": "error",
+      "message": "❌ getItems: Неуспешно - Failed to get items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.027Z",
+      "status": "info",
+      "message": "\n📋 === ТЕСТИРОВАНИЕ СТРУКТУРНЫХ ОПЕРАЦИЙ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.027Z",
+      "status": "info",
+      "message": "Тестируем: createGroup..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.171Z",
+      "status": "error",
+      "message": "❌ createGroup: Неуспешно - HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.171Z",
+      "status": "info",
+      "message": "\n📋 === ТЕСТИРОВАНИЕ ПОЛУЧЕНИЯ ДАННЫХ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.171Z",
+      "status": "info",
+      "message": "Тестируем: searchItems..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.343Z",
+      "status": "error",
+      "message": "❌ searchItems: Неуспешно - Failed to search items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.343Z",
+      "status": "info",
+      "message": "Тестируем: getUsers..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.599Z",
+      "status": "success",
+      "message": "✅ getUsers: Успешно"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.599Z",
+      "status": "info",
+      "message": "   Получено записей: 5"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.599Z",
+      "status": "info",
+      "message": "\n📋 === ТЕСТИРОВАНИЕ ДОПОЛНИТЕЛЬНЫХ ОПЕРАЦИЙ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:44.599Z",
+      "status": "info",
+      "message": "Тестируем: getUsersExtended..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.149Z",
+      "status": "success",
+      "message": "✅ getUsersExtended: Успешно"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.149Z",
+      "status": "info",
+      "message": "   Получено записей: 5"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.149Z",
+      "status": "info",
+      "message": "Тестируем: getAccount..."
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.661Z",
+      "status": "success",
+      "message": "✅ getAccount: Успешно"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.661Z",
+      "status": "info",
+      "message": "   ID результата: 7775150"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.661Z",
+      "status": "info",
+      "message": "\n📋 === ОЧИСТКА ТЕСТОВЫХ ДАННЫХ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.661Z",
+      "status": "info",
+      "message": "\n📊 === СВОДКА РЕЗУЛЬТАТОВ ТЕСТИРОВАНИЯ ===\n"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "success",
+      "message": "✅ Успешных тестов: 6"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "❌ Неуспешных тестов: 6"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "success",
+      "message": "⚠️ Предупреждений: 0"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "info",
+      "message": "\n🔍 Функции с ошибками:"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "   1. ❌ getBoard: Неуспешно - HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "   2. ❌ createItem (простое): Неуспешно - Failed to create item: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "   3. ❌ createItem (с данными): Неуспешно - Failed to create item: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "   4. ❌ getItems: Неуспешно - Failed to get items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "   5. ❌ createGroup: Неуспешно - HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T20:06:45.662Z",
+      "status": "error",
+      "message": "   6. ❌ searchItems: Неуспешно - Failed to search items: HTTP Error: 400 Bad Request"
+    }
+  ]
+}

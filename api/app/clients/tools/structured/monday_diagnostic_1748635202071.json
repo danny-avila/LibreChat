@@ -1,0 +1,170 @@
+{
+  "timestamp": "2025-05-30T20:00:02.071Z",
+  "results": [
+    {
+      "timestamp": "2025-05-30T20:00:00.924Z",
+      "type": "info",
+      "message": "🚀 Запуск диагностики Monday.com API..."
+    },
+    {
+      "timestamp": "2025-05-30T20:00:00.924Z",
+      "type": "info",
+      "message": "Тест 1: Получение списка досок..."
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "success",
+      "message": "✅ Получено досок: 10"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   1. Test Board Created by Tool (ID: 9261805849, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   2. Test Board - Function Check (ID: 9259632443, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   3. Management Test Board (ID: 9258391881, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   4. Public Test Board (ID: 9258372431, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   5. API Test Board (ID: 9258358161, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   6. Meeting Tasks (ID: 9153369978, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   7. Задачи после встречи (ID: 9153364865, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   8. Phase 7: Termination Procedure (ID: 8972102774, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   9. Phase 6: Client Retention (ID: 8972101936, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "   10. Phase 5: Delivery & Final Production (ID: 8972101362, State: active)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.502Z",
+      "type": "info",
+      "message": "📋 Используем доску для тестов: Test Board Created by Tool (ID: 9261805849)"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.503Z",
+      "type": "info",
+      "message": "Тест 2: Получение колонок доски 9261805849..."
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.611Z",
+      "type": "error",
+      "message": "❌ Ошибка получения колонок: Не удалось получить колонки"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.611Z",
+      "type": "info",
+      "message": "Тест 2.5: Получение групп доски 9261805849..."
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.820Z",
+      "type": "warning",
+      "message": "⚠️ Группы не найдены"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.820Z",
+      "type": "info",
+      "message": "Тест 3: Простое создание элемента (без column_values)..."
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.820Z",
+      "type": "info",
+      "message": "   Создаем элемент: Диагностический тест 1748635201820"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.820Z",
+      "type": "info",
+      "message": "   Параметры: {\n  \"action\": \"createItem\",\n  \"boardId\": \"9261805849\",\n  \"itemName\": \"Диагностический тест 1748635201820\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.954Z",
+      "type": "error",
+      "message": "❌ Неудача создания. Ответ: {\"error\":\"Failed to create item: HTTP Error: 400 Bad Request\",\"success\":false,\"action\":\"createItem\"}"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:01.954Z",
+      "type": "info",
+      "message": "Тест 5: Получение элементов доски 9261805849..."
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "error",
+      "message": "❌ Ошибка получения элементов: {\"error\":\"Failed to get items: HTTP Error: 400 Bad Request\",\"success\":false,\"action\":\"getItems\"}"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "info",
+      "message": "🎯 Диагностика завершена"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "info",
+      "message": "\n📊 Сводка результатов диагностики:"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "success",
+      "message": "✅ Успешных операций: 1"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "error",
+      "message": "❌ Ошибок: 3"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "warning",
+      "message": "⚠️ Предупреждений: 1"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "info",
+      "message": "\n🔍 Список ошибок:"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "error",
+      "message": "   1. ❌ Ошибка получения колонок: Не удалось получить колонки"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "error",
+      "message": "   2. ❌ Неудача создания. Ответ: {\"error\":\"Failed to create item: HTTP Error: 400 Bad Request\",\"success\":false,\"action\":\"createItem\"}"
+    },
+    {
+      "timestamp": "2025-05-30T20:00:02.071Z",
+      "type": "error",
+      "message": "   3. ❌ Ошибка получения элементов: {\"error\":\"Failed to get items: HTTP Error: 400 Bad Request\",\"success\":false,\"action\":\"getItems\"}"
+    }
+  ]
+}
