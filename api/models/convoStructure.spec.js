@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
-const { Message } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { getMessages, bulkSaveMessages } = require('./Message');
+
+const Message = mongoose.models.Message;
 
 // Original version of buildTree function
 function buildTree({ messages, fileMap }) {

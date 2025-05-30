@@ -1,7 +1,11 @@
 const { nanoid } = require('nanoid');
+const mongoose = require('mongoose');
 const { Constants } = require('librechat-data-provider');
-const { SharedLink, Conversation, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { getMessages } = require('./Message');
+
+const Conversation = mongoose.models.Conversation;
+const SharedLink = mongoose.models.SharedLink;
 
 class ShareServiceError extends Error {
   constructor(message, code) {

@@ -1,10 +1,13 @@
 const fs = require('fs');
+const mongoose = require('mongoose');
 const LdapStrategy = require('passport-ldapauth');
 const { SystemRoles } = require('librechat-data-provider');
-const { User, createUser, findUser, updateUser } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
+const { createUser, findUser, updateUser } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { isEnabled } = require('~/server/utils');
-const logger = require('~/utils/logger');
+
+const User = mongoose.models.User;
 
 const {
   LDAP_URL,

@@ -1,6 +1,8 @@
+const mongoose = require('mongoose');
 const { webcrypto } = require('node:crypto');
-const { User } = require('@librechat/data-schemas');
 const { hashBackupCode, decryptV3, decryptV2 } = require('~/server/utils/crypto');
+
+const User = mongoose.models.User;
 
 // Base32 alphabet for TOTP secret encoding.
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

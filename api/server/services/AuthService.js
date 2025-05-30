@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { webcrypto } = require('node:crypto');
+const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
   createUser,
@@ -15,8 +16,7 @@ const {
   generateToken,
   deleteUserById,
   generateRefreshToken,
-} = require('@librechat/data-schemas');
-const { SystemRoles, errorsToString } = require('librechat-data-provider');
+} = require('~/models');
 const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { getBalanceConfig } = require('~/server/services/Config');

@@ -1,5 +1,9 @@
-const { Conversation, logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const { getMessages, deleteMessages } = require('./Message');
+
+const Conversation = mongoose.models.Conversation;
+
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
  * @param {string} conversationId - The conversation's ID.

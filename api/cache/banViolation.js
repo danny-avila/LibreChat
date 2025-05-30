@@ -1,8 +1,8 @@
+const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
-const { deleteAllUserSessions } = require('@librechat/data-schemas');
 const { isEnabled, math, removePorts } = require('~/server/utils');
+const { deleteAllUserSessions } = require('~/models');
 const getLogStores = require('./getLogStores');
-const { logger } = require('~/config');
 
 const { BAN_VIOLATIONS, BAN_INTERVAL } = process.env ?? {};
 const interval = math(BAN_INTERVAL, 20);

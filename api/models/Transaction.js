@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
-const { Balance, Transaction, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
+
+const Transaction = mongoose.models.Transaction;
+const Balance = mongoose.models.Balance;
 
 const cancelRate = 1.15;
 

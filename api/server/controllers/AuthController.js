@@ -1,7 +1,8 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const openIdClient = require('openid-client');
-const { User, Session, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   registerUser,
   resetPassword,
@@ -11,6 +12,9 @@ const {
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
+
+const Session = mongoose.models.Session;
+const User = mongoose.models.User;
 
 const registrationController = async (req, res) => {
   try {

@@ -1,5 +1,5 @@
-const { deleteTokens } = require('@librechat/data-schemas');
 const { getInvite } = require('~/models/inviteUser');
+const { deleteTokens } = require('~/models');
 
 async function checkInviteUser(req, res, next) {
   const token = req.body.token;

@@ -1,4 +1,7 @@
-const { Balance } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+
+const Balance = mongoose.models.Balance;
+
 async function balanceController(req, res) {
   const balanceData = await Balance.findOne(
     { user: req.user.id },

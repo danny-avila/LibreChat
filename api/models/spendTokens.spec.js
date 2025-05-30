@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { Transaction, Balance } = require('@librechat/data-schemas');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
+const Transaction = mongoose.models.Transaction;
+const Balance = mongoose.models.Balance;
 
 // Mock the logger to prevent console output during tests
 jest.mock('~/config', () => ({

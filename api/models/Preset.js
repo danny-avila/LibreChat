@@ -1,4 +1,7 @@
-const { Preset, logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
+
+const Preset = mongoose.models.Preset;
 
 const getPreset = async (user, presetId) => {
   try {

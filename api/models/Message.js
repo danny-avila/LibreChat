@@ -1,5 +1,8 @@
 const { z } = require('zod');
-const { Message, logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
+
+const Message = mongoose.models.Message;
 const idSchema = z.string().uuid();
 
 /**

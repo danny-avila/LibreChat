@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const mongoose = require('mongoose');
 const jwtDecode = require('jsonwebtoken/decode');
 const { setupOpenId } = require('./openidStrategy');
 const { getBalanceConfig } = require('~/server/services/Config');
@@ -7,7 +8,6 @@ const { getBalanceConfig } = require('~/server/services/Config');
 const mockCreateUser = jest.fn();
 const mockFindUser = jest.fn();
 const mockUpdateUser = jest.fn();
-let User;
 
 const mockModels = {
   User: {
@@ -132,8 +132,7 @@ describe('setupOpenId', () => {
       picture: 'https://example.com/avatar.png',
     }),
   };
-  const { registerModels } = require('@librechat/data-schemas');
-  User = registerModels().User;
+  const User = mongoose.models.User;
   beforeEach(async () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();

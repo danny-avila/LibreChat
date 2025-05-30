@@ -1,5 +1,6 @@
+const mongoose = require('mongoose');
 const { ObjectId } = require('mongodb');
-const { Prompt, PromptGroup, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, SystemCategories, Constants } = require('librechat-data-provider');
 const {
   getProjectByName,
@@ -8,6 +9,9 @@ const {
   removeGroupFromAllProjects,
 } = require('./Project');
 const { escapeRegExp } = require('~/server/utils');
+
+const PromptGroup = mongoose.models.PromptGroup;
+const Prompt = mongoose.models.Prompt;
 
 /**
  * Create a pipeline for the aggregation to get prompt groups

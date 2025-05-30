@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
-const { Agent } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
@@ -13,7 +13,8 @@ const {
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
-const { logger } = require('~/config');
+
+const Agent = mongoose.models.Agent;
 
 /**
  * Create an agent with the provided data.

@@ -1,6 +1,7 @@
 const express = require('express');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
-const { Message, logger } = require('@librechat/data-schemas');
 const {
   saveConvo,
   saveMessage,
@@ -14,6 +15,8 @@ const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
+
+const Message = mongoose.models.Message;
 
 const router = express.Router();
 router.use(requireJwtAuth);

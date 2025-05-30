@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
-const { findToken } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
 const {
   Time,
@@ -20,7 +19,7 @@ const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
-const db = require('~/lib/db/connectDb');
+const { findToken } = require('~/models');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;

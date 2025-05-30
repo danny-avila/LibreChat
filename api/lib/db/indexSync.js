@@ -1,6 +1,10 @@
+const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
-const { Message, Conversation, logger } = require('@librechat/data-schemas');
 const { isEnabled } = require('~/server/utils');
+const { logger } = require('@librechat/data-schemas');
+
+const Conversation = mongoose.models.Conversation;
+const Message = mongoose.models.Message;
 
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);

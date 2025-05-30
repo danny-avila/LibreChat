@@ -1,4 +1,7 @@
-const { Banner, logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
+
+const Banner = mongoose.models.Banner;
 
 /**
  * Retrieves the current active banner.

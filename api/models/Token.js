@@ -1,5 +1,7 @@
-const { Token } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
 const { encryptV2 } = require('~/server/utils/crypto');
+
+const Token = mongoose.models.Token;
 
 /**
  * Handles the OAuth token by creating or updating the token.

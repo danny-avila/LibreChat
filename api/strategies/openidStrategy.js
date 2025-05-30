@@ -1,14 +1,17 @@
 const fetch = require('node-fetch');
+const mongoose = require('mongoose');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { User, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
+
+const User = mongoose.models.User;
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata

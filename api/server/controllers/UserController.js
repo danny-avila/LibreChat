@@ -4,7 +4,8 @@ const {
   webSearchKeys,
   extractWebSearchEnvVars,
 } = require('librechat-data-provider');
-const { User, Session, Transaction, Balance, logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const { getFiles, deleteFiles, deleteConvos, deletePresets, deleteMessages } = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
@@ -13,6 +14,11 @@ const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud')
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
+
+const Transaction = mongoose.models.Transaction;
+const Session = mongoose.models.Session;
+const Balance = mongoose.models.Balance;
+const User = mongoose.models.User;
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */

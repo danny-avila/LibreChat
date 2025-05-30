@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { Role, logger } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
@@ -9,6 +8,8 @@ const {
 } = require('librechat-data-provider');
 const { getRoleByName, updateAccessPermissions, initializeRoles } = require('~/models/Role');
 const getLogStores = require('~/cache/getLogStores');
+
+const Role = mongoose.models.Role;
 
 // Mock the cache
 jest.mock('~/cache/getLogStores', () =>

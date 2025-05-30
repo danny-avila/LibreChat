@@ -1,6 +1,7 @@
-const { findUser, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
+const { findUser } = require('~/models');
 
 const socialLogin =
   (provider, getProfileDetails) => async (accessToken, refreshToken, idToken, profile, cb) => {

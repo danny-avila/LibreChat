@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
-const { Token, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { getRandomValues, hashToken } = require('~/server/utils/crypto');
+
+const Token = mongoose.models.Token;
 
 /**
  * @module inviteUser

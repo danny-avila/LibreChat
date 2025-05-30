@@ -1,4 +1,5 @@
-const { User, logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const {
   generateTOTPSecret,
   generateBackupCodes,
@@ -8,6 +9,8 @@ const {
 } = require('~/server/services/twoFactorService');
 const { encryptV3 } = require('~/server/utils/crypto');
 const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
+
+const User = mongoose.models.User;
 
 /**
  * Enable 2FA for the user by generating a new TOTP secret and backup codes.

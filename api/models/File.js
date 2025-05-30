@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
-const { File } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { EToolResources } = require('librechat-data-provider');
-const { logger } = require('~/config');
+
+const File = mongoose.models.File;
 
 /**
  * Finds a file by its file_id with additional query options.

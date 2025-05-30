@@ -1,4 +1,7 @@
-const { ToolCall } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+
+const ToolCall = mongoose.models.ToolCall;
+
 /**
  * Create a new tool call
  * @param {IToolCallData} toolCallData - The tool call data

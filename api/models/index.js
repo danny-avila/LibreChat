@@ -1,3 +1,7 @@
+const mongoose = require('mongoose');
+const { createModels, createMethods } = require('@librechat/data-schemas');
+createModels(mongoose);
+const methods = createMethods(mongoose);
 const { comparePassword } = require('./userMethods');
 const {
   findFileById,
@@ -21,6 +25,7 @@ const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversa
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 
 module.exports = {
+  ...methods,
   comparePassword,
   findFileById,
   createFile,

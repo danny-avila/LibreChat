@@ -1,9 +1,11 @@
-const { Balance } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
 const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
 const { getMultiplier } = require('./tx');
-const { logger } = require('~/config');
+
+const Balance = mongoose.models.Balance;
 
 function isInvalidDate(date) {
   return isNaN(date);

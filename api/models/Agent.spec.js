@@ -8,18 +8,20 @@ process.env.CREDS_IV = '0123456789abcdef';
 
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { Agent } = require('@librechat/data-schemas');
+
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
-  addAgentResourceFile,
-  removeAgentResourceFiles,
-  createAgent,
-  updateAgent,
   getAgent,
+  updateAgent,
   deleteAgent,
+  createAgent,
   getListAgents,
   updateAgentProjects,
+  addAgentResourceFile,
+  removeAgentResourceFiles,
 } = require('./Agent');
+
+const Agent = mongoose.models.Agent;
 
 describe('Agent Resource File Operations', () => {
   let mongoServer;

@@ -1,10 +1,10 @@
 const mongoose = require('mongoose');
-const { Balance } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { createTransaction } = require('./Transaction');
+const Balance = mongoose.models.Balance;
 
 // Mock the custom config module so we can control the balance flag.
 jest.mock('~/server/services/Config');

@@ -1,11 +1,14 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const {
   verifyTOTP,
   verifyBackupCode,
   getTOTPSecret,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { User, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
+
+const User = mongoose.models.User;
 
 /**
  * Verifies the 2FA code during login using a temporary token.
