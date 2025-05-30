@@ -12,6 +12,7 @@ const userQueries = require('./utils/mondayUsers');
 const workspaceQueries = require('./utils/mondayWorkspaces');
 const assetQueries = require('./utils/mondayAssets');
 const advancedQueries = require('./utils/mondayAdvanced');
+const mondayMutations = require('./utils/mondayMutations');
 
 class MondayTool extends Tool {
   static lc_name() {
@@ -165,6 +166,9 @@ class MondayTool extends Tool {
       folderName: z.string().optional().describe('Название папки'),
       color: z.string().optional().describe('Цвет группы или папки'),
       parentFolderId: z.string().optional().describe('ID родительской папки'),
+      
+      // Параметры для групп
+      groupName: z.string().optional().describe('Название группы'),
       
       // Параметры для assets и файлов
       assetId: z.string().optional().describe('ID asset'),
@@ -457,43 +461,14 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы для работы с досками
-  async getBoards({ limit = 25, workspaceId, boardKind, state = 'active' }) {
-    const query = `
-      query getBoards($limit: Int!, $workspaceIds: [ID], $boardKind: BoardKind, $state: State) {
-        boards(limit: $limit, workspace_ids: $workspaceIds, board_kind: $boardKind, state: $state) {
-          id
-          name
-          description
-          state
-          board_kind
-          workspace {
-            id
-            name
-          }
-          groups {
-            id
-            title
-            color
-          }
-          columns {
-            id
-            title
-            type
-            settings_str
-          }
-          items_count
-        }
-      }
-    `;
-    
-    const variables = { 
-      limit, 
+  async getBoards({ limit = 25, page = 1, workspaceId, boardKind, state = 'active' }) {
+    const data = await this.makeGraphQLRequest(mondayQueries.GET_BOARDS, {
+      limit,
+      page,
       workspaceIds: workspaceId ? [workspaceId] : null,
-      boardKind: boardKind || null,
-      state: state
-    };
+      boardKind: boardKind || null
+    });
 
-    const data = await this.makeGraphQLRequest(query, variables);
     return JSON.stringify({
       success: true,
       action: 'getBoards',
@@ -507,48 +482,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId is required for getBoard action');
     }
 
-    const query = `
-      query getBoard($boardId: [ID!]!, $includeItems: Boolean!, $includeGroups: Boolean!, $includeColumns: Boolean!) {
-        boards(ids: $boardId) {
-          id
-          name
-          description
-          state
-          board_kind
-          workspace {
-            id
-            name
-          }
-          groups @include(if: $includeGroups) {
-            id
-            title
-            color
-            position
-          }
-          columns @include(if: $includeColumns) {
-            id
-            title
-            type
-            settings_str
-          }
-          items_count
-          items_page(limit: 10) @include(if: $includeItems) {
-            cursor
-            items {
-              id
-              name
-              state
-              group {
-                id
-                title
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(query, {
+    const data = await this.makeGraphQLRequest(mondayQueries.GET_BOARD_DETAILS, {
       boardId: [boardId],
       includeItems,
       includeGroups,
@@ -566,33 +500,16 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  async createBoard({ boardName, workspaceId, boardKind = 'public' }) {
+  async createBoard({ boardName, workspaceId, boardKind = 'public', templateId }) {
     if (!boardName) {
       throw new Error('boardName is required for createBoard action');
     }
 
-    const mutation = `
-      mutation createBoard($boardName: String!, $boardKind: BoardKind!, $workspaceId: ID) {
-        create_board(
-          board_name: $boardName,
-          board_kind: $boardKind,
-          workspace_id: $workspaceId
-        ) {
-          id
-          name
-          board_kind
-          workspace {
-            id
-            name
-          }
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(mutation, {
+    const data = await this.makeGraphQLRequest(mondayMutations.CREATE_BOARD, {
       boardName,
       boardKind,
-      workspaceId: workspaceId || null
+      workspaceId: workspaceId || null,
+      templateId: templateId || null
     });
 
     return JSON.stringify({
@@ -603,15 +520,15 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы для работы с элементами
-  async getItems({ boardId, groupId, limit = 25, columnValues = false }) {
+  async getItems({ boardId, groupId, limit = 25, columnValues = false, page = 1 }) {
     if (!boardId) {
       throw new Error('boardId is required for getItems action');
     }
 
     const query = `
-      query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!) {
+      query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!, $groupId: String, $page: Int) {
         boards(ids: $boardId) {
-          items_page(limit: $limit) {
+          items_page(limit: $limit, page: $page, group_id: $groupId) {
             cursor
             items {
               id
@@ -630,49 +547,69 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
                 text
                 value
               }
+              board {
+                id
+                name
+              }
             }
           }
         }
       }
     `;
 
-    const data = await this.makeGraphQLRequest(query, {
-      boardId: [boardId],
-      limit,
-      columnValues
-    });
+    try {
+      const data = await this.makeGraphQLRequest(query, {
+        boardId: [boardId],
+        limit,
+        columnValues,
+        groupId: groupId || null,
+        page
+      });
 
-    let items = data.boards[0]?.items_page?.items || [];
-    
-    // Фильтрация по группе, если указана
-    if (groupId) {
-      items = items.filter(item => item.group?.id === groupId);
+      const board = data.boards?.[0];
+      if (!board) {
+        throw new Error(`Board ${boardId} not found`);
+      }
+
+      const items = board.items_page?.items || [];
+      const cursor = board.items_page?.cursor || null;
+
+      return JSON.stringify({
+        success: true,
+        action: 'getItems',
+        data: items,
+        total: items.length,
+        cursor: cursor,
+        page: page
+      });
+    } catch (error) {
+      logger.error('[MondayTool] Error getting items:', error);
+      throw new Error(`Failed to get items: ${error.message}`);
     }
-
-    return JSON.stringify({
-      success: true,
-      action: 'getItems',
-      data: items,
-      total: items.length,
-      cursor: data.boards[0]?.items_page?.cursor
-    });
   }
 
-  async createItem({ boardId, itemName, groupId, columnValues }) {
+  async createItem({ boardId, itemName, groupId, columnValues, createLabelsIfMissing = false }) {
     if (!boardId || !itemName) {
       throw new Error('boardId and itemName are required for createItem action');
     }
 
+    // Преобразуем columnValues в правильный формат
+    const formattedColumnValues = columnValues ? JSON.stringify(columnValues) : null;
+
     const mutation = `
-      mutation createItem($boardId: ID!, $itemName: String!, $groupId: String, $columnValues: JSON) {
+      mutation createItem($boardId: ID!, $itemName: String!, $groupId: String, $columnValues: JSON, $createLabelsIfMissing: Boolean) {
         create_item(
           board_id: $boardId,
           item_name: $itemName,
           group_id: $groupId,
-          column_values: $columnValues
+          column_values: $columnValues,
+          create_labels_if_missing: $createLabelsIfMissing
         ) {
           id
           name
+          state
+          created_at
+          updated_at
           group {
             id
             title
@@ -680,62 +617,91 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
           column_values {
             id
             title
+            type
             text
             value
+          }
+          board {
+            id
+            name
           }
         }
       }
     `;
 
-    const data = await this.makeGraphQLRequest(mutation, {
-      boardId,
-      itemName,
-      groupId,
-      columnValues: columnValues ? JSON.stringify(columnValues) : null
-    });
+    try {
+      const data = await this.makeGraphQLRequest(mutation, {
+        boardId,
+        itemName,
+        groupId: groupId || null,
+        columnValues: formattedColumnValues,
+        createLabelsIfMissing
+      });
 
-    return JSON.stringify({
-      success: true,
-      action: 'createItem',
-      data: data.create_item
-    });
+      return JSON.stringify({
+        success: true,
+        action: 'createItem',
+        data: data.create_item
+      });
+    } catch (error) {
+      logger.error('[MondayTool] Error creating item:', error);
+      throw new Error(`Failed to create item: ${error.message}`);
+    }
   }
 
-  async updateItem({ boardId, itemId, columnValues }) {
+  async updateItem({ boardId, itemId, columnValues, createLabelsIfMissing = false }) {
     if (!boardId || !itemId || !columnValues) {
       throw new Error('boardId, itemId and columnValues are required for updateItem action');
     }
 
+    // Преобразуем columnValues в правильный формат
+    const formattedColumnValues = JSON.stringify(columnValues);
+
     const mutation = `
-      mutation updateItem($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+      mutation updateItem($boardId: ID!, $itemId: ID!, $columnValues: JSON!, $createLabelsIfMissing: Boolean) {
         change_multiple_column_values(
           board_id: $boardId,
           item_id: $itemId,
-          column_values: $columnValues
+          column_values: $columnValues,
+          create_labels_if_missing: $createLabelsIfMissing
         ) {
           id
           name
+          state
+          created_at
+          updated_at
           column_values {
             id
             title
+            type
             text
             value
+          }
+          board {
+            id
+            name
           }
         }
       }
     `;
 
-    const data = await this.makeGraphQLRequest(mutation, {
-      boardId,
-      itemId,
-      columnValues: JSON.stringify(columnValues)
-    });
+    try {
+      const data = await this.makeGraphQLRequest(mutation, {
+        boardId,
+        itemId,
+        columnValues: formattedColumnValues,
+        createLabelsIfMissing
+      });
 
-    return JSON.stringify({
-      success: true,
-      action: 'updateItem',
-      data: data.change_multiple_column_values
-    });
+      return JSON.stringify({
+        success: true,
+        action: 'updateItem',
+        data: data.change_multiple_column_values
+      });
+    } catch (error) {
+      logger.error('[MondayTool] Error updating item:', error);
+      throw new Error(`Failed to update item: ${error.message}`);
+    }
   }
 
   async deleteItem({ itemId }) {
@@ -743,15 +709,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('itemId is required for deleteItem action');
     }
 
-    const mutation = `
-      mutation deleteItem($itemId: ID!) {
-        delete_item(item_id: $itemId) {
-          id
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(mutation, {
+    const data = await this.makeGraphQLRequest(mondayMutations.DELETE_ITEM, {
       itemId
     });
 
@@ -763,24 +721,16 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы для работы с группами
-  async createGroup({ boardId, groupName }) {
+  async createGroup({ boardId, groupName, color, position }) {
     if (!boardId || !groupName) {
       throw new Error('boardId and groupName are required for createGroup action');
     }
 
-    const mutation = `
-      mutation createGroup($boardId: ID!, $groupName: String!) {
-        create_group(board_id: $boardId, group_name: $groupName) {
-          id
-          title
-          color
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(mutation, {
+    const data = await this.makeGraphQLRequest(mondayMutations.CREATE_GROUP, {
       boardId,
-      groupName
+      groupName,
+      color: color || null,
+      position: position || null
     });
 
     return JSON.stringify({
@@ -791,58 +741,73 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы для работы с колонками
-  async updateColumn({ boardId, itemId, columnId, value }) {
+  async updateColumn({ boardId, itemId, columnId, value, createLabelsIfMissing = false }) {
     if (!boardId || !itemId || !columnId || value === undefined) {
       throw new Error('boardId, itemId, columnId and value are required for updateColumn action');
     }
 
+    // Преобразуем value в правильный формат
+    const formattedValue = JSON.stringify(value);
+
     const mutation = `
-      mutation updateColumn($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+      mutation updateColumn($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!, $createLabelsIfMissing: Boolean) {
         change_column_value(
           board_id: $boardId,
           item_id: $itemId,
           column_id: $columnId,
-          value: $value
+          value: $value,
+          create_labels_if_missing: $createLabelsIfMissing
         ) {
           id
           name
+          state
+          created_at
+          updated_at
+          column_values {
+            id
+            title
+            type
+            text
+            value
+          }
+          board {
+            id
+            name
+          }
         }
       }
     `;
 
-    const data = await this.makeGraphQLRequest(mutation, {
-      boardId,
-      itemId,
-      columnId,
-      value: JSON.stringify(value)
-    });
+    try {
+      const data = await this.makeGraphQLRequest(mutation, {
+        boardId,
+        itemId,
+        columnId,
+        value: formattedValue,
+        createLabelsIfMissing
+      });
 
-    return JSON.stringify({
-      success: true,
-      action: 'updateColumn',
-      data: data.change_column_value
-    });
+      return JSON.stringify({
+        success: true,
+        action: 'updateColumn',
+        data: data.change_column_value
+      });
+    } catch (error) {
+      logger.error('[MondayTool] Error updating column:', error);
+      throw new Error(`Failed to update column: ${error.message}`);
+    }
   }
 
   // Методы для работы с комментариями
-  async addComment({ itemId, body }) {
+  async addComment({ itemId, body, parentId }) {
     if (!itemId || !body) {
       throw new Error('itemId and body are required for addComment action');
     }
 
-    const mutation = `
-      mutation addComment($itemId: ID!, $body: String!) {
-        create_update(item_id: $itemId, body: $body) {
-          id
-          body
-          created_at
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(mutation, {
+    const data = await this.makeGraphQLRequest(mondayMutations.ADD_COMMENT, {
       itemId,
-      body
+      body,
+      parentId: parentId || null
     });
 
     return JSON.stringify({
@@ -853,48 +818,15 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы поиска
-  async searchItems({ boardId, query }) {
+  async searchItems({ boardId, query, limit = 25 }) {
     if (!boardId || !query) {
       throw new Error('boardId and query are required for searchItems action');
     }
 
-    const searchQuery = `
-      query searchItems($boardId: ID!, $query: String!) {
-        items_page_by_column_values(
-          limit: 25,
-          board_id: $boardId,
-          columns: [
-            {
-              column_id: "name",
-              column_values: [$query]
-            }
-          ]
-        ) {
-          cursor
-          items {
-            id
-            name
-            board {
-              id
-              name
-            }
-            group {
-              id
-              title
-            }
-            column_values {
-              id
-              title
-              text
-            }
-          }
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(searchQuery, {
+    const data = await this.makeGraphQLRequest(mondayQueries.SEARCH_ITEMS, {
       boardId,
-      query
+      query,
+      limit
     });
 
     return JSON.stringify({
@@ -907,19 +839,9 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   async getWorkspaces({ limit = 25 }) {
-    const query = `
-      query getWorkspaces($limit: Int!) {
-        workspaces(limit: $limit) {
-          id
-          name
-          description
-          created_at
-          state
-        }
-      }
-    `;
-
-    const data = await this.makeGraphQLRequest(query, { limit });
+    const data = await this.makeGraphQLRequest(mondayQueries.GET_WORKSPACES, {
+      limit
+    });
 
     return JSON.stringify({
       success: true,

@@ -1,8 +1,8 @@
-// GraphQL запросы для monday.com API
+// GraphQL queries for monday.com API
 module.exports = {
   GET_BOARDS: `
-    query getBoards($limit: Int!, $page: Int!, $workspaceIds: [ID]) {
-      boards(limit: $limit, page: $page, workspace_ids: $workspaceIds) {
+    query getBoards($limit: Int!, $page: Int!, $workspaceIds: [ID], $boardKind: BoardKind) {
+      boards(limit: $limit, page: $page, workspace_ids: $workspaceIds, board_kind: $boardKind) {
         id
         name
         description
@@ -16,14 +16,18 @@ module.exports = {
           id
           title
           color
+          position
         }
         columns {
           id
           title
           type
           settings_str
+          description
         }
         items_count
+        created_at
+        updated_at
       }
     }
   `,
@@ -45,12 +49,16 @@ module.exports = {
           title
           color
           position
+          items_count
         }
         columns @include(if: $includeColumns) {
           id
           title
           type
           settings_str
+          description
+          width
+          position
         }
         items_count
         items_page(limit: 10) @include(if: $includeItems) {
@@ -59,9 +67,18 @@ module.exports = {
             id
             name
             state
+            created_at
+            updated_at
             group {
               id
               title
+            }
+            column_values {
+              id
+              title
+              type
+              text
+              value
             }
           }
         }
@@ -70,9 +87,9 @@ module.exports = {
   `,
   
   GET_ITEMS: `
-    query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!) {
+    query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!, $groupId: String) {
       boards(ids: $boardId) {
-        items_page(limit: $limit) {
+        items_page(limit: $limit, group_id: $groupId) {
           cursor
           items {
             id
@@ -91,6 +108,10 @@ module.exports = {
               text
               value
             }
+            board {
+              id
+              name
+            }
           }
         }
       }
@@ -98,9 +119,9 @@ module.exports = {
   `,
   
   SEARCH_ITEMS: `
-    query searchItems($boardId: ID!, $query: String!) {
+    query searchItems($boardId: ID!, $query: String!, $limit: Int!) {
       items_page_by_column_values(
-        limit: 25,
+        limit: $limit,
         board_id: $boardId,
         columns: [
           {
@@ -113,6 +134,9 @@ module.exports = {
         items {
           id
           name
+          state
+          created_at
+          updated_at
           board {
             id
             name
@@ -124,7 +148,9 @@ module.exports = {
           column_values {
             id
             title
+            type
             text
+            value
           }
         }
       }
@@ -139,6 +165,10 @@ module.exports = {
         description
         created_at
         state
+        picture_url
+        items_count
+        boards_count
+        users_count
       }
     }
   `,
@@ -152,6 +182,9 @@ module.exports = {
           type
           settings_str
           description
+          width
+          position
+          archived
         }
       }
     }
