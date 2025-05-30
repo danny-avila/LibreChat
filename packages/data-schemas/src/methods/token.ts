@@ -47,27 +47,13 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
   async function deleteTokens(query: TokenQuery): Promise<TokenDeleteResult> {
     try {
       const Token = mongoose.models.Token;
-      const conditions = [];
-
-      if (query.userId) {
-        conditions.push({ userId: query.userId });
-      }
-      if (query.token) {
-        conditions.push({ token: query.token });
-      }
-      if (query.email) {
-        conditions.push({ email: query.email });
-      }
-      if (query.identifier) {
-        conditions.push({ identifier: query.identifier });
-      }
-
-      if (conditions.length === 0) {
-        throw new Error('At least one query parameter must be provided');
-      }
-
       return await Token.deleteMany({
-        $or: conditions,
+        $or: [
+          { userId: query.userId },
+          { token: query.token },
+          { email: query.email },
+          { identifier: query.identifier },
+        ],
       });
     } catch (error) {
       logger.debug('An error occurred while deleting tokens:', error);
@@ -96,13 +82,11 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
         conditions.push({ identifier: query.identifier });
       }
 
-      if (conditions.length === 0) {
-        throw new Error('At least one query parameter must be provided');
-      }
-
-      return (await Token.findOne({
+      const token = await Token.findOne({
         $and: conditions,
-      }).lean()) as IToken | null;
+      }).lean();
+
+      return token as IToken | null;
     } catch (error) {
       logger.debug('An error occurred while finding token:', error);
       throw error;
@@ -111,10 +95,10 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
 
   // Return all methods
   return {
+    findToken,
     createToken,
     updateToken,
     deleteTokens,
-    findToken,
   };
 }
 
