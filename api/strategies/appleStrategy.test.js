@@ -6,17 +6,21 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
 const socialLogin = require('./socialLogin');
+const { findUser } = require('~/models');
 
 const User = require('~/db/models').User;
 
-// Mocking external dependencies
 jest.mock('jsonwebtoken');
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
+jest.mock('@librechat/data-schemas', () => {
+  const actualModule = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actualModule,
+    logger: {
+      error: jest.fn(),
+      debug: jest.fn(),
+    },
+  };
+});
 jest.mock('./process', () => ({
   createSocialUser: jest.fn(),
   handleExistingUser: jest.fn(),
@@ -208,13 +212,12 @@ describe('Apple Login Strategy', () => {
 
     beforeEach(() => {
       jwt.decode.mockReturnValue(decodedToken);
-      User.findUser = jest.fn();
-      User.findUser.mockImplementation(({ email }) => User.findOne({ email }));
+      findUser.mockResolvedValue(null);
     });
 
     it('should create a new user if one does not exist and registration is allowed', async () => {
       // Mock findUser to return null (user does not exist)
-      User.findUser.mockResolvedValue(null);
+      findUser.mockResolvedValue(null);
 
       // Mock createSocialUser to create a user
       createSocialUser.mockImplementation(async (userData) => {
@@ -248,7 +251,7 @@ describe('Apple Login Strategy', () => {
     });
 
     it('should handle existing user and update avatarUrl', async () => {
-      // Create an existing user
+      // Create an existing user without saving to database
       const existingUser = new User({
         email: 'jane.doe@example.com',
         username: 'jane.doe',
@@ -257,15 +260,15 @@ describe('Apple Login Strategy', () => {
         providerId: 'apple-sub-9012',
         avatarUrl: 'old_avatar.png',
       });
-      await existingUser.save();
 
       // Mock findUser to return the existing user
-      User.findUser.mockResolvedValue(existingUser);
+      findUser.mockResolvedValue(existingUser);
 
-      // Mock handleExistingUser to update avatarUrl
+      // Mock handleExistingUser to update avatarUrl without saving to database
       handleExistingUser.mockImplementation(async (user, avatarUrl) => {
         user.avatarUrl = avatarUrl;
-        await user.save();
+        // Don't call save() to avoid database operations
+        return user;
       });
 
       const mockVerifyCallback = jest.fn();
@@ -344,7 +347,7 @@ describe('Apple Login Strategy', () => {
 
     it('should handle errors during user creation', async () => {
       // Mock findUser to return null (user does not exist)
-      User.findUser.mockResolvedValue(null);
+      findUser.mockResolvedValue(null);
 
       // Mock createSocialUser to throw an error
       createSocialUser.mockImplementation(() => {

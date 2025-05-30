@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
-const Transaction = require('~/db/models').Transaction;
-const Balance = require('~/db/models').Balance;
+
+require('~/db/models');
 
 // Mock the logger to prevent console output during tests
 jest.mock('~/config', () => ({
@@ -20,10 +20,15 @@ jest.mock('~/server/services/Config');
 describe('spendTokens', () => {
   let mongoServer;
   let userId;
+  let Transaction;
+  let Balance;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
+
+    Transaction = mongoose.model('Transaction');
+    Balance = mongoose.model('Balance');
   });
 
   afterAll(async () => {

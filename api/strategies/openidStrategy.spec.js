@@ -13,7 +13,7 @@ jest.mock('~/server/services/Files/strategies', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({
   getBalanceConfig: jest.fn(() => ({
-    enabled: true,
+    enabled: false,
   })),
 }));
 jest.mock('~/models', () => ({
@@ -41,11 +41,6 @@ jest.mock('~/cache/getLogStores', () =>
     set: jest.fn(),
   })),
 );
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    OPENID_EXCHANGED_TOKENS: 'openid-exchanged-tokens',
-  },
-}));
 
 // Mock the openid-client module and all its dependencies
 jest.mock('openid-client', () => {
