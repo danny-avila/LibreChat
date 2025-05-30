@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import mongoMeili from '~/models/plugins/mongoMeili';
 
 // @ts-ignore
 export interface IMessage extends Document {
@@ -181,5 +182,14 @@ const messageSchema: Schema<IMessage> = new Schema(
 messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
+
+if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
+  messageSchema.plugin(mongoMeili, {
+    host: process.env.MEILI_HOST,
+    apiKey: process.env.MEILI_MASTER_KEY,
+    indexName: 'messages',
+    primaryKey: 'messageId',
+  });
+}
 
 export default messageSchema;
