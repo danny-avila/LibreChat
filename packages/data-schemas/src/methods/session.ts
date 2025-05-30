@@ -1,38 +1,41 @@
-import {
-  ISession,
-  CreateSessionOptions,
-  SessionSearchParams,
-  SessionQueryOptions,
-  DeleteSessionParams,
-  DeleteAllSessionsOptions,
-  SessionResult,
-  SessionError,
-} from '~/types';
+import type * as t from '~/types/session';
 import { signPayload, hashToken } from '~/schema/session';
 import logger from '~/config/winston';
+
+export class SessionError extends Error {
+  public code: string;
+
+  constructor(message: string, code: string = 'SESSION_ERROR') {
+    super(message);
+    this.name = 'SessionError';
+    this.code = code;
+  }
+}
 
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
 const expires = eval(REFRESH_TOKEN_EXPIRY ?? '0') ?? 1000 * 60 * 60 * 24 * 7; // 7 days default
 
 // Factory function that takes mongoose instance and returns the methods
 export function createSessionMethods(mongoose: typeof import('mongoose')) {
+  const Session = mongoose.models.Session;
+
   /**
    * Creates a new session for a user
    */
   async function createSession(
     userId: string,
-    options: CreateSessionOptions = {},
-  ): Promise<SessionResult> {
+    options: t.CreateSessionOptions = {},
+  ): Promise<t.SessionResult> {
     if (!userId) {
       throw new SessionError('User ID is required', 'INVALID_USER_ID');
     }
 
     try {
-      const session = {
-        _id: new mongoose.Types.ObjectId(),
-        user: new mongoose.Types.ObjectId(userId),
+      // Create a proper Mongoose document like the original
+      const session = new Session({
+        user: userId,
         expiration: options.expiration || new Date(Date.now() + expires),
-      };
+      });
       const refreshToken = await generateRefreshToken(session);
 
       return { session, refreshToken };
@@ -46,11 +49,10 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
    * Finds a session by various parameters
    */
   async function findSession(
-    params: SessionSearchParams,
-    options: SessionQueryOptions = { lean: true },
-  ): Promise<ISession | null> {
+    params: t.SessionSearchParams,
+    options: t.SessionQueryOptions = { lean: true },
+  ): Promise<t.ISession | null> {
     try {
-      const Session = mongoose.models.Session;
       const query: Record<string, unknown> = {};
 
       if (!params.refreshToken && !params.userId && !params.sessionId) {
@@ -71,9 +73,11 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
 
       if (params.sessionId) {
         const sessionId =
-          typeof params.sessionId === 'object' && 'sessionId' in params.sessionId
-            ? params.sessionId.sessionId
-            : params.sessionId;
+          typeof params.sessionId === 'object' &&
+          params.sessionId !== null &&
+          'sessionId' in params.sessionId
+            ? (params.sessionId as { sessionId: string }).sessionId
+            : (params.sessionId as string);
         if (!mongoose.Types.ObjectId.isValid(sessionId)) {
           throw new SessionError('Invalid session ID format', 'INVALID_SESSION_ID');
         }
@@ -86,7 +90,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
       const sessionQuery = Session.findOne(query);
 
       if (options.lean) {
-        return (await sessionQuery.lean()) as ISession | null;
+        return (await sessionQuery.lean()) as t.ISession | null;
       }
 
       return await sessionQuery.exec();
@@ -97,12 +101,32 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Updates session expiration
+   */
+  async function updateExpiration(
+    session: t.ISession | string,
+    newExpiration?: Date,
+  ): Promise<t.ISession> {
+    try {
+      const sessionDoc = typeof session === 'string' ? await Session.findById(session) : session;
+
+      if (!sessionDoc) {
+        throw new SessionError('Session not found', 'SESSION_NOT_FOUND');
+      }
+
+      sessionDoc.expiration = newExpiration || new Date(Date.now() + expires);
+      return await sessionDoc.save();
+    } catch (error) {
+      logger.error('[updateExpiration] Error updating session:', error);
+      throw new SessionError('Failed to update session expiration', 'UPDATE_EXPIRATION_FAILED');
+    }
+  }
+
+  /**
    * Deletes a session by refresh token or session ID
    */
-  async function deleteSession(params: DeleteSessionParams): Promise<{ deletedCount?: number }> {
+  async function deleteSession(params: t.DeleteSessionParams): Promise<{ deletedCount?: number }> {
     try {
-      const Session = mongoose.models.Session;
-
       if (!params.refreshToken && !params.sessionId) {
         throw new SessionError(
           'Either refreshToken or sessionId is required',
@@ -134,54 +158,19 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Generates a refresh token for a session
-   */
-  async function generateRefreshToken(session: Partial<ISession>): Promise<string> {
-    if (!session || !session.user) {
-      throw new SessionError('Invalid session object', 'INVALID_SESSION');
-    }
-
-    try {
-      const Session = mongoose.models.Session;
-      const expiresIn = session.expiration ? session.expiration.getTime() : Date.now() + expires;
-      if (!session.expiration) {
-        session.expiration = new Date(expiresIn);
-      }
-
-      const refreshToken = await signPayload({
-        payload: {
-          id: session.user,
-          sessionId: session._id,
-        },
-        secret: process.env.JWT_REFRESH_SECRET,
-        expirationTime: Math.floor((expiresIn - Date.now()) / 1000),
-      });
-
-      session.refreshTokenHash = await hashToken(refreshToken);
-      await Session.create(session);
-      return refreshToken;
-    } catch (error) {
-      logger.error('[generateRefreshToken] Error generating refresh token:', error);
-      throw new SessionError('Failed to generate refresh token', 'GENERATE_TOKEN_FAILED');
-    }
-  }
-
-  /**
    * Deletes all sessions for a user
    */
   async function deleteAllUserSessions(
     userId: string | { userId: string },
-    options: DeleteAllSessionsOptions = {},
+    options: t.DeleteAllSessionsOptions = {},
   ): Promise<{ deletedCount?: number }> {
     try {
-      const Session = mongoose.models.Session;
-
       if (!userId) {
         throw new SessionError('User ID is required', 'INVALID_USER_ID');
       }
 
-      // Extract userId if it's passed as an object
-      const userIdString = typeof userId === 'object' ? userId.userId : userId;
+      const userIdString =
+        typeof userId === 'object' && userId !== null ? userId.userId : (userId as string);
 
       if (!mongoose.Types.ObjectId.isValid(userIdString)) {
         throw new SessionError('Invalid user ID format', 'INVALID_USER_ID_FORMAT');
@@ -195,6 +184,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
 
       const result = await Session.deleteMany(query);
 
+      // Match original logging logic exactly
       if (result.deletedCount && result.deletedCount > 0) {
         logger.debug(
           `[deleteAllUserSessions] Deleted ${result.deletedCount} sessions for user ${userIdString}.`,
@@ -208,11 +198,67 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
-  // Return all methods
+  /**
+   * Generates a refresh token for a session
+   */
+  async function generateRefreshToken(session: t.ISession): Promise<string> {
+    if (!session || !session.user) {
+      throw new SessionError('Invalid session object', 'INVALID_SESSION');
+    }
+
+    try {
+      const expiresIn = session.expiration ? session.expiration.getTime() : Date.now() + expires;
+
+      if (!session.expiration) {
+        session.expiration = new Date(expiresIn);
+      }
+
+      const refreshToken = await signPayload({
+        payload: {
+          id: session.user,
+          sessionId: session._id,
+        },
+        secret: process.env.JWT_REFRESH_SECRET!,
+        expirationTime: Math.floor((expiresIn - Date.now()) / 1000),
+      });
+
+      session.refreshTokenHash = await hashToken(refreshToken);
+      await session.save();
+
+      return refreshToken;
+    } catch (error) {
+      logger.error('[generateRefreshToken] Error generating refresh token:', error);
+      throw new SessionError('Failed to generate refresh token', 'GENERATE_TOKEN_FAILED');
+    }
+  }
+
+  /**
+   * Counts active sessions for a user
+   */
+  async function countActiveSessions(userId: string): Promise<number> {
+    try {
+      if (!userId) {
+        throw new SessionError('User ID is required', 'INVALID_USER_ID');
+      }
+
+      return await Session.countDocuments({
+        user: userId,
+        expiration: { $gt: new Date() },
+      });
+    } catch (error) {
+      logger.error('[countActiveSessions] Error counting active sessions:', error);
+      throw new SessionError('Failed to count active sessions', 'COUNT_SESSIONS_FAILED');
+    }
+  }
+
+  // Return all methods - match original exports exactly
   return {
-    createSession,
     findSession,
+    SessionError,
     deleteSession,
+    createSession,
+    updateExpiration,
+    countActiveSessions,
     generateRefreshToken,
     deleteAllUserSessions,
   };

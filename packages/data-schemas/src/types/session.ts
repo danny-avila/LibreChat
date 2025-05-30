@@ -1,4 +1,4 @@
-import { Document, Types } from 'mongoose';
+import type { Document, Types } from 'mongoose';
 
 export interface ISession extends Document {
   refreshTokenHash: string;
@@ -39,14 +39,4 @@ export interface SignPayloadParams {
   payload: Record<string, unknown>;
   secret?: string;
   expirationTime: number;
-}
-
-export class SessionError extends Error {
-  public code: string;
-
-  constructor(message: string, code: string = 'SESSION_ERROR') {
-    super(message);
-    this.name = 'SessionError';
-    this.code = code;
-  }
 }
