@@ -1,7 +1,7 @@
 {
   "build": {
     "type": "docker",
-    "dockerfile": "Dockerfile.zeabur"
+    "dockerfile": "Dockerfile"
   },
   "env": {
     "NODE_ENV": "production",

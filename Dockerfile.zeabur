@@ -1,37 +1,63 @@
 # Zeabur Build Configuration
-# Оптимизированные настройки для развертывания на Zeabur
+# Optimized settings for Zeabur deployment
 
-FROM node:18-alpine
+FROM node:20-alpine
 
-# Установка зависимостей для сборки
-RUN apk add --no-cache python3 make g++
+# Install build dependencies and jemalloc for better memory management
+RUN apk add --no-cache python3 py3-pip make g++ jemalloc
 
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+RUN uv --version
+
+RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
-# Копируем файлы зависимостей
-COPY package*.json ./
-COPY client/package*.json ./client/
-COPY api/package*.json ./api/
-COPY packages/data-provider/package*.json ./packages/data-provider/
-COPY packages/data-schemas/package*.json ./packages/data-schemas/
-COPY packages/mcp/package*.json ./packages/mcp/
+USER node
 
-# Устанавливаем зависимости
-RUN npm ci --only=production
+# Copy package files first for better caching
+COPY --chown=node:node package*.json ./
+COPY --chown=node:node client/package*.json ./client/
+COPY --chown=node:node api/package*.json ./api/
+COPY --chown=node:node packages/data-provider/package*.json ./packages/data-provider/
+COPY --chown=node:node packages/data-schemas/package*.json ./packages/data-schemas/
+COPY --chown=node:node packages/mcp/package*.json ./packages/mcp/
 
-# Копируем исходный код
-COPY . .
+# Configure npm for reliability
+RUN npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000
 
-# Применяем патчи для исправления проблем с react-virtualized
+# Install dependencies
+RUN npm install --no-audit --frozen-lockfile
+
+# Copy source code
+COPY --chown=node:node . .
+
+# Apply patches
 RUN npm run postinstall
 
-# Собираем приложение с оптимизированными настройками
+# Build application with optimized settings
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Увеличиваем лимиты для сборки
+# Install client dependencies separately
+RUN cd client && npm install && cd ..
+
+# Build frontend with Zeabur-specific optimizations
 RUN npm run frontend:zeabur
 
+# Clean up
+RUN npm prune --production && \
+    npm cache clean --force
+
+# Create necessary directories
+RUN mkdir -p /app/client/public/images /app/api/logs
+
 EXPOSE 3080
+ENV HOST=0.0.0.0
 
 CMD ["npm", "run", "backend"]
