@@ -6,7 +6,7 @@
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
-    "build": "cross-env NODE_ENV=production vite build",
+    "build": "cross-env NODE_ENV=production vite build && node ./scripts/post-build.cjs",
     "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
     "dev": "cross-env NODE_ENV=development vite",
     "preview-prod": "cross-env NODE_ENV=development vite preview",
@@ -139,7 +139,6 @@
     "postcss": "^8.4.31",
     "postcss-loader": "^7.1.0",
     "postcss-preset-env": "^8.2.0",
-    "rollup-plugin-visualizer": "^6.0.0",
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.2.5",
     "typescript": "^5.3.3",

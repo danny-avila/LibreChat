@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
+const crypto = require('node:crypto');
 const { agentSchema } = require('@librechat/data-schemas');
-const { SystemRoles, Tools } = require('librechat-data-provider');
+const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
@@ -11,6 +12,8 @@ const {
   removeAgentFromAllProjects,
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
+const { getActions } = require('./Action');
+const { logger } = require('~/config');
 
 const Agent = mongoose.model('agent', agentSchema);
 
@@ -149,10 +152,12 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
 /**
  * Check if a version already exists in the versions array, excluding timestamp and author fields
  * @param {Object} updateData - The update data to compare
+ * @param {Object} currentData - The current agent data
  * @param {Array} versions - The existing versions array
+ * @param {string} [actionsHash] - Hash of current action metadata
  * @returns {Object|null} - The matching version if found, null otherwise
  */
-const isDuplicateVersion = (updateData, currentData, versions) => {
+const isDuplicateVersion = (updateData, currentData, versions, actionsHash = null) => {
   if (!versions || versions.length === 0) {
     return null;
   }
@@ -169,16 +174,21 @@ const isDuplicateVersion = (updateData, currentData, versions) => {
     '__v',
     'agent_ids',
     'versions',
+    'actionsHash', // Exclude actionsHash from direct comparison
   ];
 
   const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
-  if (Object.keys(directUpdates).length === 0) {
+  if (Object.keys(directUpdates).length === 0 && !actionsHash) {
     return null;
   }
 
   const wouldBeVersion = { ...currentData, ...directUpdates };
   const lastVersion = versions[versions.length - 1];
+
+  if (actionsHash && lastVersion.actionsHash !== actionsHash) {
+    return null;
+  }
 
   const allFields = new Set([...Object.keys(wouldBeVersion), ...Object.keys(lastVersion)]);
 
@@ -249,21 +259,58 @@ const isDuplicateVersion = (updateData, currentData, versions) => {
  * @param {string} searchParameter.id - The ID of the agent to update.
  * @param {string} [searchParameter.author] - The user ID of the agent's author.
  * @param {Object} updateData - An object containing the properties to update.
- * @param {string} [updatingUserId] - The ID of the user performing the update (used for tracking non-author updates).
+ * @param {Object} [options] - Optional configuration object.
+ * @param {string} [options.updatingUserId] - The ID of the user performing the update (used for tracking non-author updates).
+ * @param {boolean} [options.forceVersion] - Force creation of a new version even if no fields changed.
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
  * @throws {Error} If the update would create a duplicate version
  */
-const updateAgent = async (searchParameter, updateData, updatingUserId = null) => {
-  const options = { new: true, upsert: false };
+const updateAgent = async (searchParameter, updateData, options = {}) => {
+  const { updatingUserId = null, forceVersion = false } = options;
+  const mongoOptions = { new: true, upsert: false };
 
   const currentAgent = await Agent.findOne(searchParameter);
   if (currentAgent) {
     const { __v, _id, id, versions, author, ...versionData } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
-    if (Object.keys(directUpdates).length > 0 && versions && versions.length > 0) {
-      const duplicateVersion = isDuplicateVersion(updateData, versionData, versions);
-      if (duplicateVersion) {
+    let actionsHash = null;
+
+    // Generate actions hash if agent has actions
+    if (currentAgent.actions && currentAgent.actions.length > 0) {
+      // Extract action IDs from the format "domain_action_id"
+      const actionIds = currentAgent.actions
+        .map((action) => {
+          const parts = action.split(actionDelimiter);
+          return parts[1]; // Get just the action ID part
+        })
+        .filter(Boolean);
+
+      if (actionIds.length > 0) {
+        try {
+          const actions = await getActions(
+            {
+              action_id: { $in: actionIds },
+            },
+            true,
+          ); // Include sensitive data for hash
+
+          actionsHash = await generateActionMetadataHash(currentAgent.actions, actions);
+        } catch (error) {
+          logger.error('Error fetching actions for hash generation:', error);
+        }
+      }
+    }
+
+    const shouldCreateVersion =
+      forceVersion ||
+      (versions &&
+        versions.length > 0 &&
+        (Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet));
+
+    if (shouldCreateVersion) {
+      const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
+      if (duplicateVersion && !forceVersion) {
         const error = new Error(
           'Duplicate version: This would create a version identical to an existing one',
         );
@@ -284,18 +331,25 @@ const updateAgent = async (searchParameter, updateData, updatingUserId = null) =
       updatedAt: new Date(),
     };
 
+    // Include actions hash in version if available
+    if (actionsHash) {
+      versionEntry.actionsHash = actionsHash;
+    }
+
     // Always store updatedBy field to track who made the change
     if (updatingUserId) {
       versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
     }
 
-    updateData.$push = {
-      ...($push || {}),
-      versions: versionEntry,
-    };
+    if (shouldCreateVersion || forceVersion) {
+      updateData.$push = {
+        ...($push || {}),
+        versions: versionEntry,
+      };
+    }
   }
 
-  return Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
+  return Agent.findOneAndUpdate(searchParameter, updateData, mongoOptions).lean();
 };
 
 /**
@@ -333,7 +387,9 @@ const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) =
     },
   };
 
-  const updatedAgent = await updateAgent(searchParameter, updateData, req?.user?.id);
+  const updatedAgent = await updateAgent(searchParameter, updateData, {
+    updatingUserId: req?.user?.id,
+  });
   if (updatedAgent) {
     return updatedAgent;
   } else {
@@ -497,7 +553,7 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
     delete updateQuery.author;
   }
 
-  const updatedAgent = await updateAgent(updateQuery, updateOps, user.id);
+  const updatedAgent = await updateAgent(updateQuery, updateOps, { updatingUserId: user.id });
   if (updatedAgent) {
     return updatedAgent;
   }
@@ -548,6 +604,63 @@ const revertAgentVersion = async (searchParameter, versionIndex) => {
   return Agent.findOneAndUpdate(searchParameter, updateData, { new: true }).lean();
 };
 
+/**
+ * Generates a hash of action metadata for version comparison
+ * @param {string[]} actionIds - Array of action IDs in format "domain_action_id"
+ * @param {Action[]} actions - Array of action documents
+ * @returns {Promise<string>} - SHA256 hash of the action metadata
+ */
+const generateActionMetadataHash = async (actionIds, actions) => {
+  if (!actionIds || actionIds.length === 0) {
+    return '';
+  }
+
+  // Create a map of action_id to metadata for quick lookup
+  const actionMap = new Map();
+  actions.forEach((action) => {
+    actionMap.set(action.action_id, action.metadata);
+  });
+
+  // Sort action IDs for consistent hashing
+  const sortedActionIds = [...actionIds].sort();
+
+  // Build a deterministic string representation of all action metadata
+  const metadataString = sortedActionIds
+    .map((actionFullId) => {
+      // Extract just the action_id part (after the delimiter)
+      const parts = actionFullId.split(actionDelimiter);
+      const actionId = parts[1];
+
+      const metadata = actionMap.get(actionId);
+      if (!metadata) {
+        return `${actionId}:null`;
+      }
+
+      // Sort metadata keys for deterministic output
+      const sortedKeys = Object.keys(metadata).sort();
+      const metadataStr = sortedKeys
+        .map((key) => `${key}:${JSON.stringify(metadata[key])}`)
+        .join(',');
+      return `${actionId}:{${metadataStr}}`;
+    })
+    .join(';');
+
+  // Use Web Crypto API to generate hash
+  const encoder = new TextEncoder();
+  const data = encoder.encode(metadataString);
+  const hashBuffer = await crypto.webcrypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  return hashHex;
+};
+
+/**
+ * Load a default agent based on the endpoint
+ * @param {string} endpoint
+ * @returns {Agent | null}
+ */
+
 module.exports = {
   Agent,
   getAgent,
@@ -556,8 +669,9 @@ module.exports = {
   updateAgent,
   deleteAgent,
   getListAgents,
+  revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
-  revertAgentVersion,
+  generateActionMetadataHash,
 };
