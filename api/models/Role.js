@@ -6,7 +6,6 @@ const {
   permissionsSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 
