@@ -1,6 +1,9 @@
-import mongoose from 'mongoose';
 import assistantSchema from '~/schema/assistant';
 import type { IAssistant } from '~/types';
 
-export const Assistant =
-  mongoose.models.Assistant || mongoose.model<IAssistant>('Assistant', assistantSchema);
+/**
+ * Creates or returns the Assistant model using the provided mongoose instance and schema
+ */
+export function createAssistantModel(mongoose: typeof import('mongoose')) {
+  return mongoose.models.Assistant || mongoose.model<IAssistant>('Assistant', assistantSchema);
+}
