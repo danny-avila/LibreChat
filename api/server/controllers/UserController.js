@@ -15,10 +15,10 @@ const { processDeleteRequest } = require('~/server/services/Files/process');
 const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
 
-const Transaction = mongoose.models.Transaction;
-const Session = mongoose.models.Session;
-const Balance = mongoose.models.Balance;
-const User = mongoose.models.User;
+const Transaction = require('~/db/models').Transaction;
+const Session = require('~/db/models').Session;
+const Balance = require('~/db/models').Balance;
+const User = require('~/db/models').User;
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */

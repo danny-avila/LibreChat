@@ -6,7 +6,7 @@ const { isEnabled, checkEmailConfig } = require('~/server/utils');
 const { comparePassword } = require('~/models');
 const { loginSchema } = require('./validators');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;

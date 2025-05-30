@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const Assistant = mongoose.models.Assistant;
+const Assistant = require('~/db/models').Assistant;
 
 /**
  * Update an assistant with new data without overwriting existing properties,

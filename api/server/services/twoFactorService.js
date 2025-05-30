@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { webcrypto } = require('node:crypto');
 const { hashBackupCode, decryptV3, decryptV2 } = require('~/server/utils/crypto');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 // Base32 alphabet for TOTP secret encoding.
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

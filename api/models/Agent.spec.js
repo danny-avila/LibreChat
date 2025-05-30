@@ -21,7 +21,7 @@ const {
   removeAgentResourceFiles,
 } = require('./Agent');
 
-const Agent = mongoose.models.Agent;
+const Agent = require('~/db/models').Agent;
 
 describe('Agent Resource File Operations', () => {
   let mongoServer;

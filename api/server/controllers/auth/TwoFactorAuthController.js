@@ -8,7 +8,7 @@ const {
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('@librechat/data-schemas');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 /**
  * Verifies the 2FA code during login using a temporary token.

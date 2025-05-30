@@ -10,8 +10,8 @@ const {
 } = require('./Project');
 const { escapeRegExp } = require('~/server/utils');
 
-const PromptGroup = mongoose.models.PromptGroup;
-const Prompt = mongoose.models.Prompt;
+const PromptGroup = require('~/db/models').PromptGroup;
+const Prompt = require('~/db/models').Prompt;
 
 /**
  * Create a pipeline for the aggregation to get prompt groups

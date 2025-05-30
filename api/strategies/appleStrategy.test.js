@@ -7,7 +7,7 @@ const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
 const socialLogin = require('./socialLogin');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 // Mocking external dependencies
 jest.mock('jsonwebtoken');

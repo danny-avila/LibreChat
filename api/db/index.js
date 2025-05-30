@@ -3,6 +3,6 @@ const { createModels } = require('@librechat/data-schemas');
 const { connectDb } = require('./connect');
 const indexSync = require('./indexSync');
 
-const models = createModels(mongoose);
+createModels(mongoose);
 
-module.exports = { connectDb, indexSync, ...models };
+module.exports = { connectDb, indexSync };

@@ -8,7 +8,7 @@ const keyvMongo = require('~/cache/keyvMongo');
 const denyRequest = require('./denyRequest');
 const { getLogStores } = require('~/cache');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';

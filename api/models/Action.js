@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const Action = mongoose.models.Action;
+const Action = require('~/db/models').Action;
 
 /**
  * Update an action with new data without overwriting existing properties,

@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
-const { isEnabled } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
+
+const { isEnabled } = require('~/server/utils');
 
 const Conversation = mongoose.models.Conversation;
 const Message = mongoose.models.Message;

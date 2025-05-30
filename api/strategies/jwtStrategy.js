@@ -3,7 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 // JWT strategy
 const jwtLogin = () =>

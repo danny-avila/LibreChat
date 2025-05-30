@@ -17,16 +17,6 @@ const mockModels = {
   },
 };
 
-jest.mock('~/db/connect', () => {
-  return {
-    getModels: jest.fn(() => mockModels),
-    connectDb: jest.fn(),
-    get models() {
-      return mockModels;
-    },
-  };
-});
-
 jest.mock('~/server/services/Config', () => ({
   getBalanceConfig: jest.fn(),
 }));
@@ -132,7 +122,7 @@ describe('setupOpenId', () => {
       picture: 'https://example.com/avatar.png',
     }),
   };
-  const User = mongoose.models.User;
+  const User = require('~/db/models').User;
   beforeEach(async () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();

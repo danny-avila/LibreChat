@@ -10,7 +10,7 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 
-const Role = mongoose.models.Role;
+const Role = require('~/db/models').Role;
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.

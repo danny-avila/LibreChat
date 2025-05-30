@@ -13,8 +13,8 @@ const {
 const { getOpenIdConfig } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
 
-const Session = mongoose.models.Session;
-const User = mongoose.models.User;
+const Session = require('~/db/models').Session;
+const User = require('~/db/models').User;
 
 const registrationController = async (req, res) => {
   try {

@@ -11,7 +11,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -38,7 +38,6 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
   }
 }
 
-const db = require('db/connect');
 const { getBalanceConfig } = require('~/server/services/Config');
 
 let crypto;

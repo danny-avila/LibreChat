@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { getRandomValues, hashToken } = require('~/server/utils/crypto');
 
-const Token = mongoose.models.Token;
+const Token = require('~/db/models').Token;
 
 /**
  * @module inviteUser

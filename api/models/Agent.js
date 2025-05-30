@@ -14,7 +14,7 @@ const {
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 
-const Agent = mongoose.models.Agent;
+const Agent = require('~/db/models').Agent;
 
 /**
  * Create an agent with the provided data.

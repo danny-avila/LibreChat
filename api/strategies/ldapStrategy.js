@@ -7,7 +7,7 @@ const { createUser, findUser, updateUser } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { isEnabled } = require('~/server/utils');
 
-const User = mongoose.models.User;
+const User = require('~/db/models').User;
 
 const {
   LDAP_URL,

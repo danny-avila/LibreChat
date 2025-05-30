@@ -4,8 +4,8 @@ const { Constants } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const { getMessages } = require('./Message');
 
-const Conversation = mongoose.models.Conversation;
-const SharedLink = mongoose.models.SharedLink;
+const Conversation = require('~/db/models').Conversation;
+const SharedLink = require('~/db/models').SharedLink;
 
 class ShareServiceError extends Error {
   constructor(message, code) {

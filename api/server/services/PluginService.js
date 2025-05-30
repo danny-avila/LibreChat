@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { encrypt, decrypt } = require('~/server/utils/');
 const { logger } = require('~/config');
 
-const PluginAuth = mongoose.models.PluginAuth;
+const PluginAuth = require('~/db/models').PluginAuth;
 
 /**
  * Asynchronously retrieves and decrypts the authentication value for a user's plugin, based on a specified authentication field.

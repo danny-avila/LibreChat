@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const ToolCall = mongoose.models.ToolCall;
+const ToolCall = require('~/db/models').ToolCall;
 
 /**
  * Create a new tool call

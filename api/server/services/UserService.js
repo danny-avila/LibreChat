@@ -4,7 +4,7 @@ const { ErrorTypes } = require('librechat-data-provider');
 const { encrypt, decrypt } = require('~/server/utils/crypto');
 const { updateUser } = require('~/models');
 
-const Key = mongoose.models.Key;
+const Key = require('~/db/models').Key;
 
 /**
  * Updates the plugins for a user based on the action specified (install/uninstall).

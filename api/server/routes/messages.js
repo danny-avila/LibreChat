@@ -16,7 +16,7 @@ const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
 
-const Message = mongoose.models.Message;
+const Message = require('~/db/models').Message;
 
 const router = express.Router();
 router.use(requireJwtAuth);

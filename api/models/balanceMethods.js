@@ -5,7 +5,7 @@ const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
 const { getMultiplier } = require('./tx');
 
-const Balance = mongoose.models.Balance;
+const Balance = require('~/db/models').Balance;
 
 function isInvalidDate(date) {
   return isNaN(date);
