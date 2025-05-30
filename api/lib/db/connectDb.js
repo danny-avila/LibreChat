@@ -1,6 +1,5 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
-const { registerModels } = require('@librechat/data-schemas');
 
 if (!process.env.MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
@@ -39,11 +38,6 @@ async function connectDb(mongoUri = process.env.MONGO_URI) {
     });
   }
   cached.conn = await cached.promise;
-
-  // Register models once
-  if (!cached.models) {
-    cached.models = registerModels(mongoose);
-  }
 
   return cached.conn;
 }

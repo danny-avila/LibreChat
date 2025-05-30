@@ -1,4 +1,4 @@
-const db = require('~/lib/db/connectDb');
+const { ToolCall } = require('@librechat/data-schemas');
 /**
  * Create a new tool call
  * @param {IToolCallData} toolCallData - The tool call data
@@ -6,7 +6,7 @@ const db = require('~/lib/db/connectDb');
  */
 async function createToolCall(toolCallData) {
   try {
-    return await db.models.ToolCall.create(toolCallData);
+    return await ToolCall.create(toolCallData);
   } catch (error) {
     throw new Error(`Error creating tool call: ${error.message}`);
   }
@@ -19,7 +19,7 @@ async function createToolCall(toolCallData) {
  */
 async function getToolCallById(id) {
   try {
-    return await db.models.ToolCall.findById(id).lean();
+    return await ToolCall.findById(id).lean();
   } catch (error) {
     throw new Error(`Error fetching tool call: ${error.message}`);
   }
@@ -33,7 +33,7 @@ async function getToolCallById(id) {
  */
 async function getToolCallsByMessage(messageId, userId) {
   try {
-    return await db.models.ToolCall.find({ messageId, user: userId }).lean();
+    return await ToolCall.find({ messageId, user: userId }).lean();
   } catch (error) {
     throw new Error(`Error fetching tool calls: ${error.message}`);
   }
@@ -47,7 +47,7 @@ async function getToolCallsByMessage(messageId, userId) {
  */
 async function getToolCallsByConvo(conversationId, userId) {
   try {
-    return await db.models.ToolCall.find({ conversationId, user: userId }).lean();
+    return await ToolCall.find({ conversationId, user: userId }).lean();
   } catch (error) {
     throw new Error(`Error fetching tool calls: ${error.message}`);
   }
@@ -61,7 +61,7 @@ async function getToolCallsByConvo(conversationId, userId) {
  */
 async function updateToolCall(id, updateData) {
   try {
-    return await db.models.ToolCall.findByIdAndUpdate(id, updateData, { new: true }).lean();
+    return await ToolCall.findByIdAndUpdate(id, updateData, { new: true }).lean();
   } catch (error) {
     throw new Error(`Error updating tool call: ${error.message}`);
   }
@@ -79,7 +79,7 @@ async function deleteToolCalls(userId, conversationId) {
     if (conversationId) {
       query.conversationId = conversationId;
     }
-    return await db.models.ToolCall.deleteMany(query);
+    return await ToolCall.deleteMany(query);
   } catch (error) {
     throw new Error(`Error deleting tool call: ${error.message}`);
   }

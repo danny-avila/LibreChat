@@ -1,9 +1,9 @@
 const path = require('path');
 const { v5: uuidv5 } = require('uuid');
+const { Banner } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, askMultiLineQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
-const db = require('~/lib/db/connectDb');
 
 (async () => {
   await connect();
@@ -87,7 +87,6 @@ const db = require('~/lib/db/connectDb');
 
   let result;
   try {
-    const { Banner } = db.models;
     // There is always only one Banner record in the DB.
     // If a Banner exists in the DB, it will be updated.
     // If it doesn't exist, a new one will be added.

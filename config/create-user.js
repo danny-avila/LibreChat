@@ -1,8 +1,8 @@
 const path = require('path');
+const { User } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
-const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -92,7 +92,7 @@ or the user will need to attempt logging in to have a verification link sent to 
     }
   }
 
-  const userExists = await db.models.User.findOne({ $or: [{ email }, { username }] });
+  const userExists = await User.findOne({ $or: [{ email }, { username }] });
   if (userExists) {
     console.red('Error: A user with that email or username already exists!');
     silentExit(1);

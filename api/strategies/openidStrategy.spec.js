@@ -9,18 +9,6 @@ const mockFindUser = jest.fn();
 const mockUpdateUser = jest.fn();
 let User;
 
-jest.mock('@librechat/data-schemas', () => {
-  return {
-    registerModels: jest.fn().mockReturnValue({
-      User: {
-        createUser: mockCreateUser,
-        findUser: mockFindUser,
-        updateUser: mockUpdateUser,
-      },
-    }),
-  };
-});
-
 const mockModels = {
   User: {
     createUser: mockCreateUser,

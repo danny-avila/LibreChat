@@ -3,10 +3,9 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const jwt = require('jsonwebtoken');
 const { Strategy: AppleStrategy } = require('passport-apple');
 const socialLogin = require('./socialLogin');
-const { logger } = require('~/config');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
-const db = require('~/lib/db/connectDb');
+const { User, logger } = require('@librechat/data-schemas');
 
 // Mocking external dependencies
 jest.mock('jsonwebtoken');
@@ -29,14 +28,11 @@ describe('Apple Login Strategy', () => {
   let appleStrategyInstance;
   const OLD_ENV = process.env;
   let getProfileDetails;
-  let User;
   // Start and stop in-memory MongoDB
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
-    await db.connectDb(mongoUri);
-
-    User = db.models.User;
+    await mongoose.connect(mongoUri);
   });
 
   afterAll(async () => {

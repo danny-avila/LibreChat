@@ -1,7 +1,6 @@
 const { MeiliSearch } = require('meilisearch');
+const { Message, Conversation, logger } = require('@librechat/data-schemas');
 const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
 
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
@@ -28,7 +27,6 @@ async function indexSync() {
   if (!searchEnabled) {
     return;
   }
-  const { Message, Conversation } = db.models;
   try {
     const client = MeiliSearchClient.getInstance();
 
@@ -41,6 +39,8 @@ async function indexSync() {
       logger.info('[indexSync] Indexing is disabled, skipping...');
       return;
     }
+
+    logger.info('[indexSync] Starting index sync...');
 
     const messageCount = await Message.countDocuments();
     const convoCount = await Conversation.countDocuments();

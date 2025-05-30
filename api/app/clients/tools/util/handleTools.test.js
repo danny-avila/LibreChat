@@ -21,25 +21,6 @@ jest.mock('~/lib/db/connectDb', () => {
     },
   };
 });
-jest.mock('@librechat/data-schemas', () => {
-  const userModelMock = {
-    createUser: jest.fn(() => mockUser),
-    findUser: jest.fn(),
-    updateUser: jest.fn(),
-  };
-  return {
-    registerModels: jest.fn().mockReturnValue({
-      User: userModelMock,
-    }),
-  };
-});
-
-jest.mock('~/models/Message', () => ({
-  Message: jest.fn(),
-}));
-jest.mock('~/models/Conversation', () => ({
-  Conversation: jest.fn(),
-}));
 jest.mock('~/models/File', () => ({
   File: jest.fn(),
 }));
@@ -62,9 +43,6 @@ describe('Tool Handlers', () => {
   const mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
   const authConfigs = mainPlugin.authConfig;
-
-  const { registerModels } = require('@librechat/data-schemas');
-  let User = registerModels().User;
 
   beforeAll(async () => {
     mockUser.save.mockResolvedValue(undefined);

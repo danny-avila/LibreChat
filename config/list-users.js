@@ -1,12 +1,12 @@
 const path = require('path');
+const { User } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
-const db = require('~/lib/db/connectDb');
 
 const listUsers = async () => {
   try {
     await connect();
-    const users = await db.models.User.find({}, 'email provider avatar username name createdAt');
+    const users = await User.find({}, 'email provider avatar username name createdAt');
 
     console.log('\nUser List:');
     console.log('----------------------------------------');

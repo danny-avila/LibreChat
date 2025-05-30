@@ -1,6 +1,5 @@
+const { Balance, logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
 
 /**
  * Middleware to synchronize user balance settings with current balance configuration.
@@ -20,14 +19,14 @@ const setBalanceConfig = async (req, res, next) => {
     }
 
     const userId = req.user._id;
-    const userBalanceRecord = await db.models.Balance.findOne({ user: userId }).lean();
+    const userBalanceRecord = await Balance.findOne({ user: userId }).lean();
     const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord);
 
     if (Object.keys(updateFields).length === 0) {
       return next();
     }
 
-    await db.models.Balance.findOneAndUpdate(
+    await Balance.findOneAndUpdate(
       { user: userId },
       { $set: updateFields },
       { upsert: true, new: true },

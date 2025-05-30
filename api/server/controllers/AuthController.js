@@ -1,6 +1,7 @@
-const openIdClient = require('openid-client');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const openIdClient = require('openid-client');
+const { User, Session, logger } = require('@librechat/data-schemas');
 const {
   registerUser,
   resetPassword,
@@ -9,9 +10,7 @@ const {
   setOpenIDAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
-const { logger } = require('~/config');
 const { isEnabled } = require('~/server/utils');
-const db = require('~/lib/db/connectDb');
 
 const registrationController = async (req, res) => {
   try {
@@ -48,7 +47,7 @@ const resetPasswordController = async (req, res) => {
     if (resetPasswordService instanceof Error) {
       return res.status(400).json(resetPasswordService);
     } else {
-      await db.models.Session.deleteAllUserSessions({ userId: req.body.userId });
+      await Session.deleteAllUserSessions({ userId: req.body.userId });
       return res.status(200).json(resetPasswordService);
     }
   } catch (e) {
@@ -70,7 +69,7 @@ const refreshController = async (req, res) => {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
       const claims = tokenset.claims();
-      const user = await findUser({ email: claims.email });
+      const user = await User.findUser({ email: claims.email });
       if (!user) {
         return res.status(401).redirect('/login');
       }
@@ -83,7 +82,7 @@ const refreshController = async (req, res) => {
   }
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await db.models.User.getUserById(payload.id, '-password -__v -totpSecret');
+    const user = await User.getUserById(payload.id, '-password -__v -totpSecret');
     if (!user) {
       return res.status(401).redirect('/login');
     }
@@ -96,7 +95,7 @@ const refreshController = async (req, res) => {
     }
 
     // Find the session with the hashed refresh token
-    const session = await db.models.Session.findSession({
+    const session = await Session.findSession({
       userId: userId,
       refreshToken: refreshToken,
     });

@@ -1,8 +1,7 @@
 const path = require('path');
+const { User, Balance } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
-const Balance = require('~/models/Balance');
-const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -15,7 +14,7 @@ const connect = require('./connect');
   console.purple('Show the balance of all users');
   console.purple('-----------------------------');
 
-  let users = await db.models.User.find({});
+  let users = await User.find({});
   for (const user of users) {
     let balance = await Balance.findOne({ user: user._id });
     if (balance !== null) {

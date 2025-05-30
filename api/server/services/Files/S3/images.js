@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const { logger, updateUser } = require('@librechat/data-schemas');
 const { resizeImageBuffer } = require('../images/resize');
-const { saveBufferToS3 } = require('./crud');
 const { updateFile } = require('~/models/File');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
+const { saveBufferToS3 } = require('./crud');
 
 const defaultBasePath = 'images';
 
@@ -102,7 +101,7 @@ async function processS3Avatar({ buffer, userId, manual, basePath = defaultBaseP
   try {
     const downloadURL = await saveBufferToS3({ userId, buffer, fileName: 'avatar.png', basePath });
     if (manual === 'true') {
-      await db.models?.User.updateUser(userId, { avatar: downloadURL });
+      await updateUser(userId, { avatar: downloadURL });
     }
     return downloadURL;
   } catch (error) {

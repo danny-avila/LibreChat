@@ -1,10 +1,7 @@
-// Export all types
+export { default as logger } from './config/winston';
+export { default as meiliLogger } from './config/meiliLogger';
 export * from './types';
-
-// Export all models
 export * from './models';
-
-// Export all methods
 export * from './methods';
 
 // Export schemas (if needed for direct access)
@@ -16,13 +13,10 @@ export { default as tokenSchema } from './schema/token';
 export { signPayload, hashToken } from './schema/session';
 
 export { default as actionSchema } from './schema/action';
-export type { IAction } from './schema/action';
 
 export { default as agentSchema } from './schema/agent';
-export type { IAgent } from './schema/agent';
 
 export { default as assistantSchema } from './schema/assistant';
-export type { IAssistant } from './schema/assistant';
 
 export { default as balanceSchema } from './schema/balance';
 
@@ -38,10 +32,8 @@ export type { IConversationTag } from './schema/conversationTag';
 export { default as convoSchema } from './schema/convo';
 
 export { default as fileSchema } from './schema/file';
-export type { IMongoFile } from './schema/file';
 
 export { default as keySchema } from './schema/key';
-export type { IKey } from './schema/key';
 
 export { default as messageSchema } from './schema/message';
 export type { IMessage } from './schema/message';
@@ -62,7 +54,6 @@ export { default as promptGroupSchema } from './schema/promptGroup';
 export type { IPromptGroup, IPromptGroupDocument } from './schema/promptGroup';
 
 export { default as roleSchema } from './schema/role';
-export type { IRole } from './schema/role';
 
 export { default as shareSchema } from './schema/share';
 export type { ISharedLink } from './schema/share';

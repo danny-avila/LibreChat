@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const { updateUser } = require('@librechat/data-schemas');
 const { resizeImageBuffer } = require('../images/resize');
 const { updateFile } = require('~/models/File');
-const db = require('~/lib/db/connectDb');
 
 /**
  * Converts an image file to the target format. The function first resizes the image based on the specified
@@ -141,7 +141,7 @@ async function processLocalAvatar({ buffer, userId, manual }) {
   let url = `${urlRoute}?manual=${isManual}`;
 
   if (isManual) {
-    await db.models?.User.updateUser(userId, { avatar: url });
+    await updateUser(userId, { avatar: url });
   }
 
   return url;

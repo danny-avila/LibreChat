@@ -1,10 +1,9 @@
+const { User, logger } = require('@librechat/data-schemas');
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { comparePassword } = require('~/models');
 const { isEnabled, checkEmailConfig } = require('~/server/utils');
+const { comparePassword } = require('~/models');
 const { loginSchema } = require('./validators');
-const logger = require('~/utils/logger');
-const db = require('~/lib/db/connectDb');
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;
@@ -15,7 +14,6 @@ async function validateLoginRequest(req) {
 }
 
 async function passportLogin(req, email, password, done) {
-  const {User} = db.models;
   try {
     const validationError = await validateLoginRequest(req);
     if (validationError) {

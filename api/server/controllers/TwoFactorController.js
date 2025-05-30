@@ -1,3 +1,4 @@
+const { User, logger } = require('@librechat/data-schemas');
 const {
   generateTOTPSecret,
   generateBackupCodes,
@@ -5,9 +6,7 @@ const {
   verifyBackupCode,
   getTOTPSecret,
 } = require('~/server/services/twoFactorService');
-const { logger } = require('~/config');
 const { encryptV3 } = require('~/server/utils/crypto');
-const db = require('~/lib/db/connectDb');
 const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 
 /**
@@ -24,7 +23,7 @@ const enable2FA = async (req, res) => {
     const encryptedSecret = encryptV3(secret);
 
     // Update the user record: store the secret & backup codes and set twoFactorEnabled to false.
-    const user = await db.models.User.updateUser(userId, {
+    const user = await User.updateUser(userId, {
       totpSecret: encryptedSecret,
       backupCodes: codeObjects,
       twoFactorEnabled: false,
@@ -46,7 +45,7 @@ const verify2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await db.models.User.getUserById(userId);
+    const user = await User.getUserById(userId);
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
@@ -78,7 +77,6 @@ const confirm2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
-    const { User } = db.models;
     const user = await User.getUserById(userId);
 
     if (!user || !user.totpSecret) {
@@ -103,7 +101,7 @@ const confirm2FA = async (req, res) => {
 const disable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
-    await db.models.User.updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
+    await User.updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
     return res.status(200).json();
   } catch (err) {
     logger.error('[disable2FA]', err);
@@ -118,7 +116,7 @@ const regenerateBackupCodes = async (req, res) => {
   try {
     const userId = req.user.id;
     const { plainCodes, codeObjects } = await generateBackupCodes();
-    await db.models.User.updateUser(userId, { backupCodes: codeObjects });
+    await User.updateUser(userId, { backupCodes: codeObjects });
     return res.status(200).json({
       backupCodes: plainCodes,
       backupCodesHash: codeObjects,

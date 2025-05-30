@@ -8,6 +8,7 @@ process.env.CREDS_IV = '0123456789abcdef';
 
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const { Agent } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   addAgentResourceFile,
@@ -19,9 +20,6 @@ const {
   getListAgents,
   updateAgentProjects,
 } = require('./Agent');
-const db = require('~/lib/db/connectDb');
-
-let Agent;
 
 describe('Agent Resource File Operations', () => {
   let mongoServer;
@@ -29,9 +27,7 @@ describe('Agent Resource File Operations', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
-    await db.connectDb(mongoUri);
-
-    Agent = db.models.Agent;
+    await mongoose.connect(mongoUri);
   });
 
   afterAll(async () => {

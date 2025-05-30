@@ -4,8 +4,7 @@ const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
 const { saveBufferToFirebase } = require('./crud');
 const { updateFile } = require('~/models/File');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
+const { logger, updateUser } = require('@librechat/data-schemas');
 
 /**
  * Converts an image file to the target format. The function first resizes the image based on the specified
@@ -99,7 +98,7 @@ async function processFirebaseAvatar({ buffer, userId, manual }) {
     const url = `${downloadURL}?manual=${isManual}`;
 
     if (isManual) {
-      await db.models.User.updateUser(userId, { avatar: url });
+      await updateUser(userId, { avatar: url });
     }
 
     return url;

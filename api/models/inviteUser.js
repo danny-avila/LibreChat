@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
+const { Token, logger } = require('@librechat/data-schemas');
 const { getRandomValues, hashToken } = require('~/server/utils/crypto');
-const logger = require('~/config/winston');
-const db = require('~/lib/db/connectDb');
 
 /**
  * @module inviteUser
@@ -23,7 +22,7 @@ const createInvite = async (email) => {
 
     const fakeUserId = new mongoose.Types.ObjectId();
 
-    await db.models.Token.createToken({
+    await Token.createToken({
       userId: fakeUserId,
       email,
       token: hash,
@@ -50,7 +49,7 @@ const getInvite = async (encodedToken, email) => {
   try {
     const token = decodeURIComponent(encodedToken);
     const hash = await hashToken(token);
-    const invite = await db.models.Token.findToken({ token: hash, email });
+    const invite = await Token.findToken({ token: hash, email });
 
     if (!invite) {
       throw new Error('Invite not found or email does not match');

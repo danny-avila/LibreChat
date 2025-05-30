@@ -1,9 +1,9 @@
 const path = require('path');
+const { User } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { askQuestion, silentExit } = require('./helpers');
 const { createInvite } = require('~/models/inviteUser');
-const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -40,7 +40,7 @@ const connect = require('./connect');
   }
 
   // Check if the user already exists
-  const userExists = await db.models.User.findOne({ email });
+  const userExists = await User.findOne({ email });
   if (userExists) {
     console.red('Error: A user with that email already exists!');
     silentExit(1);

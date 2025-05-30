@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { Role, logger } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
@@ -8,8 +9,6 @@ const {
 } = require('librechat-data-provider');
 const { getRoleByName, updateAccessPermissions, initializeRoles } = require('~/models/Role');
 const getLogStores = require('~/cache/getLogStores');
-
-const db = require('~/lib/db/connectDb');
 
 // Mock the cache
 jest.mock('~/cache/getLogStores', () =>
@@ -21,14 +20,11 @@ jest.mock('~/cache/getLogStores', () =>
 );
 
 let mongoServer;
-let Role;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
-  await db.connectDb(mongoUri);
-
-  Role = db.models.Role;
+  await mongoose.connect(mongoUri);
 });
 
 afterAll(async () => {

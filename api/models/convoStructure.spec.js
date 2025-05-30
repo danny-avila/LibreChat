@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
+const { Message } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { getMessages, bulkSaveMessages } = require('./Message');
-const db = require('~/lib/db/connectDb');
 
 // Original version of buildTree function
 function buildTree({ messages, fileMap }) {
@@ -43,13 +43,10 @@ function buildTree({ messages, fileMap }) {
 }
 
 let mongod;
-let Message;
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();
-  await db.connectDb(uri);
-
-  Message = db.models.Message;
+  await mongoose.connect(uri);
 });
 
 afterAll(async () => {

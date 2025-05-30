@@ -1,7 +1,7 @@
 const { ErrorTypes } = require('librechat-data-provider');
-const { encrypt, decrypt } = require('~/server/utils');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
+const { Key, logger, updateUser } = require('@librechat/data-schemas');
+const { encrypt, decrypt } = require('~/server/utils/crypto');
+
 /**
  * Updates the plugins for a user based on the action specified (install/uninstall).
  * @async
@@ -16,11 +16,10 @@ const db = require('~/lib/db/connectDb');
 const updateUserPluginsService = async (user, pluginKey, action) => {
   try {
     const userPlugins = user.plugins || [];
-    const { User } = db.models;
     if (action === 'install') {
-      return await User.updateUser(user._id, { plugins: [...userPlugins, pluginKey] });
+      return await updateUser(user._id, { plugins: [...userPlugins, pluginKey] });
     } else if (action === 'uninstall') {
-      return await User.updateUser(user._id, {
+      return await updateUser(user._id, {
         plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
       });
     }
@@ -42,7 +41,7 @@ const updateUserPluginsService = async (user, pluginKey, action) => {
  *              an error indicating that there is no user key available.
  */
 const getUserKey = async ({ userId, name }) => {
-  const keyValue = await db.models.Key.findOne({ userId, name }).lean();
+  const keyValue = await Key.findOne({ userId, name }).lean();
   if (!keyValue) {
     throw new Error(
       JSON.stringify({
@@ -89,7 +88,7 @@ const getUserKeyValues = async ({ userId, name }) => {
  *              returns its expiry date. If the key is not found, it returns null for the expiry date.
  */
 const getUserKeyExpiry = async ({ userId, name }) => {
-  const keyValue = await db.models.Key.findOne({ userId, name }).lean();
+  const keyValue = await Key.findOne({ userId, name }).lean();
   if (!keyValue) {
     return { expiresAt: null };
   }
@@ -123,7 +122,7 @@ const updateUserKey = async ({ userId, name, value, expiresAt = null }) => {
     // make sure to remove if already present
     updateQuery.$unset = { expiresAt };
   }
-  return await db.models.Key.findOneAndUpdate({ userId, name }, updateQuery, {
+  return await Key.findOneAndUpdate({ userId, name }, updateQuery, {
     upsert: true,
     new: true,
   }).lean();
@@ -143,10 +142,10 @@ const updateUserKey = async ({ userId, name, value, expiresAt = null }) => {
  */
 const deleteUserKey = async ({ userId, name, all = false }) => {
   if (all) {
-    return await db.models.Key.deleteMany({ userId });
+    return await Key.deleteMany({ userId });
   }
 
-  await db.models.Key.findOneAndDelete({ userId, name }).lean();
+  await Key.findOneAndDelete({ userId, name }).lean();
 };
 
 /**

@@ -1,7 +1,7 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
-const db = require('~/lib/db/connectDb');
+const { User, Conversation, Message } = require('@librechat/data-schemas');
 const connect = require('./connect');
 
 (async () => {
@@ -14,7 +14,6 @@ const connect = require('./connect');
   console.purple('Show the stats of all users');
   console.purple('-----------------------------');
 
-  const { User, Conversation, Message } = db.models;
   let users = await User.find({});
   let userData = [];
   for (const user of users) {

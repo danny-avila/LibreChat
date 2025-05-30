@@ -1,5 +1,6 @@
 const express = require('express');
 const { ContentTypes } = require('librechat-data-provider');
+const { Message, logger } = require('@librechat/data-schemas');
 const {
   saveConvo,
   saveMessage,
@@ -13,8 +14,6 @@ const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -40,7 +39,7 @@ router.get('/', async (req, res) => {
     const sortOrder = sortDirection === 'asc' ? 1 : -1;
 
     if (conversationId && messageId) {
-      const message = await db.models.Message.findOne({
+      const message = await Message.findOne({
         conversationId,
         messageId,
         user: user,
@@ -51,14 +50,14 @@ router.get('/', async (req, res) => {
       if (cursor) {
         filter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
       }
-      const messages = await db.models.Message.find(filter)
+      const messages = await Message.find(filter)
         .sort({ [sortField]: sortOrder })
         .limit(pageSize + 1)
         .lean();
       const nextCursor = messages.length > pageSize ? messages.pop()[sortField] : null;
       response = { messages, nextCursor };
     } else if (search) {
-      const searchResults = await db.models.Message.meiliSearch(search, undefined, true);
+      const searchResults = await Message.meiliSearch(search, undefined, true);
 
       const messages = searchResults.hits || [];
 

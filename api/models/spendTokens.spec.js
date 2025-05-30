@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { Transaction, Balance } = require('@librechat/data-schemas');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
-const db = require('~/lib/db/connectDb');
 const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
 
 // Mock the logger to prevent console output during tests
@@ -20,15 +20,9 @@ describe('spendTokens', () => {
   let mongoServer;
   let userId;
 
-  let Transaction;
-  let Balance;
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    await db.connectDb(mongoUri);
-
-    Balance = db.models.Balance;
-    Transaction = db.models.Transaction;
+    await mongoose.connect(mongoServer.getUri());
   });
 
   afterAll(async () => {

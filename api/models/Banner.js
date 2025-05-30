@@ -1,5 +1,4 @@
-const logger = require('~/config/winston');
-const db = require('~/lib/db/connectDb');
+const { Banner, logger } = require('@librechat/data-schemas');
 
 /**
  * Retrieves the current active banner.
@@ -8,7 +7,7 @@ const db = require('~/lib/db/connectDb');
 const getBanner = async (user) => {
   try {
     const now = new Date();
-    const banner = await db.models.Banner.findOne({
+    const banner = await Banner.findOne({
       displayFrom: { $lte: now },
       $or: [{ displayTo: { $gte: now } }, { displayTo: null }],
       type: 'banner',

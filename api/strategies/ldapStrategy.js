@@ -1,10 +1,10 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
 const { SystemRoles } = require('librechat-data-provider');
+const { User, createUser, findUser, updateUser } = require('@librechat/data-schemas');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { isEnabled } = require('~/server/utils');
 const logger = require('~/utils/logger');
-const db = require('~/lib/db/connectDb');
-const { getBalanceConfig } = require('~/server/services/Config');
 
 const {
   LDAP_URL,
@@ -81,7 +81,6 @@ const ldapOptions = {
 };
 
 const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
-  const { User } = db.models;
   if (!userinfo) {
     return done(null, false, { message: 'Invalid credentials' });
   }
@@ -90,7 +89,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const ldapId =
       (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
-    let user = await User.findUser({ ldapId });
+    let user = await findUser({ ldapId });
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
@@ -126,8 +125,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       };
       const balanceConfig = await getBalanceConfig();
-      
-      const userId = await User.createUser(user, balanceConfig);
+      const userId = await createUser(user, balanceConfig);
       user._id = userId;
     } else {
       // Users registered in LDAP are assumed to have their user information managed in LDAP,
@@ -139,7 +137,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       user.name = fullName;
     }
 
-    user = await User.updateUser(user._id, user);
+    user = await updateUser(user._id, user);
     done(null, user);
   } catch (err) {
     logger.error('[ldapStrategy]', err);

@@ -1,8 +1,8 @@
 const path = require('path');
+const { User, Balance } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const { isEnabled } = require('~/server/utils/handleText');
-const db = require('~/lib/db/connectDb');
 const connect = require('./connect');
 
 (async () => {
@@ -56,7 +56,7 @@ const connect = require('./connect');
   }
 
   // Validate the user
-  const user = await db.models.User.findOne({ email }).lean();
+  const user = await User.findOne({ email }).lean();
   if (!user) {
     console.red('Error: No user with that email was found!');
     silentExit(1);
@@ -64,7 +64,7 @@ const connect = require('./connect');
     console.purple(`Found user: ${user.email}`);
   }
 
-  let balance = await db.models.Balance.findOne({ user: user._id }).lean();
+  let balance = await Balance.findOne({ user: user._id }).lean();
   if (!balance) {
     console.purple('User has no balance!');
   } else {
@@ -85,7 +85,7 @@ const connect = require('./connect');
    */
   let result;
   try {
-    result = await db.models.Balance.findOneAndUpdate(
+    result = await Balance.findOneAndUpdate(
       { user: user._id },
       { tokenCredits: amount },
       { upsert: true, new: true },

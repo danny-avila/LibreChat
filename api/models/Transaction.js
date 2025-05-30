@@ -1,9 +1,7 @@
 const mongoose = require('mongoose');
-const { transactionSchema } = require('@librechat/data-schemas');
+const { Balance, Transaction, logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
 
 const cancelRate = 1.15;
 
@@ -23,7 +21,6 @@ const updateBalance = async ({ user, incrementValue, setValues }) => {
   let maxRetries = 10; // Number of times to retry on conflict
   let delay = 50; // Initial retry delay in ms
   let lastError = null;
-  const { Balance } = db.models;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     let currentBalanceDoc;
@@ -165,7 +162,6 @@ function calculateTokenValue(txn) {
  * @returns {Promise<object>} - The created transaction.
  */
 async function createAutoRefillTransaction(txData) {
-  const Transaction = db.models.Transaction;
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
@@ -198,7 +194,7 @@ async function createTransaction(txData) {
     return;
   }
 
-  const transaction = new db.models.Transaction(txData);
+  const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   calculateTokenValue(transaction);
 
@@ -228,7 +224,7 @@ async function createTransaction(txData) {
  * @param {txData} txData - Transaction data.
  */
 async function createStructuredTransaction(txData) {
-  const transaction = new db.models.Transaction({
+  const transaction = new Transaction({
     ...txData,
     endpointTokenConfig: txData.endpointTokenConfig,
   });
@@ -329,7 +325,7 @@ function calculateStructuredTokenValue(txn) {
  */
 async function getTransactions(filter) {
   try {
-    return await db.models.Transaction.find(filter).lean();
+    return await Transaction.find(filter).lean();
   } catch (error) {
     logger.error('Error querying transactions:', error);
     throw error;

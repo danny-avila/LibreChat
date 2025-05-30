@@ -1,6 +1,6 @@
-const db = require('~/lib/db/connectDb');
+const { Balance } = require('@librechat/data-schemas');
 async function balanceController(req, res) {
-  const balanceData = await db.models.Balance.findOne(
+  const balanceData = await Balance.findOne(
     { user: req.user.id },
     '-_id tokenCredits autoRefillEnabled refillIntervalValue refillIntervalUnit lastRefill refillAmount',
   ).lean();

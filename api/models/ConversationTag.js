@@ -1,5 +1,4 @@
-const logger = require('~/config/winston');
-const db = require('~/lib/db/connectDb');
+const { ConversationTag, Conversation, logger } = require('@librechat/data-schemas');
 
 /**
  * Retrieves all conversation tags for a user.
@@ -8,7 +7,7 @@ const db = require('~/lib/db/connectDb');
  */
 const getConversationTags = async (user) => {
   try {
-    return await db.models.ConversationTag.find({ user }).sort({ position: 1 }).lean();
+    return await ConversationTag.find({ user }).sort({ position: 1 }).lean();
   } catch (error) {
     logger.error('[getConversationTags] Error getting conversation tags', error);
     throw new Error('Error getting conversation tags');
@@ -29,7 +28,6 @@ const createConversationTag = async (user, data) => {
   try {
     const { tag, description, addToConversation, conversationId } = data;
 
-    const { ConversationTag, Conversation } = db.models;
     const existingTag = await ConversationTag.findOne({ user, tag }).lean();
     if (existingTag) {
       return existingTag;
@@ -84,7 +82,6 @@ const updateConversationTag = async (user, oldTag, data) => {
   try {
     const { tag: newTag, description, position } = data;
 
-    const { ConversationTag, Conversation } = db.models;
     const existingTag = await ConversationTag.findOne({ user, tag: oldTag }).lean();
     if (!existingTag) {
       return null;
@@ -145,7 +142,7 @@ const adjustPositions = async (user, oldPosition, newPosition) => {
           $lt: Math.max(oldPosition, newPosition),
         };
 
-  await db.models.ConversationTag.updateMany(
+  await ConversationTag.updateMany(
     {
       user,
       position,
@@ -162,7 +159,6 @@ const adjustPositions = async (user, oldPosition, newPosition) => {
  */
 const deleteConversationTag = async (user, tag) => {
   try {
-    const { ConversationTag, Conversation } = db.models;
     const deletedTag = await ConversationTag.findOneAndDelete({ user, tag }).lean();
     if (!deletedTag) {
       return null;
@@ -191,7 +187,6 @@ const deleteConversationTag = async (user, tag) => {
  */
 const updateTagsForConversation = async (user, conversationId, tags) => {
   try {
-    const { ConversationTag, Conversation } = db.models;
     const conversation = await Conversation.findOne({ user, conversationId }).lean();
     if (!conversation) {
       throw new Error('Conversation not found');

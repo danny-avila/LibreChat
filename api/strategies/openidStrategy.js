@@ -1,14 +1,14 @@
-const { CacheKeys } = require('librechat-data-provider');
 const fetch = require('node-fetch');
 const passport = require('passport');
-const jwtDecode = require('jsonwebtoken/decode');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const client = require('openid-client');
+const jwtDecode = require('jsonwebtoken/decode');
+const { CacheKeys } = require('librechat-data-provider');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { User, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
 const getLogStores = require('~/cache/getLogStores');
+const { isEnabled } = require('~/server/utils');
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -212,7 +212,6 @@ function convertToUsername(input, defaultValue = '') {
  * @throws {Error} If an error occurs during the setup process.
  */
 async function setupOpenId() {
-  const { User } = db.models;
   try {
     /** @type {ClientMetadata} */
     const clientMetadata = {

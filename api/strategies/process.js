@@ -1,7 +1,7 @@
 const { FileSources } = require('librechat-data-provider');
+const { updateUser, createUser, getUserById } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const db = require('~/lib/db/connectDb');
 const { getBalanceConfig } = require('~/server/services/Config');
 
 /**
@@ -35,7 +35,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   }
 
   if (updatedAvatar) {
-    await db.models.User.updateUser(oldUser._id, { avatar: updatedAvatar });
+    await updateUser(oldUser._id, { avatar: updatedAvatar });
   }
 };
 
@@ -80,7 +80,7 @@ const createSocialUser = async ({
   };
 
   const balanceConfig = await getBalanceConfig();
-  const newUserId = await db.models.User.createUser(update, balanceConfig);
+  const newUserId = await createUser(update, balanceConfig);
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
@@ -91,10 +91,10 @@ const createSocialUser = async ({
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
     const avatar = await processAvatar({ buffer: resizedBuffer, userId: newUserId });
-    await User.updateUser(newUserId, { avatar });
+    await updateUser(newUserId, { avatar });
   }
 
-  return await User.getUserById(newUserId);
+  return await getUserById(newUserId);
 };
 
 module.exports = {

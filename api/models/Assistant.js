@@ -1,4 +1,4 @@
-const db = require('~/lib/db/connectDb');
+const { Assistant } = require('@librechat/data-schemas');
 
 /**
  * Update an assistant with new data without overwriting existing properties,
@@ -12,7 +12,7 @@ const db = require('~/lib/db/connectDb');
  */
 const updateAssistantDoc = async (searchParams, updateData) => {
   const options = { new: true, upsert: true };
-  return await db.models.Assistant.findOneAndUpdate(searchParams, updateData, options).lean();
+  return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean();
 };
 
 /**
@@ -23,7 +23,7 @@ const updateAssistantDoc = async (searchParams, updateData) => {
  * @param {string} searchParams.user - The user ID of the assistant's author.
  * @returns {Promise<AssistantDocument|null>} The assistant document as a plain object, or null if not found.
  */
-const getAssistant = async (searchParams) => await db.models.Assistant.findOne(searchParams).lean();
+const getAssistant = async (searchParams) => await Assistant.findOne(searchParams).lean();
 
 /**
  * Retrieves all assistants that match the given search parameters.
@@ -33,7 +33,7 @@ const getAssistant = async (searchParams) => await db.models.Assistant.findOne(s
  * @returns {Promise<Array<AssistantDocument>>} A promise that resolves to an array of assistant documents as plain objects.
  */
 const getAssistants = async (searchParams, select = null) => {
-  let query = db.models.Assistant.find(searchParams);
+  let query = Assistant.find(searchParams);
 
   if (select) {
     query = query.select(select);
@@ -51,7 +51,7 @@ const getAssistants = async (searchParams, select = null) => {
  * @returns {Promise<void>} Resolves when the assistant has been successfully deleted.
  */
 const deleteAssistant = async (searchParams) => {
-  return await db.models.Assistant.findOneAndDelete(searchParams);
+  return await Assistant.findOneAndDelete(searchParams);
 };
 
 module.exports = {

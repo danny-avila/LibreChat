@@ -1,7 +1,6 @@
 const { SystemRoles } = require('librechat-data-provider');
+const { User, logger } = require('@librechat/data-schemas');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
 
 // JWT strategy
 const jwtLogin = () =>
@@ -12,7 +11,6 @@ const jwtLogin = () =>
     },
     async (payload, done) => {
       try {
-        const {User} = db.models;
         const user = await User.getUserById(payload?.id, '-password -__v -totpSecret');
         if (user) {
           user.id = user._id.toString();

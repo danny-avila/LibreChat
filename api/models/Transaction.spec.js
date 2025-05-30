@@ -1,24 +1,19 @@
 const mongoose = require('mongoose');
+const { Balance } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const db = require('~/lib/db/connectDb');
 const { createTransaction } = require('./Transaction');
 
 // Mock the custom config module so we can control the balance flag.
 jest.mock('~/server/services/Config');
 
 let mongoServer;
-let Balance;
-let Transaction;
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
-  await db.connectDb(mongoUri);
-
-  Balance = db.models.Balance;
-  Transaction = db.models.Transaction;
+  await mongoose.connect(mongoUri);
 });
 
 afterAll(async () => {

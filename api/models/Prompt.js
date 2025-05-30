@@ -1,4 +1,5 @@
 const { ObjectId } = require('mongodb');
+const { Prompt, PromptGroup, logger } = require('@librechat/data-schemas');
 const { SystemRoles, SystemCategories, Constants } = require('librechat-data-provider');
 const {
   getProjectByName,
@@ -7,8 +8,6 @@ const {
   removeGroupFromAllProjects,
 } = require('./Project');
 const { escapeRegExp } = require('~/server/utils');
-const { logger } = require('~/config');
-const db = require('~/lib/db/connectDb');
 
 /**
  * Create a pipeline for the aggregation to get prompt groups
@@ -133,7 +132,7 @@ const getAllPromptGroups = async (req, filter) => {
     }
 
     const promptGroupsPipeline = createAllGroupsPipeline(combinedQuery);
-    return await db.models.PromptGroup.aggregate(promptGroupsPipeline).exec();
+    return await PromptGroup.aggregate(promptGroupsPipeline).exec();
   } catch (error) {
     console.error('Error getting all prompt groups', error);
     return { message: 'Error getting all prompt groups' };
@@ -233,7 +232,7 @@ const deletePromptGroup = async ({ _id, author, role }) => {
     throw new Error('Prompt group not found');
   }
 
-  await db.models.Prompt.deleteMany(groupQuery);
+  await Prompt.deleteMany(groupQuery);
   await removeGroupFromAllProjects(_id);
   return { message: 'Prompt group deleted successfully' };
 };
@@ -250,7 +249,6 @@ module.exports = {
   createPromptGroup: async (saveData) => {
     try {
       const { prompt, group, author, authorName } = saveData;
-      const { Prompt, PromptGroup } = db.models;
 
       let newPromptGroup = await PromptGroup.findOneAndUpdate(
         { ...group, author, authorName, productionId: null },
@@ -306,7 +304,6 @@ module.exports = {
 
       /** @type {TPrompt} */
       let newPrompt;
-      const { Prompt } = db.models;
       try {
         newPrompt = await Prompt.create(newPromptData);
       } catch (error) {
@@ -326,7 +323,7 @@ module.exports = {
   },
   getPrompts: async (filter) => {
     try {
-      return await db.models.Prompt.find(filter).sort({ createdAt: -1 }).lean();
+      return await Prompt.find(filter).sort({ createdAt: -1 }).lean();
     } catch (error) {
       logger.error('Error getting prompts', error);
       return { message: 'Error getting prompts' };
@@ -337,7 +334,7 @@ module.exports = {
       if (filter.groupId) {
         filter.groupId = new ObjectId(filter.groupId);
       }
-      return await db.models.Prompt.findOne(filter).lean();
+      return await Prompt.findOne(filter).lean();
     } catch (error) {
       logger.error('Error getting prompt', error);
       return { message: 'Error getting prompt' };
@@ -350,7 +347,7 @@ module.exports = {
    */
   getRandomPromptGroups: async (filter) => {
     try {
-      const result = await db.models.PromptGroup.aggregate([
+      const result = await PromptGroup.aggregate([
         {
           $match: {
             category: { $ne: '' },
@@ -383,7 +380,7 @@ module.exports = {
   },
   getPromptGroupsWithPrompts: async (filter) => {
     try {
-      return await db.models.PromptGroup.findOne(filter)
+      return await PromptGroup.findOne(filter)
         .populate({
           path: 'prompts',
           select: '-_id -__v -user',
@@ -397,7 +394,7 @@ module.exports = {
   },
   getPromptGroup: async (filter) => {
     try {
-      return await db.models.PromptGroup.findOne(filter).lean();
+      return await PromptGroup.findOne(filter).lean();
     } catch (error) {
       logger.error('Error getting prompt group', error);
       return { message: 'Error getting prompt group' };
@@ -418,7 +415,6 @@ module.exports = {
    */
   deletePrompt: async ({ promptId, groupId, author, role }) => {
     const query = { _id: promptId, groupId, author };
-    const { Prompt, PromptGroup } = db.models;
     if (role === SystemRoles.ADMIN) {
       delete query.author;
     }
@@ -483,7 +479,7 @@ module.exports = {
       }
 
       const updateData = { ...data, ...updateOps };
-      const updatedDoc = await db.models.PromptGroup.findOneAndUpdate(filter, updateData, {
+      const updatedDoc = await PromptGroup.findOneAndUpdate(filter, updateData, {
         new: true,
         upsert: false,
       });
@@ -505,7 +501,6 @@ module.exports = {
    */
   makePromptProduction: async (promptId) => {
     try {
-      const { Prompt, PromptGroup } = db.models;
       const prompt = await Prompt.findById(promptId).lean();
 
       if (!prompt) {
@@ -530,7 +525,7 @@ module.exports = {
   },
   updatePromptLabels: async (_id, labels) => {
     try {
-      const response = await db.models.Prompt.updateOne({ _id }, { $set: { labels } });
+      const response = await Prompt.updateOne({ _id }, { $set: { labels } });
       if (response.matchedCount === 0) {
         return { message: 'Prompt not found' };
       }

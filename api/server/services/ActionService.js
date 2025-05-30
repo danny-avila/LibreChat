@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
+const { findToken } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
 const {
   Time,
@@ -231,10 +232,9 @@ async function createActionTool({
             };
 
             const tokenPromises = [];
-            const { Token } = db.models;
-            tokenPromises.push(Token.findToken({ userId, type: 'oauth', identifier }));
+            tokenPromises.push(findToken({ userId, type: 'oauth', identifier }));
             tokenPromises.push(
-              Token.findToken({
+              findToken({
                 userId,
                 type: 'oauth_refresh',
                 identifier: `${identifier}:refresh`,

@@ -1,5 +1,5 @@
+const { Token } = require('@librechat/data-schemas');
 const { encryptV2 } = require('~/server/utils/crypto');
-const db = require('~/lib/db/connectDb');
 
 /**
  * Handles the OAuth token by creating or updating the token.
@@ -29,7 +29,6 @@ async function handleOAuthToken({
     expiresIn: parseInt(expiresIn, 10) || 3600,
   };
 
-  const { Token } = db.models;
   const existingToken = await Token.findToken({ userId, identifier });
   if (existingToken) {
     return await Token.updateToken({ identifier }, tokenData);

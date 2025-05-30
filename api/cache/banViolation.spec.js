@@ -1,17 +1,5 @@
 const banViolation = require('./banViolation');
 
-jest.mock('@librechat/data-schemas', () => {
-  const sessionModelMock = {
-    deleteAllUserSessions: jest.fn(),
-  };
-
-  return {
-    registerModels: jest.fn().mockReturnValue({
-      Session: sessionModelMock,
-    }),
-  };
-});
-
 const mockModels = {
   Session: {
     deleteAllUserSessions: jest.fn(),
