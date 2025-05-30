@@ -79,16 +79,13 @@ module.exports = {
 
   // Приглашение пользователей
   INVITE_USER: `
-    mutation inviteUsers($emails: [String!]!, $userRole: UserRole, $product: Product) {
-      invite_users(
-        emails: $emails,
-        user_role: $userRole,
-        product: $product
-      ) {
+    mutation inviteUsers($emails: [String!]!, $userRole: UserRole!, $teamIds: [ID]) {
+      invite_users(emails: $emails, user_role: $userRole, team_ids: $teamIds) {
         invited_users {
           id
           name
           email
+          enabled
         }
         errors {
           message

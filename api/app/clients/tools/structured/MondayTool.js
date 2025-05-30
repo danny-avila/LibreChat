@@ -459,7 +459,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   // Методы для работы с досками
   async getBoards({ limit = 25, workspaceId, boardKind, state = 'active' }) {
     const query = `
-      query getBoards($limit: Int!, $workspaceIds: [ID], $boardKind: BoardKind, $state: State!) {
+      query getBoards($limit: Int!, $workspaceIds: [ID], $boardKind: BoardKind, $state: State) {
         boards(limit: $limit, workspace_ids: $workspaceIds, board_kind: $boardKind, state: $state) {
           id
           name
@@ -490,7 +490,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       limit, 
       workspaceIds: workspaceId ? [workspaceId] : null,
       boardKind: boardKind || null,
-      state
+      state: state
     };
 
     const data = await this.makeGraphQLRequest(query, variables);
@@ -779,7 +779,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
-      boardId: parseInt(boardId),
+      boardId,
       groupName
     });
 
@@ -811,8 +811,8 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
-      boardId: parseInt(boardId),
-      itemId: parseInt(itemId),
+      boardId,
+      itemId,
       columnId,
       value: JSON.stringify(value)
     });
@@ -841,7 +841,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(mutation, {
-      itemId: parseInt(itemId),
+      itemId,
       body
     });
 
@@ -893,7 +893,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     `;
 
     const data = await this.makeGraphQLRequest(searchQuery, {
-      boardId: parseInt(boardId),
+      boardId,
       query
     });
 
@@ -903,6 +903,28 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       data: data.items_page_by_column_values?.items || [],
       total: data.items_page_by_column_values?.items?.length || 0,
       cursor: data.items_page_by_column_values?.cursor
+    });
+  }
+
+  async getWorkspaces({ limit = 25 }) {
+    const query = `
+      query getWorkspaces($limit: Int!) {
+        workspaces(limit: $limit) {
+          id
+          name
+          description
+          created_at
+          state
+        }
+      }
+    `;
+
+    const data = await this.makeGraphQLRequest(query, { limit });
+
+    return JSON.stringify({
+      success: true,
+      action: 'getWorkspaces',
+      data: data.workspaces || []
     });
   }
 
@@ -1037,8 +1059,24 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('updateId and body are required for createUpdateReply action');
     }
 
-    const data = await this.makeGraphQLRequest(updateQueries.CREATE_UPDATE_REPLY, {
-      updateId,
+    const mutation = `
+      mutation createUpdateReply($parentId: ID!, $body: String!) {
+        create_update(parent_id: $parentId, body: $body) {
+          id
+          body
+          text_body
+          created_at
+          creator {
+            id
+            name
+            email
+          }
+        }
+      }
+    `;
+
+    const data = await this.makeGraphQLRequest(mutation, {
+      parentId: updateId,
       body
     });
 
@@ -1274,10 +1312,38 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('email is required for inviteUser action');
     }
 
-    const data = await this.makeGraphQLRequest(userQueries.INVITE_USER, {
+    // Преобразуем userKind в user_role
+    const userRoleMap = {
+      'member': 'MEMBER',
+      'viewer': 'VIEW_ONLY',
+      'admin': 'ADMIN',
+      'guest': 'GUEST'
+    };
+    
+    const userRole = userRoleMap[userKind.toLowerCase()] || 'MEMBER';
+    
+    const mutation = `
+      mutation inviteUsers($emails: [String!]!, $userRole: UserRole!, $teamIds: [ID]) {
+        invite_users(emails: $emails, user_role: $userRole, team_ids: $teamIds) {
+          invited_users {
+            id
+            name
+            email
+            enabled
+          }
+          errors {
+            message
+            code
+            email
+          }
+        }
+      }
+    `;
+
+    const data = await this.makeGraphQLRequest(mutation, {
       emails: [email],
-      kind: userKind,
-      team_ids: teamIds
+      userRole,
+      teamIds
     });
 
     return JSON.stringify({
@@ -1372,16 +1438,55 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('workspaceId is required for updateWorkspace action');
     }
 
-    const data = await this.makeGraphQLRequest(workspaceQueries.UPDATE_WORKSPACE, {
-      workspaceId,
-      name,
-      description
-    });
+    // Используем разные мутации для обновления разных полей
+    let updatedData = { id: workspaceId };
+    
+    if (name) {
+      const updateNameMutation = `
+        mutation updateWorkspaceName($workspaceId: ID!, $name: String!) {
+          update_workspace(id: $workspaceId, attributes: {name: $name}) {
+            id
+            name
+            description
+            kind
+            state
+          }
+        }
+      `;
+      
+      const nameData = await this.makeGraphQLRequest(updateNameMutation, {
+        workspaceId,
+        name
+      });
+      
+      updatedData = { ...updatedData, ...nameData.update_workspace };
+    }
+    
+    if (description) {
+      const updateDescMutation = `
+        mutation updateWorkspaceDesc($workspaceId: ID!, $description: String!) {
+          update_workspace(id: $workspaceId, attributes: {description: $description}) {
+            id
+            name
+            description
+            kind
+            state
+          }
+        }
+      `;
+      
+      const descData = await this.makeGraphQLRequest(updateDescMutation, {
+        workspaceId,
+        description
+      });
+      
+      updatedData = { ...updatedData, ...descData.update_workspace };
+    }
 
     return JSON.stringify({
       success: true,
       action: 'updateWorkspace',
-      data: data.update_workspace
+      data: updatedData
     });
   }
 
@@ -1523,8 +1628,8 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   async duplicateBoard({ boardId, duplicateType = 'duplicate_structure_and_items', boardName, workspaceId, folderId, keepSubscribers = false }) {
-    if (!boardId || !boardName) {
-      throw new Error('boardId and boardName are required for duplicateBoard action');
+    if (!boardId) {
+      throw new Error('boardId is required for duplicateBoard action');
     }
 
     const data = await this.makeGraphQLRequest(workspaceQueries.DUPLICATE_BOARD, {
@@ -1841,7 +1946,23 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId and groupName are required for createGroupAdvanced action');
     }
 
-    const data = await this.makeGraphQLRequest(advancedQueries.CREATE_GROUP_ADVANCED, {
+    const mutation = `
+      mutation createGroupAdvanced($boardId: ID!, $groupName: String!, $color: String, $position: String) {
+        create_group(
+          board_id: $boardId,
+          group_name: $groupName,
+          group_color: $color,
+          position: $position
+        ) {
+          id
+          title
+          color
+          position
+        }
+      }
+    `;
+
+    const data = await this.makeGraphQLRequest(mutation, {
       boardId,
       groupName,
       color,
@@ -1860,17 +1981,63 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId and groupId are required for updateGroup action');
     }
 
-    const data = await this.makeGraphQLRequest(advancedQueries.UPDATE_GROUP, {
-      boardId,
-      groupId,
-      groupName,
-      color
-    });
+    // Новый подход: используем две отдельные мутации для обновления названия и цвета
+    let updatedData = { id: groupId };
+    
+    if (groupName) {
+      const updateNameMutation = `
+        mutation updateGroupName($boardId: ID!, $groupId: String!, $groupName: String!) {
+          update_group(
+            board_id: $boardId,
+            group_id: $groupId,
+            group_attribute: title,
+            new_value: $groupName
+          ) {
+            id
+            title
+            color
+          }
+        }
+      `;
+      
+      const nameData = await this.makeGraphQLRequest(updateNameMutation, {
+        boardId,
+        groupId,
+        groupName
+      });
+      
+      updatedData = { ...updatedData, ...nameData.update_group };
+    }
+    
+    if (color) {
+      const updateColorMutation = `
+        mutation updateGroupColor($boardId: ID!, $groupId: String!, $color: String!) {
+          update_group(
+            board_id: $boardId,
+            group_id: $groupId,
+            group_attribute: color,
+            new_value: $color
+          ) {
+            id
+            title
+            color
+          }
+        }
+      `;
+      
+      const colorData = await this.makeGraphQLRequest(updateColorMutation, {
+        boardId,
+        groupId,
+        color
+      });
+      
+      updatedData = { ...updatedData, ...colorData.update_group };
+    }
 
     return JSON.stringify({
       success: true,
       action: 'updateGroup',
-      data: data.update_group
+      data: updatedData
     });
   }
 
@@ -2113,8 +2280,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   /**
-   * Форматирование ответа для агентов
-   /**
    * Метод для выполнения множественных операций параллельно (batch processing)
    * Ограничиваем до 5 одновременных запросов для соблюдения rate limits monday.com
    */

@@ -120,6 +120,20 @@ module.exports = {
     }
   `,
 
+  // Получение базовой информации о пользователях
+  GET_USERS: `
+    query getUsers($limit: Int!) {
+      users(limit: $limit) {
+        id
+        name
+        email
+        enabled
+        title
+        photo_thumb
+      }
+    }
+  `,
+
   // Получение расширенной информации о пользователях
   GET_USERS_EXTENDED: `
     query getUsersExtended($ids: [ID!], $emails: [String!], $kind: UserKind, $limit: Int, $page: Int) {

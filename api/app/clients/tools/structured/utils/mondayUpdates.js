@@ -98,8 +98,8 @@ module.exports = {
 
   // Ответ на обновление (используем create_update с parent_id)
   CREATE_UPDATE_REPLY: `
-    mutation createUpdateReply($updateId: ID!, $body: String!) {
-      create_update(parent_id: $updateId, body: $body) {
+    mutation createUpdateReply($parentId: ID!, $body: String!) {
+      create_update(parent_id: $parentId, body: $body) {
         id
         body
         text_body
