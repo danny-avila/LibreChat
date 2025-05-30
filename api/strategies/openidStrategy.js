@@ -37,15 +37,6 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
   }
 }
 
-let crypto;
-let webcrypto;
-try {
-  crypto = require('node:crypto');
-  webcrypto = crypto;
-} catch (err) {
-  logger.error('[openidStrategy] crypto support is disabled!', err);
-}
-
 /**
  * Exchange the access token for a new access token using the on-behalf-of flow if required.
  * @param {Configuration} config
