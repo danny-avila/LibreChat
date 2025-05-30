@@ -1,8 +1,24 @@
-// User methods
-export * from './user';
+import { createUserMethods, type UserMethods } from './user';
+import { createSessionMethods, type SessionMethods } from './session';
+import { createTokenMethods, type TokenMethods } from './token';
+import { createRoleMethods, type RoleMethods } from './role';
 
-// Session methods
-export * from './session';
+/**
+ * Creates all database methods for all collections
+ */
+export function createAllMethods(mongoose: typeof import('mongoose')) {
+  return {
+    ...createUserMethods(mongoose),
+    ...createSessionMethods(mongoose),
+    ...createTokenMethods(mongoose),
+    ...createRoleMethods(mongoose),
+  };
+}
 
-// Token methods
-export * from './token';
+export type AllMethods = UserMethods & SessionMethods & TokenMethods & RoleMethods;
+
+// Also export individual factory functions for granular usage if needed
+export { createUserMethods, type UserMethods } from './user';
+export { createSessionMethods, type SessionMethods } from './session';
+export { createTokenMethods, type TokenMethods } from './token';
+export { createRoleMethods, type RoleMethods } from './role';

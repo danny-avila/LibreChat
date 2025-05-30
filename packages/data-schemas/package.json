@@ -70,7 +70,8 @@
   },
   "peerDependencies": {
     "keyv": "^5.3.2",
-    "mongoose": "^8.12.1"
+    "mongoose": "^8.12.1",
+    "librechat-data-provider": "*"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
