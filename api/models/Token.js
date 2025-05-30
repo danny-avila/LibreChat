@@ -1,7 +1,5 @@
-const mongoose = require('mongoose');
+const { findToken, updateToken, createToken } = require('~/models');
 const { encryptV2 } = require('~/server/utils/crypto');
-
-const Token = require('~/db/models').Token;
 
 /**
  * Handles the OAuth token by creating or updating the token.
@@ -31,11 +29,11 @@ async function handleOAuthToken({
     expiresIn: parseInt(expiresIn, 10) || 3600,
   };
 
-  const existingToken = await Token.findToken({ userId, identifier });
+  const existingToken = await findToken({ userId, identifier });
   if (existingToken) {
-    return await Token.updateToken({ identifier }, tokenData);
+    return await updateToken({ identifier }, tokenData);
   } else {
-    return await Token.createToken(tokenData);
+    return await createToken(tokenData);
   }
 }
 

@@ -4,9 +4,17 @@ const {
   webSearchKeys,
   extractWebSearchEnvVars,
 } = require('librechat-data-provider');
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { getFiles, deleteFiles, deleteConvos, deletePresets, deleteMessages } = require('~/models');
+const {
+  getFiles,
+  updateUser,
+  deleteFiles,
+  deleteConvos,
+  deletePresets,
+  deleteMessages,
+  deleteUserById,
+  deleteAllUserSessions,
+} = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
@@ -16,7 +24,6 @@ const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
 
 const Transaction = require('~/db/models').Transaction;
-const Session = require('~/db/models').Session;
 const Balance = require('~/db/models').Balance;
 const User = require('~/db/models').User;
 
@@ -32,7 +39,7 @@ const getUserController = async (req, res) => {
     const originalAvatar = userData.avatar;
     try {
       userData.avatar = await getNewS3URL(userData.avatar);
-      await User.updateUser(userData.id, { avatar: userData.avatar });
+      await updateUser(userData.id, { avatar: userData.avatar });
     } catch (error) {
       userData.avatar = originalAvatar;
       logger.error('Error getting new S3 URL for avatar:', error);
@@ -153,7 +160,7 @@ const deleteUserController = async (req, res) => {
 
   try {
     await deleteMessages({ user: user.id }); // delete user messages
-    await Session.deleteAllUserSessions({ userId: user.id }); // delete user sessions
+    await deleteAllUserSessions({ userId: user.id }); // delete user sessions
     await Transaction.deleteMany({ user: user.id }); // delete user transactions
     await deleteUserKey({ userId: user.id, all: true }); // delete user keys
     await Balance.deleteMany({ user: user._id }); // delete user balances
@@ -161,7 +168,7 @@ const deleteUserController = async (req, res) => {
     /* TODO: Delete Assistant Threads */
     await deleteConvos(user.id); // delete user convos
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
-    await User.deleteUserById(user.id); // delete user
+    await deleteUserById(user.id); // delete user
     await deleteAllSharedLinks(user.id); // delete user shared links
     await deleteUserFiles(req); // delete user files
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps

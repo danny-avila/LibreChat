@@ -1,13 +1,10 @@
 const fs = require('fs');
-const mongoose = require('mongoose');
 const LdapStrategy = require('passport-ldapauth');
 const { SystemRoles } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
-const { createUser, findUser, updateUser } = require('~/models');
+const { createUser, findUser, updateUser, countUsers } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { isEnabled } = require('~/server/utils');
-
-const User = require('~/db/models').User;
 
 const {
   LDAP_URL,
@@ -117,7 +114,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     }
 
     if (!user) {
-      const isFirstRegisteredUser = (await User.countUsers()) === 0;
+      const isFirstRegisteredUser = (await countUsers()) === 0;
       user = {
         provider: 'ldap',
         ldapId,

@@ -9,11 +9,9 @@ const {
   requestPasswordReset,
   setOpenIDAuthTokens,
 } = require('~/server/services/AuthService');
-const { findUser, getUserById } = require('~/models');
+const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
-
-const Session = require('~/db/models').Session;
 
 const registrationController = async (req, res) => {
   try {
@@ -50,7 +48,7 @@ const resetPasswordController = async (req, res) => {
     if (resetPasswordService instanceof Error) {
       return res.status(400).json(resetPasswordService);
     } else {
-      await Session.deleteAllUserSessions({ userId: req.body.userId });
+      await deleteAllUserSessions({ userId: req.body.userId });
       return res.status(200).json(resetPasswordService);
     }
   } catch (e) {
@@ -98,7 +96,7 @@ const refreshController = async (req, res) => {
     }
 
     // Find the session with the hashed refresh token
-    const session = await Session.findSession({
+    const session = await findSession({
       userId: userId,
       refreshToken: refreshToken,
     });

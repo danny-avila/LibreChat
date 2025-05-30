@@ -2,10 +2,8 @@ const { logger } = require('@librechat/data-schemas');
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
 const { isEnabled, checkEmailConfig } = require('~/server/utils');
-const { findUser, comparePassword } = require('~/models');
+const { findUser, comparePassword, updateUser } = require('~/models');
 const { loginSchema } = require('./validators');
-
-const User = require('~/db/models').User;
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;
@@ -46,13 +44,13 @@ async function passportLogin(req, email, password, done) {
       !user.emailVerified &&
       userCreatedAtTimestamp < verificationEnabledTimestamp
     ) {
-      await User.updateUser(user._id, { emailVerified: true });
+      await updateUser(user._id, { emailVerified: true });
       user.emailVerified = true;
     }
 
     const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
     if (user.expiresAt && unverifiedAllowed) {
-      await User.updateUser(user._id, {});
+      await updateUser(user._id, {});
     }
 
     if (!user.emailVerified && !unverifiedAllowed) {

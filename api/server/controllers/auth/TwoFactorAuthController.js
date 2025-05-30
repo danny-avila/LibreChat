@@ -1,14 +1,12 @@
 const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const {
   verifyTOTP,
-  verifyBackupCode,
   getTOTPSecret,
+  verifyBackupCode,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { logger } = require('@librechat/data-schemas');
-
-const User = require('~/db/models').User;
+const { getUserById } = require('~/models');
 
 /**
  * Verifies the 2FA code during login using a temporary token.
@@ -27,7 +25,7 @@ const verify2FAWithTempToken = async (req, res) => {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await User.getUserById(payload.userId);
+    const user = await getUserById(payload.userId);
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }
