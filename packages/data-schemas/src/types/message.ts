@@ -1,4 +1,5 @@
 import type { Document } from 'mongoose';
+import type { TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
 
 // @ts-ignore
 export interface IMessage extends Document {
@@ -20,6 +21,11 @@ export interface IMessage extends Document {
   unfinished?: boolean;
   error?: boolean;
   finish_reason?: string;
+  feedback?: {
+    rating: TFeedbackRating;
+    tag: TFeedbackTag | undefined;
+    text?: string;
+  };
   _meiliIndex?: boolean;
   files?: unknown[];
   plugin?: {

@@ -1,48 +1,6 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
+import type { IMessage } from '~/types/message';
 import mongoMeili from '~/models/plugins/mongoMeili';
-import { TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
-
-// @ts-ignore
-export interface IMessage extends Document {
-  messageId: string;
-  conversationId: string;
-  user: string;
-  model?: string;
-  endpoint?: string;
-  conversationSignature?: string;
-  clientId?: string;
-  invocationId?: number;
-  parentMessageId?: string;
-  tokenCount?: number;
-  summaryTokenCount?: number;
-  sender?: string;
-  text?: string;
-  summary?: string;
-  isCreatedByUser: boolean;
-  unfinished?: boolean;
-  error?: boolean;
-  finish_reason?: string;
-  feedback?: {
-    rating: TFeedbackRating;
-    tag: TFeedbackTag | undefined;
-    text?: string;
-  };
-  _meiliIndex?: boolean;
-  files?: unknown[];
-  plugin?: {
-    latest?: string;
-    inputs?: unknown[];
-    outputs?: string;
-  };
-  plugins?: unknown[];
-  content?: unknown[];
-  thread_id?: string;
-  iconURL?: string;
-  attachments?: unknown[];
-  expiredAt?: Date;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
 
 const messageSchema: Schema<IMessage> = new Schema(
   {
