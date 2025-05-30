@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
+import { TFeedback, feedbackSchema } from './feedback';
 import type { SearchResultData } from './types/web';
 import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
@@ -518,6 +519,7 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  feedback: feedbackSchema.optional(),
 });
 
 export type TAttachmentMetadata = {
@@ -543,6 +545,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  feedback?: TFeedback;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {

@@ -153,7 +153,7 @@ describe('Message Operations', () => {
   });
 
   describe('Conversation Hijacking Prevention', () => {
-    it('should not allow editing a message in another user\'s conversation', async () => {
+    it("should not allow editing a message in another user's conversation", async () => {
       const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = 'victim-convo-123';
       const victimMessageId = 'victim-msg-123';
@@ -175,7 +175,7 @@ describe('Message Operations', () => {
       );
     });
 
-    it('should not allow deleting messages from another user\'s conversation', async () => {
+    it("should not allow deleting messages from another user's conversation", async () => {
       const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = 'victim-convo-123';
       const victimMessageId = 'victim-msg-123';
@@ -193,7 +193,7 @@ describe('Message Operations', () => {
       });
     });
 
-    it('should not allow inserting a new message into another user\'s conversation', async () => {
+    it("should not allow inserting a new message into another user's conversation", async () => {
       const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = uuidv4(); // Use a valid UUID
 

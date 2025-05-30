@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
 
 // @ts-ignore
 export interface IMessage extends Document {
@@ -20,6 +21,11 @@ export interface IMessage extends Document {
   unfinished?: boolean;
   error?: boolean;
   finish_reason?: string;
+  feedback?: {
+    rating: TFeedbackRating;
+    tag: TFeedbackTag | undefined;
+    text?: string;
+  };
   _meiliIndex?: boolean;
   files?: unknown[];
   plugin?: {
@@ -109,6 +115,25 @@ const messageSchema: Schema<IMessage> = new Schema(
     },
     finish_reason: {
       type: String,
+    },
+    feedback: {
+      type: {
+        rating: {
+          type: String,
+          enum: ['thumbsUp', 'thumbsDown'],
+          required: true,
+        },
+        tag: {
+          type: mongoose.Schema.Types.Mixed,
+          required: false,
+        },
+        text: {
+          type: String,
+          required: false,
+        },
+      },
+      default: undefined,
+      required: false,
     },
     _meiliIndex: {
       type: Boolean,
