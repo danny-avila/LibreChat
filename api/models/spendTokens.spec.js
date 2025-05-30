@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { Transaction } = require('./Transaction');
-const Balance = require('./Balance');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
+const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
+const Transaction = require('~/db/models').Transaction;
+const Balance = require('~/db/models').Balance;
 
 // Mock the logger to prevent console output during tests
 jest.mock('~/config', () => ({
@@ -22,8 +23,7 @@ describe('spendTokens', () => {
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    await mongoose.connect(mongoUri);
+    await mongoose.connect(mongoServer.getUri());
   });
 
   afterAll(async () => {
@@ -197,7 +197,7 @@ describe('spendTokens', () => {
     // Check that the transaction records show the adjusted values
     const transactionResults = await Promise.all(
       transactions.map((t) =>
-        Transaction.create({
+        createTransaction({
           ...txData,
           tokenType: t.tokenType,
           rawAmount: t.rawAmount,
@@ -280,7 +280,7 @@ describe('spendTokens', () => {
 
     // Check the return values from Transaction.create directly
     // This is to verify that the incrementValue is not becoming positive
-    const directResult = await Transaction.create({
+    const directResult = await createTransaction({
       user: userId,
       conversationId: 'test-convo-3',
       model: 'gpt-4',
@@ -607,7 +607,7 @@ describe('spendTokens', () => {
     const promises = [];
     for (let i = 0; i < numberOfRefills; i++) {
       promises.push(
-        Transaction.createAutoRefillTransaction({
+        createAutoRefillTransaction({
           user: userId,
           tokenType: 'credits',
           context: 'concurrent-refill-test',

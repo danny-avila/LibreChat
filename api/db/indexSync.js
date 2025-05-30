@@ -1,8 +1,11 @@
+const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
-const { Conversation } = require('~/models/Conversation');
-const { Message } = require('~/models/Message');
+const { logger } = require('@librechat/data-schemas');
+
 const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
+
+const Conversation = mongoose.models.Conversation;
+const Message = mongoose.models.Message;
 
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
@@ -29,7 +32,6 @@ async function indexSync() {
   if (!searchEnabled) {
     return;
   }
-
   try {
     const client = MeiliSearchClient.getInstance();
 

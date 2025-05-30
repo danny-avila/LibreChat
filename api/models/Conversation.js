@@ -1,6 +1,8 @@
-const Conversation = require('./schema/convoSchema');
+const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const { getMessages, deleteMessages } = require('./Message');
-const logger = require('~/config/winston');
+
+const Conversation = require('~/db/models').Conversation;
 
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
@@ -75,7 +77,6 @@ const getConvoFiles = async (conversationId) => {
 };
 
 module.exports = {
-  Conversation,
   getConvoFiles,
   searchConversation,
   deleteNullOrEmptyConversations,
@@ -155,7 +156,6 @@ module.exports = {
     { cursor, limit = 25, isArchived = false, tags, search, order = 'desc' } = {},
   ) => {
     const filters = [{ user }];
-
     if (isArchived) {
       filters.push({ isArchived: true });
     } else {
@@ -288,7 +288,6 @@ module.exports = {
   deleteConvos: async (user, filter) => {
     try {
       const userFilter = { ...filter, user };
-
       const conversations = await Conversation.find(userFilter).select('conversationId');
       const conversationIds = conversations.map((c) => c.conversationId);
 

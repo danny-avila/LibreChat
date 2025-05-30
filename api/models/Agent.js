@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
-const { agentSchema } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
@@ -13,9 +13,8 @@ const {
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
-const { logger } = require('~/config');
 
-const Agent = mongoose.model('agent', agentSchema);
+const Agent = require('~/db/models').Agent;
 
 /**
  * Create an agent with the provided data.
@@ -481,7 +480,6 @@ const getListAgents = async (searchParameter) => {
     delete globalQuery.author;
     query = { $or: [globalQuery, query] };
   }
-
   const agents = (
     await Agent.find(query, {
       id: 1,
@@ -662,7 +660,6 @@ const generateActionMetadataHash = async (actionIds, actions) => {
  */
 
 module.exports = {
-  Agent,
   getAgent,
   loadAgent,
   createAgent,

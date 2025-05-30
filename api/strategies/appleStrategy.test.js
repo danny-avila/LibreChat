@@ -1,17 +1,17 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 const jwt = require('jsonwebtoken');
+const { logger } = require('@librechat/data-schemas');
 const { Strategy: AppleStrategy } = require('passport-apple');
-const socialLogin = require('./socialLogin');
-const User = require('~/models/User');
-const { logger } = require('~/config');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
-const { findUser } = require('~/models');
+const socialLogin = require('./socialLogin');
+
+const User = require('~/db/models').User;
 
 // Mocking external dependencies
 jest.mock('jsonwebtoken');
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
     debug: jest.fn(),
@@ -64,7 +64,6 @@ describe('Apple Login Strategy', () => {
 
     // Define getProfileDetails within the test scope
     getProfileDetails = ({ idToken, profile }) => {
-      console.log('getProfileDetails called with idToken:', idToken);
       if (!idToken) {
         logger.error('idToken is missing');
         throw new Error('idToken is missing');
@@ -84,9 +83,7 @@ describe('Apple Login Strategy', () => {
         email: decoded.email,
         id: decoded.sub,
         avatarUrl: null, // Apple does not provide an avatar URL
-        username: decoded.email
-          ? decoded.email.split('@')[0].toLowerCase()
-          : `user_${decoded.sub}`,
+        username: decoded.email ? decoded.email.split('@')[0].toLowerCase() : `user_${decoded.sub}`,
         name: decoded.name
           ? `${decoded.name.firstName} ${decoded.name.lastName}`
           : profile.displayName || null,
@@ -96,8 +93,12 @@ describe('Apple Login Strategy', () => {
 
     // Mock isEnabled based on environment variable
     isEnabled.mockImplementation((flag) => {
-      if (flag === 'true') { return true; }
-      if (flag === 'false') { return false; }
+      if (flag === 'true') {
+        return true;
+      }
+      if (flag === 'false') {
+        return false;
+      }
       return false;
     });
 
@@ -154,9 +155,7 @@ describe('Apple Login Strategy', () => {
       });
 
       expect(jwt.decode).toHaveBeenCalledWith('fake_id_token');
-      expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('Decoded Apple JWT'),
-      );
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Decoded Apple JWT'));
       expect(profileDetails).toEqual({
         email: 'john.doe@example.com',
         id: 'apple-sub-1234',
@@ -209,12 +208,13 @@ describe('Apple Login Strategy', () => {
 
     beforeEach(() => {
       jwt.decode.mockReturnValue(decodedToken);
-      findUser.mockImplementation(({ email }) => User.findOne({ email }));
+      User.findUser = jest.fn();
+      User.findUser.mockImplementation(({ email }) => User.findOne({ email }));
     });
 
     it('should create a new user if one does not exist and registration is allowed', async () => {
       // Mock findUser to return null (user does not exist)
-      findUser.mockResolvedValue(null);
+      User.findUser.mockResolvedValue(null);
 
       // Mock createSocialUser to create a user
       createSocialUser.mockImplementation(async (userData) => {
@@ -260,7 +260,7 @@ describe('Apple Login Strategy', () => {
       await existingUser.save();
 
       // Mock findUser to return the existing user
-      findUser.mockResolvedValue(existingUser);
+      User.findUser.mockResolvedValue(existingUser);
 
       // Mock handleExistingUser to update avatarUrl
       handleExistingUser.mockImplementation(async (user, avatarUrl) => {
@@ -297,7 +297,7 @@ describe('Apple Login Strategy', () => {
         appleStrategyInstance._verify(
           fakeAccessToken,
           fakeRefreshToken,
-          null,               // idToken is missing
+          null, // idToken is missing
           mockProfile,
           (err, user) => {
             mockVerifyCallback(err, user);
@@ -344,7 +344,7 @@ describe('Apple Login Strategy', () => {
 
     it('should handle errors during user creation', async () => {
       // Mock findUser to return null (user does not exist)
-      findUser.mockResolvedValue(null);
+      User.findUser.mockResolvedValue(null);
 
       // Mock createSocialUser to throw an error
       createSocialUser.mockImplementation(() => {

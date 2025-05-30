@@ -1,16 +1,16 @@
-const { CacheKeys } = require('librechat-data-provider');
 const fetch = require('node-fetch');
 const passport = require('passport');
-const jwtDecode = require('jsonwebtoken/decode');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const client = require('openid-client');
+const jwtDecode = require('jsonwebtoken/decode');
+const { CacheKeys } = require('librechat-data-provider');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { hashToken } = require('~/server/utils/crypto');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
+const { findUser, createUser, updateUser } = require('~/models');
+const { getBalanceConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
+const { isEnabled } = require('~/server/utils');
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -297,7 +297,10 @@ async function setupOpenId() {
               emailVerified: userinfo.email_verified || false,
               name: fullName,
             };
-            user = await createUser(user, true, true);
+
+            const balanceConfig = await getBalanceConfig();
+
+            user = await createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;

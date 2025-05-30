@@ -1,6 +1,7 @@
-const PluginAuth = require('~/models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('~/server/utils/');
+const { encrypt, decrypt } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
+
+const PluginAuth = require('~/db/models').PluginAuth;
 
 /**
  * Asynchronously retrieves and decrypts the authentication value for a user's plugin, based on a specified authentication field.

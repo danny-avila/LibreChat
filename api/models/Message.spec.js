@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 
 jest.mock('mongoose');
@@ -19,10 +18,6 @@ const mockSchema = {
   find: jest.fn(() => mockFindQuery),
   deleteMany: jest.fn(),
 };
-
-mongoose.model.mockReturnValue(mockSchema);
-
-jest.mock('~/models/schema/messageSchema', () => mockSchema);
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
