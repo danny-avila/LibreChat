@@ -1,5 +1,9 @@
-import mongoose from '~/mongoose';
 import roleSchema from '~/schema/role';
 import type { IRole } from '~/types';
 
-export const Role = mongoose.models.Role || mongoose.model('Role', roleSchema) as any;
+/**
+ * Creates or returns the Role model using the provided mongoose instance and schema
+ */
+export function createRoleModel(mongoose: typeof import('mongoose')) {
+  return mongoose.models.Role || mongoose.model<IRole>('Role', roleSchema);
+}

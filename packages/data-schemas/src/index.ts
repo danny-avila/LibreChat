@@ -1,4 +1,6 @@
-export { Role } from './models/role';
+// export { default as roleSchema } from './schema/role';
+export { createRoleModel } from './models/role';
+export { createRoleMethods } from './methods/role';
 // export { default as logger } from './config/winston';
 // export { default as meiliLogger } from './config/meiliLogger';
 // export * from './types';
