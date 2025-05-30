@@ -253,6 +253,31 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
+router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (req, res) => {
+  try {
+    const { conversationId, messageId } = req.params;
+    const { feedback } = req.body;
+
+    const updatedMessage = await updateMessage(
+      req,
+      {
+        messageId,
+        feedback: feedback || null,
+      },
+      { context: 'updateFeedback' },
+    );
+
+    res.json({
+      messageId,
+      conversationId,
+      feedback: updatedMessage.feedback,
+    });
+  } catch (error) {
+    logger.error('Error updating message feedback:', error);
+    res.status(500).json({ error: 'Failed to update feedback' });
+  }
+});
+
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { messageId } = req.params;

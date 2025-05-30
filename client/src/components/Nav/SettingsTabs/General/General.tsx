@@ -1,10 +1,7 @@
-import { useRecoilState } from 'recoil';
-import Cookies from 'js-cookie';
 import React, { useContext, useCallback } from 'react';
-import UserMsgMarkdownSwitch from './UserMsgMarkdownSwitch';
-import HideSidePanelSwitch from './HideSidePanelSwitch';
+import Cookies from 'js-cookie';
+import { useRecoilState } from 'recoil';
 import { ThemeContext, useLocalize } from '~/hooks';
-import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { Dropdown } from '~/components';
