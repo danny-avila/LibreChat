@@ -19,8 +19,19 @@ WORKDIR /app
 
 USER node
 
-COPY --chown=node:node . .
+# Copy package files first for better caching
+COPY --chown=node:node package*.json ./
+COPY --chown=node:node client/package*.json ./client/
+COPY --chown=node:node api/package*.json ./api/
+COPY --chown=node:node packages/data-provider/package*.json ./packages/data-provider/
+COPY --chown=node:node packages/data-schemas/package*.json ./packages/data-schemas/
+COPY --chown=node:node packages/mcp/package*.json ./packages/mcp/
 
+# Force cache invalidation for dependencies
+ARG CACHE_BUST
+ENV CACHE_BUST=${CACHE_BUST:-1}
+
+# Install dependencies with retry logic
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
@@ -29,9 +40,16 @@ RUN \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
+    # Clean npm cache before install to avoid stale cache issues
+    npm cache clean --force ; \
     npm install --no-audit --frozen-lockfile; \
     # Install client dependencies with dev dependencies for build
-    cd client && npm install --include=dev && cd .. ; \
+    cd client && npm install --include=dev && cd ..
+
+# Copy the rest of the application code
+COPY --chown=node:node . .
+
+RUN \
     # React client build (before pruning dev dependencies)
     NODE_OPTIONS="--max-old-space-size=3072" npm run frontend:docker; \
     # Keep the built packages before pruning
