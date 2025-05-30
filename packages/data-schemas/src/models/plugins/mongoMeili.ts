@@ -1,8 +1,7 @@
 import _ from 'lodash';
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Document, Model, Query } from 'mongoose';
 import { MeiliSearch, Index } from 'meilisearch';
-const { parseTextParts } = require('librechat-data-provider');
-const logger = require('~/config/meiliLogger');
+import logger from '../../config/meiliLogger';
 
 interface MongoMeiliOptions {
   host: string;
@@ -12,34 +11,79 @@ interface MongoMeiliOptions {
 }
 
 interface MeiliIndexable {
-  [key: string]: any;
+  [key: string]: unknown;
   _meiliIndex?: boolean;
+}
+
+interface ContentItem {
+  type: string;
+  text?: string;
+}
+
+interface DocumentWithMeiliIndex extends Document {
+  _meiliIndex?: boolean;
+  preprocessObjectForIndex?: () => Record<string, unknown>;
+  addObjectToMeili?: () => Promise<void>;
+  updateObjectToMeili?: () => Promise<void>;
+  deleteObjectFromMeili?: () => Promise<void>;
+  postSaveHook?: () => void;
+  postUpdateHook?: () => void;
+  postRemoveHook?: () => void;
+  conversationId?: string;
+  content?: ContentItem[];
+  messageId?: string;
+  unfinished?: boolean;
+  messages?: unknown[];
+  title?: string;
+  toJSON(): Record<string, unknown>;
+}
+
+interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
+  syncWithMeili(): Promise<void>;
+  setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown>;
+  meiliSearch(q: string, params: Record<string, unknown>, populate: boolean): Promise<unknown>;
 }
 
 // Environment flags
 /**
  * Flag to indicate if search is enabled based on environment variables.
- * @type {boolean}
  */
-const searchEnabled = process.env.SEARCH && process.env.SEARCH.toLowerCase() === 'true';
+const searchEnabled = process.env.SEARCH != null && process.env.SEARCH.toLowerCase() === 'true';
 
 /**
  * Flag to indicate if MeiliSearch is enabled based on required environment variables.
- * @type {boolean}
  */
-const meiliEnabled = process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY && searchEnabled;
+const meiliEnabled =
+  process.env.MEILI_HOST != null && process.env.MEILI_MASTER_KEY != null && searchEnabled;
+
+/**
+ * Local implementation of parseTextParts to avoid dependency on librechat-data-provider
+ * Extracts text content from an array of content items
+ */
+const parseTextParts = (content: ContentItem[]): string => {
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((item) => item.type === 'text' && typeof item.text === 'string')
+    .map((item) => item.text)
+    .join(' ')
+    .trim();
+};
+
+/**
+ * Local implementation to handle Bing convoId conversion
+ */
+const cleanUpPrimaryKeyValue = (value: string): string => {
+  return value.replace(/--/g, '|');
+};
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
- *
- * @param {Object} options - The configuration options.
- * @param {string} options.host - The MeiliSearch host.
- * @param {string} options.apiKey - The MeiliSearch API key.
- * @param {string} options.indexName - The name of the index.
- * @throws {Error} Throws an error if any required option is missing.
  */
-const validateOptions = function (options: any) {
-  const requiredKeys = ['host', 'apiKey', 'indexName'];
+const validateOptions = (options: Partial<MongoMeiliOptions>): void => {
+  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName'];
   requiredKeys.forEach((key) => {
     if (!options[key]) {
       throw new Error(`Missing mongoMeili Option: ${key}`);
@@ -52,19 +96,18 @@ const validateOptions = function (options: any) {
  * This class contains static and instance methods to synchronize and manage the MeiliSearch index
  * corresponding to the MongoDB collection.
  *
- * @param {Object} config - Configuration object.
- * @param {Object} config.index - The MeiliSearch index object.
- * @param {Array<string>} config.attributesToIndex - List of attributes to index.
- * @returns {Function} A class definition that will be loaded into the Mongoose schema.
+ * @param config - Configuration object.
+ * @param config.index - The MeiliSearch index object.
+ * @param config.attributesToIndex - List of attributes to index.
+ * @returns A class definition that will be loaded into the Mongoose schema.
  */
-const createMeiliMongooseModel = function ({
+const createMeiliMongooseModel = ({
   index,
   attributesToIndex,
 }: {
   index: Index<MeiliIndexable>;
   attributesToIndex: string[];
-}) {
-  // The primary key is assumed to be the first attribute in the attributesToIndex array.
+}) => {
   const primaryKey = attributesToIndex[0];
 
   class MeiliMongooseModel {
@@ -85,24 +128,24 @@ const createMeiliMongooseModel = function ({
      *
      * @returns {Promise<void>} Resolves when the synchronization is complete.
      */
-    static async syncWithMeili(this: Model<any>) {
+    static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
       try {
         let moreDocuments = true;
-        // Retrieve all MongoDB documents from the collection as plain JavaScript objects.
         const mongoDocuments = await this.find().lean();
 
-        // Helper function to format a document by selecting only the attributes to index
-        // and omitting keys starting with '$'.
-        const format = (doc: Record<string, any>) =>
+        const format = (doc: Record<string, unknown>) =>
           _.omitBy(_.pick(doc, attributesToIndex), (v, k) => k.startsWith('$'));
 
-        // Build a map of MongoDB documents for quick lookup based on the primary key.
-        const mongoMap = new Map(mongoDocuments.map((doc) => [doc[primaryKey], format(doc)]));
-        const indexMap = new Map();
+        const mongoMap = new Map(
+          mongoDocuments.map((doc) => {
+            const typedDoc = doc as Record<string, unknown>;
+            return [typedDoc[primaryKey], format(typedDoc)];
+          }),
+        );
+        const indexMap = new Map<unknown, Record<string, unknown>>();
         let offset = 0;
         const batchSize = 1000;
 
-        // Fetch documents from the MeiliSearch index in batches.
         while (moreDocuments) {
           const batch = await index.getDocuments({ limit: batchSize, offset });
           if (batch.results.length === 0) {
@@ -116,17 +159,22 @@ const createMeiliMongooseModel = function ({
 
         logger.debug('[syncWithMeili]', { indexMap: indexMap.size, mongoMap: mongoMap.size });
 
-        const updateOps = [];
+        const updateOps: Array<{
+          updateOne: {
+            filter: Record<string, unknown>;
+            update: { $set: { _meiliIndex: boolean } };
+          };
+        }> = [];
 
-        // Process documents present in the MeiliSearch index.
+        // Process documents present in the MeiliSearch index
         for (const [id, doc] of indexMap) {
-          const update: any = {};
+          const update: Record<string, unknown> = {};
           update[primaryKey] = id;
           if (mongoMap.has(id)) {
-            // If document exists in MongoDB, check for discrepancies in key fields.
+            const mongoDoc = mongoMap.get(id);
             if (
-              (doc.text && doc.text !== mongoMap.get(id)?.text) ||
-              (doc.title && doc.title !== mongoMap.get(id)?.title)
+              (doc.text && doc.text !== mongoDoc?.text) ||
+              (doc.title && doc.title !== mongoDoc?.title)
             ) {
               logger.debug(
                 `[syncWithMeili] ${id} had document discrepancy in ${
@@ -139,33 +187,29 @@ const createMeiliMongooseModel = function ({
               await index.addDocuments([doc]);
             }
           } else {
-            // If the document does not exist in MongoDB, delete it from MeiliSearch.
-            await index.deleteDocument(id);
+            await index.deleteDocument(id as string);
             updateOps.push({
               updateOne: { filter: update, update: { $set: { _meiliIndex: false } } },
             });
           }
         }
 
-        // Process documents present in MongoDB.
+        // Process documents present in MongoDB
         for (const [id, doc] of mongoMap) {
-          const update: any = {};
+          const update: Record<string, unknown> = {};
           update[primaryKey] = id;
-          // If the document is missing in the Meili index, add it.
           if (!indexMap.has(id)) {
             await index.addDocuments([doc]);
             updateOps.push({
               updateOne: { filter: update, update: { $set: { _meiliIndex: true } } },
             });
           } else if (doc._meiliIndex === false) {
-            // If the document exists but is marked as not indexed, update the flag.
             updateOps.push({
               updateOne: { filter: update, update: { $set: { _meiliIndex: true } } },
             });
           }
         }
 
-        // Execute bulk update operations in MongoDB to update the _meiliIndex flags.
         if (updateOps.length > 0) {
           await this.collection.bulkWrite(updateOps);
           logger.debug(
@@ -180,51 +224,51 @@ const createMeiliMongooseModel = function ({
     }
 
     /**
-     * Updates settings for the MeiliSearch index.
-     *
-     * @param {Object} settings - The settings to update on the MeiliSearch index.
-     * @returns {Promise<Object>} Promise resolving to the update result.
+     * Updates settings for the MeiliSearch index
      */
-    static async setMeiliIndexSettings(settings: any) {
+    static async setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown> {
       return await index.updateSettings(settings);
     }
 
     /**
-     * Searches the MeiliSearch index and optionally populates the results with data from MongoDB.
-     *
-     * @param {string} q - The search query.
-     * @param {Object} params - Additional search parameters for MeiliSearch.
-     * @param {boolean} populate - Whether to populate search hits with full MongoDB documents.
-     * @returns {Promise<Object>} The search results with populated hits if requested.
+     * Searches the MeiliSearch index and optionally populates results
      */
-    static async meiliSearch(this: Model<any>, q: string, params: any, populate: boolean) {
+    static async meiliSearch(
+      this: SchemaWithMeiliMethods,
+      q: string,
+      params: Record<string, unknown>,
+      populate: boolean,
+    ): Promise<unknown> {
       const data = await index.search(q, params);
 
       if (populate) {
-        // Build a query using the primary key values from the search hits.
-        const query: Record<string, any> = {};
-        query[primaryKey] = _.map(data.hits, (hit) => cleanUpPrimaryKeyValue(hit[primaryKey]));
+        const query: Record<string, unknown> = {};
+        query[primaryKey] = _.map(data.hits, (hit) =>
+          cleanUpPrimaryKeyValue(hit[primaryKey] as string),
+        );
 
-        // Build a projection object, including only keys that do not start with '$'.
         const projection = Object.keys(this.schema.obj).reduce<Record<string, number>>(
-          (acc, key) => {
-            if (!key.startsWith('$')) acc[key] = 1;
-            return acc;
+          (results, key) => {
+            if (!key.startsWith('$')) {
+              results[key] = 1;
+            }
+            return results;
           },
           { _id: 1, __v: 1 },
         );
 
-        // Retrieve the full documents from MongoDB.
         const hitsFromMongoose = await this.find(query, projection).lean();
 
-        // Merge the MongoDB documents with the search hits.
-        const populatedHits = data.hits.map(function (hit) {
-          const query = {};
-          query[primaryKey] = hit[primaryKey];
-          const originalHit = _.find(hitsFromMongoose, query);
+        const populatedHits = data.hits.map((hit) => {
+          const queryObj: Record<string, unknown> = {};
+          queryObj[primaryKey] = hit[primaryKey];
+          const originalHit = _.find(hitsFromMongoose, (item) => {
+            const typedItem = item as Record<string, unknown>;
+            return typedItem[primaryKey] === hit[primaryKey];
+          });
 
           return {
-            ...(originalHit ?? {}),
+            ...(originalHit && typeof originalHit === 'object' ? originalHit : {}),
             ...hit,
           };
         });
@@ -235,21 +279,18 @@ const createMeiliMongooseModel = function ({
     }
 
     /**
-     * Preprocesses the current document for indexing.
-     *
-     * This method:
-     *  - Picks only the defined attributes to index.
-     *  - Omits any keys starting with '$'.
-     *  - Replaces pipe characters ('|') in `conversationId` with '--'.
-     *  - Extracts and concatenates text from an array of content items.
-     *
-     * @returns {Object} The preprocessed object ready for indexing.
+     * Preprocesses the current document for indexing
      */
-    preprocessObjectForIndex(this: Document) {
+    preprocessObjectForIndex(this: DocumentWithMeiliIndex): Record<string, unknown> {
       const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
         k.startsWith('$'),
       );
-      if (object.conversationId && object.conversationId.includes('|')) {
+
+      if (
+        object.conversationId &&
+        typeof object.conversationId === 'string' &&
+        object.conversationId.includes('|')
+      ) {
         object.conversationId = object.conversationId.replace(/\|/g, '--');
       }
 
@@ -262,31 +303,26 @@ const createMeiliMongooseModel = function ({
     }
 
     /**
-     * Adds the current document to the MeiliSearch index.
-     *
-     * The method preprocesses the document, adds it to MeiliSearch, and then updates
-     * the MongoDB document's `_meiliIndex` flag to true.
-     *
-     * @returns {Promise<void>}
+     * Adds the current document to the MeiliSearch index
      */
-    async addObjectToMeili(this: Document) {
-      const object = this.preprocessObjectForIndex();
+    async addObjectToMeili(this: DocumentWithMeiliIndex): Promise<void> {
+      const object = this.preprocessObjectForIndex!();
       try {
         await index.addDocuments([object]);
       } catch (error) {
-        // Error handling can be enhanced as needed.
         logger.error('[addObjectToMeili] Error adding document to Meili', error);
       }
 
-      await this.collection.updateMany({ _id: this._id }, { $set: { _meiliIndex: true } });
+      await this.collection.updateMany(
+        { _id: this._id as mongoose.Types.ObjectId },
+        { $set: { _meiliIndex: true } },
+      );
     }
 
     /**
-     * Updates the current document in the MeiliSearch index.
-     *
-     * @returns {Promise<void>}
+     * Updates the current document in the MeiliSearch index
      */
-    async updateObjectToMeili(this: Document) {
+    async updateObjectToMeili(this: DocumentWithMeiliIndex): Promise<void> {
       const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
         k.startsWith('$'),
       );
@@ -298,8 +334,8 @@ const createMeiliMongooseModel = function ({
      *
      * @returns {Promise<void>}
      */
-    async deleteObjectFromMeili(this: Document) {
-      await index.deleteDocument(this._id);
+    async deleteObjectFromMeili(this: DocumentWithMeiliIndex): Promise<void> {
+      await index.deleteDocument(this._id as string);
     }
 
     /**
@@ -308,11 +344,11 @@ const createMeiliMongooseModel = function ({
      * If the document is already indexed (i.e. `_meiliIndex` is true), it updates it;
      * otherwise, it adds the document to the index.
      */
-    postSaveHook(this: Document) {
+    postSaveHook(this: DocumentWithMeiliIndex): void {
       if (this._meiliIndex) {
-        this.updateObjectToMeili();
+        this.updateObjectToMeili!();
       } else {
-        this.addObjectToMeili();
+        this.addObjectToMeili!();
       }
     }
 
@@ -322,9 +358,9 @@ const createMeiliMongooseModel = function ({
      * This hook is triggered after a document update, ensuring that changes are
      * propagated to the MeiliSearch index if the document is indexed.
      */
-    postUpdateHook() {
+    postUpdateHook(this: DocumentWithMeiliIndex): void {
       if (this._meiliIndex) {
-        this.updateObjectToMeili();
+        this.updateObjectToMeili!();
       }
     }
 
@@ -334,9 +370,9 @@ const createMeiliMongooseModel = function ({
      * This hook is triggered after a document is removed, ensuring that the document
      * is also removed from the MeiliSearch index if it was previously indexed.
      */
-    postRemoveHook(this: Document) {
+    postRemoveHook(this: DocumentWithMeiliIndex): void {
       if (this._meiliIndex) {
-        this.deleteObjectFromMeili();
+        this.deleteObjectFromMeili!();
       }
     }
   }
@@ -344,10 +380,6 @@ const createMeiliMongooseModel = function ({
   return MeiliMongooseModel;
 };
 
-const cleanUpPrimaryKeyValue = (value) => {
-  // For Bing convoId handling
-  return value.replace(/--/g, '|');
-};
 /**
  * Mongoose plugin to synchronize MongoDB collections with a MeiliSearch index.
  *
@@ -358,14 +390,14 @@ const cleanUpPrimaryKeyValue = (value) => {
  *   - Loads class methods for syncing, searching, and managing documents in MeiliSearch.
  *   - Registers Mongoose hooks (post-save, post-update, post-remove, etc.) to maintain index consistency.
  *
- * @param {mongoose.Schema} schema - The Mongoose schema to which the plugin is applied.
- * @param {Object} options - Configuration options.
- * @param {string} options.host - The MeiliSearch host.
- * @param {string} options.apiKey - The MeiliSearch API key.
- * @param {string} options.indexName - The name of the MeiliSearch index.
- * @param {string} options.primaryKey - The primary key field for indexing.
+ * @param schema - The Mongoose schema to which the plugin is applied.
+ * @param options - Configuration options.
+ * @param options.host - The MeiliSearch host.
+ * @param options.apiKey - The MeiliSearch API key.
+ * @param options.indexName - The name of the MeiliSearch index.
+ * @param options.primaryKey - The primary key field for indexing.
  */
-export default function mongoMeili(schema: Schema, options: MongoMeiliOptions) {
+export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): void {
   validateOptions(options);
 
   // Add _meiliIndex field to the schema to track if a document has been indexed in MeiliSearch.
@@ -380,44 +412,31 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions) {
 
   const { host, apiKey, indexName, primaryKey } = options;
 
-  // Setup the MeiliSearch client.
   const client = new MeiliSearch({ host, apiKey });
-
-  // Create the index asynchronously if it doesn't exist.
   client.createIndex(indexName, { primaryKey });
-
-  // Setup the MeiliSearch index for this schema.
   const index = client.index<MeiliIndexable>(indexName);
 
-  // Collect attributes from the schema that should be indexed.
-  const attributesToIndex = [
-    ..._.reduce(
-      schema.obj,
-      function (results, value, key) {
-        return value.meiliIndex ? [...results, key] : results;
-      },
-      [],
-    ),
+  // Collect attributes from the schema that should be indexed
+  const attributesToIndex: string[] = [
+    ...Object.entries(schema.obj).reduce<string[]>((results, [key, value]) => {
+      const schemaValue = value as { meiliIndex?: boolean };
+      return schemaValue.meiliIndex ? [...results, key] : results;
+    }, []),
   ];
 
-  // Load the class methods into the schema.
-  schema.loadClass(createMeiliMongooseModel({ index, client, attributesToIndex }));
+  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex }));
 
-  // Register Mongoose hooks to synchronize with MeiliSearch.
-
-  // Post-save: synchronize after a document is saved.
-  schema.post('save', function (doc) {
-    doc.postSaveHook();
+  // Register Mongoose hooks
+  schema.post('save', function (doc: DocumentWithMeiliIndex) {
+    doc.postSaveHook?.();
   });
 
-  // Post-update: synchronize after a document is updated.
-  schema.post('update', function (doc) {
-    doc.postUpdateHook();
+  schema.post('updateOne', function (doc: DocumentWithMeiliIndex) {
+    doc.postUpdateHook?.();
   });
 
-  // Post-remove: synchronize after a document is removed.
-  schema.post('remove', function (doc) {
-    doc.postRemoveHook();
+  schema.post('deleteOne', function (doc: DocumentWithMeiliIndex) {
+    doc.postRemoveHook?.();
   });
 
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
@@ -427,22 +446,28 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions) {
     }
 
     try {
-      // Check if the schema has a "messages" field to determine if it's a conversation schema.
+      const conditions = (this as Query<unknown, unknown>).getQuery();
+
       if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
         const convoIndex = client.index('convos');
-        const deletedConvos = await mongoose.model('Conversation').find(this._conditions).lean();
-        const promises = deletedConvos.map((convo) =>
-          convoIndex.deleteDocument(convo.conversationId),
+        const deletedConvos = await mongoose
+          .model('Conversation')
+          .find(conditions as mongoose.FilterQuery<unknown>)
+          .lean();
+        const promises = deletedConvos.map((convo: Record<string, unknown>) =>
+          convoIndex.deleteDocument(convo.conversationId as string),
         );
         await Promise.all(promises);
       }
 
-      // Check if the schema has a "messageId" field to determine if it's a message schema.
       if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
         const messageIndex = client.index('messages');
-        const deletedMessages = await mongoose.model('Message').find(this._conditions).lean();
-        const promises = deletedMessages.map((message) =>
-          messageIndex.deleteDocument(message.messageId),
+        const deletedMessages = await mongoose
+          .model('Message')
+          .find(conditions as mongoose.FilterQuery<unknown>)
+          .lean();
+        const promises = deletedMessages.map((message: Record<string, unknown>) =>
+          messageIndex.deleteDocument(message.messageId as string),
         );
         await Promise.all(promises);
       }
@@ -458,37 +483,33 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions) {
     }
   });
 
-  // Post-findOneAndUpdate hook: update MeiliSearch index after a document is updated via findOneAndUpdate.
-  schema.post('findOneAndUpdate', async function (doc) {
+  // Post-findOneAndUpdate hook
+  schema.post('findOneAndUpdate', async function (doc: DocumentWithMeiliIndex) {
     if (!meiliEnabled) {
       return;
     }
 
-    // If the document is unfinished, do not update the index.
     if (doc.unfinished) {
       return;
     }
 
-    let meiliDoc;
-    // For conversation documents, try to fetch the document from the "convos" index.
+    let meiliDoc: Record<string, unknown> | undefined;
     if (doc.messages) {
       try {
-        meiliDoc = await client.index('convos').getDocument(doc.conversationId);
-      } catch (error) {
+        meiliDoc = await client.index('convos').getDocument(doc.conversationId as string);
+      } catch (error: unknown) {
         logger.debug(
           '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
             doc.conversationId,
-          error,
+          error as Record<string, unknown>,
         );
       }
     }
 
-    // If the MeiliSearch document exists and the title is unchanged, do nothing.
     if (meiliDoc && meiliDoc.title === doc.title) {
       return;
     }
 
-    // Otherwise, trigger a post-save hook to synchronize the document.
-    doc.postSaveHook();
+    doc.postSaveHook?.();
   });
 }

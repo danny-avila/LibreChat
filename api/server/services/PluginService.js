@@ -1,4 +1,4 @@
-const PluginAuth = require('~/models/schema/pluginAuthSchema');
+const { PluginAuth } = require('@librechat/data-schemas');
 const { encrypt, decrypt } = require('~/server/utils/');
 const { logger } = require('~/config');
 
