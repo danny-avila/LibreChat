@@ -45,8 +45,6 @@ async function indexSync() {
       return;
     }
 
-    logger.info('[indexSync] Starting index sync...');
-
     const messageCount = await Message.countDocuments();
     const convoCount = await Conversation.countDocuments();
     const messages = await client.index('messages').getStats();
