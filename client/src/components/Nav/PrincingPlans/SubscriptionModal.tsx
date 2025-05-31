@@ -45,30 +45,59 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     return localize('com_subscription_upgrade');
   };
 
-  const transformPlansData = (): SubscriptionPlan[] => {
-    const currentPlanIndex = subscriptionPlansQuery.data?.findIndex((plan) => plan.isCurrent) ?? -1;
-
-    return (
-      subscriptionPlansQuery.data?.map((plan, index) => ({
-        id: parseInt(plan.id),
-        name: plan.name,
-        price: plan.label,
-        features: plan.features,
-        buttonText: getButtonText(plan, index, currentPlanIndex),
-        recommended: plan.isRecommended,
-        onClick: () => handlePlanSelection(parseInt(plan.id)),
-        isDisabled: plan.isCurrent,
-        isFree: plan.name.toLowerCase().includes('free') || parseInt(plan.id) === 1,
-      })) ?? []
-    );
+  const isPlanFree = (plan: any): boolean => {
+    return plan.name.toLowerCase().includes('free') || parseInt(plan.id) === 1;
   };
 
-  const subscriptionPlans = useMemo(() => {
-    if (!subscriptionPlansQuery.data?.length) {
-      return [];
-    }
-    return transformPlansData();
-  }, [subscriptionPlansQuery.data, localize]);
+  const createPlanObject = (
+    plan: any,
+    index: number,
+    currentPlanIndex: number,
+  ): SubscriptionPlan => {
+    return {
+      id: parseInt(plan.id),
+      name: plan.name,
+      price: plan.label,
+      features: plan.features,
+      buttonText: getButtonText(plan, index, currentPlanIndex),
+      recommended: plan.isRecommended,
+      onClick: () => handlePlanSelection(parseInt(plan.id)),
+      isDisabled: plan.isCurrent,
+      isFree: isPlanFree(plan),
+    };
+  };
+
+  const sortPlansWithFreeLast = (plans: SubscriptionPlan[]): SubscriptionPlan[] => {
+    const paidPlans = plans.filter((plan) => !plan.isFree);
+    const freePlans = plans.filter((plan) => plan.isFree);
+    return [...paidPlans, ...freePlans];
+  };
+
+  const transformPlansData = (): SubscriptionPlan[] => {
+    if (!subscriptionPlansQuery.data?.length) return [];
+
+    const currentPlanIndex = subscriptionPlansQuery.data.findIndex((plan) => plan.isCurrent) ?? -1;
+    const transformedPlans = subscriptionPlansQuery.data.map((plan, index) =>
+      createPlanObject(plan, index, currentPlanIndex),
+    );
+
+    return sortPlansWithFreeLast(transformedPlans);
+  };
+
+  const subscriptionPlans = useMemo(
+    () => transformPlansData(),
+    [subscriptionPlansQuery.data, localize],
+  );
+
+  const handleNewUserSubscription = (planId: number): void => {
+    setProcessingId(planId);
+    processNewSubscription(planId);
+  };
+
+  const handleExistingUserPlanChange = (planId: number): void => {
+    setConfirmationPlan(planId);
+    setShowConfirmation(true);
+  };
 
   const handlePlanSelection = (planId: number): void => {
     console.log(`${getPlanNameById(planId)} plan selected`);
@@ -77,13 +106,11 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     const currentPlanId = currentPlan ? parseInt(currentPlan.id) : 0;
 
     if (currentPlanId <= 1) {
-      setProcessingId(planId);
-      processNewSubscription(planId);
+      handleNewUserSubscription(planId);
       return;
     }
 
-    setConfirmationPlan(planId);
-    setShowConfirmation(true);
+    handleExistingUserPlanChange(planId);
   };
 
   const processNewSubscription = (planId: number): void => {
@@ -115,12 +142,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     changeSubscription.mutate(
       { subscriptionId: planId },
       {
-        onSettled: () => {
-          setProcessingId(null);
-          subscriptionPlansQuery.refetch();
-        },
+        onSettled: handlePlanChangeComplete,
       },
     );
+  };
+
+  const handlePlanChangeComplete = (): void => {
+    setProcessingId(null);
+    subscriptionPlansQuery.refetch();
   };
 
   const confirmPlanChange = (): void => {
@@ -141,63 +170,84 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     return plan?.name || `Plan ${id}`;
   };
 
-  const renderPlanCard = (plan: SubscriptionPlan): JSX.Element => {
+  const renderPlanFeatures = (features: string[]): JSX.Element => (
+    <ul className="mt-3 flex-1 space-y-2 text-sm">
+      {features.map((feature, index) => (
+        <li key={index} className="flex items-start">
+          <CheckIcon className="mr-2 mt-1 h-4 w-4 text-green-500" />
+          <span>{feature}</span>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const renderPlanButton = (plan: SubscriptionPlan): JSX.Element => {
     const isProcessing = processingId === plan.id;
 
     return (
-      <div
-        key={plan.id}
-        className={`relative flex flex-col rounded-xl border p-4 shadow-sm transition-all duration-200 hover:shadow-md ${
+      <Button
+        className={`mt-4 w-full ${
           plan.recommended
-            ? 'border-primary bg-primary/5 dark:border-primary/70'
-            : 'border-border-medium bg-surface-primary'
-        } ${plan.isFree ? 'col-span-full' : ''}`}
+            ? 'bg-primary text-primary-foreground hover:bg-primary/90 dark:text-black'
+            : 'bg-[#2f7ff7] text-primary-foreground hover:bg-[#2f7ff7]/90'
+        }`}
+        onClick={plan.onClick}
+        disabled={processingId !== null || plan.isDisabled}
+        size="sm"
       >
-        {plan.recommended && (
-          <div className="absolute -top-3 right-4 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white dark:text-black">
-            {localize('com_subscription_recommended')}
+        {isProcessing ? (
+          <div className="flex items-center justify-center">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {localize('com_ui_processing')}
           </div>
+        ) : (
+          plan.buttonText
         )}
-        <h3 className="text-lg font-semibold">{plan.name}</h3>
-        <div className="mt-2 text-xl font-bold">{plan.price}</div>
-        <ul className="mt-3 flex-1 space-y-2 text-sm">
-          {plan.features.map((feature, index) => (
-            <li key={index} className="flex items-start">
-              <CheckIcon className="mr-2 mt-1 h-4 w-4 text-green-500" />
-              <span>{feature}</span>
-            </li>
-          ))}
-        </ul>
-        <Button
-          className={`mt-4 w-full ${
-            plan.recommended
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90 dark:text-black'
-              : 'bg-[#2f7ff7] text-primary-foreground hover:bg-[#2f7ff7]/90'
-          }`}
-          onClick={plan.onClick}
-          disabled={processingId !== null || plan.isDisabled}
-          size="sm"
-        >
-          {isProcessing ? (
-            <div className="flex items-center justify-center">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {localize('com_ui_processing')}
-            </div>
-          ) : (
-            plan.buttonText
-          )}
-        </Button>
-      </div>
+      </Button>
     );
   };
 
+  const renderRecommendedBadge = (): JSX.Element => (
+    <div className="absolute -top-3 right-4 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white dark:text-black">
+      {localize('com_subscription_recommended')}
+    </div>
+  );
+
+  const getCardClasses = (plan: SubscriptionPlan): string => {
+    const baseClasses =
+      'relative flex flex-col rounded-xl border shadow-sm transition-all duration-200 hover:shadow-md';
+    const heightClass = plan.isFree ? 'p-3' : 'p-4';
+    const spanClass = plan.isFree ? 'col-span-full' : '';
+    const borderClass = plan.recommended
+      ? 'border-primary bg-primary/5 dark:border-primary/70'
+      : 'border-border-medium bg-surface-primary';
+
+    return `${baseClasses} ${heightClass} ${spanClass} ${borderClass}`;
+  };
+
+  const renderPlanCard = (plan: SubscriptionPlan): JSX.Element => (
+    <div key={plan.id} className={getCardClasses(plan)}>
+      {plan.recommended && renderRecommendedBadge()}
+      <h3 className={`font-semibold ${plan.isFree ? 'text-base' : 'text-lg'}`}>{plan.name}</h3>
+      <div className={`mt-2 font-bold ${plan.isFree ? 'text-lg' : 'text-xl'}`}>{plan.price}</div>
+      {plan.isFree ? (
+        <div className="mt-2 text-sm text-text-secondary">{plan.features.join(' • ')}</div>
+      ) : (
+        renderPlanFeatures(plan.features)
+      )}
+      {renderPlanButton(plan)}
+    </div>
+  );
+
+  const renderEmptyState = (): JSX.Element => (
+    <div className="py-8 text-center">
+      <p className="text-lg text-text-secondary">{localize('com_ui_processing')}</p>
+    </div>
+  );
+
   const renderPlansGrid = (): JSX.Element => {
     if (subscriptionPlans.length === 0) {
-      return (
-        <div className="py-8 text-center">
-          <p className="text-lg text-text-secondary">{localize('com_ui_processing')}</p>
-        </div>
-      );
+      return renderEmptyState();
     }
 
     return (
@@ -227,6 +277,18 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     </div>
   );
 
+  const renderConfirmationButtons = (): JSX.Element => (
+    <div className="flex justify-end space-x-2">
+      <Button variant="outline" onClick={cancelPlanChange}>
+        {localize('com_ui_cancel')}
+      </Button>
+      <Button onClick={confirmPlanChange} disabled={processingId !== null}>
+        {processingId !== null && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {localize('com_ui_confirm')}
+      </Button>
+    </div>
+  );
+
   const renderConfirmationDialog = (): JSX.Element => (
     <OGDialog open={showConfirmation} onOpenChange={setShowConfirmation}>
       <OGDialogContent className="max-w-md">
@@ -236,34 +298,30 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
         <div className="py-4">
           <p>{localize('com_subscription_confirm_change_message')}</p>
         </div>
-        <div className="flex justify-end space-x-2">
-          <Button variant="outline" onClick={cancelPlanChange}>
-            {localize('com_ui_cancel')}
-          </Button>
-          <Button onClick={confirmPlanChange} disabled={processingId !== null}>
-            {processingId !== null && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {localize('com_ui_confirm')}
-          </Button>
+        {renderConfirmationButtons()}
+      </OGDialogContent>
+    </OGDialog>
+  );
+
+  const renderMainDialog = (): JSX.Element => (
+    <OGDialog open={open} onOpenChange={onOpenChange}>
+      <OGDialogContent className="max-h-[85vh] w-11/12 max-w-5xl overflow-auto">
+        <OGDialogHeader>
+          <OGDialogTitle className="text-2xl font-bold">
+            {localize('com_subscription_plans')}
+          </OGDialogTitle>
+        </OGDialogHeader>
+        <div className="space-y-8">
+          <div>{renderPlansGrid()}</div>
         </div>
+        {renderFooterLinks()}
       </OGDialogContent>
     </OGDialog>
   );
 
   return (
     <>
-      <OGDialog open={open} onOpenChange={onOpenChange}>
-        <OGDialogContent className="max-h-[85vh] w-11/12 max-w-5xl overflow-auto">
-          <OGDialogHeader>
-            <OGDialogTitle className="text-2xl font-bold">
-              {localize('com_subscription_plans')}
-            </OGDialogTitle>
-          </OGDialogHeader>
-          <div className="space-y-8">
-            <div>{renderPlansGrid()}</div>
-          </div>
-          {renderFooterLinks()}
-        </OGDialogContent>
-      </OGDialog>
+      {renderMainDialog()}
       {renderConfirmationDialog()}
     </>
   );
