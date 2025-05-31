@@ -226,7 +226,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
 
   const renderPlanButton = (plan: SubscriptionPlan): JSX.Element => {
     const isProcessing = processingId === plan.id;
-    const buttonSize = plan.isFree ? 'w-70' : 'mt-4 w-full';
+    const buttonSize = plan.isFree && !isSmallScreen ? 'w-70' : 'mt-4 w-full';
 
     return (
       <Button
@@ -235,7 +235,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
             ? 'bg-primary text-primary-foreground hover:bg-primary/90 dark:text-black'
             : 'bg-[#2f7ff7] text-primary-foreground hover:bg-[#2f7ff7]/90'
         }`}
-        style={plan.isFree ? { width: '280px' } : {}}
+        style={plan.isFree && !isSmallScreen ? { width: '280px' } : {}}
         onClick={plan.onClick}
         disabled={processingId !== null || plan.isDisabled}
         size="sm"
@@ -261,8 +261,8 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
   const getCardClasses = (plan: SubscriptionPlan): string => {
     const baseClasses =
       'relative flex flex-col rounded-xl border shadow-sm transition-all duration-200 hover:shadow-md';
-    const heightClass = plan.isFree ? 'p-3' : 'p-4';
-    const spanClass = plan.isFree ? 'col-span-full' : '';
+    const heightClass = plan.isFree && !isSmallScreen ? 'p-3' : 'p-4';
+    const spanClass = plan.isFree && !isSmallScreen ? 'col-span-full' : '';
     const borderClass = plan.recommended
       ? 'border-primary bg-primary/5 dark:border-primary/70'
       : 'border-border-medium bg-surface-primary';
@@ -270,24 +270,32 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     return `${baseClasses} ${heightClass} ${spanClass} ${borderClass}`;
   };
 
-  const renderFreePlanContent = (plan: SubscriptionPlan): JSX.Element => (
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex-shrink-1 mr-20">
-        <h3 className="text-base font-semibold">{plan.name}</h3>
-        <div className="mt-1 text-lg font-bold">{plan.price}</div>
+  const renderFreePlanContent = (plan: SubscriptionPlan): JSX.Element => {
+    if (isSmallScreen) {
+      return renderPaidPlanContent(plan);
+    }
+
+    return (
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-shrink-1 mr-20">
+          <h3 className="text-base font-semibold">{plan.name}</h3>
+          <div className="mt-1 text-lg font-bold">{plan.price}</div>
+        </div>
+
+        <div className="min-w-0 flex-1">{renderFreeFeatures(plan.features)}</div>
+
+        <div className="flex-shrink-0">{renderPlanButton(plan)}</div>
       </div>
-
-      <div className="min-w-0 flex-1">{renderFreeFeatures(plan.features)}</div>
-
-      <div className="flex-shrink-0">{renderPlanButton(plan)}</div>
-    </div>
-  );
+    );
+  };
 
   const renderPaidPlanContent = (plan: SubscriptionPlan): JSX.Element => (
     <>
       <h3 className="text-lg font-semibold">{plan.name}</h3>
       <div className="mt-2 text-xl font-bold">{plan.price}</div>
-      {renderPlanFeatures(plan.features)}
+      {plan.isFree && isSmallScreen
+        ? renderPlanFeatures(plan.features)
+        : renderPlanFeatures(plan.features)}
       {renderPlanButton(plan)}
     </>
   );
