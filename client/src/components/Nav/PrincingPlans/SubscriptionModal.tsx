@@ -233,12 +233,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
 
       {plan.isFree ? (
         <div className="flex items-start justify-between">
-          <div className="flex-1">
+          <div className="">
             <h3 className="text-base font-semibold">{plan.name}</h3>
             <div className="mt-1 text-lg font-bold">{plan.price}</div>
-            <div className="mt-2 text-sm text-text-secondary">{plan.features.join(' • ')}</div>
           </div>
-          <div className="ml-4">{renderPlanButton(plan)}</div>
+
+          <div className="text-sm text-text-secondary">{plan.features.join(' • ')}</div>
+
+          <div className="mr-1">{renderPlanButton(plan)}</div>
         </div>
       ) : (
         <>
