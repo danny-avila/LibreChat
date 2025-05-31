@@ -78,6 +78,53 @@ endpoints:
     titleConvo: true
     titleModel: 'claude-3-5-sonnet-20241022'
   
+  # Google endpoint configuration (includes VertexAI support)
+  google:
+    models:
+      default: [
+        # Gemini 2.5 Series (Latest)
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        # Gemini 2.0 Series
+        'gemini-2.0-flash-exp',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-2.0-pro',
+        # Gemini 1.5 Series
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-8b',
+        'gemini-1.5-pro',
+        'gemini-1.5-pro-002',
+        'gemini-1.5-flash-002',
+        # Gemini 1.0 Series
+        'gemini-1.0-pro',
+        'gemini-1.0-ultra',
+        # Gemma Open Models
+        'gemma-2-27b-it',
+        'gemma-2-9b-it',
+        'gemma-2-2b-it',
+        # Legacy Models
+        'text-bison',
+        'text-bison-32k',
+        'chat-bison',
+        'chat-bison-32k',
+        'codechat-bison',
+        'codechat-bison-32k'
+      ]
+      fetch: true
+    titleConvo: true
+    titleModel: 'gemini-1.5-flash'
+    # If you want to use VertexAI, you need to:
+    # 1. Set GOOGLE_KEY=user_provided in your .env file
+    # 2. Upload your Google Cloud service account JSON key in the UI
+    # 3. The service account should have "Vertex AI User" role
+    # 4. Set GOOGLE_LOC in your .env file (default: us-central1)
+    # 
+    # Note: Some models require specific permissions:
+    # - Veo 3 (video generation) - Private preview, requires access request
+    # - Imagen 4 (image generation) - Public preview
+    # - Lyria 2 (music generation) - Generally available
+  
   agents:
     recursionLimit: 50
     maxRecursionLimit: 100
@@ -180,6 +227,15 @@ endpoints:
 fileConfig:
   endpoints:
     openAI:
+      fileLimit: 10
+      fileSizeLimit: 20
+      totalSizeLimit: 100
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+        - "text/.*"
+        - "application/json"
+    google:
       fileLimit: 10
       fileSizeLimit: 20
       totalSizeLimit: 100
