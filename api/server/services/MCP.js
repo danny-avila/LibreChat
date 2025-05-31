@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { normalizeServerName } = require('librechat-api');
+const { normalizeServerName } = require('@librechat/api');
 const { Constants: AgentConstants, Providers } = require('@librechat/agents');
 const {
   Constants,

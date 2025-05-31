@@ -87,7 +87,7 @@ export class MCPConnection extends EventEmitter {
     this.lastPingTime = Date.now();
     this.client = new Client(
       {
-        name: 'librechat-api-client',
+        name: '@librechat/api-client',
         version: '1.2.2',
       },
       {

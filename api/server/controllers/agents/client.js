@@ -36,6 +36,7 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
+const { getFormattedMemories } = require('~/models');
 const { logger, sendEvent } = require('~/config');
 const { createRun } = require('./run');
 
@@ -58,7 +59,6 @@ const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deep
 const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
-// const { getFormattedMemories } = require('~/models/Memory');
 // const { getCurrentDateTime } = require('~/utils');
 
 function createTokenCounter(encoding) {
@@ -270,9 +270,9 @@ class AgentClient extends BaseClient {
       .join('\n')
       .trim();
     // this.systemMessage = getCurrentDateTime();
-    // const { withKeys, withoutKeys } = await getFormattedMemories({
-    //   userId: this.options.req.user.id,
-    // });
+    const { withKeys, withoutKeys } = await getFormattedMemories({
+      userId: this.options.req.user.id,
+    });
     // processMemory({
     //   userId: this.options.req.user.id,
     //   message: this.options.req.body.text,
