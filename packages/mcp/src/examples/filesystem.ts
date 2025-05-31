@@ -162,8 +162,8 @@ const GetFileInfoArgsSchema = z.object({
   path: z.string(),
 });
 
-const ToolInputSchema = ToolSchema.shape.inputSchema;
-type ToolInput = z.infer<typeof ToolInputSchema>;
+type ToolInputSchema = typeof ToolSchema.shape.inputSchema;
+type ToolInput = z.infer<ToolInputSchema>;
 
 interface FileInfo {
   size: number;
@@ -237,7 +237,7 @@ async function searchFiles(
         if (entry.isDirectory()) {
           await search(fullPath);
         }
-      } catch (error) {
+      } catch {
         // Skip invalid paths during search
         continue;
       }
