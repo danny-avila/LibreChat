@@ -25,8 +25,8 @@ const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { agentsConfigSetup } = require('./start/agents');
-const { initializeRoles } = require('~/models/Role');
 const { isEnabled } = require('~/server/utils');
+const { initializeRoles } = require('~/models');
 const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
