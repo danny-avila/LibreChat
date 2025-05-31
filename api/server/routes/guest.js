@@ -17,7 +17,9 @@ const createGuestUser = async (req, res) => {
   try {
     let randomSuffix;
     let username;
+    let counter = 0;
     do {
+      counter++;
       // Generate random 6-digit number for username and password
       randomSuffix = Math.floor(100000000 + Math.random() * 900000000);
       username = `guest${randomSuffix}@guest.local`;
@@ -27,8 +29,7 @@ const createGuestUser = async (req, res) => {
       if (!existingUser) {
         break;
       }
-      // eslint-disable-next-line no-constant-condition
-    } while (true);
+    } while (counter < 5);
 
     const password = 'p' + Math.floor(10000000000 + Math.random() * 90000000000);
 

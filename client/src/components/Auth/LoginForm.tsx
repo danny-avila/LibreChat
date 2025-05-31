@@ -11,9 +11,16 @@ type TLoginFormProps = {
   startupConfig: TStartupConfig;
   error: Pick<TAuthContext, 'error'>['error'];
   setError: Pick<TAuthContext, 'setError'>['setError'];
+  onCaptchaSuccess?: () => void;
 };
 
-const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
+const LoginForm: React.FC<TLoginFormProps> = ({
+  onSubmit,
+  startupConfig,
+  error,
+  setError,
+  onCaptchaSuccess,
+}) => {
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
   const {
@@ -43,6 +50,17 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     },
   });
 
+  // Handle turnstile success with callback
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token);
+    onCaptchaSuccess?.();
+  };
+
+  // Handle turnstile error/expiry
+  const handleTurnstileError = () => {
+    setTurnstileToken(null);
+  };
+
   if (!startupConfig) {
     return null;
   }
@@ -64,82 +82,108 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     resendLinkMutation.mutate({ email });
   };
 
+  const renderResendLink = () => (
+    <div className="mt-2 rounded-md border border-blue-500 bg-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
+      {localize('com_auth_email_verification_resend_prompt')}
+      <button
+        type="button"
+        className="ml-2 text-blue-600 hover:underline"
+        onClick={handleResendEmail}
+        disabled={resendLinkMutation.isLoading}
+      >
+        {localize('com_auth_email_resend_link')}
+      </button>
+    </div>
+  );
+
+  const renderEmailField = () => (
+    <div className="mb-4">
+      <div className="relative">
+        <input
+          type="text"
+          id="email"
+          autoComplete={useUsernameLogin ? 'username' : 'email'}
+          aria-label={localize('com_auth_email')}
+          {...register('email', {
+            required: localize('com_auth_email_required'),
+            maxLength: { value: 120, message: localize('com_auth_email_max_length') },
+            pattern: {
+              value: useUsernameLogin ? /\S+/ : /\S+@\S+\.\S+/,
+              message: localize('com_auth_email_pattern'),
+            },
+          })}
+          aria-invalid={!!errors.email}
+          className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-blue-500 focus:outline-none"
+          placeholder=" "
+        />
+        <label
+          htmlFor="email"
+          className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600 dark:peer-focus:text-blue-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
+        >
+          {useUsernameLogin
+            ? localize('com_auth_username').replace(/ \(.*$/, '')
+            : localize('com_auth_email_address')}
+        </label>
+      </div>
+      {renderError('email')}
+    </div>
+  );
+
+  const renderPasswordField = () => (
+    <div className="mb-2">
+      <div className="relative">
+        <input
+          type="password"
+          id="password"
+          autoComplete="current-password"
+          aria-label={localize('com_auth_password')}
+          {...register('password', {
+            required: localize('com_auth_password_required'),
+            minLength: { value: 8, message: localize('com_auth_password_min_length') },
+            maxLength: { value: 128, message: localize('com_auth_password_max_length') },
+          })}
+          aria-invalid={!!errors.password}
+          className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-blue-500 focus:outline-none"
+          placeholder=" "
+        />
+        <label
+          htmlFor="password"
+          className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600 dark:peer-focus:text-blue-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
+        >
+          {localize('com_auth_password')}
+        </label>
+      </div>
+      {renderError('password')}
+    </div>
+  );
+
+  const renderCaptcha = () => (
+    <div className="my-4 flex justify-center">
+      <Turnstile
+        siteKey={startupConfig.turnstile!.siteKey}
+        options={{
+          ...startupConfig.turnstile!.options,
+          theme: validTheme,
+        }}
+        onSuccess={handleTurnstileSuccess}
+        onError={handleTurnstileError}
+        onExpire={handleTurnstileError}
+      />
+    </div>
+  );
+
   return (
     <>
-      {showResendLink && (
-        <div className="mt-2 rounded-md border border-blue-500 bg-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
-          {localize('com_auth_email_verification_resend_prompt')}
-          <button
-            type="button"
-            className="ml-2 text-blue-600 hover:underline"
-            onClick={handleResendEmail}
-            disabled={resendLinkMutation.isLoading}
-          >
-            {localize('com_auth_email_resend_link')}
-          </button>
-        </div>
-      )}
+      {showResendLink && renderResendLink()}
       <form
         className="mt-6"
         aria-label="Login form"
         method="POST"
         onSubmit={handleSubmit((data) => onSubmit(data))}
       >
-        <div className="mb-4">
-          <div className="relative">
-            <input
-              type="text"
-              id="email"
-              autoComplete={useUsernameLogin ? 'username' : 'email'}
-              aria-label={localize('com_auth_email')}
-              {...register('email', {
-                required: localize('com_auth_email_required'),
-                maxLength: { value: 120, message: localize('com_auth_email_max_length') },
-                pattern: {
-                  value: useUsernameLogin ? /\S+/ : /\S+@\S+\.\S+/,
-                  message: localize('com_auth_email_pattern'),
-                },
-              })}
-              aria-invalid={!!errors.email}
-              className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-blue-500 focus:outline-none"
-              placeholder=" "
-            />
-            <label
-              htmlFor="email"
-              className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600 dark:peer-focus:text-blue-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
-            >
-              {useUsernameLogin
-                ? localize('com_auth_username').replace(/ \(.*$/, '')
-                : localize('com_auth_email_address')}
-            </label>
-          </div>
-          {renderError('email')}
-        </div>
-        <div className="mb-2">
-          <div className="relative">
-            <input
-              type="password"
-              id="password"
-              autoComplete="current-password"
-              aria-label={localize('com_auth_password')}
-              {...register('password', {
-                required: localize('com_auth_password_required'),
-                minLength: { value: 8, message: localize('com_auth_password_min_length') },
-                maxLength: { value: 128, message: localize('com_auth_password_max_length') },
-              })}
-              aria-invalid={!!errors.password}
-              className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-blue-500 focus:outline-none"
-              placeholder=" "
-            />
-            <label
-              htmlFor="password"
-              className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600 dark:peer-focus:text-blue-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
-            >
-              {localize('com_auth_password')}
-            </label>
-          </div>
-          {renderError('password')}
-        </div>
+        {renderEmailField()}
+        {renderPasswordField()}
+
         {startupConfig.passwordResetEnabled && (
           <a
             href="/forgot-password"
@@ -149,20 +193,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           </a>
         )}
 
-        {requireCaptcha && (
-          <div className="my-4 flex justify-center">
-            <Turnstile
-              siteKey={startupConfig.turnstile!.siteKey}
-              options={{
-                ...startupConfig.turnstile!.options,
-                theme: validTheme,
-              }}
-              onSuccess={setTurnstileToken}
-              onError={() => setTurnstileToken(null)}
-              onExpire={() => setTurnstileToken(null)}
-            />
-          </div>
-        )}
+        {requireCaptcha && renderCaptcha()}
 
         <div className="mt-6">
           <button
