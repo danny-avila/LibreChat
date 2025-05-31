@@ -183,7 +183,7 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "icon": "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1/logos/flux-color.svg",
     "isAuthRequired": "true",
     "authConfig": [
       {
@@ -210,7 +210,7 @@
     "name": "Stripe API",
     "pluginKey": "stripe-payment",
     "description": "Complete Stripe API integration for managing payments, customers, invoices, subscriptions, products and prices. Supports invoice creation and sending, payment processing and refunds.",
-    "icon": "https://assets.stripe.com/img/v3/home/twitter.png",
+    "icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/stripe/stripe-original.svg",
     "authConfig": [
       {
         "authField": "STRIPE_API_KEY",
