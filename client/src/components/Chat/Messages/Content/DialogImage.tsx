@@ -88,9 +88,9 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                   className="h-10 w-10 p-0"
                 >
                   {isPromptOpen ? (
-                    <PanelLeftClose className="size-6" />
-                  ) : (
                     <PanelLeftOpen className="size-6" />
+                  ) : (
+                    <PanelLeftClose className="size-6" />
                   )}
                 </Button>
               }
