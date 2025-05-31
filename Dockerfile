@@ -3,8 +3,8 @@
 # Base node image
 FROM node:20-alpine AS node
 
-# Install jemalloc
-RUN apk add --no-cache jemalloc
+# Install jemalloc and runtime dependencies for sharp
+RUN apk add --no-cache jemalloc vips vips-cpp
 RUN apk add --no-cache python3 py3-pip
 # Add build dependencies for sharp
 RUN apk add --no-cache --virtual .build-deps \
@@ -50,8 +50,6 @@ RUN \
     npm config set fetch-retry-mintimeout 15000 ; \
     # Clean npm cache before install to avoid stale cache issues
     npm cache clean --force ; \
-    # Force rebuild sharp for Alpine Linux
-    npm install --no-audit --platform=linuxmusl --arch=x64 --libc=musl sharp@^0.33.5; \
     # Install with --ignore-scripts first to get all dependencies
     npm install --no-audit --frozen-lockfile --ignore-scripts ; \
     # Manually install the rollup platform-specific dependency for Alpine
@@ -78,6 +76,9 @@ RUN \
     # Prune dev dependencies after build
     npm prune --production; \
     cd client && npm prune --production && cd .. ; \
+    # Reinstall sharp after pruning to ensure it's available
+    npm install --no-audit --platform=linuxmusl --arch=x64 --libc=musl sharp@^0.33.5 --omit=dev ; \
+    npm rebuild sharp ; \
     # Restore the built packages
     mkdir -p packages/data-provider/dist packages/data-schemas/dist packages/mcp/dist ; \
     cp -r /tmp/packages-dist/data-provider-dist/* packages/data-provider/dist/ || true ; \
