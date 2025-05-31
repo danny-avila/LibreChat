@@ -547,6 +547,35 @@ class OpenAIClient extends BaseClient {
     let result = null;
     let streamResult = null;
     this.modelOptions.user = this.user;
+    
+    const useResponsesAPI = opts.useResponsesAPI !== undefined ? opts.useResponsesAPI : this.options.useResponsesAPI;
+    
+    if (useResponsesAPI && this.options.context !== 'title') {      
+      // For Responses API, we need to extract the user input from the payload
+      let userInput = '';
+      if (Array.isArray(payload)) {
+        // Find the last user message
+        const lastUserMessage = payload.slice().reverse().find(msg => msg.role === 'user');
+        if (lastUserMessage) {
+          userInput = typeof lastUserMessage.content === 'string' 
+            ? lastUserMessage.content 
+            : lastUserMessage.content?.[0]?.text || '';
+        }
+      } else if (typeof payload === 'string') {
+        userInput = payload;
+      }
+      
+      if (!userInput) {
+        throw new Error('No user input found for Responses API');
+      }
+      
+      return await this.responsesCompletion({
+        input: userInput,
+        onProgress: opts.onProgress,
+        abortController: opts.abortController,
+      });
+    }
+    
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
     const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
@@ -818,6 +847,7 @@ ${convo}
             modelOptions,
             useChatCompletion,
             context: 'title',
+            useResponsesAPI: false,  // Force Chat Completions for title generation
           })
         ).replaceAll('"', '');
 
@@ -1133,6 +1163,233 @@ ${convo}
 
       return msg;
     };
+  }
+
+  async responsesCompletion({ input, onProgress, abortController = null }) {
+    let error = null;
+    let intermediateReply = [];
+    const errorCallback = (err) => (error = err);
+    
+    try {
+      if (!abortController) {
+        abortController = new AbortController();
+      }
+
+      // Define valid Responses API parameters
+      const validResponsesParams = [
+        'model',
+        'input',
+        'tools',
+        'stream',
+        'max_output_tokens',
+        'temperature',
+        'search_context_size',
+        'user_location'
+      ];
+      
+      // Build Responses API payload with only valid parameters
+      const responsesPayload = {
+        model: this.modelOptions.model,
+        input: input,
+      };
+
+      // Enable streaming if onProgress callback is provided
+      if (typeof onProgress === 'function') {
+        responsesPayload.stream = true;
+      }
+
+      // Add built-in tools if configured
+      if (this.options.builtInTools && Array.isArray(this.options.builtInTools)) {
+        responsesPayload.tools = this.options.builtInTools.map(tool => ({ type: tool }));
+      }
+
+      // Add any additional responses options, filtering for valid parameters only
+      if (this.options.responsesOptions && typeof this.options.responsesOptions === 'object') {
+        Object.keys(this.options.responsesOptions).forEach(key => {
+          if (validResponsesParams.includes(key)) {
+            responsesPayload[key] = this.options.responsesOptions[key];
+          } else if (this.options.debug) {
+            logger.debug(`[OpenAIClient] Filtered out invalid Responses API parameter: ${key}`);
+          }
+        });
+      }
+
+      // Filter modelOptions for any valid Responses API parameters
+      Object.keys(this.modelOptions).forEach(key => {
+        if (validResponsesParams.includes(key) && !responsesPayload.hasOwnProperty(key)) {
+          responsesPayload[key] = this.modelOptions[key];
+        } else if (!validResponsesParams.includes(key) && this.options.debug) {
+          logger.debug(`[OpenAIClient] Filtered out invalid Responses API parameter from modelOptions: ${key}`);
+        }
+      });
+
+      const baseURL = extractBaseURL(this.completionsUrl);
+      const opts = {
+        baseURL,
+      };
+
+      if (this.useOpenRouter) {
+        opts.defaultHeaders = {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        };
+      }
+
+      if (this.options.headers) {
+        opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
+      }
+
+      if (this.options.defaultQuery) {
+        opts.defaultQuery = this.options.defaultQuery;
+      }
+
+      if (this.options.proxy) {
+        opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
+      }
+
+      if (process.env.OPENAI_ORGANIZATION) {
+        opts.organization = process.env.OPENAI_ORGANIZATION;
+      }
+
+      /** @type {OpenAI} */
+      const openai = new OpenAI({
+        fetch: createFetch({
+          directEndpoint: this.options.directEndpoint,
+          reverseProxyUrl: this.options.reverseProxyUrl,
+        }),
+        apiKey: this.apiKey,
+        ...opts,
+      });
+
+      logger.debug('[OpenAIClient] responsesCompletion', { baseURL, responsesPayload });
+
+      // Handle streaming responses
+      if (responsesPayload.stream) {
+        const handlers = createStreamEventHandlers(this.options.res);
+        this.streamHandler = new SplitStreamHandler({
+          reasoningKey: 'reasoning_content',
+          accumulate: true,
+          runId: this.responseMessageId,
+          handlers,
+        });
+
+        intermediateReply = this.streamHandler.tokens;
+        let finalResponse = null;
+
+        const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
+
+        try {
+          const stream = await openai.responses.create({
+            ...responsesPayload,
+            stream: true,
+          });
+
+          for await (const chunk of stream) {
+            if (abortController.signal.aborted) {
+              break;
+            }
+
+            // Handle Responses API streaming events correctly
+            if (chunk.type === 'response.output_text.delta') {
+              // Extract content from the delta (direct string)
+              const token = chunk.delta;
+              if (token) {
+                onProgress(token);
+                intermediateReply.push(token);
+              }
+            } else if (chunk.type === 'response.completed') {
+              // Final response with complete data
+              finalResponse = chunk.response;
+              break;
+            }
+
+            await sleep(streamRate);
+          }
+
+          // Store usage information if available
+          if (finalResponse && finalResponse.usage) {
+            this.usage = finalResponse.usage;
+          }
+
+          return intermediateReply.join('');
+        } catch (streamError) {
+          logger.error('[OpenAIClient] Responses API streaming error:', streamError);
+          if (intermediateReply.length > 0) {
+            return intermediateReply.join('');
+          }
+          throw streamError;
+        }
+      }
+
+      // Non-streaming response
+      const response = await openai.responses.create(responsesPayload).catch((err) => {
+        handleOpenAIErrors(err, errorCallback, 'responses.create');
+      });
+
+      if (!response && error) {
+        throw new Error(error);
+      } else if (!response) {
+        throw new Error('Responses API call failed');
+      }
+
+      logger.debug('[OpenAIClient] responsesCompletion response', response);
+
+      // Store usage information if available
+      if (response.usage) {
+        this.usage = response.usage;
+      }
+
+      // Extract response text from Responses API format
+      let responseText = '';
+      
+      if (response.output && Array.isArray(response.output)) {
+        // Find the assistant message in the output array
+        const assistantMessage = response.output.find(
+          item => item.type === 'message' && item.role === 'assistant'
+        );
+
+        if (assistantMessage && assistantMessage.content && Array.isArray(assistantMessage.content)) {
+          // Extract text content from content array
+          const textContent = assistantMessage.content.find(content => 
+            content.type === 'output_text'
+          );
+          if (textContent && textContent.text) {
+            responseText = textContent.text;
+          }
+        }
+      }
+
+      if (this.options.debug) {
+        logger.debug('[OpenAIClient] Extracted response text:', {
+          hasText: !!responseText,
+          textLength: responseText.length,
+          textPreview: responseText.substring(0, 100)
+        });
+      }
+
+      if (!responseText) {
+        logger.warn('[OpenAIClient] No response text found in Responses API response:', {
+          responseStructure: Object.keys(response),
+          outputStructure: response.output ? response.output.map(item => ({
+            type: item.type,
+            role: item.role,
+            hasContent: !!item.content
+          })) : 'no output'
+        });
+        throw new Error('No response text found in Responses API response');
+      }
+
+      return responseText;
+    } catch (err) {
+      if (
+        err?.message?.includes('abort') ||
+        (err instanceof OpenAI.APIError && err?.message?.includes('abort'))
+      ) {
+        return intermediateReply.join('');
+      }
+      logger.error('[OpenAIClient.responsesCompletion] Error:', err);
+      throw err;
+    }
   }
 
   async chatCompletion({ payload, onProgress, abortController = null }) {

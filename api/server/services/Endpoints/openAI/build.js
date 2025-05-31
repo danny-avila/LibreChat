@@ -13,6 +13,9 @@ const buildOptions = (endpoint, parsedBody) => {
     greeting,
     spec,
     artifacts,
+    useResponsesAPI,
+    builtInTools,
+    responsesOptions,
     ...modelOptions
   } = parsedBody;
 
@@ -27,6 +30,9 @@ const buildOptions = (endpoint, parsedBody) => {
     greeting,
     spec,
     maxContextTokens,
+    useResponsesAPI,
+    builtInTools,
+    responsesOptions,
     modelOptions,
   });
 
