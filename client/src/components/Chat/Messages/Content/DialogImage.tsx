@@ -102,8 +102,16 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
         <div
           className={`flex h-full transition-all duration-500 ease-in-out ${isPromptOpen ? 'mr-80' : 'mr-0'}`}
         >
-          <div className="flex flex-1 items-center justify-center p-4">
-            <img src={src} alt="Image" className="max-h-full max-w-full object-contain" />
+          <div className="flex flex-1 items-center justify-center px-4 pb-4 pt-20">
+            <img
+              src={src}
+              alt="Image"
+              className="max-h-full max-w-full object-contain"
+              style={{
+                maxHeight: 'calc(100vh - 6rem)', // Account for header and padding
+                maxWidth: '100%',
+              }}
+            />
           </div>
         </div>
 
