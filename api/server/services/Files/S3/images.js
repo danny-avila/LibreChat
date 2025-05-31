@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const { logger } = require('@librechat/data-schemas');
 const { resizeImageBuffer } = require('../images/resize');
-const { updateUser } = require('~/models/userMethods');
+const { updateUser, updateFile } = require('~/models');
 const { saveBufferToS3 } = require('./crud');
-const { updateFile } = require('~/models/File');
-const { logger } = require('~/config');
 
 const defaultBasePath = 'images';
 

@@ -8,18 +8,22 @@ process.env.CREDS_IV = '0123456789abcdef';
 
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
-  Agent,
-  addAgentResourceFile,
-  removeAgentResourceFiles,
+  getAgent,
   createAgent,
   updateAgent,
-  getAgent,
   deleteAgent,
   getListAgents,
   updateAgentProjects,
+  addAgentResourceFile,
+  removeAgentResourceFiles,
 } = require('./Agent');
+/**
+ * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
+ */
+let Agent;
 
 describe('Agent Resource File Operations', () => {
   let mongoServer;
@@ -27,6 +31,7 @@ describe('Agent Resource File Operations', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
+    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
     await mongoose.connect(mongoUri);
   });
 

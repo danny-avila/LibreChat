@@ -1,4 +1,5 @@
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
 const {
   saveConvo,
@@ -13,8 +14,7 @@ const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
-const { Message } = require('~/models/Message');
-const { logger } = require('~/config');
+const { Message } = require('~/db/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -40,7 +40,11 @@ router.get('/', async (req, res) => {
     const sortOrder = sortDirection === 'asc' ? 1 : -1;
 
     if (conversationId && messageId) {
-      const message = await Message.findOne({ conversationId, messageId, user: user }).lean();
+      const message = await Message.findOne({
+        conversationId,
+        messageId,
+        user: user,
+      }).lean();
       response = { messages: message ? [message] : [], nextCursor: null };
     } else if (conversationId) {
       const filter = { conversationId, user: user };
