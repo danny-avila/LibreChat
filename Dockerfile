@@ -6,6 +6,14 @@ FROM node:20-alpine AS node
 # Install jemalloc
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip
+# Add build dependencies for sharp
+RUN apk add --no-cache --virtual .build-deps \
+    build-base \
+    gcc \
+    g++ \
+    make \
+    python3-dev \
+    vips-dev
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
@@ -42,6 +50,8 @@ RUN \
     npm config set fetch-retry-mintimeout 15000 ; \
     # Clean npm cache before install to avoid stale cache issues
     npm cache clean --force ; \
+    # Force rebuild sharp for Alpine Linux
+    npm install --no-audit --platform=linuxmusl --arch=x64 --libc=musl sharp@^0.33.5; \
     # Install with --ignore-scripts first to get all dependencies
     npm install --no-audit --frozen-lockfile --ignore-scripts ; \
     # Manually install the rollup platform-specific dependency for Alpine
@@ -78,6 +88,12 @@ RUN \
     cp -r /tmp/client-dist/* client/dist/ || true ; \
     rm -rf /tmp/packages-dist /tmp/client-dist ; \
     npm cache clean --force
+
+# Remove build dependencies to reduce image size
+USER root
+RUN apk del .build-deps
+
+USER node
 
 RUN mkdir -p /app/client/public/images /app/api/logs
 

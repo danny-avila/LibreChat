@@ -10,6 +10,7 @@
     "test:ci": "jest --ci",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
+    "postinstall": "npm rebuild sharp --platform=linux --arch=x64 --libc=musl || true",
     "add-balance": "node ./add-balance.js",
     "list-balances": "node ./list-balances.js",
     "user-stats": "node ./user-stats.js",
