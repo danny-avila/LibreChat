@@ -183,14 +183,16 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
 
   const renderPlanButton = (plan: SubscriptionPlan): JSX.Element => {
     const isProcessing = processingId === plan.id;
+    const buttonSize = plan.isFree ? 'w-70' : 'mt-4 w-full';
 
     return (
       <Button
-        className={`mt-4 w-full ${
+        className={`${buttonSize} ${
           plan.recommended
             ? 'bg-primary text-primary-foreground hover:bg-primary/90 dark:text-black'
             : 'bg-[#2f7ff7] text-primary-foreground hover:bg-[#2f7ff7]/90'
         }`}
+        style={plan.isFree ? { width: '280px' } : {}}
         onClick={plan.onClick}
         disabled={processingId !== null || plan.isDisabled}
         size="sm"
@@ -228,14 +230,24 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
   const renderPlanCard = (plan: SubscriptionPlan): JSX.Element => (
     <div key={plan.id} className={getCardClasses(plan)}>
       {plan.recommended && renderRecommendedBadge()}
-      <h3 className={`font-semibold ${plan.isFree ? 'text-base' : 'text-lg'}`}>{plan.name}</h3>
-      <div className={`mt-2 font-bold ${plan.isFree ? 'text-lg' : 'text-xl'}`}>{plan.price}</div>
+
       {plan.isFree ? (
-        <div className="mt-2 text-sm text-text-secondary">{plan.features.join(' • ')}</div>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <h3 className="text-base font-semibold">{plan.name}</h3>
+            <div className="mt-1 text-lg font-bold">{plan.price}</div>
+            <div className="mt-2 text-sm text-text-secondary">{plan.features.join(' • ')}</div>
+          </div>
+          <div className="ml-4">{renderPlanButton(plan)}</div>
+        </div>
       ) : (
-        renderPlanFeatures(plan.features)
+        <>
+          <h3 className="text-lg font-semibold">{plan.name}</h3>
+          <div className="mt-2 text-xl font-bold">{plan.price}</div>
+          {renderPlanFeatures(plan.features)}
+          {renderPlanButton(plan)}
+        </>
       )}
-      {renderPlanButton(plan)}
     </div>
   );
 
