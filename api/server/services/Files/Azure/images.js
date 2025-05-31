@@ -98,10 +98,14 @@ async function prepareAzureImageURL(req, file) {
  */
 async function processAzureAvatar({ buffer, userId, manual, basePath = 'images', containerName }) {
   try {
+    const metadata = await sharp(buffer).metadata();
+    const extension = metadata.format === 'gif' ? 'gif' : 'png';
+    const fileName = `avatar.${extension}`;
+
     const downloadURL = await saveBufferToAzure({
       userId,
       buffer,
-      fileName: 'avatar.png',
+      fileName,
       basePath,
       containerName,
     });
