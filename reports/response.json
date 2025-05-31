@@ -1,0 +1,3 @@
+event: error
+data: {"message":"Illegal request"}
+

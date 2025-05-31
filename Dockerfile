@@ -3,17 +3,19 @@
 # Base node image
 FROM node:20-alpine AS node
 
-# Install jemalloc and runtime dependencies for sharp
-RUN apk add --no-cache jemalloc vips vips-cpp
-RUN apk add --no-cache python3 py3-pip
-# Add build dependencies for sharp
-RUN apk add --no-cache --virtual .build-deps \
-    build-base \
-    gcc \
-    g++ \
+# Install system dependencies
+RUN apk add --no-cache \
+    jemalloc \
+    vips \
+    vips-cpp \
+    vips-dev \
+    python3 \
+    py3-pip \
     make \
-    python3-dev \
-    vips-dev
+    g++ \
+    gcc \
+    build-base \
+    python3-dev
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
@@ -39,63 +41,60 @@ COPY --chown=node:node packages/mcp/package*.json ./packages/mcp/
 ARG CACHE_BUST
 ENV CACHE_BUST=${CACHE_BUST:-1}
 
-# Install dependencies with retry logic and ensure rollup platform dependencies are installed
+# Install dependencies with platform-specific optimizations
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
     # Create directories for the volumes to inherit the correct permissions
     mkdir -p /app/client/public/images /app/api/logs ; \
+    # Configure npm
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
-    # Clean npm cache before install to avoid stale cache issues
+    # Clean npm cache
     npm cache clean --force ; \
-    # Install with --ignore-scripts first to get all dependencies
+    # Install dependencies without scripts first
     npm install --no-audit --frozen-lockfile --ignore-scripts ; \
-    # Manually install the rollup platform-specific dependency for Alpine
+    # Install rollup platform-specific dependency
     npm install @rollup/rollup-linux-x64-musl --save-optional --no-audit ; \
-    # Run postinstall scripts after ensuring all dependencies are present
+    # Install sharp specifically for Alpine
+    cd api && npm install --no-audit sharp@^0.33.5 --platform=linuxmusl --arch=x64 --libc=musl && cd .. ; \
+    # Rebuild all native modules
     npm rebuild ; \
+    # Run postinstall scripts
     npm run postinstall || true ; \
-    # Install client dependencies with dev dependencies for build
+    # Install client dev dependencies
     cd client && npm install --include=dev && cd ..
 
 # Copy the rest of the application code
 COPY --chown=node:node . .
 
+# Build the application
 RUN \
-    # React client build (before pruning dev dependencies)
+    # Build frontend with increased memory
     NODE_OPTIONS="--max-old-space-size=3072" npm run frontend:docker; \
-    # Keep the built packages before pruning
-    mkdir -p /tmp/packages-dist ; \
-    cp -r packages/data-provider/dist /tmp/packages-dist/data-provider-dist || true ; \
-    cp -r packages/data-schemas/dist /tmp/packages-dist/data-schemas-dist || true ; \
-    cp -r packages/mcp/dist /tmp/packages-dist/mcp-dist || true ; \
-    # Keep the client build before pruning
-    cp -r client/dist /tmp/client-dist || true ; \
-    # Prune dev dependencies after build
-    npm prune --production; \
+    # Save built artifacts
+    mkdir -p /tmp/build-artifacts ; \
+    cp -r packages/data-provider/dist /tmp/build-artifacts/data-provider-dist || true ; \
+    cp -r packages/data-schemas/dist /tmp/build-artifacts/data-schemas-dist || true ; \
+    cp -r packages/mcp/dist /tmp/build-artifacts/mcp-dist || true ; \
+    cp -r client/dist /tmp/build-artifacts/client-dist || true ; \
+    # Prune dev dependencies
+    npm prune --production ; \
     cd client && npm prune --production && cd .. ; \
-    # Reinstall sharp after pruning to ensure it's available
-    npm install --no-audit --platform=linuxmusl --arch=x64 --libc=musl sharp@^0.33.5 --omit=dev ; \
-    npm rebuild sharp ; \
-    # Restore the built packages
-    mkdir -p packages/data-provider/dist packages/data-schemas/dist packages/mcp/dist ; \
-    cp -r /tmp/packages-dist/data-provider-dist/* packages/data-provider/dist/ || true ; \
-    cp -r /tmp/packages-dist/data-schemas-dist/* packages/data-schemas/dist/ || true ; \
-    cp -r /tmp/packages-dist/mcp-dist/* packages/mcp/dist/ || true ; \
-    # Restore the client build
-    mkdir -p client/dist ; \
-    cp -r /tmp/client-dist/* client/dist/ || true ; \
-    rm -rf /tmp/packages-dist /tmp/client-dist ; \
+    # Ensure sharp is installed in production mode
+    cd api && npm install --production --no-audit sharp@^0.33.5 --platform=linuxmusl --arch=x64 --libc=musl && cd .. ; \
+    # Restore built artifacts
+    mkdir -p packages/data-provider/dist packages/data-schemas/dist packages/mcp/dist client/dist ; \
+    cp -r /tmp/build-artifacts/data-provider-dist/* packages/data-provider/dist/ || true ; \
+    cp -r /tmp/build-artifacts/data-schemas-dist/* packages/data-schemas/dist/ || true ; \
+    cp -r /tmp/build-artifacts/mcp-dist/* packages/mcp/dist/ || true ; \
+    cp -r /tmp/build-artifacts/client-dist/* client/dist/ || true ; \
+    # Clean up
+    rm -rf /tmp/build-artifacts ; \
     npm cache clean --force
 
-# Remove build dependencies to reduce image size
-USER root
-RUN apk del .build-deps
-
-USER node
-
+# Ensure directories exist with correct permissions
 RUN mkdir -p /app/client/public/images /app/api/logs
 
 # Node API setup

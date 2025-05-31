@@ -1,0 +1,332 @@
+{
+  "timestamp": "2025-05-30T21:44:45.539Z",
+  "totalFunctions": 10,
+  "successCount": 6,
+  "errorCount": 6,
+  "criticalIssues": [
+    {
+      "function": "getItems",
+      "error": "Failed to get items: HTTP Error: 400 Bad Request",
+      "request": {
+        "action": "getItems",
+        "boardId": "9261805849",
+        "limit": 10,
+        "columnValues": true
+      },
+      "response": {
+        "error": "Failed to get items: HTTP Error: 400 Bad Request",
+        "success": false,
+        "action": "getItems"
+      }
+    },
+    {
+      "function": "updateItem",
+      "error": "boardId, itemId and columnValues are required for updateItem action",
+      "request": {
+        "action": "updateItem",
+        "itemId": "9271226908",
+        "itemName": "Updated 1748641483485"
+      },
+      "response": {
+        "error": "boardId, itemId and columnValues are required for updateItem action",
+        "success": false,
+        "action": "updateItem"
+      }
+    },
+    {
+      "function": "searchItems",
+      "error": "Failed to search items: HTTP Error: 400 Bad Request",
+      "request": {
+        "action": "searchItems",
+        "boardId": "9261805849",
+        "query": "test"
+      },
+      "response": {
+        "error": "Failed to search items: HTTP Error: 400 Bad Request",
+        "success": false,
+        "action": "searchItems"
+      }
+    },
+    {
+      "function": "updateColumn",
+      "error": "boardId, itemId, columnId and value are required for updateColumn action",
+      "request": {
+        "action": "updateColumn",
+        "columnId": "text_mkre1hm2",
+        "title": "Updated 1748641484157"
+      },
+      "response": {
+        "error": "boardId, itemId, columnId and value are required for updateColumn action",
+        "success": false,
+        "action": "updateColumn"
+      }
+    },
+    {
+      "function": "createWebhook",
+      "error": "HTTP Error: 500 Internal Server Error",
+      "request": {
+        "action": "createWebhook",
+        "boardId": "9261805849",
+        "url": "https://httpbin.org/post",
+        "event": "create_item"
+      },
+      "response": {
+        "error": "HTTP Error: 500 Internal Server Error",
+        "success": false,
+        "action": "createWebhook"
+      }
+    }
+  ],
+  "allResults": [
+    {
+      "timestamp": "2025-05-30T21:44:41.060Z",
+      "level": "info",
+      "message": "🚀 ЗАПУСК ДИАГНОСТИКИ КРИТИЧЕСКИХ ФУНКЦИЙ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.060Z",
+      "level": "info",
+      "message": "📋 Тестовая доска: 9261805849"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.060Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: getBoards"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.060Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"getBoards\",\n  \"limit\": 5\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.447Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"success\":true,\"action\":\"getBoards\",\"data\":[{\"id\":\"9271219779\",\"name\":\"Test Board 1748641382881\",\"description\":null,\"state\":\"active\",\"board_kind\":\"public\",\"workspace\":{\"id\":\"7750739\",\"name\":\"Main Workspace\"},\"items_count\":2},{\"id\":\"9271161179\",\"name\":\"Test Board 1748640603317\",\"description\":null,\"state\":\"active\",\"board_kind\":\"public\",\"workspace\":{\"id\":\"7750739\",\"name\":\"Main Workspace\"},\"items_count\":1},{\"id\":\"9271157671\",\"name\":\"Test Board 1748640564695\",\"description\":null,\"state\":\"active\",\"board_kind\":\"public\",\"workspace\":{\"id\":\"7750739\",\"name\":\"Main Workspace\"},\"items_count\":1},{\"id\":\"9271133955\",\"name\":\"Test Board 1748640292448\",\"description\":null,\"state\":\"active\",\"board_kind\":\"public\",\"workspace\":{\"id\":\"7750739\",\"name\":\"Main Workspace\"},\"items_count\":1},{\"id\":\"9271105203\",\"name\":\"Test Board 1748640051466\",\"description\":null,\"state\":\"active\",\"board_kind\":\"public\",\"workspace\":{\"id\":\"7750739\",\"name\":\"Main Workspace\"},\"items_count\":1}],\"total\":5}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.447Z",
+      "level": "success",
+      "message": "✅ getBoards: РАБОТАЕТ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.447Z",
+      "level": "info",
+      "message": "   Получено записей: 5"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.447Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: getBoard"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.447Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"getBoard\",\n  \"boardId\": \"9261805849\",\n  \"includeItems\": true,\n  \"includeGroups\": true,\n  \"includeColumns\": true\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.736Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"success\":true,\"action\":\"getBoard\",\"data\":{\"id\":\"9261805849\",\"name\":\"Test Board Created by Tool\",\"description\":null,\"state\":\"active\",\"board_kind\":\"public\",\"workspace\":{\"id\":\"7750739\",\"name\":\"Main Workspace\"},\"columns\":[{\"id\":\"name\",\"title\":\"Name\",\"type\":\"name\",\"settings_str\":\"{}\"},{\"id\":\"color_mkrd819y\",\"title\":\"Status\",\"type\":\"status\",\"settings_str\":\"{\\\"done_colors\\\":[1],\\\"labels\\\":{\\\"0\\\":\\\"Working on it\\\",\\\"1\\\":\\\"Done\\\",\\\"2\\\":\\\"Stuck\\\"},\\\"labels_colors\\\":{\\\"0\\\":{\\\"color\\\":\\\"#fdab3d\\\",\\\"border\\\":\\\"#e99729\\\",\\\"var_name\\\":\\\"orange\\\"},\\\"1\\\":{\\\"color\\\":\\\"#00c875\\\",\\\"border\\\":\\\"#00b461\\\",\\\"var_name\\\":\\\"green-shadow\\\"},\\\"2\\\":{\\\"color\\\":\\\"#df2f4a\\\",\\\"border\\\":\\\"#ce3048\\\",\\\"var_name\\\":\\\"red-shadow\\\"}}}\"},{\"id\":\"text_mkre1hm2\",\"title\":\"Updated Column Title\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkre7x4h\",\"title\":\"Test Column 1748636197030\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkreqste\",\"title\":\"Test Column 1748638464042\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkreaa2c\",\"title\":\"Test Column 1748638663361\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkrem8n4\",\"title\":\"Test Column 1748638739120\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkrewn7c\",\"title\":\"Test Column 1748638833163\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkre7hg1\",\"title\":\"Test Column 1748639064493\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkre4b83\",\"title\":\"Test Column 1748639188274\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkrev970\",\"title\":\"Test Column 1748639354338\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkreaf9v\",\"title\":\"Test Column 1748639534733\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkrekcfe\",\"title\":\"Test Column 1748639791523\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkrej9hj\",\"title\":\"Test Column 1748640081363\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkreyjxs\",\"title\":\"Test Column 1748640320657\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkresss\",\"title\":\"Test Column 1748640590204\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkrevnst\",\"title\":\"Test Column 1748640628997\",\"type\":\"text\",\"settings_str\":\"{}\"},{\"id\":\"text_mkree84j\",\"title\":\"Test Column 1748641408569\",\"type\":\"text\",\"settings_str\":\"{}\"}],\"groups\":[{\"id\":\"group_mkrej9ee\",\"title\":\"Test Group 1748641385931\",\"color\":\"#579bfc\"},{\"id\":\"group_mkreg05a\",\"title\":\"Test Group 1748640606278\",\"color\":\"#037f4c\"},{\"id\":\"group_mkredhkd\",\"title\":\"Test Group 1748640567589\",\"color\":\"#037f4c\"},{\"id\":\"group_mkrey8ja\",\"title\":\"Test Group 1748640296338\",\"color\":\"#579bfc\"},{\"id\":\"group_mkrerk75\",\"title\":\"Test Group 1748640055293\",\"color\":\"#579bfc\"},{\"id\":\"group_mkremj3h\",\"title\":\"Test Group 1748639748197\",\"color\":\"#579bfc\"},{\"id\":\"group_mkre8tq3\",\"title\":\"Test Group 1748639587333\",\"color\":\"#037f4c\"},{\"id\":\"group_mkre4x4w\",\"title\":\"Test Group 1748639513440\",\"color\":\"#00c875\"},{\"id\":\"group_mkrea8r\",\"title\":\"Test Group 1748639331159\",\"color\":\"#fdab3d\"},{\"id\":\"group_mkreqzbr\",\"title\":\"Test Group 1748639164499\",\"color\":\"#fdab3d\"},{\"id\":\"group_mkres7hd\",\"title\":\"Test Group 1748639148553\",\"color\":\"#037f4c\"},{\"id\":\"group_mkrew57y\",\"title\":\"Test Group 1748639041464\",\"color\":\"#a25ddc\"},{\"id\":\"group_mkreqw8a\",\"title\":\"Test Group 1748638801117\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkre8da7\",\"title\":\"Test Group 1748638723615\",\"color\":\"#e2445c\"},{\"id\":\"group_mkredpw7\",\"title\":\"Test Group 1748638643940\",\"color\":\"#579bfc\"},{\"id\":\"group_mkrex8dk\",\"title\":\"Test Group 1748638448095\",\"color\":\"#00c875\"},{\"id\":\"group_mkre9y03\",\"title\":\"Test Group 1748638237817\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkrey0wt\",\"title\":\"Advanced Group 1748638040091\",\"color\":\"#579bfc\"},{\"id\":\"group_mkre57vv\",\"title\":\"Test Group 1748638030185\",\"color\":\"#579bfc\"},{\"id\":\"group_mkref640\",\"title\":\"Advanced Group 1748637932651\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkrekjdn\",\"title\":\"Test Group 1748637923832\",\"color\":\"#fdab3d\"},{\"id\":\"group_mkrerzdh\",\"title\":\"Advanced Group 1748637888822\",\"color\":\"#a25ddc\"},{\"id\":\"group_mkreavbp\",\"title\":\"Test Group 1748637880256\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkrek97c\",\"title\":\"Advanced Group 1748637835253\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkrewmb4\",\"title\":\"Test Group 1748637826780\",\"color\":\"#00c875\"},{\"id\":\"group_mkrey2m4\",\"title\":\"Advanced Group 1748637704397\",\"color\":\"#037f4c\"},{\"id\":\"group_mkrethqx\",\"title\":\"Test Group 1748637701230\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkrea2vt\",\"title\":\"Fix Advanced Group 1748637683243\",\"color\":\"#579bfc\"},{\"id\":\"group_mkreqh2f\",\"title\":\"Fix Test Group 1748637672946\",\"color\":\"#037f4c\"},{\"id\":\"group_mkredd1a\",\"title\":\"Fix Advanced Group 1748637625147\",\"color\":\"#579bfc\"},{\"id\":\"group_mkre9799\",\"title\":\"Fix Test Group 1748637613038\",\"color\":\"#a25ddc\"},{\"id\":\"group_mkrecpx0\",\"title\":\"Fix Advanced Group 1748637582107\",\"color\":\"#579bfc\"},{\"id\":\"group_mkrewsmg\",\"title\":\"Fix Test Group 1748637572589\",\"color\":\"#a25ddc\"},{\"id\":\"group_mkref1k\",\"title\":\"Fix Advanced Group 1748637421853\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkrejqjp\",\"title\":\"Fix Test Group 1748637411104\",\"color\":\"#a25ddc\"},{\"id\":\"group_mkre7dfh\",\"title\":\"Fix Test Group 1748637354456\",\"color\":\"#579bfc\"},{\"id\":\"group_mkretap5\",\"title\":\"Fix Test Group 1748637231695\",\"color\":\"#c4c4c4\"},{\"id\":\"group_mkre3xqw\",\"title\":\"Fix Test Group 1748637144730\",\"color\":\"#579bfc\"},{\"id\":\"group_mkre15sn\",\"title\":\"Tool Test Group 1748637125010\",\"color\":\"#ff642e\"},{\"id\":\"group_mkreash\",\"title\":\"Direct Test Group 1748637124240\",\"color\":\"#ff642e\"},{\"id\":\"group_mkre51m0\",\"title\":\"Direct Test Group 1748637111958\",\"color\":\"#ff642e\"},{\"id\":\"group_mkrem0by\",\"title\":\"Direct Test Group 1748637100163\",\"color\":\"#ff642e\"},{\"id\":\"group_mkrek3a1\",\"title\":\"Direct Test Group 1748637085180\",\"color\":\"#ff642e\"},{\"id\":\"group_mkren658\",\"title\":\"Advanced Group 1748636197851\",\"color\":\"#037f4c\"},{\"id\":\"group_mkre4k5p\",\"title\":\"Test Group Official\",\"color\":\"#e2445c\"},{\"id\":\"topics\",\"title\":\"Group Title\",\"color\":\"#037f4c\"}],\"items_count\":61}}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.737Z",
+      "level": "success",
+      "message": "✅ getBoard: РАБОТАЕТ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.737Z",
+      "level": "info",
+      "message": "   ID результата: 9261805849"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.737Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: getItems"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.737Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"getItems\",\n  \"boardId\": \"9261805849\",\n  \"limit\": 10,\n  \"columnValues\": true\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.853Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"error\":\"Failed to get items: HTTP Error: 400 Bad Request\",\"success\":false,\"action\":\"getItems\"}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.853Z",
+      "level": "error",
+      "message": "❌ getItems: ОШИБКА - Failed to get items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.853Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: createItem"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:41.853Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"createItem\",\n  \"boardId\": \"9261805849\",\n  \"itemName\": \"Debug Test 1748641481853\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:42.797Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"success\":true,\"action\":\"createItem\",\"data\":{\"id\":\"9271226829\",\"name\":\"Debug Test 1748641481853\"}}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:42.798Z",
+      "level": "success",
+      "message": "✅ createItem: РАБОТАЕТ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:42.798Z",
+      "level": "info",
+      "message": "   ID результата: 9271226829"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:42.798Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: updateItem"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.485Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"updateItem\",\n  \"itemId\": \"9271226908\",\n  \"itemName\": \"Updated 1748641483485\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.487Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"error\":\"boardId, itemId and columnValues are required for updateItem action\",\"success\":false,\"action\":\"updateItem\"}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.487Z",
+      "level": "error",
+      "message": "❌ updateItem: ОШИБКА - boardId, itemId and columnValues are required for updateItem action"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.487Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: searchItems"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.487Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"searchItems\",\n  \"boardId\": \"9261805849\",\n  \"query\": \"test\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.611Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"error\":\"Failed to search items: HTTP Error: 400 Bad Request\",\"success\":false,\"action\":\"searchItems\"}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.611Z",
+      "level": "error",
+      "message": "❌ searchItems: ОШИБКА - Failed to search items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.611Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: getColumnsInfo"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.611Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"getColumnsInfo\",\n  \"boardId\": \"9261805849\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.879Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"success\":true,\"action\":\"getColumnsInfo\",\"data\":[{\"id\":\"name\",\"title\":\"Name\",\"type\":\"name\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"color_mkrd819y\",\"title\":\"Status\",\"type\":\"status\",\"settings_str\":\"{\\\"done_colors\\\":[1],\\\"labels\\\":{\\\"0\\\":\\\"Working on it\\\",\\\"1\\\":\\\"Done\\\",\\\"2\\\":\\\"Stuck\\\"},\\\"labels_colors\\\":{\\\"0\\\":{\\\"color\\\":\\\"#fdab3d\\\",\\\"border\\\":\\\"#e99729\\\",\\\"var_name\\\":\\\"orange\\\"},\\\"1\\\":{\\\"color\\\":\\\"#00c875\\\",\\\"border\\\":\\\"#00b461\\\",\\\"var_name\\\":\\\"green-shadow\\\"},\\\"2\\\":{\\\"color\\\":\\\"#df2f4a\\\",\\\"border\\\":\\\"#ce3048\\\",\\\"var_name\\\":\\\"red-shadow\\\"}}}\",\"archived\":false},{\"id\":\"text_mkre1hm2\",\"title\":\"Updated Column Title\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkre7x4h\",\"title\":\"Test Column 1748636197030\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkreqste\",\"title\":\"Test Column 1748638464042\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkreaa2c\",\"title\":\"Test Column 1748638663361\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkrem8n4\",\"title\":\"Test Column 1748638739120\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkrewn7c\",\"title\":\"Test Column 1748638833163\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkre7hg1\",\"title\":\"Test Column 1748639064493\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkre4b83\",\"title\":\"Test Column 1748639188274\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkrev970\",\"title\":\"Test Column 1748639354338\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkreaf9v\",\"title\":\"Test Column 1748639534733\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkrekcfe\",\"title\":\"Test Column 1748639791523\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkrej9hj\",\"title\":\"Test Column 1748640081363\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkreyjxs\",\"title\":\"Test Column 1748640320657\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkresss\",\"title\":\"Test Column 1748640590204\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkrevnst\",\"title\":\"Test Column 1748640628997\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false},{\"id\":\"text_mkree84j\",\"title\":\"Test Column 1748641408569\",\"type\":\"text\",\"settings_str\":\"{}\",\"archived\":false}]}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.880Z",
+      "level": "success",
+      "message": "✅ getColumnsInfo: РАБОТАЕТ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.880Z",
+      "level": "info",
+      "message": "   Получено записей: 18"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:43.880Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: updateColumn"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:44.157Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"updateColumn\",\n  \"columnId\": \"text_mkre1hm2\",\n  \"title\": \"Updated 1748641484157\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:44.158Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"error\":\"boardId, itemId, columnId and value are required for updateColumn action\",\"success\":false,\"action\":\"updateColumn\"}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:44.158Z",
+      "level": "error",
+      "message": "❌ updateColumn: ОШИБКА - boardId, itemId, columnId and value are required for updateColumn action"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:44.158Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: createWebhook"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:44.158Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"createWebhook\",\n  \"boardId\": \"9261805849\",\n  \"url\": \"https://httpbin.org/post\",\n  \"event\": \"create_item\"\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.295Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"error\":\"HTTP Error: 500 Internal Server Error\",\"success\":false,\"action\":\"createWebhook\"}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.295Z",
+      "level": "error",
+      "message": "❌ createWebhook: ОШИБКА - HTTP Error: 500 Internal Server Error"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.295Z",
+      "level": "debug",
+      "message": "\n🔍 ДЕТАЛЬНЫЙ ТЕСТ: getWorkspaces"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.295Z",
+      "level": "debug",
+      "message": "📤 Запрос: {\n  \"action\": \"getWorkspaces\",\n  \"limit\": 5\n}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.538Z",
+      "level": "debug",
+      "message": "📥 Ответ: {\"success\":true,\"action\":\"getWorkspaces\",\"data\":[{\"id\":\"11174847\",\"name\":\"Updated Workspace Name\",\"kind\":\"open\",\"description\":null},{\"id\":\"11174824\",\"name\":\"Test Workspace 1748637927302\",\"kind\":\"open\",\"description\":null},{\"id\":\"11174819\",\"name\":\"Test Workspace 1748637883708\",\"kind\":\"open\",\"description\":null},{\"id\":\"11174809\",\"name\":\"Test Workspace 1748637830583\",\"kind\":\"open\",\"description\":null},{\"id\":\"11174540\",\"name\":\"Test Workspace 1748636193743\",\"kind\":\"open\",\"description\":\"Test workspace for API testing\"}]}"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.538Z",
+      "level": "success",
+      "message": "✅ getWorkspaces: РАБОТАЕТ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.538Z",
+      "level": "info",
+      "message": "   Получено записей: 5"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.538Z",
+      "level": "info",
+      "message": "📊 СВОДКА КРИТИЧЕСКИХ ФУНКЦИЙ"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.538Z",
+      "level": "success",
+      "message": "✅ Рабочих функций: 5/10"
+    },
+    {
+      "timestamp": "2025-05-30T21:44:45.538Z",
+      "level": "error",
+      "message": "❌ Проблемных функций: 5/10"
+    }
+  ]
+}

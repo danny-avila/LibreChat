@@ -122,3 +122,12 @@ helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
 
+# TypeScript
+*.tsbuildinfo
+
+# Backups
+backups/
+*.tar.gz
+*.backup
+*.bak
+

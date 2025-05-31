@@ -1,0 +1,56 @@
+{
+  "timestamp": "2025-05-30T21:51:08.614Z",
+  "summary": {
+    "total": 3,
+    "successful": 0,
+    "failed": 3,
+    "successRate": 0
+  },
+  "results": [
+    {
+      "function": "getItems",
+      "status": "ERROR",
+      "error": "Failed to get items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "function": "searchItems",
+      "status": "ERROR",
+      "error": "Failed to search items: HTTP Error: 400 Bad Request"
+    },
+    {
+      "function": "createWebhook",
+      "status": "ERROR",
+      "error": "Failed to create webhook: HTTP Error: 500 Internal Server Error"
+    }
+  ],
+  "errors": [
+    {
+      "function": "getItems",
+      "error": "Failed to get items: HTTP Error: 400 Bad Request",
+      "testData": {
+        "boardId": "9261805849",
+        "limit": 5,
+        "columnValues": true
+      }
+    },
+    {
+      "function": "searchItems",
+      "error": "Failed to search items: HTTP Error: 400 Bad Request",
+      "testData": {
+        "boardId": "9261805849",
+        "query": "test",
+        "limit": 3
+      }
+    },
+    {
+      "function": "createWebhook",
+      "error": "Failed to create webhook: HTTP Error: 500 Internal Server Error",
+      "testData": {
+        "boardId": "9261805849",
+        "url": "https://webhook-test.com/test-endpoint",
+        "event": "create_item",
+        "config": null
+      }
+    }
+  ]
+}
