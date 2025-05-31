@@ -302,7 +302,7 @@ class StreamRunManager {
 
           for (const d of delta[key]) {
             if (typeof d === 'object' && !Object.prototype.hasOwnProperty.call(d, 'index')) {
-              logger.warn('Expected an object with an \'index\' for array updates but got:', d);
+              logger.warn("Expected an object with an 'index' for array updates but got:", d);
               continue;
             }
 

@@ -39,7 +39,7 @@ const Dropdown: FC<DropdownProps> = ({
     typeof option === 'string' ? option : option?.value;
 
   const getDisplay = (option?: string | Option) =>
-    typeof option === 'string' ? option : option?.label ?? option?.value;
+    typeof option === 'string' ? option : (option?.label ?? option?.value);
 
   const isEqual = (a: string | Option, b: string | Option): boolean => getValue(a) === getValue(b);
 

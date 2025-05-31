@@ -66,7 +66,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
     if (!plugin.loading && latestPlugin === 'self reflection') {
       return 'Finished';
     } else if (latestPlugin === 'self reflection') {
-      return 'I\'m  thinking...';
+      return "I'm  thinking...";
     } else {
       return (
         <>
@@ -112,9 +112,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
                 />
                 {plugin.outputs && plugin.outputs.length > 0 && (
                   <CodeBlock
-                    lang={
-                      latestPlugin ? `RESPONSE FROM ${latestPlugin.toUpperCase()}` : 'RESPONSE'
-                    }
+                    lang={latestPlugin ? `RESPONSE FROM ${latestPlugin.toUpperCase()}` : 'RESPONSE'}
                     codeChildren={formatJSON(plugin.outputs ?? '')}
                     plugin={true}
                     classProp="max-h-[450px]"

@@ -1,4 +1,3 @@
-
 import { processLaTeX, preprocessLaTeX } from './latex';
 
 describe('processLaTeX', () => {

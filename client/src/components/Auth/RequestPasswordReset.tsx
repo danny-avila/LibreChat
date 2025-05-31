@@ -105,23 +105,12 @@ function RequestPasswordReset() {
               },
             })}
             aria-invalid={!!errors.email}
-            className="
-              peer w-full rounded-lg border border-gray-300 bg-transparent px-4 py-3
-              text-base text-gray-900 placeholder-transparent transition-all
-              focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20
-              dark:border-gray-700 dark:text-white dark:focus:border-green-500
-            "
+            className="peer w-full rounded-lg border border-gray-300 bg-transparent px-4 py-3 text-base text-gray-900 placeholder-transparent transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-gray-700 dark:text-white dark:focus:border-green-500"
             placeholder="email@example.com"
           />
           <label
             htmlFor="email"
-            className="
-              absolute -top-2 left-2 z-10 bg-white px-2 text-sm text-gray-600
-              transition-all peer-placeholder-shown:top-3 peer-placeholder-shown:text-base
-              peer-placeholder-shown:text-gray-500 peer-focus:-top-2 peer-focus:text-sm
-              peer-focus:text-green-600 dark:bg-gray-900 dark:text-gray-400
-              dark:peer-focus:text-green-500
-            "
+            className="absolute -top-2 left-2 z-10 bg-white px-2 text-sm text-gray-600 transition-all peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-500 peer-focus:-top-2 peer-focus:text-sm peer-focus:text-green-600 dark:bg-gray-900 dark:text-gray-400 dark:peer-focus:text-green-500"
           >
             {localize('com_auth_email_address')}
           </label>
@@ -136,12 +125,7 @@ function RequestPasswordReset() {
         <button
           type="submit"
           disabled={!!errors.email}
-          className="
-            w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
-            transition-colors hover:bg-green-700 focus:outline-none focus:ring-2
-            focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50
-            disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700
-          "
+          className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
         >
           {localize('com_auth_continue')}
         </button>

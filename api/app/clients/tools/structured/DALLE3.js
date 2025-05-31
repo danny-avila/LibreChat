@@ -11,7 +11,7 @@ const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
 const displayMessage =
-  'DALL-E displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
+  "DALL-E displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();

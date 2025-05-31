@@ -81,7 +81,7 @@ export default function ComboboxComponent({
             isCollapsed
               ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
               : '',
-            'bg-white text-black hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gray-500 dark:bg-gray-850 dark:text-white ',
+            'bg-white text-black hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gray-500 dark:bg-gray-850 dark:text-white',
           )}
         >
           <SelectValue placeholder={selectPlaceholder}>
@@ -93,7 +93,7 @@ export default function ComboboxComponent({
               style={{ userSelect: 'none' }}
             >
               {selectedValue
-                ? displayValue ?? selectedValue
+                ? (displayValue ?? selectedValue)
                 : selectPlaceholder && selectPlaceholder}
             </span>
           </SelectValue>
@@ -140,7 +140,7 @@ export default function ComboboxComponent({
                   <RadixSelect.Item key={value} value={`${value ?? ''}`} asChild>
                     <ComboboxItem
                       className={cn(
-                        'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+                        'relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
                         'rounded-lg hover:bg-gray-100/50 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-600',
                       )}
                       /** Hacky fix for radix-ui Android issue: https://github.com/radix-ui/primitives/issues/1658  */
@@ -155,8 +155,8 @@ export default function ComboboxComponent({
                         </RadixSelect.ItemIndicator>
                       </span>
                       <RadixSelect.ItemText>
-                        <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0">
-                          <div className="assistant-item overflow-hidden rounded-full ">
+                        <div className="flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-foreground">
+                          <div className="assistant-item overflow-hidden rounded-full">
                             {icon && icon}
                           </div>
                           {label}

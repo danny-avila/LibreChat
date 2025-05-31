@@ -109,7 +109,7 @@ export default function Settings({
             placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
             )}
           />
         </div>
@@ -160,6 +160,7 @@ export default function Settings({
             <div className="flex justify-between">
               <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
+                {/* eslint-disable-next-line i18next/no-literal-string */}
                 <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
               </Label>
               <InputNumber
@@ -198,7 +199,8 @@ export default function Settings({
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
               <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                {localize('com_endpoint_frequency_penalty')}{' '}
+                {localize('com_endpoint_frequency_penalty')}
+                {/* eslint-disable-next-line i18next/no-literal-string */}
                 <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
               </Label>
               <InputNumber
@@ -238,6 +240,7 @@ export default function Settings({
             <div className="flex justify-between">
               <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_presence_penalty')}{' '}
+                {/* eslint-disable-next-line i18next/no-literal-string */}
                 <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
               </Label>
               <InputNumber

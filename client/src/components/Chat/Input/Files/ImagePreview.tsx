@@ -93,9 +93,9 @@ const ImagePreview = ({
 
   const style: styleProps = imageUrl
     ? {
-      ...baseStyle,
-      backgroundImage: `url(${imageUrl})`,
-    }
+        ...baseStyle,
+        backgroundImage: `url(${imageUrl})`,
+      }
     : baseStyle;
 
   if (typeof style.backgroundImage !== 'string' || style.backgroundImage.length === 0) {

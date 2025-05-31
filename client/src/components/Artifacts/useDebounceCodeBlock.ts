@@ -9,16 +9,17 @@ export function useDebounceCodeBlock() {
   const setCodeBlocks = useSetRecoilState(codeBlocksState);
   const setCodeBlockIds = useSetRecoilState(codeBlockIdsState);
 
-  const updateCodeBlock = useCallback((codeBlock: CodeBlock) => {
-    console.log('Updating code block:', codeBlock);
-    setCodeBlocks((prev) => ({
-      ...prev,
-      [codeBlock.id]: codeBlock,
-    }));
-    setCodeBlockIds((prev) =>
-      prev.includes(codeBlock.id) ? prev : [...prev, codeBlock.id],
-    );
-  }, [setCodeBlocks, setCodeBlockIds]);
+  const updateCodeBlock = useCallback(
+    (codeBlock: CodeBlock) => {
+      console.log('Updating code block:', codeBlock);
+      setCodeBlocks((prev) => ({
+        ...prev,
+        [codeBlock.id]: codeBlock,
+      }));
+      setCodeBlockIds((prev) => (prev.includes(codeBlock.id) ? prev : [...prev, codeBlock.id]));
+    },
+    [setCodeBlocks, setCodeBlockIds],
+  );
 
   const debouncedUpdateCodeBlock = useCallback(
     debounce((codeBlock: CodeBlock) => {

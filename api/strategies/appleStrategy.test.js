@@ -84,9 +84,7 @@ describe('Apple Login Strategy', () => {
         email: decoded.email,
         id: decoded.sub,
         avatarUrl: null, // Apple does not provide an avatar URL
-        username: decoded.email
-          ? decoded.email.split('@')[0].toLowerCase()
-          : `user_${decoded.sub}`,
+        username: decoded.email ? decoded.email.split('@')[0].toLowerCase() : `user_${decoded.sub}`,
         name: decoded.name
           ? `${decoded.name.firstName} ${decoded.name.lastName}`
           : profile.displayName || null,
@@ -96,8 +94,12 @@ describe('Apple Login Strategy', () => {
 
     // Mock isEnabled based on environment variable
     isEnabled.mockImplementation((flag) => {
-      if (flag === 'true') { return true; }
-      if (flag === 'false') { return false; }
+      if (flag === 'true') {
+        return true;
+      }
+      if (flag === 'false') {
+        return false;
+      }
       return false;
     });
 
@@ -154,9 +156,7 @@ describe('Apple Login Strategy', () => {
       });
 
       expect(jwt.decode).toHaveBeenCalledWith('fake_id_token');
-      expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('Decoded Apple JWT'),
-      );
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Decoded Apple JWT'));
       expect(profileDetails).toEqual({
         email: 'john.doe@example.com',
         id: 'apple-sub-1234',
@@ -297,7 +297,7 @@ describe('Apple Login Strategy', () => {
         appleStrategyInstance._verify(
           fakeAccessToken,
           fakeRefreshToken,
-          null,               // idToken is missing
+          null, // idToken is missing
           mockProfile,
           (err, user) => {
             mockVerifyCallback(err, user);

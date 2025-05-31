@@ -87,11 +87,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     },
     ...(startupConfig?.balance?.enabled
       ? [
-        {
-          value: SettingsTabValues.BALANCE,
+          {
+            value: SettingsTabValues.BALANCE,
             icon: <DollarSign size={18} />,
-          label: 'com_nav_setting_balance' as TranslationKeys,
-        },
+            label: 'com_nav_setting_balance' as TranslationKeys,
+          },
         ]
       : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
     {

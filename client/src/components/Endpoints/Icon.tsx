@@ -48,15 +48,15 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
     >
       {(!(user?.avatar ?? '') && (!(user?.username ?? '') || user?.username.trim() === '')) ||
       imageError ? (
-          renderDefaultAvatar()
-        ) : (
-          <img
-            className="rounded-full"
-            src={(user?.avatar ?? '') || avatarSrc}
-            alt="avatar"
-            onError={handleImageError}
-          />
-        )}
+        renderDefaultAvatar()
+      ) : (
+        <img
+          className="rounded-full"
+          src={(user?.avatar ?? '') || avatarSrc}
+          alt="avatar"
+          onError={handleImageError}
+        />
+      )}
     </div>
   );
 });

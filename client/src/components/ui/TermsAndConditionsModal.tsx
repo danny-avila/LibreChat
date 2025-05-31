@@ -73,7 +73,7 @@ const TermsAndConditionsModal = ({
         main={
           <section
             // Motivation: This is a dialog, so its content should be focusable
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+
             tabIndex={0}
             className="max-h-[60vh] overflow-y-auto p-4"
             aria-label={localize('com_ui_terms_and_conditions')}

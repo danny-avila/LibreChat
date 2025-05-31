@@ -42,7 +42,7 @@ function useDebouncedInput<T = unknown>({
         typeof e !== 'object'
           ? e
           : ((e as React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>).target
-            .value as unknown as T);
+              .value as unknown as T);
       if (numeric === true) {
         newValue = Number(newValue) as unknown as T;
       }

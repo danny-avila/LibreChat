@@ -3,7 +3,7 @@
  * @readonly
  * @enum {string}
  */
-// eslint-disable-next-line no-unused-vars
+
 const Tools = {
   code_interpreter: 'code_interpreter',
   retrieval: 'retrieval',

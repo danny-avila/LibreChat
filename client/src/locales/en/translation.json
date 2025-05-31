@@ -948,5 +948,8 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_ui_add_anything": "Add anything",
+  "com_ui_add_anything_description": "Drop any file here to add it to the conversation",
+  "com_ui_more": "More"
 }

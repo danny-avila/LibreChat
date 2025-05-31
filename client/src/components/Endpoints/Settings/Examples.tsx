@@ -42,7 +42,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
                   placeholder="Set example input. Example is ignored if empty."
                   className={cn(
                     defaultTextProps,
-                    'flex max-h-[138px] min-h-[75px] w-full resize-none px-3 py-2 ',
+                    'flex max-h-[138px] min-h-[75px] w-full resize-none px-3 py-2',
                   )}
                 />
               </div>
@@ -67,7 +67,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
                   placeholder={'Set example output. Example is ignored if empty.'}
                   className={cn(
                     defaultTextProps,
-                    'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
+                    'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2',
                   )}
                 />
               </div>

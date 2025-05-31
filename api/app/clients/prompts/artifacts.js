@@ -3,7 +3,6 @@ const { EModelEndpoint, ArtifactModes } = require('librechat-data-provider');
 const { generateShadcnPrompt } = require('~/app/clients/prompts/shadcn-docs/generate');
 const { components } = require('~/app/clients/prompts/shadcn-docs/components');
 
-// eslint-disable-next-line no-unused-vars
 const artifactsPromptV1 = dedent`The assistant can create and reference artifacts during conversations.
   
 Artifacts are for substantial, self-contained content that users might modify or reuse, displayed in a separate UI window for clarity.

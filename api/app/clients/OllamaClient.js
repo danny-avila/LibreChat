@@ -67,7 +67,7 @@ class OllamaClient {
       return models;
     } catch (error) {
       const logMessage =
-        'Failed to fetch models from Ollama API. If you are not using Ollama directly, and instead, through some aggregator or reverse proxy that handles fetching via OpenAI spec, ensure the name of the endpoint doesn\'t start with `ollama` (case-insensitive).';
+        "Failed to fetch models from Ollama API. If you are not using Ollama directly, and instead, through some aggregator or reverse proxy that handles fetching via OpenAI spec, ensure the name of the endpoint doesn't start with `ollama` (case-insensitive).";
       logAxiosError({ message: logMessage, error });
       return [];
     }

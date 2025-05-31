@@ -34,7 +34,7 @@ async function abortRun(req, res) {
   const [thread_id, run_id] = runValues.split(':');
 
   if (!run_id) {
-    logger.warn('[abortRun] Couldn\'t find run for cancel request', { thread_id });
+    logger.warn("[abortRun] Couldn't find run for cancel request", { thread_id });
     return res.status(204).send({ message: 'Run not found' });
   } else if (run_id === 'cancelled') {
     logger.warn('[abortRun] Run already cancelled', { thread_id });

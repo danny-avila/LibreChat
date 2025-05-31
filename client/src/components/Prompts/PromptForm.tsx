@@ -287,18 +287,18 @@ const PromptForm = () => {
       {editorMode === PromptsEditorMode.ADVANCED &&
         (isLoadingPrompts
           ? Array.from({ length: 6 }).map((_, index: number) => (
-            <div key={index} className="my-2">
-              <Skeleton className="h-[72px] w-full" />
-            </div>
-          ))
+              <div key={index} className="my-2">
+                <Skeleton className="h-[72px] w-full" />
+              </div>
+            ))
           : prompts.length > 0 && (
-            <PromptVersions
-              group={group}
-              prompts={prompts}
-              selectionIndex={selectionIndex}
-              setSelectionIndex={setSelectionIndex}
-            />
-          ))}
+              <PromptVersions
+                group={group}
+                prompts={prompts}
+                selectionIndex={selectionIndex}
+                setSelectionIndex={setSelectionIndex}
+              />
+            ))}
     </div>
   );
 

@@ -259,7 +259,7 @@ export const createServer = () => {
             role: 'assistant',
             content: {
               type: 'text',
-              text: 'I understand. You\'ve provided a complex prompt with temperature and style arguments. How would you like me to proceed?',
+              text: "I understand. You've provided a complex prompt with temperature and style arguments. How would you like me to proceed?",
             },
           },
           {
@@ -296,7 +296,7 @@ export const createServer = () => {
       },
       {
         name: ToolName.SAMPLE_LLM,
-        description: 'Samples from an LLM using MCP\'s sampling feature',
+        description: "Samples from an LLM using MCP's sampling feature",
         inputSchema: zodToJsonSchema(SampleLLMSchema) as ToolInput,
       },
       {

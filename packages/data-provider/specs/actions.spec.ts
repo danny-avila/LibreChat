@@ -275,8 +275,7 @@ describe('ActionRequest', () => {
       expect(config?.headers).toEqual({
         'some-header': 'header-var',
       });
-      expect(config?.params).toEqual({
-      });
+      expect(config?.params).toEqual({});
       expect(response.data.success).toBe(true);
     });
 
@@ -285,13 +284,13 @@ describe('ActionRequest', () => {
 
       const data: Record<string, unknown> = {
         'api-version': '2025-01-01',
-        'message': 'a body parameter',
+        message: 'a body parameter',
         'some-header': 'header-var',
       };
 
       const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
         'api-version': 'query',
-        'message': 'body',
+        message: 'body',
         'some-header': 'header',
       };
 
@@ -326,13 +325,13 @@ describe('ActionRequest', () => {
 
       const data: Record<string, unknown> = {
         'api-version': '2025-01-01',
-        'message': 'a body parameter',
+        message: 'a body parameter',
         'some-header': 'header-var',
       };
 
       const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
         'api-version': 'query',
-        'message': 'body',
+        message: 'body',
         'some-header': 'header',
       };
 
@@ -367,13 +366,13 @@ describe('ActionRequest', () => {
 
       const data: Record<string, unknown> = {
         'api-version': '2025-01-01',
-        'message': 'a body parameter',
+        message: 'a body parameter',
         'some-header': 'header-var',
       };
 
       const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
         'api-version': 'query',
-        'message': 'body',
+        message: 'body',
         'some-header': 'header',
       };
 
@@ -443,7 +442,6 @@ describe('ActionRequest', () => {
       });
       expect(response.data.success).toBe(true);
     });
-
   });
 
   it('throws an error for unsupported HTTP method', async () => {

@@ -171,8 +171,8 @@ const SetKeyDialog = ({
               {expiryTime === 'never'
                 ? localize('com_endpoint_config_key_never_expires')
                 : `${localize('com_endpoint_config_key_encryption')} ${new Date(
-                  expiryTime ?? 0,
-                ).toLocaleString()}`}
+                    expiryTime ?? 0,
+                  ).toLocaleString()}`}
             </small>
             <Dropdown
               label="Expires "

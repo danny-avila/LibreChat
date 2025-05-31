@@ -30,17 +30,17 @@ const TagPrimitiveRoot = React.forwardRef<HTMLDivElement, TagProps>(
       {CancelButton
         ? CancelButton
         : onRemove && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove(e);
-            }}
-            className="rounded-full bg-green-600/50"
-            aria-label={`Remove ${label}`}
-          >
-            <X className="m-[1.5px] p-1" />
-          </button>
-        )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove(e);
+              }}
+              className="rounded-full bg-green-600/50"
+              aria-label={`Remove ${label}`}
+            >
+              <X className="m-[1.5px] p-1" />
+            </button>
+          )}
     </div>
   ),
 );

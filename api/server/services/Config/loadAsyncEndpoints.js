@@ -32,14 +32,14 @@ async function loadAsyncEndpoints(req) {
   const gptPlugins =
     useAzure || openAIApiKey || azureOpenAIApiKey
       ? {
-        availableAgents: ['classic', 'functions'],
-        userProvide: useAzure ? false : userProvidedOpenAI,
-        userProvideURL: useAzure
-          ? false
-          : config[EModelEndpoint.openAI]?.userProvideURL ||
+          availableAgents: ['classic', 'functions'],
+          userProvide: useAzure ? false : userProvidedOpenAI,
+          userProvideURL: useAzure
+            ? false
+            : config[EModelEndpoint.openAI]?.userProvideURL ||
               config[EModelEndpoint.azureOpenAI]?.userProvideURL,
-        azure: useAzurePlugins || useAzure,
-      }
+          azure: useAzurePlugins || useAzure,
+        }
       : false;
 
   return { google, gptPlugins };

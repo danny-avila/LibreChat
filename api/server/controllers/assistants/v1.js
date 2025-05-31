@@ -39,12 +39,10 @@ const createAssistant = async (req, res) => {
         const toolDefinitions = req.app.locals.availableTools;
         const toolDef = toolDefinitions[tool];
         if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
-          return (
-            Object.entries(toolDefinitions)
-              .filter(([key]) => key.startsWith(`${tool}_`))
-              // eslint-disable-next-line no-unused-vars
-              .map(([_, val]) => val)
-          );
+          return Object.entries(toolDefinitions)
+            .filter(([key]) => key.startsWith(`${tool}_`))
+
+            .map(([_, val]) => val);
         }
 
         return toolDef;
@@ -144,12 +142,10 @@ const patchAssistant = async (req, res) => {
         const toolDefinitions = req.app.locals.availableTools;
         const toolDef = toolDefinitions[tool];
         if (!toolDef && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
-          return (
-            Object.entries(toolDefinitions)
-              .filter(([key]) => key.startsWith(`${tool}_`))
-              // eslint-disable-next-line no-unused-vars
-              .map(([_, val]) => val)
-          );
+          return Object.entries(toolDefinitions)
+            .filter(([key]) => key.startsWith(`${tool}_`))
+
+            .map(([_, val]) => val);
         }
 
         return toolDef;

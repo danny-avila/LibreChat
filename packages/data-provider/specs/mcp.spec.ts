@@ -1,4 +1,9 @@
-import { StdioOptionsSchema, StreamableHTTPOptionsSchema, processMCPEnv, MCPOptions } from '../src/mcp';
+import {
+  StdioOptionsSchema,
+  StreamableHTTPOptionsSchema,
+  processMCPEnv,
+  MCPOptions,
+} from '../src/mcp';
 
 describe('Environment Variable Extraction (MCP)', () => {
   const originalEnv = process.env;
@@ -91,13 +96,13 @@ describe('Environment Variable Extraction (MCP)', () => {
 
       // Type is now required, so parsing should fail
       expect(() => StreamableHTTPOptionsSchema.parse(options)).toThrow();
-      
+
       // With type provided, it should pass
       const validOptions = {
         type: 'streamable-http' as const,
         url: 'https://example.com/api',
       };
-      
+
       const result = StreamableHTTPOptionsSchema.parse(validOptions);
       expect(result.type).toBe('streamable-http');
     });
@@ -113,7 +118,7 @@ describe('Environment Variable Extraction (MCP)', () => {
       };
 
       const result = StreamableHTTPOptionsSchema.parse(options);
-      
+
       expect(result.headers).toEqual(options.headers);
     });
   });
@@ -262,7 +267,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         'Content-Type': 'application/json',
       });
     });
-    
+
     it('should maintain streamable-http type in processed options', () => {
       const obj: MCPOptions = {
         type: 'streamable-http',

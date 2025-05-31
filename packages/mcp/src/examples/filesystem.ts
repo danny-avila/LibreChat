@@ -5,10 +5,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
-  JSONRPCMessage,
   CallToolRequestSchema,
   ListToolsRequestSchema,
-  InitializeRequestSchema,
   ToolSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs/promises';
@@ -16,8 +14,7 @@ import path from 'path';
 import os from 'os';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { diffLines, createTwoFilesPatch } from 'diff';
-import { IncomingMessage, ServerResponse } from 'node:http';
+import { createTwoFilesPatch } from 'diff';
 import { minimatch } from 'minimatch';
 import express from 'express';
 
@@ -100,7 +97,7 @@ async function validatePath(requestedPath: string): Promise<string> {
       throw new Error('Access denied - symlink target outside allowed directories');
     }
     return realPath;
-  } catch (error) {
+  } catch {
     // For new files that don't exist yet, verify parent directory
     const parentDir = path.dirname(absolute);
     try {
@@ -369,8 +366,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description:
           'Read the contents of multiple files simultaneously. This is more ' +
           'efficient than reading files one by one when you need to analyze ' +
-          'or compare multiple files. Each file\'s content is returned with its ' +
-          'path as a reference. Failed reads for individual files won\'t stop ' +
+          "or compare multiple files. Each file's content is returned with its " +
+          "path as a reference. Failed reads for individual files won't stop " +
           'the entire operation. Only works within allowed directories.',
         inputSchema: zodToJsonSchema(ReadMultipleFilesArgsSchema) as ToolInput,
       },
@@ -423,7 +420,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           'Recursively search for files and directories matching a pattern. ' +
           'Searches through all subdirectories from the starting path. The search ' +
           'is case-insensitive and matches partial names. Returns full paths to all ' +
-          'matching items. Great for finding files when you don\'t know their exact location. ' +
+          "matching items. Great for finding files when you don't know their exact location. " +
           'Only searches within allowed directories.',
         inputSchema: zodToJsonSchema(SearchFilesArgsSchema) as ToolInput,
       },
