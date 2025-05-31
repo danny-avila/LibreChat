@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 
-const Project = require('~/db/models').Project;
+const { Project } = require('~/db/models');
 
 /**
  * Retrieve a project by ID and convert the found project document to a plain object.

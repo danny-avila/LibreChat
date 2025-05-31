@@ -13,8 +13,7 @@ const {
 } = require('./Project');
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
-
-const Agent = require('~/db/models').Agent;
+const { Agent } = require('~/db/models');
 
 /**
  * Create an agent with the provided data.

@@ -7,8 +7,7 @@ const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
 const socialLogin = require('./socialLogin');
 const { findUser } = require('~/models');
-
-const User = require('~/db/models').User;
+const { User } = require('~/db/models');
 
 jest.mock('jsonwebtoken');
 jest.mock('@librechat/data-schemas', () => {

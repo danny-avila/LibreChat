@@ -4,8 +4,7 @@ const { ViolationTypes } = require('librechat-data-provider');
 const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
 const { getMultiplier } = require('./tx');
-
-const Balance = require('~/db/models').Balance;
+const { Balance } = require('~/db/models');
 
 function isInvalidDate(date) {
   return isNaN(date);

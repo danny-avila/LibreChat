@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 
-const Balance = require('~/db/models').Balance;
+const { Balance } = require('~/db/models');
 
 /**
  * Middleware to synchronize user balance settings with current balance configuration.

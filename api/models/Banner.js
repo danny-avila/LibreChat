@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 
-const Banner = require('~/db/models').Banner;
+const { Banner } = require('~/db/models');
 
 /**
  * Retrieves the current active banner.

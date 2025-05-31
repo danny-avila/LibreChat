@@ -1,5 +1,4 @@
-const mongoose = require('mongoose');
-const Action = require('~/db/models').Action;
+const { Action } = require('~/db/models');
 
 /**
  * Update an action with new data without overwriting existing properties,

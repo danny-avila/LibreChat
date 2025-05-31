@@ -10,8 +10,7 @@ const {
 } = require('./Project');
 const { escapeRegExp } = require('~/server/utils');
 
-const PromptGroup = require('~/db/models').PromptGroup;
-const Prompt = require('~/db/models').Prompt;
+const { PromptGroup, Prompt } = require('~/db/models');
 
 /**
  * Create a pipeline for the aggregation to get prompt groups

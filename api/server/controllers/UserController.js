@@ -23,9 +23,7 @@ const { processDeleteRequest } = require('~/server/services/Files/process');
 const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
 
-const Transaction = require('~/db/models').Transaction;
-const Balance = require('~/db/models').Balance;
-const User = require('~/db/models').User;
+const { Transaction, Balance, User } = require('~/db/models');
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */

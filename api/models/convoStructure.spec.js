@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { getMessages, bulkSaveMessages } = require('./Message');
 
-const Message = require('~/db/models').Message;
+const { Message } = require('~/db/models');
 
 // Original version of buildTree function
 function buildTree({ messages, fileMap }) {

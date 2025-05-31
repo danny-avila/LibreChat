@@ -1,8 +1,7 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 
-const ConversationTag = require('~/db/models').ConversationTag;
-const Conversation = require('~/db/models').Conversation;
+const { ConversationTag, Conversation } = require('~/db/models');
 
 /**
  * Retrieves all conversation tags for a user.
