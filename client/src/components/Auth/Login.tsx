@@ -14,7 +14,7 @@ import { ThemeContext } from '~/hooks';
 import { useContext } from 'react';
 
 const VISITED_STORAGE_KEY = 'appTitle';
-const MINIMUM_LOADING_DURATION = 500; // 500ms = 0.5 seconds
+const MINIMUM_LOADING_DURATION = 1000; // 1000ms = 1 second
 
 function Login() {
   const localize = useLocalize();
@@ -26,7 +26,7 @@ function Login() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [hasAutoLoginAttempted, setHasAutoLoginAttempted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [captchaValidated, setCaptchaValidated] = useState(false);
+  const [isShownLoading, setIsShownLoading] = useState(false);
 
   // Track loading start time
   const loadingStartTime = useRef<number>(Date.now());
@@ -36,26 +36,6 @@ function Login() {
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
 
   const validTheme = theme === 'dark' ? 'dark' : 'light';
-
-  // Enhanced loading state setter with minimum duration
-  const setLoadingWithMinDuration = useCallback((loading: boolean) => {
-    if (!loading) {
-      const elapsedTime = Date.now() - loadingStartTime.current;
-      const remainingTime = Math.max(0, MINIMUM_LOADING_DURATION - elapsedTime);
-
-      if (remainingTime > 0) {
-        loadingTimeoutRef.current = setTimeout(() => {
-          setIsLoading(false);
-        }, remainingTime);
-      } else {
-        setIsLoading(false);
-      }
-    } else {
-      // Reset start time when starting to load
-      loadingStartTime.current = Date.now();
-      setIsLoading(true);
-    }
-  }, []);
 
   // Clean up timeout on unmount
   useEffect(() => {
@@ -81,6 +61,28 @@ function Login() {
     return Boolean(startupConfig?.turnstile?.siteKey);
   }, [startupConfig?.turnstile?.siteKey]);
 
+  // Enhanced loading state setter with minimum duration
+  const setLoadingWithMinDuration = useCallback((loading: boolean) => {
+    if (loading) {
+      // Reset start time when starting to load
+      loadingStartTime.current = Date.now();
+      setIsLoading(true);
+      return;
+    }
+
+    const elapsedTime = Date.now() - loadingStartTime.current;
+    const remainingTime = Math.max(0, MINIMUM_LOADING_DURATION - elapsedTime);
+
+    if (remainingTime > 0) {
+      loadingTimeoutRef.current = setTimeout(() => {
+        setIsLoading(false);
+      }, remainingTime);
+      return;
+    }
+
+    setIsLoading(false);
+  }, []);
+
   // Create guest user with proper credentials handling
   const createGuestUser = useCallback(() => {
     createGuest.mutate(
@@ -95,8 +97,8 @@ function Login() {
             login(guestCredentials);
           } else {
             console.error('No guest user');
+            setLoadingWithMinDuration(false);
           }
-          setLoadingWithMinDuration(false);
         },
         onError: () => {
           setLoadingWithMinDuration(false);
@@ -107,19 +109,21 @@ function Login() {
 
   // Auto guest login logic with captcha validation
   const attemptAutoGuestLogin = useCallback(() => {
-    if (hasVisitedBefore() || hasAutoLoginAttempted) {
-      setLoadingWithMinDuration(false);
-      return;
-    }
-
     // If captcha is required, wait for validation
     if (requiresCaptcha()) {
       // Don't hide loading yet, wait for captcha
       return;
     }
 
-    setHasAutoLoginAttempted(true);
-    createGuestUser();
+    if (hasVisitedBefore()) {
+      setLoadingWithMinDuration(false);
+      return;
+    }
+
+    if (!hasAutoLoginAttempted) {
+      setHasAutoLoginAttempted(true);
+      createGuestUser();
+    }
   }, [
     hasVisitedBefore,
     requiresCaptcha,
@@ -128,36 +132,23 @@ function Login() {
     setLoadingWithMinDuration,
   ]);
 
+  const handleCaptchaError = useCallback(() => {
+    setLoadingWithMinDuration(false);
+  }, [setLoadingWithMinDuration]);
+
   // Handle successful captcha validation
   const handleCaptchaSuccess = useCallback(() => {
-    if (captchaValidated) {
-      return;
-    }
-    setCaptchaValidated(true);
-
     // Create guest if auto-login was attempted but waiting for captcha
-    if (hasVisitedBefore() || hasAutoLoginAttempted) {
+    if (hasVisitedBefore()) {
       setLoadingWithMinDuration(false);
       return;
     }
 
-    setHasAutoLoginAttempted(true);
-    createGuestUser();
-  }, [
-    captchaValidated,
-    hasAutoLoginAttempted,
-    hasVisitedBefore,
-    createGuestUser,
-    setLoadingWithMinDuration,
-  ]);
-
-  // Handle captcha error/expiry
-  const handleCaptchaError = useCallback(() => {
-    setCaptchaValidated(false);
-    if (!hasVisitedBefore() && !hasAutoLoginAttempted) {
-      setLoadingWithMinDuration(false);
+    if (!hasAutoLoginAttempted) {
+      setHasAutoLoginAttempted(true);
+      createGuestUser();
     }
-  }, [hasVisitedBefore, hasAutoLoginAttempted, setLoadingWithMinDuration]);
+  }, [hasAutoLoginAttempted, hasVisitedBefore, createGuestUser, setLoadingWithMinDuration]);
 
   // Handle URL parameter cleanup
   useEffect(() => {
@@ -171,8 +162,17 @@ function Login() {
 
   // Attempt auto guest login when component mounts
   useEffect(() => {
-    attemptAutoGuestLogin();
-  }, [attemptAutoGuestLogin]);
+    if (!isShownLoading) {
+      setIsShownLoading(true);
+      setLoadingWithMinDuration(true);
+    }
+  }, [isShownLoading, setLoadingWithMinDuration]);
+
+  useEffect(() => {
+    if (startupConfig) {
+      attemptAutoGuestLogin();
+    }
+  }, [attemptAutoGuestLogin, startupConfig]);
 
   // Auto-redirect logic for OpenID
   const shouldAutoRedirect =
@@ -199,7 +199,6 @@ function Login() {
           }}
           onSuccess={handleCaptchaSuccess}
           onError={handleCaptchaError}
-          onExpire={handleCaptchaError}
         />
       )}
     </div>
@@ -216,7 +215,7 @@ function Login() {
       <p className="mb-8 text-lg font-semibold text-text-primary">
         {localize('com_ui_loading') || 'Loading...'}
       </p>
-      {requiresCaptcha() && !hasVisitedBefore() && renderCaptcha()}
+      {requiresCaptcha() && renderCaptcha()}
     </div>
   );
 
