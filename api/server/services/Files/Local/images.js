@@ -129,7 +129,10 @@ async function processLocalAvatar({ buffer, userId, manual }) {
     userId,
   );
 
-  const fileName = `avatar-${new Date().getTime()}.png`;
+  const metadata = await sharp(buffer).metadata();
+  const extension = metadata.format === 'gif' ? 'gif' : 'png';
+
+  const fileName = `avatar-${new Date().getTime()}.${extension}`;
   const urlRoute = `/images/${userId}/${fileName}`;
   const avatarPath = path.join(userDir, fileName);
 

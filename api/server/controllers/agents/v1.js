@@ -18,6 +18,7 @@ const {
 } = require('~/models/Agent');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { updateAction, getActions } = require('~/models/Action');
 const { updateAgentProjects } = require('~/models/Agent');
@@ -373,11 +374,25 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-    const image = await uploadImageBuffer({
-      req,
-      context: FileContext.avatar,
-      metadata: { buffer },
+
+    const fileStrategy = req.app.locals.fileStrategy;
+
+    const resizedBuffer = await resizeAvatar({
+      userId: req.user.id,
+      input: buffer,
     });
+
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const avatarUrl = await processAvatar({
+      buffer: resizedBuffer,
+      userId: req.user.id,
+      manual: 'false',
+    });
+
+    const image = {
+      filepath: avatarUrl,
+      source: fileStrategy,
+    };
 
     let _avatar;
     try {
@@ -403,7 +418,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const data = {
       avatar: {
         filepath: image.filepath,
-        source: req.app.locals.fileStrategy,
+        source: image.source,
       },
     };
 
