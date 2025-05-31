@@ -1,5 +1,4 @@
 const { nanoid } = require('nanoid');
-const mongoose = require('mongoose');
 const { Constants } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const { getMessages } = require('./Message');

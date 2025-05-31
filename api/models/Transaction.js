@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');

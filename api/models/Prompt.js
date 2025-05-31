@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const { ObjectId } = require('mongodb');
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, SystemCategories, Constants } = require('librechat-data-provider');
