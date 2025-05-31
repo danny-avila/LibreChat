@@ -24,8 +24,10 @@ jest.mock('./Config/loadCustomConfig', () => {
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
 }));
-jest.mock('~/models/Role', () => ({
+jest.mock('~/models', () => ({
   initializeRoles: jest.fn(),
+}));
+jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
 }));
 jest.mock('./ToolService', () => ({

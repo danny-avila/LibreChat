@@ -5,7 +5,7 @@ const getLogStores = require('~/cache/getLogStores');
 const OpenAIClient = require('../OpenAIClient');
 jest.mock('meilisearch');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),

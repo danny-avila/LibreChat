@@ -1,9 +1,9 @@
+const { logger } = require('@librechat/data-schemas');
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { findUser, comparePassword, updateUser } = require('~/models');
 const { isEnabled, checkEmailConfig } = require('~/server/utils');
+const { findUser, comparePassword, updateUser } = require('~/models');
 const { loginSchema } = require('./validators');
-const logger = require('~/utils/logger');
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;

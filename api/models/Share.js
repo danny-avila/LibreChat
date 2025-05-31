@@ -1,11 +1,8 @@
-const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
+const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
-const { Conversation } = require('~/models/Conversation');
-const { shareSchema } = require('@librechat/data-schemas');
-const SharedLink = mongoose.model('SharedLink', shareSchema);
+const { Conversation, SharedLink } = require('~/db/models');
 const { getMessages } = require('./Message');
-const logger = require('~/config/winston');
 
 class ShareServiceError extends Error {
   constructor(message, code) {
@@ -202,7 +199,6 @@ async function createSharedLink(user, conversationId) {
   if (!user || !conversationId) {
     throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
   }
-
   try {
     const [existingShare, conversationMessages] = await Promise.all([
       SharedLink.findOne({ conversationId, isPublic: true }).select('-_id -__v -user').lean(),
@@ -340,7 +336,6 @@ async function deleteSharedLink(user, shareId) {
 }
 
 module.exports = {
-  SharedLink,
   getSharedLink,
   getSharedLinks,
   createSharedLink,

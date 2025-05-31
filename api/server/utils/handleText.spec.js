@@ -50,9 +50,13 @@ describe('isEnabled', () => {
   });
 });
 
-jest.mock('crypto', () => ({
-  randomBytes: jest.fn().mockReturnValue(Buffer.from('abc123', 'hex')),
-}));
+jest.mock('crypto', () => {
+  const actualModule = jest.requireActual('crypto');
+  return {
+    ...actualModule,
+    randomBytes: jest.fn().mockReturnValue(Buffer.from('abc123', 'hex')),
+  };
+});
 
 describe('sanitizeFilename', () => {
   test('removes directory components (1/2)', () => {

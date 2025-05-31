@@ -1,7 +1,7 @@
 const { Constants } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),
