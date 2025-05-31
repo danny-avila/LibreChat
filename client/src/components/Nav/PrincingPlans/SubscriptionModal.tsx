@@ -270,13 +270,13 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
   };
 
   const renderFreePlanContent = (plan: SubscriptionPlan): JSX.Element => (
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex items-center justify-between gap-4">
       <div className="flex-shrink-1 mr-20">
         <h3 className="text-base font-semibold">{plan.name}</h3>
         <div className="mt-1 text-lg font-bold">{plan.price}</div>
       </div>
 
-      <div className="mt-1 min-w-0 flex-1">{renderFreeFeatures(plan.features)}</div>
+      <div className="min-w-0 flex-1">{renderFreeFeatures(plan.features)}</div>
 
       <div className="flex-shrink-0">{renderPlanButton(plan)}</div>
     </div>
