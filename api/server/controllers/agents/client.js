@@ -8,6 +8,7 @@
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
 require('events').EventEmitter.defaultMaxListeners = 100;
+const { createMemoryProcessor } = require('@librechat/api');
 const {
   Callback,
   GraphEvents,
@@ -28,15 +29,15 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { getCustomEndpointConfig, checkCapability } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { setMemory, deleteMemory, getFormattedMemories } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getFormattedMemories } = require('~/models');
 const { logger, sendEvent } = require('~/config');
 const { createRun } = require('./run');
 
@@ -123,6 +124,8 @@ class AgentClient extends BaseClient {
     this.usage;
     /** @type {Record<string, number>} */
     this.indexTokenCountMap = {};
+    /** @type {(messages: BaseMessage[]) => Promise<void>} */
+    this.processMemory;
   }
 
   /**
@@ -269,24 +272,6 @@ class AgentClient extends BaseClient {
       .filter(Boolean)
       .join('\n')
       .trim();
-    // this.systemMessage = getCurrentDateTime();
-    const { withKeys, withoutKeys } = await getFormattedMemories({
-      userId: this.options.req.user.id,
-    });
-    // processMemory({
-    //   userId: this.options.req.user.id,
-    //   message: this.options.req.body.text,
-    //   parentMessageId,
-    //   memory: withKeys,
-    //   thread_id: this.conversationId,
-    // }).catch((error) => {
-    //   logger.error('Memory Agent failed to process memory', error);
-    // });
-
-    // this.systemMessage += '\n\n' + memoryInstructions;
-    // if (withoutKeys) {
-    //   this.systemMessage += `\n\n# Existing memory about the user:\n${withoutKeys}`;
-    // }
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
@@ -370,10 +355,6 @@ class AgentClient extends BaseClient {
       systemContent = this.augmentedPrompt + systemContent;
     }
 
-    if (systemContent) {
-      this.options.agent.instructions = systemContent;
-    }
-
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;
 
@@ -399,7 +380,36 @@ class AgentClient extends BaseClient {
       opts.getReqData({ promptTokens });
     }
 
+    const withoutKeys = await this.useMemory();
+    if (withoutKeys) {
+      systemContent += `\n\n# Existing memory about the user:\n${withoutKeys}`;
+    }
+
+    if (systemContent) {
+      this.options.agent.instructions = systemContent;
+    }
+
     return result;
+  }
+
+  /**
+   * @returns {Promise<string>}
+   */
+  async useMemory() {
+    const userId = this.options.req.user.id + '';
+    const conversationId = this.conversationId + '';
+    const [withoutKeys, processMemory] = await createMemoryProcessor({
+      userId,
+      conversationId,
+      memoryMethods: {
+        setMemory,
+        deleteMemory,
+        getFormattedMemories,
+      },
+    });
+
+    this.processMemory = processMemory;
+    return withoutKeys;
   }
 
   /** @type {sendCompletion} */
@@ -732,6 +742,27 @@ class AgentClient extends BaseClient {
           )
         ) {
           messages = addCacheControl(messages);
+        }
+
+        if (this.processMemory != null) {
+          let messagesToProcess = [...messages];
+          if (messages.length > 5) {
+            for (let i = messages.length - 5; i >= 0; i--) {
+              const potentialWindow = messages.slice(i, i + 5);
+              if (potentialWindow[0]?.role === 'user') {
+                messagesToProcess = [...potentialWindow];
+                break;
+              }
+            }
+
+            if (messagesToProcess.length === messages.length) {
+              messagesToProcess = [...messages.slice(-5)];
+            }
+          }
+
+          this.processMemory(messagesToProcess).catch((error) => {
+            logger.error('Memory Agent failed to process memory', error);
+          });
         }
 
         run = await createRun({

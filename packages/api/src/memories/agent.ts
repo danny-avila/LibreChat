@@ -241,7 +241,7 @@ export async function createMemoryProcessor({
   memoryMethods: RequiredMemoryMethods;
   conversationId: string;
   config?: MemoryConfig;
-}) {
+}): Promise<[string, (messages: BaseMessage[]) => Promise<void>]> {
   const { validKeys, instructions, llmConfig } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys);
 
