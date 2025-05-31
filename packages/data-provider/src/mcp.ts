@@ -7,6 +7,13 @@ const BaseOptionsSchema = z.object({
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
+  /** 
+   * Controls server instruction behavior:
+   * - undefined/not set: No instructions included (default)
+   * - true: Use server-provided instructions
+   * - string: Use custom instructions (overrides server-provided)
+   */
+  serverInstructions: z.union([z.boolean(), z.string()]).optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({

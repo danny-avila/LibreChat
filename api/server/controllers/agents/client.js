@@ -32,11 +32,12 @@ const { getCustomEndpointConfig, checkCapability } = require('~/server/services/
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
-const { logger, sendEvent } = require('~/config');
+const { logger, sendEvent, getMCPManager } = require('~/config');
 const { createRun } = require('./run');
 
 /**
@@ -368,6 +369,37 @@ class AgentClient extends BaseClient {
     if (this.contextHandlers) {
       this.augmentedPrompt = await this.contextHandlers.createContext();
       systemContent = this.augmentedPrompt + systemContent;
+    }
+
+    // Inject MCP server instructions if available
+    const ephemeralAgent = this.options.req.body.ephemeralAgent;
+    let mcpServers = [];
+
+    // Check for ephemeral agent MCP servers
+    if (ephemeralAgent && ephemeralAgent.mcp && ephemeralAgent.mcp.length > 0) {
+      mcpServers = ephemeralAgent.mcp;
+    }
+    // Check for regular agent MCP tools
+    else if (this.options.agent && this.options.agent.tools) {
+      mcpServers = this.options.agent.tools
+        .filter(
+          (tool) =>
+            tool instanceof DynamicStructuredTool && tool.name.includes(Constants.mcp_delimiter),
+        )
+        .map((tool) => tool.name.split(Constants.mcp_delimiter).pop())
+        .filter(Boolean);
+    }
+
+    if (mcpServers.length > 0) {
+      try {
+        const mcpInstructions = await getMCPManager().formatInstructionsForContext(mcpServers);
+        if (mcpInstructions) {
+          systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
+          logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
+        }
+      } catch (error) {
+        logger.error('[AgentClient] Failed to inject MCP instructions:', error);
+      }
     }
 
     if (systemContent) {
