@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CheckIcon, Loader2 } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Button } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useMediaQuery } from '~/hooks';
 import {
   useCreateOmnexioSubscription,
   useChangeOmnexioSubscription,
@@ -33,6 +33,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
   const createSubscription = useCreateOmnexioSubscription();
   const changeSubscription = useChangeOmnexioSubscription();
   const subscriptionPlansQuery = useGetOmnexioSubscriptionPlans();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   useEffect(() => {
     if (!open) return;
