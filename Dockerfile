@@ -31,7 +31,7 @@ COPY --chown=node:node packages/mcp/package*.json ./packages/mcp/
 ARG CACHE_BUST
 ENV CACHE_BUST=${CACHE_BUST:-1}
 
-# Install dependencies with retry logic
+# Install dependencies with retry logic and ensure rollup platform dependencies are installed
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
@@ -42,7 +42,13 @@ RUN \
     npm config set fetch-retry-mintimeout 15000 ; \
     # Clean npm cache before install to avoid stale cache issues
     npm cache clean --force ; \
-    npm install --no-audit --frozen-lockfile; \
+    # Install with --ignore-scripts first to get all dependencies
+    npm install --no-audit --frozen-lockfile --ignore-scripts ; \
+    # Manually install the rollup platform-specific dependency for Alpine
+    npm install @rollup/rollup-linux-x64-musl --save-optional --no-audit ; \
+    # Run postinstall scripts after ensuring all dependencies are present
+    npm rebuild ; \
+    npm run postinstall || true ; \
     # Install client dependencies with dev dependencies for build
     cd client && npm install --include=dev && cd ..
 
