@@ -2,7 +2,7 @@ name: Update Test Server
 
 on:
   workflow_run:
-    workflows: ["Docker Dev Images Build"]
+    workflows: ["Docker Dev Branch Images Build"]
     types:
       - completed
   workflow_dispatch:
