@@ -1,0 +1,272 @@
+import { z } from 'zod';
+import { tool } from '@langchain/core/tools';
+import { Run, Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
+import type { BaseMessage } from '@langchain/core/messages';
+import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
+import type { LLMConfig } from '@librechat/agents';
+
+// const CHAR_LIMIT = 15000;
+
+// Type for just the memory methods we need
+type RequiredMemoryMethods = Pick<
+  MemoryMethods,
+  'setMemory' | 'deleteMemory' | 'getFormattedMemories'
+>;
+
+export interface MemoryConfig {
+  validKeys?: string[];
+  instructions?: string;
+  llmConfig?: Partial<LLMConfig>;
+}
+
+export const memoryInstructions =
+  'The system will automatically save important information about the user into memory. It can intelligently recognize when the user would like to update or delete specific memories, allowing for dynamic management of stored information based on user preferences and requests.';
+
+const getDefaultInstructions = (
+  validKeys?: string[],
+) => `Use the \`set_memory\` tool to save important information about the user, but ONLY when the user has explicitly provided this information. If there is nothing to note about the user specifically, END THE TURN IMMEDIATELY.
+
+  The \`delete_memory\` tool should only be used in two scenarios:
+  1. When the user explicitly asks to forget or remove specific information
+  2. When updating existing memories, use the \`set_memory\` tool instead of deleting and re-adding the memory.
+  
+  ${
+    validKeys && validKeys.length > 0
+      ? `CRITICAL INSTRUCTION: Only the following keys are valid for storing memories:
+  ${validKeys.map((key) => `- ${key}`).join('\n  ')}`
+      : 'You can use any appropriate key to store memories about the user.'
+  }
+
+  ⚠️ WARNING ⚠️
+  DO NOT STORE ANY INFORMATION UNLESS THE USER HAS EXPLICITLY PROVIDED IT.
+  ONLY store information the user has EXPLICITLY shared.
+  NEVER guess or assume user information.
+  ALL memory values must be factual statements about THIS specific user.
+  If nothing needs to be stored, DO NOT CALL any memory tools.
+  If you're unsure whether to store something, DO NOT store it.
+  If nothing needs to be stored, END THE TURN IMMEDIATELY.`;
+
+/**
+ * Creates a memory tool instance with user context
+ */
+const createMemoryTool = ({
+  userId,
+  setMemory,
+  validKeys,
+}: {
+  userId: string | ObjectId;
+  setMemory: MemoryMethods['setMemory'];
+  validKeys?: string[];
+}) => {
+  return tool(
+    async ({ key, value }) => {
+      try {
+        if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
+          logger.warn(
+            `Memory Agent failed to set memory: Invalid key "${key}". Must be one of: ${validKeys.join(
+              ', ',
+            )}`,
+          );
+          return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
+        }
+
+        const result = await setMemory({ userId, key, value });
+        return result?.ok ?? false;
+      } catch (error) {
+        logger.error('Memory Agent failed to set memory', error);
+        return false;
+      }
+    },
+    {
+      name: 'set_memory',
+      description: 'Saves important information about the user into memory.',
+      schema: z.object({
+        key: z
+          .string()
+          .describe(
+            validKeys && validKeys.length > 0
+              ? `The key of the memory value. Must be one of: ${validKeys.join(', ')}`
+              : 'The key identifier for this memory',
+          ),
+        value: z
+          .string()
+          .describe(
+            'Value MUST be a complete sentence that fully describes relevant user information.',
+          ),
+      }),
+    },
+  );
+};
+
+/**
+ * Creates a delete memory tool instance with user context
+ */
+const createDeleteMemoryTool = ({
+  userId,
+  deleteMemory,
+  validKeys,
+}: {
+  userId: string | ObjectId;
+  deleteMemory: MemoryMethods['deleteMemory'];
+  validKeys?: string[];
+}) => {
+  return tool(
+    async ({ key }) => {
+      try {
+        if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
+          logger.warn(
+            `Memory Agent failed to delete memory: Invalid key "${key}". Must be one of: ${validKeys.join(
+              ', ',
+            )}`,
+          );
+          return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
+        }
+
+        const result = await deleteMemory({ userId, key });
+        return result?.ok ?? false;
+      } catch (error) {
+        logger.error('Memory Agent failed to delete memory', error);
+        return false;
+      }
+    },
+    {
+      name: 'delete_memory',
+      description:
+        'Deletes specific memory data about the user using the provided key. For updating existing memories, use the `set_memory` tool instead',
+      schema: z.object({
+        key: z
+          .string()
+          .describe(
+            validKeys && validKeys.length > 0
+              ? `The key of the memory to delete. Must be one of: ${validKeys.join(', ')}`
+              : 'The key identifier of the memory to delete',
+          ),
+      }),
+    },
+  );
+};
+
+export async function processMemory({
+  userId,
+  setMemory,
+  deleteMemory,
+  messages,
+  memory,
+  conversationId,
+  validKeys,
+  instructions,
+  llmConfig,
+}: {
+  setMemory: MemoryMethods['setMemory'];
+  deleteMemory: MemoryMethods['deleteMemory'];
+  userId: string | ObjectId;
+  memory: string;
+  conversationId: string;
+  messages: BaseMessage[];
+  validKeys?: string[];
+  instructions: string;
+  llmConfig?: Partial<LLMConfig>;
+}) {
+  try {
+    const memoryTool = createMemoryTool({ userId, setMemory, validKeys });
+    const deleteMemoryTool = createDeleteMemoryTool({ userId, deleteMemory, validKeys });
+    // const currentMemorySize = memory?.length ?? 0;
+    // const remainingSpace = CHAR_LIMIT - currentMemorySize;
+    //     const memoryStatus = `# Memory Status:
+    // Current memory size: ${currentMemorySize} characters
+    // Remaining space: ${remainingSpace} characters
+    // Character limit: ${CHAR_LIMIT}
+
+    // # Existing memory:
+    // ${memory ?? 'No existing memories'}`;
+    /** THE SPECIFIC KEYS WE ARE LIMITED TO WILL ACT AS A LOOSE MEMORY LIMITER */
+    const memoryStatus = `# Existing memory:
+${memory ?? 'No existing memories'}`;
+
+    const defaultLLMConfig: LLMConfig = {
+      provider: Providers.OPENAI,
+      model: 'gpt-4.1-mini',
+      temperature: 0.4,
+      streaming: false,
+      disableStreaming: true,
+    };
+
+    const finalLLMConfig = {
+      ...defaultLLMConfig,
+      ...llmConfig,
+      // Ensure streaming is always disabled for memory processing
+      streaming: false,
+      disableStreaming: true,
+    };
+
+    const run = await Run.create({
+      runId: `memory-run-${conversationId}`,
+      graphConfig: {
+        type: 'standard',
+        llmConfig: finalLLMConfig,
+        tools: [memoryTool, deleteMemoryTool],
+        instructions,
+        additional_instructions: memoryStatus,
+        toolEnd: true,
+      },
+      returnContent: true,
+    });
+
+    const config = {
+      configurable: {
+        provider: Providers.OPENAI,
+        thread_id: `memory-run-${conversationId}`,
+      },
+      streamMode: 'values',
+      version: 'v2',
+    } as const;
+
+    const inputs = {
+      messages,
+    };
+    await run.processStream(inputs, config);
+  } catch (error) {
+    logger.error('Memory Agent failed to process memory', error);
+  }
+}
+
+export async function createMemoryProcessor({
+  userId,
+  memoryMethods,
+  conversationId,
+  config = {},
+}: {
+  userId: string | ObjectId;
+  memoryMethods: RequiredMemoryMethods;
+  conversationId: string;
+  config?: MemoryConfig;
+}) {
+  const { validKeys, instructions, llmConfig } = config;
+  const finalInstructions = instructions || getDefaultInstructions(validKeys);
+
+  const { withKeys, withoutKeys } = await memoryMethods.getFormattedMemories({
+    userId,
+  });
+
+  return [
+    withoutKeys,
+    async function (messages: BaseMessage[]) {
+      try {
+        await processMemory({
+          userId,
+          setMemory: memoryMethods.setMemory,
+          deleteMemory: memoryMethods.deleteMemory,
+          messages,
+          memory: withKeys,
+          conversationId,
+          validKeys,
+          instructions: finalInstructions,
+          llmConfig,
+        });
+      } catch (error) {
+        logger.error('Memory Agent failed to process memory', error);
+      }
+    },
+  ];
+}
