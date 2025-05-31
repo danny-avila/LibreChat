@@ -1,5 +1,5 @@
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
@@ -9,21 +9,62 @@ import LoginForm from './LoginForm';
 import SocialButton from '~/components/Auth/SocialButton';
 import { OpenIDIcon } from '~/components';
 import { useCreateGuest } from '~/data-provider';
+import { Turnstile } from '@marsidev/react-turnstile';
+import { ThemeContext } from '~/hooks';
+import { useContext } from 'react';
 
 const VISITED_STORAGE_KEY = 'appTitle';
+const MINIMUM_LOADING_DURATION = 500; // 500ms = 0.5 seconds
 
 function Login() {
   const localize = useLocalize();
+  const { theme } = useContext(ThemeContext);
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
   const createGuest = useCreateGuest();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [hasAutoLoginAttempted, setHasAutoLoginAttempted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [captchaValidated, setCaptchaValidated] = useState(false);
+
+  // Track loading start time
+  const loadingStartTime = useRef<number>(Date.now());
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
-  const [captchaValidated, setCaptchaValidated] = useState(false);
+
+  const validTheme = theme === 'dark' ? 'dark' : 'light';
+
+  // Enhanced loading state setter with minimum duration
+  const setLoadingWithMinDuration = useCallback((loading: boolean) => {
+    if (!loading) {
+      const elapsedTime = Date.now() - loadingStartTime.current;
+      const remainingTime = Math.max(0, MINIMUM_LOADING_DURATION - elapsedTime);
+
+      if (remainingTime > 0) {
+        loadingTimeoutRef.current = setTimeout(() => {
+          setIsLoading(false);
+        }, remainingTime);
+      } else {
+        setIsLoading(false);
+      }
+    } else {
+      // Reset start time when starting to load
+      loadingStartTime.current = Date.now();
+      setIsLoading(true);
+    }
+  }, []);
+
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Check if user has visited before
   const hasVisitedBefore = useCallback(() => {
@@ -55,24 +96,37 @@ function Login() {
           } else {
             console.error('No guest user');
           }
+          setLoadingWithMinDuration(false);
+        },
+        onError: () => {
+          setLoadingWithMinDuration(false);
         },
       },
     );
-  }, [createGuest, login]);
+  }, [createGuest, login, setLoadingWithMinDuration]);
 
   // Auto guest login logic with captcha validation
   const attemptAutoGuestLogin = useCallback(() => {
-    if (hasVisitedBefore() || hasAutoLoginAttempted) return;
+    if (hasVisitedBefore() || hasAutoLoginAttempted) {
+      setLoadingWithMinDuration(false);
+      return;
+    }
 
     // If captcha is required, wait for validation
     if (requiresCaptcha()) {
-      return; // Will be handled by handleCaptchaSuccess
+      // Don't hide loading yet, wait for captcha
+      return;
     }
 
     setHasAutoLoginAttempted(true);
-    // No captcha required, proceed with guest creation
     createGuestUser();
-  }, [hasVisitedBefore, requiresCaptcha, createGuestUser]);
+  }, [
+    hasVisitedBefore,
+    requiresCaptcha,
+    createGuestUser,
+    hasAutoLoginAttempted,
+    setLoadingWithMinDuration,
+  ]);
 
   // Handle successful captcha validation
   const handleCaptchaSuccess = useCallback(() => {
@@ -83,12 +137,27 @@ function Login() {
 
     // Create guest if auto-login was attempted but waiting for captcha
     if (hasVisitedBefore() || hasAutoLoginAttempted) {
+      setLoadingWithMinDuration(false);
       return;
     }
 
     setHasAutoLoginAttempted(true);
     createGuestUser();
-  }, [captchaValidated, hasAutoLoginAttempted, hasVisitedBefore, createGuestUser]);
+  }, [
+    captchaValidated,
+    hasAutoLoginAttempted,
+    hasVisitedBefore,
+    createGuestUser,
+    setLoadingWithMinDuration,
+  ]);
+
+  // Handle captcha error/expiry
+  const handleCaptchaError = useCallback(() => {
+    setCaptchaValidated(false);
+    if (!hasVisitedBefore() && !hasAutoLoginAttempted) {
+      setLoadingWithMinDuration(false);
+    }
+  }, [hasVisitedBefore, hasAutoLoginAttempted, setLoadingWithMinDuration]);
 
   // Handle URL parameter cleanup
   useEffect(() => {
@@ -118,6 +187,43 @@ function Login() {
       window.location.href = `${startupConfig.serverDomain}/oauth/openid`;
     }
   }, [shouldAutoRedirect, startupConfig]);
+
+  const renderCaptcha = () => (
+    <div className="my-4 flex justify-center">
+      {startupConfig?.turnstile!.siteKey && (
+        <Turnstile
+          siteKey={startupConfig.turnstile!.siteKey}
+          options={{
+            ...startupConfig.turnstile!.options,
+            theme: validTheme,
+          }}
+          onSuccess={handleCaptchaSuccess}
+          onError={handleCaptchaError}
+          onExpire={handleCaptchaError}
+        />
+      )}
+    </div>
+  );
+
+  // Loading screen component
+  const LoadingScreen = () => (
+    <div className="fixed inset-0 z-50 ml-2 mr-2 flex flex-col items-center justify-center bg-surface-primary">
+      <img
+        src="/assets/omnexio-logo.png"
+        alt="Omnexio Logo"
+        className="mb-8 h-24 w-auto animate-pulse"
+      />
+      <p className="mb-8 text-lg font-semibold text-text-primary">
+        {localize('com_ui_loading') || 'Loading...'}
+      </p>
+      {requiresCaptcha() && !hasVisitedBefore() && renderCaptcha()}
+    </div>
+  );
+
+  // Show loading screen
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   // Render auto-redirect UI
   if (shouldAutoRedirect) {
