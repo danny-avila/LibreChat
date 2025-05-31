@@ -1,9 +1,7 @@
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { encrypt, decrypt } = require('~/server/utils/crypto');
 const { updateUser } = require('~/models');
-
 const { Key } = require('~/db/models');
 
 /**

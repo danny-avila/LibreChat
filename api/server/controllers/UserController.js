@@ -20,10 +20,9 @@ const { updateUserPluginsService, deleteUserKey } = require('~/server/services/U
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { Transaction, Balance, User } = require('~/db/models');
 const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
-
-const { Transaction, Balance, User } = require('~/db/models');
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */

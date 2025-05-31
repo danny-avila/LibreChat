@@ -14,7 +14,6 @@ const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
-
 const { Message } = require('~/db/models');
 
 const router = express.Router();
