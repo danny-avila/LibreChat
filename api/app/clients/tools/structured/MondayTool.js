@@ -525,45 +525,66 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId is required for getItems action');
     }
 
-    const query = `
-      query getItems($boardId: [ID!]!, $limit: Int!, $columnValues: Boolean!, $groupId: String, $page: Int) {
-        boards(ids: $boardId) {
-          items_page(limit: $limit, page: $page, group_id: $groupId) {
-            cursor
-            items {
-              id
-              name
-              state
-              created_at
-              updated_at
-              group {
-                id
-                title
-              }
-              column_values @include(if: $columnValues) {
-                id
-                title
-                type
-                text
-                value
-              }
-              board {
+    // Создаем запрос с условным включением column_values
+    let query;
+    if (columnValues) {
+      query = `
+        query getItems($boardId: [ID!]!, $limit: Int!) {
+          boards(ids: $boardId) {
+            id
+            name
+            items_page(limit: $limit) {
+              cursor
+              items {
                 id
                 name
+                state
+                created_at
+                updated_at
+                group {
+                  id
+                  title
+                }
+                column_values {
+                  id
+                  type
+                  text
+                  value
+                }
               }
             }
           }
         }
-      }
-    `;
+      `;
+    } else {
+      query = `
+        query getItems($boardId: [ID!]!, $limit: Int!) {
+          boards(ids: $boardId) {
+            id
+            name
+            items_page(limit: $limit) {
+              cursor
+              items {
+                id
+                name
+                state
+                created_at
+                updated_at
+                group {
+                  id
+                  title
+                }
+              }
+            }
+          }
+        }
+      `;
+    }
 
     try {
       const data = await this.makeGraphQLRequest(query, {
         boardId: [boardId],
-        limit,
-        columnValues,
-        groupId: groupId || null,
-        page
+        limit
       });
 
       const board = data.boards?.[0];
@@ -636,7 +657,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId, itemId and columnValues are required for updateItem action');
     }
 
-    // Преобразуем columnValues в правильный формат
+    // Преобразуем columnValues в правильный формат для Monday.com API
     const formattedColumnValues = JSON.stringify(columnValues);
 
     const mutation = `
@@ -649,6 +670,12 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
         ) {
           id
           name
+          column_values {
+            id
+            type
+            text
+            value
+          }
         }
       }
     `;
@@ -714,8 +741,8 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId, itemId, columnId and value are required for updateColumn action');
     }
 
-    // Преобразуем value в правильный формат
-    const formattedValue = JSON.stringify(value);
+    // Для Monday.com API значения должны быть в формате JSON строки
+    const formattedValue = typeof value === 'string' ? value : JSON.stringify(value);
 
     const mutation = `
       mutation updateColumn($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!, $createLabelsIfMissing: Boolean) {
@@ -728,6 +755,12 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
         ) {
           id
           name
+          column_values(ids: [$columnId]) {
+            id
+            type
+            text
+            value
+          }
         }
       }
     `;
@@ -771,69 +804,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
     });
   }
 
-  // Методы поиска
-  async searchItems({ boardId, query, limit = 25 }) {
-    if (!boardId || !query) {
-      throw new Error('boardId and query are required for searchItems action');
-    }
-
-    const searchQuery = `
-      query searchItems($boardId: [ID!]!, $query: String!, $limit: Int!) {
-        items_page_by_column_values(
-          board_id: $boardId,
-          query: $query,
-          limit: $limit
-        ) {
-          cursor
-          items {
-            id
-            name
-            state
-            created_at
-            updated_at
-            group {
-              id
-              title
-            }
-            column_values {
-              id
-              title
-              type
-              text
-              value
-            }
-            board {
-              id
-              name
-            }
-          }
-        }
-      }
-    `;
-
-    try {
-      const data = await this.makeGraphQLRequest(searchQuery, {
-        boardId: [boardId],
-        query,
-        limit
-      });
-
-      const items = data.items_page_by_column_values?.items || [];
-      const cursor = data.items_page_by_column_values?.cursor || null;
-
-      return JSON.stringify({
-        success: true,
-        action: 'searchItems',
-        data: items,
-        total: items.length,
-        cursor: cursor
-      });
-    } catch (error) {
-      logger.error('[MondayTool] Error searching items:', error);
-      throw new Error(`Failed to search items: ${error.message}`);
-    }
-  }
-
   async getWorkspaces({ limit = 25 }) {
     const data = await this.makeGraphQLRequest(mondayQueries.GET_WORKSPACES, {
       limit
@@ -869,18 +839,40 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId, url, and event are required for createWebhook action');
     }
 
-    const data = await this.makeGraphQLRequest(webhookQueries.CREATE_WEBHOOK, {
-      boardId,
-      url,
-      event,
-      config
-    });
+    // Создаем webhook с правильным GraphQL запросом согласно документации
+    const mutation = `
+      mutation createWebhook($boardId: ID!, $url: String!, $event: WebhookEventType!, $config: JSON) {
+        create_webhook(
+          board_id: $boardId,
+          url: $url,
+          event: $event,
+          config: $config
+        ) {
+          id
+          board_id
+          event
+          config
+        }
+      }
+    `;
 
-    return JSON.stringify({
-      success: true,
-      action: 'createWebhook',
-      data: data.create_webhook
-    });
+    try {
+      const data = await this.makeGraphQLRequest(mutation, {
+        boardId,
+        url,
+        event,
+        config: config || null
+      });
+
+      return JSON.stringify({
+        success: true,
+        action: 'createWebhook',
+        data: data.create_webhook
+      });
+    } catch (error) {
+      logger.error('[MondayTool] Error creating webhook:', error);
+      throw new Error(`Failed to create webhook: ${error.message}`);
+    }
   }
 
   async getWebhooks({ boardId }) {
@@ -934,8 +926,6 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error(`Failed to delete webhook: ${error.message}`);
     }
   }
-
-
 
   // ============ ФАЗА 1: UPDATES И УВЕДОМЛЕНИЯ МЕТОДЫ ============
 
@@ -1185,7 +1175,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
 
   async removeUserFromTeam({ teamId, userId, userIds }) {
     if (!teamId || (!userId && !userIds)) {
-            throw new Error('teamId and userId (or userIds) are required for removeUserFromTeam action');
+      throw new Error('teamId and userId (or userIds) are required for removeUserFromTeam action');
     }
 
     const userIdsToRemove = userIds || [userId];
@@ -1883,6 +1873,86 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       action: 'getAssetThumbnail',
       data: data.assets[0] || null
     });
+  }
+
+  // Методы поиска - ИСПРАВЛЕННАЯ ВЕРСИЯ
+  async searchItems({ boardId, query, limit = 25 }) {
+    if (!boardId || !query) {
+      throw new Error('boardId and query are required for searchItems action');
+    }
+
+    // Monday.com API не имеет прямого поиска items_page_by_column_values
+    // Вместо этого используем обычное получение элементов с фильтрацией на стороне клиента
+    const searchQuery = `
+      query searchItems($boardId: [ID!]!, $limit: Int!) {
+        boards(ids: $boardId) {
+          id
+          name
+          items_page(limit: $limit) {
+            cursor
+            items {
+              id
+              name
+              state
+              created_at
+              updated_at
+              group {
+                id
+                title
+              }
+              column_values {
+                id
+                type
+                text
+                value
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const data = await this.makeGraphQLRequest(searchQuery, {
+        boardId: [boardId],
+        limit: Math.min(limit * 3, 500) // Получаем больше элементов для фильтрации
+      });
+
+      const board = data.boards?.[0];
+      if (!board) {
+        throw new Error(`Board ${boardId} not found`);
+      }
+
+      const allItems = board.items_page?.items || [];
+      
+      // Фильтруем элементы на стороне клиента
+      const filteredItems = allItems.filter(item => {
+        // Ищем по названию элемента
+        if (item.name && item.name.toLowerCase().includes(query.toLowerCase())) {
+          return true;
+        }
+        
+        // Ищем по значениям колонок
+        if (item.column_values) {
+          return item.column_values.some(col => 
+            col.text && col.text.toLowerCase().includes(query.toLowerCase())
+          );
+        }
+        
+        return false;
+      }).slice(0, limit); // Ограничиваем результат
+
+      return JSON.stringify({
+        success: true,
+        action: 'searchItems',
+        data: filteredItems,
+        total: filteredItems.length,
+        query: query
+      });
+    } catch (error) {
+      logger.error('[MondayTool] Error searching items:', error);
+      throw new Error(`Failed to search items: ${error.message}`);
+    }
   }
 
   // ============ РАСШИРЕННЫЕ ОПЕРАЦИИ С КОЛОНКАМИ И ГРУППАМИ ============
