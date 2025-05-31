@@ -170,6 +170,48 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     return plan?.name || `Plan ${id}`;
   };
 
+  const calculateFreeFeatureColumns = (
+    features: string[],
+  ): { columns: number; itemsPerColumn: number } => {
+    const maxRows = 2;
+    const totalFeatures = features.length;
+
+    if (totalFeatures <= maxRows) {
+      return { columns: 1, itemsPerColumn: totalFeatures };
+    }
+
+    const columns = Math.ceil(totalFeatures / maxRows);
+    const itemsPerColumn = Math.ceil(totalFeatures / columns);
+
+    return { columns, itemsPerColumn };
+  };
+
+  const renderFreeFeatures = (features: string[]): JSX.Element => {
+    const { columns, itemsPerColumn } = calculateFreeFeatureColumns(features);
+    const featureColumns: string[][] = [];
+
+    for (let i = 0; i < columns; i++) {
+      const start = i * itemsPerColumn;
+      const end = start + itemsPerColumn;
+      featureColumns.push(features.slice(start, end));
+    }
+
+    return (
+      <div className={`grid grid-cols-${columns} gap-2 text-sm text-text-secondary`}>
+        {featureColumns.map((columnFeatures, columnIndex) => (
+          <div key={columnIndex} className="space-y-1">
+            {columnFeatures.map((feature, featureIndex) => (
+              <div key={featureIndex} className="flex items-start">
+                <CheckIcon className="mr-1 mt-0.5 h-4 w-4 flex-shrink-0 text-green-500" />
+                <span className="">{feature}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderPlanFeatures = (features: string[]): JSX.Element => (
     <ul className="mt-3 flex-1 space-y-2 text-sm">
       {features.map((feature, index) => (
@@ -227,29 +269,32 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ open, onOpenChang
     return `${baseClasses} ${heightClass} ${spanClass} ${borderClass}`;
   };
 
+  const renderFreePlanContent = (plan: SubscriptionPlan): JSX.Element => (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-shrink-1 mr-20">
+        <h3 className="text-base font-semibold">{plan.name}</h3>
+        <div className="mt-1 text-lg font-bold">{plan.price}</div>
+      </div>
+
+      <div className="mt-1 min-w-0 flex-1">{renderFreeFeatures(plan.features)}</div>
+
+      <div className="flex-shrink-0">{renderPlanButton(plan)}</div>
+    </div>
+  );
+
+  const renderPaidPlanContent = (plan: SubscriptionPlan): JSX.Element => (
+    <>
+      <h3 className="text-lg font-semibold">{plan.name}</h3>
+      <div className="mt-2 text-xl font-bold">{plan.price}</div>
+      {renderPlanFeatures(plan.features)}
+      {renderPlanButton(plan)}
+    </>
+  );
+
   const renderPlanCard = (plan: SubscriptionPlan): JSX.Element => (
     <div key={plan.id} className={getCardClasses(plan)}>
       {plan.recommended && renderRecommendedBadge()}
-
-      {plan.isFree ? (
-        <div className="flex items-start justify-between">
-          <div className="">
-            <h3 className="text-base font-semibold">{plan.name}</h3>
-            <div className="mt-1 text-lg font-bold">{plan.price}</div>
-          </div>
-
-          <div className="text-sm text-text-secondary">{plan.features.join(' • ')}</div>
-
-          <div className="mr-1">{renderPlanButton(plan)}</div>
-        </div>
-      ) : (
-        <>
-          <h3 className="text-lg font-semibold">{plan.name}</h3>
-          <div className="mt-2 text-xl font-bold">{plan.price}</div>
-          {renderPlanFeatures(plan.features)}
-          {renderPlanButton(plan)}
-        </>
-      )}
+      {plan.isFree ? renderFreePlanContent(plan) : renderPaidPlanContent(plan)}
     </div>
   );
 
