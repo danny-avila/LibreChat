@@ -183,7 +183,7 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1/logos/flux-color.svg",
+    "icon": "/assets/flux.svg",
     "isAuthRequired": "true",
     "authConfig": [
       {

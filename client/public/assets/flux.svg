@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <rect x="8" y="8" width="112" height="112" rx="16" fill="#1a1a1a"/>
+  <path d="M40 40h48v8H48v32h32v8H48v32h40v8H40V40z" fill="#00ff88"/>
+  <path d="M88 40v88h-8V40h8z" fill="#00ff88"/>
+  <circle cx="88" cy="64" r="4" fill="#00ff88"/>
+  <text x="64" y="100" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#00ff88">FLUX</text>
+</svg> 
