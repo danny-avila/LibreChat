@@ -11,6 +11,7 @@ const Image = ({
   width,
   placeholderDimensions,
   className,
+  args,
 }: {
   imagePath: string;
   altText: string;
@@ -21,6 +22,13 @@ const Image = ({
     width?: string;
   };
   className?: string;
+  args?: {
+    prompt?: string;
+    quality?: 'low' | 'medium' | 'high';
+    size?: string;
+    style?: string;
+    [key: string]: unknown;
+  };
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -91,6 +99,7 @@ const Image = ({
             onOpenChange={setIsOpen}
             src={imagePath}
             downloadImage={downloadImage}
+            args={args}
           />
         )}
       </div>
