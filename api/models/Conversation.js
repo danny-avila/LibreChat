@@ -1,7 +1,5 @@
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { getMessages, deleteMessages } = require('./Message');
-
 const { Conversation } = require('~/db/models');
 
 /**

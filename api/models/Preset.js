@@ -1,6 +1,4 @@
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-
 const { Preset } = require('~/db/models');
 
 const getPreset = async (user, presetId) => {

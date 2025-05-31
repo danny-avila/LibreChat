@@ -1,7 +1,5 @@
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { EToolResources } = require('librechat-data-provider');
-
 const { File } = require('~/db/models');
 
 /**

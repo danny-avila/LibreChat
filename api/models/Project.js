@@ -1,6 +1,4 @@
-const mongoose = require('mongoose');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
-
 const { Project } = require('~/db/models');
 
 /**

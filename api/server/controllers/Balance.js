@@ -1,5 +1,3 @@
-const mongoose = require('mongoose');
-
 const { Balance } = require('~/db/models');
 
 async function balanceController(req, res) {

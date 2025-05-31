@@ -1,5 +1,3 @@
-const mongoose = require('mongoose');
-
 const { ToolCall } = require('~/db/models');
 
 /**

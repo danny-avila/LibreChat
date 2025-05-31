@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const { Assistant } = require('~/db/models');
 
 /**
