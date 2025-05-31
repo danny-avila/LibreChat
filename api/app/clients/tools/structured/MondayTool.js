@@ -2048,7 +2048,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
         change_column_value(
           board_id: $boardId,
           item_id: $itemId,
-          columnId: $columnId,
+          column_id: $columnId,
           value: $value,
           create_labels_if_missing: $createLabelsIfMissing
         ) {
