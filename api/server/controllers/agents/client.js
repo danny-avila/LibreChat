@@ -143,55 +143,10 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   *
-   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
-   * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
-   * - Sets `this.isVisionModel` to `true` if vision request.
-   * - Deletes `this.modelOptions.stop` if vision request.
+   * `AgentClient` is not opinionated about vision requests, so we don't do anything here
    * @param {MongoFile[]} attachments
    */
-  checkVisionRequest(attachments) {
-    // if (!attachments) {
-    //   return;
-    // }
-    // const availableModels = this.options.modelsConfig?.[this.options.endpoint];
-    // if (!availableModels) {
-    //   return;
-    // }
-    // let visionRequestDetected = false;
-    // for (const file of attachments) {
-    //   if (file?.type?.includes('image')) {
-    //     visionRequestDetected = true;
-    //     break;
-    //   }
-    // }
-    // if (!visionRequestDetected) {
-    //   return;
-    // }
-    // this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
-    // if (this.isVisionModel) {
-    //   delete this.modelOptions.stop;
-    //   return;
-    // }
-    // for (const model of availableModels) {
-    //   if (!validateVisionModel({ model, availableModels })) {
-    //     continue;
-    //   }
-    //   this.modelOptions.model = model;
-    //   this.isVisionModel = true;
-    //   delete this.modelOptions.stop;
-    //   return;
-    // }
-    // if (!availableModels.includes(this.defaultVisionModel)) {
-    //   return;
-    // }
-    // if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
-    //   return;
-    // }
-    // this.modelOptions.model = this.defaultVisionModel;
-    // this.isVisionModel = true;
-    // delete this.modelOptions.stop;
-  }
+  checkVisionRequest(attachments) {}
 
   getSaveOptions() {
     // TODO:
