@@ -1,13 +1,10 @@
-import { Plus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
 import { RankablePromptList, RankingProvider } from '~/components/Prompts/Groups/RankingComponent';
 import DashGroupItem from '~/components/Prompts/Groups/DashGroupItem';
 import ChatGroupItem from '~/components/Prompts/Groups/ChatGroupItem';
 import { useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useHasAccess } from '~/hooks';
 import { Button, Skeleton } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 export default function List({
   groups = [],
@@ -20,14 +17,9 @@ export default function List({
   isLoading: boolean;
   enableRanking?: boolean;
 }) {
-  const navigate = useNavigate();
   const localize = useLocalize();
   const { data: startupConfig = {} as Partial<TStartupConfig> } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
-  const hasCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.CREATE,
-  });
 
   const renderGroupItem = (group: TPromptGroup) => {
     if (isChatRoute) {
@@ -39,18 +31,6 @@ export default function List({
   return (
     <RankingProvider>
       <div className="flex h-full flex-col">
-        {hasCreateAccess && (
-          <div className="flex w-full justify-end">
-            <Button
-              variant="outline"
-              className={`w-full bg-transparent ${isChatRoute ? '' : 'mx-2'}`}
-              onClick={() => navigate('/d/prompts/new')}
-            >
-              <Plus className="size-4" aria-hidden />
-              {localize('com_ui_create_prompt')}
-            </Button>
-          </div>
-        )}
         <div className="flex-grow overflow-y-auto">
           <div className="overflow-y-auto overflow-x-hidden">
             {isLoading && isChatRoute && (
@@ -74,7 +54,7 @@ export default function List({
                 {localize('com_ui_nothing_found')}
               </div>
             )}
-            {!isLoading && groups.length > 0 && enableRanking ? (
+            {!isLoading && groups.length > 0 && !isChatRoute && enableRanking ? (
               <RankablePromptList groups={groups} renderItem={renderGroupItem} />
             ) : (
               !isLoading && groups.map((group) => renderGroupItem(group))

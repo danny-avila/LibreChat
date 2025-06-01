@@ -4,6 +4,7 @@ import { SystemRoles } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import {
+  ThemeSelector,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -14,7 +15,7 @@ import {
   // DropdownMenuItem,
   // DropdownMenuContent,
   // DropdownMenuTrigger,
-} from '~/components/ui';
+} from '~/components';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
 // import { RightPanel } from '../../components/Prompts/RightPanel';
@@ -106,6 +107,7 @@ export default function DashBreadcrumb() {
       </Breadcrumb>
       <div className="flex items-center justify-center gap-2">
         {isPromptsPath && <AdvancedSwitch />}
+        <ThemeSelector returnThemeOnly={true} />
         {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       </div>
     </div>

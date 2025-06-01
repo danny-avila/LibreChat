@@ -822,6 +822,7 @@
   "com_ui_prompts_allow_create": "Allow creating Prompts",
   "com_ui_prompts_allow_share_global": "Allow sharing Prompts to all users",
   "com_ui_prompts_allow_use": "Allow using Prompts",
+  "com_ui_prompts_settings": "Prompt Settings",
   "com_ui_provider": "Provider",
   "com_ui_read_aloud": "Read aloud",
   "com_ui_redirecting_to_provider": "Redirecting to {{0}}, please wait...",

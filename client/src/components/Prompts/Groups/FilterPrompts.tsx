@@ -44,11 +44,11 @@ export default function FilterPrompts({
     const categoryOptions = categories
       ? [...categories]
       : [
-        {
-          value: SystemCategories.NO_CATEGORY,
-          label: localize('com_ui_no_category'),
-        },
-      ];
+          {
+            value: SystemCategories.NO_CATEGORY,
+            label: localize('com_ui_no_category'),
+          },
+        ];
 
     return [...baseOptions, ...categoryOptions];
   }, [categories, localize]);
@@ -78,7 +78,7 @@ export default function FilterPrompts({
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className="bg-transparent"
+        className="rounded-lg bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}
