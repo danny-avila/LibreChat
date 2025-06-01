@@ -393,7 +393,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<string>}
+   * @returns {Promise<string | undefined>}
    */
   async useMemory() {
     const userId = this.options.req.user.id + '';
@@ -410,6 +410,33 @@ class AgentClient extends BaseClient {
 
     this.processMemory = processMemory;
     return withoutKeys;
+  }
+
+  /**
+   * @param {BaseMessage[]} messages
+   */
+  runMemory(messages) {
+    if (this.processMemory == null) {
+      return;
+    }
+    let messagesToProcess = [...messages];
+    if (messages.length > 5) {
+      for (let i = messages.length - 5; i >= 0; i--) {
+        const potentialWindow = messages.slice(i, i + 5);
+        if (potentialWindow[0]?.role === 'user') {
+          messagesToProcess = [...potentialWindow];
+          break;
+        }
+      }
+
+      if (messagesToProcess.length === messages.length) {
+        messagesToProcess = [...messages.slice(-5)];
+      }
+    }
+
+    this.processMemory(messagesToProcess).catch((error) => {
+      logger.error('Memory Agent failed to process memory', error);
+    });
   }
 
   /** @type {sendCompletion} */
@@ -559,95 +586,6 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      // if (this.options.headers) {
-      //   opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
-      // }
-
-      // if (this.options.proxy) {
-      //   opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
-      // }
-
-      // if (this.isVisionModel) {
-      //   modelOptions.max_tokens = 4000;
-      // }
-
-      // /** @type {TAzureConfig | undefined} */
-      // const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
-
-      // if (
-      //   (this.azure && this.isVisionModel && azureConfig) ||
-      //   (azureConfig && this.isVisionModel && this.options.endpoint === EModelEndpoint.azureOpenAI)
-      // ) {
-      //   const { modelGroupMap, groupMap } = azureConfig;
-      //   const {
-      //     azureOptions,
-      //     baseURL,
-      //     headers = {},
-      //     serverless,
-      //   } = mapModelToAzureConfig({
-      //     modelName: modelOptions.model,
-      //     modelGroupMap,
-      //     groupMap,
-      //   });
-      //   opts.defaultHeaders = resolveHeaders(headers);
-      //   this.langchainProxy = extractBaseURL(baseURL);
-      //   this.apiKey = azureOptions.azureOpenAIApiKey;
-
-      //   const groupName = modelGroupMap[modelOptions.model].group;
-      //   this.options.addParams = azureConfig.groupMap[groupName].addParams;
-      //   this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
-      //   // Note: `forcePrompt` not re-assigned as only chat models are vision models
-
-      //   this.azure = !serverless && azureOptions;
-      //   this.azureEndpoint =
-      //     !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
-      // }
-
-      // if (this.azure || this.options.azure) {
-      //   /* Azure Bug, extremely short default `max_tokens` response */
-      //   if (!modelOptions.max_tokens && modelOptions.model === 'gpt-4-vision-preview') {
-      //     modelOptions.max_tokens = 4000;
-      //   }
-
-      //   /* Azure does not accept `model` in the body, so we need to remove it. */
-      //   delete modelOptions.model;
-
-      //   opts.baseURL = this.langchainProxy
-      //     ? constructAzureURL({
-      //       baseURL: this.langchainProxy,
-      //       azureOptions: this.azure,
-      //     })
-      //     : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
-
-      //   opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
-      //   opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
-      // }
-
-      // if (process.env.OPENAI_ORGANIZATION) {
-      //   opts.organization = process.env.OPENAI_ORGANIZATION;
-      // }
-
-      // if (this.options.addParams && typeof this.options.addParams === 'object') {
-      //   modelOptions = {
-      //     ...modelOptions,
-      //     ...this.options.addParams,
-      //   };
-      //   logger.debug('[api/server/controllers/agents/client.js #chatCompletion] added params', {
-      //     addParams: this.options.addParams,
-      //     modelOptions,
-      //   });
-      // }
-
-      // if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
-      //   this.options.dropParams.forEach((param) => {
-      //     delete modelOptions[param];
-      //   });
-      //   logger.debug('[api/server/controllers/agents/client.js #chatCompletion] dropped params', {
-      //     dropParams: this.options.dropParams,
-      //     modelOptions,
-      //   });
-      // }
-
       /** @type {TCustomConfig['endpoints']['agents']} */
       const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
 
@@ -744,27 +682,7 @@ class AgentClient extends BaseClient {
           messages = addCacheControl(messages);
         }
 
-        if (this.processMemory != null) {
-          let messagesToProcess = [...messages];
-          if (messages.length > 5) {
-            for (let i = messages.length - 5; i >= 0; i--) {
-              const potentialWindow = messages.slice(i, i + 5);
-              if (potentialWindow[0]?.role === 'user') {
-                messagesToProcess = [...potentialWindow];
-                break;
-              }
-            }
-
-            if (messagesToProcess.length === messages.length) {
-              messagesToProcess = [...messages.slice(-5)];
-            }
-          }
-
-          this.processMemory(messagesToProcess).catch((error) => {
-            logger.error('Memory Agent failed to process memory', error);
-          });
-        }
-
+        this.runMemory(messages);
         run = await createRun({
           agent,
           req: this.options.req,
