@@ -32,15 +32,6 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
       `Configuration conflict: The '${assistantsEndpoint}' endpoint has both 'supportedIds' and 'excludedIds' defined. The 'excludedIds' will be ignored.`,
     );
   }
-  if (
-    assistantsConfig.privateAssistants &&
-    (assistantsConfig.supportedIds?.length || assistantsConfig.excludedIds?.length)
-  ) {
-    logger.warn(
-      `Configuration conflict: The '${assistantsEndpoint}' endpoint has both 'privateAssistants' and 'supportedIds' or 'excludedIds' defined. The 'supportedIds' and 'excludedIds' will be ignored.`,
-    );
-  }
-
   return {
     ...prevConfig,
     retrievalModels: parsedConfig.retrievalModels,
