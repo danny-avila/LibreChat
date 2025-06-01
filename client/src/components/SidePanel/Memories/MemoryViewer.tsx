@@ -82,8 +82,9 @@ export default function MemoryViewer() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
+      {/* 
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-primary p-2">
-        {/* <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium text-text-primary">
             {localize('com_ui_memories')} ({memories.length})
           </h2>
@@ -96,8 +97,9 @@ export default function MemoryViewer() {
           >
             <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
-        </div> */}
+        </div>
       </div>
+       */}
 
       <div className="mt-2 space-y-2" role="region" aria-label={localize('com_ui_memories')}>
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
