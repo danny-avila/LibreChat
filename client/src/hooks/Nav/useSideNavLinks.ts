@@ -47,6 +47,10 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.MEMORIES,
     permission: Permissions.USE,
   });
+  const hasAccessToReadMemories = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.READ,
+  });
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
@@ -102,7 +106,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToMemories) {
+    if (hasAccessToMemories && hasAccessToReadMemories) {
       links.push({
         title: 'com_ui_memories',
         label: '',
@@ -163,6 +167,7 @@ export default function useSideNavLinks({
     hasAccessToAgents,
     hasAccessToPrompts,
     hasAccessToMemories,
+    hasAccessToReadMemories,
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
     hidePanel,

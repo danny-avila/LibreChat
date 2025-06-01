@@ -952,6 +952,8 @@
   "com_ui_version_var": "Version {{0}}",
   "com_ui_versions": "Versions",
   "com_ui_view_source": "View source chat",
+  "com_ui_view_memory": "View Memory",
+  "com_ui_no_read_access": "You don't have permission to view memories",
   "com_ui_web_search": "Web Search",
   "com_ui_web_search_api_subtitle": "Search the web for up-to-date information",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",

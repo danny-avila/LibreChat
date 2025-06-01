@@ -1,7 +1,7 @@
 /* Memories */
 import { useMemo, useState, useRef } from 'react';
 import { matchSorter } from 'match-sorter';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
 import {
   Table,
@@ -18,9 +18,9 @@ import {
   OGDialogTrigger,
 } from '~/components/ui';
 import { useDeleteMemoryMutation, useMemoriesQuery } from '~/data-provider';
+import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { EditIcon, TrashIcon } from '~/components/svg';
-import { useLocalize, useAuthContext } from '~/hooks';
 import MemoryEditDialog from './MemoryEditDialog';
 import Spinner from '~/components/svg/Spinner';
 import { useToastContext } from '~/Providers';
@@ -36,6 +36,16 @@ export default function MemoryViewer() {
   const [searchQuery, setSearchQuery] = useState('');
   const pageSize = 10;
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+
+  const hasReadAccess = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.READ,
+  });
+
+  const hasUpdateAccess = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.UPDATE,
+  });
 
   const memories: TUserMemory[] = useMemo(
     () =>
@@ -65,6 +75,11 @@ export default function MemoryViewer() {
         setOpen(!open);
       }
     };
+
+    // Only show edit button if user has UPDATE permission
+    if (!hasUpdateAccess) {
+      return null;
+    }
 
     return (
       <MemoryEditDialog
@@ -101,6 +116,10 @@ export default function MemoryViewer() {
         setOpen(!open);
       }
     };
+
+    if (!hasUpdateAccess) {
+      return null;
+    }
 
     const confirmDelete = async () => {
       setDeletingKey(memory.key);
@@ -168,6 +187,16 @@ export default function MemoryViewer() {
     );
   }
 
+  if (!hasReadAccess) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-4">
+        <div className="text-center">
+          <p className="text-sm text-text-secondary">{localize('com_ui_no_read_access')}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-2">
@@ -183,16 +212,18 @@ export default function MemoryViewer() {
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
           <Table className="w-full table-fixed">
             <TableHeader>
-              <TableRow className="border-b border-border-light">
+              <TableRow className="border-b border-border-light hover:bg-surface-secondary">
                 <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
                   <div className="px-4">{localize('com_ui_key')}</div>
                 </TableHead>
                 <TableHead className="w-[40%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
                   <div className="px-4">{localize('com_ui_value')}</div>
                 </TableHead>
-                <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                  <div className="px-4">{localize('com_assistants_actions')}</div>
-                </TableHead>
+                {hasUpdateAccess && (
+                  <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                    <div className="px-4">{localize('com_assistants_actions')}</div>
+                  </TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -200,7 +231,7 @@ export default function MemoryViewer() {
                 currentRows.map((memory: TUserMemory, idx: number) => (
                   <TableRow
                     key={idx}
-                    className="border-b border-border-light hover:bg-surface-hover"
+                    className="border-b border-border-light hover:bg-surface-secondary"
                   >
                     <TableCell className="w-[30%] px-4 py-4">
                       <div
@@ -210,7 +241,9 @@ export default function MemoryViewer() {
                         {memory.key}
                       </div>
                     </TableCell>
-                    <TableCell className="w-[40%] px-4 py-4">
+                    <TableCell
+                      className={hasUpdateAccess ? 'w-[40%] px-4 py-4' : 'w-[70%] px-4 py-4'}
+                    >
                       <div
                         className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary"
                         title={memory.value}
@@ -218,17 +251,22 @@ export default function MemoryViewer() {
                         {memory.value}
                       </div>
                     </TableCell>
-                    <TableCell className="w-[30%] px-4 py-4">
-                      <div className="flex gap-2">
-                        <EditMemoryButton memory={memory} />
-                        <DeleteMemoryButton memory={memory} />
-                      </div>
-                    </TableCell>
+                    {hasUpdateAccess && (
+                      <TableCell className="w-[30%] px-4 py-4">
+                        <div className="flex gap-2">
+                          <EditMemoryButton memory={memory} />
+                          <DeleteMemoryButton memory={memory} />
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3} className="h-24 text-center text-sm text-text-secondary">
+                  <TableCell
+                    colSpan={hasUpdateAccess ? 3 : 2}
+                    className="h-24 text-center text-sm text-text-secondary"
+                  >
                     {localize('com_ui_no_data')}
                   </TableCell>
                 </TableRow>

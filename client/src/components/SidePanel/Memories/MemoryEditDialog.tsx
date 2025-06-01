@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
 import { OGDialog, OGDialogTemplate, Button, Label, Input } from '~/components/ui';
 import { useUpdateMemoryMutation } from '~/data-provider';
+import { useLocalize, useHasAccess } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
-import { useLocalize } from '~/hooks';
 
 interface MemoryEditDialogProps {
   memory: TUserMemory | null;
@@ -23,6 +24,12 @@ export default function MemoryEditDialog({
 }: MemoryEditDialogProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+
+  const hasUpdateAccess = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.UPDATE,
+  });
+
   const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation({
     onMutate: () => {
       onOpenChange(false);
@@ -57,6 +64,10 @@ export default function MemoryEditDialog({
   }, [memory]);
 
   const handleSave = () => {
+    if (!hasUpdateAccess) {
+      return;
+    }
+
     if (!key.trim() || !value.trim()) {
       showToast({
         message: localize('com_ui_field_required'),
@@ -73,7 +84,7 @@ export default function MemoryEditDialog({
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
+    if (e.key === 'Enter' && e.ctrlKey && hasUpdateAccess) {
       handleSave();
     }
   };
@@ -82,7 +93,7 @@ export default function MemoryEditDialog({
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       {children}
       <OGDialogTemplate
-        title={localize('com_ui_edit_memory')}
+        title={hasUpdateAccess ? localize('com_ui_edit_memory') : localize('com_ui_view_memory')}
         showCloseButton={false}
         className="w-11/12 md:max-w-lg"
         main={
@@ -106,10 +117,11 @@ export default function MemoryEditDialog({
               <Input
                 id="memory-key"
                 value={key}
-                onChange={(e) => setKey(e.target.value)}
+                onChange={(e) => hasUpdateAccess && setKey(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_key')}
                 className="w-full"
+                disabled={!hasUpdateAccess}
               />
             </div>
             <div className="space-y-2">
@@ -119,25 +131,28 @@ export default function MemoryEditDialog({
               <textarea
                 id="memory-value"
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(e) => hasUpdateAccess && setValue(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 rows={3}
+                disabled={!hasUpdateAccess}
               />
             </div>
           </div>
         }
         buttons={
-          <Button
-            type="button"
-            variant="submit"
-            onClick={handleSave}
-            disabled={isLoading || !key.trim() || !value.trim()}
-            className="text-white"
-          >
-            {isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
-          </Button>
+          hasUpdateAccess ? (
+            <Button
+              type="button"
+              variant="submit"
+              onClick={handleSave}
+              disabled={isLoading || !key.trim() || !value.trim()}
+              className="text-white"
+            >
+              {isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
+            </Button>
+          ) : null
         }
       />
     </OGDialog>
