@@ -10,9 +10,15 @@ interface MemoryEditDialogProps {
   memory: TUserMemory | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
 }
 
-export default function MemoryEditDialog({ memory, open, onOpenChange }: MemoryEditDialogProps) {
+export default function MemoryEditDialog({
+  memory,
+  open,
+  onOpenChange,
+  children,
+}: MemoryEditDialogProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation();
@@ -70,6 +76,7 @@ export default function MemoryEditDialog({ memory, open, onOpenChange }: MemoryE
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
+      {children}
       <OGDialogTemplate
         title={localize('com_ui_edit_memory')}
         showCloseButton={false}

@@ -1,18 +1,24 @@
 /* Memories */
 import { useMemo, useState } from 'react';
 import { SystemRoles } from 'librechat-data-provider';
-import { Pencil, Trash2, RefreshCw } from 'lucide-react';
 import type { TUserMemory } from 'librechat-data-provider';
 import {
-  TableHeader,
+  Table,
+  Input,
+  Label,
+  Button,
+  TableRow,
+  OGDialog,
   TableHead,
   TableBody,
   TableCell,
-  TableRow,
-  Button,
-  Table,
+  TableHeader,
+  TooltipAnchor,
+  OGDialogTrigger,
 } from '~/components/ui';
 import { useDeleteMemoryMutation, useMemoriesQuery } from '~/data-provider';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { EditIcon, TrashIcon } from '~/components/svg';
 import { useLocalize, useAuthContext } from '~/hooks';
 import MemoryEditDialog from './MemoryEditDialog';
 import Spinner from '~/components/svg/Spinner';
@@ -22,18 +28,12 @@ import AdminSettings from './AdminSettings';
 export default function MemoryViewer() {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const {
-    data: memData = [],
-    isLoading,
-    // isFetching,
-    // refetch: refreshMemories,
-  } = useMemoriesQuery();
+  const { data: memData = [], isLoading } = useMemoriesQuery();
   const { mutate: deleteMemory } = useDeleteMemoryMutation();
   const { showToast } = useToastContext();
   const [pageIndex, setPageIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
   const pageSize = 10;
-  const [selectedMemory, setSelectedMemory] = useState<TUserMemory | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   const memories: TUserMemory[] = useMemo(
@@ -44,24 +44,68 @@ export default function MemoryViewer() {
     [memData],
   );
 
-  const currentRows = useMemo(() => {
-    return memories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  }, [memories, pageIndex]);
+  const filteredMemories = useMemo(() => {
+    return memories.filter(
+      (memory) =>
+        memory.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        memory.value.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [memories, searchQuery]);
 
-  const handleEdit = (memory: TUserMemory) => {
-    setSelectedMemory(memory);
-    setIsEditDialogOpen(true);
+  const currentRows = useMemo(() => {
+    return filteredMemories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+  }, [filteredMemories, pageIndex]);
+
+  const EditMemoryButton = ({ memory }: { memory: TUserMemory }) => {
+    const [open, setOpen] = useState(false);
+
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setOpen(!open);
+      }
+    };
+
+    return (
+      <MemoryEditDialog memory={memory} open={open} onOpenChange={setOpen}>
+        <OGDialogTrigger asChild>
+          <TooltipAnchor
+            role="button"
+            aria-label={localize('com_ui_edit')}
+            description={localize('com_ui_edit')}
+            tabIndex={0}
+            onClick={() => setOpen(!open)}
+            className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
+            onKeyDown={handleKeyDown}
+          >
+            <EditIcon />
+          </TooltipAnchor>
+        </OGDialogTrigger>
+      </MemoryEditDialog>
+    );
   };
 
-  const handleDelete = (memory: TUserMemory) => {
-    if (window.confirm(localize('com_ui_delete_confirm'))) {
+  const DeleteMemoryButton = ({ memory }: { memory: TUserMemory }) => {
+    const [open, setOpen] = useState(false);
+
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(!open);
+      }
+    };
+
+    const confirmDelete = async () => {
       setDeletingKey(memory.key);
       deleteMemory(memory.key, {
-        onSuccess: () =>
+        onSuccess: () => {
           showToast({
             message: localize('com_ui_deleted'),
             status: 'success',
-          }),
+          });
+          setOpen(false);
+        },
         onError: () =>
           showToast({
             message: localize('com_ui_error'),
@@ -69,7 +113,45 @@ export default function MemoryViewer() {
           }),
         onSettled: () => setDeletingKey(null),
       });
-    }
+    };
+
+    return (
+      <OGDialog open={open} onOpenChange={setOpen}>
+        <OGDialogTrigger asChild>
+          <TooltipAnchor
+            role="button"
+            aria-label={localize('com_ui_delete')}
+            description={localize('com_ui_delete')}
+            className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
+            tabIndex={0}
+            onClick={() => setOpen(!open)}
+            onKeyDown={handleKeyDown}
+          >
+            {deletingKey === memory.key ? (
+              <Spinner className="size-4 animate-spin" />
+            ) : (
+              <TrashIcon className="size-4" />
+            )}
+          </TooltipAnchor>
+        </OGDialogTrigger>
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_delete_memory')}
+          className="w-11/12 max-w-lg"
+          main={
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_delete_confirm')} &quot;{memory.key}&quot;?
+            </Label>
+          }
+          selection={{
+            selectHandler: confirmDelete,
+            selectClasses:
+              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+            selectText: localize('com_ui_delete'),
+          }}
+        />
+      </OGDialog>
+    );
   };
 
   if (isLoading) {
@@ -82,26 +164,16 @@ export default function MemoryViewer() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      {/* 
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-primary p-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium text-text-primary">
-            {localize('com_ui_memories')} ({memories.length})
-          </h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refreshMemories()}
-            disabled={isFetching}
-            className="h-6 w-6 p-0"
-          >
-            <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
-          </Button>
+      <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-2">
+        <div className="flex items-center gap-4">
+          <Input
+            placeholder={localize('com_ui_memories_filter')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={localize('com_ui_memories_filter')}
+          />
         </div>
-      </div>
-       */}
 
-      <div className="mt-2 space-y-2" role="region" aria-label={localize('com_ui_memories')}>
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
           <Table className="w-full table-fixed">
             <TableHeader>
@@ -124,7 +196,7 @@ export default function MemoryViewer() {
                     key={idx}
                     className="border-b border-border-light hover:bg-surface-hover"
                   >
-                    <TableCell className="w-[30%] px-4 py-3">
+                    <TableCell className="w-[30%] px-4 py-4">
                       <div
                         className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary"
                         title={memory.key}
@@ -132,7 +204,7 @@ export default function MemoryViewer() {
                         {memory.key}
                       </div>
                     </TableCell>
-                    <TableCell className="w-[40%] px-4 py-3">
+                    <TableCell className="w-[40%] px-4 py-4">
                       <div
                         className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary"
                         title={memory.value}
@@ -140,31 +212,10 @@ export default function MemoryViewer() {
                         {memory.value}
                       </div>
                     </TableCell>
-                    <TableCell className="w-[30%] px-4 py-3">
-                      <div className="flex gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          aria-label={localize('com_ui_edit')}
-                          onClick={() => handleEdit(memory)}
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          aria-label={localize('com_ui_delete')}
-                          onClick={() => handleDelete(memory)}
-                          disabled={deletingKey === memory.key}
-                        >
-                          {deletingKey === memory.key ? (
-                            <Spinner className="size-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="size-3.5" />
-                          )}
-                        </Button>
+                    <TableCell className="w-[30%] px-4 py-4">
+                      <div className="flex gap-2">
+                        <EditMemoryButton memory={memory} />
+                        <DeleteMemoryButton memory={memory} />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -181,7 +232,7 @@ export default function MemoryViewer() {
         </div>
 
         {/* Pagination controls */}
-        {memories.length > pageSize && (
+        {filteredMemories.length > pageSize && (
           <div
             className="flex items-center justify-end gap-2"
             role="navigation"
@@ -197,15 +248,17 @@ export default function MemoryViewer() {
               {localize('com_ui_prev')}
             </Button>
             <div className="text-sm" aria-live="polite">
-              {`${pageIndex + 1} / ${Math.ceil(memories.length / pageSize)}`}
+              {`${pageIndex + 1} / ${Math.ceil(filteredMemories.length / pageSize)}`}
             </div>
             <Button
               variant="outline"
               size="sm"
               onClick={() =>
-                setPageIndex((prev) => ((prev + 1) * pageSize < memories.length ? prev + 1 : prev))
+                setPageIndex((prev) =>
+                  (prev + 1) * pageSize < filteredMemories.length ? prev + 1 : prev,
+                )
               }
-              disabled={(pageIndex + 1) * pageSize >= memories.length}
+              disabled={(pageIndex + 1) * pageSize >= filteredMemories.length}
               aria-label={localize('com_ui_next')}
             >
               {localize('com_ui_next')}
@@ -219,12 +272,6 @@ export default function MemoryViewer() {
             <AdminSettings />
           </div>
         )}
-
-        <MemoryEditDialog
-          memory={selectedMemory}
-          open={isEditDialogOpen}
-          onOpenChange={setIsEditDialogOpen}
-        />
       </div>
     </div>
   );
