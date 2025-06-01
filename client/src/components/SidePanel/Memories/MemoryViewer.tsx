@@ -97,11 +97,6 @@ export default function MemoryViewer() {
             <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
         </div> */}
-        {user?.role === SystemRoles.ADMIN && (
-          <div className="flex items-center gap-2">
-            <AdminSettings />
-          </div>
-        )}
       </div>
 
       <div className="mt-2 space-y-2" role="region" aria-label={localize('com_ui_memories')}>
@@ -213,6 +208,13 @@ export default function MemoryViewer() {
             >
               {localize('com_ui_next')}
             </Button>
+          </div>
+        )}
+
+        {/* Admin Settings */}
+        {user?.role === SystemRoles.ADMIN && (
+          <div className="mt-4">
+            <AdminSettings />
           </div>
         )}
 
