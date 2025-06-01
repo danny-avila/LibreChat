@@ -809,6 +809,10 @@ export const deleteMemory = (key: string): Promise<void> => {
   return request.delete(endpoints.memory(key));
 };
 
-export const updateMemory = (key: string, value: string): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(key), { value });
+export const updateMemory = (
+  key: string,
+  value: string,
+  originalKey?: string,
+): Promise<q.TUserMemory> => {
+  return request.patch(endpoints.memory(originalKey || key), { key, value });
 };

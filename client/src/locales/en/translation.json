@@ -974,5 +974,9 @@
   "com_user_message": "You",
   "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
   "com_ui_data": "Data",
-  "com_ui_value": "Value"
+  "com_ui_value": "Value",
+  "com_ui_edit_memory": "Edit Memory",
+  "com_ui_enter_key": "Enter key",
+  "com_ui_enter_value": "Enter value",
+  "com_ui_no_memories": "No memories available"
 }

@@ -27,7 +27,8 @@ export const useDeleteMemoryMutation = () => {
 export const useUpdateMemoryMutation = () => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ key, value }: { key: string; value: string }) => dataService.updateMemory(key, value),
+    ({ key, value, originalKey }: { key: string; value: string; originalKey?: string }) =>
+      dataService.updateMemory(key, value, originalKey),
     {
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.memories]);
