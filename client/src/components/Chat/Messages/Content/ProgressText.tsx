@@ -59,7 +59,7 @@ export default function ProgressText({
   isExpanded?: boolean;
   error?: boolean;
 }) {
-  const text = progress < 1 ? (authText ?? inProgressText) : finishedText;
+  const text = error ? finishedText : progress < 1 ? (authText ?? inProgressText) : finishedText;
   return (
     <Wrapper popover={popover}>
       <button
@@ -71,8 +71,8 @@ export default function ProgressText({
         disabled={!hasInput}
         onClick={hasInput ? onClick : undefined}
       >
-        {progress < 1 ? <Spinner /> : error ? <CancelledIcon /> : <FinishedIcon />}
-        <span className={`${progress < 1 ? 'shimmer' : ''}`}>{text}</span>
+        {error ? <CancelledIcon /> : progress < 1 ? <Spinner /> : <FinishedIcon />}
+        <span className={`${progress < 1 && !error ? 'shimmer' : ''}`}>{text}</span>
         {hasInput &&
           (isExpanded ? (
             <ChevronUp className="size-4 translate-y-[1px]" />
