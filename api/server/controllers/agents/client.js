@@ -20,10 +20,12 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  Permissions,
   VisionModes,
   ContentTypes,
   EModelEndpoint,
   KnownEndpoints,
+  PermissionTypes,
   isAgentsEndpoint,
   AgentCapabilities,
   bedrockInputSchema,
@@ -36,6 +38,7 @@ const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { setMemory, deleteMemory, getFormattedMemories } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
+const { checkAccess } = require('~/server/middleware/roles/access');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 const { logger, sendEvent } = require('~/config');
@@ -396,6 +399,17 @@ class AgentClient extends BaseClient {
    * @returns {Promise<string | undefined>}
    */
   async useMemory() {
+    const hasAccess = await checkAccess(this.options.req.user, PermissionTypes.MEMORIES, [
+      Permissions.USE,
+    ]);
+
+    if (!hasAccess) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #useMemory] User ${this.options.req.user.id} does not have USE permission for memories`,
+      );
+      return undefined;
+    }
+
     const userId = this.options.req.user.id + '';
     const conversationId = this.conversationId + '';
     const [withoutKeys, processMemory] = await createMemoryProcessor({
