@@ -188,7 +188,12 @@ export default [
     },
   },
   {
-    files: ['client/src/**/*.tsx', 'client/src/**/*.ts', 'client/src/**/*.jsx', 'client/src/**/*.js'],
+    files: [
+      'client/src/**/*.tsx',
+      'client/src/**/*.ts',
+      'client/src/**/*.jsx',
+      'client/src/**/*.js',
+    ],
     rules: {
       // Client a11y
       // TODO: maybe later to error.
@@ -285,7 +290,6 @@ export default [
       // General
       'no-constant-binary-expression': 'off',
       'import/no-cycle': 'off',
-      'no-nested-ternary': 'off',
     },
   },
   {
