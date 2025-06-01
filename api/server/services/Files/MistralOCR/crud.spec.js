@@ -186,6 +186,7 @@ describe('MistralOCR Service', () => {
         {
           model: 'mistral-ocr-latest',
           include_image_base64: false,
+          image_limit: 0,
           document: {
             type: 'document_url',
             document_url: 'https://document-url.com',
@@ -221,6 +222,7 @@ describe('MistralOCR Service', () => {
         {
           model: 'mistral-ocr-latest',
           include_image_base64: false,
+          image_limit: 0,
           document: {
             type: 'image_url',
             image_url: 'https://image-url.com/image.png',
