@@ -1,5 +1,6 @@
 /* Memories */
 import { useMemo, useState } from 'react';
+import { matchSorter } from 'match-sorter';
 import { SystemRoles } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
 import {
@@ -45,11 +46,9 @@ export default function MemoryViewer() {
   );
 
   const filteredMemories = useMemo(() => {
-    return memories.filter(
-      (memory) =>
-        memory.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        memory.value.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
+    return matchSorter(memories, searchQuery, {
+      keys: ['key', 'value'],
+    });
   }, [memories, searchQuery]);
 
   const currentRows = useMemo(() => {
