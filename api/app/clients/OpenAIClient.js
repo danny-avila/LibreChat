@@ -847,7 +847,6 @@ ${convo}
             modelOptions,
             useChatCompletion,
             context: 'title',
-            useResponsesAPI: false,  // Force Chat Completions for title generation
           })
         ).replaceAll('"', '');
 
