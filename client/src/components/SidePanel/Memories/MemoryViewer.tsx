@@ -1,5 +1,5 @@
 /* Memories */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { matchSorter } from 'match-sorter';
 import { SystemRoles } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
@@ -57,6 +57,7 @@ export default function MemoryViewer() {
 
   const EditMemoryButton = ({ memory }: { memory: TUserMemory }) => {
     const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLDivElement>(null);
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -66,9 +67,15 @@ export default function MemoryViewer() {
     };
 
     return (
-      <MemoryEditDialog memory={memory} open={open} onOpenChange={setOpen}>
+      <MemoryEditDialog
+        open={open}
+        memory={memory}
+        onOpenChange={setOpen}
+        triggerRef={triggerRef as React.MutableRefObject<HTMLButtonElement | null>}
+      >
         <OGDialogTrigger asChild>
           <TooltipAnchor
+            ref={triggerRef}
             role="button"
             aria-label={localize('com_ui_edit')}
             description={localize('com_ui_edit')}

@@ -11,6 +11,7 @@ interface MemoryEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
+  triggerRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
 export default function MemoryEditDialog({
@@ -18,10 +19,30 @@ export default function MemoryEditDialog({
   open,
   onOpenChange,
   children,
+  triggerRef,
 }: MemoryEditDialogProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation();
+  const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation({
+    onMutate: () => {
+      onOpenChange(false);
+      setTimeout(() => {
+        triggerRef?.current?.focus();
+      }, 0);
+    },
+    onSuccess: () => {
+      showToast({
+        message: localize('com_ui_saved'),
+        status: 'success',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_error'),
+        status: 'error',
+      });
+    },
+  });
 
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
@@ -44,28 +65,11 @@ export default function MemoryEditDialog({
       return;
     }
 
-    updateMemory(
-      {
-        key: key.trim(),
-        value: value.trim(),
-        ...(originalKey !== key.trim() && { originalKey }),
-      },
-      {
-        onSuccess: () => {
-          showToast({
-            message: localize('com_ui_saved'),
-            status: 'success',
-          });
-          onOpenChange(false);
-        },
-        onError: () => {
-          showToast({
-            message: localize('com_ui_error'),
-            status: 'error',
-          });
-        },
-      },
-    );
+    updateMemory({
+      key: key.trim(),
+      value: value.trim(),
+      ...(originalKey !== key.trim() && { originalKey }),
+    });
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -75,7 +79,7 @@ export default function MemoryEditDialog({
   };
 
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       {children}
       <OGDialogTemplate
         title={localize('com_ui_edit_memory')}
@@ -126,6 +130,7 @@ export default function MemoryEditDialog({
         }
         buttons={
           <Button
+            type="button"
             variant="submit"
             onClick={handleSave}
             disabled={isLoading || !key.trim() || !value.trim()}
