@@ -639,6 +639,9 @@ export const tConversationSchema = z.object({
   iconURL: z.string().nullable().optional(),
   /* temporary chat */
   expiredAt: z.string().nullable().optional(),
+  /* Responses API */
+  useResponsesAPI: z.boolean().optional(),
+  builtInTools: z.array(z.string()).optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -1033,6 +1036,8 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  useResponsesAPI: true,
+  builtInTools: true,
 });
 
 export const openAISchema = openAIBaseSchema

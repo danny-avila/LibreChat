@@ -15,9 +15,12 @@ const buildOptions = (endpoint, parsedBody) => {
     artifacts,
     useResponsesAPI,
     builtInTools,
-    responsesOptions,
     ...modelOptions
   } = parsedBody;
+
+  if (builtInTools && builtInTools.length > 0 && !useResponsesAPI) {
+    throw new Error('builtInTools can only be used when useResponsesAPI is set to true');
+  }
 
   const endpointOption = removeNullishValues({
     endpoint,
@@ -32,7 +35,6 @@ const buildOptions = (endpoint, parsedBody) => {
     maxContextTokens,
     useResponsesAPI,
     builtInTools,
-    responsesOptions,
     modelOptions,
   });
 

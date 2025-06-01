@@ -123,6 +123,27 @@ const initializeClient = async ({
     clientOptions.streamRate = allConfig.streamRate;
   }
 
+  let useResponsesAPI = false;
+  let builtInTools = [];
+
+  if (!isAzureOpenAI && openAIConfig) {
+    useResponsesAPI = openAIConfig.useResponsesAPI || false;
+    builtInTools = openAIConfig.builtInTools || [];
+  } else if (isAzureOpenAI && azureConfig) {
+    useResponsesAPI = azureConfig.useResponsesAPI || false;
+    builtInTools = azureConfig.builtInTools || [];
+  }
+
+  if (endpointOption.useResponsesAPI !== undefined) {
+    useResponsesAPI = endpointOption.useResponsesAPI;
+  }
+  if (endpointOption.builtInTools !== undefined) {
+    builtInTools = endpointOption.builtInTools;
+  }
+
+  clientOptions.useResponsesAPI = useResponsesAPI;
+  clientOptions.builtInTools = builtInTools;
+
   if (userProvidesKey & !apiKey) {
     throw new Error(
       JSON.stringify({
