@@ -15,6 +15,7 @@ const {
   makePromptProduction,
 } = require('~/models/Prompt');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
+const { getUserById, updateUser } = require('~/models');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -173,6 +174,28 @@ router.patch('/:promptId/tags/production', checkPromptCreate, async (req, res) =
   }
 });
 
+/**
+ * Route to get user's prompt preferences (favorites and rankings)
+ * GET /preferences
+ */
+router.get('/preferences', async (req, res) => {
+  try {
+    const user = await getUserById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      favorites: user.promptFavorites || [],
+      rankings: user.promptRanking || [],
+    });
+  } catch (error) {
+    logger.error('Error getting user preferences', error);
+    res.status(500).json({ message: 'Error getting user preferences' });
+  }
+});
+
 router.get('/:promptId', async (req, res) => {
   const { promptId } = req.params;
   const author = req.user.id;
@@ -242,5 +265,80 @@ const deletePromptGroupController = async (req, res) => {
 
 router.delete('/:promptId', checkPromptCreate, deletePromptController);
 router.delete('/groups/:groupId', checkPromptCreate, deletePromptGroupController);
+
+/**
+ * Route to toggle favorite status for a prompt group
+ * POST /favorites/:groupId
+ */
+router.post('/favorites/:groupId', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+
+    const user = await getUserById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const favorites = user.promptFavorites || [];
+    const isFavorite = favorites.some((id) => id.toString() === groupId.toString());
+
+    let updatedFavorites;
+    if (isFavorite) {
+      updatedFavorites = favorites.filter((id) => id.toString() !== groupId.toString());
+    } else {
+      updatedFavorites = [...favorites, groupId];
+    }
+
+    await updateUser(req.user.id, { promptFavorites: updatedFavorites });
+
+    const response = {
+      promptGroupId: groupId,
+      isFavorite: !isFavorite,
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error('Error toggling favorite status', error);
+    res.status(500).json({ message: 'Error updating favorite status' });
+  }
+});
+
+/**
+ * Route to update prompt group rankings
+ * PUT /rankings
+ */
+router.put('/rankings', async (req, res) => {
+  try {
+    const { rankings } = req.body;
+
+    if (!Array.isArray(rankings)) {
+      return res.status(400).json({ message: 'Rankings must be an array' });
+    }
+
+    const user = await getUserById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const promptRanking = rankings
+      .filter(({ promptGroupId, order }) => promptGroupId && !isNaN(parseInt(order, 10)))
+      .map(({ promptGroupId, order }) => ({
+        promptGroupId,
+        order: parseInt(order, 10),
+      }));
+
+    const updatedUser = await updateUser(req.user.id, { promptRanking });
+
+    res.json({
+      message: 'Rankings updated successfully',
+      rankings: updatedUser?.promptRanking || [],
+    });
+  } catch (error) {
+    logger.error('Error updating rankings', error);
+    res.status(500).json({ message: 'Error updating rankings' });
+  }
+});
 
 module.exports = router;

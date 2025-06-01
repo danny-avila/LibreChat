@@ -250,6 +250,13 @@ export const getCategories = () => '/api/categories';
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Prompt Favorites and Rankings */
+export const togglePromptFavorite = (groupId: string) => `${prompts()}/favorites/${groupId}`;
+
+export const updatePromptRankings = () => `${prompts()}/rankings`;
+
+export const getUserPromptPreferences = () => `${prompts()}/preferences`;
+
 /* Roles */
 export const roles = () => '/api/roles';
 export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;

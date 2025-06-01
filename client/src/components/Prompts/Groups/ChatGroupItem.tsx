@@ -10,6 +10,7 @@ import {
 } from '~/components/ui';
 import { useLocalize, useSubmitMessage, useCustomLink, useAuthContext } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
+import FavoriteButton from '~/components/Prompts/Groups/FavoriteButton';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';
 import ListCard from '~/components/Prompts/Groups/ListCard';
 import { detectVariables } from '~/utils';
@@ -64,6 +65,7 @@ function ChatGroupItem({
           {groupIsGlobal === true && (
             <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
           )}
+          <FavoriteButton groupId={group._id ?? ''} size="16" />
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button

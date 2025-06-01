@@ -129,6 +129,28 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    promptFavorites: {
+      type: [Schema.Types.ObjectId],
+      ref: 'PromptGroup',
+      default: [],
+    },
+    promptRanking: {
+      type: [
+        {
+          promptGroupId: {
+            type: Schema.Types.ObjectId,
+            ref: 'PromptGroup',
+            required: true,
+          },
+          order: {
+            type: Number,
+            required: true,
+          },
+        },
+      ],
+      default: [],
+      _id: false,
+    },
   },
   { timestamps: true },
 );
