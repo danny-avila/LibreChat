@@ -1174,7 +1174,6 @@ ${convo}
         abortController = new AbortController();
       }
 
-      // Define valid Responses API parameters
       const validResponsesParams = [
         'model',
         'input',
@@ -1186,34 +1185,19 @@ ${convo}
         'user_location'
       ];
       
-      // Build Responses API payload with only valid parameters
       const responsesPayload = {
         model: this.modelOptions.model,
         input: input,
       };
 
-      // Enable streaming if onProgress callback is provided
       if (typeof onProgress === 'function') {
         responsesPayload.stream = true;
       }
 
-      // Add built-in tools if configured
       if (this.options.builtInTools && Array.isArray(this.options.builtInTools)) {
         responsesPayload.tools = this.options.builtInTools.map(tool => ({ type: tool }));
       }
 
-      // Add any additional responses options, filtering for valid parameters only
-      if (this.options.responsesOptions && typeof this.options.responsesOptions === 'object') {
-        Object.keys(this.options.responsesOptions).forEach(key => {
-          if (validResponsesParams.includes(key)) {
-            responsesPayload[key] = this.options.responsesOptions[key];
-          } else if (this.options.debug) {
-            logger.debug(`[OpenAIClient] Filtered out invalid Responses API parameter: ${key}`);
-          }
-        });
-      }
-
-      // Filter modelOptions for any valid Responses API parameters
       Object.keys(this.modelOptions).forEach(key => {
         if (validResponsesParams.includes(key) && !responsesPayload.hasOwnProperty(key)) {
           responsesPayload[key] = this.modelOptions[key];
@@ -1262,7 +1246,6 @@ ${convo}
 
       logger.debug('[OpenAIClient] responsesCompletion', { baseURL, responsesPayload });
 
-      // Handle streaming responses
       if (responsesPayload.stream) {
         const handlers = createStreamEventHandlers(this.options.res);
         this.streamHandler = new SplitStreamHandler({
@@ -1288,16 +1271,13 @@ ${convo}
               break;
             }
 
-            // Handle Responses API streaming events correctly
             if (chunk.type === 'response.output_text.delta') {
-              // Extract content from the delta (direct string)
               const token = chunk.delta;
               if (token) {
                 onProgress(token);
                 intermediateReply.push(token);
               }
             } else if (chunk.type === 'response.completed') {
-              // Final response with complete data
               finalResponse = chunk.response;
               break;
             }
@@ -1305,7 +1285,6 @@ ${convo}
             await sleep(streamRate);
           }
 
-          // Store usage information if available
           if (finalResponse && finalResponse.usage) {
             this.usage = finalResponse.usage;
           }
@@ -1320,7 +1299,6 @@ ${convo}
         }
       }
 
-      // Non-streaming response
       const response = await openai.responses.create(responsesPayload).catch((err) => {
         handleOpenAIErrors(err, errorCallback, 'responses.create');
       });
@@ -1333,22 +1311,18 @@ ${convo}
 
       logger.debug('[OpenAIClient] responsesCompletion response', response);
 
-      // Store usage information if available
       if (response.usage) {
         this.usage = response.usage;
       }
 
-      // Extract response text from Responses API format
       let responseText = '';
       
       if (response.output && Array.isArray(response.output)) {
-        // Find the assistant message in the output array
         const assistantMessage = response.output.find(
           item => item.type === 'message' && item.role === 'assistant'
         );
 
         if (assistantMessage && assistantMessage.content && Array.isArray(assistantMessage.content)) {
-          // Extract text content from content array
           const textContent = assistantMessage.content.find(content => 
             content.type === 'output_text'
           );
