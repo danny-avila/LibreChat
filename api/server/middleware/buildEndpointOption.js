@@ -39,50 +39,45 @@ async function buildEndpointOption(req, res, next) {
     return handleError(res, { text: 'Error parsing conversation' });
   }
 
-  if (req.app.locals.modelSpecs?.list) {
+  if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = req.app.locals.modelSpecs;
     const { spec } = parsedBody;
-    const isEnforced = req.app.locals.modelSpecs?.enforce;
 
-    // If enforced, spec is required
-    if (isEnforced && !spec) {
+    if (!spec) {
       return handleError(res, { text: 'No model spec selected' });
     }
 
-    // If spec is provided (either enforced or user-selected), process it
-    if (spec) {
-      const currentModelSpec = list.find((s) => s.name === spec);
-      if (!currentModelSpec) {
-        return handleError(res, { text: 'Invalid model spec' });
-      }
+    const currentModelSpec = list.find((s) => s.name === spec);
+    if (!currentModelSpec) {
+      return handleError(res, { text: 'Invalid model spec' });
+    }
 
-      if (endpoint !== currentModelSpec.preset.endpoint) {
-        return handleError(res, { text: 'Model spec mismatch' });
-      }
+    if (endpoint !== currentModelSpec.preset.endpoint) {
+      return handleError(res, { text: 'Model spec mismatch' });
+    }
 
-      if (
-        currentModelSpec.preset.endpoint !== EModelEndpoint.gptPlugins &&
-        currentModelSpec.preset.tools
-      ) {
-        return handleError(res, {
-          text: `Only the "${EModelEndpoint.gptPlugins}" endpoint can have tools defined in the preset`,
-        });
-      }
+    if (
+      currentModelSpec.preset.endpoint !== EModelEndpoint.gptPlugins &&
+      currentModelSpec.preset.tools
+    ) {
+      return handleError(res, {
+        text: `Only the "${EModelEndpoint.gptPlugins}" endpoint can have tools defined in the preset`,
+      });
+    }
 
-      try {
-        currentModelSpec.preset.spec = spec;
-        if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
-          currentModelSpec.preset.iconURL = currentModelSpec.iconURL;
-        }
-        parsedBody = parseCompactConvo({
-          endpoint,
-          endpointType,
-          conversation: currentModelSpec.preset,
-        });
-      } catch (error) {
-        return handleError(res, { text: 'Error parsing model spec' });
+    try {
+      currentModelSpec.preset.spec = spec;
+      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
+        currentModelSpec.preset.iconURL = currentModelSpec.iconURL;
       }
+      parsedBody = parseCompactConvo({
+        endpoint,
+        endpointType,
+        conversation: currentModelSpec.preset,
+      });
+    } catch (error) {
+      return handleError(res, { text: 'Error parsing model spec' });
     }
   }
 
