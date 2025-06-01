@@ -5,6 +5,7 @@ import {
   permissionsSchema,
   agentPermissionsSchema,
   promptPermissionsSchema,
+  memoryPermissionsSchema,
   runCodePermissionsSchema,
   webSearchPermissionsSchema,
   bookmarkPermissionsSchema,
@@ -48,6 +49,12 @@ const defaultRolesSchema = z.object({
       [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
       }),
+      [PermissionTypes.MEMORIES]: memoryPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+        [Permissions.CREATE]: z.boolean().default(true),
+        [Permissions.UPDATE]: z.boolean().default(true),
+        [Permissions.READ]: z.boolean().default(true),
+      }),
       [PermissionTypes.AGENTS]: agentPermissionsSchema.extend({
         [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
@@ -86,6 +93,12 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: true,
       },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.UPDATE]: true,
+        [Permissions.READ]: true,
+      },
       [PermissionTypes.AGENTS]: {
         [Permissions.SHARED_GLOBAL]: true,
         [Permissions.USE]: true,
@@ -110,6 +123,7 @@ export const roleDefaults = defaultRolesSchema.parse({
     permissions: {
       [PermissionTypes.PROMPTS]: {},
       [PermissionTypes.BOOKMARKS]: {},
+      [PermissionTypes.MEMORIES]: {},
       [PermissionTypes.AGENTS]: {},
       [PermissionTypes.MULTI_CONVO]: {},
       [PermissionTypes.TEMPORARY_CHAT]: {},

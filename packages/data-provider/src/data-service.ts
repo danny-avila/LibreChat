@@ -718,6 +718,12 @@ export function updateAgentPermissions(
   return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
 }
 
+export function updateMemoryPermissions(
+  variables: m.UpdateMemoryPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMemoryPermissions(variables.roleName), variables.updates);
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());

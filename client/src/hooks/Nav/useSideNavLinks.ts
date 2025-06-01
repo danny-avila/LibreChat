@@ -43,6 +43,10 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
   });
+  const hasAccessToMemories = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.USE,
+  });
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
@@ -98,13 +102,15 @@ export default function useSideNavLinks({
       });
     }
 
-    links.push({
-      title: 'com_ui_memories',
-      label: '',
-      icon: Database,
-      id: 'memories',
-      Component: MemoryViewer,
-    });
+    if (hasAccessToMemories) {
+      links.push({
+        title: 'com_ui_memories',
+        label: '',
+        icon: Database,
+        id: 'memories',
+        Component: MemoryViewer,
+      });
+    }
 
     if (
       interfaceConfig.parameters === true &&
@@ -156,6 +162,7 @@ export default function useSideNavLinks({
     endpoint,
     hasAccessToAgents,
     hasAccessToPrompts,
+    hasAccessToMemories,
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
     hidePanel,

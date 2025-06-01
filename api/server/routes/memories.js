@@ -1,8 +1,22 @@
 const express = require('express');
-const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
 const { MemoryEntry } = require('~/db/models');
 
 const router = express.Router();
+
+const checkMemoryRead = generateCheckAccess(PermissionTypes.MEMORIES, [
+  Permissions.USE,
+  Permissions.READ,
+]);
+const checkMemoryUpdate = generateCheckAccess(PermissionTypes.MEMORIES, [
+  Permissions.USE,
+  Permissions.UPDATE,
+]);
+const checkMemoryDelete = generateCheckAccess(PermissionTypes.MEMORIES, [
+  Permissions.USE,
+  Permissions.UPDATE,
+]);
 
 router.use(requireJwtAuth);
 
@@ -10,7 +24,7 @@ router.use(requireJwtAuth);
  * GET /memories
  * Returns all memories for the authenticated user, sorted by updated_at (newest first).
  */
-router.get('/', async (req, res) => {
+router.get('/', checkMemoryRead, async (req, res) => {
   try {
     const memories = await MemoryEntry.find({ userId: req.user.id })
       .sort({ updated_at: -1 })
@@ -28,7 +42,7 @@ router.get('/', async (req, res) => {
  * Body: { value: string }
  * Returns 200 and { updated: true, memory: <updatedDoc> } when successful.
  */
-router.patch('/:key', async (req, res) => {
+router.patch('/:key', checkMemoryUpdate, async (req, res) => {
   const { key } = req.params;
   const { value } = req.body || {};
 
@@ -58,7 +72,7 @@ router.patch('/:key', async (req, res) => {
  * Deletes a memory entry for the authenticated user.
  * Returns 200 and { deleted: true } when successful.
  */
-router.delete('/:key', async (req, res) => {
+router.delete('/:key', checkMemoryDelete, async (req, res) => {
   const { key } = req.params;
 
   try {

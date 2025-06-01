@@ -33,6 +33,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
+    memories: interfaceConfig?.memories ?? defaults.memories,
     prompts: interfaceConfig?.prompts ?? defaults.prompts,
     multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
     agents: interfaceConfig?.agents ?? defaults.agents,
@@ -45,6 +46,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   await updateAccessPermissions(roleName, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+    [PermissionTypes.MEMORIES]: { [Permissions.USE]: loadedInterface.memories },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
@@ -54,6 +56,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+    [PermissionTypes.MEMORIES]: { [Permissions.USE]: loadedInterface.memories },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },

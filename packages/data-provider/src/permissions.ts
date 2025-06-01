@@ -17,6 +17,10 @@ export enum PermissionTypes {
    */
   AGENTS = 'AGENTS',
   /**
+   * Type for Memory Permissions
+   */
+  MEMORIES = 'MEMORIES',
+  /**
    * Type for Multi-Conversation Permissions
    */
   MULTI_CONVO = 'MULTI_CONVO',
@@ -60,6 +64,14 @@ export const bookmarkPermissionsSchema = z.object({
 });
 export type TBookmarkPermissions = z.infer<typeof bookmarkPermissionsSchema>;
 
+export const memoryPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+  [Permissions.CREATE]: z.boolean().default(true),
+  [Permissions.UPDATE]: z.boolean().default(true),
+  [Permissions.READ]: z.boolean().default(true),
+});
+export type TMemoryPermissions = z.infer<typeof memoryPermissionsSchema>;
+
 export const agentPermissionsSchema = z.object({
   [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
   [Permissions.USE]: z.boolean().default(true),
@@ -92,6 +104,7 @@ export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
+  [PermissionTypes.MEMORIES]: memoryPermissionsSchema,
   [PermissionTypes.AGENTS]: agentPermissionsSchema,
   [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
   [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
