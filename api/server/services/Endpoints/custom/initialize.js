@@ -117,10 +117,6 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     titleMessageRole: endpointConfig.titleMessageRole,
     streamRate: endpointConfig.streamRate,
     endpointTokenConfig,
-    // Responses API configuration
-    useResponsesAPI: endpointConfig.useResponsesAPI,
-    builtInTools: endpointConfig.builtInTools,
-    responsesOptions: endpointConfig.responsesOptions,
   };
 
   /** @type {undefined | TBaseEndpoint} */
