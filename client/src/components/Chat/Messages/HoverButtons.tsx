@@ -162,18 +162,6 @@ const HoverButtons = ({
 
   const { isCreatedByUser, error } = message;
 
-  const buttonStyle = cn(
-    'hover-button rounded-lg p-1.5',
-    'hover:bg-gray-100 hover:text-gray-500',
-    'dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200',
-    'disabled:dark:hover:text-gray-400',
-    'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
-    !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
-    'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
-    'active text-gray-700 dark:text-gray-200 bg-gray-100 bg-gray-700',
-  );
-
-  // If message has an error, only show regenerate button
   if (error === true) {
     return (
       <div className="visible flex justify-center self-end lg:justify-start">
@@ -204,9 +192,9 @@ const HoverButtons = ({
       {TextToSpeech && (
         <MessageAudio
           index={index}
+          isLast={isLast}
           messageId={message.messageId}
           content={extractMessageContent(message)}
-          isLast={isLast}
           renderButton={(props) => (
             <HoverButton
               onClick={props.onClick}
@@ -214,7 +202,6 @@ const HoverButtons = ({
               icon={props.icon}
               isActive={props.isActive}
               isLast={isLast}
-              className={props.className}
             />
           )}
         />
