@@ -73,6 +73,7 @@
     "@modelcontextprotocol/sdk": "^1.11.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "zod": "^3.22.4"
   }
 }

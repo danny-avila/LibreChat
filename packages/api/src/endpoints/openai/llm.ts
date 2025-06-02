@@ -1,90 +1,8 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { KnownEndpoints } from 'librechat-data-provider';
-import type { AzureOptions } from '~/utils/azure';
+import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
-
-/**
- * Model-specific options interface
- */
-export interface ModelOptions {
-  model?: string;
-  user?: string;
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  max_tokens?: number;
-  stop?: string[];
-  maxOutputTokens?: number;
-  maxTokens?: number;
-  maxContextTokens?: number;
-  reasoning_effort?: number;
-}
-
-/**
- * OpenAI Client configuration options
- */
-export interface OpenAIClientOptions {
-  streaming?: boolean;
-  apiKey?: string;
-  organization?: string;
-  model?: string;
-  user?: string;
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  max_tokens?: number;
-  maxTokens?: number;
-  stop?: string[];
-  logit_bias?: Record<string, number>;
-  seed?: number;
-  response_format?: Record<string, unknown>;
-  n?: number;
-  logprobs?: boolean;
-  include_reasoning?: boolean;
-  reasoning?: { effort?: number };
-  maxOutputTokens?: number;
-  maxContextTokens?: number;
-  reasoning_effort?: number;
-  configuration?: OpenAIClientConfiguration;
-}
-
-/**
- * OpenAI Client configuration for initialization
- */
-export interface OpenAIClientConfiguration {
-  baseURL?: string;
-  defaultHeaders?: Record<string, string>;
-  defaultQuery?: Record<string, string | number>;
-  httpAgent?: HttpsProxyAgent;
-  httpsAgent?: HttpsProxyAgent;
-  organization?: string;
-}
-
-/**
- * Configuration options for the getLLMConfig function
- */
-export interface LLMConfigOptions {
-  modelOptions?: ModelOptions;
-  reverseProxyUrl?: string;
-  defaultQuery?: Record<string, string | number>;
-  headers?: Record<string, string>;
-  proxy?: string;
-  azure?: AzureOptions;
-  streaming?: boolean;
-  addParams?: Record<string, unknown>;
-  dropParams?: string[];
-}
-
-/**
- * Return type for getLLMConfig function
- */
-export interface LLMConfigResult {
-  llmConfig: OpenAIClientOptions;
-  configOptions: OpenAIClientConfiguration;
-}
 
 /**
  * Generates configuration options for creating a language model (LLM) instance.
@@ -95,9 +13,9 @@ export interface LLMConfigResult {
  */
 export function getLLMConfig(
   apiKey: string,
-  options: LLMConfigOptions = {},
+  options: t.LLMConfigOptions = {},
   endpoint?: string | null,
-): LLMConfigResult {
+): t.LLMConfigResult {
   const {
     modelOptions = {},
     reverseProxyUrl,
@@ -110,11 +28,13 @@ export function getLLMConfig(
     dropParams,
   } = options;
 
-  const llmConfig: OpenAIClientOptions = {
-    streaming,
-  };
-
-  Object.assign(llmConfig, modelOptions);
+  const llmConfig: Partial<t.ClientOptions> & Partial<t.OpenAIParameters> = Object.assign(
+    {
+      streaming,
+      model: modelOptions.model ?? '',
+    },
+    modelOptions,
+  );
 
   if (addParams && typeof addParams === 'object') {
     Object.assign(llmConfig, addParams);
@@ -142,19 +62,19 @@ export function getLLMConfig(
 
     combinedDropParams.forEach((param) => {
       if (param in llmConfig) {
-        delete llmConfig[param as keyof OpenAIClientOptions];
+        delete llmConfig[param as keyof t.ClientOptions];
       }
     });
   } else if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => {
       if (param in llmConfig) {
-        delete llmConfig[param as keyof OpenAIClientOptions];
+        delete llmConfig[param as keyof t.ClientOptions];
       }
     });
   }
 
   let useOpenRouter = false;
-  const configOptions: OpenAIClientConfiguration = {};
+  const configOptions: t.OpenAIConfiguration = {};
 
   if (
     (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
@@ -184,7 +104,6 @@ export function getLLMConfig(
   if (proxy) {
     const proxyAgent = new HttpsProxyAgent(proxy);
     configOptions.httpAgent = proxyAgent;
-    configOptions.httpsAgent = proxyAgent;
   }
 
   if (azure) {
@@ -215,7 +134,7 @@ export function getLLMConfig(
   }
 
   if (process.env.OPENAI_ORGANIZATION && azure) {
-    llmConfig.organization = process.env.OPENAI_ORGANIZATION;
+    configOptions.organization = process.env.OPENAI_ORGANIZATION;
   }
 
   if (useOpenRouter && llmConfig.reasoning_effort != null) {
