@@ -598,7 +598,6 @@
   "com_ui_enter": "Indtast",
   "com_ui_enter_api_key": "Indtast API-nøgle",
   "com_ui_enter_openapi_schema": "Indtast dit OpenAPI-skema her",
-  "com_ui_enter_var": "Indtast {{0}}",
   "com_ui_error": "Fejl",
   "com_ui_error_connection": "Fejl i forbindelse med serveren, prøv at opdatere siden.",
   "com_ui_error_save_admin_settings": "Der opstod en fejl, da du gemte dine administratorindstillinger.",

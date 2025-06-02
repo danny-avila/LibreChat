@@ -543,7 +543,6 @@
   "com_ui_enter": "Wprowadź",
   "com_ui_enter_api_key": "Wprowadź klucz API",
   "com_ui_enter_openapi_schema": "Wprowadź swoją schemę OpenAPI tutaj",
-  "com_ui_enter_var": "Wprowadź {{0}}",
   "com_ui_error": "Błąd",
   "com_ui_error_connection": "Błąd połączenia z serwerem, spróbuj odświeżyć stronę.",
   "com_ui_error_save_admin_settings": "Wystąpił błąd podczas zapisywania ustawień administratora.",
