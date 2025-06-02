@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
+const { sanitizeFilename } = require('@librechat/api');
 const { fileConfig: defaultFileConfig, mergeFileConfig } = require('librechat-data-provider');
-const { sanitizeFilename } = require('~/server/utils/handleText');
 const { getCustomConfig } = require('~/server/services/Config');
 
 const storage = multer.diskStorage({
