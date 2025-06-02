@@ -8,11 +8,11 @@ import type {
   TConversation,
   EModelEndpoint,
   TConversationTag,
+  TAttachment,
 } from './schemas';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { Agent } from './types/assistants';
-import type { TFile } from './types/files';
 
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
@@ -86,7 +86,7 @@ export type TEndpointOption = Pick<
   // Configuration data (added by middleware)
   modelsConfig?: TModelsConfig;
   // File attachments (processed by middleware)
-  attachments?: TFile[];
+  attachments?: TAttachment[];
   // Generated prompts
   artifactsPrompt?: string;
   // Agent-specific fields
