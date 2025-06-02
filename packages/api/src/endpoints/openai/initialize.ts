@@ -95,8 +95,8 @@ export const initializeOpenAIOptions = async ({
 
     const groupName = modelGroupMap[modelName || '']?.group;
     if (groupName && groupMap[groupName]) {
-      clientOptions.addParams = groupMap[groupName].addParams;
-      clientOptions.dropParams = groupMap[groupName].dropParams;
+      clientOptions.addParams = groupMap[groupName]?.addParams;
+      clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 
     apiKey = azureOptions.azureOpenAIApiKey;
