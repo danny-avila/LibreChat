@@ -11,7 +11,7 @@ import { isEnabled } from '~/utils/common';
  * @param endpoint - The endpoint name
  * @returns Configuration options for creating an LLM instance.
  */
-export function getLLMConfig(
+export function getOpenAIConfig(
   apiKey: string,
   options: t.LLMConfigOptions = {},
   endpoint?: string | null,
