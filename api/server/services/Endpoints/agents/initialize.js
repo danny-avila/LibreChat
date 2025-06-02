@@ -1,3 +1,4 @@
+const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const { primeResources, optionalChainWithEmptyCheck } = require('@librechat/api');
 const {
@@ -41,20 +42,53 @@ const providerConfigMap = {
   [EModelEndpoint.bedrock]: getBedrockOptions,
 };
 
+function createToolLoader() {
+  /**
+   * @param {object} params
+   * @param {ServerRequest} params.req
+   * @param {ServerResponse} params.res
+   * @param {string} params.agentId
+   * @param {string[]} params.tools
+   * @param {string} params.provider
+   * @param {string} params.model
+   * @param {AgentToolResources} params.tool_resources
+   * @returns {Promise<{ tools: StructuredTool[], toolContextMap: Record<string, unknown> } | undefined>}
+   */
+  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources }) {
+    const agent = { id: agentId, tools, provider, model };
+    try {
+      return await loadAgentTools({
+        req,
+        res,
+        agent,
+        tool_resources,
+      });
+    } catch (error) {
+      logger.error('Error loading tools for agent ' + agentId, error);
+    }
+  };
+}
+
 /**
  * @param {object} params
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
+ * @param {string | null} [params.conversationId]
+ * @param {Array<IMongoFile>} [params.requestFiles]
+ * @param {typeof loadAgentTools | undefined} [params.loadTools]
+ * @param {TEndpointOption} [params.endpointOption]
  * @param {Set<string>} [params.allowedProviders]
- * @param {object} [params.endpointOption]
  * @param {boolean} [params.isInitialAgent]
- * @returns {Promise<Agent>}
+ * @returns {Promise<Agent & { tools: StructuredTool[], attachments: Array<MongoFile>, toolContextMap: Record<string, unknown>, maxContextTokens: number }>}
  */
 const initializeAgentOptions = async ({
   req,
   res,
   agent,
+  loadTools,
+  requestFiles,
+  conversationId,
   endpointOption,
   allowedProviders,
   isInitialAgent = false,
@@ -65,14 +99,13 @@ const initializeAgentOptions = async ({
     );
   }
   let currentFiles;
-  /** @type {Array<MongoFile>} */
-  const requestFiles = req.body.files ?? [];
+
   if (
     isInitialAgent &&
-    req.body.conversationId != null &&
+    conversationId != null &&
     (agent.model_parameters?.resendFiles ?? true) === true
   ) {
-    const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
+    const fileIds = (await getConvoFiles(conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
     const toolResourceSet = new Set();
     for (const tool of agent.tools) {
@@ -97,17 +130,16 @@ const initializeAgentOptions = async ({
   });
 
   const provider = agent.provider;
-  const { tools, toolContextMap } = await loadAgentTools({
-    req,
-    res,
-    agent: {
-      id: agent.id,
-      tools: agent.tools,
+  const { tools, toolContextMap } =
+    (await loadTools?.({
+      req,
+      res,
       provider,
+      agentId: agent.id,
+      tools: agent.tools,
       model: agent.model,
-    },
-    tool_resources,
-  });
+      tool_resources,
+    })) ?? {};
 
   agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
@@ -221,7 +253,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('No agent promise provided');
   }
 
-  // Initialize primary agent
   const primaryAgent = await endpointOption.agent;
   if (!primaryAgent) {
     throw new Error('Agent not found');
@@ -231,10 +262,18 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   /** @type {Set<string>} */
   const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
-  // Handle primary agent
+  const loadTools = createToolLoader();
+  /** @type {Array<MongoFile>} */
+  const requestFiles = req.body.files ?? [];
+  /** @type {string} */
+  const conversationId = req.body.conversationId;
+
   const primaryConfig = await initializeAgentOptions({
     req,
     res,
+    loadTools,
+    requestFiles,
+    conversationId,
     agent: primaryAgent,
     endpointOption,
     allowedProviders,
@@ -252,6 +291,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         req,
         res,
         agent,
+        loadTools,
+        requestFiles,
+        conversationId,
         endpointOption,
         allowedProviders,
       });
