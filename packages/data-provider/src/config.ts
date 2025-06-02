@@ -651,11 +651,33 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
+export const memorySchema = z.object({
+  disabled: z.boolean().optional(),
+  agent: z
+    .union([
+      z.object({
+        id: z.string(),
+      }),
+      z.object({
+        model_parameters: z
+          .object({
+            provider: z.string(),
+            model: z.string(),
+          })
+          .passthrough(), // Allow additional fields
+      }),
+    ])
+    .optional(),
+});
+
+export type TMemoryConfig = z.infer<typeof memorySchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  memory: memorySchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
