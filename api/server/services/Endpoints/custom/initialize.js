@@ -6,10 +6,9 @@ const {
   extractEnvVariable,
 } = require('librechat-data-provider');
 const { Providers } = require('@librechat/agents');
-const { getOpenAIConfig } = require('@librechat/api');
+const { getOpenAIConfig, createHandleLLMNewToken } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
-const { createHandleLLMNewToken } = require('~/app/clients/generators');
 const { fetchModels } = require('~/server/services/ModelService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { isUserProvided } = require('~/server/utils');

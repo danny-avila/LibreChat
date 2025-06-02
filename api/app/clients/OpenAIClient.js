@@ -1,7 +1,13 @@
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
-const { isEnabled, constructAzureURL, genAzureChatCompletion } = require('@librechat/api');
+const {
+  isEnabled,
+  createFetch,
+  constructAzureURL,
+  genAzureChatCompletion,
+  createStreamEventHandlers,
+} = require('@librechat/api');
 const {
   Constants,
   ImageDetail,
@@ -26,7 +32,6 @@ const {
 } = require('./prompts');
 const { extractBaseURL, getModelMaxTokens, getModelMaxOutputTokens } = require('~/utils');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { createFetch, createStreamEventHandlers } = require('./generators');
 const { addSpaceIfNeeded, sleep } = require('~/server/utils');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');

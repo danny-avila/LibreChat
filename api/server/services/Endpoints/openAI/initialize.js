@@ -9,9 +9,9 @@ const {
   isUserProvided,
   getOpenAIConfig,
   getAzureCredentials,
+  createHandleLLMNewToken,
 } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { createHandleLLMNewToken } = require('~/app/clients/generators');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 
 const initializeClient = async ({
