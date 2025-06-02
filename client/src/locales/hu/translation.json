@@ -627,7 +627,6 @@
   "com_ui_enter": "Enter",
   "com_ui_enter_api_key": "API kulcs megadása",
   "com_ui_enter_openapi_schema": "Adja meg itt az OpenAPI sémáját",
-  "com_ui_enter_var": "{{0}} megadása",
   "com_ui_error": "Hiba",
   "com_ui_error_connection": "Hiba a szerverhez való csatlakozáskor, próbálja meg frissíteni az oldalt.",
   "com_ui_error_save_admin_settings": "Hiba történt az adminisztrátori beállítások mentése során.",

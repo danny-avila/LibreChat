@@ -627,7 +627,6 @@
   "com_ui_enter": "وارد کنید",
   "com_ui_enter_api_key": "کلید API را وارد کنید",
   "com_ui_enter_openapi_schema": "طرح OpenAPI خود را در اینجا وارد کنید",
-  "com_ui_enter_var": "وارد کنید {{0}}",
   "com_ui_error": "خطا",
   "com_ui_error_connection": "خطا در اتصال به سرور، سعی کنید صفحه را بازخوانی کنید.",
   "com_ui_error_save_admin_settings": "هنگام ذخیره تنظیمات سرپرست شما خطایی روی داد.",
