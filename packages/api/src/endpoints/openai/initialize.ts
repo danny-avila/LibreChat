@@ -23,7 +23,7 @@ import { getOpenAIConfig } from './llm';
  * @returns Promise resolving to OpenAI configuration options
  * @throws Error if API key is missing or user key has expired
  */
-export const initializeOpenAIOptions = async ({
+export const initializeOpenAI = async ({
   req,
   overrideModel,
   endpointOption,

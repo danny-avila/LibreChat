@@ -66,7 +66,7 @@ Breaking down the large migration into manageable pieces to avoid overwhelming c
 - ✅ `OpenAIOptionsResult` - Extended result with stream rate
 
 **Functionality Migrated:**
-- ✅ `initializeOpenAIOptions()` - Equivalent to `initializeClient` with `optionsOnly=true`
+- ✅ `initializeOpenAI()` - Equivalent to `initializeClient` with `optionsOnly=true`
 - ✅ Environment variable configuration handling
 - ✅ User-provided key and URL management
 - ✅ Azure OpenAI configuration with model group mapping
@@ -98,16 +98,16 @@ const providerConfigMap = {
   [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
   [Providers.OPENROUTER]: initCustom,
-  [EModelEndpoint.openAI]: initOpenAI,           // ✅ DONE (as initializeOpenAIOptions)
+  [EModelEndpoint.openAI]: initOpenAI,           // ✅ DONE (as initializeOpenAI)
   [EModelEndpoint.google]: initGoogle,           // ⏳ TODO  
-  [EModelEndpoint.azureOpenAI]: initOpenAI,      // ✅ DONE (as initializeOpenAIOptions)
+  [EModelEndpoint.azureOpenAI]: initOpenAI,      // ✅ DONE (as initializeOpenAI)
   [EModelEndpoint.anthropic]: initAnthropic,     // ⏳ TODO
   [EModelEndpoint.bedrock]: getBedrockOptions,   // ⏳ TODO
 };
 ```
 
 **Priority Order:**
-1. ~~**initOpenAI**~~ ✅ **COMPLETED** (`initializeOpenAIOptions`)
+1. ~~**initOpenAI**~~ ✅ **COMPLETED** (`initializeOpenAI`)
 2. **initCustom** (`api/server/services/Endpoints/custom/initialize`)
 3. **initGoogle** (`api/server/services/Endpoints/google/initialize`)
 4. **initAnthropic** (`api/server/services/Endpoints/anthropic/initialize`)

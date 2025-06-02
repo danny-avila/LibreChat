@@ -78,7 +78,7 @@ export type GetUserKeyValuesFunction = (params: {
 export type CheckUserKeyExpiryFunction = (expiresAt: string, endpoint: string) => void;
 
 /**
- * Parameters for the initializeOpenAIOptions function
+ * Parameters for the initializeOpenAI function
  */
 export interface InitializeOpenAIOptionsParams {
   req: RequestData;
