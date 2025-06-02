@@ -30,6 +30,7 @@ jobs:
         DO_USER: ${{ secrets.DO_USER }}
       run: |
         ssh -o StrictHostKeyChecking=no ${DO_USER}@${DO_HOST} << EOF
+        sudo -i -u danny bash << 'EEOF'
         cd ~/LibreChat && \
         git fetch origin main && \
         sudo npm run stop:deployed && \
@@ -41,4 +42,5 @@ jobs:
         git rebase dev && \
         sudo npm run start:deployed && \
         echo "Update completed. Application should be running now."
+        EEOF
         EOF
