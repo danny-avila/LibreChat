@@ -8,7 +8,7 @@
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
 require('events').EventEmitter.defaultMaxListeners = 100;
-const { createMemoryProcessor } = require('@librechat/api');
+const { createRun, createMemoryProcessor } = require('@librechat/api');
 const {
   Callback,
   GraphEvents,
@@ -42,7 +42,6 @@ const { checkAccess } = require('~/server/middleware/roles/access');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 const { logger, sendEvent } = require('~/config');
-const { createRun } = require('./run');
 
 /**
  * @param {ServerRequest} req
