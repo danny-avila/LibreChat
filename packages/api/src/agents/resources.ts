@@ -53,10 +53,8 @@ export const primeResources = async ({
     if (!_attachments) {
       return { attachments, tool_resources };
     }
-    /** @type {Array<MongoFile | undefined> | undefined} */
     const files = await _attachments;
     if (!attachments) {
-      /** @type {Array<MongoFile | undefined>} */
       attachments = [];
     }
 
@@ -100,7 +98,7 @@ export const primeResources = async ({
     if (_attachments) {
       try {
         const attachmentFiles = await _attachments;
-        safeAttachments = attachmentFiles?.filter((file) => file !== null) ?? [];
+        safeAttachments = (attachmentFiles?.filter((file) => !!file) ?? []) as Array<TFile>;
       } catch (attachmentError) {
         // If attachments promise is also rejected, just use empty array
         logger.error('Error resolving attachments in catch block', attachmentError);
