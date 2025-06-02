@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState, useRef, ReactNode } from 'react';
-import { DndProvider, useDrag, useDrop, useDragLayer } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
 import { GripVertical } from 'lucide-react';
-import { useUpdatePromptRankings, useGetUserPromptPreferences } from '~/data-provider';
+import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import type { TPromptGroup } from 'librechat-data-provider';
+import { useUpdatePromptRankings, useGetUserPromptPreferences } from '~/data-provider';
+import CategoryIcon from './CategoryIcon';
+import { Label } from '~/components';
 import { cn } from '~/utils';
 
 const ITEM_TYPE = 'PROMPT_GROUP';
@@ -20,7 +21,30 @@ interface DragItem {
   index: number;
   id: string;
   type: string;
+  group: TPromptGroup;
 }
+
+const sortGroups = (groups: TPromptGroup[], rankings: any[], favorites: string[]) => {
+  const rankingMap = new Map(rankings.map((ranking) => [ranking.promptGroupId, ranking.order]));
+
+  return [...groups].sort((a, b) => {
+    const aId = a._id ?? '';
+    const bId = b._id ?? '';
+    const aIsFavorite = favorites.includes(aId);
+    const bIsFavorite = favorites.includes(bId);
+
+    if (aIsFavorite && !bIsFavorite) return -1;
+    if (!aIsFavorite && bIsFavorite) return 1;
+
+    const aRank = rankingMap.get(aId);
+    const bRank = rankingMap.get(bId);
+    if (aRank !== undefined && bRank !== undefined) return aRank - bRank;
+    if (aRank !== undefined) return -1;
+    if (bRank !== undefined) return 1;
+
+    return a.name.localeCompare(b.name);
+  });
+};
 
 function DraggablePromptItem({
   group,
@@ -30,45 +54,32 @@ function DraggablePromptItem({
   children,
 }: DraggablePromptItemProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [isOver, setIsOver] = useState(false);
 
   const [{ isDragging }, drag, preview] = useDrag({
     type: ITEM_TYPE,
-    item: () => ({ type: ITEM_TYPE, index, id: group._id }),
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
-    }),
+    item: { type: ITEM_TYPE, index, id: group._id, group },
+    collect: (monitor) => ({ isDragging: monitor.isDragging() }),
   });
 
-  const [{ isOverCurrent }, drop] = useDrop<DragItem, void, { isOverCurrent: boolean }>({
+  const [{ isOver }, drop] = useDrop<DragItem, void, { isOver: boolean }>({
     accept: ITEM_TYPE,
     hover: (item, monitor) => {
-      if (!ref.current) return;
-
-      const dragIndex = item.index;
-      const hoverIndex = index;
-      if (dragIndex === hoverIndex) return;
+      if (!ref.current || item.index === index) return;
 
       const hoverBoundingRect = ref.current.getBoundingClientRect();
-      const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
+      const hoverMiddleY = hoverBoundingRect.height / 2;
       const clientOffset = monitor.getClientOffset();
       if (!clientOffset) return;
+
       const hoverClientY = clientOffset.y - hoverBoundingRect.top;
+      if (item.index < index && hoverClientY < hoverMiddleY * 0.8) return;
+      if (item.index > index && hoverClientY > hoverMiddleY * 1.2) return;
 
-      if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY * 0.8) return;
-      if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY * 1.2) return;
-
-      moveItem(dragIndex, hoverIndex);
-      item.index = hoverIndex;
+      moveItem(item.index, index);
+      item.index = index;
     },
-    collect: (monitor) => ({
-      isOverCurrent: monitor.isOver({ shallow: true }),
-    }),
+    collect: (monitor) => ({ isOver: monitor.isOver({ shallow: true }) }),
   });
-
-  useEffect(() => {
-    setIsOver(isOverCurrent);
-  }, [isOverCurrent]);
 
   drag(drop(ref));
 
@@ -85,15 +96,11 @@ function DraggablePromptItem({
         isAnyDragging && !isDragging && 'transition-transform',
         isOver && !isDragging && 'scale-[1.02]',
       )}
-      style={{
-        transform: isDragging ? 'scale(1.05)' : 'scale(1)',
-        cursor: isDragging ? 'grabbing' : 'grab',
-      }}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
     >
       <div
         className={cn(
-          'absolute left-2 top-1/2 z-10 -translate-y-1/2 transition-all duration-200',
-          'opacity-0 group-hover:opacity-100',
+          'absolute left-2 top-1/2 z-10 -translate-y-1/2 opacity-0 group-hover:opacity-100',
           isDragging && 'opacity-100',
         )}
       >
@@ -105,35 +112,14 @@ function DraggablePromptItem({
 }
 
 function CustomDragLayer() {
-  const { item, itemType, currentOffset, isDragging } = useDragLayer((monitor) => ({
-    item: monitor.getItem(),
+  const { itemType, item, currentOffset, isDragging } = useDragLayer((monitor) => ({
     itemType: monitor.getItemType(),
+    item: monitor.getItem() as DragItem,
     currentOffset: monitor.getSourceClientOffset(),
     isDragging: monitor.isDragging(),
   }));
 
-  if (!isDragging || !currentOffset || itemType !== ITEM_TYPE) {
-    return null;
-  }
-
-  const renderPreview = () => {
-    if (item && typeof item.id === 'string') {
-      return (
-        <div
-          style={{
-            backgroundColor: 'rgba(230, 245, 255, 0.9)',
-            padding: '10px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            display: 'inline-block',
-          }}
-        >
-          {`Moving: ${item.id}`}
-        </div>
-      );
-    }
-    return <div>Dragging...</div>;
-  };
+  if (!isDragging || !currentOffset || itemType !== ITEM_TYPE || !item?.group) return null;
 
   return (
     <div
@@ -152,8 +138,52 @@ function CustomDragLayer() {
           transform: `translate(${currentOffset.x}px, ${currentOffset.y}px)`,
         }}
       >
-        {renderPreview()}
+        <div className="mx-2 my-2 flex h-[60px] w-[430px] min-w-[300px] cursor-pointer rounded-lg border border-border-light bg-surface-primary p-3 opacity-90 shadow-lg">
+          <div className="flex items-center gap-2 truncate pr-2">
+            <CategoryIcon
+              category={item.group.category ?? ''}
+              className="icon-lg"
+              aria-hidden="true"
+            />
+
+            <Label className="text-md cursor-pointer truncate font-semibold text-text-primary">
+              {item.group.name}
+            </Label>
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function SortedPromptList({
+  groups,
+  renderItem,
+}: {
+  groups: TPromptGroup[];
+  renderItem: (group: TPromptGroup) => ReactNode;
+}) {
+  const { data: preferences } = useGetUserPromptPreferences();
+  const [sortedGroups, setSortedGroups] = useState<TPromptGroup[]>([]);
+
+  useEffect(() => {
+    if (!groups?.length) {
+      setSortedGroups([]);
+      return;
+    }
+
+    const rankings = preferences?.rankings || [];
+    const favorites = preferences?.favorites || [];
+    setSortedGroups(sortGroups(groups, rankings, favorites));
+  }, [groups, preferences]);
+
+  return (
+    <div className="space-y-2">
+      {sortedGroups.map((group) => (
+        <div key={group._id} className="transition-all duration-300 ease-in-out">
+          {renderItem(group)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -167,7 +197,6 @@ interface RankablePromptListProps {
 function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePromptListProps) {
   const { data: preferences } = useGetUserPromptPreferences();
   const updateRankings = useUpdatePromptRankings();
-
   const [sortedGroups, setSortedGroups] = useState<TPromptGroup[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -177,54 +206,29 @@ function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePro
       setSortedGroups([]);
       return;
     }
+
     const rankings = preferences?.rankings || [];
     const favorites = preferences?.favorites || [];
-    const rankingMap = new Map(rankings.map((ranking) => [ranking.promptGroupId, ranking.order]));
-
-    const sorted = [...groups].sort((a, b) => {
-      const aId = a._id ?? '';
-      const bId = b._id ?? '';
-      const aIsFavorite = favorites.includes(aId);
-      const bIsFavorite = favorites.includes(bId);
-
-      if (aIsFavorite && !bIsFavorite) return -1;
-      if (!aIsFavorite && bIsFavorite) return 1;
-
-      const aRank = rankingMap.get(aId);
-      const bRank = rankingMap.get(bId);
-      if (aRank !== undefined && bRank !== undefined) {
-        return aRank - bRank;
-      }
-      if (aRank !== undefined) return -1;
-      if (bRank !== undefined) return 1;
-
-      return a.name.localeCompare(b.name);
-    });
-
-    setSortedGroups(sorted);
+    setSortedGroups(sortGroups(groups, rankings, favorites));
   }, [groups, preferences]);
 
   const moveItem = useCallback(
     (dragIndex: number, hoverIndex: number) => {
       if (dragIndex === hoverIndex) return;
+
       setSortedGroups((prevGroups) => {
         const newGroups = [...prevGroups];
-        const draggedItem = newGroups[dragIndex];
-        newGroups.splice(dragIndex, 1);
+        const [draggedItem] = newGroups.splice(dragIndex, 1);
         newGroups.splice(hoverIndex, 0, draggedItem);
         return newGroups;
       });
 
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
       saveTimeoutRef.current = setTimeout(() => {
         setSortedGroups((currentGroups) => {
           const newRankings = currentGroups
-            .map((group, index) =>
-              typeof group._id === 'string' ? { promptGroupId: group._id, order: index } : null,
-            )
+            .map((group, index) => (group._id ? { promptGroupId: group._id, order: index } : null))
             .filter(
               (ranking): ranking is { promptGroupId: string; order: number } => ranking !== null,
             );
@@ -232,12 +236,8 @@ function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePro
           if (newRankings.length > 0) {
             updateRankings
               .mutateAsync({ rankings: newRankings })
-              .then(() => {
-                onRankingChange?.(newRankings.map((r) => r.promptGroupId));
-              })
-              .catch((error) => {
-                console.error('Failed to update rankings:', error);
-              });
+              .then(() => onRankingChange?.(newRankings.map((r) => r.promptGroupId)))
+              .catch(console.error);
           }
           return currentGroups;
         });
@@ -245,14 +245,6 @@ function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePro
     },
     [updateRankings, onRankingChange],
   );
-
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const handleDragStart = () => setIsDragging(true);
@@ -264,6 +256,7 @@ function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePro
     return () => {
       document.removeEventListener('dragstart', handleDragStart);
       document.removeEventListener('dragend', handleDragEnd);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, []);
 
@@ -273,9 +266,7 @@ function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePro
         <div
           key={group._id || index}
           className="transition-all duration-300 ease-in-out"
-          style={{
-            transform: `translateY(${isDragging ? '2px' : '0'})`,
-          }}
+          style={{ transform: `translateY(${isDragging ? '2px' : '0'})` }}
         >
           <DraggablePromptItem
             group={group}
@@ -293,11 +284,11 @@ function RankablePromptList({ groups, renderItem, onRankingChange }: RankablePro
 
 function RankingProvider({ children }: { children: ReactNode }) {
   return (
-    <DndProvider backend={HTML5Backend}>
+    <div>
       <CustomDragLayer />
       {children}
-    </DndProvider>
+    </div>
   );
 }
 
-export { RankablePromptList, RankingProvider };
+export { RankablePromptList, SortedPromptList, RankingProvider };
