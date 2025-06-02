@@ -28,24 +28,59 @@ Breaking down the large migration into manageable pieces to avoid overwhelming c
 **Files Created:**
 - `packages/api/src/utils/azure.ts` - Azure OpenAI utilities
 - `packages/api/src/utils/common.ts` - Common utility functions  
-- `packages/api/src/endpoints/openai/llm.ts` - Main LLM configuration
+- `packages/api/src/endpoints/openai/llm.ts` - Main LLM configuration (formerly `getLLMConfig`)
 - `packages/api/src/utils/index.ts` - Utility exports
 - `packages/api/src/endpoints/index.ts` - Endpoint exports
 - `packages/api/src/endpoints/openai/index.ts` - OpenAI endpoint exports
 
 **Functionality Migrated:**
-- ✅ `getLLMConfig()` function with comprehensive TypeScript interfaces
+- ✅ `getLLMConfig()` → `getOpenAIConfig()` function with comprehensive TypeScript interfaces
 - ✅ Azure configuration utilities (`sanitizeModelName`, `constructAzureURL`, etc.)
 - ✅ Common utilities (`isEnabled`, `isUserProvided`)
 - ✅ Support for OpenRouter, Azure, proxy configurations
 - ✅ Parameter validation and sanitization
-- ✅ Full type safety with interfaces:
-  - `ModelOptions`
-  - `OpenAIClientOptions` 
-  - `OpenAIClientConfiguration`
+- ✅ Full type safety with interfaces (moved to `packages/api/src/types/openai.ts`):
+  - `ModelOptions` → `OpenAIParameters`
+  - `OpenAIClientOptions` → `ClientOptions` 
+  - `OpenAIClientConfiguration` → `OpenAIConfiguration`
   - `LLMConfigOptions`
   - `LLMConfigResult`
   - `AzureOptions`
+
+**Build Status:** ✅ Successfully compiles
+
+### ✅ **COMPLETED: Micro Task 1.5 - OpenAI Initialize Function**
+
+**Files Created:**
+- `packages/api/src/endpoints/openai/initialize.ts` - OpenAI initialization with options-only behavior
+
+**Types Added to `packages/api/src/types/openai.ts`:**
+- ✅ `UserKeyValues` - Database user key storage interface
+- ✅ `EndpointOption` - Endpoint configuration options
+- ✅ `AzureConfigFromLocals` - Azure app locals configuration
+- ✅ `BaseEndpointConfig` - Base endpoint configuration
+- ✅ `RequestData` - Simplified Express request interface
+- ✅ `GetUserKeyValuesFunction` - Function type for database retrieval
+- ✅ `CheckUserKeyExpiryFunction` - Function type for key validation
+- ✅ `InitializeOpenAIOptionsParams` - Function parameters interface
+- ✅ `OpenAIOptionsResult` - Extended result with stream rate
+
+**Functionality Migrated:**
+- ✅ `initializeOpenAIOptions()` - Equivalent to `initializeClient` with `optionsOnly=true`
+- ✅ Environment variable configuration handling
+- ✅ User-provided key and URL management
+- ✅ Azure OpenAI configuration with model group mapping
+- ✅ Stream rate configuration (returns value for future callback implementation)
+- ✅ Dependency injection for `getUserKeyValues` and `checkUserKeyExpiry`
+- ✅ Leverages existing `getOpenAIConfig` function instead of duplicating logic
+
+**Key Features:**
+- Always returns configuration options (never creates client instances)
+- Handles both regular OpenAI and Azure OpenAI endpoints
+- Functions passed as parameters for better testability
+- Stream rate configuration with placeholder for future callback implementation
+- Comprehensive error handling for missing API keys
+- Clean separation of types in the types directory
 
 **Build Status:** ✅ Successfully compiles
 
@@ -63,16 +98,16 @@ const providerConfigMap = {
   [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
   [Providers.OPENROUTER]: initCustom,
-  [EModelEndpoint.openAI]: initOpenAI,           // ⏳ NEXT
+  [EModelEndpoint.openAI]: initOpenAI,           // ✅ DONE (as initializeOpenAIOptions)
   [EModelEndpoint.google]: initGoogle,           // ⏳ TODO  
-  [EModelEndpoint.azureOpenAI]: initOpenAI,      // ⏳ NEXT
+  [EModelEndpoint.azureOpenAI]: initOpenAI,      // ✅ DONE (as initializeOpenAIOptions)
   [EModelEndpoint.anthropic]: initAnthropic,     // ⏳ TODO
   [EModelEndpoint.bedrock]: getBedrockOptions,   // ⏳ TODO
 };
 ```
 
 **Priority Order:**
-1. **initOpenAI** (`api/server/services/Endpoints/openAI/initialize`) 
+1. ~~**initOpenAI**~~ ✅ **COMPLETED** (`initializeOpenAIOptions`)
 2. **initCustom** (`api/server/services/Endpoints/custom/initialize`)
 3. **initGoogle** (`api/server/services/Endpoints/google/initialize`)
 4. **initAnthropic** (`api/server/services/Endpoints/anthropic/initialize`)
@@ -82,7 +117,7 @@ const providerConfigMap = {
 ```
 packages/api/src/endpoints/
 ├── openai/
-│   ├── initialize.ts      # ⏳ NEXT
+│   ├── initialize.ts      # ✅ DONE
 │   └── llm.ts            # ✅ DONE
 ├── custom/
 │   └── initialize.ts      # ⏳ TODO
@@ -164,11 +199,13 @@ packages/api/src/utils/
 - Extracted repeated logic into dedicated utilities
 - Reusable interfaces and types
 - Centralized configuration patterns
+- Types properly organized in types directory
 
 ✅ **Type Safety:**
 - Comprehensive TypeScript interfaces
 - Explicit typing for all parameters and returns
 - Avoided `any` types completely
+- All types centralized in `packages/api/src/types`
 
 ### **Performance Optimizations**
 
@@ -184,14 +221,17 @@ packages/api/src/utils/
 - Modular utility organization  
 - Consistent interface patterns
 - Self-documenting code with JSDoc
+- Proper type organization in dedicated types directory
 
 ---
 
 ## Current Issues to Resolve
 
-### **Linter Errors (Minor)**
-- Trailing spaces in several files (easily fixable)
-- Missing newlines at end of files (easily fixable)
+### **All Known Issues Resolved:**
+- ~~Trailing spaces in several files~~ ✅ **FIXED**
+- ~~Missing newlines at end of files~~ ✅ **FIXED**
+- ~~Express.Application typing conflicts~~ ✅ **FIXED** (Using simplified RequestData interface)
+- ~~Duplicate type definitions~~ ✅ **FIXED** (Moved to types directory)
 
 **Note:** As per project guidelines, formatting linter errors are ignored as they can be fixed with "fix auto-fixable" command.
 
@@ -200,9 +240,9 @@ packages/api/src/utils/
 ## Next Steps
 
 ### **Immediate (Micro Task 2):**
-1. Migrate `initOpenAI` from `api/server/services/Endpoints/openAI/initialize`
-2. Create `packages/api/src/endpoints/openai/initialize.ts`
-3. Ensure compatibility with existing `getLLMConfig` function
+1. Migrate `initCustom` from `api/server/services/Endpoints/custom/initialize`
+2. Create `packages/api/src/endpoints/custom/initialize.ts`
+3. Ensure compatibility with existing provider configuration patterns
 4. Add comprehensive TypeScript interfaces
 
 ### **Short Term:**
@@ -223,23 +263,27 @@ packages/api/src/utils/
 - Eliminated potential runtime errors through comprehensive interfaces
 - Clear contracts between functions and modules
 - IDE support with autocomplete and error detection
+- Proper type organization in dedicated directory
 
 ### **Code Organization**
 - Logical separation of Azure, OpenAI, and common utilities
 - Clear module boundaries and responsibilities
 - Easier to locate and modify specific functionality
+- All types centralized in `packages/api/src/types`
 
 ### **Developer Experience**
 - Self-documenting code with TypeScript interfaces
 - Better IDE support and debugging
 - Reduced cognitive load through clear abstractions
+- Dependency injection for better testability
 
 ### **Maintainability**
 - DRY principles reduce code duplication
 - Consistent patterns across modules
 - Easier to extend with new providers or functionality
+- Clean separation between implementation and types
 
 ---
 
 *Last Updated: January 2025*
-*Status: Micro Task 1 Complete, Ready for Micro Task 2* 
+*Status: Micro Task 1 & 1.5 Complete, Ready for Micro Task 2* 
