@@ -46,6 +46,8 @@ export interface IConversation extends Document {
   maxContextTokens?: number;
   max_tokens?: number;
   reasoning_effort?: string;
+  isPinned?: boolean;
+  pinnedOrder?: number;
   // Additional fields
   files?: string[];
   expiredAt?: Date;
@@ -83,6 +85,15 @@ const convoSchema: Schema<IConversation> = new Schema(
       type: [String],
       default: [],
       meiliIndex: true,
+    },
+    isPinned: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    pinnedOrder: {
+      type: Number,
+      index: true,
     },
     files: {
       type: [String],
