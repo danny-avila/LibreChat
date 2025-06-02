@@ -1,11 +1,11 @@
 import {
-  sanitizeModelName,
-  genAzureEndpoint,
   genAzureChatCompletion,
   getAzureCredentials,
   constructAzureURL,
+  sanitizeModelName,
+  genAzureEndpoint,
 } from './azure';
-import type { GenericClient } from './azure';
+import type { GenericClient } from '~/types';
 
 describe('sanitizeModelName', () => {
   test('removes periods from the model name', () => {
