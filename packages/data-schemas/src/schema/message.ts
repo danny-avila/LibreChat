@@ -1,41 +1,6 @@
-import mongoose, { Schema, Document } from 'mongoose';
-
-// @ts-ignore
-export interface IMessage extends Document {
-  messageId: string;
-  conversationId: string;
-  user: string;
-  model?: string;
-  endpoint?: string;
-  conversationSignature?: string;
-  clientId?: string;
-  invocationId?: number;
-  parentMessageId?: string;
-  tokenCount?: number;
-  summaryTokenCount?: number;
-  sender?: string;
-  text?: string;
-  summary?: string;
-  isCreatedByUser: boolean;
-  unfinished?: boolean;
-  error?: boolean;
-  finish_reason?: string;
-  _meiliIndex?: boolean;
-  files?: unknown[];
-  plugin?: {
-    latest?: string;
-    inputs?: unknown[];
-    outputs?: string;
-  };
-  plugins?: unknown[];
-  content?: unknown[];
-  thread_id?: string;
-  iconURL?: string;
-  attachments?: unknown[];
-  expiredAt?: Date;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
+import mongoose, { Schema } from 'mongoose';
+import type { IMessage } from '~/types/message';
+import mongoMeili from '~/models/plugins/mongoMeili';
 
 const messageSchema: Schema<IMessage> = new Schema(
   {
@@ -110,6 +75,25 @@ const messageSchema: Schema<IMessage> = new Schema(
     finish_reason: {
       type: String,
     },
+    feedback: {
+      type: {
+        rating: {
+          type: String,
+          enum: ['thumbsUp', 'thumbsDown'],
+          required: true,
+        },
+        tag: {
+          type: mongoose.Schema.Types.Mixed,
+          required: false,
+        },
+        text: {
+          type: String,
+          required: false,
+        },
+      },
+      default: undefined,
+      required: false,
+    },
     _meiliIndex: {
       type: Boolean,
       required: false,
@@ -181,5 +165,14 @@ const messageSchema: Schema<IMessage> = new Schema(
 messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
+
+if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
+  messageSchema.plugin(mongoMeili, {
+    host: process.env.MEILI_HOST,
+    apiKey: process.env.MEILI_MASTER_KEY,
+    indexName: 'messages',
+    primaryKey: 'messageId',
+  });
+}
 
 export default messageSchema;

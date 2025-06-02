@@ -2548,6 +2548,18 @@ html {
   margin-right: -2px;
 }
 
+.popover-animate {
+  opacity: 0;
+  transform: scale(0.95) translateY(-0.5rem);
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.popover-animate[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
 .popover-ui:focus-visible,
 .popover-ui[data-focus-visible] {
   outline: var(--bg-surface-hover);

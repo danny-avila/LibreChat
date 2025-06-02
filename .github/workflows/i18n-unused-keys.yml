@@ -5,12 +5,13 @@ on:
     paths:
       - "client/src/**"
       - "api/**"
+      - "packages/data-provider/src/**"
 
 jobs:
   detect-unused-i18n-keys:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write  # Required for posting PR comments
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

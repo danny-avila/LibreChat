@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { setupOpenId } = require('./openidStrategy');
+const { findUser, createUser, updateUser } = require('~/models');
 
 // --- Mocks ---
 jest.mock('node-fetch');
@@ -11,7 +11,12 @@ jest.mock('~/server/services/Files/strategies', () => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
 }));
-jest.mock('~/models/userMethods', () => ({
+jest.mock('~/server/services/Config', () => ({
+  getBalanceConfig: jest.fn(() => ({
+    enabled: false,
+  })),
+}));
+jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
@@ -36,11 +41,6 @@ jest.mock('~/cache/getLogStores', () =>
     set: jest.fn(),
   })),
 );
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    OPENID_EXCHANGED_TOKENS: 'openid-exchanged-tokens',
-  },
-}));
 
 // Mock the openid-client module and all its dependencies
 jest.mock('openid-client', () => {
@@ -174,6 +174,7 @@ describe('setupOpenId', () => {
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
+      { enabled: false },
       true,
       true,
     );
@@ -193,6 +194,7 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(expectUsername);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
+      { enabled: false },
       true,
       true,
     );
@@ -212,6 +214,7 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(expectUsername);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
+      { enabled: false },
       true,
       true,
     );
@@ -229,6 +232,7 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(userinfo.sub);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: userinfo.sub }),
+      { enabled: false },
       true,
       true,
     );

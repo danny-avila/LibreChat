@@ -10,7 +10,9 @@ import type {
   TConversationTag,
   TBanner,
 } from './schemas';
+import { TMinimalFeedback } from './feedback';
 import { SettingDefinition } from './generate';
+
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
@@ -546,6 +548,16 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+export type TUpdateFeedbackRequest = {
+  feedback?: TMinimalFeedback;
+};
+
+export type TUpdateFeedbackResponse = {
+  messageId: string;
+  conversationId: string;
+  feedback?: TMinimalFeedback;
+}
 
 export type TBalanceResponse = {
   tokenCredits: number;

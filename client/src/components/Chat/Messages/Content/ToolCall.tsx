@@ -97,7 +97,7 @@ export default function ToolCall({
 
   const getFinishedText = () => {
     if (cancelled) {
-      return localize('com_ui_error');
+      return localize('com_ui_cancelled');
     }
     if (isMCPToolCall === true) {
       return localize('com_assistants_completed_function', { 0: function_name });
@@ -153,7 +153,7 @@ export default function ToolCall({
 
   return (
     <>
-      <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={() => setShowInfo((prev) => !prev)}
