@@ -213,14 +213,14 @@ export default function MemoryViewer() {
           <Table className="w-full table-fixed">
             <TableHeader>
               <TableRow className="border-b border-border-light hover:bg-surface-secondary">
-                <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                <TableHead className="w-[25%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
                   <div className="px-4">{localize('com_ui_key')}</div>
                 </TableHead>
-                <TableHead className="w-[40%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                <TableHead className="w-[50%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
                   <div className="px-4">{localize('com_ui_value')}</div>
                 </TableHead>
                 {hasUpdateAccess && (
-                  <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <TableHead className="w-[25%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
                     <div className="px-4">{localize('com_assistants_actions')}</div>
                   </TableHead>
                 )}
@@ -233,7 +233,7 @@ export default function MemoryViewer() {
                     key={idx}
                     className="border-b border-border-light hover:bg-surface-secondary"
                   >
-                    <TableCell className="w-[30%] px-4 py-4">
+                    <TableCell className="w-[25%] px-4 py-4">
                       <div
                         className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary"
                         title={memory.key}
@@ -252,7 +252,7 @@ export default function MemoryViewer() {
                       </div>
                     </TableCell>
                     {hasUpdateAccess && (
-                      <TableCell className="w-[30%] px-4 py-4">
+                      <TableCell className="w-[25%] px-4 py-4">
                         <div className="flex gap-2">
                           <EditMemoryButton memory={memory} />
                           <DeleteMemoryButton memory={memory} />
