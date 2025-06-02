@@ -552,7 +552,6 @@
   "com_ui_enter": "Gir",
   "com_ui_enter_api_key": "API Anahtarı Girin",
   "com_ui_enter_openapi_schema": "OpenAPI şemanızı buraya girin",
-  "com_ui_enter_var": "{{0}} girin",
   "com_ui_error": "Hata",
   "com_ui_error_connection": "Sunucuya bağlanırken hata oluştu, sayfayı yenilemeyi deneyin.",
   "com_ui_error_save_admin_settings": "Yönetici ayarlarınız kaydedilirken bir hata oluştu.",

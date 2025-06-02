@@ -627,7 +627,6 @@
   "com_ui_enter": "进入",
   "com_ui_enter_api_key": "输入 API 密钥",
   "com_ui_enter_openapi_schema": "请在此输入OpenAPI架构",
-  "com_ui_enter_var": "输入 {{0}}",
   "com_ui_error": "错误",
   "com_ui_error_connection": "连接服务器出现错误，请尝试刷新页面。",
   "com_ui_error_save_admin_settings": "保存您的管理员设置时出现错误。",
