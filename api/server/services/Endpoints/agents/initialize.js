@@ -1,11 +1,11 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
+const { primeResources, optionalChainWithEmptyCheck } = require('@librechat/api');
 const {
   Constants,
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
   getResponseSender,
-  AgentCapabilities,
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
@@ -28,7 +28,6 @@ const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
-const { logger } = require('~/config');
 
 const providerConfigMap = {
   [Providers.XAI]: initCustom,
@@ -41,98 +40,6 @@ const providerConfigMap = {
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
 };
-
-/**
- * @param {Object} params
- * @param {ServerRequest} params.req
- * @param {Promise<Array<MongoFile | null>> | undefined} [params.attachments]
- * @param {Set<string>} params.requestFileSet
- * @param {AgentToolResources | undefined} [params.tool_resources]
- * @returns {Promise<{ attachments: Array<MongoFile | undefined> | undefined, tool_resources: AgentToolResources | undefined }>}
- */
-const primeResources = async ({
-  req,
-  attachments: _attachments,
-  tool_resources: _tool_resources,
-  requestFileSet,
-}) => {
-  try {
-    /** @type {Array<MongoFile | undefined> | undefined} */
-    let attachments;
-    const tool_resources = _tool_resources ?? {};
-    const isOCREnabled = (req.app.locals?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
-      AgentCapabilities.ocr,
-    );
-    if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
-      const context = await getFiles(
-        {
-          file_id: { $in: tool_resources.ocr.file_ids },
-        },
-        {},
-        {},
-      );
-      attachments = (attachments ?? []).concat(context);
-    }
-    if (!_attachments) {
-      return { attachments, tool_resources };
-    }
-    /** @type {Array<MongoFile | undefined> | undefined} */
-    const files = await _attachments;
-    if (!attachments) {
-      /** @type {Array<MongoFile | undefined>} */
-      attachments = [];
-    }
-
-    for (const file of files) {
-      if (!file) {
-        continue;
-      }
-      if (file.metadata?.fileIdentifier) {
-        const execute_code = tool_resources[EToolResources.execute_code] ?? {};
-        if (!execute_code.files) {
-          tool_resources[EToolResources.execute_code] = { ...execute_code, files: [] };
-        }
-        tool_resources[EToolResources.execute_code].files.push(file);
-      } else if (file.embedded === true) {
-        const file_search = tool_resources[EToolResources.file_search] ?? {};
-        if (!file_search.files) {
-          tool_resources[EToolResources.file_search] = { ...file_search, files: [] };
-        }
-        tool_resources[EToolResources.file_search].files.push(file);
-      } else if (
-        requestFileSet.has(file.file_id) &&
-        file.type.startsWith('image') &&
-        file.height &&
-        file.width
-      ) {
-        const image_edit = tool_resources[EToolResources.image_edit] ?? {};
-        if (!image_edit.files) {
-          tool_resources[EToolResources.image_edit] = { ...image_edit, files: [] };
-        }
-        tool_resources[EToolResources.image_edit].files.push(file);
-      }
-
-      attachments.push(file);
-    }
-    return { attachments, tool_resources };
-  } catch (error) {
-    logger.error('Error priming resources', error);
-    return { attachments: _attachments, tool_resources: _tool_resources };
-  }
-};
-
-/**
- * @param  {...string | number} values
- * @returns {string | number | undefined}
- */
-function optionalChainWithEmptyCheck(...values) {
-  for (const value of values) {
-    if (value !== undefined && value !== null && value !== '') {
-      return value;
-    }
-  }
-  return values[values.length - 1];
-}
 
 /**
  * @param {object} params
@@ -183,6 +90,7 @@ const initializeAgentOptions = async ({
 
   const { attachments, tool_resources } = await primeResources({
     req,
+    getFiles,
     attachments: currentFiles,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles.map((file) => file.file_id)),
