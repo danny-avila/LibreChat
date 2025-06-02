@@ -87,10 +87,14 @@ async function prepareImageURL(req, file) {
  */
 async function processFirebaseAvatar({ buffer, userId, manual }) {
   try {
+    const metadata = await sharp(buffer).metadata();
+    const extension = metadata.format === 'gif' ? 'gif' : 'png';
+    const fileName = `avatar.${extension}`;
+
     const downloadURL = await saveBufferToFirebase({
       userId,
       buffer,
-      fileName: 'avatar.png',
+      fileName,
     });
 
     const isManual = manual === 'true';
