@@ -118,7 +118,6 @@ export const initializeOpenAIOptions = async ({
     apiKey = clientOptions.azure?.azureOpenAIApiKey;
   }
 
-  // Validate API key
   if (userProvidesKey && !apiKey) {
     throw new Error(
       JSON.stringify({
