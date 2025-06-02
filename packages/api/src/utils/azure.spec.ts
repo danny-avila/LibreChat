@@ -1,10 +1,11 @@
-const {
+import {
   sanitizeModelName,
   genAzureEndpoint,
   genAzureChatCompletion,
   getAzureCredentials,
   constructAzureURL,
-} = require('./azureUtils');
+} from './azure';
+import type { GenericClient } from './azure';
 
 describe('sanitizeModelName', () => {
   test('removes periods from the model name', () => {
@@ -118,7 +119,7 @@ describe('genAzureChatCompletion', () => {
   // Test with client parameter and model name
   test('updates client with sanitized model name when provided and feature enabled', () => {
     process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME = 'true';
-    const clientMock = { azure: {} };
+    const clientMock = { azure: {} } as GenericClient;
     const url = genAzureChatCompletion(
       {
         azureOpenAIApiInstanceName: 'instanceName',
@@ -135,7 +136,7 @@ describe('genAzureChatCompletion', () => {
 
   // Test with client parameter but without model name
   test('does not update client when model name is not provided', () => {
-    const clientMock = { azure: {} };
+    const clientMock = { azure: {} } as GenericClient;
     const url = genAzureChatCompletion(
       {
         azureOpenAIApiInstanceName: 'instanceName',
@@ -154,7 +155,7 @@ describe('genAzureChatCompletion', () => {
   // Test with client parameter and deployment name when feature is disabled
   test('does not update client when feature is disabled', () => {
     process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME = 'false';
-    const clientMock = { azure: {} };
+    const clientMock = { azure: {} } as GenericClient;
     const url = genAzureChatCompletion(
       {
         azureOpenAIApiInstanceName: 'instanceName',

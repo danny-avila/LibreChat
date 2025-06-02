@@ -1,7 +1,6 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { KnownEndpoints } = require('librechat-data-provider');
-const { sanitizeModelName, constructAzureURL } = require('~/utils');
-const { isEnabled } = require('~/server/utils');
+const { isEnabled, sanitizeModelName, constructAzureURL } = require('@librechat/api');
 
 /**
  * Generates configuration options for creating a language model (LLM) instance.
