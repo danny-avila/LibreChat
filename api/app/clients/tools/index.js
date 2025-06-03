@@ -14,6 +14,7 @@ const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const MondayTool = require('./structured/MondayTool');
 const StripeAPITool = require('./structured/StripeAPI');
+const GitHubTool = require('./structured/GitHubTool');
 
 /** @type {Record<string, TPlugin | undefined>} */
 const manifestToolMap = {};
@@ -46,4 +47,5 @@ module.exports = {
   createOpenAIImageTools,
   MondayTool,
   StripeAPITool,
+  GitHubTool,
 };

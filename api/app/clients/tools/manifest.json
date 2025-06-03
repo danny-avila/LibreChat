@@ -218,5 +218,18 @@
         "description": "Your Stripe API Key. Get it from Stripe Dashboard → Developers → API keys. Use 'sk_test_' for test mode or 'sk_live_' for production. More info: <a href='https://stripe.com/docs/keys' target='_blank'>Stripe API Keys</a>"
       }
     ]
+  },
+  {
+    "name": "GitHub",
+    "pluginKey": "github-tool",
+    "description": "Comprehensive GitHub integration for repository management, file browsing, issues, PRs, and code analysis. Access repository structure, search code, manage issues and pull requests.",
+    "icon": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+    "authConfig": [
+      {
+        "authField": "GITHUB_TOKEN",
+        "label": "GitHub Personal Access Token",
+        "description": "Your GitHub Personal Access Token. Generate one at: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic). Required scopes: repo, read:user, read:org. More info: <a href='https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token' target='_blank'>GitHub Token Guide</a>"
+      }
+    ]
   }
 ]
