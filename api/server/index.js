@@ -12,6 +12,7 @@ const cookieParser = require('cookie-parser');
 const { connectDb, indexSync } = require('~/db');
 
 const { jwtLogin, passportLogin } = require('~/strategies');
+const { initAuthModels } = require('@librechat/auth');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
@@ -36,7 +37,8 @@ const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
-  await connectDb();
+  const mongooseInstance = await connectDb();
+  initAuthModels(mongooseInstance);
 
   logger.info('Connected to MongoDB');
   await indexSync();

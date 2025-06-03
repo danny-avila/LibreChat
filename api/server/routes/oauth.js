@@ -9,7 +9,7 @@ const {
   setBalanceConfig,
   checkDomainAllowed,
 } = require('~/server/middleware');
-const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const { setAuthTokens, setOpenIDAuthTokens } = require('@librechat/auth');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 

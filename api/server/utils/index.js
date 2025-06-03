@@ -8,22 +8,8 @@ const queue = require('./queue');
 const files = require('./files');
 const math = require('./math');
 
-/**
- * Check if email configuration is set
- * @returns {Boolean}
- */
-function checkEmailConfig() {
-  return (
-    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-    !!process.env.EMAIL_USERNAME &&
-    !!process.env.EMAIL_PASSWORD &&
-    !!process.env.EMAIL_FROM
-  );
-}
-
 module.exports = {
   ...streamResponse,
-  checkEmailConfig,
   ...cryptoUtils,
   ...handleText,
   countTokens,

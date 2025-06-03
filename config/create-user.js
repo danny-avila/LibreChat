@@ -2,7 +2,7 @@ const path = require('path');
 const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { registerUser } = require('~/server/services/AuthService');
+const { registerUser } = require('@librechat/auth');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
@@ -102,7 +102,9 @@ or the user will need to attempt logging in to have a verification link sent to 
   const user = { email, password, name, username, confirm_password: password };
   let result;
   try {
-    result = await registerUser(user, { emailVerified });
+    const isEmailDomAllowed = await isEmailDomAllowed(user.email);
+    const balanceConfig = await getBalanceConfig();
+    result = await registerUser(user, { emailVerified }, isEmailDomAllowed, balanceConfig);
   } catch (error) {
     console.red('Error: ' + error.message);
     silentExit(1);

@@ -4,18 +4,22 @@ const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const {
   registerUser,
+  requestPasswordReset,
   resetPassword,
   setAuthTokens,
-  requestPasswordReset,
   setOpenIDAuthTokens,
-} = require('~/server/services/AuthService');
+} = require('@librechat/auth');
 const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
+const { getBalanceConfig } = require('~/server/services/Config');
 
 const registrationController = async (req, res) => {
   try {
-    const response = await registerUser(req.body);
+    const isEmailDomAllowed = await isEmailDomainAllowed(req.body.email);
+    const balanceConfig = await getBalanceConfig();
+    const response = await registerUser(req.body, {}, isEmailDomAllowed, balanceConfig);
     const { status, message } = response;
     res.status(status).send({ message });
   } catch (err) {

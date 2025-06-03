@@ -5,7 +5,8 @@ const {
   conflictingAzureVariables,
   extractVariableName,
 } = require('librechat-data-provider');
-const { isEnabled, checkEmailConfig } = require('~/server/utils');
+const { isEnabled } = require('~/server/utils');
+const { checkEmailConfig } = require('@librechat/auth');
 const { logger } = require('~/config');
 
 const secretDefaults = {

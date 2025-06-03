@@ -5,7 +5,7 @@ const {
   getTOTPSecret,
   verifyBackupCode,
 } = require('~/server/services/twoFactorService');
-const { setAuthTokens } = require('~/server/services/AuthService');
+const { setAuthTokens } = require('@librechat/auth');
 const { getUserById } = require('~/models');
 
 /**

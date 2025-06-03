@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const { getOpenIdConfig } = require('~/strategies');
-const { logoutUser } = require('~/server/services/AuthService');
+const { logoutUser } = require('@librechat/auth');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
