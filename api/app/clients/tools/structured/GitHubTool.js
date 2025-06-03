@@ -19,7 +19,7 @@ class GitHubTool extends Tool {
     super(fields);
 
     this.name = 'github-tool';
-    this.description = 'Comprehensive tool for GitHub repository management, file browsing, issues, PRs, and code analysis. Uses official GitHub API with @octokit/rest SDK. Supports both classic and fine-grained personal access tokens.';
+    this.description = 'Comprehensive tool for GitHub repository management with full read and write capabilities. Supports file operations (create, update, delete), branch management (create, delete), issues management (create, update, close), repository browsing, code search, and project analysis. Uses official GitHub API with @octokit/rest SDK. Supports both classic and fine-grained personal access tokens. Write operations require appropriate permissions.';
 
     // Получение API ключа из параметров (токен предоставляется пользователем)
     // Поддерживает как classic, так и fine-grained GitHub Personal Access Tokens
@@ -63,7 +63,18 @@ class GitHubTool extends Tool {
         'listPullRequests',
         'getPullRequest',
         'analyzeProject',
-        'getRepoStats'
+        'getRepoStats',
+        // File Management Operations
+        'createFile',
+        'updateFile',
+        'deleteFile',
+        // Branch Management Operations
+        'createBranch',
+        'deleteBranch',
+        // Issues Management Operations
+        'createIssue',
+        'updateIssue',
+        'closeIssue'
       ]).describe('The specific GitHub action to perform'),
       
       owner: z.string().describe('Repository owner (username or organization)'),
@@ -77,7 +88,18 @@ class GitHubTool extends Tool {
       pull_number: z.number().optional().describe('Pull request number'),
       state: z.enum(['open', 'closed', 'all']).optional().describe('State filter for issues/PRs'),
       per_page: z.number().max(100).optional().describe('Number of results per page (max 100)'),
-      page: z.number().optional().describe('Page number for pagination')
+      page: z.number().optional().describe('Page number for pagination'),
+      
+      // Parameters for write operations
+      content: z.string().optional().describe('File content for create/update operations'),
+      message: z.string().optional().describe('Commit message for file operations'),
+      sha: z.string().optional().describe('SHA of the file for update/delete operations'),
+      source_branch: z.string().optional().describe('Source branch for creating new branch'),
+      title: z.string().optional().describe('Title for issue operations'),
+      body: z.string().optional().describe('Body/description for issue operations'),
+      assignees: z.array(z.string()).optional().describe('Assignees for issue operations'),
+      labels: z.array(z.string()).optional().describe('Labels for issue operations'),
+      milestone: z.number().optional().describe('Milestone number for issue operations')
     }).describe('Input schema for GitHub operations');
     
     console.log(`GitHubTool [${constructorTime}]: Schema defined. Initialization complete.`);
@@ -133,6 +155,22 @@ class GitHubTool extends Tool {
           return await this.analyzeProject(owner, repo);
         case 'getRepoStats':
           return await this.getRepoStats(owner, repo);
+        case 'createFile':
+          return await this.createFile(owner, repo, params.path, params.content, params.message, params.branch);
+        case 'updateFile':
+          return await this.updateFile(owner, repo, params.path, params.content, params.message, params.sha);
+        case 'deleteFile':
+          return await this.deleteFile(owner, repo, params.path, params.sha, params.message);
+        case 'createBranch':
+          return await this.createBranch(owner, repo, params.source_branch, params.branch);
+        case 'deleteBranch':
+          return await this.deleteBranch(owner, repo, params.branch);
+        case 'createIssue':
+          return await this.createIssue(owner, repo, params.title, params.body, params.assignees, params.labels, params.milestone);
+        case 'updateIssue':
+          return await this.updateIssue(owner, repo, params.issue_number, params.title, params.body, params.assignees, params.labels, params.milestone);
+        case 'closeIssue':
+          return await this.closeIssue(owner, repo, params.issue_number);
         default:
           return JSON.stringify({ error: true, message: `Unknown action: ${action}` });
       }
@@ -694,6 +732,427 @@ class GitHubTool extends Tool {
     if (complexity >= 4) return 'Medium';
     if (complexity >= 2) return 'Low';
     return 'Very Low';
+  }
+
+  // === WRITE OPERATIONS ===
+
+  // === FILE MANAGEMENT ===
+
+  async createFile(owner, repo, path, content, message = null, branch = null) {
+    try {
+      if (!path) {
+        return JSON.stringify({ error: true, message: 'File path is required' });
+      }
+      
+      if (!content) {
+        return JSON.stringify({ error: true, message: 'File content is required' });
+      }
+
+      const commitMessage = message || `Create ${path}`;
+      
+      // Encode content to Base64
+      const encodedContent = Buffer.from(content).toString('base64');
+      
+      const params = {
+        owner,
+        repo,
+        path,
+        message: commitMessage,
+        content: encodedContent
+      };
+
+      // Add branch if specified
+      if (branch) {
+        params.branch = branch;
+      }
+
+      const { data } = await this.octokit.rest.repos.createOrUpdateFileContents(params);
+      
+      return JSON.stringify({
+        success: true,
+        message: 'File created successfully',
+        file: {
+          path: data.content.path,
+          sha: data.content.sha,
+          size: data.content.size,
+          html_url: data.content.html_url,
+          download_url: data.content.download_url
+        },
+        commit: {
+          sha: data.commit.sha,
+          message: data.commit.message,
+          author: data.commit.author,
+          committer: data.commit.committer,
+          html_url: data.commit.html_url
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  async updateFile(owner, repo, path, content, message = null, sha = null) {
+    try {
+      if (!path) {
+        return JSON.stringify({ error: true, message: 'File path is required' });
+      }
+      
+      if (!content) {
+        return JSON.stringify({ error: true, message: 'File content is required' });
+      }
+
+      // If SHA is not provided, get current file to obtain SHA
+      if (!sha) {
+        try {
+          const { data: currentFile } = await this.octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path
+          });
+          sha = currentFile.sha;
+        } catch (getError) {
+          return JSON.stringify({ 
+            error: true, 
+            message: `Could not retrieve current file SHA: ${getError.message}` 
+          });
+        }
+      }
+
+      const commitMessage = message || `Update ${path}`;
+      
+      // Encode content to Base64
+      const encodedContent = Buffer.from(content).toString('base64');
+      
+      const { data } = await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path,
+        message: commitMessage,
+        content: encodedContent,
+        sha
+      });
+      
+      return JSON.stringify({
+        success: true,
+        message: 'File updated successfully',
+        file: {
+          path: data.content.path,
+          sha: data.content.sha,
+          size: data.content.size,
+          html_url: data.content.html_url,
+          download_url: data.content.download_url
+        },
+        commit: {
+          sha: data.commit.sha,
+          message: data.commit.message,
+          author: data.commit.author,
+          committer: data.commit.committer,
+          html_url: data.commit.html_url
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  async deleteFile(owner, repo, path, sha = null, message = null) {
+    try {
+      if (!path) {
+        return JSON.stringify({ error: true, message: 'File path is required' });
+      }
+
+      // If SHA is not provided, get current file to obtain SHA
+      if (!sha) {
+        try {
+          const { data: currentFile } = await this.octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path
+          });
+          sha = currentFile.sha;
+        } catch (getError) {
+          return JSON.stringify({ 
+            error: true, 
+            message: `Could not retrieve current file SHA: ${getError.message}` 
+          });
+        }
+      }
+
+      const commitMessage = message || `Delete ${path}`;
+      
+      const { data } = await this.octokit.rest.repos.deleteFile({
+        owner,
+        repo,
+        path,
+        message: commitMessage,
+        sha
+      });
+      
+      return JSON.stringify({
+        success: true,
+        message: 'File deleted successfully',
+        commit: {
+          sha: data.commit.sha,
+          message: data.commit.message,
+          author: data.commit.author,
+          committer: data.commit.committer,
+          html_url: data.commit.html_url
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  // === BRANCH MANAGEMENT ===
+
+  async createBranch(owner, repo, sourceBranch = null, newBranch = null) {
+    try {
+      if (!newBranch) {
+        return JSON.stringify({ error: true, message: 'New branch name is required' });
+      }
+
+      // Get source branch SHA (default to main/master if not specified)
+      let sourceSha;
+      if (sourceBranch) {
+        try {
+          const { data: sourceRef } = await this.octokit.rest.git.getRef({
+            owner,
+            repo,
+            ref: `heads/${sourceBranch}`
+          });
+          sourceSha = sourceRef.object.sha;
+        } catch (error) {
+          return JSON.stringify({ 
+            error: true, 
+            message: `Source branch '${sourceBranch}' not found: ${error.message}` 
+          });
+        }
+      } else {
+        // Get default branch SHA
+        const { data: repoData } = await this.octokit.rest.repos.get({ owner, repo });
+        const defaultBranch = repoData.default_branch;
+        const { data: defaultRef } = await this.octokit.rest.git.getRef({
+          owner,
+          repo,
+          ref: `heads/${defaultBranch}`
+        });
+        sourceSha = defaultRef.object.sha;
+      }
+
+      // Create new branch
+      const { data } = await this.octokit.rest.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${newBranch}`,
+        sha: sourceSha
+      });
+      
+      return JSON.stringify({
+        success: true,
+        message: 'Branch created successfully',
+        branch: {
+          name: newBranch,
+          ref: data.ref,
+          sha: data.object.sha,
+          url: data.url
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  async deleteBranch(owner, repo, branchName) {
+    try {
+      if (!branchName) {
+        return JSON.stringify({ error: true, message: 'Branch name is required' });
+      }
+
+      // Check if branch exists
+      try {
+        await this.octokit.rest.git.getRef({
+          owner,
+          repo,
+          ref: `heads/${branchName}`
+        });
+      } catch (error) {
+        return JSON.stringify({ 
+          error: true, 
+          message: `Branch '${branchName}' not found: ${error.message}` 
+        });
+      }
+
+      // Delete branch
+      await this.octokit.rest.git.deleteRef({
+        owner,
+        repo,
+        ref: `heads/${branchName}`
+      });
+      
+      return JSON.stringify({
+        success: true,
+        message: `Branch '${branchName}' deleted successfully`
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  // === ISSUES MANAGEMENT ===
+
+  async createIssue(owner, repo, title, body = null, assignees = null, labels = null, milestone = null) {
+    try {
+      if (!title) {
+        return JSON.stringify({ error: true, message: 'Issue title is required' });
+      }
+
+      const params = {
+        owner,
+        repo,
+        title
+      };
+
+      if (body) params.body = body;
+      if (assignees && assignees.length > 0) params.assignees = assignees;
+      if (labels && labels.length > 0) params.labels = labels;
+      if (milestone) params.milestone = milestone;
+
+      const { data } = await this.octokit.rest.issues.create(params);
+      
+      return JSON.stringify({
+        success: true,
+        message: 'Issue created successfully',
+        issue: {
+          number: data.number,
+          title: data.title,
+          body: data.body,
+          state: data.state,
+          user: data.user.login,
+          assignees: data.assignees.map(a => a.login),
+          labels: data.labels.map(l => ({ name: l.name, color: l.color })),
+          milestone: data.milestone ? data.milestone.title : null,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          html_url: data.html_url,
+          comments: data.comments
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  async updateIssue(owner, repo, issue_number, title = null, body = null, assignees = null, labels = null, milestone = null) {
+    try {
+      if (!issue_number) {
+        return JSON.stringify({ error: true, message: 'Issue number is required' });
+      }
+
+      const params = {
+        owner,
+        repo,
+        issue_number
+      };
+
+      if (title) params.title = title;
+      if (body !== null) params.body = body;
+      if (assignees !== null) params.assignees = assignees;
+      if (labels !== null) params.labels = labels;
+      if (milestone !== null) params.milestone = milestone;
+
+      const { data } = await this.octokit.rest.issues.update(params);
+      
+      return JSON.stringify({
+        success: true,
+        message: 'Issue updated successfully',
+        issue: {
+          number: data.number,
+          title: data.title,
+          body: data.body,
+          state: data.state,
+          user: data.user.login,
+          assignees: data.assignees.map(a => a.login),
+          labels: data.labels.map(l => ({ name: l.name, color: l.color })),
+          milestone: data.milestone ? data.milestone.title : null,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          html_url: data.html_url,
+          comments: data.comments
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
+  }
+
+  async closeIssue(owner, repo, issue_number) {
+    try {
+      if (!issue_number) {
+        return JSON.stringify({ error: true, message: 'Issue number is required' });
+      }
+
+      const { data } = await this.octokit.rest.issues.update({
+        owner,
+        repo,
+        issue_number,
+        state: 'closed'
+      });
+      
+      return JSON.stringify({
+        success: true,
+        message: 'Issue closed successfully',
+        issue: {
+          number: data.number,
+          title: data.title,
+          body: data.body,
+          state: data.state,
+          user: data.user.login,
+          assignees: data.assignees.map(a => a.login),
+          labels: data.labels.map(l => ({ name: l.name, color: l.color })),
+          milestone: data.milestone ? data.milestone.title : null,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          closed_at: data.closed_at,
+          html_url: data.html_url,
+          comments: data.comments
+        }
+      });
+    } catch (error) {
+      return JSON.stringify({ 
+        error: true, 
+        message: error.message,
+        status: error.status 
+      });
+    }
   }
 }
 
