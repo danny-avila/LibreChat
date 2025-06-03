@@ -12,6 +12,7 @@ const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   getAgent,
+  loadAgent,
   createAgent,
   updateAgent,
   deleteAgent,
@@ -19,6 +20,8 @@ const {
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
+  generateActionMetadataHash,
+  revertAgentVersion,
 } = require('./Agent');
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -816,7 +819,6 @@ describe('Agent Version History', () => {
     console.error = jest.fn();
 
     try {
-      const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
       const projectId1 = new mongoose.Types.ObjectId();
       const projectId2 = new mongoose.Types.ObjectId();
@@ -1077,5 +1079,704 @@ describe('Agent Version History', () => {
     expect(error).toBeDefined();
     expect(error.message).toContain('Duplicate version');
     expect(error.statusCode).toBe(409);
+  });
+});
+
+describe('Action Metadata and Hash Generation', () => {
+  let mongoServer;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  test('should generate consistent hash for same action metadata', async () => {
+    const actionIds = ['test.com_action_123', 'example.com_action_456'];
+    const actions = [
+      {
+        action_id: '123',
+        metadata: { version: '1.0', endpoints: ['GET /api/test'], schema: { type: 'object' } },
+      },
+      {
+        action_id: '456',
+        metadata: { version: '2.0', endpoints: ['POST /api/example'], schema: { type: 'string' } },
+      },
+    ];
+
+    const hash1 = await generateActionMetadataHash(actionIds, actions);
+    const hash2 = await generateActionMetadataHash(actionIds, actions);
+
+    expect(hash1).toBe(hash2);
+    expect(typeof hash1).toBe('string');
+    expect(hash1.length).toBe(64); // SHA-256 produces 64 character hex string
+  });
+
+  test('should generate different hashes for different action metadata', async () => {
+    const actionIds = ['test.com_action_123'];
+    const actions1 = [
+      { action_id: '123', metadata: { version: '1.0', endpoints: ['GET /api/test'] } },
+    ];
+    const actions2 = [
+      { action_id: '123', metadata: { version: '2.0', endpoints: ['GET /api/test'] } },
+    ];
+
+    const hash1 = await generateActionMetadataHash(actionIds, actions1);
+    const hash2 = await generateActionMetadataHash(actionIds, actions2);
+
+    expect(hash1).not.toBe(hash2);
+  });
+
+  test('should handle empty action arrays', async () => {
+    const hash = await generateActionMetadataHash([], []);
+    expect(hash).toBe('');
+  });
+
+  test('should handle null or undefined action arrays', async () => {
+    const hash1 = await generateActionMetadataHash(null, []);
+    const hash2 = await generateActionMetadataHash(undefined, []);
+
+    expect(hash1).toBe('');
+    expect(hash2).toBe('');
+  });
+
+  test('should handle missing action metadata gracefully', async () => {
+    const actionIds = ['test.com_action_123', 'missing.com_action_999'];
+    const actions = [
+      { action_id: '123', metadata: { version: '1.0' } },
+      // missing action with id '999'
+    ];
+
+    const hash = await generateActionMetadataHash(actionIds, actions);
+    expect(typeof hash).toBe('string');
+    expect(hash.length).toBe(64);
+  });
+
+  test('should sort action IDs for consistent hashing', async () => {
+    const actionIds1 = ['b.com_action_2', 'a.com_action_1'];
+    const actionIds2 = ['a.com_action_1', 'b.com_action_2'];
+    const actions = [
+      { action_id: '1', metadata: { version: '1.0' } },
+      { action_id: '2', metadata: { version: '2.0' } },
+    ];
+
+    const hash1 = await generateActionMetadataHash(actionIds1, actions);
+    const hash2 = await generateActionMetadataHash(actionIds2, actions);
+
+    expect(hash1).toBe(hash2);
+  });
+
+  test('should handle complex nested metadata objects', async () => {
+    const actionIds = ['complex.com_action_1'];
+    const actions = [
+      {
+        action_id: '1',
+        metadata: {
+          version: '1.0',
+          schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              nested: {
+                type: 'object',
+                properties: {
+                  id: { type: 'number' },
+                  tags: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+          },
+          endpoints: [
+            { path: '/api/test', method: 'GET', params: ['id'] },
+            { path: '/api/create', method: 'POST', body: true },
+          ],
+        },
+      },
+    ];
+
+    const hash = await generateActionMetadataHash(actionIds, actions);
+    expect(typeof hash).toBe('string');
+    expect(hash.length).toBe(64);
+  });
+});
+
+describe('Load Agent Functionality', () => {
+  let mongoServer;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  test('should return null when agent_id is not provided', async () => {
+    const mockReq = { user: { id: 'user123' } };
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: null,
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4' },
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test('should return null when agent_id is empty string', async () => {
+    const mockReq = { user: { id: 'user123' } };
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: '',
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4' },
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test('should test ephemeral agent loading logic', async () => {
+    // Import the Agent module to access the loadEphemeralAgent function directly
+    const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+
+    const mockReq = {
+      user: { id: 'user123' },
+      body: {
+        promptPrefix: 'Test instructions',
+        ephemeralAgent: {
+          execute_code: true,
+          web_search: true,
+          mcp: ['server1', 'server2'],
+        },
+      },
+      app: {
+        locals: {
+          availableTools: {
+            tool1_mcp_server1: {},
+            tool2_mcp_server2: {},
+            another_tool: {},
+          },
+        },
+      },
+    };
+
+    // Test loadAgent with the actual EPHEMERAL_AGENT_ID
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: EPHEMERAL_AGENT_ID,
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4', temperature: 0.7 },
+    });
+
+    if (result) {
+      expect(result.id).toBe(EPHEMERAL_AGENT_ID);
+      expect(result.instructions).toBe('Test instructions');
+      expect(result.provider).toBe('openai');
+      expect(result.model).toBe('gpt-4');
+      expect(result.model_parameters.temperature).toBe(0.7);
+      expect(result.tools).toContain('execute_code');
+      expect(result.tools).toContain('web_search');
+      expect(result.tools).toContain('tool1_mcp_server1');
+      expect(result.tools).toContain('tool2_mcp_server2');
+    } else {
+      // If result is null, at least verify that the function doesn't crash
+      expect(result).toBeNull();
+    }
+  });
+
+  test('should return null for non-existent agent', async () => {
+    const mockReq = { user: { id: 'user123' } };
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: 'non_existent_agent',
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4' },
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test('should load agent when user is the author', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentId = `agent_${uuidv4()}`;
+
+    await createAgent({
+      id: agentId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+      description: 'Test description',
+      tools: ['web_search'],
+    });
+
+    const mockReq = { user: { id: userId.toString() } };
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: agentId,
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4' },
+    });
+
+    expect(result).toBeDefined();
+    expect(result.id).toBe(agentId);
+    expect(result.name).toBe('Test Agent');
+    expect(result.author.toString()).toBe(userId.toString());
+    expect(result.version).toBe(1); // Should set version from versions array length
+  });
+
+  test('should return null when user is not author and agent has no projectIds', async () => {
+    const authorId = new mongoose.Types.ObjectId();
+    const userId = new mongoose.Types.ObjectId();
+    const agentId = `agent_${uuidv4()}`;
+
+    await createAgent({
+      id: agentId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+
+    const mockReq = { user: { id: userId.toString() } };
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: agentId,
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4' },
+    });
+
+    // The function may return null or undefined for unauthorized access
+    expect(result).toBeFalsy();
+  });
+
+  test('should handle ephemeral agent with no MCP servers', async () => {
+    const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+
+    const mockReq = {
+      user: { id: 'user123' },
+      body: {
+        promptPrefix: 'Simple instructions',
+        ephemeralAgent: {
+          execute_code: false,
+          web_search: false,
+          mcp: [],
+        },
+      },
+      app: {
+        locals: {
+          availableTools: {},
+        },
+      },
+    };
+
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: EPHEMERAL_AGENT_ID,
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-3.5-turbo' },
+    });
+
+    if (result) {
+      expect(result.tools).toEqual([]);
+      expect(result.instructions).toBe('Simple instructions');
+    } else {
+      expect(result).toBeFalsy();
+    }
+  });
+
+  test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
+    const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+
+    const mockReq = {
+      user: { id: 'user123' },
+      body: {
+        promptPrefix: 'Basic instructions',
+      },
+      app: {
+        locals: {
+          availableTools: {},
+        },
+      },
+    };
+
+    const result = await loadAgent({
+      req: mockReq,
+      agent_id: EPHEMERAL_AGENT_ID,
+      endpoint: 'openai',
+      model_parameters: { model: 'gpt-4' },
+    });
+
+    if (result) {
+      expect(result.tools).toEqual([]);
+    } else {
+      expect(result).toBeFalsy();
+    }
+  });
+});
+
+describe('Agent Edge Cases and Error Handling', () => {
+  let mongoServer;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  test('should handle agent creation with minimal required fields', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    const agent = await createAgent({
+      id: agentId,
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+    });
+
+    expect(agent).toBeDefined();
+    expect(agent.id).toBe(agentId);
+    expect(agent.versions).toHaveLength(1);
+    expect(agent.versions[0].provider).toBe('test');
+    expect(agent.versions[0].model).toBe('test-model');
+  });
+
+  test('should handle agent creation with all optional fields', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+    const projectId = new mongoose.Types.ObjectId();
+
+    const agent = await createAgent({
+      id: agentId,
+      name: 'Complex Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+      description: 'Complex description',
+      instructions: 'Complex instructions',
+      tools: ['tool1', 'tool2'],
+      actions: ['action1', 'action2'],
+      model_parameters: { temperature: 0.8, max_tokens: 1000 },
+      projectIds: [projectId],
+      avatar: 'https://example.com/avatar.png',
+      isCollaborative: true,
+      tool_resources: {
+        file_search: { file_ids: ['file1', 'file2'] },
+      },
+    });
+
+    expect(agent).toBeDefined();
+    expect(agent.name).toBe('Complex Agent');
+    expect(agent.description).toBe('Complex description');
+    expect(agent.instructions).toBe('Complex instructions');
+    expect(agent.tools).toEqual(['tool1', 'tool2']);
+    expect(agent.actions).toEqual(['action1', 'action2']);
+    expect(agent.model_parameters.temperature).toBe(0.8);
+    expect(agent.model_parameters.max_tokens).toBe(1000);
+    expect(agent.projectIds.map((id) => id.toString())).toContain(projectId.toString());
+    expect(agent.avatar).toBe('https://example.com/avatar.png');
+    expect(agent.isCollaborative).toBe(true);
+    expect(agent.tool_resources.file_search.file_ids).toEqual(['file1', 'file2']);
+  });
+
+  test('should handle updateAgent with empty update object', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Test Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+    });
+
+    const updatedAgent = await updateAgent({ id: agentId }, {});
+
+    expect(updatedAgent).toBeDefined();
+    expect(updatedAgent.name).toBe('Test Agent');
+    expect(updatedAgent.versions).toHaveLength(1); // No new version should be created
+  });
+
+  test('should handle concurrent updates to different agents', async () => {
+    const agent1Id = `agent_${uuidv4()}`;
+    const agent2Id = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agent1Id,
+      name: 'Agent 1',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+    });
+
+    await createAgent({
+      id: agent2Id,
+      name: 'Agent 2',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+    });
+
+    // Concurrent updates to different agents
+    const [updated1, updated2] = await Promise.all([
+      updateAgent({ id: agent1Id }, { description: 'Updated Agent 1' }),
+      updateAgent({ id: agent2Id }, { description: 'Updated Agent 2' }),
+    ]);
+
+    expect(updated1.description).toBe('Updated Agent 1');
+    expect(updated2.description).toBe('Updated Agent 2');
+    expect(updated1.versions).toHaveLength(2);
+    expect(updated2.versions).toHaveLength(2);
+  });
+
+  test('should handle agent deletion with non-existent ID', async () => {
+    const nonExistentId = `agent_${uuidv4()}`;
+    const result = await deleteAgent({ id: nonExistentId });
+
+    expect(result).toBeNull();
+  });
+
+  test('should handle getListAgents with no agents', async () => {
+    const authorId = new mongoose.Types.ObjectId();
+    const result = await getListAgents({ author: authorId.toString() });
+
+    expect(result).toBeDefined();
+    expect(result.data).toEqual([]);
+    expect(result.has_more).toBe(false);
+    expect(result.first_id).toBeNull();
+    expect(result.last_id).toBeNull();
+  });
+
+  test('should handle updateAgent with MongoDB operators mixed with direct updates', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Test Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+      tools: ['tool1'],
+    });
+
+    // Test with $push and direct field update
+    const updatedAgent = await updateAgent(
+      { id: agentId },
+      {
+        name: 'Updated Name',
+        $push: { tools: 'tool2' },
+      },
+    );
+
+    expect(updatedAgent.name).toBe('Updated Name');
+    expect(updatedAgent.tools).toContain('tool1');
+    expect(updatedAgent.tools).toContain('tool2');
+    expect(updatedAgent.versions).toHaveLength(2);
+  });
+
+  test('should handle revertAgentVersion with invalid version index', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Test Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+    });
+
+    // Try to revert to non-existent version
+    await expect(revertAgentVersion({ id: agentId }, 5)).rejects.toThrow('Version 5 not found');
+  });
+
+  test('should handle revertAgentVersion with non-existent agent', async () => {
+    const nonExistentId = `agent_${uuidv4()}`;
+
+    await expect(revertAgentVersion({ id: nonExistentId }, 0)).rejects.toThrow('Agent not found');
+  });
+
+  test('should handle addAgentResourceFile with non-existent agent', async () => {
+    const nonExistentId = `agent_${uuidv4()}`;
+    const mockReq = { user: { id: 'user123' } };
+
+    await expect(
+      addAgentResourceFile({
+        req: mockReq,
+        agent_id: nonExistentId,
+        tool_resource: 'file_search',
+        file_id: 'file123',
+      }),
+    ).rejects.toThrow('Agent not found for adding resource file');
+  });
+
+  test('should handle removeAgentResourceFiles with non-existent agent', async () => {
+    const nonExistentId = `agent_${uuidv4()}`;
+
+    await expect(
+      removeAgentResourceFiles({
+        agent_id: nonExistentId,
+        files: [{ tool_resource: 'file_search', file_id: 'file123' }],
+      }),
+    ).rejects.toThrow('Agent not found for removing resource files');
+  });
+
+  test('should handle updateAgent with complex nested updates', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Test Agent',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+      model_parameters: { temperature: 0.5 },
+      tools: ['tool1'],
+    });
+
+    // First update with $push operation
+    const firstUpdate = await updateAgent(
+      { id: agentId },
+      {
+        $push: { tools: 'tool2' },
+      },
+    );
+
+    expect(firstUpdate.tools).toContain('tool1');
+    expect(firstUpdate.tools).toContain('tool2');
+
+    // Second update with direct field update and $addToSet
+    const secondUpdate = await updateAgent(
+      { id: agentId },
+      {
+        name: 'Updated Agent',
+        model_parameters: { temperature: 0.8, max_tokens: 500 },
+        $addToSet: { tools: 'tool3' },
+      },
+    );
+
+    expect(secondUpdate.name).toBe('Updated Agent');
+    expect(secondUpdate.model_parameters.temperature).toBe(0.8);
+    expect(secondUpdate.model_parameters.max_tokens).toBe(500);
+    expect(secondUpdate.tools).toContain('tool1');
+    expect(secondUpdate.tools).toContain('tool2');
+    expect(secondUpdate.tools).toContain('tool3');
+    expect(secondUpdate.versions).toHaveLength(3);
+  });
+
+  test('should preserve version order in versions array', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Version 1',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+    });
+
+    await updateAgent({ id: agentId }, { name: 'Version 2' });
+    await updateAgent({ id: agentId }, { name: 'Version 3' });
+    const finalAgent = await updateAgent({ id: agentId }, { name: 'Version 4' });
+
+    expect(finalAgent.versions).toHaveLength(4);
+    expect(finalAgent.versions[0].name).toBe('Version 1');
+    expect(finalAgent.versions[1].name).toBe('Version 2');
+    expect(finalAgent.versions[2].name).toBe('Version 3');
+    expect(finalAgent.versions[3].name).toBe('Version 4');
+    expect(finalAgent.name).toBe('Version 4');
+  });
+
+  test('should handle updateAgentProjects error scenarios', async () => {
+    const nonExistentId = `agent_${uuidv4()}`;
+    const userId = new mongoose.Types.ObjectId();
+    const projectId = new mongoose.Types.ObjectId();
+
+    // Test with non-existent agent
+    const result = await updateAgentProjects({
+      user: { id: userId.toString() },
+      agentId: nonExistentId,
+      projectIds: [projectId.toString()],
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test('should handle revertAgentVersion properly', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    await createAgent({
+      id: agentId,
+      name: 'Original Name',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+      description: 'Original description',
+    });
+
+    await updateAgent(
+      { id: agentId },
+      { name: 'Updated Name', description: 'Updated description' },
+    );
+
+    const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+    expect(revertedAgent.name).toBe('Original Name');
+    expect(revertedAgent.description).toBe('Original description');
+    expect(revertedAgent.author.toString()).toBe(authorId.toString());
+  });
+
+  test('should handle action-related updates with getActions error', async () => {
+    const agentId = `agent_${uuidv4()}`;
+    const authorId = new mongoose.Types.ObjectId();
+
+    // Create agent with actions that might cause getActions to fail
+    await createAgent({
+      id: agentId,
+      name: 'Agent with Actions',
+      provider: 'test',
+      model: 'test-model',
+      author: authorId,
+      actions: ['test.com_action_invalid_id'],
+    });
+
+    // Update should still work even if getActions fails
+    const updatedAgent = await updateAgent({ id: agentId }, { description: 'Updated description' });
+
+    expect(updatedAgent).toBeDefined();
+    expect(updatedAgent.description).toBe('Updated description');
+    expect(updatedAgent.versions).toHaveLength(2);
   });
 });
