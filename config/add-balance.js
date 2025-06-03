@@ -1,8 +1,10 @@
 const path = require('path');
+const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
+const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const { Transaction } = require('~/models/Transaction');
-const User = require('~/models/User');
+const { isEnabled } = require('~/server/utils/handleText');
+const { createTransaction } = require('~/models/Transaction');
 const connect = require('./connect');
 
 (async () => {
@@ -33,6 +35,12 @@ const connect = require('./connect');
   if (!process.env.CHECK_BALANCE) {
     console.red(
       'Error: CHECK_BALANCE environment variable is not set! Configure it to use it: `CHECK_BALANCE=true`',
+    );
+    silentExit(1);
+  }
+  if (isEnabled(process.env.CHECK_BALANCE) === false) {
+    console.red(
+      'Error: CHECK_BALANCE environment variable is set to `false`! Please configure: `CHECK_BALANCE=true`',
     );
     silentExit(1);
   }
@@ -71,7 +79,7 @@ const connect = require('./connect');
    */
   let result;
   try {
-    result = await Transaction.create({
+    result = await createTransaction({
       user: user._id,
       tokenType: 'credits',
       context: 'admin',

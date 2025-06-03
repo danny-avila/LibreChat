@@ -32,29 +32,31 @@ export const useUpdatePromptGroup = (
     mutationFn: (variables: t.TUpdatePromptGroupVariables) =>
       dataService.updatePromptGroup(variables),
     onMutate: (variables: t.TUpdatePromptGroupVariables) => {
-      const group = JSON.parse(
-        JSON.stringify(
-          queryClient.getQueryData<t.TPromptGroup>([QueryKeys.promptGroup, variables.id]),
-        ),
-      ) as t.TPromptGroup;
-      const groupData = queryClient.getQueryData<t.PromptGroupListData>([
+      const groupData = queryClient.getQueryData<t.TPromptGroup>([
+        QueryKeys.promptGroup,
+        variables.id,
+      ]);
+      const group = groupData ? structuredClone(groupData) : undefined;
+
+      const groupListData = queryClient.getQueryData<t.PromptGroupListData>([
         QueryKeys.promptGroups,
         name,
         category,
         pageSize,
       ]);
-      const previousListData = JSON.parse(JSON.stringify(groupData)) as t.PromptGroupListData;
+      const previousListData = groupListData ? structuredClone(groupListData) : undefined;
+
       let update = variables.payload;
-      if (update.removeProjectIds && group.projectIds) {
-        update = JSON.parse(JSON.stringify(update));
+      if (update.removeProjectIds && group?.projectIds) {
+        update = structuredClone(update);
         update.projectIds = group.projectIds.filter((id) => !update.removeProjectIds?.includes(id));
         delete update.removeProjectIds;
       }
 
-      if (groupData) {
+      if (groupListData) {
         const newData = updateGroupFields(
           /* Paginated Data */
-          groupData,
+          groupListData,
           /* Update */
           { _id: variables.id, ...update },
           /* Callback */
@@ -74,12 +76,12 @@ export const useUpdatePromptGroup = (
     },
     onError: (err, variables, context) => {
       if (context?.group) {
-        queryClient.setQueryData([QueryKeys.promptGroups, variables.id], context?.group);
+        queryClient.setQueryData([QueryKeys.promptGroups, variables.id], context.group);
       }
       if (context?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(
           [QueryKeys.promptGroups, name, category, pageSize],
-          context?.previousListData,
+          context.previousListData,
         );
       }
       if (onError) {
@@ -110,7 +112,7 @@ export const useCreatePrompt = (
     onSuccess: (response, variables, context) => {
       const { prompt, group } = response;
       queryClient.setQueryData(
-        [QueryKeys.prompts, variables?.prompt?.groupId],
+        [QueryKeys.prompts, variables.prompt.groupId],
         (oldData: t.TPrompt[] | undefined) => {
           return [prompt, ...(oldData ?? [])];
         },
@@ -301,12 +303,12 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
     },
     onError: (err, variables, context) => {
       if (context?.group) {
-        queryClient.setQueryData([QueryKeys.promptGroups, variables.groupId], context?.group);
+        queryClient.setQueryData([QueryKeys.promptGroups, variables.groupId], context.group);
       }
       if (context?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(
           [QueryKeys.promptGroups, name, category, pageSize],
-          context?.previousListData,
+          context.previousListData,
         );
       }
       if (onError) {

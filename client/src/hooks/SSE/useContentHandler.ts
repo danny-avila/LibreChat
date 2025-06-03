@@ -6,10 +6,10 @@ import type {
   Text,
   TMessage,
   ImageFile,
-  TSubmission,
   ContentPart,
   PartMetadata,
   TContentData,
+  EventSubmission,
   TMessageContentParts,
 } from 'librechat-data-provider';
 import { addFileToCache } from '~/utils';
@@ -21,7 +21,7 @@ type TUseContentHandler = {
 
 type TContentHandler = {
   data: TContentData;
-  submission: TSubmission;
+  submission: EventSubmission;
 };
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
@@ -35,16 +35,16 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       const messages =
         _messages
           ?.filter((m) => m.messageId !== messageId)
-          ?.map((msg) => ({ ...msg, thread_id })) ?? [];
-      const userMessage = messages[messages.length - 1];
+          .map((msg) => ({ ...msg, thread_id })) ?? [];
+      const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
 
       let response = messageMap.get(messageId);
       if (!response) {
         response = {
-          ...initialResponse,
-          parentMessageId: userMessage?.messageId,
+          ...(initialResponse as TMessage),
+          parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
           thread_id,
@@ -55,7 +55,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       // TODO: handle streaming for non-text
       const textPart: Text | string | undefined = data[ContentTypes.TEXT];
       const part: ContentPart =
-        textPart && typeof textPart === 'string' ? { value: textPart } : data[type];
+        textPart != null && typeof textPart === 'string' ? { value: textPart } : data[type];
 
       if (type === ContentTypes.IMAGE_FILE) {
         addFileToCache(queryClient, part as ImageFile & PartMetadata);

@@ -1,5 +1,5 @@
-const Preset = require('./schema/presetSchema');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { Preset } = require('~/db/models');
 
 const getPreset = async (user, presetId) => {
   try {
@@ -11,7 +11,6 @@ const getPreset = async (user, presetId) => {
 };
 
 module.exports = {
-  Preset,
   getPreset,
   getPresets: async (user, filter) => {
     try {
@@ -38,7 +37,8 @@ module.exports = {
   savePreset: async (user, { presetId, newPresetId, defaultPreset, ...preset }) => {
     try {
       const setter = { $set: {} };
-      const update = { presetId, ...preset };
+      const { user: _, ...cleanPreset } = preset;
+      const update = { presetId, ...cleanPreset };
       if (preset.tools && Array.isArray(preset.tools)) {
         update.tools =
           preset.tools

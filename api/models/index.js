@@ -1,23 +1,7 @@
-const {
-  getMessages,
-  saveMessage,
-  recordMessage,
-  updateMessage,
-  deleteMessagesSince,
-  deleteMessages,
-} = require('./Message');
-const {
-  comparePassword,
-  deleteUserById,
-  generateToken,
-  getUserById,
-  updateUser,
-  createUser,
-  countUsers,
-  findUser,
-} = require('./userMethods');
-const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
-const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const mongoose = require('mongoose');
+const { createMethods } = require('@librechat/data-schemas');
+const methods = createMethods(mongoose);
+const { comparePassword } = require('./userMethods');
 const {
   findFileById,
   createFile,
@@ -27,26 +11,30 @@ const {
   getFiles,
   updateFileUsage,
 } = require('./File');
-const Key = require('./Key');
-const User = require('./User');
-const Session = require('./Session');
-const Balance = require('./Balance');
+const {
+  getMessage,
+  getMessages,
+  saveMessage,
+  recordMessage,
+  updateMessage,
+  deleteMessagesSince,
+  deleteMessages,
+} = require('./Message');
+const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
+const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 
 module.exports = {
-  User,
-  Key,
-  Session,
-  Balance,
-
+  ...methods,
   comparePassword,
-  deleteUserById,
-  generateToken,
-  getUserById,
-  countUsers,
-  createUser,
-  updateUser,
-  findUser,
+  findFileById,
+  createFile,
+  updateFile,
+  deleteFile,
+  deleteFiles,
+  getFiles,
+  updateFileUsage,
 
+  getMessage,
   getMessages,
   saveMessage,
   recordMessage,
@@ -63,12 +51,4 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
-
-  findFileById,
-  createFile,
-  updateFile,
-  deleteFile,
-  deleteFiles,
-  getFiles,
-  updateFileUsage,
 };

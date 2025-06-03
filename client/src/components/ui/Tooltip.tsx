@@ -1,46 +1,75 @@
-import * as React from 'react';
-import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import * as Ariakit from '@ariakit/react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { forwardRef, useMemo } from 'react';
 import { cn } from '~/utils';
 
-const Tooltip = TooltipPrimitive.Root;
+interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
+  description: string;
+  side?: 'top' | 'bottom' | 'left' | 'right';
+  className?: string;
+  focusable?: boolean;
+  role?: string;
+}
 
-const TooltipTrigger = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
->((props, ref) => <TooltipPrimitive.Trigger ref={ref} {...props} />);
-TooltipTrigger.displayName = TooltipPrimitive.Trigger.displayName;
+export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
+  { description, side = 'top', className, role, ...props },
+  ref,
+) {
+  const tooltip = Ariakit.useTooltipStore({ placement: side });
+  const mounted = Ariakit.useStoreState(tooltip, (state) => state.mounted);
+  const placement = Ariakit.useStoreState(tooltip, (state) => state.placement);
 
-const TooltipPortal = TooltipPrimitive.Portal;
+  const { x, y } = useMemo(() => {
+    const dir = placement.split('-')[0];
+    switch (dir) {
+      case 'top':
+        return { x: 0, y: -8 };
+      case 'bottom':
+        return { x: 0, y: 8 };
+      case 'left':
+        return { x: -8, y: 0 };
+      case 'right':
+        return { x: 8, y: 0 };
+      default:
+        return { x: 0, y: 0 };
+    }
+  }, [placement]);
 
-const TooltipArrow = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Arrow>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Arrow>
->((props, ref) => <TooltipPrimitive.Arrow ref={ref} {...props} />);
-TooltipArrow.displayName = TooltipPrimitive.Arrow.displayName;
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (role === 'button' && event.key === 'Enter') {
+      event.preventDefault();
+      (event.target as HTMLDivElement).click();
+    }
+  };
 
-const TooltipContent = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className = '', forceMount, children, ...props }, ref) => (
-  <TooltipPortal forceMount={forceMount}>
-    <TooltipPrimitive.Content
-      className={cn(
-        'shadow-xs relative z-[1000] max-w-xs rounded-lg border border-gray-900/10 bg-gray-900 p-1 transition-opacity',
-        className,
-      )}
-      ref={ref}
-      {...props}
-      style={{ userSelect: 'none' }}
-    >
-      <span className="flex items-center whitespace-pre-wrap px-2 py-1 text-center text-sm font-medium normal-case text-white">
-        {children}
-        <TooltipArrow className="TooltipArrow" />
-      </span>
-    </TooltipPrimitive.Content>
-  </TooltipPortal>
-));
-TooltipContent.displayName = TooltipPrimitive.Content.displayName;
-
-const TooltipProvider = TooltipPrimitive.Provider;
-
-export { Tooltip, TooltipTrigger, TooltipPortal, TooltipContent, TooltipArrow, TooltipProvider };
+  return (
+    <Ariakit.TooltipProvider store={tooltip} hideTimeout={0}>
+      <Ariakit.TooltipAnchor
+        {...props}
+        ref={ref}
+        role={role}
+        onKeyDown={handleKeyDown}
+        className={cn('cursor-pointer', className)}
+      />
+      <AnimatePresence>
+        {mounted === true && (
+          <Ariakit.Tooltip
+            gutter={4}
+            alwaysVisible
+            className="tooltip"
+            render={
+              <motion.div
+                initial={{ opacity: 0, x, y }}
+                animate={{ opacity: 1, x: 0, y: 0 }}
+                exit={{ opacity: 0, x, y }}
+              />
+            }
+          >
+            <Ariakit.TooltipArrow />
+            {description}
+          </Ariakit.Tooltip>
+        )}
+      </AnimatePresence>
+    </Ariakit.TooltipProvider>
+  );
+});

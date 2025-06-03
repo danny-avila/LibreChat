@@ -26,7 +26,6 @@ export default function Toast() {
           className={`alert-root pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 text-white ${
             severityClassName[toast.severity]
           }`}
-          role="alert"
         >
           {toast.showIcon && (
             <div className="mt-1 flex-shrink-0 flex-grow-0">

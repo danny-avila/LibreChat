@@ -1,62 +1,89 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type * as a from '../types/agents';
+import type * as s from '../schemas';
 import type * as t from '../types';
-import type { TMessage, TConversation, TSharedLink, TConversationTag } from '../schemas';
 
 export type Conversation = {
   id: string;
   createdAt: number;
   participants: string[];
   lastMessage: string;
-  conversations: TConversation[];
+  conversations: s.TConversation[];
 };
 
-// Parameters for listing conversations (e.g., for pagination)
 export type ConversationListParams = {
-  limit?: number;
-  before?: string | null;
-  after?: string | null;
-  order?: 'asc' | 'desc';
-  pageNumber: string; // Add this line
-  conversationId?: string;
+  cursor?: string;
   isArchived?: boolean;
+  sortBy?: 'title' | 'createdAt' | 'updatedAt';
+  sortDirection?: 'asc' | 'desc';
   tags?: string[];
+  search?: string;
 };
 
-// Type for the response from the conversation list API
+export type MinimalConversation = Pick<
+  s.TConversation,
+  'conversationId' | 'endpoint' | 'title' | 'createdAt' | 'updatedAt' | 'user'
+>;
+
 export type ConversationListResponse = {
-  conversations: TConversation[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-  messages: TMessage[];
+  conversations: MinimalConversation[];
+  nextCursor: string | null;
 };
 
 export type ConversationData = InfiniteData<ConversationListResponse>;
 export type ConversationUpdater = (
   data: ConversationData,
-  conversation: TConversation,
+  conversation: s.TConversation,
 ) => ConversationData;
 
-export type SharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
-  messages: TMessage[];
-};
-export type SharedLinkListParams = Omit<ConversationListParams, 'isArchived' | 'conversationId'> & {
-  isPublic?: boolean;
-};
-
-export type SharedLinksResponse = Omit<ConversationListResponse, 'conversations' | 'messages'> & {
-  sharedLinks: TSharedLink[];
-};
-
-// Type for the response from the conversation list API
-export type SharedLinkListResponse = {
-  sharedLinks: TSharedLink[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
+/* Messages */
+export type MessagesListParams = {
+  cursor?: string | null;
+  sortBy?: 'endpoint' | 'createdAt' | 'updatedAt';
+  sortDirection?: 'asc' | 'desc';
+  pageSize?: number;
+  conversationId?: string;
+  messageId?: string;
+  search?: string;
 };
 
-export type SharedLinkListData = InfiniteData<SharedLinkListResponse>;
+export type MessagesListResponse = {
+  messages: s.TMessage[];
+  nextCursor: string | null;
+};
+
+/* Shared Links */
+export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
+  messages: s.TMessage[];
+};
+
+export interface SharedLinksListParams {
+  pageSize: number;
+  isPublic: boolean;
+  sortBy: 'title' | 'createdAt';
+  sortDirection: 'asc' | 'desc';
+  search?: string;
+  cursor?: string;
+}
+
+export type SharedLinkItem = {
+  shareId: string;
+  title: string;
+  isPublic: boolean;
+  createdAt: Date;
+  conversationId: string;
+};
+
+export interface SharedLinksResponse {
+  links: SharedLinkItem[];
+  nextCursor: string | null;
+  hasNextPage: boolean;
+}
+
+export interface SharedLinkQueryData {
+  pages: SharedLinksResponse[];
+  pageParams: (string | null)[];
+}
 
 export type AllPromptGroupsFilterRequest = {
   category: string;
@@ -71,4 +98,14 @@ export type AllPromptGroupsFilterRequest = {
 
 export type AllPromptGroupsResponse = t.TPromptGroup[];
 
-export type ConversationTagsResponse = TConversationTag[];
+export type ConversationTagsResponse = s.TConversationTag[];
+
+export type VerifyToolAuthParams = { toolId: string };
+export type VerifyToolAuthResponse = {
+  authenticated: boolean;
+  message?: string | s.AuthType;
+  authTypes?: [string, s.AuthType][];
+};
+
+export type GetToolCallParams = { conversationId: string };
+export type ToolCallResults = a.ToolCallResult[];

@@ -4,8 +4,8 @@ const { z } = require('zod');
 const path = require('path');
 const yaml = require('js-yaml');
 const { createOpenAPIChain } = require('langchain/chains');
-const { DynamicStructuredTool } = require('langchain/tools');
-const { ChatPromptTemplate, HumanMessagePromptTemplate } = require('langchain/prompts');
+const { DynamicStructuredTool } = require('@langchain/core/tools');
+const { ChatPromptTemplate, HumanMessagePromptTemplate } = require('@langchain/core/prompts');
 const { logger } = require('~/config');
 
 function addLinePrefix(text, prefix = '// ') {

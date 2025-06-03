@@ -4,24 +4,45 @@ import {
   Constants,
   QueryKeys,
   ContentTypes,
+  EModelEndpoint,
   parseCompactConvo,
+  replaceSpecialVars,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
   TMessage,
   TSubmission,
   TConversation,
   TEndpointOption,
   TEndpointsConfig,
+  EndpointSchemaKey,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import store, { useGetEphemeralAgent } from '~/store';
+import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
-import store from '~/store';
+import { useNavigate } from 'react-router-dom';
+import { useAuthContext } from '~/hooks';
+
+const logChatRequest = (request: Record<string, unknown>) => {
+  logger.log('=====================================\nAsk function called with:');
+  logger.dir(request);
+  logger.log('=====================================');
+};
+
+const usesContentStream = (endpoint: EModelEndpoint | undefined, endpointType?: string) => {
+  if (endpointType === EModelEndpoint.custom) {
+    return true;
+  }
+  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
+    return true;
+  }
+};
 
 export default function useChatFunctions({
   index = 0,
@@ -47,13 +68,19 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
-  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
-  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
-  const setFilesToDelete = useSetFilesToDelete();
+  const navigate = useNavigate();
   const getSender = useGetSender();
-
+  const { user } = useAuthContext();
   const queryClient = useQueryClient();
+  const setFilesToDelete = useSetFilesToDelete();
+  const getEphemeralAgent = useGetEphemeralAgent();
+  const isTemporary = useRecoilValue(store.isTemporary);
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
+  const includeShadcnui = useRecoilValue(store.includeShadcnui);
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
+  const customPromptMode = useRecoilValue(store.customPromptMode);
+  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
   const ask: TAskFunction = (
     {
@@ -67,11 +94,12 @@ export default function useChatFunctions({
     {
       editedText = null,
       editedMessageId = null,
-      resubmitFiles = false,
+      isResubmission = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
       overrideMessages,
+      overrideFiles,
     } = {},
   ) => {
     setShowStopButton(false);
@@ -97,85 +125,116 @@ export default function useChatFunctions({
       return;
     }
 
+    const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
+
+    if (conversation?.promptPrefix) {
+      conversation.promptPrefix = replaceSpecialVars({
+        text: conversation.promptPrefix,
+        user,
+      });
+    }
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
+    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
 
-    logger.dir('Ask function called with:', {
+    logChatRequest({
       index,
+      conversation,
       latestMessage,
       conversationId,
       intermediateId,
       parentMessageId,
       currentMessages,
     });
-    logger.log('=====================================');
 
     if (conversationId == Constants.NEW_CONVO) {
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
+      navigate('/c/new', { state: { focusChat: true } });
     }
 
-    const parentMessage = currentMessages?.find(
-      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
+    /**
+     * If the user regenerated or resubmitted the message, the current parent is technically
+     * the latest user message, which is passed into `ask`; otherwise, we can rely on the
+     * latestMessage to find the parent.
+     */
+    const targetParentMessage = currentMessages.find(
+      (msg) => msg.messageId === targetParentMessageId,
     );
 
-    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
-    if (!thread_id) {
+    let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (thread_id == null) {
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
 
-    // set the endpoint option
+    /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
-      endpoint,
-      endpointType,
+      endpoint: endpoint as EndpointSchemaKey,
+      endpointType: endpointType as EndpointSchemaKey,
       conversation: conversation ?? {},
     });
 
     const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
-    const endpointOption = {
-      ...convo,
-      endpoint,
-      thread_id,
-      endpointType,
-      overrideConvoId,
-      key: getExpiry(),
-      modelDisplayLabel,
-      overrideUserMessageId,
-    } as TEndpointOption;
+    const endpointOption = Object.assign(
+      {
+        endpoint,
+        endpointType,
+        overrideConvoId,
+        overrideUserMessageId,
+        artifacts:
+          endpoint !== EModelEndpoint.agents
+            ? getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode })
+            : undefined,
+      },
+      convo,
+    ) as TEndpointOption;
+    if (endpoint !== EModelEndpoint.agents) {
+      endpointOption.key = getExpiry();
+      endpointOption.thread_id = thread_id;
+      endpointOption.modelDisplayLabel = modelDisplayLabel;
+    } else {
+      endpointOption.key = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {
       text,
       sender: 'User',
+      clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isContinued && messageId ? messageId : intermediateId,
+      messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
     };
 
-    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
-    if (setFiles && reuseFiles && parentMessage.files?.length) {
-      currentMsg.files = parentMessage.files;
+    const submissionFiles = overrideFiles ?? targetParentMessage?.files;
+    const reuseFiles =
+      (isRegenerate || (overrideFiles != null && overrideFiles.length)) &&
+      submissionFiles &&
+      submissionFiles.length > 0;
+
+    if (setFiles && reuseFiles === true) {
+      currentMsg.files = [...submissionFiles];
       setFiles(new Map());
       setFilesToDelete({});
     } else if (setFiles && files && files.size > 0) {
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
-        type: file.type || '', // Ensure type is not undefined
+        type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
       }));
@@ -183,11 +242,11 @@ export default function useChatFunctions({
       setFilesToDelete({});
     }
 
-    // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
     const responseText = isEditOrContinue ? generation : '';
 
-    const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
+    const responseMessageId =
+      editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
@@ -198,8 +257,8 @@ export default function useChatFunctions({
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      isEdited: isEditOrContinue,
-      iconURL: convo.iconURL,
+      iconURL: convo?.iconURL,
+      model: convo?.model,
       error: false,
     };
 
@@ -214,6 +273,29 @@ export default function useChatFunctions({
           },
         },
       ];
+    } else if (endpoint === EModelEndpoint.agents) {
+      initialResponse.model = conversation?.agent_id ?? '';
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+      setShowStopButton(true);
+    } else if (usesContentStream(endpoint, endpointType)) {
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+      setShowStopButton(true);
     } else {
       setShowStopButton(true);
     }
@@ -222,6 +304,7 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,
@@ -238,7 +321,10 @@ export default function useChatFunctions({
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
+      isResubmission,
       initialResponse,
+      isTemporary,
+      ephemeralAgent,
     };
 
     if (isRegenerate) {
@@ -251,8 +337,7 @@ export default function useChatFunctions({
     }
 
     setSubmission(submission);
-    logger.log('Submission:');
-    logger.dir(submission, { depth: null });
+    logger.dir('message_stream', submission, { depth: null });
   };
 
   const regenerate = ({ parentMessageId }) => {

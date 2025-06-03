@@ -1,7 +1,9 @@
 const {
   Constants,
+  webSearchKeys,
   deprecatedAzureVariables,
   conflictingAzureVariables,
+  extractVariableName,
 } = require('librechat-data-provider');
 const { isEnabled, checkEmailConfig } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -12,6 +14,24 @@ const secretDefaults = {
   JWT_SECRET: '16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef',
   JWT_REFRESH_SECRET: 'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418',
 };
+
+const deprecatedVariables = [
+  {
+    key: 'CHECK_BALANCE',
+    description:
+      'Please use the `balance` field in the `librechat.yaml` config file instead.\nMore info: https://librechat.ai/docs/configuration/librechat_yaml/object_structure/balance#overview',
+  },
+  {
+    key: 'START_BALANCE',
+    description:
+      'Please use the `balance` field in the `librechat.yaml` config file instead.\nMore info: https://librechat.ai/docs/configuration/librechat_yaml/object_structure/balance#overview',
+  },
+  {
+    key: 'GOOGLE_API_KEY',
+    description:
+      'Please use the `GOOGLE_SEARCH_API_KEY` environment variable for the Google Search Tool instead.',
+  },
+];
 
 /**
  * Checks environment variables for default secrets and deprecated variables.
@@ -37,19 +57,11 @@ function checkVariables() {
     \u200B`);
   }
 
-  if (process.env.GOOGLE_API_KEY) {
-    logger.warn(
-      'The `GOOGLE_API_KEY` environment variable is deprecated.\nPlease use the `GOOGLE_SEARCH_API_KEY` environment variable instead.',
-    );
-  }
-
-  if (process.env.OPENROUTER_API_KEY) {
-    logger.warn(
-      `The \`OPENROUTER_API_KEY\` environment variable is deprecated and its functionality will be removed soon.
-      Use of this environment variable is highly discouraged as it can lead to unexpected errors when using custom endpoints.
-      Please use the config (\`librechat.yaml\`) file for setting up OpenRouter, and use \`OPENROUTER_KEY\` or another environment variable instead.`,
-    );
-  }
+  deprecatedVariables.forEach(({ key, description }) => {
+    if (process.env[key]) {
+      logger.warn(`The \`${key}\` environment variable is deprecated. ${description}`);
+    }
+  });
 
   checkPasswordReset();
 }
@@ -131,4 +143,56 @@ function checkPasswordReset() {
   }
 }
 
-module.exports = { checkVariables, checkHealth, checkConfig, checkAzureVariables };
+/**
+ * Checks web search configuration values to ensure they are environment variable references.
+ * Warns if actual API keys or URLs are used instead of environment variable references.
+ * Logs debug information for properly configured environment variable references.
+ * @param {Object} webSearchConfig - The loaded web search configuration object.
+ */
+function checkWebSearchConfig(webSearchConfig) {
+  if (!webSearchConfig) {
+    return;
+  }
+
+  webSearchKeys.forEach((key) => {
+    const value = webSearchConfig[key];
+
+    if (typeof value === 'string') {
+      const varName = extractVariableName(value);
+
+      if (varName) {
+        // This is a proper environment variable reference
+        const actualValue = process.env[varName];
+        if (actualValue) {
+          logger.debug(`Web search ${key}: Using environment variable ${varName} with value set`);
+        } else {
+          logger.debug(
+            `Web search ${key}: Using environment variable ${varName} (not set in environment, user provided value)`,
+          );
+        }
+      } else {
+        // This is not an environment variable reference - warn user
+        logger.warn(
+          `❗ Web search configuration error: ${key} contains an actual value instead of an environment variable reference.
+          
+          Current value: "${value.substring(0, 10)}..."
+          
+          This is incorrect! You should use environment variable references in your librechat.yaml file, such as:
+          ${key}: "\${YOUR_ENV_VAR_NAME}"
+          
+          Then set the actual API key in your .env file or environment variables.
+          
+          More info: https://www.librechat.ai/docs/configuration/librechat_yaml/web_search`,
+        );
+      }
+    }
+  });
+}
+
+module.exports = {
+  checkHealth,
+  checkConfig,
+  checkVariables,
+  checkAzureVariables,
+  checkWebSearchConfig,
+};

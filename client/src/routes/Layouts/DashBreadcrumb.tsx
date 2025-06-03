@@ -1,7 +1,7 @@
-import { useSetRecoilState } from 'recoil';
 import { useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { SystemRoles } from 'librechat-data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import {
   Breadcrumb,
@@ -10,15 +10,17 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
   // BreadcrumbEllipsis,
-  DropdownMenu,
+  // DropdownMenu,
   // DropdownMenuItem,
   // DropdownMenuContent,
-  DropdownMenuTrigger,
+  // DropdownMenuTrigger,
 } from '~/components/ui';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
+// import { RightPanel } from '../../components/Prompts/RightPanel';
 import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
+// import { PromptsEditorMode } from '~/common';
 import store from '~/store';
 
 const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;
@@ -40,6 +42,7 @@ export default function DashBreadcrumb() {
 
   const setPromptsName = useSetRecoilState(store.promptsName);
   const setPromptsCategory = useSetRecoilState(store.promptsCategory);
+  const editorMode = useRecoilValue(store.promptsEditorMode);
 
   const clickCallback = useCallback(() => {
     setPromptsName('');
@@ -55,7 +58,7 @@ export default function DashBreadcrumb() {
   );
 
   return (
-    <div className="mr-4 flex h-10 items-center justify-between">
+    <div className="mr-2 mt-2 flex h-10 items-center justify-between">
       <Breadcrumb className="mt-1 px-2 dark:text-gray-200">
         <BreadcrumbList>
           <BreadcrumbItem className="hover:dark:text-white">
@@ -64,7 +67,7 @@ export default function DashBreadcrumb() {
               className="flex flex-row items-center gap-1"
               onClick={chatLinkHandler}
             >
-              <ArrowLeft className="icon-xs" />
+              <ArrowLeft className="icon-xs" aria-hidden="true" />
               <span className="hidden md:flex">{localize('com_ui_back_to_chat')}</span>
               <span className="flex md:hidden">{localize('com_ui_chat')}</span>
             </BreadcrumbLink>
@@ -95,7 +98,7 @@ export default function DashBreadcrumb() {
               className="flex flex-row items-center gap-1"
               onClick={promptsLinkHandler}
             >
-              <MessageSquareQuote className="h-4 w-4 dark:text-gray-300" />
+              <MessageSquareQuote className="h-4 w-4 dark:text-gray-300" aria-hidden="true" />
               {localize('com_ui_prompts')}
             </BreadcrumbLink>
           </BreadcrumbItem>

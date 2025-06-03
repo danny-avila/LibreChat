@@ -1,26 +1,65 @@
+const {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  removeNullishValues,
+} = require('librechat-data-provider');
+const { updateAccessPermissions } = require('~/models/Role');
 const { logger } = require('~/config');
 
 /**
  * Loads the default interface object.
  * @param {TCustomConfig | undefined} config - The loaded custom configuration.
  * @param {TConfigDefaults} configDefaults - The custom configuration default values.
- * @returns {TCustomConfig['interface']} The default interface object.
+ * @param {SystemRoles} [roleName] - The role to load the default interface for, defaults to `'USER'`.
+ * @returns {Promise<TCustomConfig['interface']>} The default interface object.
  */
-function loadDefaultInterface(config, configDefaults) {
+async function loadDefaultInterface(config, configDefaults, roleName = SystemRoles.USER) {
   const { interface: interfaceConfig } = config ?? {};
   const { interface: defaults } = configDefaults;
   const hasModelSpecs = config?.modelSpecs?.list?.length > 0;
+  const includesAddedEndpoints = config?.modelSpecs?.addedEndpoints?.length > 0;
 
-  const loadedInterface = {
+  /** @type {TCustomConfig['interface']} */
+  const loadedInterface = removeNullishValues({
     endpointsMenu:
       interfaceConfig?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
-    modelSelect: interfaceConfig?.modelSelect ?? (hasModelSpecs ? false : defaults.modelSelect),
+    modelSelect:
+      interfaceConfig?.modelSelect ??
+      (hasModelSpecs ? includesAddedEndpoints : defaults.modelSelect),
     parameters: interfaceConfig?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
     presets: interfaceConfig?.presets ?? (hasModelSpecs ? false : defaults.presets),
     sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
-  };
+    bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
+    prompts: interfaceConfig?.prompts ?? defaults.prompts,
+    multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
+    agents: interfaceConfig?.agents ?? defaults.agents,
+    temporaryChat: interfaceConfig?.temporaryChat ?? defaults.temporaryChat,
+    runCode: interfaceConfig?.runCode ?? defaults.runCode,
+    webSearch: interfaceConfig?.webSearch ?? defaults.webSearch,
+    customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+  });
+
+  await updateAccessPermissions(roleName, {
+    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
+    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+    [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+    [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
+    [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
+    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
+    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
+  });
+  await updateAccessPermissions(SystemRoles.ADMIN, {
+    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
+    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+    [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+    [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
+    [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
+    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
+    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
+  });
 
   let i = 0;
   const logSettings = () => {
@@ -38,7 +77,7 @@ function loadDefaultInterface(config, configDefaults) {
   // warn about config.modelSpecs.prioritize if true and presets are enabled, that default presets will conflict with prioritizing model specs.
   if (config?.modelSpecs?.prioritize && loadedInterface.presets) {
     logger.warn(
-      'Note: Prioritizing model specs can conflict with default presets if a default preset is set. It\'s recommended to disable presets from the interface or disable use of a default preset.',
+      "Note: Prioritizing model specs can conflict with default presets if a default preset is set. It's recommended to disable presets from the interface or disable use of a default preset.",
     );
     i === 0 && i++;
   }
@@ -52,14 +91,14 @@ function loadDefaultInterface(config, configDefaults) {
       loadedInterface.parameters)
   ) {
     logger.warn(
-      'Note: Enforcing model specs can conflict with the interface options: endpointsMenu, modelSelect, presets, and parameters. It\'s recommended to disable these options from the interface or disable enforcing model specs.',
+      "Note: Enforcing model specs can conflict with the interface options: endpointsMenu, modelSelect, presets, and parameters. It's recommended to disable these options from the interface or disable enforcing model specs.",
     );
     i === 0 && i++;
   }
   // warn if enforce is true and prioritize is not, that enforcing model specs without prioritizing them can lead to unexpected behavior.
   if (config?.modelSpecs?.enforce && !config?.modelSpecs?.prioritize) {
     logger.warn(
-      'Note: Enforcing model specs without prioritizing them can lead to unexpected behavior. It\'s recommended to enable prioritizing model specs if enforcing them.',
+      "Note: Enforcing model specs without prioritizing them can lead to unexpected behavior. It's recommended to enable prioritizing model specs if enforcing them.",
     );
     i === 0 && i++;
   }

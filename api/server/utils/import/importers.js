@@ -113,7 +113,7 @@ async function importLibreChatConvo(
        */
       const traverseMessages = async (messages, parentMessageId = null) => {
         for (const message of messages) {
-          if (!message.text) {
+          if (!message.text && !message.content) {
             continue;
           }
 
@@ -121,6 +121,7 @@ async function importLibreChatConvo(
           if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
             savedMessage = await importBatchBuilder.saveMessage({
               text: message.text,
+              content: message.content,
               sender: 'user',
               isCreatedByUser: true,
               parentMessageId: parentMessageId,
@@ -128,6 +129,7 @@ async function importLibreChatConvo(
           } else {
             savedMessage = await importBatchBuilder.saveMessage({
               text: message.text,
+              content: message.content,
               sender: message.sender,
               isCreatedByUser: false,
               model: options.model,
@@ -277,34 +279,39 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
 
 /**
  * Processes text content of messages authored by an assistant, inserting citation links as required.
- * Applies citation metadata to construct regex patterns and replacements for inserting links into the text.
+ * Uses citation start and end indices to place links at the correct positions.
  *
  * @param {ChatGPTMessage} messageData - The message data containing metadata about citations.
  * @param {string} messageText - The original text of the message which may be altered by inserting citation links.
  * @returns {string} - The updated message text after processing for citations.
  */
 function processAssistantMessage(messageData, messageText) {
-  const citations = messageData.metadata.citations ?? [];
+  if (!messageText) {
+    return messageText;
+  }
 
-  for (const citation of citations) {
+  const citations = messageData.metadata?.citations ?? [];
+
+  const sortedCitations = [...citations].sort((a, b) => b.start_ix - a.start_ix);
+
+  let result = messageText;
+  for (const citation of sortedCitations) {
     if (
-      !citation.metadata ||
-      !citation.metadata.extra ||
-      !citation.metadata.extra.cited_message_idx ||
-      (citation.metadata.type && citation.metadata.type !== 'webpage')
+      !citation.metadata?.type ||
+      citation.metadata.type !== 'webpage' ||
+      typeof citation.start_ix !== 'number' ||
+      typeof citation.end_ix !== 'number' ||
+      citation.start_ix >= citation.end_ix
     ) {
       continue;
     }
 
-    const pattern = new RegExp(
-      `\\u3010${citation.metadata.extra.cited_message_idx}\\u2020.+?\\u3011`,
-      'g',
-    );
     const replacement = ` ([${citation.metadata.title}](${citation.metadata.url}))`;
-    messageText = messageText.replace(pattern, replacement);
+
+    result = result.slice(0, citation.start_ix) + replacement + result.slice(citation.end_ix);
   }
 
-  return messageText;
+  return result;
 }
 
 /**
@@ -342,4 +349,4 @@ function formatMessageText(messageData) {
   return messageText;
 }
 
-module.exports = { getImporter };
+module.exports = { getImporter, processAssistantMessage };

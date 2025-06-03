@@ -6,21 +6,14 @@ import {
   parseISO,
   startOfDay,
   startOfYear,
-  startOfToday,
   isWithinInterval,
 } from 'date-fns';
-import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
-import type {
-  TConversation,
-  ConversationData,
-  ConversationUpdater,
-  GroupedConversations,
-  ConversationListResponse,
-} from 'librechat-data-provider';
+import { QueryClient } from '@tanstack/react-query';
+import { EModelEndpoint, LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
+import type { TConversation, GroupedConversations } from 'librechat-data-provider';
+import type { InfiniteData } from '@tanstack/react-query';
 
-import { addData, deleteData, updateData, findPage } from './collection';
-import { InfiniteData } from '@tanstack/react-query';
-
+// Date group helpers
 export const dateKeys = {
   today: 'com_ui_date_today',
   yesterday: 'com_ui_date_yesterday',
@@ -41,7 +34,7 @@ export const dateKeys = {
 };
 
 const getGroupName = (date: Date) => {
-  const now = new Date();
+  const now = new Date(Date.now());
   if (isToday(date)) {
     return dateKeys.today;
   }
@@ -61,174 +54,350 @@ const getGroupName = (date: Date) => {
   return ' ' + getYear(date).toString();
 };
 
-export const groupConversationsByDate = (conversations: TConversation[]): GroupedConversations => {
+const monthOrderMap = new Map([
+  ['december', 11],
+  ['november', 10],
+  ['october', 9],
+  ['september', 8],
+  ['august', 7],
+  ['july', 6],
+  ['june', 5],
+  ['may', 4],
+  ['april', 3],
+  ['march', 2],
+  ['february', 1],
+  ['january', 0],
+]);
+const dateKeysReverse = Object.fromEntries(Object.entries(dateKeys).map(([k, v]) => [v, k]));
+const dateGroupsSet = new Set([
+  dateKeys.today,
+  dateKeys.yesterday,
+  dateKeys.previous7Days,
+  dateKeys.previous30Days,
+]);
+
+export const groupConversationsByDate = (
+  conversations: Array<TConversation | null>,
+): GroupedConversations => {
   if (!Array.isArray(conversations)) {
     return [];
   }
-
   const seenConversationIds = new Set();
-  const groups = conversations.reduce((acc, conversation) => {
-    if (!conversation) {
-      return acc;
-    }
+  const groups = new Map();
+  const now = new Date(Date.now());
 
-    if (seenConversationIds.has(conversation.conversationId)) {
-      return acc;
+  conversations.forEach((conversation) => {
+    if (!conversation || seenConversationIds.has(conversation.conversationId)) {
+      return;
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : startOfToday();
-    const groupName = getGroupName(date);
-    if (!acc[groupName]) {
-      acc[groupName] = [];
+    let date: Date;
+    if (conversation.updatedAt) {
+      date = parseISO(conversation.updatedAt);
+    } else {
+      date = now;
     }
-    acc[groupName].push(conversation);
-    return acc;
-  }, {});
+    const groupName = getGroupName(date);
+    if (!groups.has(groupName)) {
+      groups.set(groupName, []);
+    }
+    groups.get(groupName).push(conversation);
+  });
 
-  const sortedGroups = {};
-  const dateGroups = [
-    dateKeys.today,
-    dateKeys.yesterday,
-    dateKeys.previous7Days,
-    dateKeys.previous30Days,
-  ];
-  dateGroups.forEach((group) => {
-    if (groups[group]) {
-      sortedGroups[group] = groups[group];
+  const sortedGroups = new Map();
+  dateGroupsSet.forEach((group) => {
+    if (groups.has(group)) {
+      sortedGroups.set(group, groups.get(group));
     }
   });
 
-  Object.keys(groups)
-    .filter((group) => !dateGroups.includes(group))
-    .sort()
-    .reverse()
-    .forEach((year) => {
-      sortedGroups[year] = groups[year];
+  const yearMonthGroups = Array.from(groups.keys())
+    .filter((group) => !dateGroupsSet.has(group))
+    .sort((a, b) => {
+      const [yearA, yearB] = [parseInt(a.trim()), parseInt(b.trim())];
+      if (yearA !== yearB) {
+        return yearB - yearA;
+      }
+      const [monthA, monthB] = [dateKeysReverse[a], dateKeysReverse[b]];
+      const bOrder = monthOrderMap.get(monthB) ?? -1,
+        aOrder = monthOrderMap.get(monthA) ?? -1;
+      return bOrder - aOrder;
     });
+  yearMonthGroups.forEach((group) => {
+    sortedGroups.set(group, groups.get(group));
+  });
 
-  return Object.entries(sortedGroups);
+  sortedGroups.forEach((conversations) => {
+    conversations.sort(
+      (a: TConversation, b: TConversation) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+  });
+  return Array.from(sortedGroups, ([key, value]) => [key, value]);
 };
 
-export const addConversation = (
-  data: InfiniteData<ConversationListResponse>,
-  newConversation: TConversation,
-): ConversationData => {
-  return addData<ConversationListResponse, TConversation>(
-    data,
-    'conversations',
-    newConversation,
-    (page) =>
-      page.conversations.findIndex((c) => c.conversationId === newConversation.conversationId),
-  );
+export type ConversationCursorData = {
+  conversations: TConversation[];
+  nextCursor?: string | null;
 };
 
-export function findPageForConversation(
-  data: ConversationData,
-  conversation: TConversation | { conversationId: string },
-) {
-  return findPage<ConversationListResponse>(data, (page) =>
-    page.conversations.findIndex((c) => c.conversationId === conversation.conversationId),
-  );
-}
+// === InfiniteData helpers for cursor-based convo queries ===
 
-export const updateConversation = (
-  data: InfiniteData<ConversationListResponse>,
-  newConversation: TConversation,
-): ConversationData => {
-  return updateData<ConversationListResponse, TConversation>(
-    data,
-    'conversations',
-    newConversation,
-    (page) =>
-      page.conversations.findIndex((c) => c.conversationId === newConversation.conversationId),
-  );
-};
-
-export const updateConvoFields = (
-  data: ConversationData,
-  updatedConversation: Partial<TConversation> & Pick<TConversation, 'conversationId'>,
-  keepPosition = false,
-): ConversationData => {
-  const newData = JSON.parse(JSON.stringify(data));
-  const { pageIndex, index } = findPageForConversation(
-    newData,
-    updatedConversation as { conversationId: string },
-  );
-  if (pageIndex !== -1 && index !== -1) {
-    const oldConversation = newData.pages[pageIndex].conversations[index] as TConversation;
-
-    /**
-     * Do not change the position of the conversation if the tags are updated.
-     */
-    if (keepPosition) {
-      const updatedConvo = {
-        ...oldConversation,
-        ...updatedConversation,
-      };
-      newData.pages[pageIndex].conversations[index] = updatedConvo;
-    } else {
-      const updatedConvo = {
-        ...oldConversation,
-        ...updatedConversation,
-        updatedAt: new Date().toISOString(),
-      };
-      newData.pages[pageIndex].conversations.splice(index, 1);
-      newData.pages[0].conversations.unshift(updatedConvo);
-    }
-  }
-
-  return newData;
-};
-
-export const deleteConversation = (
-  data: ConversationData,
+export function findConversationInInfinite(
+  data: InfiniteData<ConversationCursorData> | undefined,
   conversationId: string,
-): ConversationData => {
-  return deleteData<ConversationListResponse, ConversationData>(data, 'conversations', (page) =>
-    page.conversations.findIndex((c) => c.conversationId === conversationId),
-  );
-};
-
-export const getConversationById = (
-  data: ConversationData | undefined,
-  conversationId: string | null,
-): TConversation | undefined => {
-  if (!data || !conversationId) {
+): TConversation | undefined {
+  if (!data) {
     return undefined;
   }
-
   for (const page of data.pages) {
-    const conversation = page.conversations.find((c) => c.conversationId === conversationId);
-    if (conversation) {
-      return conversation;
+    const found = page.conversations.find((c) => c.conversationId === conversationId);
+    if (found) {
+      return found;
     }
   }
   return undefined;
-};
+}
+
+export function updateInfiniteConvoPage(
+  data: InfiniteData<ConversationCursorData> | undefined,
+  conversationId: string,
+  updater: (c: TConversation) => TConversation,
+): InfiniteData<ConversationCursorData> | undefined {
+  if (!data) {
+    return data;
+  }
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      conversations: page.conversations.map((c) =>
+        c.conversationId === conversationId ? updater(c) : c,
+      ),
+    })),
+  };
+}
+
+export function addConversationToInfinitePages(
+  data: InfiniteData<ConversationCursorData> | undefined,
+  newConversation: TConversation,
+): InfiniteData<ConversationCursorData> {
+  if (!data) {
+    return {
+      pageParams: [undefined],
+      pages: [{ conversations: [newConversation], nextCursor: null }],
+    };
+  }
+  return {
+    ...data,
+    pages: [
+      { ...data.pages[0], conversations: [newConversation, ...data.pages[0].conversations] },
+      ...data.pages.slice(1),
+    ],
+  };
+}
+
+export function addConversationToAllConversationsQueries(
+  queryClient: QueryClient,
+  newConversation: TConversation,
+) {
+  // Find all keys that start with QueryKeys.allConversations
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  for (const query of queries) {
+    queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {
+      if (
+        !old ||
+        old.pages[0].conversations.some((c) => c.conversationId === newConversation.conversationId)
+      ) {
+        return old;
+      }
+      return {
+        ...old,
+        pages: [
+          {
+            ...old.pages[0],
+            conversations: [newConversation, ...old.pages[0].conversations],
+          },
+          ...old.pages.slice(1),
+        ],
+      };
+    });
+  }
+}
+
+export function removeConvoFromInfinitePages(
+  data: InfiniteData<ConversationCursorData> | undefined,
+  conversationId: string,
+): InfiniteData<ConversationCursorData> | undefined {
+  if (!data) {
+    return data;
+  }
+  return {
+    ...data,
+    pages: data.pages
+      .map((page) => ({
+        ...page,
+        conversations: page.conversations.filter((c) => c.conversationId !== conversationId),
+      }))
+      .filter((page) => page.conversations.length > 0),
+  };
+}
+
+// Used for partial update (e.g., title, etc.), updating AND possibly bumping to front of visible convos
+export function updateConvoFieldsInfinite(
+  data: InfiniteData<ConversationCursorData> | undefined,
+  updatedConversation: Partial<TConversation> & { conversationId: string },
+  keepPosition = false,
+): InfiniteData<ConversationCursorData> | undefined {
+  if (!data) {
+    return data;
+  }
+  let found: TConversation | undefined;
+  let pageIdx = -1,
+    convoIdx = -1;
+  for (let i = 0; i < data.pages.length; ++i) {
+    const idx = data.pages[i].conversations.findIndex(
+      (c) => c.conversationId === updatedConversation.conversationId,
+    );
+    if (idx !== -1) {
+      pageIdx = i;
+      convoIdx = idx;
+      found = data.pages[i].conversations[idx];
+      break;
+    }
+  }
+  if (!found) {
+    return data;
+  }
+
+  if (keepPosition) {
+    return {
+      ...data,
+      pages: data.pages.map((page, pi) =>
+        pi === pageIdx
+          ? {
+              ...page,
+              conversations: page.conversations.map((c, ci) =>
+                ci === convoIdx ? { ...c, ...updatedConversation } : c,
+              ),
+            }
+          : page,
+      ),
+    };
+  } else {
+    const patched = { ...found, ...updatedConversation, updatedAt: new Date().toISOString() };
+    const pages = data.pages.map((page) => ({
+      ...page,
+      conversations: page.conversations.filter((c) => c.conversationId !== patched.conversationId),
+    }));
+
+    pages[0].conversations = [patched, ...pages[0].conversations];
+
+    const finalPages = pages.filter((page) => page.conversations.length > 0);
+    return { ...data, pages: finalPages };
+  }
+}
 
 export function storeEndpointSettings(conversation: TConversation | null) {
   if (!conversation) {
     return;
   }
-  const { endpoint, model, agentOptions, jailbreak, toneStyle } = conversation;
-
+  const { endpoint, model, agentOptions } = conversation;
   if (!endpoint) {
     return;
   }
-
-  if (endpoint === EModelEndpoint.bingAI) {
-    const settings = { jailbreak, toneStyle };
-    localStorage.setItem(LocalStorageKeys.LAST_BING, JSON.stringify(settings));
-    return;
-  }
-
-  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
+  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}');
   lastModel[endpoint] = model;
-
   if (endpoint === EModelEndpoint.gptPlugins) {
-    lastModel.secondaryModel = agentOptions?.model || model || '';
+    lastModel.secondaryModel = agentOptions?.model ?? model ?? '';
   }
-
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastModel));
+}
+
+// Add
+export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConversation) {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  for (const query of queries) {
+    queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
+      if (!oldData) {
+        return oldData;
+      }
+      if (
+        oldData.pages.some((p) =>
+          p.conversations.some((c) => c.conversationId === newConvo.conversationId),
+        )
+      ) {
+        return oldData;
+      }
+      return {
+        ...oldData,
+        pages: [
+          {
+            ...oldData.pages[0],
+            conversations: [newConvo, ...oldData.pages[0].conversations],
+          },
+          ...oldData.pages.slice(1),
+        ],
+      };
+    });
+  }
+}
+
+// Update
+export function updateConvoInAllQueries(
+  queryClient: QueryClient,
+  conversationId: string,
+  updater: (c: TConversation) => TConversation,
+) {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  for (const query of queries) {
+    queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
+      if (!oldData) {
+        return oldData;
+      }
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page) => ({
+          ...page,
+          conversations: page.conversations.map((c) =>
+            c.conversationId === conversationId ? updater(c) : c,
+          ),
+        })),
+      };
+    });
+  }
+}
+
+// Remove
+export function removeConvoFromAllQueries(queryClient: QueryClient, conversationId: string) {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  for (const query of queries) {
+    queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
+      if (!oldData) {
+        return oldData;
+      }
+      return {
+        ...oldData,
+        pages: oldData.pages
+          .map((page) => ({
+            ...page,
+            conversations: page.conversations.filter((c) => c.conversationId !== conversationId),
+          }))
+          .filter((page) => page.conversations.length > 0),
+      };
+    });
+  }
 }

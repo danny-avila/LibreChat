@@ -1,9 +1,8 @@
 const path = require('path');
+const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
-const Conversation = require('~/models/schema/convoSchema');
-const Message = require('~/models/schema/messageSchema');
-const User = require('~/models/User');
+const { User, Conversation, Message } = require('@librechat/data-schemas').createModels(mongoose);
 const connect = require('./connect');
 
 (async () => {
@@ -19,8 +18,8 @@ const connect = require('./connect');
   let users = await User.find({});
   let userData = [];
   for (const user of users) {
-    let conversationsCount = (await Conversation.count({ user: user._id })) ?? 0;
-    let messagesCount = (await Message.count({ user: user._id })) ?? 0;
+    let conversationsCount = (await Conversation.countDocuments({ user: user._id })) ?? 0;
+    let messagesCount = (await Message.countDocuments({ user: user._id })) ?? 0;
 
     userData.push({
       User: user.name,

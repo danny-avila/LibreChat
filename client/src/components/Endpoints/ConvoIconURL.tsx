@@ -1,14 +1,17 @@
-import React from 'react';
-import type { TPreset } from 'librechat-data-provider';
+import { memo, useMemo } from 'react';
 import type { IconMapProps } from '~/common';
-import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
+import { URLIcon } from '~/components/Endpoints/URLIcon';
+import { icons } from '~/hooks/Endpoint/Icons';
 
 interface ConvoIconURLProps {
-  preset: TPreset | null;
+  iconURL?: string;
+  modelLabel?: string | null;
   endpointIconURL?: string;
   assistantName?: string;
+  agentName?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   assistantAvatar?: string;
+  agentAvatar?: string;
 }
 
 const classMap = {
@@ -27,54 +30,47 @@ const styleImageMap = {
 };
 
 const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
-  preset,
+  iconURL = '',
+  modelLabel = '',
   endpointIconURL,
   assistantAvatar,
   assistantName,
+  agentAvatar,
+  agentName,
   context,
 }) => {
-  const { iconURL = '' } = preset ?? {};
-  let Icon: (
-    props: IconMapProps & {
-      context?: string;
-      iconURL?: string;
-    },
-  ) => React.JSX.Element;
-
-  const isURL = iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'));
-
-  if (!isURL) {
-    Icon = icons[iconURL] ?? icons.unknown;
-  } else {
-    Icon = () => (
-      <div
+  const Icon = useMemo(() => icons[iconURL] ?? icons.unknown, [iconURL]);
+  const isURL = useMemo(
+    () => !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))),
+    [iconURL],
+  );
+  if (isURL) {
+    return (
+      <URLIcon
+        iconURL={iconURL}
+        altName={modelLabel}
         className={classMap[context ?? 'default'] ?? classMap.default}
-        style={styleMap[context ?? 'default'] ?? styleMap.default}
-      >
-        <img
-          src={iconURL}
-          alt={preset?.chatGptLabel ?? preset?.modelLabel ?? ''}
-          style={styleImageMap[context ?? 'default'] ?? styleImageMap.default}
-          className="object-cover"
-        />
-      </div>
+        containerStyle={styleMap[context ?? 'default'] ?? styleMap.default}
+        imageStyle={styleImageMap[context ?? 'default'] ?? styleImageMap.default}
+      />
     );
-
-    return <Icon />;
   }
 
   return (
     <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-      <Icon
-        size={41}
-        context={context}
-        className="h-2/3 w-2/3"
-        iconURL={endpointIconURL}
-        assistantName={assistantName}
-        avatar={assistantAvatar}
-      />
+      {Icon && (
+        <Icon
+          size={41}
+          context={context}
+          className="h-2/3 w-2/3"
+          agentName={agentName}
+          iconURL={endpointIconURL}
+          assistantName={assistantName}
+          avatar={assistantAvatar || agentAvatar}
+        />
+      )}
     </div>
   );
 };
 
-export default ConvoIconURL;
+export default memo(ConvoIconURL);

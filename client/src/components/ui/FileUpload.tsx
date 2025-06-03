@@ -1,43 +1,29 @@
-import React, { useRef } from 'react';
+import React, { forwardRef } from 'react';
 
 type FileUploadProps = {
-  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onClick?: () => void;
   className?: string;
+  onClick?: () => void;
   children: React.ReactNode;
+  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 };
 
-const FileUpload: React.FC<FileUploadProps> = ({
-  handleFileChange,
-  children,
-  onClick,
-  className = '',
-}) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+const FileUpload = forwardRef<HTMLInputElement, FileUploadProps>(
+  ({ children, handleFileChange }, ref) => {
+    return (
+      <>
+        {children}
+        <input
+          ref={ref}
+          multiple
+          type="file"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+      </>
+    );
+  },
+);
 
-  const handleButtonClick = () => {
-    if (onClick) {
-      onClick();
-    }
-    // necessary to reset the input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    fileInputRef.current?.click();
-  };
-
-  return (
-    <div onClick={handleButtonClick} style={{ cursor: 'pointer' }} className={className}>
-      {children}
-      <input
-        ref={fileInputRef}
-        multiple
-        type="file"
-        style={{ display: 'none' }}
-        onChange={handleFileChange}
-      />
-    </div>
-  );
-};
+FileUpload.displayName = 'FileUpload';
 
 export default FileUpload;

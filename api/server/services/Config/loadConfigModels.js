@@ -1,7 +1,7 @@
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
+const { isUserProvided, normalizeEndpointName } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
-const { isUserProvided } = require('~/server/utils');
-const getCustomConfig = require('./getCustomConfig');
+const { getCustomConfig } = require('./getCustomConfig');
 
 /**
  * Load config endpoints from the cached configuration object
@@ -47,7 +47,7 @@ async function loadConfigModels(req) {
   );
 
   /**
-   * @type {Record<string, string[]>}
+   * @type {Record<string, Promise<string[]>>}
    * Map for promises keyed by unique combination of baseURL and apiKey */
   const fetchPromisesMap = {};
   /**
@@ -61,7 +61,8 @@ async function loadConfigModels(req) {
 
   for (let i = 0; i < customEndpoints.length; i++) {
     const endpoint = customEndpoints[i];
-    const { models, name, baseURL, apiKey } = endpoint;
+    const { models, name: configName, baseURL, apiKey } = endpoint;
+    const name = normalizeEndpointName(configName);
     endpointsMap[name] = endpoint;
 
     const API_KEY = extractEnvVariable(apiKey);
@@ -101,7 +102,7 @@ async function loadConfigModels(req) {
 
     for (const name of associatedNames) {
       const endpoint = endpointsMap[name];
-      modelsConfig[name] = !modelData?.length ? endpoint.models.default ?? [] : modelData;
+      modelsConfig[name] = !modelData?.length ? (endpoint.models.default ?? []) : modelData;
     }
   }
 

@@ -348,3 +348,130 @@ components:
         message:
           type: string
           description: Confirmation of successful save or error message.`;
+
+export const swapidev = `
+openapi: 3.0.3
+info:
+  title: Star Wars API
+  description: This is a simple API that provides information about the Star Wars universe.
+  version: 1.0.0
+servers:
+  - url: https://swapi.dev
+
+paths:
+  /api/people:
+    get:
+      summary: List all people
+      operationId: getPeople
+      tags:
+        - People
+      responses:
+        '200':
+          description: A list of people
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 82
+                  next:
+                    type: string
+                    nullable: true
+                    example: https://swapi.dev/api/people/?page=2
+                  previous:
+                    type: string
+                    nullable: true
+                    example: null
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Person'
+
+  /api/people/{id}:
+    get:
+      summary: Get a person by ID
+      operationId: getPersonById
+      tags:
+        - People
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the person to retrieve
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A single person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '404':
+          description: Person not found
+
+components:
+  schemas:
+    Person:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Luke Skywalker
+        height:
+          type: string
+          example: "172"
+        mass:
+          type: string
+          example: "77"
+        hair_color:
+          type: string
+          example: blond
+        skin_color:
+          type: string
+          example: fair
+        eye_color:
+          type: string
+          example: blue
+        birth_year:
+          type: string
+          example: "19BBY"
+        gender:
+          type: string
+          example: male
+        homeworld:
+          type: string
+          example: https://swapi.dev/api/planets/1/
+        films:
+          type: array
+          items:
+            type: string
+            example: https://swapi.dev/api/films/1/
+        species:
+          type: array
+          items:
+            type: string
+            example: https://swapi.dev/api/species/1/
+        vehicles:
+          type: array
+          items:
+            type: string
+            example: https://swapi.dev/api/vehicles/14/
+        starships:
+          type: array
+          items:
+            type: string
+            example: https://swapi.dev/api/starships/12/
+        created:
+          type: string
+          format: date-time
+          example: 2014-12-09T13:50:51.644000Z
+        edited:
+          type: string
+          format: date-time
+          example: 2014-12-20T21:17:56.891000Z
+        url:
+          type: string
+          example: https://swapi.dev/api/people/1/`;

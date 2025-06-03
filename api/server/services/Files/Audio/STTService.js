@@ -1,9 +1,83 @@
-const { Readable } = require('stream');
 const axios = require('axios');
+const fs = require('fs').promises;
+const FormData = require('form-data');
+const { Readable } = require('stream');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { getCustomConfig } = require('~/server/services/Config');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
+
+/**
+ * Maps MIME types to their corresponding file extensions for audio files.
+ * @type {Object}
+ */
+const MIME_TO_EXTENSION_MAP = {
+  // MP4 container formats
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  // Ogg formats
+  'audio/ogg': 'ogg',
+  'audio/vorbis': 'ogg',
+  'application/ogg': 'ogg',
+  // Wave formats
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  // MP3 formats
+  'audio/mp3': 'mp3',
+  'audio/mpeg': 'mp3',
+  'audio/mpeg3': 'mp3',
+  // WebM formats
+  'audio/webm': 'webm',
+  // Additional formats
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac',
+};
+
+/**
+ * Gets the file extension from the MIME type.
+ * @param {string} mimeType - The MIME type.
+ * @returns {string} The file extension.
+ */
+function getFileExtensionFromMime(mimeType) {
+  // Default fallback
+  if (!mimeType) {
+    return 'webm';
+  }
+
+  // Direct lookup (fastest)
+  const extension = MIME_TO_EXTENSION_MAP[mimeType];
+  if (extension) {
+    return extension;
+  }
+
+  // Try to extract subtype as fallback
+  const subtype = mimeType.split('/')[1]?.toLowerCase();
+
+  // If subtype matches a known extension
+  if (['mp3', 'mp4', 'ogg', 'wav', 'webm', 'm4a', 'flac'].includes(subtype)) {
+    return subtype === 'mp4' ? 'm4a' : subtype;
+  }
+
+  // Generic checks for partial matches
+  if (subtype?.includes('mp4') || subtype?.includes('m4a')) {
+    return 'm4a';
+  }
+  if (subtype?.includes('ogg')) {
+    return 'ogg';
+  }
+  if (subtype?.includes('wav')) {
+    return 'wav';
+  }
+  if (subtype?.includes('mp3') || subtype?.includes('mpeg')) {
+    return 'mp3';
+  }
+  if (subtype?.includes('webm')) {
+    return 'webm';
+  }
+
+  return 'webm'; // Default fallback
+}
 
 /**
  * Service class for handling Speech-to-Text (STT) operations.
@@ -119,9 +193,9 @@ class STTService {
    */
   azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
     const url = `${genAzureEndpoint({
-      azureOpenAIApiInstanceName: sttSchema?.instanceName,
-      azureOpenAIApiDeploymentName: sttSchema?.deploymentName,
-    })}/audio/transcriptions?api-version=${sttSchema?.apiVersion}`;
+      azureOpenAIApiInstanceName: extractEnvVariable(sttSchema?.instanceName),
+      azureOpenAIApiDeploymentName: extractEnvVariable(sttSchema?.deploymentName),
+    })}/audio/transcriptions?api-version=${extractEnvVariable(sttSchema?.apiVersion)}`;
 
     const apiKey = sttSchema.apiKey ? extractEnvVariable(sttSchema.apiKey) : '';
 
@@ -136,8 +210,10 @@ class STTService {
     }
 
     const formData = new FormData();
-    const audioBlob = new Blob([audioBuffer], { type: audioFile.mimetype });
-    formData.append('file', audioBlob, audioFile.originalname);
+    formData.append('file', audioBuffer, {
+      filename: audioFile.originalname,
+      contentType: audioFile.mimetype,
+    });
 
     const headers = {
       'Content-Type': 'multipart/form-data',
@@ -146,7 +222,7 @@ class STTService {
 
     [headers].forEach(this.removeUndefined);
 
-    return [url, formData, headers];
+    return [url, formData, { ...headers, ...formData.getHeaders() }];
   }
 
   /**
@@ -166,15 +242,12 @@ class STTService {
       throw new Error('Invalid provider');
     }
 
+    const fileExtension = getFileExtensionFromMime(audioFile.mimetype);
+
     const audioReadStream = Readable.from(audioBuffer);
-    audioReadStream.path = 'audio.wav';
+    audioReadStream.path = `audio.${fileExtension}`;
 
     const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
-
-    if (!Readable.from && data instanceof FormData) {
-      const audioBlob = new Blob([audioBuffer], { type: audioFile.mimetype });
-      data.set('file', audioBlob, audioFile.originalname);
-    }
 
     try {
       const response = await axios.post(url, data, { headers });
@@ -202,11 +275,11 @@ class STTService {
    * @returns {Promise<void>}
    */
   async processTextToSpeech(req, res) {
-    if (!req.file || !req.file.buffer) {
+    if (!req.file) {
       return res.status(400).json({ message: 'No audio file provided in the FormData' });
     }
 
-    const audioBuffer = req.file.buffer;
+    const audioBuffer = await fs.readFile(req.file.path);
     const audioFile = {
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
@@ -220,6 +293,13 @@ class STTService {
     } catch (error) {
       logger.error('An error occurred while processing the audio:', error);
       res.sendStatus(500);
+    } finally {
+      try {
+        await fs.unlink(req.file.path);
+        logger.debug('[/speech/stt] Temp. audio upload file deleted');
+      } catch (error) {
+        logger.debug('[/speech/stt] Temp. audio upload file already deleted');
+      }
     }
   }
 }

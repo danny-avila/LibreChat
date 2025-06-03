@@ -1,23 +1,74 @@
 const {
-  Session,
-  Balance,
+  Tools,
+  FileSources,
+  webSearchKeys,
+  extractWebSearchEnvVars,
+} = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const {
   getFiles,
+  updateUser,
   deleteFiles,
   deleteConvos,
   deletePresets,
   deleteMessages,
   deleteUserById,
+  deleteAllUserSessions,
 } = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
+const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { Transaction, Balance, User } = require('~/db/models');
 const { deleteAllSharedLinks } = require('~/models/Share');
-const { Transaction } = require('~/models/Transaction');
-const { logger } = require('~/config');
+const { deleteToolCalls } = require('~/models/ToolCall');
 
 const getUserController = async (req, res) => {
-  res.status(200).send(req.user);
+  /** @type {MongoUser} */
+  const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  delete userData.totpSecret;
+  if (req.app.locals.fileStrategy === FileSources.s3 && userData.avatar) {
+    const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
+    if (!avatarNeedsRefresh) {
+      return res.status(200).send(userData);
+    }
+    const originalAvatar = userData.avatar;
+    try {
+      userData.avatar = await getNewS3URL(userData.avatar);
+      await updateUser(userData.id, { avatar: userData.avatar });
+    } catch (error) {
+      userData.avatar = originalAvatar;
+      logger.error('Error getting new S3 URL for avatar:', error);
+    }
+  }
+  res.status(200).send(userData);
+};
+
+const getTermsStatusController = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ termsAccepted: !!user.termsAccepted });
+  } catch (error) {
+    logger.error('Error fetching terms acceptance status:', error);
+    res.status(500).json({ message: 'Error fetching terms acceptance status' });
+  }
+};
+
+const acceptTermsController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Terms accepted successfully' });
+  } catch (error) {
+    logger.error('Error accepting terms:', error);
+    res.status(500).json({ message: 'Error accepting terms' });
+  }
 };
 
 const deleteUserFiles = async (req) => {
@@ -34,10 +85,9 @@ const deleteUserFiles = async (req) => {
 
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
-  const { pluginKey, action, auth, isAssistantTool } = req.body;
-  let authService;
+  const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
-    if (!isAssistantTool) {
+    if (!isEntityTool) {
       const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
 
       if (userPluginsService instanceof Error) {
@@ -47,32 +97,55 @@ const updateUserPluginsController = async (req, res) => {
       }
     }
 
-    if (auth) {
-      const keys = Object.keys(auth);
-      const values = Object.values(auth);
-      if (action === 'install' && keys.length > 0) {
-        for (let i = 0; i < keys.length; i++) {
-          authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
-          if (authService instanceof Error) {
-            logger.error('[authService]', authService);
-            const { status, message } = authService;
-            res.status(status).send({ message });
-          }
+    if (auth == null) {
+      return res.status(200).send();
+    }
+
+    let keys = Object.keys(auth);
+    if (keys.length === 0 && pluginKey !== Tools.web_search) {
+      return res.status(200).send();
+    }
+    const values = Object.values(auth);
+
+    /** @type {number} */
+    let status = 200;
+    /** @type {string} */
+    let message;
+    /** @type {IPluginAuth | Error} */
+    let authService;
+
+    if (pluginKey === Tools.web_search) {
+      /** @type  {TCustomConfig['webSearch']} */
+      const webSearchConfig = req.app.locals?.webSearch;
+      keys = extractWebSearchEnvVars({
+        keys: action === 'install' ? keys : webSearchKeys,
+        config: webSearchConfig,
+      });
+    }
+
+    if (action === 'install') {
+      for (let i = 0; i < keys.length; i++) {
+        authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
+        if (authService instanceof Error) {
+          logger.error('[authService]', authService);
+          ({ status, message } = authService);
         }
       }
-      if (action === 'uninstall' && keys.length > 0) {
-        for (let i = 0; i < keys.length; i++) {
-          authService = await deleteUserPluginAuth(user.id, keys[i]);
-          if (authService instanceof Error) {
-            logger.error('[authService]', authService);
-            const { status, message } = authService;
-            res.status(status).send({ message });
-          }
+    } else if (action === 'uninstall') {
+      for (let i = 0; i < keys.length; i++) {
+        authService = await deleteUserPluginAuth(user.id, keys[i]);
+        if (authService instanceof Error) {
+          logger.error('[authService]', authService);
+          ({ status, message } = authService);
         }
       }
     }
 
-    res.status(200).send();
+    if (status === 200) {
+      return res.status(status).send();
+    }
+
+    res.status(status).send({ message });
   } catch (err) {
     logger.error('[updateUserPluginsController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
@@ -84,7 +157,7 @@ const deleteUserController = async (req, res) => {
 
   try {
     await deleteMessages({ user: user.id }); // delete user messages
-    await Session.deleteMany({ user: user.id }); // delete user sessions
+    await deleteAllUserSessions({ userId: user.id }); // delete user sessions
     await Transaction.deleteMany({ user: user.id }); // delete user transactions
     await deleteUserKey({ userId: user.id, all: true }); // delete user keys
     await Balance.deleteMany({ user: user._id }); // delete user balances
@@ -96,6 +169,7 @@ const deleteUserController = async (req, res) => {
     await deleteAllSharedLinks(user.id); // delete user shared links
     await deleteUserFiles(req); // delete user files
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
+    await deleteToolCalls(user.id); // delete user tool calls
     /* TODO: queue job for cleaning actions and assistants of non-existant users */
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
@@ -135,6 +209,8 @@ const resendVerificationController = async (req, res) => {
 
 module.exports = {
   getUserController,
+  getTermsStatusController,
+  acceptTermsController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,

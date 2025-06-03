@@ -24,6 +24,7 @@ const checkPromptCreate = generateCheckAccess(PermissionTypes.PROMPTS, [
   Permissions.USE,
   Permissions.CREATE,
 ]);
+
 const checkGlobalPromptShare = generateCheckAccess(
   PermissionTypes.PROMPTS,
   [Permissions.USE, Permissions.CREATE],
@@ -133,7 +134,7 @@ const createPrompt = async (req, res) => {
   }
 };
 
-router.post('/', createPrompt);
+router.post('/', checkPromptCreate, createPrompt);
 
 /**
  * Updates a prompt group
@@ -214,9 +215,6 @@ const deletePromptController = async (req, res) => {
     const { groupId } = req.query;
     const author = req.user.id;
     const query = { promptId, groupId, author, role: req.user.role };
-    if (req.user.role === SystemRoles.ADMIN) {
-      delete query.author;
-    }
     const result = await deletePrompt(query);
     res.status(200).send(result);
   } catch (error) {
@@ -225,11 +223,24 @@ const deletePromptController = async (req, res) => {
   }
 };
 
-router.delete('/:promptId', checkPromptCreate, deletePromptController);
+/**
+ * Delete a prompt group
+ * @param {ServerRequest} req
+ * @param {ServerResponse} res
+ * @returns {Promise<TDeletePromptGroupResponse>}
+ */
+const deletePromptGroupController = async (req, res) => {
+  try {
+    const { groupId: _id } = req.params;
+    const message = await deletePromptGroup({ _id, author: req.user.id, role: req.user.role });
+    res.send(message);
+  } catch (error) {
+    logger.error('Error deleting prompt group', error);
+    res.status(500).send({ message: 'Error deleting prompt group' });
+  }
+};
 
-router.delete('/groups/:groupId', checkPromptCreate, async (req, res) => {
-  const { groupId } = req.params;
-  res.status(200).send(await deletePromptGroup(groupId));
-});
+router.delete('/:promptId', checkPromptCreate, deletePromptController);
+router.delete('/groups/:groupId', checkPromptCreate, deletePromptGroupController);
 
 module.exports = router;

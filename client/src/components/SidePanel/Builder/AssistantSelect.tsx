@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Tools,
   FileSources,
@@ -11,7 +11,13 @@ import {
 } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { UseMutationResult } from '@tanstack/react-query';
-import type { Assistant, AssistantCreateParams, AssistantsEndpoint } from 'librechat-data-provider';
+import type {
+  TPlugin,
+  Assistant,
+  AssistantDocument,
+  AssistantsEndpoint,
+  AssistantCreateParams,
+} from 'librechat-data-provider';
 import type {
   Actions,
   ExtendedFile,
@@ -22,45 +28,62 @@ import type {
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
 import { useLocalize, useLocalStorage } from '~/hooks';
+import { cn, createDropdownSetter } from '~/utils';
 import { useFileMapContext } from '~/Providers';
-import { cn } from '~/utils';
 
-const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
+const keys = new Set([
+  'name',
+  'id',
+  'description',
+  'instructions',
+  'conversation_starters',
+  'model',
+  'append_current_datetime',
+]);
 
 export default function AssistantSelect({
   reset,
   value,
   endpoint,
+  documentsMap,
   selectedAssistant,
   setCurrentAssistantId,
   createMutation,
+  allTools,
 }: {
   reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
   endpoint: AssistantsEndpoint;
   selectedAssistant: string | null;
+  documentsMap: Map<string, AssistantDocument> | null;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
+  allTools?: TPlugin[];
 }) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const lastSelectedAssistant = useRef<string | null>(null);
-  const [lastSelectedModels] = useLocalStorage<LastSelectedModels>(
+  const [lastSelectedModels] = useLocalStorage<LastSelectedModels | undefined>(
     LocalStorageKeys.LAST_MODEL,
     {} as LastSelectedModels,
   );
 
-  const assistants = useListAssistantsQuery(endpoint, undefined, {
+  const toolkits = useMemo(
+    () => new Set(allTools?.filter((tool) => tool.toolkit === true).map((tool) => tool.pluginKey)),
+    [allTools],
+  );
+
+  const query = useListAssistantsQuery(endpoint, undefined, {
     select: (res) =>
       res.data.map((_assistant) => {
         const source =
           endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
-        const assistant = {
+        const assistant: TAssistantOption = {
           ..._assistant,
-          label: _assistant?.name ?? '',
+          label: _assistant.name ?? '',
           value: _assistant.id,
-          files: _assistant?.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
-          code_files: _assistant?.tool_resources?.code_interpreter?.file_ids
+          files: _assistant.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
+          code_files: _assistant.tool_resources?.code_interpreter?.file_ids
             ? ([] as Array<[string, ExtendedFile]>)
             : undefined,
         };
@@ -104,9 +127,18 @@ export default function AssistantSelect({
         }
 
         if (assistant.code_files && _assistant.tool_resources?.code_interpreter?.file_ids) {
-          _assistant.tool_resources?.code_interpreter?.file_ids?.forEach((file_id) =>
+          _assistant.tool_resources.code_interpreter.file_ids.forEach((file_id) =>
             handleFile(file_id, assistant.code_files),
           );
+        }
+
+        const assistantDoc = documentsMap?.get(_assistant.id);
+        /* If no user updates, use the latest assistant docs */
+        if (assistantDoc) {
+          if (!assistant.conversation_starters) {
+            assistant.conversation_starters = assistantDoc.conversation_starters;
+          }
+          assistant.append_current_datetime = assistantDoc.append_current_datetime ?? false;
         }
 
         return assistant;
@@ -115,7 +147,7 @@ export default function AssistantSelect({
 
   const onSelect = useCallback(
     (value: string) => {
-      const assistant = assistants.data?.find((assistant) => assistant.id === value);
+      const assistant = query.data?.find((assistant) => assistant.id === value);
 
       createMutation.reset();
       if (!assistant) {
@@ -128,8 +160,8 @@ export default function AssistantSelect({
 
       const update = {
         ...assistant,
-        label: assistant?.name ?? '',
-        value: assistant?.id ?? '',
+        label: assistant.name ?? '',
+        value: assistant.id || '',
       };
 
       const actions: Actions = {
@@ -138,9 +170,9 @@ export default function AssistantSelect({
         [Capabilities.retrieval]: false,
       };
 
-      assistant?.tools
-        ?.filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
-        ?.map((tool) => tool?.function?.name || tool.type)
+      (assistant.tools ?? [])
+        .filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
+        .map((tool) => (tool.function?.name ?? '') || tool.type)
         .forEach((tool) => {
           if (tool === Tools.file_search) {
             actions[Capabilities.retrieval] = true;
@@ -148,10 +180,22 @@ export default function AssistantSelect({
           actions[tool] = true;
         });
 
-      const functions =
-        assistant?.tools
-          ?.filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
-          ?.map((tool) => tool.function?.name ?? '') ?? [];
+      const seenToolkits = new Set<string>();
+      const functions = (assistant.tools ?? [])
+        .filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
+        .map((tool) => tool.function?.name ?? '')
+        .filter((fnName) => {
+          const fnPrefix = fnName.split('_')[0];
+          const seenToolkit = toolkits.has(fnPrefix);
+          if (seenToolkit) {
+            seenToolkits.add(fnPrefix);
+          }
+          return !seenToolkit;
+        });
+
+      if (seenToolkits.size > 0) {
+        functions.push(...Array.from(seenToolkits));
+      }
 
       const formValues: Partial<AssistantForm & Actions> = {
         functions,
@@ -161,20 +205,41 @@ export default function AssistantSelect({
       };
 
       Object.entries(assistant).forEach(([name, value]) => {
-        if (typeof value === 'number') {
-          return;
-        } else if (typeof value === 'object') {
+        if (!keys.has(name)) {
           return;
         }
-        if (keys.has(name)) {
+
+        if (name === 'append_current_datetime') {
+          formValues[name] = !!value;
+          return;
+        }
+
+        if (
+          name === 'conversation_starters' &&
+          Array.isArray(value) &&
+          value.every((item) => typeof item === 'string')
+        ) {
+          formValues[name] = value;
+          return;
+        }
+
+        if (typeof value !== 'number' && typeof value !== 'object') {
           formValues[name] = value;
         }
       });
 
       reset(formValues);
-      setCurrentAssistantId(assistant?.id);
+      setCurrentAssistantId(assistant.id);
     },
-    [assistants.data, reset, setCurrentAssistantId, createMutation, endpoint, lastSelectedModels],
+    [
+      query.data,
+      reset,
+      setCurrentAssistantId,
+      createMutation,
+      endpoint,
+      lastSelectedModels,
+      toolkits,
+    ],
   );
 
   useEffect(() => {
@@ -184,7 +249,7 @@ export default function AssistantSelect({
       return;
     }
 
-    if (selectedAssistant && assistants.data) {
+    if (selectedAssistant !== '' && selectedAssistant != null && query.data) {
       timerId = setTimeout(() => {
         lastSelectedAssistant.current = selectedAssistant;
         onSelect(selectedAssistant);
@@ -196,15 +261,15 @@ export default function AssistantSelect({
         clearTimeout(timerId);
       }
     };
-  }, [selectedAssistant, assistants.data, onSelect]);
+  }, [selectedAssistant, query.data, onSelect]);
 
   const createAssistant = localize('com_ui_create') + ' ' + localize('com_ui_assistant');
   return (
     <SelectDropDown
       value={!value ? createAssistant : value}
-      setValue={onSelect}
+      setValue={createDropdownSetter(onSelect)}
       availableValues={
-        assistants.data ?? [
+        query.data ?? [
           {
             label: 'Loading...',
             value: '',

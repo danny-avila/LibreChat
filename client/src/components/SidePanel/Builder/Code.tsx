@@ -30,26 +30,29 @@ export default function Code({ version }: { version: number | string }) {
                 checked={field.value}
                 onCheckedChange={field.onChange}
                 className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
-                value={field?.value?.toString()}
+                value={field.value.toString()}
               />
             )}
           />
-          <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            className="flex items-center space-x-2"
+            onClick={() =>
+              setValue(Capabilities.code_interpreter, !getValues(Capabilities.code_interpreter), {
+                shouldDirty: true,
+              })
+            }
+          >
             <label
               className="form-check-label text-token-text-primary w-full cursor-pointer"
               htmlFor={Capabilities.code_interpreter}
-              onClick={() =>
-                setValue(Capabilities.code_interpreter, !getValues(Capabilities.code_interpreter), {
-                  shouldDirty: true,
-                })
-              }
             >
               {localize('com_assistants_code_interpreter')}
             </label>
             <HoverCardTrigger>
               <CircleHelpIcon className="h-5 w-5 text-gray-500" />
             </HoverCardTrigger>
-          </div>
+          </button>
           <HoverCardPortal>
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">

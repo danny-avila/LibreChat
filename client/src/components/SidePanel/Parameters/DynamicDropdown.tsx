@@ -2,26 +2,29 @@ import { useMemo, useState } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
-import { useLocalize, useParameterEffects } from '~/hooks';
+import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
 
 function DynamicDropdown({
-  label,
+  label = '',
   settingKey,
   defaultValue,
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
   options,
   // type: _type,
   readonly = false,
-  showDefault = true,
-  labelCode,
-  descriptionCode,
+  showLabel = true,
+  showDefault = false,
+  labelCode = false,
+  descriptionCode = false,
+  placeholder = '',
+  placeholderCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
@@ -64,24 +67,26 @@ function DynamicDropdown({
     <div
       className={cn(
         'flex flex-col items-center justify-start gap-6',
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
       )}
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
-          <div className="flex w-full justify-between">
-            <Label
-              htmlFor={`${settingKey}-dynamic-dropdown`}
-              className="text-left text-sm font-medium"
-            >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}
-              {showDefault && (
-                <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue})
-                </small>
-              )}
-            </Label>
-          </div>
+          {showLabel === true && (
+            <div className="flex w-full justify-between">
+              <Label
+                htmlFor={`${settingKey}-dynamic-dropdown`}
+                className="text-left text-sm font-medium"
+              >
+                {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}
+                {showDefault && (
+                  <small className="opacity-40">
+                    ({localize('com_endpoint_default')}: {defaultValue})
+                  </small>
+                )}
+              </Label>
+            </div>
+          )}
           <SelectDropDown
             showLabel={false}
             emptyTitle={true}
@@ -91,11 +96,12 @@ function DynamicDropdown({
             availableValues={options}
             containerClassName="w-full"
             id={`${settingKey}-dynamic-dropdown`}
+            placeholder={placeholderCode ? localize(placeholder as TranslationKeys) ?? placeholder : placeholder}
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
             side={ESide.Left}
           />
         )}

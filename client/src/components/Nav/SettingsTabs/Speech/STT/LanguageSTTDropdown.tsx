@@ -36,6 +36,7 @@ export default function LanguageSTTDropdown() {
     { value: 'en-ZA', label: 'English (South Africa)' },
     { value: 'en-GB', label: 'English (UK)' },
     { value: 'en-US', label: 'English (US)' },
+    { value: 'et-EE', label: 'Estonian' },
     { value: 'fi', label: 'Finnish' },
     { value: 'fr-FR', label: 'French' },
     { value: 'gl', label: 'Galician' },
@@ -49,6 +50,8 @@ export default function LanguageSTTDropdown() {
     { value: 'ja', label: 'Japanese' },
     { value: 'ko', label: 'Korean' },
     { value: 'la', label: 'Latin' },
+    { value: 'lv-LV', label: 'Latvian' },
+    { value: 'lt-LT', label: 'Lithuanian' },
     { value: 'zh-CN', label: 'Mandarin Chinese' },
     { value: 'zh-TW', label: 'Taiwanese' },
     { value: 'zh-HK', label: 'Cantonese' },
@@ -99,8 +102,8 @@ export default function LanguageSTTDropdown() {
         onChange={handleSelect}
         options={languageOptions}
         sizeClasses="[--anchor-max-height:256px]"
-        anchor="bottom start"
         testId="LanguageSTTDropdown"
+        className="z-50"
       />
     </div>
   );

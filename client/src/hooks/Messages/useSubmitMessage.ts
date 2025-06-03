@@ -1,10 +1,9 @@
 import { v4 } from 'uuid';
 import { useCallback } from 'react';
-import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { Constants, replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { replaceSpecialVars } from '~/utils';
 import store from '~/store';
 
 const appendIndex = (index: number, value?: string) => {
@@ -14,7 +13,7 @@ const appendIndex = (index: number, value?: string) => {
   return `${value}${Constants.COMMON_DIVIDER}${index}`;
 };
 
-export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) {
+export default function useSubmitMessage() {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
@@ -31,7 +30,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       }
       const rootMessages = getMessages();
       const isLatestInRootMessages = rootMessages?.some(
-        (message) => message?.messageId === latestMessage?.messageId,
+        (message) => message.messageId === latestMessage?.messageId,
       );
       if (!isLatestInRootMessages && latestMessage) {
         setMessages([...(rootMessages || []), latestMessage]);
@@ -45,28 +44,31 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       const overrideConvoId = isNewMultiConvo ? v4() : undefined;
       const overrideUserMessageId = hasAdded ? v4() : undefined;
       const rootIndex = addedIndex - 1;
+      const clientTimestamp = new Date().toISOString();
+
       ask({
         text: data.text,
         overrideConvoId: appendIndex(rootIndex, overrideConvoId),
         overrideUserMessageId: appendIndex(rootIndex, overrideUserMessageId),
+        clientTimestamp,
       });
+
       if (hasAdded) {
         askAdditional(
           {
             text: data.text,
             overrideConvoId: appendIndex(addedIndex, overrideConvoId),
             overrideUserMessageId: appendIndex(addedIndex, overrideUserMessageId),
+            clientTimestamp,
           },
           { overrideMessages: rootMessages },
         );
       }
       methods.reset();
-      helpers?.clearDraft && helpers.clearDraft();
     },
     [
       ask,
       methods,
-      helpers,
       addedIndex,
       addedConvo,
       setMessages,
@@ -86,7 +88,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       }
 
       const currentText = methods.getValues('text');
-      const newText = currentText?.trim()?.length > 1 ? `\n${parsedText}` : parsedText;
+      const newText = currentText.trim().length > 1 ? `\n${parsedText}` : parsedText;
       setActivePrompt(newText);
     },
     [autoSendPrompts, submitMessage, setActivePrompt, methods, user],

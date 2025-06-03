@@ -22,7 +22,12 @@ export const useGetRole = (
 
 export const useUpdatePromptPermissionsMutation = (
   options?: t.UpdatePromptPermOptions,
-): UseMutationResult<t.UpdatePromptPermResponse, t.TError, t.UpdatePromptPermVars, unknown> => {
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdatePromptPermVars,
+  unknown
+> => {
   const queryClient = useQueryClient();
   const { onMutate, onSuccess, onError } = options ?? {};
   return useMutation(
@@ -38,8 +43,47 @@ export const useUpdatePromptPermissionsMutation = (
         }
       },
       onError: (...args) => {
-        args[0] && console.error('Failed to update prompt permissions:', args[0]);
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update prompt permissions:', error);
+        }
         if (onError) {
+          onError(...args);
+        }
+      },
+      onMutate,
+    },
+  );
+};
+
+export const useUpdateAgentPermissionsMutation = (
+  options?: t.UpdateAgentPermOptions,
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdateAgentPermVars,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onMutate, onSuccess, onError } = options ?? {};
+  return useMutation(
+    (variables) => {
+      promptPermissionsSchema.partial().parse(variables.updates);
+      return dataService.updateAgentPermissions(variables);
+    },
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
+        if (onSuccess != null) {
+          onSuccess(data, variables, context);
+        }
+      },
+      onError: (...args) => {
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update prompt permissions:', error);
+        }
+        if (onError != null) {
           onError(...args);
         }
       },

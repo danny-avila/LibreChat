@@ -70,7 +70,13 @@ const sendError = async (req, res, options, callback) => {
   }
 
   if (shouldSaveMessage) {
-    await saveMessage(req, { ...errorMessage, user });
+    await saveMessage(
+      req,
+      { ...errorMessage, user },
+      {
+        context: 'api/server/utils/streamResponse.js - sendError',
+      },
+    );
   }
 
   if (!errorMessage.error) {

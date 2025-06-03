@@ -26,7 +26,7 @@ export default function PopoverButtons({
   buttonClass?: string;
   iconClass?: string;
   endpoint?: EModelEndpoint | string;
-  endpointType?: EModelEndpoint | string;
+  endpointType?: EModelEndpoint | string | null;
   model?: string | null;
 }) {
   const {
@@ -41,11 +41,11 @@ export default function PopoverButtons({
 
   const { model: _model, endpoint: _endpoint, endpointType } = conversation ?? {};
   const overrideEndpoint = overrideEndpointType ?? _overrideEndpoint;
-  const endpoint = overrideEndpoint ?? endpointType ?? _endpoint;
+  const endpoint = overrideEndpoint ?? endpointType ?? _endpoint ?? '';
   const model = overrideModel ?? _model;
 
-  const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
-  const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
+  const isGenerativeModel = /gemini|learnlm|gemma/.test(model ?? '') ?? false;
+  const isChatModel = (!isGenerativeModel && model?.toLowerCase().includes('chat')) ?? false;
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
 
   const { showExamples } = optionSettings;
@@ -53,14 +53,14 @@ export default function PopoverButtons({
 
   const triggerExamples = () => {
     setSettingsView(SettingsViews.default);
-    setOptionSettings((prev) => ({ ...prev, showExamples: !prev.showExamples }));
+    setOptionSettings((prev) => ({ ...prev, showExamples: !(prev.showExamples ?? false) }));
   };
 
   const endpointSpecificbuttons: { [key: string]: TPopoverButton[] } = {
     [EModelEndpoint.google]: [
       {
-        label: localize(showExamples ? 'com_hide_examples' : 'com_show_examples'),
-        buttonClass: isGenerativeModel || isTextModel ? 'disabled' : '',
+        label: localize(showExamples === true ? 'com_hide_examples' : 'com_show_examples'),
+        buttonClass: isGenerativeModel === true || isTextModel ? 'disabled' : '',
         handler: triggerExamples,
         icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
       },
@@ -109,7 +109,7 @@ export default function PopoverButtons({
     ],
   };
 
-  const endpointButtons = endpointSpecificbuttons[endpoint] ?? [];
+  const endpointButtons = (endpointSpecificbuttons[endpoint] as TPopoverButton[] | null) ?? [];
 
   const disabled = true;
 
@@ -123,7 +123,7 @@ export default function PopoverButtons({
             className={cn(
               button.buttonClass,
               'border border-gray-300/50 focus:ring-1 focus:ring-green-500/90 dark:border-gray-500/50 dark:focus:ring-green-500',
-              'ml-1 h-full bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white',
+              'ml-1 h-full bg-transparent px-2 py-1 text-xs font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white',
               buttonClass ?? '',
             )}
             onClick={button.handler}
@@ -142,7 +142,7 @@ export default function PopoverButtons({
               className={cn(
                 button.buttonClass,
                 'flex justify-center border border-gray-300/50 focus:ring-1 focus:ring-green-500/90 dark:border-gray-500/50 dark:focus:ring-green-500',
-                'h-full w-full bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white',
+                'h-full w-full bg-transparent px-2 py-1 text-xs font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white',
                 buttonClass ?? '',
               )}
               onClick={button.handler}

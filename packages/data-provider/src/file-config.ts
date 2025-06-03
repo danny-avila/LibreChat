@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
 import type { FileConfig, EndpointFileConfig } from './types/files';
@@ -8,9 +7,11 @@ export const supportsFiles = {
   [EModelEndpoint.google]: true,
   [EModelEndpoint.assistants]: true,
   [EModelEndpoint.azureAssistants]: true,
+  [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.custom]: true,
+  [EModelEndpoint.bedrock]: true,
 };
 
 export const excelFileTypes = [
@@ -43,6 +44,7 @@ export const fullMimeTypesList = [
   'text/x-tex',
   'text/plain',
   'text/css',
+  'text/vtt',
   'image/jpeg',
   'text/javascript',
   'image/gif',
@@ -51,6 +53,8 @@ export const fullMimeTypesList = [
   'application/typescript',
   'application/xml',
   'application/zip',
+  'image/svg',
+  'image/svg+xml',
   ...excelFileTypes,
 ];
 
@@ -107,7 +111,7 @@ export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|javascript|csv))$/;
+  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv))$/;
 
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
@@ -119,6 +123,8 @@ export const supportedMimeTypes = [
   excelMimeTypes,
   applicationMimeTypes,
   imageMimeTypes,
+  /** Supported by LC Code Interpreter PAI */
+  /^image\/(svg|svg\+xml)$/,
 ];
 
 export const codeInterpreterMimeTypes = [
@@ -142,10 +148,14 @@ export const codeTypeMapping: { [key: string]: string } = {
   ts: 'application/typescript',
   tar: 'application/x-tar',
   zip: 'application/zip',
+  yml: 'application/x-yaml',
+  yaml: 'application/x-yaml',
+  log: 'text/plain',
+  tsv: 'text/tab-separated-values',
 };
 
 export const retrievalMimeTypes = [
-  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|xml))$/,
+  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
 ];
 
@@ -166,6 +176,7 @@ export const fileConfig = {
   endpoints: {
     [EModelEndpoint.assistants]: assistantsFileConfig,
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
+    [EModelEndpoint.agents]: assistantsFileConfig,
     default: {
       fileLimit: 10,
       fileSizeLimit: defaultSizeLimit,
@@ -210,6 +221,12 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
+  imageGeneration: z
+    .object({
+      percentage: z.number().min(0).max(100).optional(),
+      px: z.number().min(0).optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -219,7 +236,7 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
       const regex = new RegExp(pattern);
       acc.push(regex);
     } catch (error) {
-      console.error(`Invalid regex pattern "${pattern}" skipped.`);
+      console.error(`Invalid regex pattern "${pattern}" skipped.`, error);
     }
     return acc;
   }, []);

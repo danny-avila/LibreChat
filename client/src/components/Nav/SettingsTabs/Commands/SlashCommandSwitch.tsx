@@ -18,7 +18,6 @@ export default function SlashCommandSwitch() {
         id="slashCommand"
         checked={slashCommand}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
         data-testid="slashCommand"
       />
     </div>

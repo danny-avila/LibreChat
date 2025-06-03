@@ -27,6 +27,10 @@ async function abortRun(req, res) {
   const cacheKey = `${req.user.id}:${conversationId}`;
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const runValues = await cache.get(cacheKey);
+  if (!runValues) {
+    logger.warn('[abortRun] Run not found in cache', { cacheKey });
+    return res.status(204).send({ message: 'Run not found' });
+  }
   const [thread_id, run_id] = runValues.split(':');
 
   if (!run_id) {

@@ -14,13 +14,7 @@ import {
 } from '../src/file-config';
 
 describe('MIME Type Regex Patterns', () => {
-  const unsupportedMimeTypes = [
-    'text/x-unknown',
-    'application/unknown',
-    'image/bmp',
-    'image/svg',
-    'audio/mp3',
-  ];
+  const unsupportedMimeTypes = ['text/x-unknown', 'application/unknown', 'image/bmp', 'audio/mp3'];
 
   // Testing general supported MIME types
   fullMimeTypesList.forEach((mimeType) => {

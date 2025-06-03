@@ -1,4 +1,4 @@
-const { PromptTemplate } = require('langchain/prompts');
+const { PromptTemplate } = require('@langchain/core/prompts');
 /*
  * Without `{summary}` and `{new_lines}`, token count is 98
  * We are counting this towards the max context tokens for summaries, +3 for the assistant label (101)

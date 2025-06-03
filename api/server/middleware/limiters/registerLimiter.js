@@ -1,6 +1,9 @@
 const rateLimit = require('express-rate-limit');
-const { removePorts } = require('~/server/utils');
+const { RedisStore } = require('rate-limit-redis');
+const { removePorts, isEnabled } = require('~/server/utils');
+const ioredisClient = require('~/cache/ioredisClient');
 const { logViolation } = require('~/cache');
+const { logger } = require('~/config');
 
 const { REGISTER_WINDOW = 60, REGISTER_MAX = 5, REGISTRATION_VIOLATION_SCORE: score } = process.env;
 const windowMs = REGISTER_WINDOW * 60 * 1000;
@@ -20,11 +23,22 @@ const handler = async (req, res) => {
   return res.status(429).json({ message });
 };
 
-const registerLimiter = rateLimit({
+const limiterOptions = {
   windowMs,
   max,
   handler,
   keyGenerator: removePorts,
-});
+};
+
+if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
+  logger.debug('Using Redis for register rate limiter.');
+  const store = new RedisStore({
+    sendCommand: (...args) => ioredisClient.call(...args),
+    prefix: 'register_limiter:',
+  });
+  limiterOptions.store = store;
+}
+
+const registerLimiter = rateLimit(limiterOptions);
 
 module.exports = registerLimiter;

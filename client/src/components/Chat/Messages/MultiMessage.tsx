@@ -1,10 +1,14 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, useCallback } from 'react';
+import { isAssistantsEndpoint } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-// eslint-disable-next-line import/no-cycle
-import Message from './Message';
-// eslint-disable-next-line import/no-cycle
+
+import MessageContent from '~/components/Messages/MessageContent';
+
 import MessageParts from './MessageParts';
+
+import Message from './Message';
 import store from '~/store';
 
 export default function MultiMessage({
@@ -26,28 +30,39 @@ export default function MultiMessage({
   useEffect(() => {
     // reset siblingIdx when the tree changes, mostly when a new message is submitting.
     setSiblingIdx(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
 
   useEffect(() => {
-    if (messagesTree?.length && siblingIdx >= messagesTree?.length) {
+    if (messagesTree?.length && siblingIdx >= messagesTree.length) {
       setSiblingIdx(0);
     }
   }, [siblingIdx, messagesTree?.length, setSiblingIdx]);
 
-  if (!(messagesTree && messagesTree?.length)) {
+  if (!(messagesTree && messagesTree.length)) {
     return null;
   }
 
-  const message = messagesTree[messagesTree.length - siblingIdx - 1];
+  const message = messagesTree[messagesTree.length - siblingIdx - 1] as TMessage | undefined;
 
   if (!message) {
     return null;
   }
 
-  if (message.content) {
+  if (isAssistantsEndpoint(message.endpoint) && message.content) {
     return (
       <MessageParts
+        key={message.messageId}
+        message={message}
+        currentEditId={currentEditId}
+        setCurrentEditId={setCurrentEditId}
+        siblingIdx={messagesTree.length - siblingIdx - 1}
+        siblingCount={messagesTree.length}
+        setSiblingIdx={setSiblingIdxRev}
+      />
+    );
+  } else if (message.content) {
+    return (
+      <MessageContent
         key={message.messageId}
         message={message}
         currentEditId={currentEditId}

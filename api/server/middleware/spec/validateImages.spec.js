@@ -3,6 +3,7 @@ const validateImageRequest = require('~/server/middleware/validateImageRequest')
 
 describe('validateImageRequest middleware', () => {
   let req, res, next;
+  const validObjectId = '65cfb246f7ecadb8b1e8036b';
 
   beforeEach(() => {
     req = {
@@ -43,7 +44,7 @@ describe('validateImageRequest middleware', () => {
 
   test('should return 403 if refresh token is expired', () => {
     const expiredToken = jwt.sign(
-      { id: '123', exp: Math.floor(Date.now() / 1000) - 3600 },
+      { id: validObjectId, exp: Math.floor(Date.now() / 1000) - 3600 },
       process.env.JWT_REFRESH_SECRET,
     );
     req.headers.cookie = `refreshToken=${expiredToken}`;
@@ -54,22 +55,34 @@ describe('validateImageRequest middleware', () => {
 
   test('should call next() for valid image path', () => {
     const validToken = jwt.sign(
-      { id: '123', exp: Math.floor(Date.now() / 1000) + 3600 },
+      { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
       process.env.JWT_REFRESH_SECRET,
     );
     req.headers.cookie = `refreshToken=${validToken}`;
-    req.originalUrl = '/images/123/example.jpg';
+    req.originalUrl = `/images/${validObjectId}/example.jpg`;
     validateImageRequest(req, res, next);
     expect(next).toHaveBeenCalled();
   });
 
   test('should return 403 for invalid image path', () => {
     const validToken = jwt.sign(
-      { id: '123', exp: Math.floor(Date.now() / 1000) + 3600 },
+      { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
       process.env.JWT_REFRESH_SECRET,
     );
     req.headers.cookie = `refreshToken=${validToken}`;
-    req.originalUrl = '/images/456/example.jpg';
+    req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/example.jpg'; // Different ObjectId
+    validateImageRequest(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.send).toHaveBeenCalledWith('Access Denied');
+  });
+
+  test('should return 403 for invalid ObjectId format', () => {
+    const validToken = jwt.sign(
+      { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+      process.env.JWT_REFRESH_SECRET,
+    );
+    req.headers.cookie = `refreshToken=${validToken}`;
+    req.originalUrl = '/images/123/example.jpg'; // Invalid ObjectId
     validateImageRequest(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.send).toHaveBeenCalledWith('Access Denied');
@@ -78,16 +91,16 @@ describe('validateImageRequest middleware', () => {
   // File traversal tests
   test('should prevent file traversal attempts', () => {
     const validToken = jwt.sign(
-      { id: '123', exp: Math.floor(Date.now() / 1000) + 3600 },
+      { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
       process.env.JWT_REFRESH_SECRET,
     );
     req.headers.cookie = `refreshToken=${validToken}`;
 
     const traversalAttempts = [
-      '/images/123/../../../etc/passwd',
-      '/images/123/..%2F..%2F..%2Fetc%2Fpasswd',
-      '/images/123/image.jpg/../../../etc/passwd',
-      '/images/123/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd',
+      `/images/${validObjectId}/../../../etc/passwd`,
+      `/images/${validObjectId}/..%2F..%2F..%2Fetc%2Fpasswd`,
+      `/images/${validObjectId}/image.jpg/../../../etc/passwd`,
+      `/images/${validObjectId}/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd`,
     ];
 
     traversalAttempts.forEach((attempt) => {
@@ -101,11 +114,11 @@ describe('validateImageRequest middleware', () => {
 
   test('should handle URL encoded characters in valid paths', () => {
     const validToken = jwt.sign(
-      { id: '123', exp: Math.floor(Date.now() / 1000) + 3600 },
+      { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
       process.env.JWT_REFRESH_SECRET,
     );
     req.headers.cookie = `refreshToken=${validToken}`;
-    req.originalUrl = '/images/123/image%20with%20spaces.jpg';
+    req.originalUrl = `/images/${validObjectId}/image%20with%20spaces.jpg`;
     validateImageRequest(req, res, next);
     expect(next).toHaveBeenCalled();
   });

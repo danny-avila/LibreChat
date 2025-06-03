@@ -73,3 +73,15 @@ export function removeCharIfLast(textarea: HTMLTextAreaElement, charToRemove: st
 
   textarea.focus();
 }
+
+/**
+ * Check if the textarea is scrollable.
+ * @param element
+ * @returns
+ */
+export const checkIfScrollable = (element: HTMLTextAreaElement | null) => {
+  if (!element) {
+    return false;
+  }
+  return element.scrollHeight > element.clientHeight;
+};

@@ -2,6 +2,24 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const { logger } = require('~/config');
 
+const OBJECT_ID_LENGTH = 24;
+const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
+
+/**
+ * Validates if a string is a valid MongoDB ObjectId
+ * @param {string} id - String to validate
+ * @returns {boolean} - Whether string is a valid ObjectId format
+ */
+function isValidObjectId(id) {
+  if (typeof id !== 'string') {
+    return false;
+  }
+  if (id.length !== OBJECT_ID_LENGTH) {
+    return false;
+  }
+  return OBJECT_ID_PATTERN.test(id);
+}
+
 /**
  * Middleware to validate image request.
  * Must be set by `secureImageLinks` via custom config file.
@@ -22,6 +40,11 @@ function validateImageRequest(req, res, next) {
     payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
   } catch (err) {
     logger.warn('[validateImageRequest]', err);
+    return res.status(403).send('Access Denied');
+  }
+
+  if (!isValidObjectId(payload.id)) {
+    logger.warn('[validateImageRequest] Invalid User ID');
     return res.status(403).send('Access Denied');
   }
 

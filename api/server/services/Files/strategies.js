@@ -5,11 +5,13 @@ const {
   saveURLToFirebase,
   deleteFirebaseFile,
   saveBufferToFirebase,
+  uploadFileToFirebase,
   uploadImageToFirebase,
   processFirebaseAvatar,
   getFirebaseFileStream,
 } = require('./Firebase');
 const {
+  uploadLocalFile,
   getLocalFileURL,
   saveFileFromURL,
   saveLocalBuffer,
@@ -19,17 +21,39 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
+const {
+  getS3URL,
+  saveURLToS3,
+  saveBufferToS3,
+  getS3FileStream,
+  uploadImageToS3,
+  prepareImageURLS3,
+  deleteFileFromS3,
+  processS3Avatar,
+  uploadFileToS3,
+} = require('./S3');
+const {
+  saveBufferToAzure,
+  saveURLToAzure,
+  getAzureURL,
+  deleteFileFromAzure,
+  uploadFileToAzure,
+  getAzureFileStream,
+  uploadImageToAzure,
+  prepareAzureImageURL,
+  processAzureAvatar,
+} = require('./Azure');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
+const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { uploadMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
  *
  * */
 const firebaseStrategy = () => ({
-  // saveFile:
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadFileToFirebase,
   saveURL: saveURLToFirebase,
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
@@ -45,8 +69,7 @@ const firebaseStrategy = () => ({
  *
  * */
 const localStrategy = () => ({
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,
@@ -55,6 +78,38 @@ const localStrategy = () => ({
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
   getDownloadStream: getLocalFileStream,
+});
+
+/**
+ * S3 Storage Strategy Functions
+ *
+ * */
+const s3Strategy = () => ({
+  handleFileUpload: uploadFileToS3,
+  saveURL: saveURLToS3,
+  getFileURL: getS3URL,
+  deleteFile: deleteFileFromS3,
+  saveBuffer: saveBufferToS3,
+  prepareImagePayload: prepareImageURLS3,
+  processAvatar: processS3Avatar,
+  handleImageUpload: uploadImageToS3,
+  getDownloadStream: getS3FileStream,
+});
+
+/**
+ * Azure Blob Storage Strategy Functions
+ *
+ * */
+const azureStrategy = () => ({
+  handleFileUpload: uploadFileToAzure,
+  saveURL: saveURLToAzure,
+  getFileURL: getAzureURL,
+  deleteFile: deleteFileFromAzure,
+  saveBuffer: saveBufferToAzure,
+  prepareImagePayload: prepareAzureImageURL,
+  processAvatar: processAzureAvatar,
+  handleImageUpload: uploadImageToAzure,
+  getDownloadStream: getAzureFileStream,
 });
 
 /**
@@ -103,6 +158,50 @@ const openAIStrategy = () => ({
   getDownloadStream: getOpenAIFileStream,
 });
 
+/**
+ * Code Output Strategy Functions
+ *
+ * Note: null values mean that the strategy is not supported.
+ * */
+const codeOutputStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  handleFileUpload: uploadCodeEnvFile,
+  getDownloadStream: getCodeOutputDownloadStream,
+});
+
+const mistralOCRStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadMistralOCR,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -113,8 +212,16 @@ const getStrategyFunctions = (fileSource) => {
     return openAIStrategy();
   } else if (fileSource === FileSources.azure) {
     return openAIStrategy();
+  } else if (fileSource === FileSources.azure_blob) {
+    return azureStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
+  } else if (fileSource === FileSources.s3) {
+    return s3Strategy();
+  } else if (fileSource === FileSources.execute_code) {
+    return codeOutputStrategy();
+  } else if (fileSource === FileSources.mistral_ocr) {
+    return mistralOCRStrategy();
   } else {
     throw new Error('Invalid file source');
   }

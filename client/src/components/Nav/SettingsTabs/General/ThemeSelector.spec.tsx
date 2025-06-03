@@ -20,14 +20,15 @@ describe('ThemeSelector', () => {
       unobserve = jest.fn();
       disconnect = jest.fn();
     };
-    const { getByText } = render(
+    const { getByText, getByRole } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
     expect(getByText('Theme')).toBeInTheDocument();
-    expect(getByText('System')).toBeInTheDocument();
+    const dropdownButton = getByRole('combobox');
+    expect(dropdownButton).toHaveTextContent('System');
   });
 
   it('calls onChange when the select value changes', async () => {
@@ -44,17 +45,13 @@ describe('ThemeSelector', () => {
 
     expect(getByText('Theme')).toBeInTheDocument();
 
-    // Find the dropdown button by data-testid
     const dropdownButton = getByTestId('theme-selector');
 
-    // Open the dropdown
     fireEvent.click(dropdownButton);
 
-    // Find the option by text and click it
     const darkOption = getByText('Dark');
     fireEvent.click(darkOption);
 
-    // Ensure that the onChange is called with the expected value
     await waitFor(() => {
       expect(mockOnChange).toHaveBeenCalledWith('dark');
     });

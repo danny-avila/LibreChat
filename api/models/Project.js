@@ -1,14 +1,12 @@
-const { model } = require('mongoose');
-const projectSchema = require('~/models/schema/projectSchema');
-
-const Project = model('Project', projectSchema);
+const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { Project } = require('~/db/models');
 
 /**
  * Retrieve a project by ID and convert the found project document to a plain object.
  *
  * @param {string} projectId - The ID of the project to find and return as a plain object.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<MongoProject>} A plain object representing the project document, or `null` if no project is found.
+ * @returns {Promise<IMongoProject>} A plain object representing the project document, or `null` if no project is found.
  */
 const getProjectById = async function (projectId, fieldsToSelect = null) {
   const query = Project.findById(projectId);
@@ -26,14 +24,14 @@ const getProjectById = async function (projectId, fieldsToSelect = null) {
  *
  * @param {string} projectName - The name of the project to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<MongoProject>} A plain object representing the project document.
+ * @returns {Promise<IMongoProject>} A plain object representing the project document.
  */
 const getProjectByName = async function (projectName, fieldsToSelect = null) {
   const query = { name: projectName };
   const update = { $setOnInsert: { name: projectName } };
   const options = {
     new: true,
-    upsert: projectName === 'instance',
+    upsert: projectName === GLOBAL_PROJECT_NAME,
     lean: true,
     select: fieldsToSelect,
   };
@@ -46,7 +44,7 @@ const getProjectByName = async function (projectName, fieldsToSelect = null) {
  *
  * @param {string} projectId - The ID of the project to update.
  * @param {string[]} promptGroupIds - The array of prompt group IDs to add to the project.
- * @returns {Promise<MongoProject>} The updated project document.
+ * @returns {Promise<IMongoProject>} The updated project document.
  */
 const addGroupIdsToProject = async function (projectId, promptGroupIds) {
   return await Project.findByIdAndUpdate(
@@ -61,7 +59,7 @@ const addGroupIdsToProject = async function (projectId, promptGroupIds) {
  *
  * @param {string} projectId - The ID of the project to update.
  * @param {string[]} promptGroupIds - The array of prompt group IDs to remove from the project.
- * @returns {Promise<MongoProject>} The updated project document.
+ * @returns {Promise<IMongoProject>} The updated project document.
  */
 const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
   return await Project.findByIdAndUpdate(
@@ -81,10 +79,55 @@ const removeGroupFromAllProjects = async (promptGroupId) => {
   await Project.updateMany({}, { $pull: { promptGroupIds: promptGroupId } });
 };
 
+/**
+ * Add an array of agent IDs to a project's agentIds array, ensuring uniqueness.
+ *
+ * @param {string} projectId - The ID of the project to update.
+ * @param {string[]} agentIds - The array of agent IDs to add to the project.
+ * @returns {Promise<IMongoProject>} The updated project document.
+ */
+const addAgentIdsToProject = async function (projectId, agentIds) {
+  return await Project.findByIdAndUpdate(
+    projectId,
+    { $addToSet: { agentIds: { $each: agentIds } } },
+    { new: true },
+  );
+};
+
+/**
+ * Remove an array of agent IDs from a project's agentIds array.
+ *
+ * @param {string} projectId - The ID of the project to update.
+ * @param {string[]} agentIds - The array of agent IDs to remove from the project.
+ * @returns {Promise<IMongoProject>} The updated project document.
+ */
+const removeAgentIdsFromProject = async function (projectId, agentIds) {
+  return await Project.findByIdAndUpdate(
+    projectId,
+    { $pull: { agentIds: { $in: agentIds } } },
+    { new: true },
+  );
+};
+
+/**
+ * Remove an agent ID from all projects.
+ *
+ * @param {string} agentId - The ID of the agent to remove from projects.
+ * @returns {Promise<void>}
+ */
+const removeAgentFromAllProjects = async (agentId) => {
+  await Project.updateMany({}, { $pull: { agentIds: agentId } });
+};
+
 module.exports = {
   getProjectById,
   getProjectByName,
+  /* prompts */
   addGroupIdsToProject,
   removeGroupIdsFromProject,
   removeGroupFromAllProjects,
+  /* agents */
+  addAgentIdsToProject,
+  removeAgentIdsFromProject,
+  removeAgentFromAllProjects,
 };

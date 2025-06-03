@@ -1,0 +1,58 @@
+name: Publish `@librechat/data-schemas` to NPM
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/data-schemas/package.json'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual publish requested'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          
+      - name: Install dependencies
+        run: cd packages/data-schemas && npm ci
+        
+      - name: Build
+        run: cd packages/data-schemas && npm run build
+        
+      - name: Set up npm authentication
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
+        
+      - name: Check version change
+        id: check
+        working-directory: packages/data-schemas
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED_VERSION=$(npm view @librechat/data-schemas version 2>/dev/null || echo "0.0.0")
+          if [ "$PACKAGE_VERSION" = "$PUBLISHED_VERSION" ]; then
+            echo "No version change, skipping publish"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version changed, proceeding with publish"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+            
+      - name: Pack package
+        if: steps.check.outputs.skip != 'true'
+        working-directory: packages/data-schemas
+        run: npm pack
+        
+      - name: Publish
+        if: steps.check.outputs.skip != 'true'
+        working-directory: packages/data-schemas
+        run: npm publish *.tgz --access public

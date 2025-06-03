@@ -1,5 +1,4 @@
 import type { TModelSelectProps } from '~/common';
-import { ESide } from '~/common';
 import {
   Switch,
   Label,
@@ -9,9 +8,10 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '~/components';
-import OptionHover from './OptionHover';
 import { cn, optionText, defaultTextProps, removeFocusRings } from '~/utils';
+import OptionHover from './OptionHover';
 import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
@@ -77,7 +77,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[temperature ?? 0]}
               onValueChange={(value: number[]) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(1)}
+              onDoubleClick={() => setTemperature(1)}
               max={2}
               min={0}
               step={0.01}

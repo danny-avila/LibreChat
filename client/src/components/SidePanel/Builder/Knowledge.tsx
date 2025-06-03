@@ -4,7 +4,7 @@ import {
   retrievalMimeTypes,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { AssistantsEndpoint } from 'librechat-data-provider';
+import type { AssistantsEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
@@ -53,9 +53,10 @@ export default function Knowledge({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[endpoint];
+  const endpointFileConfig = fileConfig.endpoints[endpoint] as EndpointFileConfig | undefined;
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
-  if (endpointFileConfig?.disabled) {
+  if (isUploadDisabled) {
     return null;
   }
 

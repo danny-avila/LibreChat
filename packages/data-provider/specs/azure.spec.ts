@@ -94,8 +94,8 @@ describe('validateAzureGroups', () => {
     expect(isValid).toBe(true);
     const modelGroup = modelGroupMap['gpt-5-turbo'];
     expect(modelGroup).toBeDefined();
-    expect(modelGroup.group).toBe('japan-east');
-    expect(groupMap[modelGroup.group]).toBeDefined();
+    expect(modelGroup?.group).toBe('japan-east');
+    expect(groupMap[modelGroup?.group ?? '']).toBeDefined();
     expect(modelNames).toContain('gpt-5-turbo');
     const { azureOptions } = mapModelToAzureConfig({
       modelName: 'gpt-5-turbo',
@@ -323,6 +323,7 @@ describe('validateAzureGroups for Serverless Configurations', () => {
 
     expect(azureOptions).toEqual({
       azureOpenAIApiKey: 'def456',
+      azureOpenAIApiVersion: '',
     });
     expect(baseURL).toEqual('https://new-serverless.example.com/v1/completions');
     expect(serverless).toBe(true);
@@ -381,10 +382,10 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     const { isValid, modelGroupMap, groupMap } = validateAzureGroups(validConfigs);
     expect(isValid).toBe(true);
     expect(modelGroupMap['gpt-4-turbo']).toBeDefined();
-    expect(modelGroupMap['gpt-4-turbo'].group).toBe('us-east');
+    expect(modelGroupMap['gpt-4-turbo']?.group).toBe('us-east');
     expect(groupMap['us-east']).toBeDefined();
-    expect(groupMap['us-east'].apiKey).toBe('prod-1234');
-    expect(groupMap['us-east'].models['gpt-4-turbo']).toBeDefined();
+    expect(groupMap['us-east']?.apiKey).toBe('prod-1234');
+    expect(groupMap['us-east']?.models['gpt-4-turbo']).toBeDefined();
     const { azureOptions, baseURL, headers } = mapModelToAzureConfig({
       modelName: 'gpt-4-turbo',
       modelGroupMap,
@@ -765,6 +766,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     );
     expect(azureOptions7).toEqual({
       azureOpenAIApiKey: 'mistral-key',
+      azureOpenAIApiVersion: '',
     });
 
     const {
@@ -782,6 +784,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     );
     expect(azureOptions8).toEqual({
       azureOpenAIApiKey: 'llama-key',
+      azureOpenAIApiVersion: '',
     });
   });
 });

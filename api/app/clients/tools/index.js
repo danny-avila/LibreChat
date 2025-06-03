@@ -1,44 +1,45 @@
 const availableTools = require('./manifest.json');
-// Basic Tools
-const CodeBrew = require('./CodeBrew');
-const WolframAlphaAPI = require('./Wolfram');
-const AzureAiSearch = require('./AzureAiSearch');
-const OpenAICreateImage = require('./DALL-E');
-const StableDiffusionAPI = require('./StableDiffusion');
-const SelfReflectionTool = require('./SelfReflection');
 
 // Structured Tools
 const DALLE3 = require('./structured/DALLE3');
-const ChatTool = require('./structured/ChatTool');
-const E2BTools = require('./structured/E2BTools');
-const CodeSherpa = require('./structured/CodeSherpa');
-const StructuredSD = require('./structured/StableDiffusion');
-const StructuredACS = require('./structured/AzureAISearch');
-const CodeSherpaTools = require('./structured/CodeSherpaTools');
-const GoogleSearchAPI = require('./structured/GoogleSearch');
+const FluxAPI = require('./structured/FluxAPI');
+const OpenWeather = require('./structured/OpenWeather');
 const StructuredWolfram = require('./structured/Wolfram');
-const TavilySearchResults = require('./structured/TavilySearchResults');
+const createYouTubeTools = require('./structured/YouTube');
+const StructuredACS = require('./structured/AzureAISearch');
+const StructuredSD = require('./structured/StableDiffusion');
+const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
+const createOpenAIImageTools = require('./structured/OpenAIImageTools');
+const TavilySearchResults = require('./structured/TavilySearchResults');
+
+/** @type {Record<string, TPlugin | undefined>} */
+const manifestToolMap = {};
+
+/** @type {Array<TPlugin>} */
+const toolkits = [];
+
+availableTools.forEach((tool) => {
+  manifestToolMap[tool.pluginKey] = tool;
+  if (tool.toolkit === true) {
+    toolkits.push(tool);
+  }
+});
 
 module.exports = {
+  toolkits,
   availableTools,
-  // Basic Tools
-  CodeBrew,
-  AzureAiSearch,
-  GoogleSearchAPI,
-  WolframAlphaAPI,
-  OpenAICreateImage,
-  StableDiffusionAPI,
-  SelfReflectionTool,
+  manifestToolMap,
   // Structured Tools
   DALLE3,
-  ChatTool,
-  E2BTools,
-  CodeSherpa,
+  FluxAPI,
+  OpenWeather,
   StructuredSD,
   StructuredACS,
-  CodeSherpaTools,
-  StructuredWolfram,
-  TavilySearchResults,
+  GoogleSearchAPI,
   TraversaalSearch,
+  StructuredWolfram,
+  createYouTubeTools,
+  TavilySearchResults,
+  createOpenAIImageTools,
 };

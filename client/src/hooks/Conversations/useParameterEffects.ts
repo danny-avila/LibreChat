@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { DynamicSettingProps, TConversation, TPreset } from 'librechat-data-provider';
+import type { DynamicSettingProps, TPreset } from 'librechat-data-provider';
 import { defaultDebouncedDelay } from '~/common';
 
 function useParameterEffects<T = unknown>({
@@ -10,9 +10,8 @@ function useParameterEffects<T = unknown>({
   inputValue,
   setInputValue,
   preventDelayedUpdate = false,
-}: Pick<DynamicSettingProps, 'settingKey' | 'defaultValue'> & {
+}: Pick<DynamicSettingProps, 'settingKey' | 'defaultValue' | 'conversation'> & {
   preset: TPreset | null;
-  conversation?: TConversation | TPreset | null;
   inputValue: T;
   setInputValue: (inputValue: T) => void;
   preventDelayedUpdate?: boolean;
@@ -38,29 +37,31 @@ function useParameterEffects<T = unknown>({
 
   /** Resets the local state if conversationId changed */
   useEffect(() => {
-    if (!conversation?.conversationId) {
+    const conversationId = conversation?.conversationId ?? '';
+    if (!conversationId) {
       return;
     }
 
-    if (idRef.current === conversation?.conversationId) {
+    if (idRef.current === conversationId) {
       return;
     }
 
-    idRef.current = conversation?.conversationId;
+    idRef.current = conversationId;
     setInputValue(defaultValue as T);
   }, [setInputValue, conversation?.conversationId, defaultValue]);
 
   /** Resets the local state if presetId changed */
   useEffect(() => {
-    if (!preset?.presetId) {
+    const presetId = preset?.presetId ?? '';
+    if (!presetId) {
       return;
     }
 
-    if (presetIdRef.current === preset?.presetId) {
+    if (presetIdRef.current === presetId) {
       return;
     }
 
-    presetIdRef.current = preset?.presetId;
+    presetIdRef.current = presetId;
     setInputValue(defaultValue as T);
   }, [setInputValue, preset?.presetId, defaultValue]);
 }

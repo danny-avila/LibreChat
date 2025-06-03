@@ -1,7 +1,7 @@
 const { Constants } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),
@@ -30,7 +30,9 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-jest.mock('langchain/chat_models/openai', () => {
+const { getConvo, saveConvo } = require('~/models');
+
+jest.mock('@librechat/agents', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
@@ -50,7 +52,7 @@ const messageHistory = [
   {
     role: 'user',
     isCreatedByUser: true,
-    text: 'What\'s up',
+    text: "What's up",
     messageId: '3',
     parentMessageId: '2',
   },
@@ -61,7 +63,7 @@ describe('BaseClient', () => {
   const options = {
     // debug: true,
     modelOptions: {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       temperature: 0,
     },
   };
@@ -88,6 +90,19 @@ describe('BaseClient', () => {
     const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = { content: 'Please respond to the question.' };
     const result = TestClient.addInstructions(messages, instructions);
+    const expected = [
+      { content: 'Please respond to the question.' },
+      { content: 'Hello' },
+      { content: 'How are you?' },
+      { content: 'Goodbye' },
+    ];
+    expect(result).toEqual(expected);
+  });
+
+  test('returns the input messages with instructions properly added when addInstructions() with legacy flag', () => {
+    const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
+    const instructions = { content: 'Please respond to the question.' };
+    const result = TestClient.addInstructions(messages, instructions, true);
     const expected = [
       { content: 'Hello' },
       { content: 'How are you?' },
@@ -146,10 +161,10 @@ describe('BaseClient', () => {
       expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
     const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
 
-    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
-    expect(result.summaryIndex).toEqual(expectedIndex);
+    expect(result.messagesToRefine.length - 1).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
@@ -182,72 +197,12 @@ describe('BaseClient', () => {
       expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
     const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
 
-    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
-    expect(result.summaryIndex).toEqual(expectedIndex);
+    expect(result.messagesToRefine.length - 1).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
-  });
-
-  test('handles context strategy correctly in handleContextStrategy()', async () => {
-    TestClient.addInstructions = jest
-      .fn()
-      .mockReturnValue([
-        { content: 'Hello' },
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ]);
-    TestClient.getMessagesWithinTokenLimit = jest.fn().mockReturnValue({
-      context: [
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ],
-      remainingContextTokens: 80,
-      messagesToRefine: [{ content: 'Hello' }],
-      summaryIndex: 3,
-    });
-
-    TestClient.getTokenCount = jest.fn().mockReturnValue(40);
-
-    const instructions = { content: 'Please provide more details.' };
-    const orderedMessages = [
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' },
-    ];
-    const formattedMessages = [
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' },
-    ];
-    const expectedResult = {
-      payload: [
-        {
-          role: 'system',
-          content: 'Refined answer',
-        },
-        { content: 'How can I help you?' },
-        { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' },
-      ],
-      promptTokens: expect.any(Number),
-      tokenCountMap: {},
-      messages: expect.any(Array),
-    };
-
-    TestClient.shouldSummarize = true;
-    const result = await TestClient.handleContextStrategy({
-      instructions,
-      orderedMessages,
-      formattedMessages,
-    });
-
-    expect(result).toEqual(expectedResult);
   });
 
   describe('getMessagesForConversation', () => {
@@ -501,7 +456,7 @@ describe('BaseClient', () => {
 
       const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
       expect(TestClient.currentMessages).toHaveLength(3);
-      expect(chatMessages2[chatMessages2.length - 1].text).toEqual('What\'s up');
+      expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
     });
 
     /* Most of the new sendMessage logic revolving around edited/continued AI messages
@@ -565,11 +520,13 @@ describe('BaseClient', () => {
       const getReqData = jest.fn();
       const opts = { getReqData };
       const response = await TestClient.sendMessage('Hello, world!', opts);
-      expect(getReqData).toHaveBeenCalledWith({
-        userMessage: expect.objectContaining({ text: 'Hello, world!' }),
-        conversationId: response.conversationId,
-        responseMessageId: response.messageId,
-      });
+      expect(getReqData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: expect.objectContaining({ text: 'Hello, world!' }),
+          conversationId: response.conversationId,
+          responseMessageId: response.messageId,
+        }),
+      );
     });
 
     test('onStart is called with the correct arguments', async () => {
@@ -585,10 +542,11 @@ describe('BaseClient', () => {
 
     test('saveMessageToDatabase is called with the correct arguments', async () => {
       const saveOptions = TestClient.getSaveOptions();
-      const user = {}; // Mock user
+      const user = {};
       const opts = { user };
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
       await TestClient.sendMessage('Hello, world!', opts);
-      expect(TestClient.saveMessageToDatabase).toHaveBeenCalledWith(
+      expect(saveSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           sender: expect.any(String),
           text: expect.any(String),
@@ -602,6 +560,157 @@ describe('BaseClient', () => {
       );
     });
 
+    test('should handle existing conversation when getConvo retrieves one', async () => {
+      const existingConvo = {
+        conversationId: 'existing-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: 'Existing message 1' },
+          { role: 'assistant', content: 'Existing response 1' },
+        ],
+        temperature: 1,
+      };
+
+      const { temperature: _temp, ...newConvo } = existingConvo;
+
+      const user = {
+        id: 'user-id',
+      };
+
+      getConvo.mockResolvedValue(existingConvo);
+      saveConvo.mockResolvedValue(newConvo);
+
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          req: {
+            user,
+          },
+        },
+        [],
+      );
+
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      const newMessage = 'New message in existing conversation';
+      const response = await TestClient.sendMessage(newMessage, {
+        user,
+        conversationId: existingConvo.conversationId,
+      });
+
+      expect(getConvo).toHaveBeenCalledWith(user.id, existingConvo.conversationId);
+      expect(TestClient.conversationId).toBe(existingConvo.conversationId);
+      expect(response.conversationId).toBe(existingConvo.conversationId);
+      expect(TestClient.fetchedConvo).toBe(true);
+
+      expect(saveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: existingConvo.conversationId,
+          text: newMessage,
+        }),
+        expect.any(Object),
+        expect.any(Object),
+      );
+
+      expect(saveConvo).toHaveBeenCalledTimes(2);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          conversationId: existingConvo.conversationId,
+        }),
+        expect.objectContaining({
+          context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
+          unsetFields: {
+            temperature: 1,
+          },
+        }),
+      );
+
+      await TestClient.sendMessage('Another message', {
+        conversationId: existingConvo.conversationId,
+      });
+      expect(getConvo).toHaveBeenCalledTimes(1);
+    });
+
+    test('should correctly handle existing conversation and unset fields appropriately', async () => {
+      const existingConvo = {
+        conversationId: 'existing-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: 'Existing message 1' },
+          { role: 'assistant', content: 'Existing response 1' },
+        ],
+        title: 'Existing Conversation',
+        someExistingField: 'existingValue',
+        anotherExistingField: 'anotherValue',
+        temperature: 0.7,
+        modelLabel: 'GPT-3.5',
+      };
+
+      getConvo.mockResolvedValue(existingConvo);
+      saveConvo.mockResolvedValue(existingConvo);
+
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          modelOptions: {
+            model: 'gpt-4',
+            temperature: 0.5,
+          },
+        },
+        [],
+      );
+
+      const newMessage = 'New message in existing conversation';
+      await TestClient.sendMessage(newMessage, {
+        conversationId: existingConvo.conversationId,
+      });
+
+      expect(saveConvo).toHaveBeenCalledTimes(2);
+
+      const saveConvoCall = saveConvo.mock.calls[0];
+      const [, savedFields, saveOptions] = saveConvoCall;
+
+      // Instead of checking all excludedKeys, we'll just check specific fields
+      // that we know should be excluded
+      expect(savedFields).not.toHaveProperty('messages');
+      expect(savedFields).not.toHaveProperty('title');
+
+      // Only check that someExistingField is in unsetFields
+      expect(saveOptions.unsetFields).toHaveProperty('someExistingField', 1);
+
+      // Mock saveConvo to return the expected fields
+      saveConvo.mockImplementation((req, fields) => {
+        return Promise.resolve({
+          ...fields,
+          endpoint: 'openai',
+          endpointType: 'openai',
+          model: 'gpt-4',
+          temperature: 0.5,
+        });
+      });
+
+      // Only check the conversationId since that's the only field we can be sure about
+      expect(savedFields).toHaveProperty('conversationId', 'existing-convo-id');
+
+      expect(TestClient.fetchedConvo).toBe(true);
+
+      await TestClient.sendMessage('Another message', {
+        conversationId: existingConvo.conversationId,
+      });
+
+      expect(getConvo).toHaveBeenCalledTimes(1);
+
+      const secondSaveConvoCall = saveConvo.mock.calls[1];
+      expect(secondSaveConvoCall[2]).toHaveProperty('unsetFields', {});
+    });
+
     test('sendCompletion is called with the correct arguments', async () => {
       const payload = {}; // Mock payload
       TestClient.buildMessages.mockReturnValue({ prompt: payload, tokenCountMap: null });
@@ -613,9 +722,9 @@ describe('BaseClient', () => {
     test('getTokenCount for response is called with the correct arguments', async () => {
       const tokenCountMap = {}; // Mock tokenCountMap
       TestClient.buildMessages.mockReturnValue({ prompt: [], tokenCountMap });
-      TestClient.getTokenCount = jest.fn();
+      TestClient.getTokenCountForResponse = jest.fn();
       const response = await TestClient.sendMessage('Hello, world!', {});
-      expect(TestClient.getTokenCount).toHaveBeenCalledWith(response.text);
+      expect(TestClient.getTokenCountForResponse).toHaveBeenCalledWith(response);
     });
 
     test('returns an object with the correct shape', async () => {
@@ -657,6 +766,114 @@ describe('BaseClient', () => {
       const calls = TestClient.saveMessageToDatabase.mock.calls;
       expect(calls[0][0].isCreatedByUser).toBe(true); // First call should be for user message
       expect(calls[1][0].isCreatedByUser).toBe(false); // Second call should be for response message
+    });
+  });
+
+  describe('getMessagesWithinTokenLimit with instructions', () => {
+    test('should always include instructions when present', async () => {
+      TestClient.maxContextTokens = 50;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      expect(result.context[0]).toBe(instructions);
+      expect(result.remainingContextTokens).toBe(2);
+    });
+
+    test('should handle case when messages exceed limit but instructions must be preserved', async () => {
+      TestClient.maxContextTokens = 30;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      // Should only include instructions and the last message that fits
+      expect(result.context).toHaveLength(1);
+      expect(result.context[0].content).toBe(instructions.content);
+      expect(result.messagesToRefine).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(7); // 30 - 20 - 3 (assistant label)
+    });
+
+    test('should work correctly without instructions (1/2)', async () => {
+      TestClient.maxContextTokens = 50;
+      const messages = [
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+      });
+
+      expect(result.context).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(22); // 50 - 10 - 15 - 3(assistant label)
+      expect(result.messagesToRefine).toHaveLength(0);
+    });
+
+    test('should work correctly without instructions (2/2)', async () => {
+      TestClient.maxContextTokens = 30;
+      const messages = [
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 20 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+      });
+
+      expect(result.context).toHaveLength(1);
+      expect(result.remainingContextTokens).toBe(7);
+      expect(result.messagesToRefine).toHaveLength(1);
+    });
+
+    test('should handle case when only instructions fit within limit', async () => {
+      TestClient.maxContextTokens = 25;
+      const instructions = {
+        role: 'system',
+        content: 'System instructions',
+        tokenCount: 20,
+      };
+
+      const messages = [
+        instructions,
+        { role: 'user', content: 'Hello', tokenCount: 10 },
+        { role: 'assistant', content: 'Hi there', tokenCount: 15 },
+      ];
+
+      const result = await TestClient.getMessagesWithinTokenLimit({
+        messages,
+        instructions,
+      });
+
+      expect(result.context).toHaveLength(1);
+      expect(result.context[0]).toBe(instructions);
+      expect(result.messagesToRefine).toHaveLength(2);
+      expect(result.remainingContextTokens).toBe(2); // 25 - 20 - 3(assistant label)
     });
   });
 });

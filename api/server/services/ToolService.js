@@ -1,32 +1,68 @@
 const fs = require('fs');
 const path = require('path');
-const { StructuredTool } = require('langchain/tools');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { Calculator } = require('langchain/tools/calculator');
+const { Calculator } = require('@langchain/community/tools/calculator');
+const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   Tools,
+  Constants,
+  ErrorTypes,
   ContentTypes,
   imageGenTools,
+  EToolResources,
+  EModelEndpoint,
   actionDelimiter,
   ImageVisionTool,
   openapiToFunction,
+  AgentCapabilities,
+  defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
+const {
+  createActionTool,
+  decryptMetadata,
+  loadActionSets,
+  domainParser,
+} = require('./ActionService');
+const {
+  createOpenAIImageTools,
+  createYouTubeTools,
+  manifestToolMap,
+  toolkits,
+} = require('~/app/clients/tools');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
+const { createOnSearchResults } = require('~/server/services/Tools/search');
+const { isActionDomainAllowed } = require('~/server/services/domains');
+const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
-const filteredTools = new Set([
-  'ChatTool.js',
-  'CodeSherpa.js',
-  'CodeSherpaTools.js',
-  'E2BTools.js',
-  'extractionChain.js',
-]);
+/**
+ * @param {string} toolName
+ * @returns {string | undefined} toolKey
+ */
+function getToolkitKey(toolName) {
+  /** @type {string|undefined} */
+  let toolkitKey;
+  for (const toolkit of toolkits) {
+    if (toolName.startsWith(EToolResources.image_edit)) {
+      const splitMatches = toolkit.pluginKey.split('_');
+      const suffix = splitMatches[splitMatches.length - 1];
+      if (toolName.endsWith(suffix)) {
+        toolkitKey = toolkit.pluginKey;
+        break;
+      }
+    }
+    if (toolName.startsWith(toolkit.pluginKey)) {
+      toolkitKey = toolkit.pluginKey;
+      break;
+    }
+  }
+  return toolkitKey;
+}
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -43,7 +79,7 @@ const filteredTools = new Set([
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
 function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] }) {
-  const filter = new Set([...adminFilter, ...filteredTools]);
+  const filter = new Set([...adminFilter]);
   const included = new Set(adminIncluded);
   const tools = [];
   /* Structured Tools Directory */
@@ -69,7 +105,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
       continue;
     }
 
-    if (!ToolClass || !(ToolClass.prototype instanceof StructuredTool)) {
+    if (!ToolClass || !(ToolClass.prototype instanceof Tool)) {
       continue;
     }
 
@@ -100,10 +136,23 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
     tools.push(formattedTool);
   }
 
-  /** Basic Tools; schema: { input: string } */
-  const basicToolInstances = [new Calculator()];
+  /** Basic Tools & Toolkits; schema: { input: string } */
+  const basicToolInstances = [
+    new Calculator(),
+    ...createOpenAIImageTools({ override: true }),
+    ...createYouTubeTools({ override: true }),
+  ];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+    let toolName = formattedTool[Tools.function].name;
+    toolName = getToolkitKey(toolName) ?? toolName;
+    if (filter.has(toolName) && included.size === 0) {
+      continue;
+    }
+
+    if (included.size > 0 && !included.has(toolName)) {
+      continue;
+    }
     tools.push(formattedTool);
   }
 
@@ -151,7 +200,7 @@ const processVisionRequest = async (client, currentAction) => {
 
   /** @type {ChatCompletion | undefined} */
   const completion = await client.visionPromise;
-  if (completion.usage) {
+  if (completion && completion.usage) {
     recordUsage({
       user: client.req.user.id,
       model: client.req.body.model,
@@ -177,12 +226,32 @@ async function processRequiredActions(client, requiredActions) {
     `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
-  const tools = requiredActions.map((action) => action.tool);
-  const loadedTools = await loadTools({
+  const toolDefinitions = client.req.app.locals.availableTools;
+  const seenToolkits = new Set();
+  const tools = requiredActions
+    .map((action) => {
+      const toolName = action.tool;
+      const toolDef = toolDefinitions[toolName];
+      if (toolDef && !manifestToolMap[toolName]) {
+        for (const toolkit of toolkits) {
+          if (seenToolkits.has(toolkit.pluginKey)) {
+            return;
+          } else if (toolName.startsWith(`${toolkit.pluginKey}_`)) {
+            seenToolkits.add(toolkit.pluginKey);
+            return toolkit.pluginKey;
+          }
+        }
+      }
+      return toolName;
+    })
+    .filter((toolName) => !!toolName);
+
+  const { loadedTools } = await loadTools({
     user: client.req.user.id,
-    model: client.req.body.model ?? 'gpt-3.5-turbo-1106',
+    model: client.req.body.model ?? 'gpt-4o-mini',
     tools,
     functions: true,
+    endpoint: client.req.body.endpoint,
     options: {
       processFileURL,
       req: client.req,
@@ -191,7 +260,6 @@ async function processRequiredActions(client, requiredActions) {
       fileStrategy: client.req.app.locals.fileStrategy,
       returnMetadata: true,
     },
-    skipSpecs: true,
   });
 
   const ToolMap = loadedTools.reduce((map, tool) => {
@@ -288,54 +356,102 @@ async function processRequiredActions(client, requiredActions) {
     if (!tool) {
       // throw new Error(`Tool ${currentAction.tool} not found.`);
 
+      // Load all action sets once if not already loaded
       if (!actionSets.length) {
         actionSets =
           (await loadActionSets({
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
+
+        // Process all action sets once
+        // Map domains to their processed action sets
+        const processedDomains = new Map();
+        const domainMap = new Map();
+
+        for (const action of actionSets) {
+          const domain = await domainParser(action.metadata.domain, true);
+          domainMap.set(domain, action);
+
+          // Check if domain is allowed
+          const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+          if (!isDomainAllowed) {
+            continue;
+          }
+
+          // Validate and parse OpenAPI spec
+          const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
+          if (!validationResult.spec) {
+            throw new Error(
+              `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+            );
+          }
+
+          // Process the OpenAPI spec
+          const { requestBuilders } = openapiToFunction(validationResult.spec);
+
+          // Store encrypted values for OAuth flow
+          const encrypted = {
+            oauth_client_id: action.metadata.oauth_client_id,
+            oauth_client_secret: action.metadata.oauth_client_secret,
+          };
+
+          // Decrypt metadata
+          const decryptedAction = { ...action };
+          decryptedAction.metadata = await decryptMetadata(action.metadata);
+
+          processedDomains.set(domain, {
+            action: decryptedAction,
+            requestBuilders,
+            encrypted,
+          });
+
+          // Store builders for reuse
+          ActionBuildersMap[action.metadata.domain] = requestBuilders;
+        }
+
+        // Update actionSets reference to use the domain map
+        actionSets = { domainMap, processedDomains };
       }
 
-      let actionSet = null;
+      // Find the matching domain for this tool
       let currentDomain = '';
-      for (let action of actionSets) {
-        const domain = await domainParser(client.req, action.metadata.domain, true);
+      for (const domain of actionSets.domainMap.keys()) {
         if (currentAction.tool.includes(domain)) {
           currentDomain = domain;
-          actionSet = action;
           break;
         }
       }
 
-      if (!actionSet) {
+      if (!currentDomain || !actionSets.processedDomains.has(currentDomain)) {
         // TODO: try `function` if no action set is found
         // throw new Error(`Tool ${currentAction.tool} not found.`);
         continue;
       }
 
-      let builders = ActionBuildersMap[actionSet.metadata.domain];
-
-      if (!builders) {
-        const validationResult = validateAndParseOpenAPISpec(actionSet.metadata.raw_spec);
-        if (!validationResult.spec) {
-          throw new Error(
-            `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
-          );
-        }
-        const { requestBuilders } = openapiToFunction(validationResult.spec);
-        ActionToolMap[actionSet.metadata.domain] = requestBuilders;
-        builders = requestBuilders;
-      }
-
+      const { action, requestBuilders, encrypted } = actionSets.processedDomains.get(currentDomain);
       const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
-
-      const requestBuilder = builders[functionName];
+      const requestBuilder = requestBuilders[functionName];
 
       if (!requestBuilder) {
         // throw new Error(`Tool ${currentAction.tool} not found.`);
         continue;
       }
 
-      tool = await createActionTool({ action: actionSet, requestBuilder });
+      // We've already decrypted the metadata, so we can pass it directly
+      tool = await createActionTool({
+        userId: client.req.user.id,
+        res: client.res,
+        action,
+        requestBuilder,
+        // Note: intentionally not passing zodSchema, name, and description for assistants API
+        encrypted, // Pass the encrypted values for OAuth flow
+      });
+      if (!tool) {
+        logger.warn(
+          `Invalid action: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | toolName: ${currentAction.tool}`,
+        );
+        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+      }
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }
@@ -372,8 +488,252 @@ async function processRequiredActions(client, requiredActions) {
   };
 }
 
+/**
+ * Processes the runtime tool calls and returns the tool classes.
+ * @param {Object} params - Run params containing user and request information.
+ * @param {ServerRequest} params.req - The request object.
+ * @param {ServerResponse} params.res - The request object.
+ * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
+ * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
+ * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
+ */
+async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
+  if (!agent.tools || agent.tools.length === 0) {
+    return {};
+  }
+
+  const endpointsConfig = await getEndpointsConfig(req);
+  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
+  if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
+    enabledCapabilities = new Set(
+      req.app?.locals?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
+  }
+  const checkCapability = (capability) => {
+    const enabled = enabledCapabilities.has(capability);
+    if (!enabled) {
+      logger.warn(
+        `Capability "${capability}" disabled${capability === AgentCapabilities.tools ? '.' : ' despite configured tool.'} User: ${req.user.id} | Agent: ${agent.id}`,
+      );
+    }
+    return enabled;
+  };
+  const areToolsEnabled = checkCapability(AgentCapabilities.tools);
+
+  let includesWebSearch = false;
+  const _agentTools = agent.tools?.filter((tool) => {
+    if (tool === Tools.file_search) {
+      return checkCapability(AgentCapabilities.file_search);
+    } else if (tool === Tools.execute_code) {
+      return checkCapability(AgentCapabilities.execute_code);
+    } else if (tool === Tools.web_search) {
+      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      return includesWebSearch;
+    } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+      return false;
+    }
+    return true;
+  });
+
+  if (!_agentTools || _agentTools.length === 0) {
+    return {};
+  }
+  /** @type {ReturnType<createOnSearchResults>} */
+  let webSearchCallbacks;
+  if (includesWebSearch) {
+    webSearchCallbacks = createOnSearchResults(res);
+  }
+  const { loadedTools, toolContextMap } = await loadTools({
+    agent,
+    functions: true,
+    user: req.user.id,
+    tools: _agentTools,
+    options: {
+      req,
+      openAIApiKey,
+      tool_resources,
+      processFileURL,
+      uploadImageBuffer,
+      returnMetadata: true,
+      fileStrategy: req.app.locals.fileStrategy,
+      [Tools.web_search]: webSearchCallbacks,
+    },
+  });
+
+  const agentTools = [];
+  for (let i = 0; i < loadedTools.length; i++) {
+    const tool = loadedTools[i];
+    if (tool.name && (tool.name === Tools.execute_code || tool.name === Tools.file_search)) {
+      agentTools.push(tool);
+      continue;
+    }
+
+    if (!areToolsEnabled) {
+      continue;
+    }
+
+    if (tool.mcp === true) {
+      agentTools.push(tool);
+      continue;
+    }
+
+    if (tool instanceof DynamicStructuredTool) {
+      agentTools.push(tool);
+      continue;
+    }
+
+    const toolDefinition = {
+      name: tool.name,
+      schema: tool.schema,
+      description: tool.description,
+    };
+
+    if (imageGenTools.has(tool.name)) {
+      toolDefinition.responseFormat = 'content_and_artifact';
+    }
+
+    const toolInstance = toolFn(async (...args) => {
+      return tool['_call'](...args);
+    }, toolDefinition);
+
+    agentTools.push(toolInstance);
+  }
+
+  const ToolMap = loadedTools.reduce((map, tool) => {
+    map[tool.name] = tool;
+    return map;
+  }, {});
+
+  if (!checkCapability(AgentCapabilities.actions)) {
+    return {
+      tools: agentTools,
+      toolContextMap,
+    };
+  }
+
+  const actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
+  if (actionSets.length === 0) {
+    if (_agentTools.length > 0 && agentTools.length === 0) {
+      logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
+    }
+    return {
+      tools: agentTools,
+      toolContextMap,
+    };
+  }
+
+  // Process each action set once (validate spec, decrypt metadata)
+  const processedActionSets = new Map();
+  const domainMap = new Map();
+
+  for (const action of actionSets) {
+    const domain = await domainParser(action.metadata.domain, true);
+    domainMap.set(domain, action);
+
+    // Check if domain is allowed (do this once per action set)
+    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+    if (!isDomainAllowed) {
+      continue;
+    }
+
+    // Validate and parse OpenAPI spec once per action set
+    const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
+    if (!validationResult.spec) {
+      continue;
+    }
+
+    const encrypted = {
+      oauth_client_id: action.metadata.oauth_client_id,
+      oauth_client_secret: action.metadata.oauth_client_secret,
+    };
+
+    // Decrypt metadata once per action set
+    const decryptedAction = { ...action };
+    decryptedAction.metadata = await decryptMetadata(action.metadata);
+
+    // Process the OpenAPI spec once per action set
+    const { requestBuilders, functionSignatures, zodSchemas } = openapiToFunction(
+      validationResult.spec,
+      true,
+    );
+
+    processedActionSets.set(domain, {
+      action: decryptedAction,
+      requestBuilders,
+      functionSignatures,
+      zodSchemas,
+      encrypted,
+    });
+  }
+
+  // Now map tools to the processed action sets
+  const ActionToolMap = {};
+
+  for (const toolName of _agentTools) {
+    if (ToolMap[toolName]) {
+      continue;
+    }
+
+    // Find the matching domain for this tool
+    let currentDomain = '';
+    for (const domain of domainMap.keys()) {
+      if (toolName.includes(domain)) {
+        currentDomain = domain;
+        break;
+      }
+    }
+
+    if (!currentDomain || !processedActionSets.has(currentDomain)) {
+      continue;
+    }
+
+    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
+      processedActionSets.get(currentDomain);
+    const functionName = toolName.replace(`${actionDelimiter}${currentDomain}`, '');
+    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
+    const requestBuilder = requestBuilders[functionName];
+    const zodSchema = zodSchemas[functionName];
+
+    if (requestBuilder) {
+      const tool = await createActionTool({
+        userId: req.user.id,
+        res,
+        action,
+        requestBuilder,
+        zodSchema,
+        encrypted,
+        name: toolName,
+        description: functionSig.description,
+      });
+
+      if (!tool) {
+        logger.warn(
+          `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
+        );
+        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+      }
+
+      agentTools.push(tool);
+      ActionToolMap[toolName] = tool;
+    }
+  }
+
+  if (_agentTools.length > 0 && agentTools.length === 0) {
+    logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
+    return {};
+  }
+
+  return {
+    tools: agentTools,
+    toolContextMap,
+  };
+}
+
 module.exports = {
-  formatToOpenAIAssistantTool,
+  getToolkitKey,
+  loadAgentTools,
   loadAndFormatTools,
   processRequiredActions,
+  formatToOpenAIAssistantTool,
 };

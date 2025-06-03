@@ -1,5 +1,6 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
+const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
 const { isEnabled, removePorts } = require('~/server/utils');
 const keyvMongo = require('~/cache/keyvMongo');
@@ -40,97 +41,101 @@ const banResponse = async (req, res) => {
  * @function
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
- * @param {Function} next - Next middleware function.
+ * @param {import('express').NextFunction} next - Next middleware function.
  *
  * @returns {Promise<function|Object>} - Returns a Promise which when resolved calls next middleware if user or source IP is not banned. Otherwise calls `banResponse()` and sets ban details in `banCache`.
  */
 const checkBan = async (req, res, next = () => {}) => {
-  const { BAN_VIOLATIONS } = process.env ?? {};
+  try {
+    const { BAN_VIOLATIONS } = process.env ?? {};
 
-  if (!isEnabled(BAN_VIOLATIONS)) {
-    return next();
-  }
+    if (!isEnabled(BAN_VIOLATIONS)) {
+      return next();
+    }
 
-  req.ip = removePorts(req);
-  let userId = req.user?.id ?? req.user?._id ?? null;
+    req.ip = removePorts(req);
+    let userId = req.user?.id ?? req.user?._id ?? null;
 
-  if (!userId && req?.body?.email) {
-    const user = await findUser({ email: req.body.email }, '_id');
-    userId = user?._id ? user._id.toString() : userId;
-  }
+    if (!userId && req?.body?.email) {
+      const user = await findUser({ email: req.body.email }, '_id');
+      userId = user?._id ? user._id.toString() : userId;
+    }
 
-  if (!userId && !req.ip) {
-    return next();
-  }
+    if (!userId && !req.ip) {
+      return next();
+    }
 
-  let cachedIPBan;
-  let cachedUserBan;
+    let cachedIPBan;
+    let cachedUserBan;
 
-  let ipKey = '';
-  let userKey = '';
+    let ipKey = '';
+    let userKey = '';
 
-  if (req.ip) {
-    ipKey = isEnabled(process.env.USE_REDIS) ? `ban_cache:ip:${req.ip}` : req.ip;
-    cachedIPBan = await banCache.get(ipKey);
-  }
+    if (req.ip) {
+      ipKey = isEnabled(process.env.USE_REDIS) ? `ban_cache:ip:${req.ip}` : req.ip;
+      cachedIPBan = await banCache.get(ipKey);
+    }
 
-  if (userId) {
-    userKey = isEnabled(process.env.USE_REDIS) ? `ban_cache:user:${userId}` : userId;
-    cachedUserBan = await banCache.get(userKey);
-  }
+    if (userId) {
+      userKey = isEnabled(process.env.USE_REDIS) ? `ban_cache:user:${userId}` : userId;
+      cachedUserBan = await banCache.get(userKey);
+    }
 
-  const cachedBan = cachedIPBan || cachedUserBan;
+    const cachedBan = cachedIPBan || cachedUserBan;
 
-  if (cachedBan) {
+    if (cachedBan) {
+      req.banned = true;
+      return await banResponse(req, res);
+    }
+
+    const banLogs = getLogStores(ViolationTypes.BAN);
+    const duration = banLogs.opts.ttl;
+
+    if (duration <= 0) {
+      return next();
+    }
+
+    let ipBan;
+    let userBan;
+
+    if (req.ip) {
+      ipBan = await banLogs.get(req.ip);
+    }
+
+    if (userId) {
+      userBan = await banLogs.get(userId);
+    }
+
+    const isBanned = !!(ipBan || userBan);
+
+    if (!isBanned) {
+      return next();
+    }
+
+    const timeLeft = Number(isBanned.expiresAt) - Date.now();
+
+    if (timeLeft <= 0 && ipKey) {
+      await banLogs.delete(ipKey);
+    }
+
+    if (timeLeft <= 0 && userKey) {
+      await banLogs.delete(userKey);
+      return next();
+    }
+
+    if (ipKey) {
+      banCache.set(ipKey, isBanned, timeLeft);
+    }
+
+    if (userKey) {
+      banCache.set(userKey, isBanned, timeLeft);
+    }
+
     req.banned = true;
     return await banResponse(req, res);
+  } catch (error) {
+    logger.error('Error in checkBan middleware:', error);
   }
-
-  const banLogs = getLogStores(ViolationTypes.BAN);
-  const duration = banLogs.opts.ttl;
-
-  if (duration <= 0) {
-    return next();
-  }
-
-  let ipBan;
-  let userBan;
-
-  if (req.ip) {
-    ipBan = await banLogs.get(req.ip);
-  }
-
-  if (userId) {
-    userBan = await banLogs.get(userId);
-  }
-
-  const isBanned = !!(ipBan || userBan);
-
-  if (!isBanned) {
-    return next();
-  }
-
-  const timeLeft = Number(isBanned.expiresAt) - Date.now();
-
-  if (timeLeft <= 0 && ipKey) {
-    await banLogs.delete(ipKey);
-  }
-
-  if (timeLeft <= 0 && userKey) {
-    await banLogs.delete(userKey);
-    return next();
-  }
-
-  if (ipKey) {
-    banCache.set(ipKey, isBanned, timeLeft);
-  }
-
-  if (userKey) {
-    banCache.set(userKey, isBanned, timeLeft);
-  }
-
-  req.banned = true;
-  return await banResponse(req, res);
 };
 
 module.exports = checkBan;

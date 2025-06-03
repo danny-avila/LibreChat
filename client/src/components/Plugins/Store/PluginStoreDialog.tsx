@@ -50,7 +50,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     (error: TError) => {
       setError(true);
       if (error.response?.data?.message) {
-        setErrorMessage(error.response?.data?.message);
+        setErrorMessage(error.response.data.message);
       }
       setTimeout(() => {
         setError(false);
@@ -187,7 +187,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                     value={searchValue}
                     onChange={handleSearch}
                     placeholder={localize('com_nav_plugin_search')}
-                    className="flex rounded-md border border-gray-200 bg-transparent py-2 pl-10 pr-2 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-500 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-500 dark:focus:ring-offset-0 dark:focus:ring-offset-gray-900"
+                    className="
+                    text-token-text-primary flex rounded-md border border-border-heavy bg-surface-tertiary py-2 pl-10 pr-2"
                   />
                 </div>
               </div>

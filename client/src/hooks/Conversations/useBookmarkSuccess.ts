@@ -3,7 +3,7 @@ import useUpdateTagsInConvo from './useUpdateTagsInConvo';
 import store from '~/store';
 
 const useBookmarkSuccess = (conversationId: string) => {
-  const setConversation = useSetRecoilState(store.conversationByIndex(0));
+  const updateConversation = useSetRecoilState(store.updateConversationSelector(conversationId));
   const { updateTagsInConversation } = useUpdateTagsInConvo();
 
   return (newTags: string[]) => {
@@ -11,16 +11,7 @@ const useBookmarkSuccess = (conversationId: string) => {
       return;
     }
     updateTagsInConversation(conversationId, newTags);
-    setConversation((prev) => {
-      if (prev) {
-        return {
-          ...prev,
-          tags: newTags,
-        };
-      }
-      console.error('Conversation not found for bookmark/tags update');
-      return prev;
-    });
+    updateConversation({ tags: newTags });
   };
 };
 

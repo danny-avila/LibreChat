@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TError } from 'librechat-data-provider';
 
 type ProviderValue = {
-  error: TError;
+  error?: TError;
   setError: React.Dispatch<React.SetStateAction<boolean>>;
 };
 const ApiErrorBoundaryContext = React.createContext<ProviderValue | undefined>(undefined);

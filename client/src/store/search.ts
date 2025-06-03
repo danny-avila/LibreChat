@@ -1,16 +1,24 @@
 import { atom } from 'recoil';
 
-const isSearchEnabled = atom<boolean | null>({
-  key: 'isSearchEnabled',
-  default: null,
-});
+export type SearchState = {
+  enabled: boolean | null;
+  query: string;
+  debouncedQuery: string;
+  isSearching: boolean;
+  isTyping: boolean;
+};
 
-const searchQuery = atom({
-  key: 'searchQuery',
-  default: '',
+export const search = atom<SearchState>({
+  key: 'search',
+  default: {
+    enabled: null,
+    query: '',
+    debouncedQuery: '',
+    isSearching: false,
+    isTyping: false,
+  },
 });
 
 export default {
-  isSearchEnabled,
-  searchQuery,
+  search,
 };

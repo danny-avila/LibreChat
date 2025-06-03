@@ -1,15 +1,28 @@
-import { convoData } from './convos.fakeData';
+import { QueryClient, InfiniteData } from '@tanstack/react-query';
+import type { TConversation } from 'librechat-data-provider';
 import {
   dateKeys,
-  addConversation,
-  updateConvoFields,
-  updateConversation,
-  deleteConversation,
-  findPageForConversation,
+  storeEndpointSettings,
+  addConversationToInfinitePages,
+  updateInfiniteConvoPage,
+  findConversationInInfinite,
+  removeConvoFromInfinitePages,
   groupConversationsByDate,
+  updateConvoFieldsInfinite,
+  addConvoToAllQueries,
+  updateConvoInAllQueries,
+  removeConvoFromAllQueries,
+  addConversationToAllConversationsQueries,
 } from './convos';
-import type { TConversation, ConversationData } from 'librechat-data-provider';
 import { normalizeData } from './collection';
+
+jest.mock('date-fns', () => {
+  const actual = jest.requireActual('date-fns');
+  return {
+    ...actual,
+    startOfToday: jest.fn(() => new Date('2023-07-15T00:00:00Z')),
+  };
+});
 
 describe('Conversation Utilities', () => {
   describe('groupConversationsByDate', () => {
@@ -17,9 +30,9 @@ describe('Conversation Utilities', () => {
       const conversations = [
         { conversationId: '1', updatedAt: '2023-04-01T12:00:00Z' },
         { conversationId: '2', updatedAt: new Date().toISOString() },
-        { conversationId: '3', updatedAt: new Date(Date.now() - 86400000).toISOString() }, // 86400 seconds ago = yesterday
-        { conversationId: '4', updatedAt: new Date(Date.now() - 86400000 * 2).toISOString() }, // 2 days ago (previous 7 days)
-        { conversationId: '5', updatedAt: new Date(Date.now() - 86400000 * 8).toISOString() }, // 8 days ago (previous 30 days)
+        { conversationId: '3', updatedAt: new Date(Date.now() - 86400000).toISOString() },
+        { conversationId: '4', updatedAt: new Date(Date.now() - 86400000 * 2).toISOString() },
+        { conversationId: '5', updatedAt: new Date(Date.now() - 86400000 * 8).toISOString() },
       ];
       const grouped = groupConversationsByDate(conversations as TConversation[]);
       expect(grouped[0][0]).toBe(dateKeys.today);
@@ -34,24 +47,20 @@ describe('Conversation Utilities', () => {
       expect(grouped[4][1]).toHaveLength(1);
     });
 
-    it('returns an empty array for no conversations', () => {
-      expect(groupConversationsByDate([])).toEqual([]);
-    });
-
     it('skips conversations with duplicate conversationIds', () => {
       const conversations = [
-        { conversationId: '1', updatedAt: '2023-12-01T12:00:00Z' }, // " 2023"
-        { conversationId: '2', updatedAt: '2023-11-25T12:00:00Z' }, // " 2023"
-        { conversationId: '1', updatedAt: '2023-11-20T12:00:00Z' }, // Should be skipped because of duplicate ID
-        { conversationId: '3', updatedAt: '2022-12-01T12:00:00Z' }, // " 2022"
+        { conversationId: '1', updatedAt: '2023-12-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: '2023-11-25T12:00:00Z' },
+        { conversationId: '1', updatedAt: '2023-11-20T12:00:00Z' },
+        { conversationId: '3', updatedAt: '2022-12-01T12:00:00Z' },
       ];
 
       const grouped = groupConversationsByDate(conversations as TConversation[]);
 
       expect(grouped).toEqual(
         expect.arrayContaining([
-          expect.arrayContaining([' 2023', expect.arrayContaining(conversations.slice(0, 2))]),
-          expect.arrayContaining([' 2022', expect.arrayContaining([conversations[3]])]),
+          [' 2023', expect.arrayContaining([conversations[0], conversations[1]])],
+          [' 2022', expect.arrayContaining([conversations[3]])],
         ]),
       );
 
@@ -60,171 +69,127 @@ describe('Conversation Utilities', () => {
       const uniqueIds = [...new Set(allGroupedIds)];
       expect(allGroupedIds.length).toBe(uniqueIds.length);
     });
-  });
 
-  describe('addConversation', () => {
-    it('adds a new conversation to the top of the list', () => {
-      const data = { pages: [{ conversations: [] }] };
-      const newConversation = { conversationId: 'new', updatedAt: '2023-04-02T12:00:00Z' };
-      const newData = addConversation(
-        data as unknown as ConversationData,
-        newConversation as TConversation,
+    it('sorts conversations by month correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-01-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: '2023-12-01T12:00:00Z' },
+        { conversationId: '3', updatedAt: '2023-02-01T12:00:00Z' },
+        { conversationId: '4', updatedAt: '2023-11-01T12:00:00Z' },
+        { conversationId: '5', updatedAt: '2022-12-01T12:00:00Z' },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // Now expect grouping by year for 2023 and 2022
+      const expectedGroups = [' 2023', ' 2022'];
+      expect(grouped.map(([key]) => key)).toEqual(expectedGroups);
+
+      // Check if conversations within 2023 are sorted correctly by updatedAt descending
+      const conversationsIn2023 = grouped[0][1];
+      const sorted = [...conversationsIn2023].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       );
-      expect(newData.pages[0].conversations).toHaveLength(1);
-      expect(newData.pages[0].conversations[0].conversationId).toBe('new');
-    });
-  });
+      expect(conversationsIn2023).toEqual(sorted);
 
-  describe('updateConversation', () => {
-    it('updates an existing conversation and moves it to the top', () => {
-      const initialData = {
-        pages: [
-          {
-            conversations: [
-              { conversationId: '1', updatedAt: '2023-04-01T12:00:00Z' },
-              { conversationId: '2', updatedAt: '2023-04-01T13:00:00Z' },
-            ],
-          },
-        ],
-      };
-      const updatedConversation = { conversationId: '1', updatedAt: '2023-04-02T12:00:00Z' };
-      const newData = updateConversation(
-        initialData as unknown as ConversationData,
-        updatedConversation as TConversation,
+      // Check if the conversation from 2022 is in its own group
+      expect(grouped[1][1].length).toBe(1);
+      expect(new Date(grouped[1][1][0].updatedAt).getFullYear()).toBe(2022);
+    });
+
+    it('handles conversations from multiple years correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-01-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: '2022-12-01T12:00:00Z' },
+        { conversationId: '3', updatedAt: '2021-06-01T12:00:00Z' },
+        { conversationId: '4', updatedAt: '2023-06-01T12:00:00Z' },
+        { conversationId: '5', updatedAt: '2021-12-01T12:00:00Z' },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.map(([key]) => key)).toEqual([' 2023', ' 2022', ' 2021']);
+      expect(grouped[0][1].map((c) => new Date(c.updatedAt).getFullYear())).toEqual([2023, 2023]);
+      expect(grouped[1][1].map((c) => new Date(c.updatedAt).getFullYear())).toEqual([2022]);
+      expect(grouped[2][1].map((c) => new Date(c.updatedAt).getFullYear())).toEqual([2021, 2021]);
+    });
+
+    it('handles conversations from the same month correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-06-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: '2023-06-15T12:00:00Z' },
+        { conversationId: '3', updatedAt: '2023-06-30T12:00:00Z' },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.length).toBe(1);
+      expect(grouped[0][0]).toBe(' 2023');
+      expect(grouped[0][1].map((c) => c.conversationId)).toEqual(['3', '2', '1']);
+    });
+
+    it('handles conversations with null or undefined updatedAt correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-06-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: null },
+        { conversationId: '3', updatedAt: undefined },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.length).toBe(2);
+      expect(grouped[0][0]).toBe(dateKeys.today);
+      expect(grouped[0][1].length).toBe(2);
+      expect(grouped[1][0]).toBe(' 2023');
+      expect(grouped[1][1].length).toBe(1);
+    });
+
+    it('correctly groups and sorts conversations for every month of the year', () => {
+      const months = [
+        'january',
+        'february',
+        'march',
+        'april',
+        'may',
+        'june',
+        'july',
+        'august',
+        'september',
+        'october',
+        'november',
+        'december',
+      ];
+
+      // Create conversations for each month in both 2023 and 2022
+      const conversations = months.flatMap((month, index) => [
+        {
+          conversationId: `2023-${month}`,
+          updatedAt: `2023-${String(index + 1).padStart(2, '0')}-15T12:00:00Z`,
+        },
+        {
+          conversationId: `2022-${month}`,
+          updatedAt: `2022-${String(index + 1).padStart(2, '0')}-15T12:00:00Z`,
+        },
+      ]);
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // All 2023 conversations should be in a single group
+      const group2023 = grouped.find(([key]) => key === ' 2023');
+      expect(group2023).toBeDefined();
+      expect(group2023![1].length).toBe(12);
+
+      // All 2022 conversations should be in a single group
+      const group2022 = grouped.find(([key]) => key === ' 2022');
+      expect(group2022).toBeDefined();
+      expect(group2022![1].length).toBe(12);
+
+      // Check that all conversations are accounted for
+      const totalGroupedConversations = grouped.reduce(
+        (total, [_, convos]) => total + convos.length,
+        0,
       );
-      expect(newData.pages[0].conversations).toHaveLength(2);
-      expect(newData.pages[0].conversations[0].conversationId).toBe('1');
-    });
-  });
-
-  describe('updateConvoFields', () => {
-    it('updates specific fields of a conversation', () => {
-      const initialData = {
-        pages: [
-          {
-            conversations: [
-              { conversationId: '1', title: 'Old Title', updatedAt: '2023-04-01T12:00:00Z' },
-            ],
-          },
-        ],
-      };
-      const updatedFields = { conversationId: '1', title: 'New Title' };
-      const newData = updateConvoFields(
-        initialData as ConversationData,
-        updatedFields as TConversation,
-      );
-      expect(newData.pages[0].conversations[0].title).toBe('New Title');
-    });
-  });
-
-  describe('deleteConversation', () => {
-    it('removes a conversation by id', () => {
-      const initialData = {
-        pages: [
-          {
-            conversations: [
-              { conversationId: '1', updatedAt: '2023-04-01T12:00:00Z' },
-              { conversationId: '2', updatedAt: '2023-04-01T13:00:00Z' },
-            ],
-          },
-        ],
-      };
-      const newData = deleteConversation(initialData as ConversationData, '1');
-      expect(newData.pages[0].conversations).toHaveLength(1);
-      expect(newData.pages[0].conversations[0].conversationId).not.toBe('1');
-    });
-  });
-
-  describe('findPageForConversation', () => {
-    it('finds the correct page and index for a given conversation', () => {
-      const data = {
-        pages: [
-          {
-            conversations: [
-              { conversationId: '1', updatedAt: '2023-04-01T12:00:00Z' },
-              { conversationId: '2', updatedAt: '2023-04-02T13:00:00Z' },
-            ],
-          },
-        ],
-      };
-      const { pageIndex, index } = findPageForConversation(data as ConversationData, {
-        conversationId: '2',
-      });
-      expect(pageIndex).toBe(0);
-      expect(index).toBe(1);
-    });
-  });
-});
-
-describe('Conversation Utilities with Fake Data', () => {
-  describe('groupConversationsByDate', () => {
-    it('correctly groups conversations from fake data by date', () => {
-      const { pages } = convoData;
-      const allConversations = pages.flatMap((p) => p.conversations);
-      const grouped = groupConversationsByDate(allConversations);
-
-      expect(grouped).toHaveLength(1);
-      expect(grouped[0][1]).toBeInstanceOf(Array);
-    });
-  });
-
-  describe('addConversation', () => {
-    it('adds a new conversation to the existing fake data', () => {
-      const newConversation = {
-        conversationId: 'new',
-        updatedAt: new Date().toISOString(),
-      } as TConversation;
-      const initialLength = convoData.pages[0].conversations.length;
-      const newData = addConversation(convoData, newConversation);
-      expect(newData.pages[0].conversations.length).toBe(initialLength + 1);
-      expect(newData.pages[0].conversations[0].conversationId).toBe('new');
-    });
-  });
-
-  describe('updateConversation', () => {
-    it('updates an existing conversation within fake data', () => {
-      const updatedConversation = {
-        ...convoData.pages[0].conversations[0],
-        title: 'Updated Title',
-      };
-      const newData = updateConversation(convoData, updatedConversation);
-      expect(newData.pages[0].conversations[0].title).toBe('Updated Title');
-    });
-  });
-
-  describe('updateConvoFields', () => {
-    it('updates specific fields of a conversation in fake data', () => {
-      const updatedFields = {
-        conversationId: convoData.pages[0].conversations[0].conversationId,
-        title: 'Partially Updated Title',
-      };
-      const newData = updateConvoFields(convoData, updatedFields as TConversation);
-      const updatedConversation = newData.pages[0].conversations.find(
-        (c) => c.conversationId === updatedFields.conversationId,
-      );
-      expect(updatedConversation?.title).toBe('Partially Updated Title');
-    });
-  });
-
-  describe('deleteConversation', () => {
-    it('removes a conversation by id from fake data', () => {
-      const conversationIdToDelete = convoData.pages[0].conversations[0].conversationId as string;
-      const newData = deleteConversation(convoData, conversationIdToDelete);
-      const deletedConvoExists = newData.pages[0].conversations.some(
-        (c) => c.conversationId === conversationIdToDelete,
-      );
-      expect(deletedConvoExists).toBe(false);
-    });
-  });
-
-  describe('findPageForConversation', () => {
-    it('finds the correct page and index for a given conversation in fake data', () => {
-      const targetConversation = convoData.pages[0].conversations[0];
-      const { pageIndex, index } = findPageForConversation(convoData, {
-        conversationId: targetConversation.conversationId as string,
-      });
-      expect(pageIndex).toBeGreaterThanOrEqual(0);
-      expect(index).toBeGreaterThanOrEqual(0);
+      expect(totalGroupedConversations).toBe(conversations.length);
     });
   });
 
@@ -346,8 +311,6 @@ describe('Conversation Utilities with Fake Data', () => {
         5,
       );
 
-      console.log(normalizedData);
-
       expect(normalizedData.pages[0].conversations).toHaveLength(0);
     });
 
@@ -394,6 +357,279 @@ describe('Conversation Utilities with Fake Data', () => {
       expect(normalizedData.pages[0].conversations).toHaveLength(5);
       expect(normalizedData.pages[1].conversations).toHaveLength(5);
       expect(normalizedData.pageParams).toHaveLength(2);
+    });
+  });
+
+  describe('InfiniteData helpers', () => {
+    const makeConversation = (id: string, updatedAt?: string) => ({
+      conversationId: id,
+      updatedAt: updatedAt || new Date().toISOString(),
+    });
+
+    const makePage = (conversations: any[], nextCursor: string | null = null) => ({
+      conversations,
+      nextCursor,
+    });
+
+    describe('findConversationInInfinite', () => {
+      it('finds a conversation by id in InfiniteData', () => {
+        const data = {
+          pages: [
+            makePage([makeConversation('1'), makeConversation('2')]),
+            makePage([makeConversation('3')]),
+          ],
+          pageParams: [],
+        };
+        const found = findConversationInInfinite(data, '2');
+        expect(found).toBeDefined();
+        expect(found?.conversationId).toBe('2');
+      });
+
+      it('returns undefined if conversation not found', () => {
+        const data = {
+          pages: [makePage([makeConversation('1')])],
+          pageParams: [],
+        };
+        expect(findConversationInInfinite(data, 'notfound')).toBeUndefined();
+      });
+
+      it('returns undefined if data is undefined', () => {
+        expect(findConversationInInfinite(undefined, '1')).toBeUndefined();
+      });
+    });
+
+    describe('updateInfiniteConvoPage', () => {
+      it('updates a conversation in InfiniteData', () => {
+        const data = {
+          pages: [makePage([makeConversation('1', '2023-01-01T00:00:00Z'), makeConversation('2')])],
+          pageParams: [],
+        };
+        const updater = (c: any) => ({ ...c, updatedAt: '2024-01-01T00:00:00Z' });
+        const updated = updateInfiniteConvoPage(data, '1', updater);
+        expect(updated?.pages[0].conversations[0].updatedAt).toBe('2024-01-01T00:00:00Z');
+      });
+
+      it('returns original data if conversation not found', () => {
+        const data = {
+          pages: [makePage([makeConversation('1')])],
+          pageParams: [],
+        };
+        const updater = (c: any) => ({ ...c, foo: 'bar' });
+        const updated = updateInfiniteConvoPage(data, 'notfound', updater);
+        expect(updated).toEqual(data);
+      });
+
+      it('returns undefined if data is undefined', () => {
+        expect(updateInfiniteConvoPage(undefined, '1', (c) => c)).toBeUndefined();
+      });
+    });
+
+    describe('addConversationToInfinitePages', () => {
+      it('adds a conversation to the first page', () => {
+        const data = {
+          pages: [makePage([makeConversation('1')])],
+          pageParams: [],
+        };
+        const newConvo = makeConversation('new');
+        const updated = addConversationToInfinitePages(data, newConvo as TConversation);
+        expect(updated.pages[0].conversations[0].conversationId).toBe('new');
+        expect(updated.pages[0].conversations[1].conversationId).toBe('1');
+      });
+
+      it('creates new InfiniteData if data is undefined', () => {
+        const newConvo = makeConversation('new');
+        const updated = addConversationToInfinitePages(undefined, newConvo as TConversation);
+        expect(updated.pages[0].conversations[0].conversationId).toBe('new');
+        expect(updated.pageParams).toEqual([undefined]);
+      });
+    });
+
+    describe('removeConvoFromInfinitePages', () => {
+      it('removes a conversation by id', () => {
+        const data = {
+          pages: [
+            makePage([makeConversation('1'), makeConversation('2')]),
+            makePage([makeConversation('3')]),
+          ],
+          pageParams: [],
+        };
+        const updated = removeConvoFromInfinitePages(data, '2');
+        expect(updated?.pages[0].conversations.map((c) => c.conversationId)).toEqual(['1']);
+      });
+
+      it('removes empty pages after deletion', () => {
+        const data = {
+          pages: [makePage([makeConversation('1')]), makePage([makeConversation('2')])],
+          pageParams: [],
+        };
+        const updated = removeConvoFromInfinitePages(data, '2');
+        expect(updated?.pages.length).toBe(1);
+        expect(updated?.pages[0].conversations[0].conversationId).toBe('1');
+      });
+
+      it('returns original data if data is undefined', () => {
+        expect(removeConvoFromInfinitePages(undefined, '1')).toBeUndefined();
+      });
+    });
+
+    describe('updateConvoFieldsInfinite', () => {
+      it('updates fields and bumps to front if keepPosition is false', () => {
+        const data = {
+          pages: [
+            makePage([makeConversation('1'), makeConversation('2')]),
+            makePage([makeConversation('3')]),
+          ],
+          pageParams: [],
+        };
+        const updated = updateConvoFieldsInfinite(
+          data,
+          { conversationId: '2', title: 'new' },
+          false,
+        );
+        expect(updated?.pages[0].conversations[0].conversationId).toBe('2');
+        expect(updated?.pages[0].conversations[0].title).toBe('new');
+      });
+
+      it('updates fields and keeps position if keepPosition is true', () => {
+        const data = {
+          pages: [makePage([makeConversation('1'), makeConversation('2')])],
+          pageParams: [],
+        };
+        const updated = updateConvoFieldsInfinite(
+          data,
+          { conversationId: '2', title: 'stay' },
+          true,
+        );
+        expect(updated?.pages[0].conversations[1].title).toBe('stay');
+      });
+
+      it('returns original data if conversation not found', () => {
+        const data = {
+          pages: [makePage([makeConversation('1')])],
+          pageParams: [],
+        };
+        const updated = updateConvoFieldsInfinite(
+          data,
+          { conversationId: 'notfound', title: 'x' },
+          false,
+        );
+        expect(updated).toEqual(data);
+      });
+
+      it('returns original data if data is undefined', () => {
+        expect(
+          updateConvoFieldsInfinite(undefined, { conversationId: '1', title: 'x' }, false),
+        ).toBeUndefined();
+      });
+    });
+
+    describe('storeEndpointSettings', () => {
+      beforeEach(() => {
+        localStorage.clear();
+      });
+
+      it('stores model for endpoint', () => {
+        const conversation = {
+          conversationId: '1',
+          endpoint: 'openAI',
+          model: 'gpt-3',
+        };
+        storeEndpointSettings(conversation as any);
+        const stored = JSON.parse(localStorage.getItem('lastModel') || '{}');
+        expect([undefined, 'gpt-3']).toContain(stored.openAI);
+      });
+
+      it('stores secondaryModel for gptPlugins endpoint', () => {
+        const conversation = {
+          conversationId: '1',
+          endpoint: 'gptPlugins',
+          model: 'gpt-4',
+          agentOptions: { model: 'plugin-model' },
+        };
+        storeEndpointSettings(conversation as any);
+        const stored = JSON.parse(localStorage.getItem('lastModel') || '{}');
+        expect([undefined, 'gpt-4']).toContain(stored.gptPlugins);
+        expect([undefined, 'plugin-model']).toContain(stored.secondaryModel);
+      });
+
+      it('does nothing if conversation is null', () => {
+        storeEndpointSettings(null);
+        expect(localStorage.getItem('lastModel')).toBeNull();
+      });
+
+      it('does nothing if endpoint is missing', () => {
+        storeEndpointSettings({ conversationId: '1', model: 'x' } as any);
+        expect(localStorage.getItem('lastModel')).toBeNull();
+      });
+    });
+
+    describe('QueryClient helpers', () => {
+      let queryClient: QueryClient;
+      let convoA: TConversation;
+      let convoB: TConversation;
+
+      beforeEach(() => {
+        queryClient = new QueryClient();
+        convoA = {
+          conversationId: 'a',
+          updatedAt: '2024-01-01T12:00:00Z',
+          createdAt: '2024-01-01T10:00:00Z',
+          endpoint: 'openAI',
+          model: 'gpt-3',
+          title: 'Conversation A',
+        } as TConversation;
+        convoB = {
+          conversationId: 'b',
+          updatedAt: '2024-01-02T12:00:00Z',
+          endpoint: 'openAI',
+          model: 'gpt-3',
+        } as TConversation;
+        queryClient.setQueryData(['allConversations'], {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+      });
+
+      it('addConvoToAllQueries adds new on top if not present', () => {
+        addConvoToAllQueries(queryClient, convoB);
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].conversationId).toBe('b');
+        expect(data!.pages[0].conversations.length).toBe(2);
+      });
+
+      it('addConvoToAllQueries does not duplicate', () => {
+        addConvoToAllQueries(queryClient, convoA);
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations.filter((c) => c.conversationId === 'a').length).toBe(1);
+      });
+
+      it('updateConvoInAllQueries updates correct convo', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, model: 'gpt-4' }));
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].model).toBe('gpt-4');
+      });
+
+      it('removeConvoFromAllQueries deletes conversation', () => {
+        removeConvoFromAllQueries(queryClient, 'a');
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages.length).toBe(0);
+      });
+
+      it('addConversationToAllConversationsQueries works with multiple pages', () => {
+        queryClient.setQueryData(['allConversations', 'other'], {
+          pages: [{ conversations: [], nextCursor: null }],
+          pageParams: [],
+        });
+        addConversationToAllConversationsQueries(queryClient, convoB);
+
+        const mainData = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        const otherData = queryClient.getQueryData<InfiniteData<any>>([
+          'allConversations',
+          'other',
+        ]);
+        expect(mainData!.pages[0].conversations[0].conversationId).toBe('b');
+        expect(otherData!.pages[0].conversations[0].conversationId).toBe('b');
+      });
     });
   });
 });

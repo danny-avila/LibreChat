@@ -1,9 +1,9 @@
 const crypto = require('crypto');
 const { Constants } = require('librechat-data-provider');
-const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+const { HumanMessage, AIMessage } = require('@langchain/core/messages');
 const PluginsClient = require('../PluginsClient');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
 jest.mock('~/models/Conversation', () => {
   return function () {
     return {
@@ -55,8 +55,8 @@ describe('PluginsClient', () => {
 
         const chatMessages = orderedMessages.map((msg) =>
           msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
-            ? new HumanChatMessage(msg.text)
-            : new AIChatMessage(msg.text),
+            ? new HumanMessage(msg.text)
+            : new AIMessage(msg.text),
         );
 
         TestAgent.currentMessages = orderedMessages;

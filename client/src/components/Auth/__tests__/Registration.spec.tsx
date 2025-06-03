@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { render, waitFor, screen } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
+import * as endpointQueries from '~/data-provider/Endpoints/queries';
+import * as authMutations from '~/data-provider/Auth/mutations';
+import * as authQueries from '~/data-provider/Auth/queries';
 import Registration from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
 
@@ -13,7 +17,7 @@ const mockStartupConfig = {
   isLoading: false,
   isError: false,
   data: {
-    socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+    socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
     discordLoginEnabled: true,
     facebookLoginEnabled: true,
     githubLoginEnabled: true,
@@ -21,6 +25,9 @@ const mockStartupConfig = {
     openidLoginEnabled: true,
     openidLabel: 'Test OpenID',
     openidImageUrl: 'http://test-server.com',
+    samlLoginEnabled: true,
+    samlLabel: 'Test SAML',
+    samlImageUrl: 'http://test-server.com',
     registrationEnabled: true,
     socialLoginEnabled: true,
     serverDomain: 'mock-server',
@@ -50,6 +57,11 @@ const setup = ({
       user: {},
     },
   },
+  useGetBannerQueryReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {},
+  },
   useGetStartupConfigReturnValue = mockStartupConfig,
 } = {}) => {
   const mockUseRegisterUserMutation = jest
@@ -57,20 +69,24 @@ const setup = ({
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRegisterUserMutationReturnValue);
   const mockUseGetUserQuery = jest
-    .spyOn(mockDataProvider, 'useGetUserQuery')
+    .spyOn(authQueries, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
   const mockUseGetStartupConfig = jest
-    .spyOn(mockDataProvider, 'useGetStartupConfig')
+    .spyOn(endpointQueries, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupConfigReturnValue);
   const mockUseRefreshTokenMutation = jest
-    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    .spyOn(authMutations, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
+  const mockUseGetBannerQuery = jest
+    .spyOn(miscDataProvider, 'useGetBannerQuery')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useGetBannerQueryReturnValue);
   const renderResult = render(
     <AuthLayout
       startupConfig={useGetStartupConfigReturnValue.data as TStartupConfig}
@@ -132,6 +148,11 @@ test('renders registration form', () => {
   expect(getByRole('link', { name: /Continue with Discord/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/discord',
+  );
+  expect(getByRole('link', { name: /Test SAML/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Test SAML/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/saml',
   );
 });
 

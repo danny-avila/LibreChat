@@ -1,4 +1,16 @@
 import { z } from 'zod';
+import {
+  Permissions,
+  PermissionTypes,
+  permissionsSchema,
+  agentPermissionsSchema,
+  promptPermissionsSchema,
+  runCodePermissionsSchema,
+  webSearchPermissionsSchema,
+  bookmarkPermissionsSchema,
+  multiConvoPermissionsSchema,
+  temporaryChatPermissionsSchema,
+} from './permissions';
 
 /**
  * Enum for System Defined Roles
@@ -14,64 +26,95 @@ export enum SystemRoles {
   USER = 'USER',
 }
 
-/**
- * Enum for Permission Types
- */
-export enum PermissionTypes {
-  /**
-   * Type for Prompt Permissions
-   */
-  PROMPTS = 'PROMPTS',
-}
-
-/**
- * Enum for Role-Based Access Control Constants
- */
-export enum Permissions {
-  SHARED_GLOBAL = 'SHARED_GLOBAL',
-  USE = 'USE',
-  CREATE = 'CREATE',
-  SHARE = 'SHARE',
-}
-
-export const promptPermissionsSchema = z.object({
-  [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
-  [Permissions.USE]: z.boolean().default(true),
-  [Permissions.CREATE]: z.boolean().default(true),
-  [Permissions.SHARE]: z.boolean().default(false),
-});
-
+// The role schema now only needs to reference the permissions schema.
 export const roleSchema = z.object({
   name: z.string(),
-  [PermissionTypes.PROMPTS]: promptPermissionsSchema,
+  permissions: permissionsSchema,
 });
 
 export type TRole = z.infer<typeof roleSchema>;
-export type TPromptPermissions = z.infer<typeof promptPermissionsSchema>;
 
+// Define default roles using the new structure.
 const defaultRolesSchema = z.object({
   [SystemRoles.ADMIN]: roleSchema.extend({
     name: z.literal(SystemRoles.ADMIN),
-    [PermissionTypes.PROMPTS]: promptPermissionsSchema.extend({
-      [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
-      [Permissions.USE]: z.boolean().default(true),
-      [Permissions.CREATE]: z.boolean().default(true),
-      [Permissions.SHARE]: z.boolean().default(true),
+    permissions: permissionsSchema.extend({
+      [PermissionTypes.PROMPTS]: promptPermissionsSchema.extend({
+        [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
+        [Permissions.USE]: z.boolean().default(true),
+        [Permissions.CREATE]: z.boolean().default(true),
+        // [Permissions.SHARE]: z.boolean().default(true),
+      }),
+      [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+      }),
+      [PermissionTypes.AGENTS]: agentPermissionsSchema.extend({
+        [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
+        [Permissions.USE]: z.boolean().default(true),
+        [Permissions.CREATE]: z.boolean().default(true),
+        // [Permissions.SHARE]: z.boolean().default(true),
+      }),
+      [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+      }),
+      [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+      }),
+      [PermissionTypes.RUN_CODE]: runCodePermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+      }),
+      [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+      }),
     }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
     name: z.literal(SystemRoles.USER),
-    [PermissionTypes.PROMPTS]: promptPermissionsSchema,
+    permissions: permissionsSchema,
   }),
 });
 
 export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.ADMIN]: {
     name: SystemRoles.ADMIN,
-    [PermissionTypes.PROMPTS]: {},
+    permissions: {
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.SHARED_GLOBAL]: true,
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.BOOKMARKS]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.AGENTS]: {
+        [Permissions.SHARED_GLOBAL]: true,
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.MULTI_CONVO]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.TEMPORARY_CHAT]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.RUN_CODE]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.WEB_SEARCH]: {
+        [Permissions.USE]: true,
+      },
+    },
   },
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
-    [PermissionTypes.PROMPTS]: {},
+    permissions: {
+      [PermissionTypes.PROMPTS]: {},
+      [PermissionTypes.BOOKMARKS]: {},
+      [PermissionTypes.AGENTS]: {},
+      [PermissionTypes.MULTI_CONVO]: {},
+      [PermissionTypes.TEMPORARY_CHAT]: {},
+      [PermissionTypes.RUN_CODE]: {},
+      [PermissionTypes.WEB_SEARCH]: {},
+    },
   },
 });

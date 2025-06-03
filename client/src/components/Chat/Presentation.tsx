@@ -1,34 +1,20 @@
 import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { FileSources, LocalStorageKeys, getConfigDefaults } from 'librechat-data-provider';
+import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
-import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
-import { SidePanel } from '~/components/SidePanel';
+import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
+import Artifacts from '~/components/Artifacts/Artifacts';
+import { SidePanelGroup } from '~/components/SidePanel';
+import { useSetFilesToDelete } from '~/hooks';
+import { EditorProvider } from '~/Providers';
 import store from '~/store';
 
-const defaultInterface = getConfigDefaults().interface;
-
-export default function Presentation({
-  children,
-  useSidePanel = false,
-  panel,
-}: {
-  children: React.ReactNode;
-  panel?: React.ReactNode;
-  useSidePanel?: boolean;
-}) {
-  const { data: startupConfig } = useGetStartupConfig();
-  const hideSidePanel = useRecoilValue(store.hideSidePanel);
-  const interfaceConfig = useMemo(
-    () => startupConfig?.interface ?? defaultInterface,
-    [startupConfig],
-  );
+export default function Presentation({ children }: { children: React.ReactNode }) {
+  const artifacts = useRecoilValue(store.artifactsState);
+  const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
 
   const setFilesToDelete = useSetFilesToDelete();
-  const { isOver, canDrop, drop } = useDragHelpers();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -44,12 +30,15 @@ export default function Presentation({
     const filesToDelete = localStorage.getItem(LocalStorageKeys.FILES_TO_DELETE);
     const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
     const files = Object.values(map)
-      .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
+      .filter(
+        (file) =>
+          file.filepath != null && file.source && !(file.embedded ?? false) && file.temp_file_id,
+      )
       .map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath as string,
         source: file.source as FileSources,
-        embedded: !!file.embedded,
+        embedded: !!(file.embedded ?? false),
       }));
 
     if (files.length === 0) {
@@ -57,8 +46,6 @@ export default function Presentation({
     }
     mutateAsync({ files });
   }, [mutateAsync]);
-
-  const isActive = canDrop && isOver;
 
   const defaultLayout = useMemo(() => {
     const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
@@ -70,39 +57,24 @@ export default function Presentation({
   }, []);
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
-  const layout = () => (
-    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
-      <div className="flex h-full flex-col" role="presentation">
-        {children}
-        {isActive && <DragDropOverlay />}
-      </div>
-    </div>
-  );
-
-  if (useSidePanel && !hideSidePanel && interfaceConfig.sidePanel === true) {
-    return (
-      <div
-        ref={drop}
-        className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
-      >
-        <SidePanel
-          defaultLayout={defaultLayout}
-          defaultCollapsed={defaultCollapsed}
-          fullPanelCollapse={fullCollapse}
-        >
-          <main className="flex h-full flex-col" role="main">
-            {children}
-            {isActive && <DragDropOverlay />}
-          </main>
-        </SidePanel>
-      </div>
-    );
-  }
-
   return (
-    <div ref={drop} className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
-      {layout()}
-      {panel && panel}
-    </div>
+    <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
+      <SidePanelGroup
+        defaultLayout={defaultLayout}
+        fullPanelCollapse={fullCollapse}
+        defaultCollapsed={defaultCollapsed}
+        artifacts={
+          artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
+            <EditorProvider>
+              <Artifacts />
+            </EditorProvider>
+          ) : null
+        }
+      >
+        <main className="flex h-full flex-col overflow-y-auto" role="main">
+          {children}
+        </main>
+      </SidePanelGroup>
+    </DragDropWrapper>
   );
 }
