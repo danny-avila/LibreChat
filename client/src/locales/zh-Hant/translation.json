@@ -537,7 +537,6 @@
   "com_ui_enter": "輸入",
   "com_ui_enter_api_key": "輸入 API 金鑰",
   "com_ui_enter_openapi_schema": "在此輸入您的 OpenAPI 結構描述",
-  "com_ui_enter_var": "輸入 {{0}}",
   "com_ui_error": "錯誤",
   "com_ui_error_connection": "連線至伺服器時發生錯誤，請重新整理頁面。",
   "com_ui_error_save_admin_settings": "儲存管理員設定時發生錯誤",
