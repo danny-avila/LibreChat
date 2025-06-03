@@ -2911,4 +2911,4 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 }
 
-module.exports = { MondayTool };
+module.exports = MondayTool;
