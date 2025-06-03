@@ -64,7 +64,6 @@ const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deep
 const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
-// const { getCurrentDateTime } = require('~/utils');
 
 function createTokenCounter(encoding) {
   return (message) => {
@@ -428,10 +427,12 @@ class AgentClient extends BaseClient {
     };
 
     const userId = this.options.req.user.id + '';
+    const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
+      messageId,
       conversationId,
       memoryMethods: {
         setMemory,
@@ -447,6 +448,7 @@ class AgentClient extends BaseClient {
 
   /**
    * @param {BaseMessage[]} messages
+   * @returns {Promise<void | (TAttachment | null)[]>}
    */
   async runMemory(messages) {
     try {
@@ -467,7 +469,7 @@ class AgentClient extends BaseClient {
           messagesToProcess = [...messages.slice(-5)];
         }
       }
-      await this.processMemory(messagesToProcess);
+      return await this.processMemory(messagesToProcess);
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
     }
@@ -615,7 +617,7 @@ class AgentClient extends BaseClient {
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
-    /** @type {Promise<void> | undefined} */
+    /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
     try {
       if (!abortController) {
@@ -875,7 +877,12 @@ class AgentClient extends BaseClient {
       });
 
       try {
-        await memoryPromise;
+        if (memoryPromise) {
+          const attachments = await memoryPromise;
+          if (attachments && attachments.length > 0) {
+            this.artifactPromises.push(...attachments);
+          }
+        }
         await this.recordCollectedUsage({ context: 'message' });
       } catch (err) {
         logger.error(
@@ -885,7 +892,10 @@ class AgentClient extends BaseClient {
       }
     } catch (err) {
       if (memoryPromise) {
-        await memoryPromise;
+        const attachments = await memoryPromise;
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
+        }
       }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',

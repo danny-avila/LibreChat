@@ -211,6 +211,7 @@ export async function processMemory({
   deleteMemory,
   messages,
   memory,
+  messageId,
   conversationId,
   validKeys,
   instructions,
@@ -221,12 +222,13 @@ export async function processMemory({
   deleteMemory: MemoryMethods['deleteMemory'];
   userId: string | ObjectId;
   memory: string;
+  messageId: string;
   conversationId: string;
   messages: BaseMessage[];
   validKeys?: string[];
   instructions: string;
   llmConfig?: Partial<LLMConfig>;
-}) {
+}): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({ userId, setMemory, validKeys });
     const deleteMemoryTool = createDeleteMemoryTool({ userId, deleteMemory, validKeys });
@@ -266,7 +268,7 @@ ${memory ?? 'No existing memories'}`;
     };
 
     const run = await Run.create({
-      runId: `memory-run-${conversationId}`,
+      runId: messageId,
       graphConfig: {
         type: 'standard',
         llmConfig: finalLLMConfig,
@@ -297,7 +299,7 @@ ${memory ?? 'No existing memories'}`;
     } else {
       logger.warn('Memory Agent processed memory but returned no content');
     }
-    await Promise.all(artifactPromises);
+    return await Promise.all(artifactPromises);
   } catch (error) {
     logger.error('Memory Agent failed to process memory', error);
   }
@@ -306,16 +308,18 @@ ${memory ?? 'No existing memories'}`;
 export async function createMemoryProcessor({
   res,
   userId,
+  messageId,
   memoryMethods,
   conversationId,
   config = {},
 }: {
   res: ServerResponse;
+  messageId: string;
   conversationId: string;
   userId: string | ObjectId;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
-}): Promise<[string, (messages: BaseMessage[]) => Promise<void>]> {
+}): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys);
 
@@ -325,14 +329,15 @@ export async function createMemoryProcessor({
 
   return [
     withoutKeys,
-    async function (messages: BaseMessage[]) {
+    async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
       try {
-        await processMemory({
+        return await processMemory({
           res,
           userId,
           messages,
           validKeys,
           llmConfig,
+          messageId,
           conversationId,
           memory: withKeys,
           instructions: finalInstructions,
