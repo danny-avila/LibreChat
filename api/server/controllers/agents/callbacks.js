@@ -241,9 +241,7 @@ function createToolEndCallback({ req, res, artifactPromises }) {
     if (output.artifact[Tools.web_search]) {
       artifactPromises.push(
         (async () => {
-          const name = `${output.name}_${output.tool_call_id}_${nanoid()}`;
           const attachment = {
-            name,
             type: Tools.web_search,
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,

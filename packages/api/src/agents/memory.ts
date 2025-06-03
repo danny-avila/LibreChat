@@ -1,19 +1,30 @@
 /** Memories */
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
-import { Run, Providers } from '@librechat/agents';
+import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import type { BaseMessage } from '@langchain/core/messages';
+import { Run, Providers, GraphEvents } from '@librechat/agents';
+import type {
+  StreamEventData,
+  ToolEndCallback,
+  EventHandler,
+  ToolEndData,
+  LLMConfig,
+} from '@librechat/agents';
+import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
-import type { LLMConfig } from '@librechat/agents';
+import type { BaseMessage } from '@langchain/core/messages';
+import type { Response as ServerResponse } from 'express';
 
-// const CHAR_LIMIT = 15000;
-
-// Type for just the memory methods we need
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
   'setMemory' | 'deleteMemory' | 'getFormattedMemories'
 >;
+
+type ToolEndMetadata = Record<string, unknown> & {
+  run_id?: string;
+  thread_id?: string;
+};
 
 export interface MemoryConfig {
   validKeys?: string[];
@@ -72,16 +83,28 @@ const createMemoryTool = ({
           return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
         }
 
+        const artifact: Record<Tools.memory, MemoryArtifact> = {
+          [Tools.memory]: {
+            key,
+            value,
+            type: 'update',
+          },
+        };
+
         const result = await setMemory({ userId, key, value });
-        return result?.ok ?? false;
+        if (result.ok) {
+          return [`Memory set for key "${key}"`, artifact];
+        }
+        return [`Failed to set memory for key "${key}"`, undefined];
       } catch (error) {
         logger.error('Memory Agent failed to set memory', error);
-        return false;
+        return [`Error setting memory for key "${key}"`, undefined];
       }
     },
     {
       name: 'set_memory',
       description: 'Saves important information about the user into memory.',
+      responseFormat: 'content_and_artifact',
       schema: z.object({
         key: z
           .string()
@@ -124,17 +147,28 @@ const createDeleteMemoryTool = ({
           return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
         }
 
+        const artifact: Record<Tools.memory, MemoryArtifact> = {
+          [Tools.memory]: {
+            key,
+            type: 'delete',
+          },
+        };
+
         const result = await deleteMemory({ userId, key });
-        return result?.ok ?? false;
+        if (result.ok) {
+          return [`Memory deleted for key "${key}"`, artifact];
+        }
+        return [`Failed to delete memory for key "${key}"`, undefined];
       } catch (error) {
         logger.error('Memory Agent failed to delete memory', error);
-        return false;
+        return [`Error deleting memory for key "${key}"`, undefined];
       }
     },
     {
       name: 'delete_memory',
       description:
         'Deletes specific memory data about the user using the provided key. For updating existing memories, use the `set_memory` tool instead',
+      responseFormat: 'content_and_artifact',
       schema: z.object({
         key: z
           .string()
@@ -147,8 +181,31 @@ const createDeleteMemoryTool = ({
     },
   );
 };
+export class BasicToolEndHandler implements EventHandler {
+  private callback?: ToolEndCallback;
+  constructor(callback?: ToolEndCallback) {
+    this.callback = callback;
+  }
+  handle(
+    event: string,
+    data: StreamEventData | undefined,
+    metadata?: Record<string, unknown>,
+  ): void {
+    if (!metadata) {
+      console.warn(`Graph or metadata not found in ${event} event`);
+      return;
+    }
+    const toolEndData = data as ToolEndData | undefined;
+    if (!toolEndData?.output) {
+      console.warn('No output found in tool_end event');
+      return;
+    }
+    this.callback?.(toolEndData, metadata);
+  }
+}
 
 export async function processMemory({
+  res,
   userId,
   setMemory,
   deleteMemory,
@@ -159,6 +216,7 @@ export async function processMemory({
   instructions,
   llmConfig,
 }: {
+  res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
   deleteMemory: MemoryMethods['deleteMemory'];
   userId: string | ObjectId;
@@ -201,6 +259,12 @@ ${memory ?? 'No existing memories'}`;
       disableStreaming: true,
     };
 
+    const artifactPromises: Promise<TAttachment | null>[] = [];
+    const memoryCallback = createMemoryCallback({ res, artifactPromises });
+    const customHandlers = {
+      [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
+    };
+
     const run = await Run.create({
       runId: `memory-run-${conversationId}`,
       graphConfig: {
@@ -211,6 +275,7 @@ ${memory ?? 'No existing memories'}`;
         additional_instructions: memoryStatus,
         toolEnd: true,
       },
+      customHandlers,
       returnContent: true,
     });
 
@@ -232,20 +297,23 @@ ${memory ?? 'No existing memories'}`;
     } else {
       logger.warn('Memory Agent processed memory but returned no content');
     }
+    await Promise.all(artifactPromises);
   } catch (error) {
     logger.error('Memory Agent failed to process memory', error);
   }
 }
 
 export async function createMemoryProcessor({
+  res,
   userId,
   memoryMethods,
   conversationId,
   config = {},
 }: {
+  res: ServerResponse;
+  conversationId: string;
   userId: string | ObjectId;
   memoryMethods: RequiredMemoryMethods;
-  conversationId: string;
   config?: MemoryConfig;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<void>]> {
   const { validKeys, instructions, llmConfig } = config;
@@ -260,19 +328,86 @@ export async function createMemoryProcessor({
     async function (messages: BaseMessage[]) {
       try {
         await processMemory({
+          res,
           userId,
+          messages,
+          validKeys,
+          llmConfig,
+          conversationId,
+          memory: withKeys,
+          instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
-          messages,
-          memory: withKeys,
-          conversationId,
-          validKeys,
-          instructions: finalInstructions,
-          llmConfig,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);
       }
     },
   ];
+}
+
+async function handleMemoryArtifact({
+  res,
+  data,
+  metadata,
+}: {
+  res: ServerResponse;
+  data: ToolEndData;
+  metadata?: ToolEndMetadata;
+}) {
+  const output = data?.output;
+  if (!output) {
+    return null;
+  }
+
+  if (!output.artifact) {
+    return null;
+  }
+
+  const memoryArtifact = output.artifact[Tools.memory] as MemoryArtifact | undefined;
+  if (!memoryArtifact) {
+    return null;
+  }
+
+  const attachment: Partial<TAttachment> = {
+    type: Tools.memory,
+    toolCallId: output.tool_call_id,
+    messageId: metadata?.run_id ?? '',
+    conversationId: metadata?.thread_id ?? '',
+    [Tools.memory]: memoryArtifact,
+  };
+  if (!res.headersSent) {
+    return attachment;
+  }
+  res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  return attachment;
+}
+
+/**
+ * Creates a memory callback for handling memory artifacts
+ * @param params - The parameters object
+ * @param params.res - The server response object
+ * @param params.artifactPromises - Array to collect artifact promises
+ * @returns The memory callback function
+ */
+export function createMemoryCallback({
+  res,
+  artifactPromises,
+}: {
+  res: ServerResponse;
+  artifactPromises: Promise<Partial<TAttachment> | null>[];
+}): ToolEndCallback {
+  return async (data: ToolEndData, metadata?: Record<string, unknown>) => {
+    const output = data?.output;
+    const memoryArtifact = output?.artifact?.[Tools.memory] as MemoryArtifact;
+    if (memoryArtifact == null) {
+      return;
+    }
+    artifactPromises.push(
+      handleMemoryArtifact({ res, data, metadata }).catch((error) => {
+        logger.error('Error processing memory artifact content:', error);
+        return null;
+      }),
+    );
+  };
 }

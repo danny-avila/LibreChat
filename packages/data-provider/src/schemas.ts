@@ -522,11 +522,18 @@ export const tMessageSchema = z.object({
   feedback: feedbackSchema.optional(),
 });
 
+export type MemoryArtifact = {
+  key: string;
+  value?: string;
+  type: 'update' | 'delete';
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
   [Tools.web_search]?: SearchResultData;
+  [Tools.memory]?: MemoryArtifact;
 };
 
 export type TAttachment =

@@ -438,6 +438,7 @@ class AgentClient extends BaseClient {
         deleteMemory,
         getFormattedMemories,
       },
+      res: this.options.res,
     });
 
     this.processMemory = processMemory;
@@ -447,28 +448,29 @@ class AgentClient extends BaseClient {
   /**
    * @param {BaseMessage[]} messages
    */
-  runMemory(messages) {
-    if (this.processMemory == null) {
-      return;
-    }
-    let messagesToProcess = [...messages];
-    if (messages.length > 5) {
-      for (let i = messages.length - 5; i >= 0; i--) {
-        const potentialWindow = messages.slice(i, i + 5);
-        if (potentialWindow[0]?.role === 'user') {
-          messagesToProcess = [...potentialWindow];
-          break;
+  async runMemory(messages) {
+    try {
+      if (this.processMemory == null) {
+        return;
+      }
+      let messagesToProcess = [...messages];
+      if (messages.length > 5) {
+        for (let i = messages.length - 5; i >= 0; i--) {
+          const potentialWindow = messages.slice(i, i + 5);
+          if (potentialWindow[0]?.role === 'user') {
+            messagesToProcess = [...potentialWindow];
+            break;
+          }
+        }
+
+        if (messagesToProcess.length === messages.length) {
+          messagesToProcess = [...messages.slice(-5)];
         }
       }
-
-      if (messagesToProcess.length === messages.length) {
-        messagesToProcess = [...messages.slice(-5)];
-      }
-    }
-
-    this.processMemory(messagesToProcess).catch((error) => {
+      await this.processMemory(messagesToProcess);
+    } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
-    });
+    }
   }
 
   /** @type {sendCompletion} */
@@ -613,6 +615,8 @@ class AgentClient extends BaseClient {
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
+    /** @type {Promise<void> | undefined} */
+    let memoryPromise;
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -714,7 +718,10 @@ class AgentClient extends BaseClient {
           messages = addCacheControl(messages);
         }
 
-        this.runMemory(messages);
+        if (i === 0) {
+          memoryPromise = this.runMemory(messages);
+        }
+
         run = await createRun({
           agent,
           req: this.options.req,
@@ -868,6 +875,7 @@ class AgentClient extends BaseClient {
       });
 
       try {
+        await memoryPromise;
         await this.recordCollectedUsage({ context: 'message' });
       } catch (err) {
         logger.error(
@@ -876,6 +884,9 @@ class AgentClient extends BaseClient {
         );
       }
     } catch (err) {
+      if (memoryPromise) {
+        await memoryPromise;
+      }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
