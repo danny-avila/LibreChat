@@ -1,0 +1,19 @@
+[variables]
+NODE_ENV = "production"
+NODE_OPTIONS = "--max-old-space-size=3072"
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-9_x"]
+
+[phases.install]
+cmds = [
+    "npm ci --no-audit --frozen-lockfile"
+]
+
+[phases.build]
+cmds = [
+    "npm run frontend:docker"
+]
+
+[start]
+cmd = "npm run backend"

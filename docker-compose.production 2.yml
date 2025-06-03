@@ -1,0 +1,266 @@
+# Production Docker Compose for LibreChat Multi-Stage Deployment
+# This file uses the optimized multi-stage Docker build for production
+
+version: '3.8'
+
+services:
+  # LibreChat API using multi-stage Docker build
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi-stage
+      target: production
+    image: librechat:production
+    container_name: LibreChat-API-Production
+    ports:
+      - "3080:3080"
+    depends_on:
+      - mongodb
+      - rag_api
+      - meilisearch
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+        read_only: true
+      - ./images:/app/client/public/images
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+    networks:
+      - librechat-network
+    healthcheck:
+      test: ["CMD", "node", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # NGINX reverse proxy with SSL termination
+  nginx:
+    image: nginx:1.27.0-alpine
+    container_name: LibreChat-NGINX-Production
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - librechat-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MongoDB with persistence and optimization
+  mongodb:
+    image: mongo:7.0-jammy
+    container_name: LibreChat-MongoDB-Production
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+      - MONGO_INITDB_DATABASE=LibreChat
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongodb/mongod.conf:/etc/mongod.conf:ro
+      - ./mongodb/init:/docker-entrypoint-initdb.d:ro
+    command: ["mongod", "--config", "/etc/mongod.conf"]
+    networks:
+      - librechat-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Meilisearch with persistence
+  meilisearch:
+    image: getmeili/meilisearch:v1.12.3
+    container_name: LibreChat-Meilisearch-Production
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_ENV=production
+    volumes:
+      - meilisearch_data:/meili_data
+    networks:
+      - librechat-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Vector Database (PostgreSQL with pgvector)
+  vectordb:
+    image: ankane/pgvector:latest
+    container_name: LibreChat-VectorDB-Production
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-librechat}
+      - POSTGRES_USER=${POSTGRES_USER:-librechat}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - vectordb_data:/var/lib/postgresql/data
+      - ./postgresql/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    networks:
+      - librechat-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-librechat}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RAG API
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    container_name: LibreChat-RAG-Production
+    restart: unless-stopped
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+    networks:
+      - librechat-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${RAG_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring: Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: LibreChat-Prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - librechat-network
+
+  # Monitoring: Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: LibreChat-Grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - librechat-network
+
+  # Log aggregation: Loki
+  loki:
+    image: grafana/loki:latest
+    container_name: LibreChat-Loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - librechat-network
+
+  # Log shipper: Promtail
+  promtail:
+    image: grafana/promtail:latest
+    container_name: LibreChat-Promtail
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./logs:/var/log/librechat:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - librechat-network
+
+networks:
+  librechat-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  meilisearch_data:
+    driver: local
+  vectordb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local

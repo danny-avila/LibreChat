@@ -1,0 +1,4 @@
+{
+  "build_command": "npm install && cd client && npm install && cd .. && npm run build:data-provider && npm run build:mcp && npm run build:data-schemas && cd client && NODE_ENV=production npx vite build && cd .. && npm prune --production",
+  "start_command": "npm run backend"
+}

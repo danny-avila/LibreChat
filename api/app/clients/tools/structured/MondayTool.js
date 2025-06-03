@@ -192,14 +192,14 @@ class MondayTool extends Tool {
       page: z.number().min(1).default(1).optional().describe('Номер страницы'),
       query: z.string().optional().describe('Поисковый запрос'),
       ids: z.array(z.string()).optional().describe('Массив ID для запроса'),
-      value: z.string().optional().describe('Значение для обновления'),
+      value: z.any().optional().describe('Значение для обновления (строка, число, объект)'),
       defaults: z.record(z.any()).optional().describe('Значения по умолчанию'),
       
       // Дополнительные параметры
       includeItems: z.boolean().optional().describe('Включить элементы в ответ'),
       includeGroups: z.boolean().optional().describe('Включить группы в ответ'),
       includeColumns: z.boolean().optional().describe('Включить колонки в ответ'),
-      columnValues: z.boolean().optional().describe('Включить значения колонок')
+      includeColumnValuesInResponse: z.boolean().optional().describe('Включить значения колонок в ответ на запрос данных (например, getItems)')
     });
 
     this.name = 'monday-tool';
@@ -520,14 +520,14 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   // Методы для работы с элементами
-  async getItems({ boardId, groupId, limit = 25, columnValues = false, page = 1 }) {
+  async getItems({ boardId, groupId, limit = 25, includeColumnValuesInResponse = false, page = 1 }) {
     if (!boardId) {
       throw new Error('boardId is required for getItems action');
     }
 
     // Создаем запрос с условным включением column_values
     let query;
-    if (columnValues) {
+    if (includeColumnValuesInResponse) {
       query = `
         query getItems($boardId: [ID!]!, $limit: Int!) {
           boards(ids: $boardId) {
@@ -2041,6 +2041,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId, itemId, columnId, and value are required for changeColumnValue action');
     }
 
+    // API Monday.com для change_column_value всегда ожидает JSON-строку.
     const formattedValue = JSON.stringify(value);
 
     const mutation = `
@@ -2054,19 +2055,11 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
         ) {
           id
           name
-          state
-          created_at
-          updated_at
-          column_values {
+          column_values(ids: [$columnId]) {
             id
-            title
             type
             text
             value
-          }
-          board {
-            id
-            name
           }
         }
       }
@@ -2102,6 +2095,9 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId, itemId, columnId, and value are required for changeSimpleColumnValue action');
     }
 
+    // Для простых колонок всегда используем строковое значение
+    const stringValue = String(value);
+
     const mutation = `
       mutation changeSimpleColumnValue($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!, $createLabelsIfMissing: Boolean) {
         change_simple_column_value(
@@ -2113,19 +2109,11 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
         ) {
           id
           name
-          state
-          created_at
-          updated_at
-          column_values {
+          column_values(ids: [$columnId]) {
             id
-            title
             type
             text
             value
-          }
-          board {
-            id
-            name
           }
         }
       }
@@ -2136,7 +2124,7 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
         boardId,
         itemId,
         columnId,
-        value: String(value),
+        value: stringValue,
         createLabelsIfMissing
       });
 
@@ -2161,32 +2149,25 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       throw new Error('boardId, itemId, and columnValues are required for changeMultipleColumnValues action');
     }
 
-    const formattedColumnValues = JSON.stringify(columnValues);
+    const columnValuesJson = JSON.stringify(columnValues);
 
     const mutation = `
       mutation changeMultipleColumnValues($boardId: ID!, $itemId: ID!, $columnValues: JSON!, $createLabelsIfMissing: Boolean) {
         change_multiple_column_values(
           board_id: $boardId,
           item_id: $itemId,
-          column_values: $columnValues,
+          column_values: $columnValues, 
           create_labels_if_missing: $createLabelsIfMissing
         ) {
           id
           name
-          state
-          created_at
-          updated_at
-          column_values {
-            id
-            title
-            type
-            text
-            value
-          }
-          board {
-            id
-            name
-          }
+          # Можно запросить обновленные значения, если нужно
+          # column_values {
+          #   id
+          #   type
+          #   text
+          #   value
+          # }
         }
       }
     `;
@@ -2195,12 +2176,12 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
       const data = await this.makeGraphQLRequest(mutation, {
         boardId,
         itemId,
-        columnValues: formattedColumnValues,
+        columnValues: columnValuesJson,
         createLabelsIfMissing
       });
 
       if (!data.change_multiple_column_values) {
-        throw new Error(`Failed to change multiple column values for item ${itemId}`);
+        throw new Error(`Failed to change multiple column values for item ${itemId} (no data returned)`);
       }
 
       return JSON.stringify({
@@ -2917,24 +2898,17 @@ WEBHOOKS И РЕАКТИВНОСТЬ (ФАЗА 1):
   }
 
   _clearCache() {
-    if (this._cache) {
-      this._cache.clear();
-      this._cacheTimestamps.clear();
-    }
+    this.cache = {};
   }
 
   /**
    * Форматирование ответа для агента (существующий метод)
    */
   formatAgentResponse(data, action) {
-    return {
-      success: true,
-      action,
-      data,
-      timestamp: new Date().toISOString(),
-      apiVersion: '2024-01'
-    };
+    // Логика форматирования ответа для агента
+    // Может быть переопределена в дочерних классах
+    return JSON.stringify({ data, action }, null, 2);
   }
 }
 
-module.exports = MondayTool;
+module.exports = { MondayTool };

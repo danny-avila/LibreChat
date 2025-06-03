@@ -157,6 +157,8 @@
   },
   "packageManager": "npm@10.2.4",
   "dependencies": {
+    "librechat-data-provider": "^0.7.85",
+    "module-alias": "^2.2.3",
     "rimraf": "^6.0.1"
   }
 }
