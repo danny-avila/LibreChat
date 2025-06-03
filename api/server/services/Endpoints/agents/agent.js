@@ -46,7 +46,7 @@ const providerConfigMap = {
  * @param {boolean} [params.isInitialAgent]
  * @returns {Promise<Agent & { tools: StructuredTool[], attachments: Array<MongoFile>, toolContextMap: Record<string, unknown>, maxContextTokens: number }>}
  */
-const loadAgent = async ({
+const initializeAgent = async ({
   req,
   res,
   agent,
@@ -90,7 +90,7 @@ const loadAgent = async ({
     getFiles,
     attachments: currentFiles,
     tool_resources: agent.tool_resources,
-    requestFileSet: new Set(requestFiles.map((file) => file.file_id)),
+    requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
   const provider = agent.provider;
@@ -194,4 +194,4 @@ const loadAgent = async ({
   };
 };
 
-module.exports = { loadAgent };
+module.exports = { initializeAgent };

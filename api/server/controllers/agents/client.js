@@ -37,11 +37,13 @@ const { getCustomEndpointConfig, checkCapability } = require('~/server/services/
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const { checkAccess } = require('~/server/middleware/roles/access');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
+const { loadAgent } = require('~/models/Agent');
 
 /**
  * @param {ServerRequest} req
@@ -361,13 +363,75 @@ class AgentClient extends BaseClient {
       logger.debug(
         `[api/server/controllers/agents/client.js #useMemory] User ${this.options.req.user.id} does not have USE permission for memories`,
       );
-      return undefined;
+      return;
     }
+    /** @type {TCustomConfig['memory']} */
+    const memoryConfig = this.options.req?.app?.locals?.memory;
+    if (memoryConfig.disabled === true) {
+      return;
+    }
+
+    /** @type {Agent} */
+    let prelimAgent;
+    const allowedProviders = new Set(
+      this.options.req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders,
+    );
+    try {
+      if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
+        prelimAgent = await loadAgent({
+          req: this.options.req,
+          agent_id: memoryConfig.agent.id,
+          endpoint: EModelEndpoint.agents,
+        });
+      } else if (
+        memoryConfig.agent?.id == null &&
+        memoryConfig.agent?.model != null &&
+        memoryConfig.agent?.provider != null
+      ) {
+        prelimAgent = { id: Constants.EPHEMERAL_AGENT_ID, ...memoryConfig.agent };
+      }
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading agent for memory',
+        error,
+      );
+    }
+
+    const agent = await initializeAgent({
+      req: this.options.req,
+      res: this.options.res,
+      agent: prelimAgent,
+      allowedProviders,
+    });
+
+    if (!agent) {
+      logger.warn(
+        '[api/server/controllers/agents/client.js #useMemory] No agent found for memory',
+        memoryConfig,
+      );
+      return;
+    }
+
+    const llmConfig = Object.assign(
+      {
+        provider: agent.provider,
+        model: agent.model,
+      },
+      agent.model_parameters,
+    );
+
+    /** @type {import('@librechat/api').MemoryConfig} */
+    const config = {
+      // TODO: validKeys
+      instructions: agent.instructions,
+      llmConfig,
+    };
 
     const userId = this.options.req.user.id + '';
     const conversationId = this.conversationId + '';
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      config,
       conversationId,
       memoryMethods: {
         setMemory,

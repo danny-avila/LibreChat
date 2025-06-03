@@ -216,7 +216,7 @@ ${memory ?? 'No existing memories'}`;
 
     const config = {
       configurable: {
-        provider: Providers.OPENAI,
+        provider: llmConfig?.provider,
         thread_id: `memory-run-${conversationId}`,
       },
       streamMode: 'values',
@@ -226,7 +226,12 @@ ${memory ?? 'No existing memories'}`;
     const inputs = {
       messages,
     };
-    await run.processStream(inputs, config);
+    const content = await run.processStream(inputs, config);
+    if (content) {
+      logger.debug('Memory Agent processed memory successfully', content);
+    } else {
+      logger.warn('Memory Agent processed memory but returned no content');
+    }
   } catch (error) {
     logger.error('Memory Agent failed to process memory', error);
   }

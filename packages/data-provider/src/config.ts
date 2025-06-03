@@ -659,12 +659,10 @@ export const memorySchema = z.object({
         id: z.string(),
       }),
       z.object({
-        model_parameters: z
-          .object({
-            provider: z.string(),
-            model: z.string(),
-          })
-          .passthrough(), // Allow additional fields
+        provider: z.string(),
+        model: z.string(),
+        instructions: z.string().optional(),
+        model_parameters: z.record(z.any()).optional(),
       }),
     ])
     .optional(),

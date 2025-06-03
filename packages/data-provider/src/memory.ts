@@ -19,9 +19,10 @@ export function loadMemoryConfig(config: TCustomConfig['memory']): TMemoryConfig
   const hasValidAgent =
     config.agent &&
     (('id' in config.agent && !!config.agent.id) ||
-      ('model_parameters' in config.agent &&
-        !!config.agent.model_parameters?.provider &&
-        !!config.agent.model_parameters?.model));
+      ('provider' in config.agent &&
+        'model' in config.agent &&
+        !!config.agent.provider &&
+        !!config.agent.model));
 
   // If agent config is invalid, treat as disabled
   if (!hasValidAgent) {
@@ -52,9 +53,10 @@ export function isMemoryEnabled(config: TMemoryConfig | undefined): boolean {
   const hasValidAgent =
     config.agent &&
     (('id' in config.agent && !!config.agent.id) ||
-      ('model_parameters' in config.agent &&
-        !!config.agent.model_parameters?.provider &&
-        !!config.agent.model_parameters?.model));
+      ('provider' in config.agent &&
+        'model' in config.agent &&
+        !!config.agent.provider &&
+        !!config.agent.model));
 
   return !!hasValidAgent;
 }

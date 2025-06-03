@@ -5,7 +5,7 @@ const {
   getDefaultHandlers,
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
-const { loadAgent } = require('~/server/services/Endpoints/agents/load');
+const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getAgent } = require('~/models/Agent');
@@ -75,7 +75,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   /** @type {string} */
   const conversationId = req.body.conversationId;
 
-  const primaryConfig = await loadAgent({
+  const primaryConfig = await initializeAgent({
     req,
     res,
     loadTools,
@@ -94,7 +94,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
       if (!agent) {
         throw new Error(`Agent ${agentId} not found`);
       }
-      const config = await loadAgent({
+      const config = await initializeAgent({
         req,
         res,
         agent,
