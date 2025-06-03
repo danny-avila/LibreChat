@@ -19,9 +19,11 @@ class GitHubTool extends Tool {
     super(fields);
 
     this.name = 'github-tool';
-    this.description = 'Comprehensive tool for GitHub repository management, file browsing, issues, PRs, and code analysis';
+    this.description = 'Comprehensive tool for GitHub repository management, file browsing, issues, PRs, and code analysis. Uses official GitHub API with @octokit/rest SDK. Supports both classic and fine-grained personal access tokens.';
 
     // Получение API ключа из параметров (токен предоставляется пользователем)
+    // Поддерживает как classic, так и fine-grained GitHub Personal Access Tokens
+    // Рекомендуется использовать fine-grained tokens для повышенной безопасности
     this.githubToken = fields.GITHUB_TOKEN || 
                       fields.githubToken || 
                       fields.token ||
