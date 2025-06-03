@@ -421,7 +421,7 @@ class AgentClient extends BaseClient {
 
     /** @type {import('@librechat/api').MemoryConfig} */
     const config = {
-      // TODO: validKeys
+      validKeys: memoryConfig.validKeys,
       instructions: agent.instructions,
       llmConfig,
     };

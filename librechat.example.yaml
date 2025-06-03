@@ -299,3 +299,20 @@ endpoints:
 #     px: 1024
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+
+# Memory configuration for user memories
+# memory:
+#   # (optional) Disable memory functionality
+#   disabled: false
+#   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
+#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+#   # Memory agent configuration - either use an existing agent by ID or define inline
+#   agent:
+#     # Option 1: Use existing agent by ID
+#     id: "your-memory-agent-id"
+#     # Option 2: Define agent inline
+#     # provider: "openai"
+#     # model: "gpt-4o-mini"
+#     # instructions: "You are a memory management assistant. Store and manage user information accurately."
+#     # model_parameters:
+#     #   temperature: 0.1
