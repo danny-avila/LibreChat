@@ -384,6 +384,7 @@
   "com_nav_info_save_draft": "When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.",
   "com_nav_info_show_thinking": "When enabled, the chat will display the thinking dropdowns open by default, allowing you to view the AI's reasoning in real-time. When disabled, the thinking dropdowns will remain closed by default for a cleaner and more streamlined interface",
   "com_nav_info_user_name_display": "When enabled, the username of the sender will be shown above each message you send. When disabled, you will only see \"You\" above your messages.",
+  "com_nav_info_balance": "Balance shows how many token credits you have left to use. Token credits translate to monetary value (e.g., 1000 credits = $0.001 USD)",
   "com_nav_lang_arabic": "العربية",
   "com_nav_lang_auto": "Auto detect",
   "com_nav_lang_brazilian_portuguese": "Português Brasileiro",
