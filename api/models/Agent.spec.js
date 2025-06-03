@@ -23,6 +23,7 @@ const {
   generateActionMetadataHash,
   revertAgentVersion,
 } = require('./Agent');
+
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
  */
@@ -49,18 +50,6 @@ describe('models/Agent', () => {
     beforeEach(async () => {
       await Agent.deleteMany({});
     });
-
-    const createBasicAgent = async () => {
-      const agentId = `agent_${uuidv4()}`;
-      const agent = await Agent.create({
-        id: agentId,
-        name: 'Test Agent',
-        provider: 'test',
-        model: 'test-model',
-        author: new mongoose.Types.ObjectId(),
-      });
-      return agent;
-    };
 
     test('should add tool_resource to tools if missing', async () => {
       const agent = await createBasicAgent();
@@ -111,13 +100,7 @@ describe('models/Agent', () => {
       const fileIds = Array.from({ length: 10 }, () => uuidv4());
 
       // Concurrent additions
-      const additionPromises = fileIds.map((fileId) =>
-        addAgentResourceFile({
-          agent_id: agent.id,
-          tool_resource: 'test_tool',
-          file_id: fileId,
-        }),
-      );
+      const additionPromises = createFileOperations(agent.id, fileIds, 'add');
 
       await Promise.all(additionPromises);
 
@@ -131,15 +114,7 @@ describe('models/Agent', () => {
       const agent = await createBasicAgent();
       const initialFileIds = Array.from({ length: 5 }, () => uuidv4());
 
-      await Promise.all(
-        initialFileIds.map((fileId) =>
-          addAgentResourceFile({
-            agent_id: agent.id,
-            tool_resource: 'test_tool',
-            file_id: fileId,
-          }),
-        ),
-      );
+      await Promise.all(createFileOperations(agent.id, initialFileIds, 'add'));
 
       const newFileIds = Array.from({ length: 5 }, () => uuidv4());
       const operations = [
@@ -231,40 +206,73 @@ describe('models/Agent', () => {
       });
     });
 
-    test('should handle concurrent duplicate additions', async () => {
-      const agent = await createBasicAgent();
-      const fileId = uuidv4();
+    test.each([
+      {
+        name: 'duplicate additions',
+        operation: 'add',
+        duplicateCount: 5,
+        expectedLength: 1,
+        expectedContains: true,
+      },
+      {
+        name: 'duplicate removals',
+        operation: 'remove',
+        duplicateCount: 5,
+        expectedLength: 0,
+        expectedContains: false,
+        setupFile: true,
+      },
+    ])(
+      'should handle concurrent $name',
+      async ({ operation, duplicateCount, expectedLength, expectedContains, setupFile }) => {
+        const agent = await createBasicAgent();
+        const fileId = uuidv4();
 
-      // Concurrent additions of the same file
-      const additionPromises = Array.from({ length: 5 }).map(() =>
-        addAgentResourceFile({
-          agent_id: agent.id,
-          tool_resource: 'test_tool',
-          file_id: fileId,
-        }),
-      );
+        if (setupFile) {
+          await addAgentResourceFile({
+            agent_id: agent.id,
+            tool_resource: 'test_tool',
+            file_id: fileId,
+          });
+        }
 
-      await Promise.all(additionPromises);
+        const promises = Array.from({ length: duplicateCount }).map(() =>
+          operation === 'add'
+            ? addAgentResourceFile({
+                agent_id: agent.id,
+                tool_resource: 'test_tool',
+                file_id: fileId,
+              })
+            : removeAgentResourceFiles({
+                agent_id: agent.id,
+                files: [{ tool_resource: 'test_tool', file_id: fileId }],
+              }),
+        );
 
-      const updatedAgent = await Agent.findOne({ id: agent.id });
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toBeDefined();
-      // Should only contain one instance of the fileId
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toHaveLength(1);
-      expect(updatedAgent.tool_resources.test_tool.file_ids[0]).toBe(fileId);
-    });
+        await Promise.all(promises);
+
+        const updatedAgent = await Agent.findOne({ id: agent.id });
+        const fileIds = updatedAgent.tool_resources?.test_tool?.file_ids ?? [];
+
+        expect(fileIds).toHaveLength(expectedLength);
+        if (expectedContains) {
+          expect(fileIds[0]).toBe(fileId);
+        } else {
+          expect(fileIds).not.toContain(fileId);
+        }
+      },
+    );
 
     test('should handle concurrent add and remove of the same file', async () => {
       const agent = await createBasicAgent();
       const fileId = uuidv4();
 
-      // First, ensure the file exists (or test might be trivial if remove runs first)
       await addAgentResourceFile({
         agent_id: agent.id,
         tool_resource: 'test_tool',
         file_id: fileId,
       });
 
-      // Concurrent add (which should be ignored) and remove
       const operations = [
         addAgentResourceFile({
           agent_id: agent.id,
@@ -280,54 +288,16 @@ describe('models/Agent', () => {
       await Promise.all(operations);
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
-      // The final state should ideally be that the file is removed,
-      // but the key point is consistency (not duplicated or error state).
-      // Depending on execution order, the file might remain if the add operation's
-      // findOneAndUpdate runs after the remove operation completes.
-      // A more robust check might be that the length is <= 1.
-      // Given the remove uses an update pipeline, it might be more likely to win.
-      // The final state depends on race condition timing (add or remove might "win").
-      // The critical part is that the state is consistent (no duplicates, no errors).
-      // Assert that the fileId is either present exactly once or not present at all.
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toBeDefined();
       const finalFileIds = updatedAgent.tool_resources.test_tool.file_ids;
       const count = finalFileIds.filter((id) => id === fileId).length;
-      expect(count).toBeLessThanOrEqual(1); // Should be 0 or 1, never more
-      // Optional: Check overall length is consistent with the count
+
+      expect(count).toBeLessThanOrEqual(1);
       if (count === 0) {
         expect(finalFileIds).toHaveLength(0);
       } else {
         expect(finalFileIds).toHaveLength(1);
         expect(finalFileIds[0]).toBe(fileId);
       }
-    });
-
-    test('should handle concurrent duplicate removals', async () => {
-      const agent = await createBasicAgent();
-      const fileId = uuidv4();
-
-      // Add the file first
-      await addAgentResourceFile({
-        agent_id: agent.id,
-        tool_resource: 'test_tool',
-        file_id: fileId,
-      });
-
-      // Concurrent removals of the same file
-      const removalPromises = Array.from({ length: 5 }).map(() =>
-        removeAgentResourceFiles({
-          agent_id: agent.id,
-          files: [{ tool_resource: 'test_tool', file_id: fileId }],
-        }),
-      );
-
-      await Promise.all(removalPromises);
-
-      const updatedAgent = await Agent.findOne({ id: agent.id });
-      // Check if the array is empty or the tool resource itself is removed
-      const fileIds = updatedAgent.tool_resources?.test_tool?.file_ids ?? [];
-      expect(fileIds).toHaveLength(0);
-      expect(fileIds).not.toContain(fileId);
     });
 
     test('should handle concurrent removals of different files', async () => {
@@ -362,62 +332,70 @@ describe('models/Agent', () => {
     });
 
     describe('Edge Cases', () => {
-      test('should handle addAgentResourceFile with empty file_id', async () => {
-        const agent = await createBasicAgent();
+      describe.each([
+        {
+          operation: 'add',
+          name: 'empty file_id',
+          needsAgent: true,
+          params: { tool_resource: 'file_search', file_id: '' },
+          shouldResolve: true,
+        },
+        {
+          operation: 'add',
+          name: 'non-existent agent',
+          needsAgent: false,
+          params: { tool_resource: 'file_search', file_id: 'file123' },
+          shouldResolve: false,
+          error: 'Agent not found for adding resource file',
+        },
+      ])('addAgentResourceFile with $name', ({ needsAgent, params, shouldResolve, error }) => {
+        test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
+          const agent = needsAgent ? await createBasicAgent() : null;
+          const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
 
-        await expect(
-          addAgentResourceFile({
-            agent_id: agent.id,
-            tool_resource: 'file_search',
-            file_id: '',
-          }),
-        ).resolves.toBeDefined();
+          if (shouldResolve) {
+            await expect(addAgentResourceFile({ agent_id, ...params })).resolves.toBeDefined();
+          } else {
+            await expect(addAgentResourceFile({ agent_id, ...params })).rejects.toThrow(error);
+          }
+        });
       });
 
-      test('should handle removeAgentResourceFiles with empty array', async () => {
-        const agent = await createBasicAgent();
-
-        const result = await removeAgentResourceFiles({
-          agent_id: agent.id,
+      describe.each([
+        {
+          name: 'empty files array',
           files: [],
-        });
-
-        expect(result).toBeDefined();
-        expect(result.id).toBe(agent.id);
-      });
-
-      test('should handle non-existent tool_resource removal', async () => {
-        const agent = await createBasicAgent();
-
-        const result = await removeAgentResourceFiles({
-          agent_id: agent.id,
+          needsAgent: true,
+          shouldResolve: true,
+        },
+        {
+          name: 'non-existent tool_resource',
           files: [{ tool_resource: 'non_existent_tool', file_id: 'file123' }],
+          needsAgent: true,
+          shouldResolve: true,
+        },
+        {
+          name: 'non-existent agent',
+          files: [{ tool_resource: 'file_search', file_id: 'file123' }],
+          needsAgent: false,
+          shouldResolve: false,
+          error: 'Agent not found for removing resource files',
+        },
+      ])('removeAgentResourceFiles with $name', ({ files, needsAgent, shouldResolve, error }) => {
+        test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
+          const agent = needsAgent ? await createBasicAgent() : null;
+          const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+
+          if (shouldResolve) {
+            const result = await removeAgentResourceFiles({ agent_id, files });
+            expect(result).toBeDefined();
+            if (agent) {
+              expect(result.id).toBe(agent.id);
+            }
+          } else {
+            await expect(removeAgentResourceFiles({ agent_id, files })).rejects.toThrow(error);
+          }
         });
-
-        expect(result).toBeDefined();
-      });
-
-      test('should handle addAgentResourceFile with non-existent agent', async () => {
-        const nonExistentId = `agent_${uuidv4()}`;
-
-        await expect(
-          addAgentResourceFile({
-            agent_id: nonExistentId,
-            tool_resource: 'file_search',
-            file_id: 'file123',
-          }),
-        ).rejects.toThrow('Agent not found for adding resource file');
-      });
-
-      test('should handle removeAgentResourceFiles with non-existent agent', async () => {
-        const nonExistentId = `agent_${uuidv4()}`;
-
-        await expect(
-          removeAgentResourceFiles({
-            agent_id: nonExistentId,
-            files: [{ tool_resource: 'file_search', file_id: 'file123' }],
-          }),
-        ).rejects.toThrow('Agent not found for removing resource files');
       });
     });
   });
@@ -441,8 +419,7 @@ describe('models/Agent', () => {
     });
 
     test('should create and get an agent', async () => {
-      const agentId = `agent_${uuidv4()}`;
-      const authorId = new mongoose.Types.ObjectId();
+      const { agentId, authorId } = createTestIds();
 
       const newAgent = await createAgent({
         id: agentId,
@@ -627,14 +604,20 @@ describe('models/Agent', () => {
     });
 
     describe('Edge Cases', () => {
-      test('should handle getAgent with undefined search parameters', async () => {
-        const result = await getAgent(undefined);
-        expect(result).toBeNull();
-      });
-
-      test('should handle deleteAgent returning null for non-existent agent', async () => {
-        const result = await deleteAgent({ id: 'non-existent' });
-        expect(result).toBeNull();
+      test.each([
+        {
+          name: 'getAgent with undefined search parameters',
+          fn: () => getAgent(undefined),
+          expected: null,
+        },
+        {
+          name: 'deleteAgent with non-existent agent',
+          fn: () => deleteAgent({ id: 'non-existent' }),
+          expected: null,
+        },
+      ])('$name should return null', async ({ fn, expected }) => {
+        const result = await fn();
+        expect(result).toBe(expected);
       });
 
       test('should handle getListAgents with invalid author format', async () => {
@@ -692,14 +675,7 @@ describe('models/Agent', () => {
     });
 
     test('should create an agent with a single entry in versions array', async () => {
-      const agentId = `agent_${uuidv4()}`;
-      const agent = await createAgent({
-        id: agentId,
-        name: 'Test Agent',
-        provider: 'test',
-        model: 'test-model',
-        author: new mongoose.Types.ObjectId(),
-      });
+      const agent = await createBasicAgent();
 
       expect(agent.versions).toBeDefined();
       expect(Array.isArray(agent.versions)).toBe(true);
@@ -902,44 +878,7 @@ describe('models/Agent', () => {
 
       try {
         const authorId = new mongoose.Types.ObjectId();
-        const projectId1 = new mongoose.Types.ObjectId();
-        const projectId2 = new mongoose.Types.ObjectId();
-
-        const testCases = [
-          {
-            name: 'simple field update',
-            initial: {
-              name: 'Test Agent',
-              description: 'Initial description',
-            },
-            update: { name: 'Updated Name' },
-            duplicate: { name: 'Updated Name' },
-          },
-          {
-            name: 'object field update',
-            initial: {
-              model_parameters: { temperature: 0.7 },
-            },
-            update: { model_parameters: { temperature: 0.8 } },
-            duplicate: { model_parameters: { temperature: 0.8 } },
-          },
-          {
-            name: 'array field update',
-            initial: {
-              tools: ['tool1', 'tool2'],
-            },
-            update: { tools: ['tool2', 'tool3'] },
-            duplicate: { tools: ['tool2', 'tool3'] },
-          },
-          {
-            name: 'projectIds update',
-            initial: {
-              projectIds: [projectId1],
-            },
-            update: { projectIds: [projectId1, projectId2] },
-            duplicate: { projectIds: [projectId2, projectId1] },
-          },
-        ];
+        const testCases = generateVersionTestCases();
 
         for (const testCase of testCases) {
           const testAgentId = `agent_${uuidv4()}`;
@@ -2269,16 +2208,7 @@ describe('models/Agent', () => {
       });
 
       // Mock findOneAndUpdate to simulate database error
-      const originalFindOneAndUpdate = Agent.findOneAndUpdate;
-      let callCount = 0;
-      Agent.findOneAndUpdate = jest.fn().mockImplementation((...args) => {
-        callCount++;
-        if (callCount === 2) {
-          // Fail on second call
-          throw new Error('Database connection lost');
-        }
-        return originalFindOneAndUpdate.apply(Agent, args);
-      });
+      const cleanup = mockFindOneAndUpdateError(2);
 
       // Concurrent updates where one fails
       const promises = [
@@ -2289,7 +2219,7 @@ describe('models/Agent', () => {
 
       const results = await Promise.allSettled(promises);
 
-      Agent.findOneAndUpdate = originalFindOneAndUpdate;
+      cleanup();
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
@@ -2415,3 +2345,92 @@ describe('models/Agent', () => {
     });
   });
 });
+
+function createBasicAgent(overrides = {}) {
+  const defaults = {
+    id: `agent_${uuidv4()}`,
+    name: 'Test Agent',
+    provider: 'test',
+    model: 'test-model',
+    author: new mongoose.Types.ObjectId(),
+  };
+  return createAgent({ ...defaults, ...overrides });
+}
+
+function createTestIds() {
+  return {
+    agentId: `agent_${uuidv4()}`,
+    authorId: new mongoose.Types.ObjectId(),
+    projectId: new mongoose.Types.ObjectId(),
+    fileId: uuidv4(),
+  };
+}
+
+function createFileOperations(agentId, fileIds, operation = 'add') {
+  return fileIds.map((fileId) =>
+    operation === 'add'
+      ? addAgentResourceFile({ agent_id: agentId, tool_resource: 'test_tool', file_id: fileId })
+      : removeAgentResourceFiles({
+          agent_id: agentId,
+          files: [{ tool_resource: 'test_tool', file_id: fileId }],
+        }),
+  );
+}
+
+function mockFindOneAndUpdateError(errorOnCall = 1) {
+  const original = Agent.findOneAndUpdate;
+  let callCount = 0;
+
+  Agent.findOneAndUpdate = jest.fn().mockImplementation((...args) => {
+    callCount++;
+    if (callCount === errorOnCall) {
+      throw new Error('Database connection lost');
+    }
+    return original.apply(Agent, args);
+  });
+
+  return () => {
+    Agent.findOneAndUpdate = original;
+  };
+}
+
+function generateVersionTestCases() {
+  const projectId1 = new mongoose.Types.ObjectId();
+  const projectId2 = new mongoose.Types.ObjectId();
+
+  return [
+    {
+      name: 'simple field update',
+      initial: {
+        name: 'Test Agent',
+        description: 'Initial description',
+      },
+      update: { name: 'Updated Name' },
+      duplicate: { name: 'Updated Name' },
+    },
+    {
+      name: 'object field update',
+      initial: {
+        model_parameters: { temperature: 0.7 },
+      },
+      update: { model_parameters: { temperature: 0.8 } },
+      duplicate: { model_parameters: { temperature: 0.8 } },
+    },
+    {
+      name: 'array field update',
+      initial: {
+        tools: ['tool1', 'tool2'],
+      },
+      update: { tools: ['tool2', 'tool3'] },
+      duplicate: { tools: ['tool2', 'tool3'] },
+    },
+    {
+      name: 'projectIds update',
+      initial: {
+        projectIds: [projectId1],
+      },
+      update: { projectIds: [projectId1, projectId2] },
+      duplicate: { projectIds: [projectId2, projectId1] },
+    },
+  ];
+}
