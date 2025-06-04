@@ -50,6 +50,25 @@ async function createRun({
     agent.model_parameters,
   );
 
+  /** Add proxy configuration for Anthropic */
+  if (provider === Providers.ANTHROPIC) {
+    const { ANTHROPIC_REVERSE_PROXY, ANTHROPIC_API_KEY } = process.env;
+
+    if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'user_provided' && !llmConfig.apiKey) {
+      llmConfig.apiKey = ANTHROPIC_API_KEY;
+    }
+
+    if (ANTHROPIC_REVERSE_PROXY) {
+      if (!llmConfig.clientOptions) {
+        llmConfig.clientOptions = {};
+      }
+
+      const baseURL = ANTHROPIC_REVERSE_PROXY.replace(/\/v1\/?$/, '');
+      llmConfig.clientOptions.baseURL = baseURL;
+      llmConfig.anthropicApiUrl = baseURL;
+    }
+  }
+
   /** Resolves issues with new OpenAI usage field */
   if (
     customProviders.has(agent.provider) ||
