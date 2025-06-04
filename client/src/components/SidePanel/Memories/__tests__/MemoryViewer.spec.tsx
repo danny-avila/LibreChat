@@ -33,7 +33,7 @@ describe('MemoryViewer', () => {
     expect(screen.getByRole('img', { hidden: true })).toBeInTheDocument();
   });
 
-  it('renders rows and pagination', () => {
+  it('renders memory values and pagination', () => {
     const memories = Array.from({ length: 12 }).map((_, i) => ({
       key: `key${i}`,
       value: `value${i}`,
@@ -42,17 +42,33 @@ describe('MemoryViewer', () => {
     mockUseMemoriesQuery.mockReturnValueOnce({ isLoading: false, data: memories });
     render(<MemoryViewer />);
 
-    // should show first 10 rows
-    expect(screen.getByText('key0')).toBeInTheDocument();
-    expect(screen.getByText('key9')).toBeInTheDocument();
-    expect(screen.queryByText('key10')).not.toBeInTheDocument();
+    // should show first 10 memory values (keys are hidden)
+    expect(screen.getByText('value0')).toBeInTheDocument();
+    expect(screen.getByText('value9')).toBeInTheDocument();
+    expect(screen.queryByText('value10')).not.toBeInTheDocument();
+
+    // keys should not be displayed
+    expect(screen.queryByText('key0')).not.toBeInTheDocument();
+    expect(screen.queryByText('key9')).not.toBeInTheDocument();
 
     // click next
     fireEvent.click(screen.getByText(/next/i));
-    expect(screen.getByText('key10')).toBeInTheDocument();
+    expect(screen.getByText('value10')).toBeInTheDocument();
   });
 
-  it('triggers edit flow and calls update mutation', () => {
+  it('shows Memory column header instead of Key and Value', () => {
+    const memories = [{ key: 'key1', value: 'value1', updated_at: new Date().toISOString() }];
+    mockUseMemoriesQuery.mockReturnValueOnce({ isLoading: false, data: memories });
+
+    render(<MemoryViewer />);
+
+    // Should show "Memory" header, not "Key" or "Value"
+    expect(screen.getByText('Memory')).toBeInTheDocument();
+    expect(screen.queryByText('Key')).not.toBeInTheDocument();
+    expect(screen.queryByText('Value')).not.toBeInTheDocument();
+  });
+
+  it('triggers edit flow and calls update mutation with key and value changes', () => {
     const memories = [{ key: 'key1', value: 'value1', updated_at: new Date().toISOString() }];
     mockUseMemoriesQuery.mockReturnValueOnce({ isLoading: false, data: memories });
 
@@ -61,15 +77,21 @@ describe('MemoryViewer', () => {
     // Click edit (pencil) button
     fireEvent.click(screen.getByLabelText(/edit/i));
 
-    // Type new value
-    const input = screen.getByLabelText(/edit/i);
-    fireEvent.change(input, { target: { value: 'new value' } });
+    // The edit dialog should open - find inputs for editing both key and value
+    const keyInput = screen.getByLabelText(/key/i);
+    const valueTextarea = screen.getByLabelText(/value/i);
 
-    // Press Enter to save
-    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
+    // Change both key and value
+    fireEvent.change(keyInput, { target: { value: 'new_key' } });
+    fireEvent.change(valueTextarea, { target: { value: 'new value' } });
 
+    // Find and click the save button
+    const saveButton = screen.getByText('Save');
+    fireEvent.click(saveButton);
+
+    // Should call update with the new key, new value, and original key
     expect(mockUseUpdateMemoryMutation).toHaveBeenCalledWith(
-      { key: 'key1', value: 'new value' },
+      { key: 'new_key', value: 'new value', originalKey: 'key1' },
       expect.any(Object),
     );
   });
@@ -78,13 +100,14 @@ describe('MemoryViewer', () => {
     const memories = [{ key: 'key2', value: 'value2', updated_at: new Date().toISOString() }];
     mockUseMemoriesQuery.mockReturnValueOnce({ isLoading: false, data: memories });
 
-    // Mock window.confirm to always return true
-    jest.spyOn(window, 'confirm').mockImplementation(() => true);
-
     render(<MemoryViewer />);
 
     // Click delete (trash) button
     fireEvent.click(screen.getByLabelText(/delete/i));
+
+    // Click confirm delete in the modal
+    const deleteButton = screen.getByText('Delete');
+    fireEvent.click(deleteButton);
 
     expect(mockUseDeleteMemoryMutation).toHaveBeenCalledWith('key2', expect.any(Object));
   });

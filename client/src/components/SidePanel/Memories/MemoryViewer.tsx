@@ -213,11 +213,12 @@ export default function MemoryViewer() {
           <Table className="w-full table-fixed">
             <TableHeader>
               <TableRow className="border-b border-border-light hover:bg-surface-secondary">
-                <TableHead className="w-[25%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                  <div className="px-4">{localize('com_ui_key')}</div>
-                </TableHead>
-                <TableHead className="w-[50%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                  <div className="px-4">{localize('com_ui_value')}</div>
+                <TableHead
+                  className={`${
+                    hasUpdateAccess ? 'w-[75%]' : 'w-[100%]'
+                  } bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary`}
+                >
+                  <div className="px-4">{localize('com_ui_memory')}</div>
                 </TableHead>
                 {hasUpdateAccess && (
                   <TableHead className="w-[25%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
@@ -233,17 +234,7 @@ export default function MemoryViewer() {
                     key={idx}
                     className="border-b border-border-light hover:bg-surface-secondary"
                   >
-                    <TableCell className="w-[25%] px-4 py-4">
-                      <div
-                        className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary"
-                        title={memory.key}
-                      >
-                        {memory.key}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className={hasUpdateAccess ? 'w-[40%] px-4 py-4' : 'w-[70%] px-4 py-4'}
-                    >
+                    <TableCell className={`${hasUpdateAccess ? 'w-[75%]' : 'w-[100%]'} px-4 py-4`}>
                       <div
                         className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary"
                         title={memory.value}
@@ -264,7 +255,7 @@ export default function MemoryViewer() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={hasUpdateAccess ? 3 : 2}
+                    colSpan={hasUpdateAccess ? 2 : 1}
                     className="h-24 text-center text-sm text-text-secondary"
                   >
                     {localize('com_ui_no_data')}
