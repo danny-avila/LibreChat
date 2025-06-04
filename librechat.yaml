@@ -43,6 +43,21 @@ actions:
     - "groq.com"
     - "openrouter.ai"
 
+# MCP (Model Context Protocol) Servers Configuration
+mcpServers:
+  puppeteer:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-puppeteer"
+    timeout: 300000  # 5 minutes timeout for browser operations
+    description: "Web automation and screenshot tool using Puppeteer"
+    # This server provides web browsing capabilities including:
+    # - Taking screenshots of web pages
+    # - Reading page content
+    # - Web automation tasks
+
 endpoints:
   openAI:
     models:

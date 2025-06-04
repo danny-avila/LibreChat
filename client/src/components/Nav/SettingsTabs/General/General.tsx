@@ -6,6 +6,7 @@ import HideSidePanelSwitch from './HideSidePanelSwitch';
 import { ThemeContext, useLocalize } from '~/hooks';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
+import MCPSettings from './MCPSettings';
 import ToggleSwitch from '../ToggleSwitch';
 import { Dropdown } from '~/components';
 import store from '~/store';
@@ -170,6 +171,9 @@ function General() {
       ))}
       <div className="pb-3">
         <ArchivedChats />
+      </div>
+      <div className="pb-3">
+        <MCPSettings />
       </div>
     </div>
   );
