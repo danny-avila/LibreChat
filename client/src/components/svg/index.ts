@@ -58,3 +58,4 @@ export { default as SaveIcon } from './SaveIcon';
 export { default as CircleHelpIcon } from './CircleHelpIcon';
 export { default as BedrockIcon } from './BedrockIcon';
 export { default as XAIcon } from './XAIcon';
+export { default as PhoneIcon } from './PhoneIcon';

@@ -32,6 +32,7 @@ import SendButton from './SendButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
+import PhoneButton from './PhoneButton';
 import store from '~/store';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
@@ -190,6 +191,12 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     setBackupBadges([]);
   }, [backupBadges, setBadges, setIsEditingBadges]);
 
+  const handlePhoneClick = useCallback(() => {
+    // Aquí puedes agregar la lógica para manejar la llamada
+    console.log('Botón de teléfono clickeado');
+    // Por ejemplo, podrías abrir un modal, iniciar una llamada, etc.
+  }, []);
+
   const isMoreThanThreeRows = visualRowCount > 3;
 
   const baseClasses = useMemo(
@@ -333,6 +340,12 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     />
                   )
                 )}
+              </div>
+              <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                <PhoneButton
+                  disabled={disableInputs}
+                  onClick={handlePhoneClick}
+                />
               </div>
             </div>
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
