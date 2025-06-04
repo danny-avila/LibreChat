@@ -57,6 +57,38 @@ mcpServers:
     # - Taking screenshots of web pages
     # - Reading page content
     # - Web automation tasks
+    
+    # Token checking and authentication configuration
+    auth:
+      enabled: true
+      requireUserToken: false
+      requireAdminRole: false
+      
+      # Security restrictions
+      security:
+        # Allowed domains for puppeteer operations
+        allowedDomains:
+          - "*.google.com"
+          - "*.github.com"
+          - "*.stackoverflow.com"
+          - "*.wikipedia.org"
+          - "*.example.com"
+        # Blocked domains
+        blockedDomains:
+          - "localhost"
+          - "127.0.0.1"
+          - "*.internal"
+          - "*.local"
+        # Maximum page load timeout (seconds)
+        maxPageLoadTimeout: 30
+        # Disable dangerous operations
+        disableDownloads: true
+        disableUploads: true
+        disableDevtools: true
+        # Screenshot restrictions
+        maxScreenshotWidth: 1920
+        maxScreenshotHeight: 1080
+        allowFullPageScreenshots: false
 
 endpoints:
   openAI:
@@ -268,12 +300,3 @@ fileConfig:
   imageGeneration:
     percentage: 100
     px: 1024
-
-# Balance configuration
-balance:
-  enabled: true
-  startBalance: 20000
-  autoRefillEnabled: false
-  refillIntervalValue: 30
-  refillIntervalUnit: 'days'
-  refillAmount: 10000
