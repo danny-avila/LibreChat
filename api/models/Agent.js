@@ -301,10 +301,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     }
 
     const shouldCreateVersion =
-      forceVersion ||
-      (versions &&
-        versions.length > 0 &&
-        (Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet));
+      forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet;
 
     if (shouldCreateVersion) {
       const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
