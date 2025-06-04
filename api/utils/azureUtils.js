@@ -1,4 +1,4 @@
-const { isEnabled } = require('~/server/utils');
+const { isEnabled } = require('~/server/utils/handleText');
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
