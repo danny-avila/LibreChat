@@ -46,7 +46,7 @@ const {
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
-const { uploadMistralOCR, uploadAzureMistralOCR} = require('./MistralOCR');
+const { uploadMistralOCR, uploadAzureMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
