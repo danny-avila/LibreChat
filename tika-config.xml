@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<properties>
+  <parsers>
+    <!-- Default Parser for most things, except for 2 mime types, and never
+         use the Executable Parser -->
+    <parser class="org.apache.tika.parser.DefaultParser">
+      <mime-exclude>application/pdf</mime-exclude>
+      <parser-exclude class="org.apache.tika.parser.executable.ExecutableParser"/>
+    </parser>
+    <!-- Use a different parser for PDF -->
+    <parser class="org.apache.tika.parser.ocr.TesseractOCRParser">
+      <mime>application/pdf</mime>
+    </parser>
+    <!-- Exclude COSParser from PDFParser -->
+    <parser class="org.apache.tika.parser.pdf.PDFParser">
+      <parser-exclude class="org.apache.pdfbox.pdfparser.COSParser"/>
+      <PDFParserConfig>
+        <OCR_STRATEGY>OCR_AND_TEXT_EXTRACTION</OCR_STRATEGY>
+      </PDFParserConfig>
+    <!-- Add XMLParser -->
+    <parser class="org.apache.tika.parser.xml.XMLParser">
+      <mime>application/xml</mime>
+      <mime>text/xml</mime>
+    </parser>
+    </parser>
+  </parsers>
+  <server>
+    <params>
+        <!-- request URI log level 'debug' or 'info' -->
+        <logLevel>debug</logLevel>
+        <!-- whether or not to return the stacktrace in the data returned to the user when a parse exception happens-->
+        <returnStackTrace>true</returnStackTrace>
+        <enableUnsecureFeatures>true</enableUnsecureFeatures>
+    </params>
+  </server>
+</properties>
