@@ -218,11 +218,11 @@ export default function MemoryViewer() {
                     hasUpdateAccess ? 'w-[75%]' : 'w-[100%]'
                   } bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary`}
                 >
-                  <div className="px-4">{localize('com_ui_memory')}</div>
+                  <div>{localize('com_ui_memory')}</div>
                 </TableHead>
                 {hasUpdateAccess && (
-                  <TableHead className="w-[25%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                    <div className="px-4">{localize('com_assistants_actions')}</div>
+                  <TableHead className="w-[25%] bg-surface-secondary py-3 text-center text-sm font-medium text-text-secondary">
+                    <div>{localize('com_assistants_actions')}</div>
                   </TableHead>
                 )}
               </TableRow>
@@ -244,7 +244,7 @@ export default function MemoryViewer() {
                     </TableCell>
                     {hasUpdateAccess && (
                       <TableCell className="w-[25%] px-4 py-4">
-                        <div className="flex gap-2">
+                        <div className="flex justify-center gap-2">
                           <EditMemoryButton memory={memory} />
                           <DeleteMemoryButton memory={memory} />
                         </div>
