@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
-import { Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
+import { X, Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
 import type { ValidSource, ImageResult } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { useSearchContext } from '~/Providers';
@@ -9,6 +9,7 @@ import { AnimatedTabs } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import {
   OGDialog,
+  OGDialogClose,
   OGDialogTitle,
   OGDialogContent,
   OGDialogTrigger,
@@ -213,25 +214,12 @@ function SourcesGroup({ sources, limit = 3 }: { sources: ValidSource[]; limit?: 
             <OGDialogTitle className="text-base font-medium">
               {localize('com_sources_title')}
             </OGDialogTitle>
-            <button
+            <OGDialogClose
               className="rounded-full p-1 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary"
               aria-label={localize('com_ui_close')}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+              <X className="h-4 w-4" />
+            </OGDialogClose>
           </div>
           <div className="flex-1 overflow-y-auto px-3 py-2">
             <div className="flex flex-col gap-2">
