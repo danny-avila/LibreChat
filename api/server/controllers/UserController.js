@@ -163,7 +163,11 @@ const deleteUserController = async (req, res) => {
     await Balance.deleteMany({ user: user._id }); // delete user balances
     await deletePresets(user.id); // delete user presets
     /* TODO: Delete Assistant Threads */
-    await deleteConvos(user.id); // delete user convos
+    try {
+      await deleteConvos(user.id); // delete user convos
+    } catch (error) {
+      logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
+    }
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
     await deleteUserById(user.id); // delete user
     await deleteAllSharedLinks(user.id); // delete user shared links
