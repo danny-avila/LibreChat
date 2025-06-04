@@ -1,5 +1,6 @@
 // ~/server/services/Files/MistralOCR/crud.js
 const fs = require('fs');
+const fas = require('fs').promises;
 const path = require('path');
 const FormData = require('form-data');
 const { FileSources, envVarRegex, extractEnvVariable } = require('librechat-data-provider');
@@ -222,9 +223,105 @@ const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
   }
 };
 
+/**
+ * Use Azure Mistral OCR API to processe the OCR result.
+ *
+ * @param {Object} params - The params object.
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
+ *                                     have a `mimetype` property that tells us the file type
+ * @returns {Promise<{ filepath: string, bytes: number }>} - The result object containing the processed `text` and `images` (not currently used),
+ *                       along with the `filename` and `bytes` properties.
+ */
+const uploadAzureMistralOCR = async ({ req, file }) => {
+  try {
+    /** @type {TCustomConfig['ocr']} */
+    const ocrConfig = req.app.locals?.ocr;
+
+    const apiKeyConfig = ocrConfig.apiKey || '';
+    const baseURLConfig = ocrConfig.baseURL || '';
+
+    const isApiKeyEnvVar = envVarRegex.test(apiKeyConfig);
+    const isBaseURLEnvVar = envVarRegex.test(baseURLConfig);
+
+    const isApiKeyEmpty = !apiKeyConfig.trim();
+    const isBaseURLEmpty = !baseURLConfig.trim();
+
+    let apiKey, baseURL;
+
+    if (isApiKeyEnvVar || isBaseURLEnvVar || isApiKeyEmpty || isBaseURLEmpty) {
+      const apiKeyVarName = isApiKeyEnvVar ? extractVariableName(apiKeyConfig) : 'OCR_API_KEY';
+      const baseURLVarName = isBaseURLEnvVar ? extractVariableName(baseURLConfig) : 'OCR_BASEURL';
+
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [baseURLVarName, apiKeyVarName],
+        optional: new Set([baseURLVarName]),
+      });
+
+      apiKey = authValues[apiKeyVarName];
+      baseURL = authValues[baseURLVarName];
+    } else {
+      apiKey = apiKeyConfig;
+      baseURL = baseURLConfig;
+    }
+
+    const modelConfig = ocrConfig.mistralModel || '';
+    const model = envVarRegex.test(modelConfig)
+      ? extractEnvVariable(modelConfig)
+      : modelConfig.trim() || 'mistral-ocr-latest';
+
+    const mimetype = (file.mimetype || '').toLowerCase();
+    const originalname = file.originalname || '';
+    const isImage =
+      mimetype.startsWith('image') || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(originalname);
+    const documentType = isImage ? 'image_url' : 'document_url';
+
+    const buffer = await fas.readFile(file.path);
+    const base64 = buffer.toString('base64');
+    const ocrResult = await performOCR({
+      apiKey,
+      baseURL,
+      model,
+      url: `data:image/jpeg;base64,${base64}`,
+      documentType,
+    });
+
+    let aggregatedText = '';
+    const images = [];
+    ocrResult.pages.forEach((page, index) => {
+      if (ocrResult.pages.length > 1) {
+        aggregatedText += `# PAGE ${index + 1}\n`;
+      }
+
+      aggregatedText += page.markdown + '\n\n';
+
+      if (page.images && page.images.length > 0) {
+        page.images.forEach((image) => {
+          if (image.image_base64) {
+            images.push(image.image_base64);
+          }
+        });
+      }
+    });
+
+    return {
+      filename: file.originalname,
+      bytes: aggregatedText.length * 4,
+      filepath: FileSources.azure_mistral_ocr,
+      text: aggregatedText,
+      images,
+    };
+  } catch (error) {
+    const message = 'Error uploading document to Azure Mistral OCR API';
+    throw new Error(logAxiosError({ error, message }));
+  }
+};
 module.exports = {
   uploadDocumentToMistral,
   uploadMistralOCR,
+  uploadAzureMistralOCR,
   getSignedUrl,
   performOCR,
 };
