@@ -1272,6 +1272,10 @@ export enum SettingsTabValues {
    */
   BETA = 'beta',
   /**
+   * Tab for MCP (Model Context Protocol) Settings
+   */
+  MCP = 'mcp',
+  /**
    * Tab for Data Controls
    */
   DATA = 'data',

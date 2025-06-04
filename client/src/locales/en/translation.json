@@ -740,6 +740,7 @@
   "com_ui_manage": "Manage",
   "com_ui_max_tags": "Maximum number allowed is {{0}}, using latest values.",
   "com_ui_mcp_servers": "MCP Servers",
+  "com_nav_setting_mcp": "MCP",
   "com_ui_mcp_settings": "MCP Settings",
   "com_ui_mcp_settings_description": "Model Context Protocol (MCP) servers provide additional capabilities to AI models. Configure which servers are available for AI interactions.",
   "com_ui_mention": "Mention an endpoint, assistant, or preset to quickly switch to it",
