@@ -121,9 +121,14 @@ export default [
       // common rules
       'no-nested-ternary': 'warn',
       'no-constant-binary-expression': 'warn',
-      // Also disable the core no-unused-vars rule globally.
-      'no-unused-vars': 'warn',
-
+      'no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       'no-console': 'off',
       'import/no-cycle': 'error',
       'import/no-self-import': 'error',
@@ -181,9 +186,6 @@ export default [
     files: ['api/**/*.js', 'config/**/*.js'],
     rules: {
       // API
-      // TODO: maybe later to error.
-      'no-unused-const': 'off',
-      'no-unused-vars': 'off',
       'no-async-promise-executor': 'off',
     },
   },
@@ -278,7 +280,14 @@ export default [
       ],
       //
       '@typescript-eslint/no-unused-expressions': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/strict-boolean-expressions': 'off',
