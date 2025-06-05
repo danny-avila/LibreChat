@@ -72,6 +72,7 @@ function getLLMConfig(apiKey, options = {}) {
 
   if (options.reverseProxyUrl) {
     requestOptions.clientOptions.baseURL = options.reverseProxyUrl;
+    requestOptions.anthropicApiUrl = options.reverseProxyUrl;
   }
 
   return {

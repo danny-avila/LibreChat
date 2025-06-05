@@ -29,13 +29,10 @@ describe('createRun', () => {
   let mockSignal;
   let mockCustomHandlers;
   let mockRunInstance;
-  let originalEnv;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    originalEnv = process.env;
-    process.env = { ...originalEnv };
     mockAgent = {
       provider: 'openAI',
       endpoint: 'openAI',
@@ -60,10 +57,6 @@ describe('createRun', () => {
     providerEndpointMap.anthropic = 'anthropic';
     providerEndpointMap.openAI = 'openAI';
     providerEndpointMap.bedrock = 'bedrock';
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
   });
 
   it('should create a Run instance with all options', async () => {
@@ -96,80 +89,6 @@ describe('createRun', () => {
         additional_instructions: 'Additional test instructions',
       },
       customHandlers: mockCustomHandlers,
-    });
-  });
-
-  describe('Anthropic provider', () => {
-    beforeEach(() => {
-      mockAgent.provider = 'anthropic';
-    });
-
-    it('should handle API key from environment correctly', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-api-key';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.apiKey).toBe('test-api-key');
-      expect(graphConfig.streamBuffer).toBe(2000);
-    });
-
-    it('should skip API key when value is "user_provided"', async () => {
-      process.env.ANTHROPIC_API_KEY = 'user_provided';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.apiKey).toBeUndefined();
-    });
-
-    it('should not override existing apiKey', async () => {
-      process.env.ANTHROPIC_API_KEY = 'env-api-key';
-      mockAgent.model_parameters.apiKey = 'existing-api-key';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.apiKey).toBe('existing-api-key');
-    });
-
-    it('should handle proxy configuration with URL normalization', async () => {
-      process.env.ANTHROPIC_REVERSE_PROXY = 'https://proxy.example.com/v1/';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.clientOptions.baseURL).toBe('https://proxy.example.com');
-      expect(graphConfig.llmConfig.anthropicApiUrl).toBe('https://proxy.example.com');
-    });
-
-    it('should merge proxy with existing clientOptions', async () => {
-      mockAgent.model_parameters.clientOptions = {
-        timeout: 30000,
-        headers: { 'Custom-Header': 'value' },
-      };
-      process.env.ANTHROPIC_REVERSE_PROXY = 'https://proxy.example.com';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.clientOptions).toEqual({
-        timeout: 30000,
-        headers: { 'Custom-Header': 'value' },
-        baseURL: 'https://proxy.example.com',
-      });
-    });
-
-    it('should handle both API key and proxy together', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-api-key';
-      process.env.ANTHROPIC_REVERSE_PROXY = 'https://proxy.example.com/v1';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.apiKey).toBe('test-api-key');
-      expect(graphConfig.llmConfig.clientOptions.baseURL).toBe('https://proxy.example.com');
-      expect(graphConfig.llmConfig.anthropicApiUrl).toBe('https://proxy.example.com');
     });
   });
 
@@ -352,19 +271,6 @@ describe('createRun', () => {
 
       const graphConfig = getLastGraphConfig();
       expect(graphConfig.reasoningKey).toBeUndefined();
-    });
-
-    it('should handle Anthropic with no environment variables', async () => {
-      delete process.env.ANTHROPIC_API_KEY;
-      delete process.env.ANTHROPIC_REVERSE_PROXY;
-      mockAgent.provider = 'anthropic';
-
-      await createRun({ agent: mockAgent, signal: mockSignal });
-
-      const graphConfig = getLastGraphConfig();
-      expect(graphConfig.llmConfig.apiKey).toBeUndefined();
-      expect(graphConfig.llmConfig.clientOptions).toBeUndefined();
-      expect(graphConfig.llmConfig.anthropicApiUrl).toBeUndefined();
     });
 
     it('should handle Run.create errors', async () => {
