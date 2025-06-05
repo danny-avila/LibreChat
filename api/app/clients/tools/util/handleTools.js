@@ -15,7 +15,6 @@ const {
   // Basic Tools
   GoogleSearchAPI,
   // Structured Tools
-  DALLE3,
   FluxAPI,
   OpenWeather,
   StructuredSD,
@@ -213,10 +212,6 @@ const loadTools = async ({
 
   const requestedTools = {};
 
-  if (functions === true) {
-    toolConstructors.dalle = DALLE3;
-  }
-
   /** @type {ImageGenOptions} */
   const imageGenOptions = {
     isAgent: !!agent,
@@ -229,7 +224,6 @@ const loadTools = async ({
 
   const toolOptions = {
     flux: imageGenOptions,
-    dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };

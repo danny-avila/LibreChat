@@ -98,19 +98,6 @@
     ]
   },
   {
-    "name": "DALL-E-3",
-    "pluginKey": "dalle",
-    "description": "[DALL-E-3] Create realistic images and art from a description in natural language",
-    "icon": "https://i.imgur.com/u2TzXzH.png",
-    "authConfig": [
-      {
-        "authField": "DALLE3_API_KEY||DALLE_API_KEY",
-        "label": "OpenAI API Key",
-        "description": "You can use DALL-E with your API Key from OpenAI."
-      }
-    ]
-  },
-  {
     "name": "Tavily Search",
     "pluginKey": "tavily_search_results_json",
     "description": "Tavily Search is a robust search API tailored for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
@@ -183,7 +170,7 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "icon": "https://mintlify.s3.us-west-1.amazonaws.com/bfl/logo/logo_light.png",
     "isAuthRequired": "true",
     "authConfig": [
       {

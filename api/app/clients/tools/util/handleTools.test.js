@@ -15,14 +15,14 @@ const { Calculator } = require('@langchain/community/tools/calculator');
 const { User } = require('~/db/models');
 const PluginService = require('~/server/services/PluginService');
 const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
-const { StructuredSD, availableTools, DALLE3 } = require('../');
+const { StructuredSD, availableTools } = require('../');
 
 describe('Tool Handlers', () => {
   let mongoServer;
   let fakeUser;
-  const pluginKey = 'dalle';
+  const pluginKey = 'stable-diffusion';
   const pluginKey2 = 'wolfram';
-  const ToolClass = DALLE3;
+  const ToolClass = StructuredSD;
   const initialTools = [pluginKey, pluginKey2];
   const mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
@@ -191,10 +191,10 @@ describe('Tool Handlers', () => {
     });
 
     it('should initialize an authenticated tool with primary auth field', async () => {
-      process.env.DALLE3_API_KEY = 'mocked_api_key';
+      process.env.SD_WEBUI_URL = 'mocked_api_key';
       const initToolFunction = loadToolWithAuth(
         'userId',
-        ['DALLE3_API_KEY||DALLE_API_KEY'],
+        ['SD_WEBUI_URL'],
         ToolClass,
       );
       const authTool = await initToolFunction();
@@ -203,36 +203,17 @@ describe('Tool Handlers', () => {
       expect(mockPluginService.getUserPluginAuthValue).not.toHaveBeenCalled();
     });
 
-    it('should initialize an authenticated tool with alternate auth field when primary is missing', async () => {
-      delete process.env.DALLE3_API_KEY; // Ensure the primary key is not set
-      process.env.DALLE_API_KEY = 'mocked_alternate_api_key';
+    it('should fallback to getUserPluginAuthValue when env vars are missing', async () => {
+      mockPluginService.updateUserPluginAuth('userId', 'SD_WEBUI_URL', 'stable-diffusion', 'mocked_api_key');
       const initToolFunction = loadToolWithAuth(
         'userId',
-        ['DALLE3_API_KEY||DALLE_API_KEY'],
+        ['SD_WEBUI_URL'],
         ToolClass,
       );
       const authTool = await initToolFunction();
 
       expect(authTool).toBeInstanceOf(ToolClass);
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(1);
-      expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledWith(
-        'userId',
-        'DALLE3_API_KEY',
-        true,
-      );
-    });
-
-    it('should fallback to getUserPluginAuthValue when env vars are missing', async () => {
-      mockPluginService.updateUserPluginAuth('userId', 'DALLE_API_KEY', 'dalle', 'mocked_api_key');
-      const initToolFunction = loadToolWithAuth(
-        'userId',
-        ['DALLE3_API_KEY||DALLE_API_KEY'],
-        ToolClass,
-      );
-      const authTool = await initToolFunction();
-
-      expect(authTool).toBeInstanceOf(ToolClass);
-      expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(2);
     });
 
     it('should throw an error for an unauthenticated tool', async () => {
