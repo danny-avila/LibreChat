@@ -525,6 +525,7 @@ export const tMessageSchema = z.object({
 export type MemoryArtifact = {
   key: string;
   value?: string;
+  tokenCount?: number;
   type: 'update' | 'delete';
 };
 

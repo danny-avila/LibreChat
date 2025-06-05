@@ -44,4 +44,5 @@ export interface MemoryResult {
 export interface FormattedMemoriesResult {
   withKeys: string;
   withoutKeys: string;
+  totalTokens?: number;
 }

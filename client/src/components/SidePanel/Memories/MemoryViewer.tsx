@@ -29,7 +29,7 @@ import AdminSettings from './AdminSettings';
 export default function MemoryViewer() {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const { data: memData = [], isLoading } = useMemoriesQuery();
+  const { data: memData, isLoading } = useMemoriesQuery();
   const { mutate: deleteMemory } = useDeleteMemoryMutation();
   const { showToast } = useToastContext();
   const [pageIndex, setPageIndex] = useState(0);
@@ -47,13 +47,7 @@ export default function MemoryViewer() {
     permission: Permissions.UPDATE,
   });
 
-  const memories: TUserMemory[] = useMemo(
-    () =>
-      Array.isArray(memData)
-        ? memData
-        : ((memData as unknown as { memories?: TUserMemory[] })?.memories ?? []),
-    [memData],
-  );
+  const memories: TUserMemory[] = useMemo(() => memData?.memories ?? [], [memData]);
 
   const filteredMemories = useMemo(() => {
     return matchSorter(memories, searchQuery, {
@@ -64,6 +58,16 @@ export default function MemoryViewer() {
   const currentRows = useMemo(() => {
     return filteredMemories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
   }, [filteredMemories, pageIndex]);
+
+  const getProgressBarColor = (percentage: number): string => {
+    if (percentage > 90) {
+      return 'bg-red-500';
+    }
+    if (percentage > 75) {
+      return 'bg-yellow-500';
+    }
+    return 'bg-green-500';
+  };
 
   const EditMemoryButton = ({ memory }: { memory: TUserMemory }) => {
     const [open, setOpen] = useState(false);
@@ -208,6 +212,26 @@ export default function MemoryViewer() {
             aria-label={localize('com_ui_memories_filter')}
           />
         </div>
+
+        {/* Memory Usage Display */}
+        {memData?.tokenLimit && (
+          <div className="rounded-lg border border-border-light bg-surface-secondary p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium text-text-primary">
+                {localize('com_ui_memory_usage')}
+              </span>
+              <span className="text-sm text-text-secondary">
+                {memData.usagePercentage}% {localize('com_ui_used')}
+              </span>
+            </div>
+            <div className="relative h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+              <div
+                className={`h-full transition-all ${getProgressBarColor(memData.usagePercentage ?? 0)}`}
+                style={{ width: `${memData.usagePercentage ?? 0}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
           <Table className="w-full table-fixed">

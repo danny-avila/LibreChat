@@ -9,7 +9,13 @@
 // } = require('librechat-data-provider');
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, createRun, Tokenizer, createMemoryProcessor } = require('@librechat/api');
+const {
+  sendEvent,
+  createRun,
+  Tokenizer,
+  memoryInstructions,
+  createMemoryProcessor,
+} = require('@librechat/api');
 const {
   Callback,
   GraphEvents,
@@ -35,9 +41,9 @@ const {
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { getCustomEndpointConfig, checkCapability } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
+const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { setMemory, deleteMemory, getFormattedMemories } = require('~/models');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const { checkAccess } = require('~/server/middleware/roles/access');
@@ -61,8 +67,6 @@ const payloadParser = ({ req, agent, endpoint }) => {
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
 const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
-
-// const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 
 function createTokenCounter(encoding) {
   return function (message) {
@@ -339,7 +343,7 @@ class AgentClient extends BaseClient {
 
     const withoutKeys = await this.useMemory();
     if (withoutKeys) {
-      systemContent += `\n\n# Existing memory about the user:\n${withoutKeys}`;
+      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
     }
 
     if (systemContent) {

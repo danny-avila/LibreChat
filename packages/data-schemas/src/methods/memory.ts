@@ -87,31 +87,37 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
       const memories = await getAllUserMemories(userId);
 
       if (!memories || memories.length === 0) {
-        return { withKeys: '', withoutKeys: '' };
+        return { withKeys: '', withoutKeys: '', totalTokens: 0 };
       }
 
       const sortedMemories = memories.sort(
         (a, b) => new Date(a.updated_at!).getTime() - new Date(b.updated_at!).getTime(),
       );
 
+      const totalTokens = sortedMemories.reduce((sum, memory) => {
+        return sum + (memory.tokenCount || 0);
+      }, 0);
+
       const withKeys = sortedMemories
         .map((memory, index) => {
           const date = formatDate(new Date(memory.updated_at!));
-          return `${index + 1}. [${date}]. ["key": "${memory.key}"]. ["value": "${memory.value}"]`;
+          const tokenInfo = memory.tokenCount ? ` [${memory.tokenCount} tokens]` : '';
+          return `${index + 1}. [${date}]. ["key": "${memory.key}"]${tokenInfo}. ["value": "${memory.value}"]`;
         })
         .join('\n\n');
 
       const withoutKeys = sortedMemories
         .map((memory, index) => {
           const date = formatDate(new Date(memory.updated_at!));
-          return `${index + 1}. [${date}]. ${memory.value}`;
+          const tokenInfo = memory.tokenCount ? ` [${memory.tokenCount} tokens]` : '';
+          return `${index + 1}. [${date}]${tokenInfo}. ${memory.value}`;
         })
         .join('\n\n');
 
-      return { withKeys, withoutKeys };
+      return { withKeys, withoutKeys, totalTokens };
     } catch (error) {
       logger.error('Failed to get formatted memories:', error);
-      return { withKeys: '', withoutKeys: '' };
+      return { withKeys: '', withoutKeys: '', totalTokens: 0 };
     }
   }
 

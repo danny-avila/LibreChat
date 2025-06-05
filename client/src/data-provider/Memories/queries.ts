@@ -3,16 +3,15 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import type {
   UseQueryOptions,
-  UseMutationResult,
-  QueryObserverResult,
   UseMutationOptions,
+  QueryObserverResult,
 } from '@tanstack/react-query';
-import type { TUserMemory, MutationOptions } from 'librechat-data-provider';
+import type { TUserMemory, MemoriesResponse } from 'librechat-data-provider';
 
 export const useMemoriesQuery = (
-  config?: UseQueryOptions<TUserMemory[]>,
-): QueryObserverResult<TUserMemory[]> => {
-  return useQuery<TUserMemory[]>([QueryKeys.memories], () => dataService.getMemories(), {
+  config?: UseQueryOptions<MemoriesResponse>,
+): QueryObserverResult<MemoriesResponse> => {
+  return useQuery<MemoriesResponse>([QueryKeys.memories], () => dataService.getMemories(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
 import { OGDialog, OGDialogTemplate, Button, Label, Input } from '~/components/ui';
-import { useUpdateMemoryMutation } from '~/data-provider';
+import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
@@ -24,6 +24,7 @@ export default function MemoryEditDialog({
 }: MemoryEditDialogProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { data: memData } = useMemoriesQuery();
 
   const hasUpdateAccess = useHasAccess({
     permissionType: PermissionTypes.MEMORIES,
@@ -99,15 +100,34 @@ export default function MemoryEditDialog({
         main={
           <div className="space-y-4">
             {memory && (
-              <div className="text-xs text-text-secondary">
-                {localize('com_ui_date')}:{' '}
-                {new Date(memory.updated_at).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-text-secondary">
+                  <div>
+                    {localize('com_ui_date')}:{' '}
+                    {new Date(memory.updated_at).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                  {/* Token Information */}
+                  {memory.tokenCount !== undefined && (
+                    <div>
+                      {memory.tokenCount.toLocaleString()}
+                      {memData?.tokenLimit && ` / ${memData.tokenLimit.toLocaleString()}`}{' '}
+                      {localize('com_ui_tokens')}
+                    </div>
+                  )}
+                </div>
+                {/* Overall Memory Usage */}
+                {memData?.tokenLimit && memData?.usagePercentage !== null && (
+                  <div className="text-xs text-text-secondary">
+                    {localize('com_ui_memory_usage')}: {memData.usagePercentage}%{' '}
+                    {localize('com_ui_used')}
+                  </div>
+                )}
               </div>
             )}
             <div className="space-y-2">

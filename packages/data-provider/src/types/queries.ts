@@ -115,4 +115,12 @@ export type TUserMemory = {
   key: string;
   value: string;
   updated_at: string;
+  tokenCount?: number;
+};
+
+export type MemoriesResponse = {
+  memories: TUserMemory[];
+  totalTokens: number;
+  tokenLimit: number | null;
+  usagePercentage: number | null;
 };

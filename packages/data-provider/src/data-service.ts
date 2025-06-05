@@ -807,7 +807,7 @@ export function verifyTwoFactorTemp(
 }
 
 /* Memories */
-export const getMemories = (): Promise<q.TUserMemory[]> => {
+export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 

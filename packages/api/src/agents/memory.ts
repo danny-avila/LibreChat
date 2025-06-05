@@ -15,6 +15,7 @@ import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
+import { Tokenizer } from '~/utils';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -34,10 +35,11 @@ export interface MemoryConfig {
 }
 
 export const memoryInstructions =
-  'The system will automatically save important information about the user into memory. It can intelligently recognize when the user would like to update or delete specific memories, allowing for dynamic management of stored information based on user preferences and requests.';
+  'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management.';
 
 const getDefaultInstructions = (
   validKeys?: string[],
+  tokenLimit?: number,
 ) => `Use the \`set_memory\` tool to save important information about the user, but ONLY when the user has explicitly provided this information. If there is nothing to note about the user specifically, END THE TURN IMMEDIATELY.
 
   The \`delete_memory\` tool should only be used in two scenarios:
@@ -49,6 +51,12 @@ const getDefaultInstructions = (
       ? `CRITICAL INSTRUCTION: Only the following keys are valid for storing memories:
   ${validKeys.map((key) => `- ${key}`).join('\n  ')}`
       : 'You can use any appropriate key to store memories about the user.'
+  }
+
+  ${
+    tokenLimit
+      ? `⚠️ TOKEN LIMIT: Each memory value must not exceed ${tokenLimit} tokens. Be concise and store only essential information.`
+      : ''
   }
 
   ⚠️ WARNING ⚠️
@@ -67,10 +75,14 @@ const createMemoryTool = ({
   userId,
   setMemory,
   validKeys,
+  tokenLimit,
+  totalTokens = 0,
 }: {
   userId: string | ObjectId;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
+  tokenLimit?: number;
+  totalTokens?: number;
 }) => {
   return tool(
     async ({ key, value }) => {
@@ -84,18 +96,38 @@ const createMemoryTool = ({
           return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
         }
 
+        const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+
+        if (tokenLimit && tokenCount > tokenLimit) {
+          logger.warn(
+            `Memory Agent failed to set memory: Value exceeds token limit. Value has ${tokenCount} tokens, but limit is ${tokenLimit}`,
+          );
+          return `Memory value too large: ${tokenCount} tokens exceeds limit of ${tokenLimit}`;
+        }
+
+        if (tokenLimit && totalTokens + tokenCount > tokenLimit) {
+          const remainingCapacity = tokenLimit - totalTokens;
+          logger.warn(
+            `Memory Agent failed to set memory: Would exceed total token limit. Current usage: ${totalTokens}, new memory: ${tokenCount} tokens, limit: ${tokenLimit}`,
+          );
+          return `Cannot add memory: would exceed token limit. Current usage: ${totalTokens}/${tokenLimit} tokens. This memory requires ${tokenCount} tokens, but only ${remainingCapacity} tokens available.`;
+        }
+
         const artifact: Record<Tools.memory, MemoryArtifact> = {
           [Tools.memory]: {
             key,
             value,
+            tokenCount,
             type: 'update',
           },
         };
 
-        const result = await setMemory({ userId, key, value });
+        const result = await setMemory({ userId, key, value, tokenCount });
         if (result.ok) {
-          return [`Memory set for key "${key}"`, artifact];
+          logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
+          return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
         }
+        logger.warn(`Failed to set memory for key "${key}" for user "${userId}"`);
         return [`Failed to set memory for key "${key}"`, undefined];
       } catch (error) {
         logger.error('Memory Agent failed to set memory', error);
@@ -157,8 +189,10 @@ const createDeleteMemoryTool = ({
 
         const result = await deleteMemory({ userId, key });
         if (result.ok) {
+          logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
           return [`Memory deleted for key "${key}"`, artifact];
         }
+        logger.warn(`Failed to delete memory for key "${key}" for user "${userId}"`);
         return [`Failed to delete memory for key "${key}"`, undefined];
       } catch (error) {
         logger.error('Memory Agent failed to delete memory', error);
@@ -217,6 +251,8 @@ export async function processMemory({
   validKeys,
   instructions,
   llmConfig,
+  tokenLimit,
+  totalTokens = 0,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -228,23 +264,32 @@ export async function processMemory({
   messages: BaseMessage[];
   validKeys?: string[];
   instructions: string;
+  tokenLimit?: number;
+  totalTokens?: number;
   llmConfig?: Partial<LLMConfig>;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
-    const memoryTool = createMemoryTool({ userId, setMemory, validKeys });
-    const deleteMemoryTool = createDeleteMemoryTool({ userId, deleteMemory, validKeys });
-    // const currentMemorySize = memory?.length ?? 0;
-    // const remainingSpace = CHAR_LIMIT - currentMemorySize;
-    //     const memoryStatus = `# Memory Status:
-    // Current memory size: ${currentMemorySize} characters
-    // Remaining space: ${remainingSpace} characters
-    // Character limit: ${CHAR_LIMIT}
+    const memoryTool = createMemoryTool({ userId, tokenLimit, setMemory, validKeys, totalTokens });
+    const deleteMemoryTool = createDeleteMemoryTool({
+      userId,
+      validKeys,
+      deleteMemory,
+    });
 
-    // # Existing memory:
-    // ${memory ?? 'No existing memories'}`;
-    /** THE SPECIFIC KEYS WE ARE LIMITED TO WILL ACT AS A LOOSE MEMORY LIMITER */
-    const memoryStatus = `# Existing memory:
+    const currentMemoryTokens = totalTokens;
+
+    let memoryStatus = `# Existing memory:\n${memory ?? 'No existing memories'}`;
+
+    if (tokenLimit) {
+      const remainingTokens = tokenLimit - currentMemoryTokens;
+      memoryStatus = `# Memory Status:
+Current memory usage: ${currentMemoryTokens} tokens
+Token limit: ${tokenLimit} tokens
+Remaining capacity: ${remainingTokens} tokens
+
+# Existing memory:
 ${memory ?? 'No existing memories'}`;
+    }
 
     const defaultLLMConfig: LLMConfig = {
       provider: Providers.OPENAI,
@@ -257,7 +302,9 @@ ${memory ?? 'No existing memories'}`;
     const finalLLMConfig = {
       ...defaultLLMConfig,
       ...llmConfig,
-      // Ensure streaming is always disabled for memory processing
+      /**
+       * Ensure streaming is always disabled for memory processing
+       */
       streaming: false,
       disableStreaming: true,
     };
@@ -321,10 +368,10 @@ export async function createMemoryProcessor({
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
-  const { validKeys, instructions, llmConfig } = config;
-  const finalInstructions = instructions || getDefaultInstructions(validKeys);
+  const { validKeys, instructions, llmConfig, tokenLimit } = config;
+  const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
-  const { withKeys, withoutKeys } = await memoryMethods.getFormattedMemories({
+  const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
     userId,
   });
 
@@ -339,8 +386,10 @@ export async function createMemoryProcessor({
           validKeys,
           llmConfig,
           messageId,
+          tokenLimit,
           conversationId,
           memory: withKeys,
+          totalTokens: totalTokens || 0,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,

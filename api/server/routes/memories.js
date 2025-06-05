@@ -1,7 +1,8 @@
 const express = require('express');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { Tokenizer } = require('@librechat/api');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
-const { MemoryEntry } = require('~/db/models');
+const { getAllUserMemories, setMemory, deleteMemory } = require('~/models');
 
 const router = express.Router();
 
@@ -23,14 +24,34 @@ router.use(requireJwtAuth);
 /**
  * GET /memories
  * Returns all memories for the authenticated user, sorted by updated_at (newest first).
+ * Also includes memory usage percentage based on token limit.
  */
 router.get('/', checkMemoryRead, async (req, res) => {
   try {
-    const memories = await MemoryEntry.find({ userId: req.user.id })
-      .sort({ updated_at: -1 })
-      .lean();
+    const memories = await getAllUserMemories(req.user.id);
 
-    res.json({ memories });
+    const sortedMemories = memories.sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    );
+
+    const totalTokens = memories.reduce((sum, memory) => {
+      return sum + (memory.tokenCount || 0);
+    }, 0);
+
+    const memoryConfig = req.app.locals?.memory;
+    const tokenLimit = memoryConfig?.tokenLimit;
+
+    let usagePercentage = null;
+    if (tokenLimit && tokenLimit > 0) {
+      usagePercentage = Math.min(100, Math.round((totalTokens / tokenLimit) * 100));
+    }
+
+    res.json({
+      memories: sortedMemories,
+      totalTokens,
+      tokenLimit: tokenLimit || null,
+      usagePercentage,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -51,17 +72,30 @@ router.patch('/:key', checkMemoryUpdate, async (req, res) => {
   }
 
   try {
-    const updated = await MemoryEntry.findOneAndUpdate(
-      { userId: req.user.id, key },
-      { value, updated_at: Date.now() },
-      { new: true },
-    ).lean();
+    const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
-    if (!updated) {
+    const memories = await getAllUserMemories(req.user.id);
+    const existingMemory = memories.find((m) => m.key === key);
+
+    if (!existingMemory) {
       return res.status(404).json({ error: 'Memory not found.' });
     }
 
-    res.json({ updated: true, memory: updated });
+    const result = await setMemory({
+      userId: req.user.id,
+      key,
+      value,
+      tokenCount,
+    });
+
+    if (!result.ok) {
+      return res.status(500).json({ error: 'Failed to update memory.' });
+    }
+
+    const updatedMemories = await getAllUserMemories(req.user.id);
+    const updatedMemory = updatedMemories.find((m) => m.key === key);
+
+    res.json({ updated: true, memory: updatedMemory });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -76,9 +110,9 @@ router.delete('/:key', checkMemoryDelete, async (req, res) => {
   const { key } = req.params;
 
   try {
-    const result = await MemoryEntry.findOneAndDelete({ userId: req.user.id, key });
+    const result = await deleteMemory({ userId: req.user.id, key });
 
-    if (!result) {
+    if (!result.ok) {
       return res.status(404).json({ error: 'Memory not found.' });
     }
 
