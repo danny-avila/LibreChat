@@ -656,6 +656,7 @@ export const memorySchema = z.object({
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
   personalize: z.boolean().default(true),
+  messageWindowSize: z.number().optional().default(5),
   agent: z
     .union([
       z.object({

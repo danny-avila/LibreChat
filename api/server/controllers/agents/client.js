@@ -461,10 +461,14 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
+      /** @type {TCustomConfig['memory']} */
+      const memoryConfig = this.options.req?.app?.locals?.memory;
+      const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
+
       let messagesToProcess = [...messages];
-      if (messages.length > 5) {
-        for (let i = messages.length - 5; i >= 0; i--) {
-          const potentialWindow = messages.slice(i, i + 5);
+      if (messages.length > messageWindowSize) {
+        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
+          const potentialWindow = messages.slice(i, i + messageWindowSize);
           if (potentialWindow[0]?.role === 'user') {
             messagesToProcess = [...potentialWindow];
             break;
@@ -472,7 +476,7 @@ class AgentClient extends BaseClient {
         }
 
         if (messagesToProcess.length === messages.length) {
-          messagesToProcess = [...messages.slice(-5)];
+          messagesToProcess = [...messages.slice(-messageWindowSize)];
         }
       }
       return await this.processMemory(messagesToProcess);
