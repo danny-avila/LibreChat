@@ -20,12 +20,13 @@ import type { TGenTitleMutation } from '~/data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
 import {
+  logger,
   scrollToEnd,
+  getAllContentText,
   addConvoToAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
-  getAllContentText,
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
@@ -466,6 +467,14 @@ export default function useEventHandlers({
           [QueryKeys.messages, conversation.conversationId],
           finalMessages,
         );
+      } else if (
+        isAssistantsEndpoint(submissionConvo.endpoint) &&
+        (!submissionConvo.conversationId || submissionConvo.conversationId === Constants.NEW_CONVO)
+      ) {
+        queryClient.setQueryData<TMessage[]>(
+          [QueryKeys.messages, conversation.conversationId],
+          [...currentMessages],
+        );
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
@@ -487,10 +496,6 @@ export default function useEventHandlers({
       }
 
       if (setConversation && isAddedRequest !== true) {
-        if (location.pathname === '/c/new') {
-          navigate(`/c/${conversation.conversationId}`, { replace: true });
-        }
-
         setConversation((prevState) => {
           const update = {
             ...prevState,
@@ -508,6 +513,9 @@ export default function useEventHandlers({
           }
           return update;
         });
+        if (location.pathname === '/c/new') {
+          navigate(`/c/${conversation.conversationId}`, { replace: true });
+        }
       }
 
       setIsSubmitting(false);
@@ -536,6 +544,12 @@ export default function useEventHandlers({
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
+      const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
+        const finalMessages: TMessage[] = [...messages, userMessage, errorMessage];
+        setMessages(finalMessages);
+        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
+      };
+
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
         const errorMessage: Partial<TMessage> = {
@@ -553,7 +567,7 @@ export default function useEventHandlers({
       };
 
       if (!data) {
-        const convoId = conversationId || v4();
+        const convoId = conversationId || `_${v4()}`;
         const errorMetadata = parseErrorResponse({
           text: 'Error connecting to server, try refreshing the page.',
           ...submission,
@@ -564,7 +578,7 @@ export default function useEventHandlers({
           getMessages,
           submission,
         });
-        setMessages([...messages, userMessage, errorResponse]);
+        setErrorMessages(convoId, errorResponse);
         if (newConversation) {
           newConversation({
             template: { conversationId: convoId },
@@ -577,9 +591,9 @@ export default function useEventHandlers({
 
       const receivedConvoId = data.conversationId ?? '';
       if (!conversationId && !receivedConvoId) {
-        const convoId = v4();
+        const convoId = `_${v4()}`;
         const errorResponse = parseErrorResponse(data);
-        setMessages([...messages, userMessage, errorResponse]);
+        setErrorMessages(convoId, errorResponse);
         if (newConversation) {
           newConversation({
             template: { conversationId: convoId },
@@ -590,7 +604,7 @@ export default function useEventHandlers({
         return;
       } else if (!receivedConvoId) {
         const errorResponse = parseErrorResponse(data);
-        setMessages([...messages, userMessage, errorResponse]);
+        setErrorMessages(conversationId, errorResponse);
         setIsSubmitting(false);
         return;
       }
@@ -601,7 +615,7 @@ export default function useEventHandlers({
         parentMessageId: userMessage.messageId,
       });
 
-      setMessages([...messages, userMessage, errorResponse]);
+      setErrorMessages(receivedConvoId, errorResponse);
       if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
         newConversation({
           template: { conversationId: receivedConvoId },
@@ -612,7 +626,15 @@ export default function useEventHandlers({
       setIsSubmitting(false);
       return;
     },
-    [setCompleted, setMessages, paramId, newConversation, setIsSubmitting, getMessages],
+    [
+      setCompleted,
+      setMessages,
+      paramId,
+      newConversation,
+      setIsSubmitting,
+      getMessages,
+      queryClient,
+    ],
   );
 
   const abortConversation = useCallback(
@@ -649,9 +671,11 @@ export default function useEventHandlers({
         );
         return;
       } else if (!isAssistantsEndpoint(endpoint)) {
+        const convoId = conversationId || `_${v4()}`;
+        logger.log('conversation', 'Aborted conversation with minimal messages, ID: ' + convoId);
         if (newConversation) {
           newConversation({
-            template: { conversationId: conversationId || v4() },
+            template: { conversationId: convoId },
             preset: tPresetSchema.parse(submission.conversation),
           });
         }

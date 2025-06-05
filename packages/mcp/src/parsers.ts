@@ -1,5 +1,13 @@
 import type * as t from './types/mcp';
-const RECOGNIZED_PROVIDERS = new Set(['google', 'anthropic', 'openai', 'openrouter', 'xai', 'deepseek', 'ollama']);
+const RECOGNIZED_PROVIDERS = new Set([
+  'google',
+  'anthropic',
+  'openai',
+  'openrouter',
+  'xai',
+  'deepseek',
+  'ollama',
+]);
 const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
@@ -48,6 +56,12 @@ function parseAsString(result: t.MCPToolCallResponse): string {
         }
         if (item.resource.uri) {
           resourceText.push(`Resource URI: ${item.resource.uri}`);
+        }
+        if (item.resource.name) {
+          resourceText.push(`Resource: ${item.resource.name}`);
+        }
+        if (item.resource.description) {
+          resourceText.push(`Description: ${item.resource.description}`);
         }
         if (item.resource.mimeType != null && item.resource.mimeType) {
           resourceText.push(`Type: ${item.resource.mimeType}`);
@@ -132,6 +146,12 @@ export function formatToolContent(
       }
       if (item.resource.uri.length) {
         resourceText.push(`Resource URI: ${item.resource.uri}`);
+      }
+      if (item.resource.name) {
+        resourceText.push(`Resource: ${item.resource.name}`);
+      }
+      if (item.resource.description) {
+        resourceText.push(`Description: ${item.resource.description}`);
       }
       if (item.resource.mimeType != null && item.resource.mimeType) {
         resourceText.push(`Type: ${item.resource.mimeType}`);

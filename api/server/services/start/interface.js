@@ -38,6 +38,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     agents: interfaceConfig?.agents ?? defaults.agents,
     temporaryChat: interfaceConfig?.temporaryChat ?? defaults.temporaryChat,
     runCode: interfaceConfig?.runCode ?? defaults.runCode,
+    webSearch: interfaceConfig?.webSearch ?? defaults.webSearch,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
   });
 
@@ -48,6 +49,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
     [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
+    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
   });
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
@@ -56,6 +58,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
     [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
+    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
   });
 
   let i = 0;
@@ -74,7 +77,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   // warn about config.modelSpecs.prioritize if true and presets are enabled, that default presets will conflict with prioritizing model specs.
   if (config?.modelSpecs?.prioritize && loadedInterface.presets) {
     logger.warn(
-      'Note: Prioritizing model specs can conflict with default presets if a default preset is set. It\'s recommended to disable presets from the interface or disable use of a default preset.',
+      "Note: Prioritizing model specs can conflict with default presets if a default preset is set. It's recommended to disable presets from the interface or disable use of a default preset.",
     );
     i === 0 && i++;
   }
@@ -88,14 +91,14 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
       loadedInterface.parameters)
   ) {
     logger.warn(
-      'Note: Enforcing model specs can conflict with the interface options: endpointsMenu, modelSelect, presets, and parameters. It\'s recommended to disable these options from the interface or disable enforcing model specs.',
+      "Note: Enforcing model specs can conflict with the interface options: endpointsMenu, modelSelect, presets, and parameters. It's recommended to disable these options from the interface or disable enforcing model specs.",
     );
     i === 0 && i++;
   }
   // warn if enforce is true and prioritize is not, that enforcing model specs without prioritizing them can lead to unexpected behavior.
   if (config?.modelSpecs?.enforce && !config?.modelSpecs?.prioritize) {
     logger.warn(
-      'Note: Enforcing model specs without prioritizing them can lead to unexpected behavior. It\'s recommended to enable prioritizing model specs if enforcing them.',
+      "Note: Enforcing model specs without prioritizing them can lead to unexpected behavior. It's recommended to enable prioritizing model specs if enforcing them.",
     );
     i === 0 && i++;
   }

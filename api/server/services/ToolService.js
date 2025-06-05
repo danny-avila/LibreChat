@@ -1,18 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const { Calculator } = require('@langchain/community/tools/calculator');
+const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   Tools,
+  Constants,
   ErrorTypes,
   ContentTypes,
   imageGenTools,
+  EToolResources,
   EModelEndpoint,
   actionDelimiter,
   ImageVisionTool,
   openapiToFunction,
   AgentCapabilities,
+  defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const {
@@ -28,6 +31,7 @@ const {
   toolkits,
 } = require('~/app/clients/tools');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
@@ -35,6 +39,30 @@ const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+
+/**
+ * @param {string} toolName
+ * @returns {string | undefined} toolKey
+ */
+function getToolkitKey(toolName) {
+  /** @type {string|undefined} */
+  let toolkitKey;
+  for (const toolkit of toolkits) {
+    if (toolName.startsWith(EToolResources.image_edit)) {
+      const splitMatches = toolkit.pluginKey.split('_');
+      const suffix = splitMatches[splitMatches.length - 1];
+      if (toolName.endsWith(suffix)) {
+        toolkitKey = toolkit.pluginKey;
+        break;
+      }
+    }
+    if (toolName.startsWith(toolkit.pluginKey)) {
+      toolkitKey = toolkit.pluginKey;
+      break;
+    }
+  }
+  return toolkitKey;
+}
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -108,7 +136,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
     tools.push(formattedTool);
   }
 
-  /** Basic Tools; schema: { input: string } */
+  /** Basic Tools & Toolkits; schema: { input: string } */
   const basicToolInstances = [
     new Calculator(),
     ...createOpenAIImageTools({ override: true }),
@@ -117,9 +145,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
     let toolName = formattedTool[Tools.function].name;
-    toolName = toolkits.some((toolkit) => toolName.startsWith(toolkit.pluginKey))
-      ? toolName.split('_')[0]
-      : toolName;
+    toolName = getToolkitKey(toolName) ?? toolName;
     if (filter.has(toolName) && included.size === 0) {
       continue;
     }
@@ -477,15 +503,33 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   }
 
   const endpointsConfig = await getEndpointsConfig(req);
-  const enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-  const checkCapability = (capability) => enabledCapabilities.has(capability);
+  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
+  if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
+    enabledCapabilities = new Set(
+      req.app?.locals?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
+  }
+  const checkCapability = (capability) => {
+    const enabled = enabledCapabilities.has(capability);
+    if (!enabled) {
+      logger.warn(
+        `Capability "${capability}" disabled${capability === AgentCapabilities.tools ? '.' : ' despite configured tool.'} User: ${req.user.id} | Agent: ${agent.id}`,
+      );
+    }
+    return enabled;
+  };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
+  let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code);
+    } else if (tool === Tools.web_search) {
+      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      return includesWebSearch;
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
@@ -495,7 +539,11 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (!_agentTools || _agentTools.length === 0) {
     return {};
   }
-
+  /** @type {ReturnType<createOnSearchResults>} */
+  let webSearchCallbacks;
+  if (includesWebSearch) {
+    webSearchCallbacks = createOnSearchResults(res);
+  }
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
     functions: true,
@@ -509,6 +557,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       uploadImageBuffer,
       returnMetadata: true,
       fileStrategy: req.app.locals.fileStrategy,
+      [Tools.web_search]: webSearchCallbacks,
     },
   });
 
@@ -682,6 +731,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
 }
 
 module.exports = {
+  getToolkitKey,
   loadAgentTools,
   loadAndFormatTools,
   processRequiredActions,

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
+import { TFeedback, feedbackSchema } from './feedback';
+import type { SearchResultData } from './types/web';
 import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
 
@@ -101,7 +103,8 @@ export const isEphemeralAgent = (
   }
   const hasMCPSelected = (ephemeralAgent?.mcp?.length ?? 0) > 0;
   const hasCodeSelected = (ephemeralAgent?.execute_code ?? false) === true;
-  return hasMCPSelected || hasCodeSelected;
+  const hasSearchSelected = (ephemeralAgent?.web_search ?? false) === true;
+  return hasMCPSelected || hasCodeSelected || hasSearchSelected;
 };
 
 export const isParamEndpoint = (
@@ -177,6 +180,7 @@ export const defaultAgentFormValues = {
   recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
+  [Tools.web_search]: false,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -417,6 +421,7 @@ export const tPluginSchema = z.object({
   icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
+  chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
   toolkit: z.boolean().optional(),
 });
@@ -514,9 +519,16 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  feedback: feedbackSchema.optional(),
 });
 
-export type TAttachmentMetadata = { messageId: string; toolCallId: string };
+export type TAttachmentMetadata = {
+  type?: Tools;
+  messageId: string;
+  toolCallId: string;
+  [Tools.web_search]?: SearchResultData;
+};
+
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
@@ -533,6 +545,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  feedback?: TFeedback;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
@@ -744,6 +757,7 @@ export type TSetOption = (
 
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
+  disableParams?: boolean;
 };
 
 export const tSharedLinkSchema = z.object({

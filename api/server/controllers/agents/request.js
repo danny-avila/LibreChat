@@ -228,7 +228,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     // Save user message if needed
     if (!client.skipSaveUserMessage) {
       await saveMessage(req, userMessage, {
-        context: 'api/server/controllers/agents/request.js - don\'t skip saving user message',
+        context: "api/server/controllers/agents/request.js - don't skip saving user message",
       });
     }
 
@@ -259,6 +259,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       sender,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
+      userMessageId,
     })
       .catch((err) => {
         logger.error('[api/server/controllers/agents/request] Error in `handleAbortError`', err);

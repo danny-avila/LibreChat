@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { Message, getMessages, bulkSaveMessages } = require('./Message');
+const { getMessages, bulkSaveMessages } = require('./Message');
+const { Message } = require('~/db/models');
 
 // Original version of buildTree function
 function buildTree({ messages, fileMap }) {
@@ -42,7 +43,6 @@ function buildTree({ messages, fileMap }) {
 }
 
 let mongod;
-
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();

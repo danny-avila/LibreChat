@@ -10,6 +10,8 @@ const {
   discordLogin,
   facebookLogin,
   appleLogin,
+  setupSaml,
+  openIdJwtLogin,
 } = require('~/strategies');
 const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
@@ -19,7 +21,7 @@ const { logger } = require('~/config');
  *
  * @param {Express.Application} app
  */
-const configureSocialLogins = (app) => {
+const configureSocialLogins = async (app) => {
   logger.info('Configuring social logins...');
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -62,9 +64,40 @@ const configureSocialLogins = (app) => {
     }
     app.use(session(sessionOptions));
     app.use(passport.session());
-    setupOpenId();
-
+    const config = await setupOpenId();
+    if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      logger.info('OpenID token reuse is enabled.');
+      passport.use('openidJwt', openIdJwtLogin(config));
+    }
     logger.info('OpenID Connect configured.');
+  }
+  if (
+    process.env.SAML_ENTRY_POINT &&
+    process.env.SAML_ISSUER &&
+    process.env.SAML_CERT &&
+    process.env.SAML_SESSION_SECRET
+  ) {
+    logger.info('Configuring SAML Connect...');
+    const sessionOptions = {
+      secret: process.env.SAML_SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false,
+    };
+    if (isEnabled(process.env.USE_REDIS)) {
+      logger.debug('Using Redis for session storage in SAML...');
+      const keyv = new Keyv({ store: keyvRedis });
+      const client = keyv.opts.store.client;
+      sessionOptions.store = new RedisStore({ client, prefix: 'saml_session' });
+    } else {
+      sessionOptions.store = new MemoryStore({
+        checkPeriod: 86400000, // prune expired entries every 24h
+      });
+    }
+    app.use(session(sessionOptions));
+    app.use(passport.session());
+    setupSaml();
+
+    logger.info('SAML Connect configured.');
   }
 };
 

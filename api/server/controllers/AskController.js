@@ -128,7 +128,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     clientRef = new WeakRef(client);
 
     getAbortData = () => {
-      const currentClient = clientRef.deref();
+      const currentClient = clientRef?.deref();
       const currentText =
         currentClient?.getStreamText != null ? currentClient.getStreamText() : getPartialText();
 
@@ -228,7 +228,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     if (!client?.skipSaveUserMessage && latestUserMessage) {
       await saveMessage(req, latestUserMessage, {
-        context: 'api/server/controllers/AskController.js - don\'t skip saving user message',
+        context: "api/server/controllers/AskController.js - don't skip saving user message",
       });
     }
 
@@ -255,7 +255,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     logger.error('[AskController] Error handling request', error);
     let partialText = '';
     try {
-      const currentClient = clientRef.deref();
+      const currentClient = clientRef?.deref();
       partialText =
         currentClient?.getStreamText != null ? currentClient.getStreamText() : getPartialText();
     } catch (getTextError) {
@@ -268,6 +268,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       conversationId: reqDataContext.conversationId,
       messageId: reqDataContext.responseMessageId,
       parentMessageId: overrideParentMessageId ?? reqDataContext.userMessageId ?? parentMessageId,
+      userMessageId: reqDataContext.userMessageId,
     })
       .catch((err) => {
         logger.error('[AskController] Error in `handleAbortError` during catch block', err);

@@ -6,6 +6,7 @@ const {
   EToolResources,
   getResponseSender,
   AgentCapabilities,
+  replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
 const {
@@ -232,6 +233,13 @@ const initializeAgentOptions = async ({
     endpointOption: _endpointOption,
   });
 
+  if (
+    agent.endpoint === EModelEndpoint.azureOpenAI &&
+    options.llmConfig?.azureOpenAIApiInstanceName == null
+  ) {
+    agent.provider = Providers.OPENAI;
+  }
+
   if (options.provider != null) {
     agent.provider = options.provider;
   }
@@ -244,6 +252,13 @@ const initializeAgentOptions = async ({
 
   if (!agent.model_parameters.model) {
     agent.model_parameters.model = agent.model;
+  }
+
+  if (agent.instructions && agent.instructions !== '') {
+    agent.instructions = replaceSpecialVars({
+      text: agent.instructions,
+      user: req.user,
+    });
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {

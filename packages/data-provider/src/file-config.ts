@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
 import type { FileConfig, EndpointFileConfig } from './types/files';
@@ -222,6 +221,12 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
+  imageGeneration: z
+    .object({
+      percentage: z.number().min(0).max(100).optional(),
+      px: z.number().min(0).optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */

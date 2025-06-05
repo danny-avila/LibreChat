@@ -46,10 +46,10 @@ module.exports = {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  createOpenAIImageTools,
   WebNavigator,
   E2BCode,
   TimeAPI,
   Quickchart,
   WordPress,
-  createOpenAIImageTools,
 };

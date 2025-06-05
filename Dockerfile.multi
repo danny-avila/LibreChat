@@ -1,5 +1,5 @@
 # Dockerfile.multi
-# v0.7.7
+# v0.7.8
 
 # Base for all builds
 FROM node:20-alpine AS base-min
@@ -49,7 +49,7 @@ FROM base AS client-build
 WORKDIR /app/client
 COPY client ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # API setup (including client dist)

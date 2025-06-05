@@ -1,6 +1,6 @@
 {
   "name": "librechat-mcp",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
@@ -67,7 +67,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.9.0",
+    "@modelcontextprotocol/sdk": "^1.11.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2"

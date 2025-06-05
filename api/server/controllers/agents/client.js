@@ -39,9 +39,6 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { logger, sendEvent } = require('~/config');
 const { createRun } = require('./run');
 
-/** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
-/** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
-
 /**
  * @param {ServerRequest} req
  * @param {Agent} agent
@@ -58,7 +55,7 @@ const payloadParser = ({ req, agent, endpoint }) => {
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
-const noSystemModelRegex = [/\b(o\d)\b/gi];
+const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
@@ -148,19 +145,13 @@ class AgentClient extends BaseClient {
    * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
-    logger.info(
-      '[api/server/controllers/agents/client.js #checkVisionRequest] not implemented',
-      attachments,
-    );
     // if (!attachments) {
     //   return;
     // }
-
     // const availableModels = this.options.modelsConfig?.[this.options.endpoint];
     // if (!availableModels) {
     //   return;
     // }
-
     // let visionRequestDetected = false;
     // for (const file of attachments) {
     //   if (file?.type?.includes('image')) {
@@ -171,13 +162,11 @@ class AgentClient extends BaseClient {
     // if (!visionRequestDetected) {
     //   return;
     // }
-
     // this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
     // if (this.isVisionModel) {
     //   delete this.modelOptions.stop;
     //   return;
     // }
-
     // for (const model of availableModels) {
     //   if (!validateVisionModel({ model, availableModels })) {
     //     continue;
@@ -187,14 +176,12 @@ class AgentClient extends BaseClient {
     //   delete this.modelOptions.stop;
     //   return;
     // }
-
     // if (!availableModels.includes(this.defaultVisionModel)) {
     //   return;
     // }
     // if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
     //   return;
     // }
-
     // this.modelOptions.model = this.defaultVisionModel;
     // this.isVisionModel = true;
     // delete this.modelOptions.stop;
@@ -553,7 +540,7 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, abortController = null }) {
-    /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
+    /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
@@ -673,7 +660,7 @@ class AgentClient extends BaseClient {
         this.indexTokenCountMap,
         toolSet,
       );
-      if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
+      if (legacyContentEndpoints.has(this.options.agent.endpoint?.toLowerCase())) {
         initialMessages = formatContentStrings(initialMessages);
       }
 
@@ -728,12 +715,14 @@ class AgentClient extends BaseClient {
         }
 
         if (noSystemMessages === true && systemContent?.length) {
-          let latestMessage = _messages.pop().content;
+          const latestMessageContent = _messages.pop().content;
           if (typeof latestMessage !== 'string') {
-            latestMessage = latestMessage[0].text;
+            latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
+            _messages.push(new HumanMessage({ content: latestMessageContent }));
+          } else {
+            const text = [systemContent, latestMessageContent].join('\n');
+            _messages.push(new HumanMessage(text));
           }
-          latestMessage = [systemContent, latestMessage].join('\n');
-          _messages.push(new HumanMessage(latestMessage));
         }
 
         let messages = _messages;

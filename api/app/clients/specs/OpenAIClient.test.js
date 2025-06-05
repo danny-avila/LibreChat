@@ -5,7 +5,7 @@ const getLogStores = require('~/cache/getLogStores');
 const OpenAIClient = require('../OpenAIClient');
 jest.mock('meilisearch');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),
@@ -462,17 +462,17 @@ describe('OpenAIClient', () => {
         role: 'system',
         name: 'example_user',
         content:
-          'Let\'s circle back when we have more bandwidth to touch base on opportunities for increased leverage.',
+          "Let's circle back when we have more bandwidth to touch base on opportunities for increased leverage.",
       },
       {
         role: 'system',
         name: 'example_assistant',
-        content: 'Let\'s talk later when we\'re less busy about how to do better.',
+        content: "Let's talk later when we're less busy about how to do better.",
       },
       {
         role: 'user',
         content:
-          'This late pivot means we don\'t have time to boil the ocean for the client deliverable.',
+          "This late pivot means we don't have time to boil the ocean for the client deliverable.",
       },
     ];
 
