@@ -357,13 +357,15 @@ class AgentClient extends BaseClient {
    * @returns {Promise<string | undefined>}
    */
   async useMemory() {
-    const hasAccess = await checkAccess(this.options.req.user, PermissionTypes.MEMORIES, [
-      Permissions.USE,
-    ]);
+    const user = this.options.req.user;
+    if (user.personalization?.memories === false) {
+      return;
+    }
+    const hasAccess = await checkAccess(user, PermissionTypes.MEMORIES, [Permissions.USE]);
 
     if (!hasAccess) {
       logger.debug(
-        `[api/server/controllers/agents/client.js #useMemory] User ${this.options.req.user.id} does not have USE permission for memories`,
+        `[api/server/controllers/agents/client.js #useMemory] User ${user.id} does not have USE permission for memories`,
       );
       return;
     }

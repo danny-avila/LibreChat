@@ -56,7 +56,7 @@ const AdminSettings = () => {
 
   const defaultValues = useMemo(() => {
     if (roles?.[selectedRole]?.permissions) {
-      return roles[selectedRole].permissions[PermissionTypes.MEMORIES];
+      return roles?.[selectedRole]?.permissions?.[PermissionTypes.MEMORIES];
     }
     return roleDefaults[selectedRole].permissions[PermissionTypes.MEMORIES];
   }, [roles, selectedRole]);
@@ -75,7 +75,7 @@ const AdminSettings = () => {
 
   useEffect(() => {
     if (roles?.[selectedRole]?.permissions?.[PermissionTypes.MEMORIES]) {
-      reset(roles[selectedRole].permissions[PermissionTypes.MEMORIES]);
+      reset(roles?.[selectedRole]?.permissions?.[PermissionTypes.MEMORIES]);
     } else {
       reset(roleDefaults[selectedRole].permissions[PermissionTypes.MEMORIES]);
     }
@@ -101,6 +101,10 @@ const AdminSettings = () => {
     {
       memoryPerm: Permissions.READ,
       label: localize('com_ui_memories_allow_read'),
+    },
+    {
+      memoryPerm: Permissions.OPT_OUT,
+      label: localize('com_ui_memories_allow_opt_out'),
     },
   ];
 

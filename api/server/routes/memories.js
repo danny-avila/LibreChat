@@ -1,8 +1,8 @@
 const express = require('express');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { Tokenizer } = require('@librechat/api');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { getAllUserMemories, toggleUserMemories, setMemory, deleteMemory } = require('~/models');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
-const { getAllUserMemories, setMemory, deleteMemory } = require('~/models');
 
 const router = express.Router();
 
@@ -17,6 +17,10 @@ const checkMemoryUpdate = generateCheckAccess(PermissionTypes.MEMORIES, [
 const checkMemoryDelete = generateCheckAccess(PermissionTypes.MEMORIES, [
   Permissions.USE,
   Permissions.UPDATE,
+]);
+const checkMemoryOptOut = generateCheckAccess(PermissionTypes.MEMORIES, [
+  Permissions.USE,
+  Permissions.OPT_OUT,
 ]);
 
 router.use(requireJwtAuth);
@@ -51,6 +55,37 @@ router.get('/', checkMemoryRead, async (req, res) => {
       totalTokens,
       tokenLimit: tokenLimit || null,
       usagePercentage,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PATCH /memories/preferences
+ * Updates the user's memory preferences (e.g., enabling/disabling memories).
+ * Body: { memories: boolean }
+ * Returns 200 and { updated: true, preferences: { memories: boolean } } when successful.
+ */
+router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
+  const { memories } = req.body;
+
+  if (typeof memories !== 'boolean') {
+    return res.status(400).json({ error: 'memories must be a boolean value.' });
+  }
+
+  try {
+    const updatedUser = await toggleUserMemories(req.user.id, memories);
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    res.json({
+      updated: true,
+      preferences: {
+        memories: updatedUser.personalization?.memories ?? true,
+      },
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -72,4 +72,5 @@ export enum MutationKeys {
   updateRole = 'updateRole',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
+  updateMemoryPreferences = 'updateMemoryPreferences',
 }

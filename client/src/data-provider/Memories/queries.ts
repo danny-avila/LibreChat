@@ -1,5 +1,5 @@
 /* Memories */
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import type {
   UseQueryOptions,
@@ -40,6 +40,34 @@ export const useUpdateMemoryMutation = (
       ...options,
       onSuccess: (...params) => {
         queryClient.invalidateQueries([QueryKeys.memories]);
+        options?.onSuccess?.(...params);
+      },
+    },
+  );
+};
+
+export type UpdateMemoryPreferencesParams = { memories: boolean };
+export type UpdateMemoryPreferencesResponse = {
+  updated: boolean;
+  preferences: { memories: boolean };
+};
+
+export const useUpdateMemoryPreferencesMutation = (
+  options?: UseMutationOptions<
+    UpdateMemoryPreferencesResponse,
+    Error,
+    UpdateMemoryPreferencesParams
+  >,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<UpdateMemoryPreferencesResponse, Error, UpdateMemoryPreferencesParams>(
+    [MutationKeys.updateMemoryPreferences],
+    (preferences: UpdateMemoryPreferencesParams) =>
+      dataService.updateMemoryPreferences(preferences),
+    {
+      ...options,
+      onSuccess: (...params) => {
+        queryClient.invalidateQueries([QueryKeys.user]);
         options?.onSuccess?.(...params);
       },
     },

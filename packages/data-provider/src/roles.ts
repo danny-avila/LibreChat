@@ -54,6 +54,7 @@ const defaultRolesSchema = z.object({
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.UPDATE]: z.boolean().default(true),
         [Permissions.READ]: z.boolean().default(true),
+        [Permissions.OPT_OUT]: z.boolean().default(true),
       }),
       [PermissionTypes.AGENTS]: agentPermissionsSchema.extend({
         [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
@@ -98,6 +99,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.CREATE]: true,
         [Permissions.UPDATE]: true,
         [Permissions.READ]: true,
+        [Permissions.OPT_OUT]: true,
       },
       [PermissionTypes.AGENTS]: {
         [Permissions.SHARED_GLOBAL]: true,

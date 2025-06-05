@@ -18,6 +18,7 @@ const rolePermissionsSchema = new Schema(
       [Permissions.CREATE]: { type: Boolean, default: true },
       [Permissions.UPDATE]: { type: Boolean, default: true },
       [Permissions.READ]: { type: Boolean, default: true },
+      [Permissions.OPT_OUT]: { type: Boolean, default: true },
     },
     [PermissionTypes.AGENTS]: {
       [Permissions.SHARED_GLOBAL]: { type: Boolean, default: false },

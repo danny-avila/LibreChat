@@ -22,8 +22,12 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   const includesAddedEndpoints = config?.modelSpecs?.addedEndpoints?.length > 0;
 
   const memoryConfig = config?.memory;
+  const memoryEnabled = isMemoryEnabled(memoryConfig);
   /** Only disable memories if memory config is present but disabled/invalid */
-  const shouldDisableMemories = memoryConfig && !isMemoryEnabled(memoryConfig);
+  const shouldDisableMemories = memoryConfig && !memoryEnabled;
+  /** Check if personalization is enabled (defaults to true if memory is configured and enabled) */
+  const isPersonalizationEnabled =
+    memoryConfig && memoryEnabled && memoryConfig.personalize !== false;
 
   /** @type {TCustomConfig['interface']} */
   const loadedInterface = removeNullishValues({
@@ -51,7 +55,10 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   await updateAccessPermissions(roleName, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
-    [PermissionTypes.MEMORIES]: { [Permissions.USE]: loadedInterface.memories },
+    [PermissionTypes.MEMORIES]: {
+      [Permissions.USE]: loadedInterface.memories,
+      [Permissions.OPT_OUT]: isPersonalizationEnabled,
+    },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
@@ -61,7 +68,10 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
-    [PermissionTypes.MEMORIES]: { [Permissions.USE]: loadedInterface.memories },
+    [PermissionTypes.MEMORIES]: {
+      [Permissions.USE]: loadedInterface.memories,
+      [Permissions.OPT_OUT]: isPersonalizationEnabled,
+    },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
     [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },

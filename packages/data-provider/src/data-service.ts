@@ -822,3 +822,9 @@ export const updateMemory = (
 ): Promise<q.TUserMemory> => {
   return request.patch(endpoints.memory(originalKey || key), { key, value });
 };
+
+export const updateMemoryPreferences = (preferences: {
+  memories: boolean;
+}): Promise<{ updated: boolean; preferences: { memories: boolean } }> => {
+  return request.patch(endpoints.memoryPreferences(), preferences);
+};

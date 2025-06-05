@@ -49,6 +49,8 @@ export enum Permissions {
   READ = 'READ',
   READ_AUTHOR = 'READ_AUTHOR',
   SHARE = 'SHARE',
+  /** Can disable if desired */
+  OPT_OUT = 'OPT_OUT',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -69,6 +71,7 @@ export const memoryPermissionsSchema = z.object({
   [Permissions.CREATE]: z.boolean().default(true),
   [Permissions.UPDATE]: z.boolean().default(true),
   [Permissions.READ]: z.boolean().default(true),
+  [Permissions.OPT_OUT]: z.boolean().default(true),
 });
 export type TMemoryPermissions = z.infer<typeof memoryPermissionsSchema>;
 

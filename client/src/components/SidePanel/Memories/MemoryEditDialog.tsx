@@ -124,8 +124,7 @@ export default function MemoryEditDialog({
                 {/* Overall Memory Usage */}
                 {memData?.tokenLimit && memData?.usagePercentage !== null && (
                   <div className="text-xs text-text-secondary">
-                    {localize('com_ui_memory_usage')}: {memData.usagePercentage}%{' '}
-                    {localize('com_ui_used')}
+                    {localize('com_ui_usage')}: {memData.usagePercentage}%{' '}
                   </div>
                 )}
               </div>

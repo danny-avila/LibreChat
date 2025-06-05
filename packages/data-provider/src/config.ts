@@ -655,6 +655,7 @@ export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
+  personalize: z.boolean().default(true),
   agent: z
     .union([
       z.object({
@@ -1315,6 +1316,10 @@ export enum SettingsTabValues {
    * Chat input commands
    */
   COMMANDS = 'commands',
+  /**
+   * Tab for Personalization Settings
+   */
+  PERSONALIZATION = 'personalization',
 }
 
 export enum STTProviders {

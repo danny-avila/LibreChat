@@ -1,5 +1,5 @@
 /* Memories */
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
@@ -8,6 +8,7 @@ import {
   Input,
   Label,
   Button,
+  Switch,
   TableRow,
   OGDialog,
   TableHead,
@@ -17,7 +18,12 @@ import {
   TooltipAnchor,
   OGDialogTrigger,
 } from '~/components/ui';
-import { useDeleteMemoryMutation, useMemoriesQuery } from '~/data-provider';
+import {
+  useGetUserQuery,
+  useMemoriesQuery,
+  useDeleteMemoryMutation,
+  useUpdateMemoryPreferencesMutation,
+} from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { EditIcon, TrashIcon } from '~/components/svg';
@@ -29,6 +35,7 @@ import AdminSettings from './AdminSettings';
 export default function MemoryViewer() {
   const localize = useLocalize();
   const { user } = useAuthContext();
+  const { data: userData } = useGetUserQuery();
   const { data: memData, isLoading } = useMemoriesQuery();
   const { mutate: deleteMemory } = useDeleteMemoryMutation();
   const { showToast } = useToastContext();
@@ -36,6 +43,34 @@ export default function MemoryViewer() {
   const [searchQuery, setSearchQuery] = useState('');
   const pageSize = 10;
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [referenceSavedMemories, setReferenceSavedMemories] = useState(true);
+
+  const updateMemoryPreferencesMutation = useUpdateMemoryPreferencesMutation({
+    onSuccess: () => {
+      showToast({
+        message: localize('com_ui_preferences_updated'),
+        status: 'success',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_error_updating_preferences'),
+        status: 'error',
+      });
+      setReferenceSavedMemories((prev) => !prev);
+    },
+  });
+
+  useEffect(() => {
+    if (userData?.personalization?.memories !== undefined) {
+      setReferenceSavedMemories(userData.personalization.memories);
+    }
+  }, [userData?.personalization?.memories]);
+
+  const handleMemoryToggle = (checked: boolean) => {
+    setReferenceSavedMemories(checked);
+    updateMemoryPreferencesMutation.mutate({ memories: checked });
+  };
 
   const hasReadAccess = useHasAccess({
     permissionType: PermissionTypes.MEMORIES,
@@ -45,6 +80,11 @@ export default function MemoryViewer() {
   const hasUpdateAccess = useHasAccess({
     permissionType: PermissionTypes.MEMORIES,
     permission: Permissions.UPDATE,
+  });
+
+  const hasOptOutAccess = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.OPT_OUT,
   });
 
   const memories: TUserMemory[] = useMemo(() => memData?.memories ?? [], [memData]);
@@ -61,12 +101,12 @@ export default function MemoryViewer() {
 
   const getProgressBarColor = (percentage: number): string => {
     if (percentage > 90) {
-      return 'bg-red-500';
+      return 'stroke-red-500';
     }
     if (percentage > 75) {
-      return 'bg-yellow-500';
+      return 'stroke-yellow-500';
     }
-    return 'bg-green-500';
+    return 'stroke-green-500';
   };
 
   const EditMemoryButton = ({ memory }: { memory: TUserMemory }) => {
@@ -213,23 +253,55 @@ export default function MemoryViewer() {
           />
         </div>
 
-        {/* Memory Usage Display */}
-        {memData?.tokenLimit && (
-          <div className="rounded-lg border border-border-light bg-surface-secondary p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium text-text-primary">
-                {localize('com_ui_memory_usage')}
-              </span>
-              <span className="text-sm text-text-secondary">
-                {memData.usagePercentage}% {localize('com_ui_used')}
-              </span>
-            </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-              <div
-                className={`h-full transition-all ${getProgressBarColor(memData.usagePercentage ?? 0)}`}
-                style={{ width: `${memData.usagePercentage ?? 0}%` }}
-              />
-            </div>
+        {/* Memory Usage and Toggle Display */}
+        {(memData?.tokenLimit || hasOptOutAccess) && (
+          <div className="flex items-center justify-between rounded-lg p-3">
+            {/* Usage Display */}
+            {memData?.tokenLimit && (
+              <div className="flex items-center gap-3">
+                <div className="relative size-10">
+                  <svg className="size-10 -rotate-90 transform">
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      fill="none"
+                      className="text-gray-200 dark:text-gray-700"
+                    />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      strokeWidth="3"
+                      fill="none"
+                      strokeDasharray={`${2 * Math.PI * 16}`}
+                      strokeDashoffset={`${2 * Math.PI * 16 * (1 - (memData.usagePercentage ?? 0) / 100)}`}
+                      className={`transition-all ${getProgressBarColor(memData.usagePercentage ?? 0)}`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-xs font-medium">{memData.usagePercentage}%</span>
+                  </div>
+                </div>
+                <div className="text-sm text-text-secondary">{localize('com_ui_usage')}</div>
+              </div>
+            )}
+
+            {/* Memory Toggle */}
+            {hasOptOutAccess && (
+              <div className="flex items-center gap-2 text-xs">
+                <span>{localize('com_ui_use_memory')}</span>
+                <Switch
+                  checked={referenceSavedMemories}
+                  onCheckedChange={handleMemoryToggle}
+                  aria-label={localize('com_ui_reference_saved_memories')}
+                  disabled={updateMemoryPreferencesMutation.isLoading}
+                />
+              </div>
+            )}
           </div>
         )}
 

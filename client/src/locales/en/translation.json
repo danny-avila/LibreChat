@@ -445,6 +445,7 @@
   "com_nav_setting_data": "Data controls",
   "com_nav_setting_general": "General",
   "com_nav_setting_speech": "Speech",
+  "com_nav_setting_personalization": "Personalization",
   "com_nav_settings": "Settings",
   "com_nav_shared_links": "Shared links",
   "com_nav_show_code": "Always show code when using code interpreter",
@@ -791,8 +792,9 @@
   "com_ui_memories_allow_create": "Allow creating Memories",
   "com_ui_memories_allow_update": "Allow updating Memories",
   "com_ui_memories_allow_read": "Allow reading Memories",
+  "com_ui_memories_allow_opt_out": "Allow users to opt out of Memories",
   "com_ui_memory": "Memory",
-  "com_ui_memory_usage": "Memory Usage",
+  "com_ui_usage": "Usage",
   "com_ui_current": "Current",
   "com_ui_total": "Total",
   "com_ui_tokens": "tokens",
@@ -996,5 +998,11 @@
   "com_ui_memory_updated_items": "Updated Memories",
   "com_ui_memory_deleted_items": "Deleted Memories",
   "com_ui_memory_deleted": "Memory deleted",
-  "com_ui_no_memory_changes": "No memory changes"
+  "com_ui_no_memory_changes": "No memory changes",
+  "com_ui_reference_saved_memories": "Reference saved memories",
+  "com_ui_reference_saved_memories_description": "Allow the assistant to reference and use your saved memories when responding",
+  "com_ui_no_personalization_available": "No personalization options are currently available",
+  "com_ui_preferences_updated": "Preferences updated successfully",
+  "com_ui_error_updating_preferences": "Error updating preferences",
+  "com_ui_use_memory": "Use memory"
 }
