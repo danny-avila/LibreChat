@@ -648,7 +648,7 @@ class AgentClient extends BaseClient {
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
-        recursionLimit: agentsEConfig?.recursionLimit,
+        recursionLimit: agentsEConfig?.recursionLimit ?? 25,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -929,6 +929,18 @@ class AgentClient extends BaseClient {
     let clientOptions = {
       maxTokens: 75,
     };
+
+    // Inherit provider-specific configuration from the agent's model_parameters
+    const agentModelParams = this.options.agent.model_parameters || {};
+    if (agentModelParams.clientOptions) {
+      clientOptions.clientOptions = { ...agentModelParams.clientOptions };
+    }
+    if (agentModelParams.apiKey) {
+      clientOptions.apiKey = agentModelParams.apiKey;
+    }
+    if (agentModelParams.anthropicApiUrl) {
+      clientOptions.anthropicApiUrl = agentModelParams.anthropicApiUrl;
+    }
     let endpointConfig = req.app.locals[endpoint];
     if (!endpointConfig) {
       try {
