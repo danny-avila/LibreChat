@@ -31,7 +31,7 @@ function useDebouncedInput<T = unknown>({
    *
   Note: We use useCallback to ensure our debounced function is stable across renders. */
   const setDebouncedOption = useCallback(
-    debounce(setOption && optionKey ? setOption(optionKey) : setter, delay),
+    debounce(setOption && optionKey ? setOption(optionKey) : setter || (() => {}), delay),
     [],
   );
 
@@ -42,8 +42,9 @@ function useDebouncedInput<T = unknown>({
         typeof e !== 'object'
           ? e
           : ((e as React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>).target
-            .value as unknown as T);
-      if (numeric === true) {
+              .value as unknown as T);
+      // Handle numeric conversion only if value is not undefined and not empty string
+      if (numeric === true && newValue !== undefined && newValue !== '') {
         newValue = Number(newValue) as unknown as T;
       }
       setValue(newValue);
