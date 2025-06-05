@@ -220,6 +220,68 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               console.log('No se encontró ningún botón en el widget');
             }
           }
+          
+          // Función común para manejar la lógica de cortar llamada + ocultar widget
+          const handleEndCallAndHide = (event: Event) => {
+            // Prevenir el comportamiento predeterminado
+            event.preventDefault();
+            event.stopPropagation();
+            
+            try {
+              // Buscar y hacer clic en el botón "End" para cortar la llamada
+              const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
+              if (endButton) {
+                endButton.click();
+                console.log('Llamada cortada automáticamente');
+              }
+            } catch (error) {
+              console.error('Error al cortar la llamada:', error);
+            }
+            
+            // Ocultar el widget
+            setShowElevenLabsWidget(false);
+            console.log('Widget ocultado');
+          };
+          
+          // Buscar el botón "Collapse" para reemplazar su funcionalidad
+          const collapseButton = elevenLabsWidget.shadowRoot.querySelector('button[aria-label="Collapse"]') as HTMLButtonElement;
+          if (collapseButton) {
+            // Quitar todos los event listeners existentes clonando el elemento
+            const newCollapseButton = collapseButton.cloneNode(true) as HTMLButtonElement;
+            collapseButton.parentNode?.replaceChild(newCollapseButton, collapseButton);
+            
+            // Agregar nuestra funcionalidad personalizada
+            newCollapseButton.addEventListener('click', handleEndCallAndHide, true);
+            console.log('Funcionalidad personalizada agregada al botón Collapse');
+          }
+          
+          // Usar MutationObserver para detectar cuando aparece el botón "End"
+          const observer = new MutationObserver(() => {
+            const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
+            if (endButton) {
+              // Agregar funcionalidad al botón "End" para que también oculte el widget
+              const handleEndClick = (event: Event) => {
+                // Permitir que la funcionalidad original se ejecute primero
+                setTimeout(() => {
+                  setShowElevenLabsWidget(false);
+                  console.log('Widget ocultado por botón End');
+                }, 100);
+              };
+              
+              endButton.addEventListener('click', handleEndClick);
+              console.log('Event listener agregado al botón End');
+              
+              // Desconectar el observer una vez que encontramos el botón
+              observer.disconnect();
+            }
+          });
+          
+          // Iniciar observación
+          observer.observe(elevenLabsWidget.shadowRoot, { 
+            childList: true, 
+            subtree: true 
+          });
+          
         } else {
           console.log('No se encontró el widget o shadowRoot de ElevenLabs');
         }
