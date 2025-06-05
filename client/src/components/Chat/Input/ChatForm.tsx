@@ -197,6 +197,36 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     console.log('Botón de teléfono clickeado');
     // Mostrar/ocultar el widget de ElevenLabs
     setShowElevenLabsWidget(!showElevenLabsWidget);
+    
+    // Si estamos mostrando el widget, activar automáticamente el botón interno
+    if (!showElevenLabsWidget) {
+      // Activar inmediatamente el botón interno (no necesita setTimeout ya que el widget ya está en el DOM)
+      try {
+        // Buscar el widget de ElevenLabs
+        const elevenLabsWidget = document.querySelector('elevenlabs-convai');
+        if (elevenLabsWidget && elevenLabsWidget.shadowRoot) {
+          // Buscar el botón dentro del shadowRoot
+          const aviButton = elevenLabsWidget.shadowRoot.querySelector('button[aria-label="Llamar a AVI"]') as HTMLButtonElement;
+          if (aviButton) {
+            aviButton.click();
+            console.log('Botón "Llamar a AVI" activado automáticamente');
+          } else {
+            // Fallback: intentar hacer clic en cualquier botón disponible
+            const anyButton = elevenLabsWidget.shadowRoot.querySelector('button') as HTMLButtonElement;
+            if (anyButton) {
+              anyButton.click();
+              console.log('Botón del widget activado automáticamente (fallback)');
+            } else {
+              console.log('No se encontró ningún botón en el widget');
+            }
+          }
+        } else {
+          console.log('No se encontró el widget o shadowRoot de ElevenLabs');
+        }
+      } catch (error) {
+        console.error('Error al activar el botón interno:', error);
+      }
+    }
   }, [showElevenLabsWidget]);
 
   const isMoreThanThreeRows = visualRowCount > 3;
