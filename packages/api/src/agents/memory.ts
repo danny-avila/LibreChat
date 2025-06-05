@@ -30,6 +30,7 @@ export interface MemoryConfig {
   validKeys?: string[];
   instructions?: string;
   llmConfig?: Partial<LLMConfig>;
+  tokenLimit?: number;
 }
 
 export const memoryInstructions =

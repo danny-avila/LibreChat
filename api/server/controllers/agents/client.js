@@ -9,7 +9,7 @@
 // } = require('librechat-data-provider');
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, createRun, createMemoryProcessor } = require('@librechat/api');
+const { sendEvent, createRun, Tokenizer, createMemoryProcessor } = require('@librechat/api');
 const {
   Callback,
   GraphEvents,
@@ -41,7 +41,6 @@ const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const { checkAccess } = require('~/server/middleware/roles/access');
-const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 const { loadAgent } = require('~/models/Agent');
 
@@ -66,7 +65,7 @@ const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 
 function createTokenCounter(encoding) {
-  return (message) => {
+  return function (message) {
     const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
     return getTokenCountForMessage(message, countTokens);
   };
@@ -366,7 +365,7 @@ class AgentClient extends BaseClient {
     }
     /** @type {TCustomConfig['memory']} */
     const memoryConfig = this.options.req?.app?.locals?.memory;
-    if (memoryConfig.disabled === true) {
+    if (!memoryConfig || memoryConfig.disabled === true) {
       return;
     }
 
@@ -424,6 +423,7 @@ class AgentClient extends BaseClient {
       validKeys: memoryConfig.validKeys,
       instructions: agent.instructions,
       llmConfig,
+      tokenLimit: memoryConfig.tokenLimit,
     };
 
     const userId = this.options.req.user.id + '';
@@ -759,10 +759,9 @@ class AgentClient extends BaseClient {
           run.Graph.contentData = contentData;
         }
 
-        const encoding = this.getEncoding();
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
-          tokenCounter: createTokenCounter(encoding),
+          tokenCounter: createTokenCounter(this.getEncoding()),
           indexTokenCountMap: currentIndexCountMap,
           maxContextTokens: agent.maxContextTokens,
           callbacks: {

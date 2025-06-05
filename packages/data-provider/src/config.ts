@@ -654,6 +654,7 @@ export const balanceSchema = z.object({
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
+  tokenLimit: z.number().optional(),
   agent: z
     .union([
       z.object({

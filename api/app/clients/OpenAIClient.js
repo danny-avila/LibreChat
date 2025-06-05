@@ -3,6 +3,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
 const {
   isEnabled,
+  Tokenizer,
   createFetch,
   constructAzureURL,
   genAzureChatCompletion,
@@ -33,7 +34,6 @@ const {
 const { extractBaseURL, getModelMaxTokens, getModelMaxOutputTokens } = require('~/utils');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { addSpaceIfNeeded, sleep } = require('~/server/utils');
-const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');

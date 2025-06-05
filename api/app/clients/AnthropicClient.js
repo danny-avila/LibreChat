@@ -10,7 +10,7 @@ const {
   validateVisionModel,
 } = require('librechat-data-provider');
 const { SplitStreamHandler: _Handler } = require('@librechat/agents');
-const { createFetch, createStreamEventHandlers } = require('@librechat/api');
+const { Tokenizer, createFetch, createStreamEventHandlers } = require('@librechat/api');
 const {
   truncateText,
   formatMessage,
@@ -27,7 +27,6 @@ const {
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const Tokenizer = require('~/server/services/Tokenizer');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');

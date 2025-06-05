@@ -5,13 +5,20 @@
  * Make sure to install `tiktoken` and have it configured properly.
  */
 
-const Tokenizer = require('./Tokenizer'); // <-- Adjust path to your singleton file
-const { logger } = require('~/config');
+import { logger } from '@librechat/data-schemas';
+import type { Tiktoken } from 'tiktoken';
+import Tokenizer from './tokenizer';
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    error: jest.fn(),
+  },
+}));
 
 describe('Tokenizer', () => {
-  it('should be a singleton (same instance)', () => {
-    const AnotherTokenizer = require('./Tokenizer'); // same path
-    expect(Tokenizer).toBe(AnotherTokenizer);
+  it('should be a singleton (same instance)', async () => {
+    const AnotherTokenizer = await import('./tokenizer'); // same path
+    expect(Tokenizer).toBe(AnotherTokenizer.default);
   });
 
   describe('getTokenizer', () => {
@@ -73,7 +80,7 @@ describe('Tokenizer', () => {
         free() {
           throw new Error('Intentional free error');
         },
-      };
+      } as unknown as Tiktoken;
 
       // Should not throw uncaught errors
       Tokenizer.freeAndResetAllEncoders();
@@ -103,7 +110,7 @@ describe('Tokenizer', () => {
     });
 
     it('should reset encoders if an error is thrown', () => {
-      // We can simulate an error by temporarily overriding the selected tokenizer’s `encode` method.
+      // We can simulate an error by temporarily overriding the selected tokenizer's `encode` method.
       const tokenizer = Tokenizer.getTokenizer('cl100k_base', false);
       const originalEncode = tokenizer.encode;
       tokenizer.encode = () => {
