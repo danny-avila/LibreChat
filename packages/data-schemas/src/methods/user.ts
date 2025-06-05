@@ -145,7 +145,18 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       throw new Error('No user provided');
     }
 
-    const expires = eval(process.env.SESSION_EXPIRY ?? '0') ?? 1000 * 60 * 15;
+    let expires = 1000 * 60 * 15;
+
+    if (process.env.SESSION_EXPIRY !== undefined && process.env.SESSION_EXPIRY !== '') {
+      try {
+        const evaluated = eval(process.env.SESSION_EXPIRY);
+        if (evaluated) {
+          expires = evaluated;
+        }
+      } catch (error) {
+        console.warn('Invalid SESSION_EXPIRY expression, using default:', error);
+      }
+    }
 
     return await signPayload({
       payload: {
