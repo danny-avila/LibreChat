@@ -73,6 +73,9 @@ jobs:
           "GOOGLE_CSE_ID" = "${{ secrets.GOOGLE_CSE_ID }}"
           "MCP_ATLASSIAN_JIRA_TOKEN" = "${{ secrets.MCP_ATLASSIAN_JIRA_TOKEN }}"
           "MCP_FIGMA_API_KEY" = "${{ secrets.MCP_FIGMA_API_KEY }}"
+          "BEDROCK_AWS_DEFAULT_REGION" = "${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}"
+          "BEDROCK_AWS_ACCESS_KEY_ID" = "${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}"
+          "BEDROCK_AWS_SECRET_ACCESS_KEY" = "${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}"
         }
 
         $envVarsHashtable = @{
