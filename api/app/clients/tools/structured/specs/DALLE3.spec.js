@@ -1,9 +1,28 @@
 const OpenAI = require('openai');
 const DALLE3 = require('../DALLE3');
-
-const { logger } = require('~/config');
+const logger = require('~/config/winston');
 
 jest.mock('openai');
+
+jest.mock('@librechat/data-schemas', () => {
+  return {
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
+    },
+  };
+});
+
+jest.mock('tiktoken', () => {
+  return {
+    encoding_for_model: jest.fn().mockReturnValue({
+      encode: jest.fn(),
+      decode: jest.fn(),
+    }),
+  };
+});
 
 const processFileURL = jest.fn();
 
@@ -37,6 +56,11 @@ jest.mock('fs', () => {
   return {
     existsSync: jest.fn(),
     mkdirSync: jest.fn(),
+    promises: {
+      writeFile: jest.fn(),
+      readFile: jest.fn(),
+      unlink: jest.fn(),
+    },
   };
 });
 
