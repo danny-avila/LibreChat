@@ -1,11 +1,18 @@
 import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { MessageSquare, Command, DollarSign, Heart } from 'lucide-react';
+import { MessageSquare, Command, DollarSign } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
-import { GearIcon, DataIcon, SpeechIcon, UserIcon, ExperimentIcon } from '~/components/svg';
+import {
+  GearIcon,
+  DataIcon,
+  SpeechIcon,
+  UserIcon,
+  ExperimentIcon,
+  PersonalizationIcon,
+} from '~/components/svg';
 import {
   General,
   Chat,
@@ -97,7 +104,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       ? [
           {
             value: SettingsTabValues.PERSONALIZATION,
-            icon: <Heart className="icon-sm" />,
+            icon: <PersonalizationIcon />,
             label: 'com_nav_setting_personalization' as TranslationKeys,
           },
         ]

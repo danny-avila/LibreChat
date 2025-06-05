@@ -255,10 +255,10 @@ export default function MemoryViewer() {
 
         {/* Memory Usage and Toggle Display */}
         {(memData?.tokenLimit || hasOptOutAccess) && (
-          <div className="flex items-center justify-between rounded-lg p-3">
+          <div className="flex items-center justify-between rounded-lg">
             {/* Usage Display */}
             {memData?.tokenLimit && (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <div className="relative size-10">
                   <svg className="size-10 -rotate-90 transform">
                     <circle
