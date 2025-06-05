@@ -34,6 +34,80 @@ const findUser = async function (searchCriteria, fieldsToSelect = null) {
 };
 
 /**
+ * Search for users by pattern matching on name, email, or username (case-insensitive)
+ * @param {string} searchPattern - The pattern to search for
+ * @param {number} [limit=20] - Maximum number of results to return
+ * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned documents
+ * @returns {Promise<Array>} Array of matching user documents
+ */
+const searchUsers = async function (searchPattern, limit = 20, fieldsToSelect = null) {
+  if (!searchPattern || searchPattern.trim().length === 0) {
+    return [];
+  }
+
+  const regex = new RegExp(searchPattern.trim(), 'i');
+  
+  const query = User.find({
+    $or: [
+      { email: regex },
+      { name: regex },
+      { username: regex }
+    ]
+  }).limit(limit * 2); // Get more results to allow for relevance sorting
+  
+  if (fieldsToSelect) {
+    query.select(fieldsToSelect);
+  }
+  
+  const users = await query.lean();
+  
+  // Score results by relevance
+  const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
+  const startsWithPattern = searchPattern.trim().toLowerCase();
+  
+  const scoredUsers = users.map(user => {
+    const searchableFields = [user.name, user.email, user.username].filter(Boolean);
+    let maxScore = 0;
+    
+    for (const field of searchableFields) {
+      const fieldLower = field.toLowerCase();
+      let score = 0;
+      
+      // Exact match gets highest score
+      if (exactRegex.test(field)) {
+        score = 100;
+      }
+      // Starts with query gets high score
+      else if (fieldLower.startsWith(startsWithPattern)) {
+        score = 80;
+      }
+      // Contains query gets medium score
+      else if (fieldLower.includes(startsWithPattern)) {
+        score = 50;
+      }
+      // Default score for regex match
+      else {
+        score = 10;
+      }
+      
+      maxScore = Math.max(maxScore, score);
+    }
+    
+    return { ...user, _searchScore: maxScore };
+  });
+  
+  // Sort by relevance and return top results
+  return scoredUsers
+    .sort((a, b) => b._searchScore - a._searchScore)
+    .slice(0, limit)
+    .map(user => {
+      // Remove the search score from final results
+      const { _searchScore, ...userWithoutScore } = user;
+      return userWithoutScore;
+    });
+};
+
+/**
  * Update a user with new data without overwriting existing properties.
  *
  * @param {string} userId - The ID of the user to update.
@@ -177,6 +251,7 @@ const comparePassword = async (user, candidatePassword) => {
   });
 };
 
+
 module.exports = {
   comparePassword,
   deleteUserById,
@@ -186,4 +261,5 @@ module.exports = {
   createUser,
   updateUser,
   findUser,
+  searchUsers,
 };

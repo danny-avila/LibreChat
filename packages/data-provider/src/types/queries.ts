@@ -105,3 +105,44 @@ export type VerifyToolAuthResponse = { authenticated: boolean; message?: string 
 
 export type GetToolCallParams = { conversationId: string };
 export type ToolCallResults = a.ToolCallResult[];
+
+export type PrincipalSearchParams = {
+  q: string;
+  limit?: number;
+  type?: 'user' | 'group';
+};
+
+export type PrincipalSearchResult = {
+  id?: string | null;
+  type: 'user' | 'group';
+  name: string;
+  email?: string;
+  username?: string;
+  avatar?: string;
+  provider?: string;
+  source: 'local' | 'entra';
+  memberCount?: number;
+  description?: string;
+  idOnTheSource?: string;
+};
+
+export type PrincipalSearchResponse = {
+  query: string;
+  limit: number;
+  type?: 'user' | 'group';
+  results: PrincipalSearchResult[];
+  count: number;
+  sources: {
+    local: number;
+    entra: number;
+  };
+};
+
+export type AccessRole = {
+  accessRoleId: string;
+  name: string;
+  description: string;
+  permBits: number;
+};
+
+export type AccessRolesResponse = AccessRole[];

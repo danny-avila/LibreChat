@@ -46,6 +46,10 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  principalSearch = 'principalSearch',
+  accessRoles = 'accessRoles',
+  resourcePermissions = 'resourcePermissions',
+  effectivePermissions = 'effectivePermissions',
 }
 
 export enum MutationKeys {

@@ -277,3 +277,29 @@ export const confirmTwoFactor = () => '/api/auth/2fa/confirm';
 export const disableTwoFactor = () => '/api/auth/2fa/disable';
 export const regenerateBackupCodes = () => '/api/auth/2fa/backup/regenerate';
 export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
+
+export const searchPrincipals = (params: q.PrincipalSearchParams) => {
+  const { q: query, limit, type } = params;
+  let url = `/api/permissions/search-principals?q=${encodeURIComponent(query)}`;
+
+  if (limit !== undefined) {
+    url += `&limit=${limit}`;
+  }
+
+  if (type !== undefined) {
+    url += `&type=${type}`;
+  }
+
+  return url;
+};
+
+export const getAccessRoles = (resourceType: string) => `/api/permissions/${resourceType}/roles`;
+
+export const getResourcePermissions = (resourceType: string, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}`;
+
+export const updateResourcePermissions = (resourceType: string, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}`;
+
+export const getEffectivePermissions = (resourceType: string, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}/effective`;

@@ -66,3 +66,12 @@ export type { ITransaction } from './schema/transaction';
 
 export { default as userSchema } from './schema/user';
 export type { IUser } from './schema/user';
+
+export { default as AccessRoleSchema, PermissionBits, RoleBits } from './schema/AccessRoleSchema';
+export type { IAccessRole } from './schema/AccessRoleSchema';
+
+export { default as AclEntrySchema } from './schema/AclEntrySchema';
+export type { IAclEntry } from './schema/AclEntrySchema';
+
+export { default as GroupSchema } from './schema/GroupSchema';
+export type { IGroup } from './schema/GroupSchema';

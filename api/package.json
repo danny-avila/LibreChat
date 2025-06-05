@@ -50,6 +50,7 @@
     "@langchain/textsplitters": "^0.1.0",
     "@librechat/agents": "^2.4.317",
     "@librechat/data-schemas": "*",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",

@@ -1,19 +1,16 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { actionDelimiter, SystemRoles, removeNullishValues } = require('librechat-data-provider');
+const { actionDelimiter, removeNullishValues } = require('librechat-data-provider');
+const { PermissionBits } = require('@librechat/data-schemas');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getAgent, updateAgent } = require('~/models/Agent');
+const { canAccessAgentResource } = require('~/server/middleware');
 const { logger } = require('~/config');
 
 const router = express.Router();
 
-// If the user has ADMIN role
-// then action edition is possible even if not owner of the assistant
-const isAdmin = (req) => {
-  return req.user.role === SystemRoles.ADMIN;
-};
 
 /**
  * Retrieves all user's actions
@@ -23,9 +20,8 @@ const isAdmin = (req) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const admin = isAdmin(req);
-    // If admin, get all actions, otherwise only user's actions
-    const searchParams = admin ? {} : { user: req.user.id };
+    // Get all actions for the user (admin permissions handled by middleware if needed)
+    const searchParams = { user: req.user.id };
     res.json(await getActions(searchParams));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -41,7 +37,12 @@ router.get('/', async (req, res) => {
  * @param {ActionMetadata} req.body.metadata - Metadata for the action.
  * @returns {Object} 200 - success response - application/json
  */
-router.post('/:agent_id', async (req, res) => {
+router.post('/:agent_id', 
+  canAccessAgentResource({ 
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'agent_id'
+  }),
+  async (req, res) => {
   try {
     const { agent_id } = req.params;
 
@@ -66,12 +67,9 @@ router.post('/:agent_id', async (req, res) => {
 
     const action_id = _action_id ?? nanoid();
     const initialPromises = [];
-    const admin = isAdmin(req);
 
-    // If admin, can edit any agent, otherwise only user's agents
-    const agentQuery = admin ? { id: agent_id } : { id: agent_id, author: req.user.id };
-    // TODO: share agents
-    initialPromises.push(getAgent(agentQuery));
+    // Permissions already validated by middleware - load agent directly
+    initialPromises.push(getAgent({ id: agent_id }));
     if (_action_id) {
       initialPromises.push(getActions({ action_id }, true));
     }
@@ -107,7 +105,7 @@ router.post('/:agent_id', async (req, res) => {
       .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
       .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
 
-    const updatedAgent = await updateAgent(agentQuery, { tools, actions });
+    const updatedAgent = await updateAgent({ id: agent_id }, { tools, actions });
 
     // Only update user field for new actions
     const actionUpdateData = { metadata, agent_id };
@@ -141,14 +139,17 @@ router.post('/:agent_id', async (req, res) => {
  * @param {string} req.params.action_id - The ID of the action to delete.
  * @returns {Object} 200 - success response - application/json
  */
-router.delete('/:agent_id/:action_id', async (req, res) => {
+router.delete('/:agent_id/:action_id',
+  canAccessAgentResource({ 
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'agent_id'
+  }),
+  async (req, res) => {
   try {
     const { agent_id, action_id } = req.params;
-    const admin = isAdmin(req);
 
-    // If admin, can delete any agent, otherwise only user's agents
-    const agentQuery = admin ? { id: agent_id } : { id: agent_id, author: req.user.id };
-    const agent = await getAgent(agentQuery);
+    // Permissions already validated by middleware - load agent directly
+    const agent = await getAgent({ id: agent_id });
     if (!agent) {
       return res.status(404).json({ message: 'Agent not found for deleting action' });
     }
@@ -172,10 +173,8 @@ router.delete('/:agent_id/:action_id', async (req, res) => {
 
     const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
 
-    await updateAgent(agentQuery, { tools: updatedTools, actions: updatedActions });
-    // If admin, can delete any action, otherwise only user's actions
-    const actionQuery = admin ? { action_id } : { action_id, user: req.user.id };
-    await deleteAction(actionQuery);
+    await updateAgent({ id: agent_id }, { tools: updatedTools, actions: updatedActions });
+    await deleteAction({ action_id });
     res.status(200).json({ message: 'Action deleted successfully' });
   } catch (error) {
     const message = 'Trouble deleting the Agent Action';

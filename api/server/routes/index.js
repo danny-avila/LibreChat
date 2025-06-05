@@ -26,6 +26,7 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
+const accessPermissions = require('./accessPermissions');
 
 module.exports = {
   ask,
@@ -56,4 +57,5 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  accessPermissions,
 };

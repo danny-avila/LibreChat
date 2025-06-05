@@ -9,6 +9,7 @@ const {
   checkDomainAllowed,
 } = require('~/server/middleware');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { logger } = require('~/config');
 const { isEnabled } = require('~/server/utils');
 
@@ -34,6 +35,7 @@ const oauthHandler = async (req, res) => {
       req.user.provider == 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
+      await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
       setOpenIDAuthTokens(req.user.tokenset, res);
     } else {
       await setAuthTokens(req.user._id, res);

@@ -19,6 +19,7 @@ const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
+const { seedDefaultRoles } = require('~/models/AccessRole');
 const { isEnabled } = require('~/server/utils');
 const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
@@ -30,6 +31,7 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   await initializeRoles();
+  await seedDefaultRoles();
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();

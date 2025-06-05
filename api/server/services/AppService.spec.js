@@ -28,6 +28,9 @@ jest.mock('~/models/Role', () => ({
   initializeRoles: jest.fn(),
   updateAccessPermissions: jest.fn(),
 }));
+jest.mock('~/models/AccessRole', () => ({
+  seedDefaultRoles: jest.fn(),
+}));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
     ExampleTool: {

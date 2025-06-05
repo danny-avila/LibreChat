@@ -1,5 +1,6 @@
 const express = require('express');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { PermissionBits } = require('@librechat/data-schemas');
 const {
   setHeaders,
   moderateText,
@@ -7,6 +8,7 @@ const {
   generateCheckAccess,
   validateConvoAccess,
   buildEndpointOption,
+  canAccessAgentFromBody,
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const AgentController = require('~/server/controllers/agents/request');
@@ -17,8 +19,12 @@ const router = express.Router();
 router.use(moderateText);
 
 const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+const checkAgentResourceAccess = canAccessAgentFromBody({ 
+  requiredPermission: PermissionBits.VIEW 
+});
 
 router.use(checkAgentAccess);
+router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
 router.use(buildEndpointOption);
 router.use(setHeaders);

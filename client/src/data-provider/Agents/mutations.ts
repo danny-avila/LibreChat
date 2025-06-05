@@ -76,6 +76,10 @@ export const useUpdateAgentMutation = (
         });
 
         queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
+        queryClient.setQueryData<t.Agent>(
+          [QueryKeys.agent, variables.agent_id, 'expanded'],
+          updatedAgent,
+        );
         return options?.onSuccess?.(updatedAgent, variables, context);
       },
     },
@@ -114,6 +118,7 @@ export const useDeleteAgentMutation = (
         });
 
         queryClient.removeQueries([QueryKeys.agent, variables.agent_id]);
+        queryClient.removeQueries([QueryKeys.agent, variables.agent_id, 'expanded']);
 
         return options?.onSuccess?.(_data, variables, data);
       },
@@ -233,6 +238,10 @@ export const useUpdateAgentAction = (
       });
 
       queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
+      queryClient.setQueryData<t.Agent>(
+        [QueryKeys.agent, variables.agent_id, 'expanded'],
+        updatedAgent,
+      );
       return options?.onSuccess?.(updateAgentActionResponse, variables, context);
     },
   });
@@ -285,8 +294,7 @@ export const useDeleteAgentAction = (
           };
         },
       );
-
-      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], (prev) => {
+      const updaterFn = (prev) => {
         if (!prev) {
           return prev;
         }
@@ -295,7 +303,12 @@ export const useDeleteAgentAction = (
           ...prev,
           tools: prev.tools?.filter((tool) => !tool.includes(domain ?? '')),
         };
-      });
+      };
+      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updaterFn);
+      queryClient.setQueryData<t.Agent>(
+        [QueryKeys.agent, variables.agent_id, 'expanded'],
+        updaterFn,
+      );
       return options?.onSuccess?.(_data, variables, context);
     },
   });

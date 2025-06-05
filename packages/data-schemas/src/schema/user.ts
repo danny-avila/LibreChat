@@ -30,6 +30,8 @@ export interface IUser extends Document {
   }>;
   expiresAt?: Date;
   termsAccepted?: boolean;
+  // Field for external source identification (for consistency with TPrincipal schema)
+  idOnTheSource?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -155,6 +157,11 @@ const User = new Schema<IUser>(
     termsAccepted: {
       type: Boolean,
       default: false,
+    },
+    // Field for external source identification (for consistency with TPrincipal schema)
+    idOnTheSource: {
+      type: String,
+      sparse: true,
     },
   },
   { timestamps: true },

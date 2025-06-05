@@ -115,6 +115,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/bedrock', routes.bedrock);
+  app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
 
