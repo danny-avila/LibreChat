@@ -287,5 +287,5 @@ export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
 
 /* Memories */
 export const memories = () => '/api/memories';
-export const memory = (key: string) => `/api/memories/${encodeURIComponent(key)}`;
-export const memoryPreferences = () => '/api/memories/preferences';
+export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
+export const memoryPreferences = () => `${memories()}/preferences`;

@@ -14,6 +14,42 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
   const MemoryEntry = mongoose.models.MemoryEntry;
 
   /**
+   * Creates a new memory entry for a user
+   * Throws an error if a memory with the same key already exists
+   */
+  async function createMemory({
+    userId,
+    key,
+    value,
+    tokenCount = 0,
+  }: t.SetMemoryParams): Promise<t.MemoryResult> {
+    try {
+      if (key?.toLowerCase() === 'nothing') {
+        return { ok: false };
+      }
+
+      const existingMemory = await MemoryEntry.findOne({ userId, key });
+      if (existingMemory) {
+        throw new Error('Memory with this key already exists');
+      }
+
+      await MemoryEntry.create({
+        userId,
+        key,
+        value,
+        tokenCount,
+        updated_at: new Date(),
+      });
+
+      return { ok: true };
+    } catch (error) {
+      throw new Error(
+        `Failed to create memory: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
    * Sets or updates a memory entry for a user
    */
   async function setMemory({
@@ -109,8 +145,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
       const withoutKeys = sortedMemories
         .map((memory, index) => {
           const date = formatDate(new Date(memory.updated_at!));
-          const tokenInfo = memory.tokenCount ? ` [${memory.tokenCount} tokens]` : '';
-          return `${index + 1}. [${date}]${tokenInfo}. ${memory.value}`;
+          return `${index + 1}. [${date}]. ${memory.value}`;
         })
         .join('\n\n');
 
@@ -121,9 +156,9 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
-  // Return all methods
   return {
     setMemory,
+    createMemory,
     deleteMemory,
     getAllUserMemories,
     getFormattedMemories,

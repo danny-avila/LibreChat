@@ -1,7 +1,13 @@
 const express = require('express');
 const { Tokenizer } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const { getAllUserMemories, toggleUserMemories, setMemory, deleteMemory } = require('~/models');
+const {
+  getAllUserMemories,
+  toggleUserMemories,
+  createMemory,
+  setMemory,
+  deleteMemory,
+} = require('~/models');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
 
 const router = express.Router();
@@ -9,6 +15,10 @@ const router = express.Router();
 const checkMemoryRead = generateCheckAccess(PermissionTypes.MEMORIES, [
   Permissions.USE,
   Permissions.READ,
+]);
+const checkMemoryCreate = generateCheckAccess(PermissionTypes.MEMORIES, [
+  Permissions.USE,
+  Permissions.CREATE,
 ]);
 const checkMemoryUpdate = generateCheckAccess(PermissionTypes.MEMORIES, [
   Permissions.USE,
@@ -57,6 +67,67 @@ router.get('/', checkMemoryRead, async (req, res) => {
       usagePercentage,
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /memories
+ * Creates a new memory entry for the authenticated user.
+ * Body: { key: string, value: string }
+ * Returns 201 and { created: true, memory: <createdDoc> } when successful.
+ */
+router.post('/', checkMemoryCreate, async (req, res) => {
+  const { key, value } = req.body;
+
+  if (typeof key !== 'string' || key.trim() === '') {
+    return res.status(400).json({ error: 'Key is required and must be a non-empty string.' });
+  }
+
+  if (typeof value !== 'string' || value.trim() === '') {
+    return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
+  }
+
+  try {
+    const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+
+    const memories = await getAllUserMemories(req.user.id);
+
+    // Check token limit
+    const memoryConfig = req.app.locals?.memory;
+    const tokenLimit = memoryConfig?.tokenLimit;
+
+    if (tokenLimit) {
+      const currentTotalTokens = memories.reduce(
+        (sum, memory) => sum + (memory.tokenCount || 0),
+        0,
+      );
+      if (currentTotalTokens + tokenCount > tokenLimit) {
+        return res.status(400).json({
+          error: `Adding this memory would exceed the token limit of ${tokenLimit}. Current usage: ${currentTotalTokens} tokens.`,
+        });
+      }
+    }
+
+    const result = await createMemory({
+      userId: req.user.id,
+      key: key.trim(),
+      value: value.trim(),
+      tokenCount,
+    });
+
+    if (!result.ok) {
+      return res.status(500).json({ error: 'Failed to create memory.' });
+    }
+
+    const updatedMemories = await getAllUserMemories(req.user.id);
+    const newMemory = updatedMemories.find((m) => m.key === key.trim());
+
+    res.status(201).json({ created: true, memory: newMemory });
+  } catch (error) {
+    if (error.message && error.message.includes('already exists')) {
+      return res.status(409).json({ error: 'Memory with this key already exists.' });
+    }
     res.status(500).json({ error: error.message });
   }
 });

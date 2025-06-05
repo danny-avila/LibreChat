@@ -1,5 +1,6 @@
 /* Memories */
 import { useMemo, useState, useRef, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
@@ -27,6 +28,7 @@ import {
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { EditIcon, TrashIcon } from '~/components/svg';
+import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryEditDialog from './MemoryEditDialog';
 import Spinner from '~/components/svg/Spinner';
 import { useToastContext } from '~/Providers';
@@ -42,6 +44,7 @@ export default function MemoryViewer() {
   const [pageIndex, setPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const pageSize = 10;
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [referenceSavedMemories, setReferenceSavedMemories] = useState(true);
 
@@ -80,6 +83,11 @@ export default function MemoryViewer() {
   const hasUpdateAccess = useHasAccess({
     permissionType: PermissionTypes.MEMORIES,
     permission: Permissions.UPDATE,
+  });
+
+  const hasCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.CREATE,
   });
 
   const hasOptOutAccess = useHasAccess({
@@ -252,7 +260,6 @@ export default function MemoryViewer() {
             aria-label={localize('com_ui_memories_filter')}
           />
         </div>
-
         {/* Memory Usage and Toggle Display */}
         {(memData?.tokenLimit || hasOptOutAccess) && (
           <div className="flex items-center justify-between rounded-lg">
@@ -304,7 +311,19 @@ export default function MemoryViewer() {
             )}
           </div>
         )}
-
+        {/* Create Memory Button */}
+        {hasCreateAccess && (
+          <div className="flex w-full justify-end">
+            <MemoryCreateDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+              <OGDialogTrigger asChild>
+                <Button variant="outline" className="w-full bg-transparent">
+                  <Plus className="size-4" aria-hidden />
+                  {localize('com_ui_create_memory')}
+                </Button>
+              </OGDialogTrigger>
+            </MemoryCreateDialog>
+          </div>
+        )}
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
           <Table className="w-full table-fixed">
             <TableHeader>

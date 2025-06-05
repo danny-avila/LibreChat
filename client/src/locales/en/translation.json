@@ -1004,5 +1004,8 @@
   "com_ui_no_personalization_available": "No personalization options are currently available",
   "com_ui_preferences_updated": "Preferences updated successfully",
   "com_ui_error_updating_preferences": "Error updating preferences",
-  "com_ui_use_memory": "Use memory"
+  "com_ui_use_memory": "Use memory",
+  "com_ui_create_memory": "Create Memory",
+  "com_ui_memory_created": "Memory created successfully",
+  "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key."
 }

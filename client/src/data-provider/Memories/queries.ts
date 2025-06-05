@@ -73,3 +73,44 @@ export const useUpdateMemoryPreferencesMutation = (
     },
   );
 };
+
+export type CreateMemoryParams = { key: string; value: string };
+export type CreateMemoryResponse = { created: boolean; memory: TUserMemory };
+
+export const useCreateMemoryMutation = (
+  options?: UseMutationOptions<CreateMemoryResponse, Error, CreateMemoryParams>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<CreateMemoryResponse, Error, CreateMemoryParams>(
+    ({ key, value }: CreateMemoryParams) => dataService.createMemory({ key, value }),
+    {
+      ...options,
+      onSuccess: (data, variables, context) => {
+        queryClient.setQueryData<MemoriesResponse>([QueryKeys.memories], (oldData) => {
+          if (!oldData) return oldData;
+
+          const newMemories = [...oldData.memories, data.memory];
+          const totalTokens = newMemories.reduce(
+            (sum, memory) => sum + (memory.tokenCount || 0),
+            0,
+          );
+          const tokenLimit = oldData.tokenLimit;
+          let usagePercentage = oldData.usagePercentage;
+
+          if (tokenLimit && tokenLimit > 0) {
+            usagePercentage = Math.min(100, Math.round((totalTokens / tokenLimit) * 100));
+          }
+
+          return {
+            ...oldData,
+            memories: newMemories,
+            totalTokens,
+            usagePercentage,
+          };
+        });
+
+        options?.onSuccess?.(data, variables, context);
+      },
+    },
+  );
+};
