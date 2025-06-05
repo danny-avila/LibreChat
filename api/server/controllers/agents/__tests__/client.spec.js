@@ -929,7 +929,7 @@ describe('AgentClient', () => {
 
         expect(createRun).toHaveBeenCalled();
         const processStreamCall = mockRun.processStream.mock.calls[0];
-        expect(processStreamCall[1].recursionLimit).toBe(50);
+        expect(processStreamCall[1].recursionLimit).toBe(25);
       });
     });
 
