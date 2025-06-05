@@ -76,9 +76,8 @@ export default function Personalization({
             <Switch
               checked={referenceSavedMemories}
               onCheckedChange={handleMemoryToggle}
-              className="data-[state=checked]:bg-green-500"
-              aria-label={localize('com_ui_reference_saved_memories')}
               disabled={updateMemoryPreferencesMutation.isLoading}
+              aria-label={localize('com_ui_reference_saved_memories')}
             />
           </div>
         </>
