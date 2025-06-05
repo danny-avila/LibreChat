@@ -17,7 +17,6 @@ const {
   // Structured Tools
   FluxAPI,
   OpenWeather,
-  StructuredSD,
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
@@ -154,7 +153,6 @@ const loadTools = async ({
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
     wolfram: StructuredWolfram,
-    'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
@@ -224,7 +222,6 @@ const loadTools = async ({
 
   const toolOptions = {
     flux: imageGenOptions,
-    'stable-diffusion': imageGenOptions,
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };
 
