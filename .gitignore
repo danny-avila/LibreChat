@@ -122,5 +122,9 @@ helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
 
+
+# dev files directory
+.devFiles/
+
 # SAML Idp cert
 *.cert
