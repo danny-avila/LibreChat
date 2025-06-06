@@ -15,7 +15,6 @@ const initGoogle = require('~/server/services/Endpoints/google/initialize');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { processFiles } = require('~/server/services/Files/process');
-const { loadAgentTools } = require('~/server/services/ToolService');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
@@ -40,7 +39,7 @@ const providerConfigMap = {
  * @param {Agent} params.agent
  * @param {string | null} [params.conversationId]
  * @param {Array<IMongoFile>} [params.requestFiles]
- * @param {typeof loadAgentTools | undefined} [params.loadTools]
+ * @param {typeof import('~/server/services/ToolService').loadAgentTools | undefined} [params.loadTools]
  * @param {TEndpointOption} [params.endpointOption]
  * @param {Set<string>} [params.allowedProviders]
  * @param {boolean} [params.isInitialAgent]
