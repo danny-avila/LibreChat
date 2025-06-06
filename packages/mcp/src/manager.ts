@@ -589,12 +589,12 @@ export class MCPManager {
    * @param serverNames Optional array of server names to include. If not provided, includes all servers.
    * @returns Formatted instructions string ready for context injection
    */
-  public formatInstructionsForContext(serverNames?: string[]): Promise<string> {
-    // Get instructions for specified servers or all stored instructions
+  public formatInstructionsForContext(serverNames?: string[]): string {
+    /** Instructions for specified servers or all stored instructions */
     const instructionsToInclude = this.getInstructions(serverNames);
 
     if (Object.keys(instructionsToInclude).length === 0) {
-      return Promise.resolve('');
+      return '';
     }
 
     // Format instructions for context injection
