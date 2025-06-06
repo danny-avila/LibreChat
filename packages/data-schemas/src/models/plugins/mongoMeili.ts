@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import { MeiliSearch, Index } from 'meilisearch';
-import mongoose, { Schema, Document, Model, Query } from 'mongoose';
+import type { FilterQuery, Types, Schema, Document, Model, Query } from 'mongoose';
 import logger from '~/config/meiliLogger';
 
 interface MongoMeiliOptions {
@@ -8,6 +8,7 @@ interface MongoMeiliOptions {
   apiKey: string;
   indexName: string;
   primaryKey: string;
+  mongoose: typeof import('mongoose');
 }
 
 interface MeiliIndexable {
@@ -314,7 +315,7 @@ const createMeiliMongooseModel = ({
       }
 
       await this.collection.updateMany(
-        { _id: this._id as mongoose.Types.ObjectId },
+        { _id: this._id as Types.ObjectId },
         { $set: { _meiliIndex: true } },
       );
     }
@@ -398,6 +399,7 @@ const createMeiliMongooseModel = ({
  * @param options.primaryKey - The primary key field for indexing.
  */
 export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): void {
+  const mongoose = options.mongoose;
   validateOptions(options);
 
   // Add _meiliIndex field to the schema to track if a document has been indexed in MeiliSearch.
@@ -452,7 +454,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         const convoIndex = client.index('convos');
         const deletedConvos = await mongoose
           .model('Conversation')
-          .find(conditions as mongoose.FilterQuery<unknown>)
+          .find(conditions as FilterQuery<unknown>)
           .lean();
         const promises = deletedConvos.map((convo: Record<string, unknown>) =>
           convoIndex.deleteDocument(convo.conversationId as string),
@@ -464,7 +466,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         const messageIndex = client.index('messages');
         const deletedMessages = await mongoose
           .model('Message')
-          .find(conditions as mongoose.FilterQuery<unknown>)
+          .find(conditions as FilterQuery<unknown>)
           .lean();
         const promises = deletedMessages.map((message: Record<string, unknown>) =>
           messageIndex.deleteDocument(message.messageId as string),
