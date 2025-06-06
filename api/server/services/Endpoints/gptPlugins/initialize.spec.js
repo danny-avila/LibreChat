@@ -114,11 +114,11 @@ describe('gptPlugins/initializeClient', () => {
   test('should initialize PluginsClient with Azure credentials when PLUGINS_USE_AZURE is true', async () => {
     process.env.AZURE_API_KEY = 'test-azure-api-key';
     (process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
-    (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.PLUGINS_USE_AZURE = 'true');
+      (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
+      (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.PLUGINS_USE_AZURE = 'true');
     process.env.DEBUG_PLUGINS = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 

@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryKeys,
+  dataService,
+  promptPermissionsSchema,
+  memoryPermissionsSchema,
+} from 'librechat-data-provider';
 import type {
+  UseQueryOptions,
   UseMutationResult,
   QueryObserverResult,
-  UseQueryOptions,
 } from '@tanstack/react-query';
-import { QueryKeys, dataService, promptPermissionsSchema } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 
 export const useGetRole = (
@@ -84,6 +89,42 @@ export const useUpdateAgentPermissionsMutation = (
           console.error('Failed to update prompt permissions:', error);
         }
         if (onError != null) {
+          onError(...args);
+        }
+      },
+      onMutate,
+    },
+  );
+};
+
+export const useUpdateMemoryPermissionsMutation = (
+  options?: t.UpdateMemoryPermOptions,
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdateMemoryPermVars,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onMutate, onSuccess, onError } = options ?? {};
+  return useMutation(
+    (variables) => {
+      memoryPermissionsSchema.partial().parse(variables.updates);
+      return dataService.updateMemoryPermissions(variables);
+    },
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
+        if (onSuccess) {
+          onSuccess(data, variables, context);
+        }
+      },
+      onError: (...args) => {
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update memory permissions:', error);
+        }
+        if (onError) {
           onError(...args);
         }
       },

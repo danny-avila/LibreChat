@@ -13,6 +13,13 @@ const rolePermissionsSchema = new Schema(
       [Permissions.USE]: { type: Boolean, default: true },
       [Permissions.CREATE]: { type: Boolean, default: true },
     },
+    [PermissionTypes.MEMORIES]: {
+      [Permissions.USE]: { type: Boolean, default: true },
+      [Permissions.CREATE]: { type: Boolean, default: true },
+      [Permissions.UPDATE]: { type: Boolean, default: true },
+      [Permissions.READ]: { type: Boolean, default: true },
+      [Permissions.OPT_OUT]: { type: Boolean, default: true },
+    },
     [PermissionTypes.AGENTS]: {
       [Permissions.SHARED_GLOBAL]: { type: Boolean, default: false },
       [Permissions.USE]: { type: Boolean, default: true },
@@ -44,6 +51,12 @@ const roleSchema: Schema<IRole> = new Schema({
         [Permissions.SHARED_GLOBAL]: false,
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.UPDATE]: true,
+        [Permissions.READ]: true,
       },
       [PermissionTypes.AGENTS]: {
         [Permissions.SHARED_GLOBAL]: false,

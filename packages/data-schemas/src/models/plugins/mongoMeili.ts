@@ -1,6 +1,14 @@
 import _ from 'lodash';
 import { MeiliSearch, Index } from 'meilisearch';
-import type { FilterQuery, Types, Schema, Document, Model, Query } from 'mongoose';
+import type {
+  CallbackWithoutResultAndOptionalError,
+  FilterQuery,
+  Document,
+  Schema,
+  Query,
+  Types,
+  Model,
+} from 'mongoose';
 import logger from '~/config/meiliLogger';
 
 interface MongoMeiliOptions {
@@ -24,12 +32,12 @@ interface ContentItem {
 interface DocumentWithMeiliIndex extends Document {
   _meiliIndex?: boolean;
   preprocessObjectForIndex?: () => Record<string, unknown>;
-  addObjectToMeili?: () => Promise<void>;
-  updateObjectToMeili?: () => Promise<void>;
-  deleteObjectFromMeili?: () => Promise<void>;
-  postSaveHook?: () => void;
-  postUpdateHook?: () => void;
-  postRemoveHook?: () => void;
+  addObjectToMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
+  updateObjectToMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
+  deleteObjectFromMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
+  postSaveHook?: (next: CallbackWithoutResultAndOptionalError) => void;
+  postUpdateHook?: (next: CallbackWithoutResultAndOptionalError) => void;
+  postRemoveHook?: (next: CallbackWithoutResultAndOptionalError) => void;
   conversationId?: string;
   content?: ContentItem[];
   messageId?: string;
@@ -220,7 +228,7 @@ const createMeiliMongooseModel = ({
           );
         }
       } catch (error) {
-        logger.error('[syncWithMeili] Error adding document to Meili', error);
+        logger.error('[syncWithMeili] Error adding document to Meili:', error);
       }
     }
 
@@ -306,28 +314,48 @@ const createMeiliMongooseModel = ({
     /**
      * Adds the current document to the MeiliSearch index
      */
-    async addObjectToMeili(this: DocumentWithMeiliIndex): Promise<void> {
+    async addObjectToMeili(
+      this: DocumentWithMeiliIndex,
+      next: CallbackWithoutResultAndOptionalError,
+    ): Promise<void> {
       const object = this.preprocessObjectForIndex!();
       try {
         await index.addDocuments([object]);
       } catch (error) {
-        logger.error('[addObjectToMeili] Error adding document to Meili', error);
+        logger.error('[addObjectToMeili] Error adding document to Meili:', error);
+        return next();
       }
 
-      await this.collection.updateMany(
-        { _id: this._id as Types.ObjectId },
-        { $set: { _meiliIndex: true } },
-      );
+      try {
+        await this.collection.updateMany(
+          { _id: this._id as Types.ObjectId },
+          { $set: { _meiliIndex: true } },
+        );
+      } catch (error) {
+        logger.error('[addObjectToMeili] Error updating _meiliIndex field:', error);
+        return next();
+      }
+
+      next();
     }
 
     /**
      * Updates the current document in the MeiliSearch index
      */
-    async updateObjectToMeili(this: DocumentWithMeiliIndex): Promise<void> {
-      const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
-        k.startsWith('$'),
-      );
-      await index.updateDocuments([object]);
+    async updateObjectToMeili(
+      this: DocumentWithMeiliIndex,
+      next: CallbackWithoutResultAndOptionalError,
+    ): Promise<void> {
+      try {
+        const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
+          k.startsWith('$'),
+        );
+        await index.updateDocuments([object]);
+        next();
+      } catch (error) {
+        logger.error('[updateObjectToMeili] Error updating document in Meili:', error);
+        return next();
+      }
     }
 
     /**
@@ -335,8 +363,17 @@ const createMeiliMongooseModel = ({
      *
      * @returns {Promise<void>}
      */
-    async deleteObjectFromMeili(this: DocumentWithMeiliIndex): Promise<void> {
-      await index.deleteDocument(this._id as string);
+    async deleteObjectFromMeili(
+      this: DocumentWithMeiliIndex,
+      next: CallbackWithoutResultAndOptionalError,
+    ): Promise<void> {
+      try {
+        await index.deleteDocument(this._id as string);
+        next();
+      } catch (error) {
+        logger.error('[deleteObjectFromMeili] Error deleting document from Meili:', error);
+        return next();
+      }
     }
 
     /**
@@ -345,11 +382,11 @@ const createMeiliMongooseModel = ({
      * If the document is already indexed (i.e. `_meiliIndex` is true), it updates it;
      * otherwise, it adds the document to the index.
      */
-    postSaveHook(this: DocumentWithMeiliIndex): void {
+    postSaveHook(this: DocumentWithMeiliIndex, next: CallbackWithoutResultAndOptionalError): void {
       if (this._meiliIndex) {
-        this.updateObjectToMeili!();
+        this.updateObjectToMeili!(next);
       } else {
-        this.addObjectToMeili!();
+        this.addObjectToMeili!(next);
       }
     }
 
@@ -359,9 +396,14 @@ const createMeiliMongooseModel = ({
      * This hook is triggered after a document update, ensuring that changes are
      * propagated to the MeiliSearch index if the document is indexed.
      */
-    postUpdateHook(this: DocumentWithMeiliIndex): void {
+    postUpdateHook(
+      this: DocumentWithMeiliIndex,
+      next: CallbackWithoutResultAndOptionalError,
+    ): void {
       if (this._meiliIndex) {
-        this.updateObjectToMeili!();
+        this.updateObjectToMeili!(next);
+      } else {
+        next();
       }
     }
 
@@ -371,9 +413,14 @@ const createMeiliMongooseModel = ({
      * This hook is triggered after a document is removed, ensuring that the document
      * is also removed from the MeiliSearch index if it was previously indexed.
      */
-    postRemoveHook(this: DocumentWithMeiliIndex): void {
+    postRemoveHook(
+      this: DocumentWithMeiliIndex,
+      next: CallbackWithoutResultAndOptionalError,
+    ): void {
       if (this._meiliIndex) {
-        this.deleteObjectFromMeili!();
+        this.deleteObjectFromMeili!(next);
+      } else {
+        next();
       }
     }
   }
@@ -429,16 +476,16 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex }));
 
   // Register Mongoose hooks
-  schema.post('save', function (doc: DocumentWithMeiliIndex) {
-    doc.postSaveHook?.();
+  schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
+    doc.postSaveHook?.(next);
   });
 
-  schema.post('updateOne', function (doc: DocumentWithMeiliIndex) {
-    doc.postUpdateHook?.();
+  schema.post('updateOne', function (doc: DocumentWithMeiliIndex, next) {
+    doc.postUpdateHook?.(next);
   });
 
-  schema.post('deleteOne', function (doc: DocumentWithMeiliIndex) {
-    doc.postRemoveHook?.();
+  schema.post('deleteOne', function (doc: DocumentWithMeiliIndex, next) {
+    doc.postRemoveHook?.(next);
   });
 
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
@@ -486,13 +533,13 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   // Post-findOneAndUpdate hook
-  schema.post('findOneAndUpdate', async function (doc: DocumentWithMeiliIndex) {
+  schema.post('findOneAndUpdate', async function (doc: DocumentWithMeiliIndex, next) {
     if (!meiliEnabled) {
-      return;
+      return next();
     }
 
     if (doc.unfinished) {
-      return;
+      return next();
     }
 
     let meiliDoc: Record<string, unknown> | undefined;
@@ -509,9 +556,9 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     }
 
     if (meiliDoc && meiliDoc.title === doc.title) {
-      return;
+      return next();
     }
 
-    doc.postSaveHook?.();
+    doc.postSaveHook?.(next);
   });
 }

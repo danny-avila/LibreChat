@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { cn } from '~/utils';
 
 interface OGDialogProps extends DialogPrimitive.DialogProps {
-  triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement>;
+  triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | null>;
 }
 
 const Dialog = React.forwardRef<HTMLDivElement, OGDialogProps>(

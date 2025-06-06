@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import PanelNavigation from '~/components/Prompts/Groups/PanelNavigation';
+import ManagePrompts from '~/components/Prompts/ManagePrompts';
 import { useMediaQuery, usePromptGroupsNav } from '~/hooks';
 import List from '~/components/Prompts/Groups/List';
 import { cn } from '~/utils';
@@ -38,14 +39,17 @@ export default function GroupSidePanel({
       <div className="flex-grow overflow-y-auto">
         <List groups={promptGroups} isChatRoute={isChatRoute} isLoading={!!groupsQuery.isLoading} />
       </div>
-      <PanelNavigation
-        nextPage={nextPage}
-        prevPage={prevPage}
-        isFetching={isFetching}
-        hasNextPage={hasNextPage}
-        isChatRoute={isChatRoute}
-        hasPreviousPage={hasPreviousPage}
-      />
+      <div className="flex items-center justify-between">
+        {isChatRoute && <ManagePrompts className="select-none" />}
+        <PanelNavigation
+          nextPage={nextPage}
+          prevPage={prevPage}
+          isFetching={isFetching}
+          hasNextPage={hasNextPage}
+          isChatRoute={isChatRoute}
+          hasPreviousPage={hasPreviousPage}
+        />
+      </div>
     </div>
   );
 }
