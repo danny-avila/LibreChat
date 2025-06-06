@@ -149,7 +149,7 @@ class AgentClient extends BaseClient {
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
    * @param {MongoFile[]} attachments
    */
-  checkVisionRequest(attachments) {}
+  checkVisionRequest() {}
 
   getSaveOptions() {
     // TODO:
