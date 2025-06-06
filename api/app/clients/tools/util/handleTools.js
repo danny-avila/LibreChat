@@ -206,6 +206,51 @@ const loadTools = async ({
         imageFiles,
       });
     },
+    flux: async (toolContextMap) => {
+      const authFields = getAuthFields('flux');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      
+      // Get image files for editing if available
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      
+      // Create context for image files if they exist
+      let toolContext = '';
+      let image_ids = [];
+      if (imageFiles.length > 0) {
+        toolContext = 'Image files provided in this request (their image IDs listed in order of appearance) available for image editing with Flux Kontext Pro:';
+        
+        for (let i = 0; i < imageFiles.length; i++) {
+          const file = imageFiles[i];
+          if (!file) continue;
+          
+          toolContext += `\n\t- ${file.file_id}`;
+          image_ids.push(file.file_id);
+        }
+        
+        toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`flux\` with action="edit". Note that Flux Kontext Pro only supports editing one image at a time.`;
+        toolContext += `\n\nFor image generation, use action="generate" (default) and provide a detailed prompt.`;
+      } else {
+        toolContext = `# \`flux\`:
+1. Use this tool to generate or edit images with Flux Kontext Pro.
+2. For generation, provide a detailed text prompt describing the image you want.
+3. For editing, provide image_ids and a text prompt describing the changes you want.
+4. Be specific and detailed in your prompt for best results.
+5. The image will be displayed in the chat.`;
+      }
+      
+      toolContextMap.flux = toolContext;
+      
+      return new FluxAPI({
+        ...authValues,
+        userId: user,
+        fileStrategy: options.fileStrategy,
+        isAgent: !!agent,
+        returnMetadata: options.returnMetadata,
+        processFileURL: options.processFileURL,
+        image_ids,
+        ...toolOptions.flux,
+      });
+    },
   };
 
   const requestedTools = {};

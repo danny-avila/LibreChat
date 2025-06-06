@@ -1,10 +1,14 @@
 const { z } = require('zod');
+const fs = require('fs');
+const path = require('path');
+const { getFiles } = require('~/models/File');
 const axios = require('axios');
 const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
 
 const displayMessage =
@@ -17,9 +21,7 @@ const displayMessage =
 class FluxAPI extends Tool {
   // Pricing constants in USD per image
   static PRICING = {
-    FLUX_PRO_1_1: -0.04, // /v1/flux-pro-1.1
-    FLUX_PRO: -0.05, // /v1/flux-pro
-    FLUX_DEV: -0.025, // /v1/flux-dev
+    FLUX_KONTEXT_PRO: -0.04, // /v1/flux-kontext-pro
   };
 
   constructor(fields = {}) {
@@ -35,6 +37,9 @@ class FluxAPI extends Tool {
     this.isAgent = fields.isAgent;
     this.returnMetadata = fields.returnMetadata ?? false;
 
+    /** @type {Array} Store image files for editing */
+    this.image_ids = fields.image_ids || [];
+
     if (fields.processFileURL) {
       /** @type {processFileURL} Necessary for output to contain all image metadata. */
       this.processFileURL = fields.processFileURL.bind(this);
@@ -46,9 +51,16 @@ class FluxAPI extends Tool {
     this.description =
       'Use Flux to generate images from text descriptions. This tool can generate or edit images. Each generate call creates one image. For multiple images, make multiple consecutive calls.';
 
-    this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Never submit a prompt under 3 sentences. Follow these core rules:
+    this.description_for_model = `// Flux Kontext Pro can both GENERATE new images and EDIT existing images
+    // For GENERATION (action="generate"): Transform any image description into a detailed, high-quality prompt. Never submit a prompt under 3 sentences. Follow these core rules:
     // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
-    // 2. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style`;
+    // 2. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
+    
+    // For EDITING (action="edit"): 
+    // 1. ALWAYS set action="edit" when modifying existing images
+    // 2. ALWAYS include exactly ONE image_id in the image_ids array parameter
+    // 3. Describe the desired changes or enhancements to the image in detail
+    // 4. Focus on what should be added, modified, or enhanced rather than what to remove`;
 
     // Add base URL from environment variable with fallback
     this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.bfl.ai';
@@ -66,28 +78,17 @@ class FluxAPI extends Tool {
         .describe(
           'Text prompt for image generation and editing.',
         ),
-      width: z
-        .number()
+      image_ids: z
+        .array(z.string())
         .optional()
         .describe(
-          'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024.',
-        ),
-      height: z
-        .number()
-        .optional()
-        .describe(
-          'Height of the generated image in pixels. Must be a multiple of 32. Default is 768.',
+          'IDs of previously generated or uploaded images to use for editing. Only one image is supported for Flux Kontext Pro.',
         ),
       prompt_upsampling: z
         .boolean()
         .optional()
         .default(false)
         .describe('Whether to perform upsampling on the prompt.'),
-      steps: z
-        .number()
-        .int()
-        .optional()
-        .describe('Number of steps to run the model for, a number from 1 to 50. Default is 40.'),
       seed: z
         .number()
         .optional()
@@ -95,24 +96,20 @@ class FluxAPI extends Tool {
       safety_tolerance: z
         .number()
         .optional()
-        .default(6)
+        .default(2)
         .describe(
           'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.',
         ),
       endpoint: z
-        .enum([
-          '/v1/flux-pro-1.1',
-          '/v1/flux-pro',
-          '/v1/flux-dev',
-        ])
+        .enum(['/v1/flux-kontext-pro'])
         .optional()
-        .default('/v1/flux-pro-1.1')
+        .default('/v1/flux-kontext-pro')
         .describe('Endpoint to use for image generation.'),
       aspect_ratio: z
         .string()
         .optional()
-        .default('16:9')
-        .describe('Aspect ratio for kontext models (e.g., "16:9")'),
+        .default('9:16')
+        .describe('Aspect ratio for kontext models (e.g., "9:16")'),
     });
   }
 
@@ -158,53 +155,96 @@ class FluxAPI extends Tool {
   }
 
   async _call(data) {
-    const { action = 'generate', ...imageData } = data;
-
-    // Use provided API key for this request if available, otherwise use default
-    const requestApiKey = this.apiKey || this.getApiKey();
-
-    // For generate action, ensure prompt is provided
-    if (!imageData.prompt) {
-      throw new Error('Missing required field: prompt');
+    if (this.override) {
+      return 'FluxAPI tool initialized without necessary variables.';
     }
 
-    let payload = {
-      prompt: imageData.prompt,
-      prompt_upsampling: imageData.prompt_upsampling || false,
-      safety_tolerance: imageData.safety_tolerance || 6,
-      output_format: imageData.output_format || 'png',
+    if (!this.apiKey) {
+      return 'No Flux API key found. Please set the FLUX_API_KEY environment variable.';
+    }
+
+    // Determine if this is an edit or generate request
+    const isEdit = this.image_ids && this.image_ids.length > 0;
+    
+    // For editing, we need to get the image file
+    let imageBase64 = null;
+    let imageFile = null;
+    
+    if (isEdit) {
+      if (this.image_ids.length > 1) {
+        return this.returnValue('Flux Kontext Pro only supports editing one image at a time. Please provide only one image ID.');
+      }
+      
+      try {
+        const imageId = this.image_ids[0];
+        logger.debug('[FluxAPI] Getting image file for editing:', imageId);
+        
+        // Get the file from the database
+        const files = await getFiles({ file_id: imageId });
+        
+        if (!files || files.length === 0) {
+          return this.returnValue(`Image with ID ${imageId} not found.`);
+        }
+        imageFile = files[0];
+        
+        // For local files, fetch from the server URL
+        const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
+        const imageUrl = `${serverDomain}${imageFile.filepath}`;
+        logger.debug('[FluxAPI] Fetching image from URL:', imageUrl);
+        
+        // Fetch the image from the URL
+        const fetchOptions = {};
+        if (process.env.PROXY) {
+          const { HttpsProxyAgent } = require('https-proxy-agent');
+          fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+        }
+        
+        const imageResponse = await fetch(imageUrl, fetchOptions);
+        
+        if (!imageResponse.ok) {
+          return this.returnValue(`Failed to fetch image from ${imageUrl}: ${imageResponse.status} ${imageResponse.statusText}`);
+        }
+        
+        const arrayBuffer = await imageResponse.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        imageBase64 = buffer.toString('base64');
+        logger.debug('[FluxAPI] Image loaded for editing from URL, base64 length:', imageBase64.length);
+      } catch (error) {
+        logger.error('[FluxAPI] Error getting image for editing:', error);
+        return this.returnValue(`Error getting image for editing: ${error.message}`);
+      }
+    }
+
+    // Prepare the request data
+    const requestApiKey = this.apiKey;
+    
+    // Set the endpoint based on action
+    const generateEndpoint = '/v1/flux-kontext-pro';
+    const resultEndpoint = '/v1/get_result';
+
+    // Prepare the request body
+    const requestBody = {
+      prompt: data.prompt,
+      prompt_upsampling: data.prompt_upsampling || false,
+      safety_tolerance: data.safety_tolerance || 2,
+      aspect_ratio: data.aspect_ratio || '9:16',
+      output_format: data.output_format || 'png',
     };
 
-    // Add optional parameters if provided
-    if (imageData.width) {
-      payload.width = imageData.width;
-    }
-    if (imageData.height) {
-      payload.height = imageData.height;
-    }
-    if (imageData.steps) {
-      payload.steps = imageData.steps;
-    }
-    if (imageData.seed !== undefined) {
-      payload.seed = imageData.seed;
-    }
-    if (imageData.raw) {
-      payload.raw = imageData.raw;
+    // Add image for editing
+    if (isEdit && imageBase64) {
+      requestBody.input_image = `data:image/${imageFile.type.split('/')[1]};base64,${imageBase64}`;
     }
 
-    const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
-    const resultUrl = `${this.baseUrl}/v1/get_result`;
-
-    logger.debug('[FluxAPI] Generating image with payload:', payload);
-    logger.debug('[FluxAPI] Using endpoint:', generateUrl);
-
+    // Submit the task
     let taskResponse;
     try {
-      taskResponse = await axios.post(generateUrl, payload, {
+      logger.debug(`[FluxAPI] Submitting ${isEdit ? 'edit' : 'generation'} task to ${generateEndpoint}`);
+      taskResponse = await axios.post(generateEndpoint, requestBody, {
+        baseURL: this.baseUrl,
         headers: {
           'x-key': requestApiKey,
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
         ...this.getAxiosConfig(),
       });
@@ -213,7 +253,7 @@ class FluxAPI extends Tool {
       logger.error('[FluxAPI] Error while submitting task:', details);
 
       return this.returnValue(
-        `Something went wrong when trying to generate the image. The Flux API may be unavailable:
+        `Something went wrong when trying to ${isEdit ? 'edit' : 'generate'} the image. The Flux API may be unavailable:
         Error Message: ${details}`,
       );
     }
@@ -227,7 +267,8 @@ class FluxAPI extends Tool {
       try {
         // Wait 2 seconds between polls
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        const resultResponse = await axios.get(resultUrl, {
+        const resultResponse = await axios.get(resultEndpoint, {
+          baseURL: this.baseUrl,
           headers: {
             'x-key': requestApiKey,
             Accept: 'application/json',
@@ -307,14 +348,6 @@ class FluxAPI extends Tool {
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
 
       // Calculate cost based on endpoint
-      /**
-       * TODO: Cost handling
-      const endpoint = imageData.endpoint || '/v1/flux-pro';
-      const endpointKey = Object.entries(FluxAPI.PRICING).find(([key, _]) =>
-        endpoint.includes(key.toLowerCase().replace(/_/g, '-')),
-      )?.[0];
-      const cost = FluxAPI.PRICING[endpointKey] || 0;
-       */
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
       return this.returnValue(this.result);
     } catch (error) {
