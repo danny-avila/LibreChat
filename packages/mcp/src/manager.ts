@@ -22,6 +22,8 @@ export class MCPManager {
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
   private processMCPEnv?: (obj: MCPOptions, userId?: string) => MCPOptions; // Store the processing function
+  /** Store MCP server instructions */
+  private serverInstructions: Map<string, string> = new Map();
   private logger: Logger;
 
   private static getDefaultLogger(): Logger {
@@ -74,6 +76,42 @@ export class MCPManager {
           if (await connection.isConnected()) {
             initializedServers.add(i);
             this.connections.set(serverName, connection); // Store in app-level map
+
+            // Handle unified serverInstructions configuration
+            const configInstructions = config.serverInstructions;
+
+            if (configInstructions !== undefined) {
+              if (typeof configInstructions === 'string') {
+                // Custom instructions provided
+                this.serverInstructions.set(serverName, configInstructions);
+                this.logger.info(
+                  `[MCP][${serverName}] Custom instructions stored for context inclusion: ${configInstructions}`,
+                );
+              } else if (configInstructions === true) {
+                // Use server-provided instructions
+                const serverInstructions = connection.client.getInstructions();
+
+                if (serverInstructions) {
+                  this.serverInstructions.set(serverName, serverInstructions);
+                  this.logger.info(
+                    `[MCP][${serverName}] Server instructions stored for context inclusion: ${serverInstructions}`,
+                  );
+                } else {
+                  this.logger.info(
+                    `[MCP][${serverName}] serverInstructions=true but no server instructions available`,
+                  );
+                }
+              } else {
+                // configInstructions is false - explicitly disabled
+                this.logger.info(
+                  `[MCP][${serverName}] Instructions explicitly disabled (serverInstructions=false)`,
+                );
+              }
+            } else {
+              this.logger.info(
+                `[MCP][${serverName}] Instructions not included (serverInstructions not configured)`,
+              );
+            }
 
             const serverCapabilities = connection.client.getServerCapabilities();
             this.logger.info(
@@ -518,5 +556,62 @@ export class MCPManager {
       const logger = MCPManager.getDefaultLogger();
       logger.info('[MCP] Manager instance destroyed.');
     }
+  }
+
+  /**
+   * Get instructions for MCP servers
+   * @param serverNames Optional array of server names. If not provided or empty, returns all servers.
+   * @returns Object mapping server names to their instructions
+   */
+  public getInstructions(serverNames?: string[]): Record<string, string> {
+    const instructions: Record<string, string> = {};
+
+    if (!serverNames || serverNames.length === 0) {
+      // Return all instructions if no specific servers requested
+      for (const [serverName, serverInstructions] of this.serverInstructions.entries()) {
+        instructions[serverName] = serverInstructions;
+      }
+    } else {
+      // Return instructions for specific servers
+      for (const serverName of serverNames) {
+        const serverInstructions = this.serverInstructions.get(serverName);
+        if (serverInstructions) {
+          instructions[serverName] = serverInstructions;
+        }
+      }
+    }
+
+    return instructions;
+  }
+
+  /**
+   * Format MCP server instructions for injection into context
+   * @param serverNames Optional array of server names to include. If not provided, includes all servers.
+   * @returns Formatted instructions string ready for context injection
+   */
+  public formatInstructionsForContext(serverNames?: string[]): string {
+    /** Instructions for specified servers or all stored instructions */
+    const instructionsToInclude = this.getInstructions(serverNames);
+
+    if (Object.keys(instructionsToInclude).length === 0) {
+      return '';
+    }
+
+    // Format instructions for context injection
+    const formattedInstructions = Object.entries(instructionsToInclude)
+      .map(([serverName, instructions]) => {
+        return `## ${serverName} MCP Server Instructions
+
+${instructions}`;
+      })
+      .join('\n\n');
+
+    return `# MCP Server Instructions
+
+The following MCP servers are available with their specific instructions:
+
+${formattedInstructions}
+
+Please follow these instructions when using tools from the respective MCP servers.`;
   }
 }
