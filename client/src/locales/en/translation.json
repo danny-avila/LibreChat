@@ -1263,6 +1263,7 @@
   "com_ui_verify": "Verify",
   "com_ui_version_var": "Version {{0}}",
   "com_ui_versions": "Versions",
+  "com_ui_change_version": "Change Version",
   "com_ui_view_memory": "View Memory",
   "com_ui_view_source": "View source chat",
   "com_ui_web_search": "Web Search",
