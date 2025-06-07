@@ -20,6 +20,7 @@
   "com_agents_missing_provider_model": "Please select a provider and model before creating an agent.",
   "com_agents_name_placeholder": "Optional: The name of the agent",
   "com_agents_no_access": "You don't have access to edit this agent.",
+  "com_agents_no_agent_id_error": "No agent ID found. Please ensure the agent is created first.",
   "com_agents_not_available": "Agent Not Available",
   "com_agents_search_info": "When enabled, allows your agent to search the web for up-to-date information. Requires a valid API key.",
   "com_agents_search_name": "Search agents by name",
