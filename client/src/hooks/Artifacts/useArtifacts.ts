@@ -129,5 +129,6 @@ export default function useArtifacts() {
     cycleArtifact,
     currentArtifact,
     orderedArtifactIds,
+    setCurrentArtifactId,
   };
 }

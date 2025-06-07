@@ -2715,6 +2715,8 @@ html {
 .animate-pulse-slow {
   animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* iOS-inspired smooth animations */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -2730,8 +2732,29 @@ html {
   animation: fadeIn 0.5s ease-out forwards;
 }
 
-.scale-98 {
-  transform: scale(0.98);
+
+/* Prevent content flash and layout shifts in artifacts */
+[data-radix-scroll-area-viewport] {
+  /* Prevent scrollbar from causing layout shifts */
+  scrollbar-gutter: stable;
+}
+
+/* Ensure smooth tab content transitions */
+[role="tabpanel"] {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-font-smoothing: subpixel-antialiased;
+}
+
+/* Prevent flash of content during mounting */
+[role="tabpanel"][data-state="inactive"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+[role="tabpanel"][data-state="active"] {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 /* Chat Badges Animation */
