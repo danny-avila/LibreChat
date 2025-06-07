@@ -262,36 +262,44 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         }
       };
 
-      // Función común para cortar llamada y ocultar widget
-      const endCallAndHideWidget = (event?: Event) => {
-        if (event) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        
-        try {
-          // Buscar y hacer clic en el botón "End" para cortar la llamada
-          const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
-          if (endButton) {
-            // Permitir que el botón "End" original funcione primero
-            endButton.click();
-            console.log('Llamada cortada');
-          }
-        } catch (error) {
-          console.error('Error al cortar la llamada:', error);
-        }
-        
+      // Función común para ocultar widget
+      const hideWidget = () => {
         // Limpiar observer antes de ocultar
         if (elevenLabsObserverRef.current) {
           elevenLabsObserverRef.current.disconnect();
           elevenLabsObserverRef.current = null;
         }
         
-        // Ocultar el widget después de un pequeño delay
         setTimeout(() => {
           setShowElevenLabsWidget(false);
           console.log('Widget ocultado');
         }, 100);
+      };
+
+      // Función para cortar llamada (opcional)
+      const endCall = () => {
+        try {
+          const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
+          if (endButton) {
+            endButton.click();
+            console.log('Llamada cortada');
+            return true;
+          }
+        } catch (error) {
+          console.error('Error al cortar la llamada:', error);
+        }
+        return false;
+      };
+
+      // Función combinada para cortar llamada Y ocultar widget
+      const endCallAndHideWidget = (event?: Event) => {
+        if (event) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        
+        endCall(); // Intentar cortar llamada si es posible
+        hideWidget(); // SIEMPRE ocultar widget
       };
 
       // Configurar botón "Collapse" (Paso 3 de los requerimientos)
@@ -303,10 +311,22 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           const collapseButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="Collapse"]') as HTMLButtonElement;
           
           if (collapseButton) {
-            // Solo agregar event listener sin clonar para evitar mutaciones
-            collapseButton.addEventListener('click', endCallAndHideWidget, { capture: true, once: true });
+            // SIEMPRE agregar funcionalidad para ocultar widget + cortar llamada si está disponible
+            collapseButton.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              
+              // Intentar cortar llamada si el botón "End" está disponible
+              const callEnded = endCall();
+              
+              // SIEMPRE ocultar el widget, independientemente de si se cortó la llamada o no
+              hideWidget();
+              
+              console.log(`Collapse ejecutado - Llamada cortada: ${callEnded ? 'Sí' : 'No'}, Widget ocultado: Sí`);
+            }, { capture: true, once: true });
+            
             collapseConfigured = true;
-            console.log('Botón "Collapse" configurado correctamente');
+            console.log('Botón "Collapse" configurado correctamente (oculta SIEMPRE)');
             return true;
           }
         } catch (error) {
@@ -320,15 +340,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         if (endConfigured) return true;
         
         try {
-          // Solo agregar event listener sin clonar para evitar mutaciones
+          // Solo agregar event listener para ocultar widget después del click original
           endButton.addEventListener('click', () => {
             setTimeout(() => {
-              // Limpiar observer antes de ocultar
-              if (elevenLabsObserverRef.current) {
-                elevenLabsObserverRef.current.disconnect();
-                elevenLabsObserverRef.current = null;
-              }
-              setShowElevenLabsWidget(false);
+              hideWidget(); // Usar la función de ocultar widget
               console.log('Widget ocultado por botón End');
             }, 200);
           }, { once: true });
@@ -345,15 +360,33 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       // Activar el botón de llamada inmediatamente
       activateCallButton();
 
-      // Configurar el botón "Collapse" si está disponible inmediatamente
-      setupCollapseButton();
+      // Función de retry para configurar el botón "Collapse"
+      const retryConfigureCollapse = (attempts = 0, maxAttempts = 10) => {
+        if (attempts >= maxAttempts || collapseConfigured) {
+          console.log(`Configuración de Collapse terminada - Intentos: ${attempts}, Configurado: ${collapseConfigured}`);
+          return;
+        }
+
+        const success = setupCollapseButton();
+        if (!success) {
+          // Reintentar después de 200ms
+          setTimeout(() => {
+            retryConfigureCollapse(attempts + 1, maxAttempts);
+          }, 200);
+        }
+      };
+
+      // Configurar el botón "Collapse" con retry mechanism
+      setTimeout(() => {
+        retryConfigureCollapse();
+      }, 300); // Dar tiempo para que aparezca el botón después de activar la llamada
 
       // Buscar el botón "End" inmediatamente
       const immediateEndButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
       if (immediateEndButton) {
         setupEndButton(immediateEndButton);
-        console.log('Configuración inicial completada');
-        return; // Salir temprano si ya encontramos todo
+        console.log('Configuración inicial completada (End encontrado inmediatamente)');
+        return; // Salir temprano si ya encontramos el botón End
       }
 
       console.log('Configuración inicial del widget...');
@@ -364,27 +397,32 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         if (endConfigured && collapseConfigured) {
           observer.disconnect();
           elevenLabsObserverRef.current = null;
+          console.log('Observer desconectado - configuración completa');
           return;
         }
 
         for (const mutation of mutations) {
           if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-            const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
-            if (endButton && !endConfigured) {
-              setupEndButton(endButton);
-              
-              // Configurar Collapse una vez más por si cambió
-              if (!collapseConfigured) {
-                setupCollapseButton();
+            
+            // Buscar y configurar botón "End"
+            if (!endConfigured) {
+              const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
+              if (endButton) {
+                setupEndButton(endButton);
               }
-              
-              // Desconectar observer una vez que configuramos todo
-              if (endConfigured && collapseConfigured) {
-                console.log('Configuración completada, desconectando observer');
-                observer.disconnect();
-                elevenLabsObserverRef.current = null;
-                return;
-              }
+            }
+            
+            // Buscar y configurar botón "Collapse"
+            if (!collapseConfigured) {
+              setupCollapseButton();
+            }
+            
+            // Desconectar observer una vez que configuramos todo
+            if (endConfigured && collapseConfigured) {
+              console.log('Configuración completada via observer, desconectando');
+              observer.disconnect();
+              elevenLabsObserverRef.current = null;
+              return;
             }
           }
         }
