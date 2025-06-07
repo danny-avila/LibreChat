@@ -3,6 +3,7 @@ const {
   loadOCRConfig,
   processMCPEnv,
   EModelEndpoint,
+  loadMemoryConfig,
   getConfigDefaults,
   loadWebSearchConfig,
 } = require('librechat-data-provider');
@@ -44,6 +45,7 @@ const AppService = async (app) => {
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
   checkWebSearchConfig(webSearch);
+  const memory = loadMemoryConfig(config.memory);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
@@ -88,6 +90,7 @@ const AppService = async (app) => {
   const defaultLocals = {
     ocr,
     paths,
+    memory,
     webSearch,
     fileStrategy,
     socialLogins,
