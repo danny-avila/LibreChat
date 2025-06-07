@@ -537,6 +537,39 @@ export type TGetRandomPromptsRequest = {
   skip: number;
 };
 
+/** Prompt favorites and ranking types */
+export type TPromptFavoriteRequest = {
+  promptGroupId: string;
+};
+
+export type TPromptFavoriteResponse = {
+  promptGroupId: string;
+  isFavorite: boolean;
+};
+
+export type TPromptRankingRequest = {
+  rankings: Array<{
+    promptGroupId: string;
+    order: number;
+  }>;
+};
+
+export type TPromptRankingResponse = {
+  message: string;
+  rankings: Array<{
+    promptGroupId: string;
+    order: number;
+  }>;
+};
+
+export type TGetUserPromptPreferencesResponse = {
+  favorites: string[];
+  rankings: Array<{
+    promptGroupId: string;
+    order: number;
+  }>;
+};
+
 export type TCustomConfigSpeechResponse = { [key: string]: string };
 
 export type TUserTermsResponse = {
@@ -557,7 +590,7 @@ export type TUpdateFeedbackResponse = {
   messageId: string;
   conversationId: string;
   feedback?: TMinimalFeedback;
-}
+};
 
 export type TBalanceResponse = {
   tokenCredits: number;

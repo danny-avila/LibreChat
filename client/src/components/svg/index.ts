@@ -60,4 +60,5 @@ export { default as CircleHelpIcon } from './CircleHelpIcon';
 export { default as BedrockIcon } from './BedrockIcon';
 export { default as ThumbUpIcon } from './ThumbUpIcon';
 export { default as ThumbDownIcon } from './ThumbDownIcon';
+export { default as StarIcon } from './StarIcon';
 export { default as XAIcon } from './XAIcon';
