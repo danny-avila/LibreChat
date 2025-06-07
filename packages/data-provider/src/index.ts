@@ -16,6 +16,8 @@ export * from './models';
 export * from './mcp';
 /* web search */
 export * from './web';
+/* memory */
+export * from './memory';
 /* RBAC */
 export * from './permissions';
 export * from './roles';
