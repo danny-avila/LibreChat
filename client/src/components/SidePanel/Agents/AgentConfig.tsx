@@ -154,6 +154,10 @@ export default function AgentConfig({
     setActivePanel(Panel.actions);
   }, [agent_id, setActivePanel, showToast, localize]);
 
+  const handleAddMCP = useCallback(() => {
+    setActivePanel(Panel.mcp);
+  }, [setActivePanel, showToast, localize]);
+
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;
   let endpointType: EModelEndpoint | undefined;
@@ -337,6 +341,26 @@ export default function AgentConfig({
                   </div>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+        {/* MCP Section */}
+        <div className="mb-4">
+          <label className={labelClass}>
+            {localize('com_assistants_mcp_server')}
+          </label>
+          <div className="space-y-2">
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={handleAddMCP}
+                className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                aria-haspopup="dialog"
+              >
+                <div className="flex w-full items-center justify-center gap-2">
+                  {localize('com_assistants_add_mcp')}
+                </div>
+              </button>
             </div>
           </div>
         </div>

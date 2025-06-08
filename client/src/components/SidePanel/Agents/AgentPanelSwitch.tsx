@@ -7,6 +7,7 @@ import { useChatContext } from '~/Providers';
 import ActionsPanel from './ActionsPanel';
 import AgentPanel from './AgentPanel';
 import VersionPanel from './Version/VersionPanel';
+import MCPPanel from './MCPPanel';
 import { Panel } from '~/common';
 
 export default function AgentPanelSwitch() {
@@ -65,6 +66,10 @@ export default function AgentPanelSwitch() {
         selectedAgentId={currentAgentId}
       />
     );
+  }
+
+  if (activePanel === Panel.mcp) {
+    return <MCPPanel {...commonProps} />;
   }
 
   return (

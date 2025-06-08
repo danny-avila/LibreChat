@@ -1004,6 +1004,9 @@
   "com_ui_use_memory": "Use memory",
   "com_ui_create_memory": "Create Memory",
   "com_ui_memory_created": "Memory created successfully",
-  "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key."
+  "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key.",
+  "com_assistants_mcp_server": "MCP Servers",
+  "com_assistants_add_mcp": "Add MCP",
+  "com_assistants_mcp_server_info": "Configure MCP servers for your agent"
 }
 
