@@ -1,14 +1,18 @@
 import { EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
-import type { Agent, AgentCreateParams } from 'librechat-data-provider';
-import type { TAgentCapabilities, AgentForm } from '~/common';
 import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
+import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import { cn, createProviderOption, processAgentOption } from '~/utils';
+import type { TAgentCapabilities, AgentForm } from '~/common';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
+import {
+  AgentCapabilities,
+  defaultAgentFormValues,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
@@ -32,7 +36,10 @@ export default function AgentSelect({
     select: (res) =>
       res.data.map((agent) =>
         processAgentOption({
-          agent,
+          agent: {
+            ...agent,
+            name: agent.name || agent.id,
+          },
           instanceProjectId: startupConfig?.instanceProjectId,
         }),
       ),
@@ -168,6 +175,18 @@ export default function AgentSelect({
     };
   }, [selectedAgentId, agents, onSelect]);
 
+  useEffect(() => {
+    if (selectedAgentId === null) {
+      reset({
+        ...defaultAgentFormValues,
+        model: localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '',
+        provider: createProviderOption(
+          localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? '',
+        ),
+      });
+    }
+  }, [selectedAgentId, reset]);
+
   const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
 
   return (
@@ -179,7 +198,7 @@ export default function AgentSelect({
           containerClassName="px-0"
           selectedValue={(field?.value?.value ?? '') + ''}
           displayValue={field?.value?.label ?? ''}
-          selectPlaceholder={createAgent}
+          selectPlaceholder={field?.value?.value ?? createAgent}
           iconSide="right"
           searchPlaceholder={localize('com_agents_search_name')}
           SelectIcon={field?.value?.icon}

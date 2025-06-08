@@ -1434,6 +1434,10 @@ export enum LocalStorageKeys {
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
   /** Last checked toggle for Web Search per conversation ID */
   LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
+  /** Key for the last selected agent provider */
+  LAST_AGENT_PROVIDER = 'lastAgentProvider',
+  /** Key for the last selected agent model */
+  LAST_AGENT_MODEL = 'lastAgentModel',
 }
 
 export enum ForkOptions {
