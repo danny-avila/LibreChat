@@ -1,34 +1,52 @@
 import { useEffect } from 'react';
-import { useForm, FormProvider, Controller } from 'react-hook-form';
+import { useForm, FormProvider } from 'react-hook-form';
+import {
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
+} from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
-import type { AgentPanelProps } from '~/common';
-import { useToastContext } from '~/Providers';
-import useLocalize from '~/hooks/useLocalize';
-import { Panel } from '~/common';
+import type { AgentPanelProps, ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
-import FormInput from '~/components/ui/FormInput';
+import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import useLocalize from '~/hooks/useLocalize';
+import { useToastContext } from '~/Providers';
+import MCPInput from './MCPInput';
 
 export default function MCPPanel({
-  agent_id,
   setActivePanel,
+  agent_id,
 }: AgentPanelProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
-  const methods = useForm<any>({
+  const methods = useForm<ActionAuthForm>({
     defaultValues: {
-      url: '',
-      label: '',
+      /* General */
+      type: AuthTypeEnum.None,
+      saved_auth_fields: false,
+      /* API key */
+      api_key: '',
+      authorization_type: AuthorizationTypeEnum.Basic,
+      custom_auth_header: '',
+      /* OAuth */
+      oauth_client_id: '',
+      oauth_client_secret: '',
+      authorization_url: '',
+      client_url: '',
+      scope: '',
+      token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
     },
   });
 
-  const { control, reset } = methods;
+  const { reset } = methods;
 
-  const onSubmit = (data: any) => {
-    // TODO: Implement MCP server creation/update
-    console.log('Form submitted:', data);
-    reset(); // Clear form
-    setActivePanel(Panel.builder); // Go back to builder panel
+  const onSubmit = (data: ActionAuthForm) => {
+    console.log('MCP form data:', data);
+    // TODO: Implement MCP creation/update
+    reset();
+    setActivePanel('builder');
     showToast({
       message: localize('com_assistants_mcp_server_added'),
       status: 'success',
@@ -59,43 +77,8 @@ export default function MCPPanel({
               {localize('com_assistants_mcp_server_info')}
             </div>
           </div>
-
-          <div className="space-y-4 px-4">
-            <Controller
-              name="url"
-              control={control}
-              rules={{ required: true }}
-              render={({ field }) => (
-                <FormInput
-                  field={field}
-                  label={localize('com_assistants_mcp_url')}
-                  placeholder="https://mcp.example.com"
-                />
-              )}
-            />
-
-            <Controller
-              name="label"
-              control={control}
-              rules={{ required: true }}
-              render={({ field }) => (
-                <FormInput
-                  field={field}
-                  label={localize('com_assistants_mcp_label')}
-                  placeholder={localize('com_assistants_my_mcp_server')}
-                />
-              )}
-            />
-
-            <ActionsAuth />
-
-            <button
-              type="submit"
-              className="btn btn-primary relative h-9 w-full rounded-lg font-medium"
-            >
-              {localize('com_ui_create')}
-            </button>
-          </div>
+          <ActionsAuth />
+          <MCPInput />
         </div>
       </form>
     </FormProvider>
