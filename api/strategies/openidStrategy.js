@@ -6,11 +6,11 @@ const { CacheKeys } = require('librechat-data-provider');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
+const { isEnabled, safeStringify, logHeaders } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
-const { isEnabled } = require('~/server/utils');
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -203,18 +203,87 @@ async function setupOpenId() {
       client_secret: process.env.OPENID_CLIENT_SECRET,
     };
 
+    const debugOpenId = isEnabled(process.env.DEBUG_OPENID_REQUESTS);
+
     /** @type {Configuration} */
     openidConfig = await client.discovery(
       new URL(process.env.OPENID_ISSUER),
       process.env.OPENID_CLIENT_ID,
       clientMetadata,
+      undefined,
+      {
+        [client.customFetch]: async (url, options) => {
+          const urlStr = url.toString();
+          logger.debug(`[openidStrategy] Request to: ${urlStr}`);
+
+          if (debugOpenId) {
+            logger.debug(`[openidStrategy] Request method: ${options.method || 'GET'}`);
+            logger.debug(`[openidStrategy] Request headers: ${logHeaders(options.headers)}`);
+            if (options.body) {
+              let bodyForLogging = '';
+              if (options.body instanceof URLSearchParams) {
+                bodyForLogging = options.body.toString();
+              } else if (typeof options.body === 'string') {
+                bodyForLogging = options.body;
+              } else {
+                bodyForLogging = safeStringify(options.body);
+              }
+              logger.debug(`[openidStrategy] Request body: ${bodyForLogging}`);
+            }
+          }
+
+          try {
+            // Apply proxy if configured
+            const fetchOptions = process.env.PROXY
+              ? { ...options, agent: new HttpsProxyAgent(process.env.PROXY) }
+              : options;
+
+            const response = await fetch(url, fetchOptions);
+
+            if (debugOpenId) {
+              logger.debug(
+                `[openidStrategy] Response status: ${response.status} ${response.statusText}`,
+              );
+              logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
+            }
+
+            // Check for WWW-Authenticate header in successful responses
+            if (response.status === 200 && response.headers.has('www-authenticate')) {
+              const wwwAuth = response.headers.get('www-authenticate');
+              logger.warn(
+                `[openidStrategy] Non-standard WWW-Authenticate header found in successful response (200 OK): ${wwwAuth}. ` +
+                  'This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.',
+              );
+
+              // Clone the response and create a new one without the WWW-Authenticate header
+              const responseBody = await response.arrayBuffer();
+
+              // Create new headers without WWW-Authenticate
+              const newHeaders = new Headers();
+              for (const [key, value] of response.headers.entries()) {
+                if (key.toLowerCase() !== 'www-authenticate') {
+                  newHeaders.append(key, value);
+                }
+              }
+
+              return new Response(responseBody, {
+                status: response.status,
+                statusText: response.statusText,
+                headers: newHeaders,
+              });
+            }
+
+            return response;
+          } catch (error) {
+            logger.error(`[openidStrategy] Fetch error: ${error.message}`);
+            throw error;
+          }
+        },
+      },
     );
+
     if (process.env.PROXY) {
-      const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-      openidConfig[client.customFetch] = (...args) => {
-        return fetch(args[0], { ...args[1], agent: proxyAgent });
-      };
-      logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
+      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
     }
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
