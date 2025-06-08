@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
@@ -210,7 +209,7 @@ async function setupOpenId() {
       new URL(process.env.OPENID_ISSUER),
       process.env.OPENID_CLIENT_ID,
       clientMetadata,
-      undefined,
+      client.ClientSecretBasic(clientMetadata.client_secret),
       {
         [client.customFetch]: async (url, options) => {
           const urlStr = url.toString();
@@ -233,9 +232,12 @@ async function setupOpenId() {
           }
 
           try {
-            // Apply proxy if configured
+            /** @type {RequestInit} */
             const fetchOptions = process.env.PROXY
-              ? { ...options, agent: new HttpsProxyAgent(process.env.PROXY) }
+              ? {
+                  ...options,
+                  dispatcher: new HttpsProxyAgent(process.env.PROXY),
+                }
               : options;
 
             const response = await fetch(url, fetchOptions);
@@ -247,7 +249,6 @@ async function setupOpenId() {
               logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
             }
 
-            // Check for WWW-Authenticate header in successful responses
             if (response.status === 200 && response.headers.has('www-authenticate')) {
               const wwwAuth = response.headers.get('www-authenticate');
               logger.warn(
@@ -255,10 +256,8 @@ async function setupOpenId() {
                   'This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.',
               );
 
-              // Clone the response and create a new one without the WWW-Authenticate header
+              /** Cloned response without the WWW-Authenticate header */
               const responseBody = await response.arrayBuffer();
-
-              // Create new headers without WWW-Authenticate
               const newHeaders = new Headers();
               for (const [key, value] of response.headers.entries()) {
                 if (key.toLowerCase() !== 'www-authenticate') {
