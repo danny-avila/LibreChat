@@ -117,7 +117,7 @@ export default function MemoryEditDialog({
                     <div>
                       {memory.tokenCount.toLocaleString()}
                       {memData?.tokenLimit && ` / ${memData.tokenLimit.toLocaleString()}`}{' '}
-                      {localize('com_ui_tokens')}
+                      {localize(memory.tokenCount === 1 ? 'com_ui_token' : 'com_ui_tokens')}
                     </div>
                   )}
                 </div>

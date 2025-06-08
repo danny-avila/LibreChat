@@ -798,6 +798,7 @@
   "com_ui_usage": "Usage",
   "com_ui_current": "Current",
   "com_ui_tokens": "tokens",
+  "com_ui_token": "token",
   "com_ui_mention": "Mention an endpoint, assistant, or preset to quickly switch to it",
   "com_ui_min_tags": "Cannot remove more values, a minimum of {{0}} are required.",
   "com_ui_misc": "Misc.",
@@ -1006,4 +1007,3 @@
   "com_ui_memory_created": "Memory created successfully",
   "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key."
 }
-
