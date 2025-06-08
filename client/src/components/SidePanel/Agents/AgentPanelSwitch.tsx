@@ -15,7 +15,13 @@ export default function AgentPanelSwitch() {
   const [activePanel, setActivePanel] = useState(Panel.builder);
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [currentAgentId, setCurrentAgentId] = useState<string | undefined>(conversation?.agent_id);
-  const { data: actions = [] } = useGetActionsQuery(conversation?.endpoint as ActionsEndpoint);
+  const { data: actions = [] } = useGetActionsQuery(
+    EModelEndpoint.agents,
+    currentAgentId,
+    {
+      enabled: !!currentAgentId,
+    },
+  );
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const createMutation = useCreateAgentMutation();
 
