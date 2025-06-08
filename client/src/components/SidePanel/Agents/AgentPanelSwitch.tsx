@@ -18,7 +18,13 @@ export default function AgentPanelSwitch() {
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [currentAgentId, setCurrentAgentId] = useState<string | undefined>(conversation?.agent_id);
-  const { data: actions = [] } = useGetActionsQuery(conversation?.endpoint as ActionsEndpoint);
+  const { data: actions = [] } = useGetActionsQuery(
+    EModelEndpoint.agents,
+    currentAgentId,
+    {
+      enabled: !!currentAgentId,
+    },
+  );
   // TODO: Implement MCP endpoint (currently mocked)
   const { data: mcps = [] } = {
     data: [
