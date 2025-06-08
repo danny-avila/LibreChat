@@ -13,6 +13,7 @@ import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
 import MCPInput from './MCPInput';
+import { Panel } from '~/common';
 
 export default function MCPPanel({
   setActivePanel,
