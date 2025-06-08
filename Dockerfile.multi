@@ -38,7 +38,7 @@ COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/d
 RUN npm run build
 
 # Build `api` package
-FROM base AS api-build
+FROM base AS api-package-build
 WORKDIR /app/packages/api
 COPY packages/api ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
@@ -65,7 +65,7 @@ COPY api ./api
 COPY config ./config
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
-COPY --from=api-build /app/packages/api/dist ./packages/api/dist
+COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
 EXPOSE 3080
