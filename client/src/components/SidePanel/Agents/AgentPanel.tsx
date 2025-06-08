@@ -30,8 +30,10 @@ import { Panel } from '~/common';
 
 export default function AgentPanel({
   setAction,
+  setMcp,
   activePanel,
   actions = [],
+  mcps = [],
   setActivePanel,
   agent_id: current_agent_id,
   setCurrentAgentId,
@@ -326,6 +328,8 @@ export default function AgentPanel({
           <AgentConfig
             actions={actions}
             setAction={setAction}
+            setMcp={setMcp}
+            mcps={mcps}
             createMutation={create}
             agentsConfig={agentsConfig}
             setActivePanel={setActivePanel}
