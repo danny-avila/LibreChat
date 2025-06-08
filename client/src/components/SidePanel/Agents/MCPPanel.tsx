@@ -155,7 +155,7 @@ export default function MCPPanel({
               </OGDialog>
             )}
 
-            <div className="text-xl font-medium">{(mcp ? 'Edit' : 'Add') + ' ' + 'MCP'}</div>
+            <div className="text-xl font-medium">{(mcp ? localize('com_assistants_edit_mcp_server') : localize('com_assistants_add_mcp_server'))}</div>
             <div className="text-xs text-text-secondary">
               {localize('com_assistants_mcp_info')}
             </div>
