@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import {
   AuthTypeEnum,
@@ -6,52 +6,84 @@ import {
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
-import type { AgentPanelProps, ActionAuthForm } from '~/common';
-import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
+import type { AgentPanelProps, MCPAuthForm } from '~/common';
+
 import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
+import { TrashIcon } from '~/components/svg';
 import MCPInput from './MCPInput';
+import MCPTools from './MCPTools';
 import { Panel } from '~/common';
+import MCPAuth from './MCPAuth';
+
+// Mock tools that would come from MCP response
+const mockMCPTools = [
+  'get_weather',
+  'get_stock_price',
+  'get_news_headlines',
+  'create_calendar_event',
+  'send_email',
+  'get_user_profile',
+  'update_user_settings',
+  'get_system_status',
+  'get_api_usage',
+  'get_error_logs'
+];
 
 export default function MCPPanel({
+  mcp,
+  mcps,
   setActivePanel,
-  agent_id,
 }: AgentPanelProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
 
-  const methods = useForm<ActionAuthForm>({
+  const methods = useForm<MCPAuthForm>({
     defaultValues: {
-      /* General */
       type: AuthTypeEnum.None,
       saved_auth_fields: false,
-      /* API key */
       api_key: '',
-      authorization_type: AuthorizationTypeEnum.Basic,
+      authorization_type: AuthorizationTypeEnum.Bearer,
       custom_auth_header: '',
-      /* OAuth */
       oauth_client_id: '',
       oauth_client_secret: '',
       authorization_url: '',
       client_url: '',
       scope: '',
       token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+      url: '',
+      label: '',
     },
   });
 
   const { reset } = methods;
 
-  const onSubmit = (data: ActionAuthForm) => {
-    console.log('MCP form data:', data);
-    // TODO: Implement MCP creation/update
+  useEffect(() => {
+    if (mcp?.formData) {
+      reset(mcp.formData);
+    }
+  }, [mcp, reset]);
+
+  const onSubmit = (data: MCPAuthForm) => {
+    console.log('Form submitted:', data);
+    console.log('Selected tools:', selectedTools);
     reset();
-    setActivePanel('builder');
+    setActivePanel(Panel.builder);
     showToast({
       message: localize('com_assistants_mcp_server_added'),
       status: 'success',
     });
+  };
+
+  const handleToolToggle = (toolName: string) => {
+    setSelectedTools(prev => 
+      prev.includes(toolName) 
+        ? prev.filter(t => t !== toolName)
+        : [...prev, toolName]
+    );
   };
 
   return (
@@ -78,8 +110,20 @@ export default function MCPPanel({
               {localize('com_assistants_mcp_server_info')}
             </div>
           </div>
-          <ActionsAuth />
-          <MCPInput />
+
+          <MCPAuth />
+          <MCPInput mcp={mcp} />
+          <MCPTools selectedTools={selectedTools} onToolToggle={handleToolToggle} />
+
+          <div className="mt-4 flex items-center justify-end">
+            <button
+              onClick={methods.handleSubmit(onSubmit)}
+              className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              type="button"
+            >
+              {mcp ? localize('com_ui_update') : localize('com_ui_create')}
+            </button>
+          </div>
         </div>
       </form>
     </FormProvider>
