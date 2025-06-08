@@ -1,15 +1,10 @@
 import { useState } from 'react';
-import type { MCPAuthForm } from '~/common';
+import type { MCP } from 'librechat-data-provider';
 import GearIcon from '~/components/svg/GearIcon';
 import { cn } from '~/utils';
 
 type MCPProps = {
-  mcp: {
-    id: string;
-    label: string;
-    url: string;
-    formData: MCPAuthForm;
-  };
+  mcp: MCP;
   onClick: () => void;
 };
 
@@ -29,13 +24,13 @@ export default function MCP({ mcp, onClick }: MCPProps) {
       className="group flex w-full rounded-lg border border-border-medium text-sm hover:cursor-pointer focus:outline-none focus:ring-2 focus:ring-text-primary"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
-      aria-label={`MCP for ${mcp.label}`}
+      aria-label={`MCP for ${mcp.metadata.label}`}
     >
       <div
         className="h-9 grow overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2"
         style={{ wordBreak: 'break-all' }}
       >
-        {mcp.label}
+        {mcp.metadata.label}
       </div>
       <div
         className={cn(
