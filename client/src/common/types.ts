@@ -167,6 +167,8 @@ export type ActionAuthForm = {
   token_exchange_method: t.TokenExchangeMethodEnum;
 };
 
+export type MCPAuthForm = ActionAuthForm;
+
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
   metadata: t.ActionMetadata | null;
 };
@@ -189,10 +191,13 @@ export type AgentPanelProps = {
   index?: number;
   agent_id?: string;
   activePanel?: string;
+  mcp?: t.MCP;
+  mcps?: t.MCP[];
   action?: t.Action;
   actions?: t.Action[];
   createMutation: UseMutationResult<t.Agent, Error, t.AgentCreateParams>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -594,8 +599,3 @@ declare global {
     google_tag_manager?: unknown;
   }
 }
-
-export type MCPAuthForm = ActionAuthForm & {
-  url: string;
-  label: string;
-};
