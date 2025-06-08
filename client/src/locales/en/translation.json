@@ -1007,6 +1007,10 @@
   "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key.",
   "com_assistants_mcp_server": "MCP Servers",
   "com_assistants_add_mcp": "Add MCP",
-  "com_assistants_mcp_server_info": "Configure MCP servers for your agent"
+  "com_assistants_mcp_server_info": "Configure MCP servers for your agent",
+  "com_assistants_my_mcp_server": "my_mcp_server",
+  "com_assistants_mcp_label": "Label",
+  "com_assistants_mcp_url": "URL",
+  "com_assistants_add_mcp_server": "Add MCP Server"
 }
 
