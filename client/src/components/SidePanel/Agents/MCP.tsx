@@ -1,0 +1,51 @@
+import { useState } from 'react';
+import type { MCPAuthForm } from '~/common';
+import GearIcon from '~/components/svg/GearIcon';
+import { cn } from '~/utils';
+
+type MCPProps = {
+  mcp: {
+    id: string;
+    label: string;
+    url: string;
+    formData: MCPAuthForm;
+  };
+  onClick: () => void;
+};
+
+export default function MCP({ mcp, onClick }: MCPProps) {
+  const [isHovering, setIsHovering] = useState(false);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          onClick();
+        }
+      }}
+      className="group flex w-full rounded-lg border border-border-medium text-sm hover:cursor-pointer focus:outline-none focus:ring-2 focus:ring-text-primary"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      aria-label={`MCP for ${mcp.label}`}
+    >
+      <div
+        className="h-9 grow overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2"
+        style={{ wordBreak: 'break-all' }}
+      >
+        {mcp.label}
+      </div>
+      <div
+        className={cn(
+          'h-9 w-9 min-w-9 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary group-focus:flex',
+          isHovering ? 'flex' : 'hidden',
+        )}
+        aria-label="Settings"
+      >
+        <GearIcon className="icon-sm" aria-hidden="true" />
+      </div>
+    </div>
+  );
+} 

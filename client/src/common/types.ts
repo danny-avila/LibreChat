@@ -594,3 +594,8 @@ declare global {
     google_tag_manager?: unknown;
   }
 }
+
+export type MCPAuthForm = ActionAuthForm & {
+  url: string;
+  label: string;
+};

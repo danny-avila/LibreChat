@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
+import { QueryKeys, EModelEndpoint, AgentCapabilities, AuthTypeEnum, AuthorizationTypeEnum, TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
@@ -20,6 +20,8 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import { Panel } from '~/common';
+import MCP from './MCP';
+import MCPPanel from './MCPPanel';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -44,6 +46,69 @@ export default function AgentConfig({
   const localize = useLocalize();
 
   const [showToolDialog, setShowToolDialog] = useState(false);
+  const [selectedMCP, setSelectedMCP] = useState<{ formData: MCPAuthForm } | undefined>(undefined);
+  const [mockMCPs] = useState([
+    {
+      id: '1',
+      label: 'Weather Service',
+      url: 'https://api.weather.com',
+      formData: {
+        type: AuthTypeEnum.None,
+        saved_auth_fields: false,
+        api_key: '',
+        authorization_type: AuthorizationTypeEnum.Basic,
+        custom_auth_header: '',
+        oauth_client_id: '',
+        oauth_client_secret: '',
+        authorization_url: '',
+        client_url: '',
+        scope: '',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        url: 'https://api.weather.com',
+        label: 'Weather Service',
+      },
+    },
+    {
+      id: '2',
+      label: 'Stock Market Data',
+      url: 'https://api.stocks.com',
+      formData: {
+        type: AuthTypeEnum.ServiceHttp,
+        saved_auth_fields: true,
+        api_key: 'sk-123456789',
+        authorization_type: AuthorizationTypeEnum.Bearer,
+        custom_auth_header: '',
+        oauth_client_id: '',
+        oauth_client_secret: '',
+        authorization_url: '',
+        client_url: '',
+        scope: '',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        url: 'https://api.stocks.com',
+        label: 'Stock Market Data',
+      },
+    },
+    {
+      id: '3',
+      label: 'News Aggregator',
+      url: 'https://api.news.com',
+      formData: {
+        type: AuthTypeEnum.OAuth,
+        saved_auth_fields: true,
+        api_key: '',
+        authorization_type: AuthorizationTypeEnum.Basic,
+        custom_auth_header: '',
+        oauth_client_id: 'client-123',
+        oauth_client_secret: 'secret-456',
+        authorization_url: 'https://api.news.com/oauth/authorize',
+        client_url: 'https://api.news.com/oauth/token',
+        scope: 'read write',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        url: 'https://api.news.com',
+        label: 'News Aggregator',
+      },
+    },
+  ]);
 
   const methods = useFormContext<AgentForm>();
 
@@ -155,8 +220,15 @@ export default function AgentConfig({
   }, [agent_id, setActivePanel, showToast, localize]);
 
   const handleAddMCP = useCallback(() => {
+    setSelectedMCP(undefined);
     setActivePanel(Panel.mcp);
-  }, [setActivePanel, showToast, localize]);
+  }, [setActivePanel]);
+
+  const handleEditMCP = useCallback((mcp: typeof mockMCPs[0]) => {
+    console.log('Editing MCP:', mcp);
+    setSelectedMCP({ formData: mcp.formData });
+    setActivePanel(Panel.mcp);
+  }, [setActivePanel]);
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;
@@ -350,6 +422,13 @@ export default function AgentConfig({
             {localize('com_assistants_mcp_server')}
           </label>
           <div className="space-y-2">
+            {mockMCPs.map((mcp) => (
+              <MCP
+                key={mcp.id}
+                mcp={mcp}
+                onClick={() => handleEditMCP(mcp)}
+              />
+            ))}
             <div className="flex space-x-2">
               <button
                 type="button"
