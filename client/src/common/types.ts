@@ -167,7 +167,10 @@ export type ActionAuthForm = {
   token_exchange_method: t.TokenExchangeMethodEnum;
 };
 
-export type MCPAuthForm = ActionAuthForm;
+export type MCPAuthForm = ActionAuthForm & {
+  label?: string;
+  domain?: string;
+}; 
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
   metadata: t.ActionMetadata | null;
