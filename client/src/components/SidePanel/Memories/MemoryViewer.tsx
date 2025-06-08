@@ -5,6 +5,9 @@ import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUserMemory } from 'librechat-data-provider';
 import {
+  Spinner,
+  EditIcon,
+  TrashIcon,
   Table,
   Input,
   Label,
@@ -18,7 +21,7 @@ import {
   TableHeader,
   TooltipAnchor,
   OGDialogTrigger,
-} from '~/components/ui';
+} from '~/components';
 import {
   useGetUserQuery,
   useMemoriesQuery,
@@ -27,10 +30,8 @@ import {
 } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { EditIcon, TrashIcon } from '~/components/svg';
 import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryEditDialog from './MemoryEditDialog';
-import Spinner from '~/components/svg/Spinner';
 import { useToastContext } from '~/Providers';
 import AdminSettings from './AdminSettings';
 
@@ -121,13 +122,6 @@ export default function MemoryViewer() {
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLDivElement>(null);
 
-    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        setOpen(!open);
-      }
-    };
-
     // Only show edit button if user has UPDATE permission
     if (!hasUpdateAccess) {
       return null;
@@ -142,17 +136,18 @@ export default function MemoryViewer() {
       >
         <OGDialogTrigger asChild>
           <TooltipAnchor
-            ref={triggerRef}
-            role="button"
-            aria-label={localize('com_ui_edit')}
-            description={localize('com_ui_edit')}
-            tabIndex={0}
-            onClick={() => setOpen(!open)}
-            className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
-            onKeyDown={handleKeyDown}
-          >
-            <EditIcon />
-          </TooltipAnchor>
+            description={localize('com_ui_edit_memory')}
+            render={
+              <Button
+                variant="ghost"
+                aria-label={localize('com_ui_bookmarks_edit')}
+                onClick={() => setOpen(!open)}
+                className="h-8 w-8 p-0"
+              >
+                <EditIcon />
+              </Button>
+            }
+          />
         </OGDialogTrigger>
       </MemoryEditDialog>
     );
@@ -160,14 +155,6 @@ export default function MemoryViewer() {
 
   const DeleteMemoryButton = ({ memory }: { memory: TUserMemory }) => {
     const [open, setOpen] = useState(false);
-
-    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        event.stopPropagation();
-        setOpen(!open);
-      }
-    };
 
     if (!hasUpdateAccess) {
       return null;
@@ -196,20 +183,22 @@ export default function MemoryViewer() {
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogTrigger asChild>
           <TooltipAnchor
-            role="button"
-            aria-label={localize('com_ui_delete')}
-            description={localize('com_ui_delete')}
-            className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
-            tabIndex={0}
-            onClick={() => setOpen(!open)}
-            onKeyDown={handleKeyDown}
-          >
-            {deletingKey === memory.key ? (
-              <Spinner className="size-4 animate-spin" />
-            ) : (
-              <TrashIcon className="size-4" />
-            )}
-          </TooltipAnchor>
+            description={localize('com_ui_delete_memory')}
+            render={
+              <Button
+                variant="ghost"
+                aria-label={localize('com_ui_delete')}
+                onClick={() => setOpen(!open)}
+                className="h-8 w-8 p-0"
+              >
+                {deletingKey === memory.key ? (
+                  <Spinner className="size-4 animate-spin" />
+                ) : (
+                  <TrashIcon className="size-4" />
+                )}
+              </Button>
+            }
+          />
         </OGDialogTrigger>
         <OGDialogTemplate
           showCloseButton={false}
