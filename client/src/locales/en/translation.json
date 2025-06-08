@@ -1012,6 +1012,7 @@
   "com_assistants_mcp_label": "Label",
   "com_assistants_mcp_url": "URL",
   "com_assistants_add_mcp_server": "Add MCP Server",
-  "com_assistants_mcp_server_added": "MCP server added successfully"
+  "com_assistants_mcp_server_added": "MCP server added successfully",
+  "com_assistants_mcps_disabled": "You need to create an assistant before adding MCPs."
 }
 
