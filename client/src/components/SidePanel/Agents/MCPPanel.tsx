@@ -22,11 +22,17 @@ export default function MCPPanel({
     },
   });
 
-  const { control } = methods;
+  const { control, reset } = methods;
 
   const onSubmit = (data: any) => {
     // TODO: Implement MCP server creation/update
     console.log('Form submitted:', data);
+    reset(); // Clear form
+    setActivePanel(Panel.builder); // Go back to builder panel
+    showToast({
+      message: localize('com_assistants_mcp_server_added'),
+      status: 'success',
+    });
   };
 
   return (
