@@ -32,7 +32,10 @@ export default function AgentSelect({
     select: (res) =>
       res.data.map((agent) =>
         processAgentOption({
-          agent,
+          agent: {
+            ...agent,
+            name: agent.name || agent.id,
+          },
           instanceProjectId: startupConfig?.instanceProjectId,
         }),
       ),
