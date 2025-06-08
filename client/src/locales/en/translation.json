@@ -1021,6 +1021,9 @@
   "com_assistants_delete_mcp_error": "Failed to delete MCP server",
   "com_assistants_mcp_info": "Add MCP servers to your agent to enable it to perform tasks and interact with external services",
   "com_assistants_update_mcp_error": "There was an error creating or updating the MCP.",
-  "com_assistants_update_mcp_success": "Successfully created or updated MCP"
-  }
+  "com_assistants_update_mcp_success": "Successfully created or updated MCP",
+  "com_assistants_available_tools": "Available Tools",
+  "com_ui_select_all": "Select All",
+  "com_ui_deselect_all": "Deselect All"
+}
 

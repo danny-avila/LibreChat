@@ -88,6 +88,9 @@ export default function MCPPanel({
         scope: mcp.metadata.auth.scope ?? '',
         token_exchange_method:
           mcp.metadata.auth.token_exchange_method ?? TokenExchangeMethodEnum.DefaultPost,
+        label: mcp.metadata.label ?? '',
+        domain: mcp.metadata.domain ?? '',
+        tools: mcp.metadata.tools ?? [],
       });
     }
   }, [mcp, reset]);
