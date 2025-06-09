@@ -8,7 +8,8 @@ const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 const connect = require('./connect');
 
 const { grantPermission } = require('~/server/services/PermissionService');
-const { getProjectByName, findRoleByIdentifier } = require('~/models');
+const { getProjectByName } = require('~/models/Project');
+const { findRoleByIdentifier } = require('~/models');
 const { Agent } = require('~/db/models');
 
 async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 } = {}) {
