@@ -1,4 +1,5 @@
 const undici = require('undici');
+const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
