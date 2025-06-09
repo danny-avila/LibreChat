@@ -100,7 +100,8 @@ beforeEach(async () => {
 });
 
 // Mock getUserPrincipals to avoid depending on the actual implementation
-jest.mock('~/models/userGroupMethods', () => ({
+jest.mock('~/models', () => ({
+  ...jest.requireActual('~/models'),
   getUserPrincipals: jest.fn(),
 }));
 

@@ -1,13 +1,11 @@
 jest.mock('~/models', () => ({
   initializeRoles: jest.fn(),
+  seedDefaultRoles: jest.fn(),
 }));
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
   getRoleByName: jest.fn(),
   updateRoleByName: jest.fn(),
-}));
-jest.mock('~/models/AccessRole', () => ({
-  seedDefaultRoles: jest.fn(),
 }));
 
 jest.mock('~/config', () => ({
