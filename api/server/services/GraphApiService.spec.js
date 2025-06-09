@@ -1,4 +1,3 @@
-// Mock all dependencies before importing anything
 jest.mock('@microsoft/microsoft-graph-client');
 jest.mock('~/strategies/openidStrategy');
 jest.mock('~/cache/getLogStores');
@@ -16,32 +15,39 @@ jest.mock('~/utils', () => ({
   logAxiosError: jest.fn(),
 }));
 
-// Mock deeper dependencies to prevent loading entire dependency tree
 jest.mock('~/server/services/Config', () => ({}));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
-jest.mock('~/models', () => ({
-  User: {},
-  Group: {},
-  updateUser: jest.fn(),
-  findUser: jest.fn(),
-  createUser: jest.fn(),
-}));
 
-const GraphApiService = require('./GraphApiService');
-const { Client } = require('@microsoft/microsoft-graph-client');
-const getLogStores = require('~/cache/getLogStores');
-const { getOpenIdConfig } = require('~/strategies/openidStrategy');
+const mongoose = require('mongoose');
 const client = require('openid-client');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const { Client } = require('@microsoft/microsoft-graph-client');
+const { getOpenIdConfig } = require('~/strategies/openidStrategy');
+const getLogStores = require('~/cache/getLogStores');
+const GraphApiService = require('./GraphApiService');
 
 describe('GraphApiService', () => {
+  let mongoServer;
   let mockGraphClient;
   let mockTokensCache;
   let mockOpenIdConfig;
 
-  beforeEach(() => {
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await mongoose.connection.dropDatabase();
 
     // Mock Graph client
     mockGraphClient = {
