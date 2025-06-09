@@ -26,6 +26,11 @@ interface MultiSelectProps<T extends string> {
   selectItemsClassName?: string;
   selectedValues: T[];
   setSelectedValues: (values: T[]) => void;
+  renderItemContent?: (
+    value: T,
+    defaultContent: React.ReactNode,
+    isSelected: boolean,
+  ) => React.ReactNode;
 }
 
 function defaultRender<T extends string>(values: T[], placeholder?: string) {
@@ -54,9 +59,9 @@ export default function MultiSelect<T extends string>({
   selectItemsClassName,
   selectedValues = [],
   setSelectedValues,
+  renderItemContent,
 }: MultiSelectProps<T>) {
   const selectRef = useRef<HTMLButtonElement>(null);
-  // const [selectedValues, setSelectedValues] = React.useState<T[]>(defaultSelectedValues);
 
   const handleValueChange = (values: T[]) => {
     setSelectedValues(values);
@@ -105,23 +110,33 @@ export default function MultiSelect<T extends string>({
             popoverClassName,
           )}
         >
-          {items.map((value) => (
-            <SelectItem
-              key={value}
-              value={value}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
-                'scroll-m-1 outline-none transition-colors',
-                'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
-                'w-full min-w-0 text-sm',
-                itemClassName,
-              )}
-            >
-              <SelectItemCheck className="text-primary" />
-              <span className="truncate">{value}</span>
-            </SelectItem>
-          ))}
+          {items.map((value) => {
+            const defaultContent = (
+              <>
+                <SelectItemCheck className="text-primary" />
+                <span className="truncate">{value}</span>
+              </>
+            );
+            const isCurrentItemSelected = selectedValues.includes(value);
+            return (
+              <SelectItem
+                key={value}
+                value={value}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
+                  'scroll-m-1 outline-none transition-colors',
+                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
+                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
+                  'w-full min-w-0 text-sm',
+                  itemClassName,
+                )}
+              >
+                {renderItemContent
+                  ? renderItemContent(value, defaultContent, isCurrentItemSelected)
+                  : defaultContent}
+              </SelectItem>
+            );
+          })}
         </SelectPopover>
       </SelectProvider>
     </div>
