@@ -34,6 +34,7 @@ import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryEditDialog from './MemoryEditDialog';
 import { useToastContext } from '~/Providers';
 import AdminSettings from './AdminSettings';
+import { cn } from '~/utils';
 
 export default function MemoryViewer() {
   const localize = useLocalize();
@@ -251,7 +252,12 @@ export default function MemoryViewer() {
         </div>
         {/* Memory Usage and Toggle Display */}
         {(memData?.tokenLimit || hasOptOutAccess) && (
-          <div className="flex items-center justify-between rounded-lg">
+          <div
+            className={cn(
+              'flex items-center rounded-lg',
+              memData?.tokenLimit != null && hasOptOutAccess ? 'justify-between' : 'justify-end',
+            )}
+          >
             {/* Usage Display */}
             {memData?.tokenLimit && (
               <div className="flex items-center gap-2">
