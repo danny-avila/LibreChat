@@ -1007,13 +1007,11 @@
   "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key.",
   "com_assistants_mcp_server": "MCP Servers",
   "com_assistants_add_mcp": "Add MCP",
-  "com_assistants_mcp_server_info": "Configure MCP servers for your agent",
   "com_assistants_my_mcp_server": "my_mcp_server",
   "com_assistants_mcp_label": "Label",
   "com_assistants_mcp_url": "URL",
   "com_assistants_add_mcp_server": "Add MCP Server",
   "com_assistants_edit_mcp_server": "Edit MCP Server",
-  "com_assistants_mcp_server_added": "MCP server added successfully",
   "com_assistants_mcps_disabled": "You need to create an assistant before adding MCPs.",
   "com_assistants_delete_mcp": "Delete MCP",
   "com_assistants_delete_mcp_confirm": "Are you sure you want to delete this MCP server?",
@@ -1026,4 +1024,3 @@
   "com_ui_select_all": "Select All",
   "com_ui_deselect_all": "Deselect All"
 }
-
