@@ -355,7 +355,7 @@ export default function AgentConfig({
           </div>
         </div>
         {/* MCP Section */}
-        <div className="mb-4">
+        {/* <div className="mb-4">
           <label className={labelClass}>{localize('com_assistants_mcp_server')}</label>
           <div className="space-y-2">
             {mcps
@@ -383,7 +383,7 @@ export default function AgentConfig({
               </button>
             </div>
           </div>
-        </div>
+        </div> */}
       </div>
       <ToolSelectDialog
         isOpen={showToolDialog}
