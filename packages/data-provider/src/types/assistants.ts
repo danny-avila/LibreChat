@@ -198,6 +198,7 @@ export interface AgentFileResource extends AgentBaseResource {
 }
 
 export type Agent = {
+  _id?: string;
   id: string;
   name: string | null;
   author?: string | null;
@@ -217,6 +218,7 @@ export type Agent = {
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
+  /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
   agent_ids?: string[];
