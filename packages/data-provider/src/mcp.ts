@@ -15,6 +15,15 @@ const BaseOptionsSchema = z.object({
    * - string: Use custom instructions (overrides server-provided)
    */
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
+  customUserVars: z
+    .record(
+      z.string(),
+      z.object({
+        title: z.string(),
+        description: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
@@ -171,13 +180,14 @@ function processUserPlaceholders(value: string, user?: TUser): string {
  * Recursively processes an object to replace environment variables in string values
  * @param obj - The object to process
  * @param user - The user object containing all user fields
+ * @param customUserVars - vars that user set in settings
  * @returns - The processed object with environment variables replaced
  */
-export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser): MCPOptions {
+export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser, customUserVars?: Record<string, string>): MCPOptions {
   if (obj === null || obj === undefined) {
     return obj;
   }
-
+  
   const newObj: MCPOptions = structuredClone(obj);
 
   if ('env' in newObj && newObj.env) {
