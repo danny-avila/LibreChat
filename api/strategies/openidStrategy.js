@@ -1,3 +1,4 @@
+const undici = require('undici');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
@@ -15,6 +16,76 @@ const getLogStores = require('~/cache/getLogStores');
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
  * @typedef {import('openid-client').Configuration} Configuration
  **/
+
+/**
+ * @param {string} url
+ * @param {client.CustomFetchOptions} options
+ */
+async function customFetch(url, options) {
+  const urlStr = url.toString();
+  logger.debug(`[openidStrategy] Request to: ${urlStr}`);
+  const debugOpenId = isEnabled(process.env.DEBUG_OPENID_REQUESTS);
+  if (debugOpenId) {
+    logger.debug(`[openidStrategy] Request method: ${options.method || 'GET'}`);
+    logger.debug(`[openidStrategy] Request headers: ${logHeaders(options.headers)}`);
+    if (options.body) {
+      let bodyForLogging = '';
+      if (options.body instanceof URLSearchParams) {
+        bodyForLogging = options.body.toString();
+      } else if (typeof options.body === 'string') {
+        bodyForLogging = options.body;
+      } else {
+        bodyForLogging = safeStringify(options.body);
+      }
+      logger.debug(`[openidStrategy] Request body: ${bodyForLogging}`);
+    }
+  }
+
+  try {
+    /** @type {undici.RequestInit} */
+    const fetchOptions = process.env.PROXY
+      ? {
+          ...options,
+          dispatcher: new HttpsProxyAgent(process.env.PROXY),
+        }
+      : options;
+
+    const response = await undici.fetch(url, fetchOptions);
+
+    if (debugOpenId) {
+      logger.debug(`[openidStrategy] Response status: ${response.status} ${response.statusText}`);
+      logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
+    }
+
+    if (response.status === 200 && response.headers.has('www-authenticate')) {
+      const wwwAuth = response.headers.get('www-authenticate');
+      logger.warn(
+        `[openidStrategy] Non-standard WWW-Authenticate header found in successful response (200 OK): ${wwwAuth}. ` +
+          'This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.',
+      );
+
+      /** Cloned response without the WWW-Authenticate header */
+      const responseBody = await response.arrayBuffer();
+      const newHeaders = new Headers();
+      for (const [key, value] of response.headers.entries()) {
+        if (key.toLowerCase() !== 'www-authenticate') {
+          newHeaders.append(key, value);
+        }
+      }
+
+      return new Response(responseBody, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders,
+      });
+    }
+
+    return response;
+  } catch (error) {
+    logger.error(`[openidStrategy] Fetch error: ${error.message}`);
+    throw error;
+  }
+}
 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
@@ -202,82 +273,14 @@ async function setupOpenId() {
       client_secret: process.env.OPENID_CLIENT_SECRET,
     };
 
-    const debugOpenId = isEnabled(process.env.DEBUG_OPENID_REQUESTS);
-
     /** @type {Configuration} */
     openidConfig = await client.discovery(
       new URL(process.env.OPENID_ISSUER),
       process.env.OPENID_CLIENT_ID,
       clientMetadata,
-      client.ClientSecretBasic(clientMetadata.client_secret),
+      undefined,
       {
-        [client.customFetch]: async (url, options) => {
-          const urlStr = url.toString();
-          logger.debug(`[openidStrategy] Request to: ${urlStr}`);
-
-          if (debugOpenId) {
-            logger.debug(`[openidStrategy] Request method: ${options.method || 'GET'}`);
-            logger.debug(`[openidStrategy] Request headers: ${logHeaders(options.headers)}`);
-            if (options.body) {
-              let bodyForLogging = '';
-              if (options.body instanceof URLSearchParams) {
-                bodyForLogging = options.body.toString();
-              } else if (typeof options.body === 'string') {
-                bodyForLogging = options.body;
-              } else {
-                bodyForLogging = safeStringify(options.body);
-              }
-              logger.debug(`[openidStrategy] Request body: ${bodyForLogging}`);
-            }
-          }
-
-          try {
-            /** @type {RequestInit} */
-            const fetchOptions = process.env.PROXY
-              ? {
-                  ...options,
-                  dispatcher: new HttpsProxyAgent(process.env.PROXY),
-                }
-              : options;
-
-            const response = await fetch(url, fetchOptions);
-
-            if (debugOpenId) {
-              logger.debug(
-                `[openidStrategy] Response status: ${response.status} ${response.statusText}`,
-              );
-              logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
-            }
-
-            if (response.status === 200 && response.headers.has('www-authenticate')) {
-              const wwwAuth = response.headers.get('www-authenticate');
-              logger.warn(
-                `[openidStrategy] Non-standard WWW-Authenticate header found in successful response (200 OK): ${wwwAuth}. ` +
-                  'This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.',
-              );
-
-              /** Cloned response without the WWW-Authenticate header */
-              const responseBody = await response.arrayBuffer();
-              const newHeaders = new Headers();
-              for (const [key, value] of response.headers.entries()) {
-                if (key.toLowerCase() !== 'www-authenticate') {
-                  newHeaders.append(key, value);
-                }
-              }
-
-              return new Response(responseBody, {
-                status: response.status,
-                statusText: response.statusText,
-                headers: newHeaders,
-              });
-            }
-
-            return response;
-          } catch (error) {
-            logger.error(`[openidStrategy] Fetch error: ${error.message}`);
-            throw error;
-          }
-        },
+        [client.customFetch]: customFetch,
       },
     );
 
