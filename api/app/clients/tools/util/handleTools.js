@@ -29,7 +29,7 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const {
-  getUsersPluginsAuthValuesMap,
+  getUsersPluginsAuthValuesMap, getUserPluginAuthValue,
 } = require('~/server/services/PluginService');
 const { createMCPTool } = require('~/server/services/MCP');
 const { logger } = require('~/config');
@@ -95,7 +95,7 @@ const validateTools = async (user, tools = []) => {
     return Array.from(validToolsSet.values());
   } catch (err) {
     logger.error('[validateTools] There was a problem validating tools', err);
-    throw new Error('There was a problem validating tools');
+    throw new Error(err);
   }
 };
 
