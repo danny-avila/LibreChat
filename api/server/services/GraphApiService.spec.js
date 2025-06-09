@@ -28,43 +28,6 @@ jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
 }));
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    OPENID_EXCHANGED_TOKENS: 'openid:exchanged:tokens',
-    PENDING_REQ: 'pending_req',
-    CONFIG_STORE: 'config_store',
-    ROLES: 'roles',
-    AUDIO_RUNS: 'audio_runs',
-    MESSAGES: 'messages',
-    FLOWS: 'flows',
-    TOKEN_CONFIG: 'token_config',
-    GEN_TITLE: 'gen_title',
-    S3_EXPIRY_INTERVAL: 's3_expiry_interval',
-    MODEL_QUERIES: 'model_queries',
-    ABORT_KEYS: 'abort_keys',
-    ENCODED_DOMAINS: 'encoded_domains',
-    BANS: 'bans',
-  },
-  Time: {
-    ONE_MINUTE: 60000,
-    TWO_MINUTES: 120000,
-    TEN_MINUTES: 600000,
-    THIRTY_MINUTES: 1800000,
-    THIRTY_SECONDS: 30000,
-  },
-  ViolationTypes: {
-    BAN: 'ban',
-    TOKEN_BALANCE: 'token_balance',
-    TTS_LIMIT: 'tts_limit',
-    STT_LIMIT: 'stt_limit',
-    CONVO_ACCESS: 'convo_access',
-    TOOL_CALL_LIMIT: 'tool_call_limit',
-    FILE_UPLOAD_LIMIT: 'file_upload_limit',
-    VERIFY_EMAIL_LIMIT: 'verify_email_limit',
-    RESET_PASSWORD_LIMIT: 'reset_password_limit',
-    ILLEGAL_MODEL_REQUEST: 'illegal_model_request',
-  },
-}));
 
 const GraphApiService = require('./GraphApiService');
 const { Client } = require('@microsoft/microsoft-graph-client');
