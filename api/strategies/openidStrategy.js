@@ -62,10 +62,8 @@ async function customFetch(url, options) {
 
     if (response.status === 200 && response.headers.has('www-authenticate')) {
       const wwwAuth = response.headers.get('www-authenticate');
-      logger.warn(
-        `[openidStrategy] Non-standard WWW-Authenticate header found in successful response (200 OK): ${wwwAuth}. ` +
-          'This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.',
-      );
+      logger.warn(`[openidStrategy] Non-standard WWW-Authenticate header found in successful response (200 OK): ${wwwAuth}.
+This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.`);
 
       /** Cloned response without the WWW-Authenticate header */
       const responseBody = await response.arrayBuffer();
