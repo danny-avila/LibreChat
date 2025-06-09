@@ -17,9 +17,9 @@ const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
-const { findToken } = require('~/models/Token');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
+const { findToken } = require('~/models');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
@@ -207,7 +207,7 @@ async function createActionTool({
                     state: stateToken,
                     userId: userId,
                     client_url: metadata.auth.client_url,
-                    redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                    redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,

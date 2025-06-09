@@ -1,5 +1,5 @@
-const PluginAuth = require('~/models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('~/server/utils/');
+const { encrypt, decrypt } = require('~/server/utils/crypto');
+const { PluginAuth } = require('~/db/models');
 const { logger } = require('~/config');
 
 /**
@@ -66,16 +66,26 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
 //   }
 // };
 
+/**
+ *
+ * @async
+ * @param {string} userId
+ * @param {string} authField
+ * @param {string} pluginKey
+ * @param {string} value
+ * @returns {Promise<IPluginAuth>}
+ * @throws {Error}
+ */
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
     const encryptedValue = await encrypt(value);
     const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
     if (pluginAuth) {
-      const pluginAuth = await PluginAuth.updateOne(
+      return await PluginAuth.findOneAndUpdate(
         { userId, authField },
         { $set: { value: encryptedValue } },
-      );
-      return pluginAuth;
+        { new: true, upsert: true },
+      ).lean();
     } else {
       const newPluginAuth = await new PluginAuth({
         userId,
@@ -84,7 +94,7 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
         pluginKey,
       });
       await newPluginAuth.save();
-      return newPluginAuth;
+      return newPluginAuth.toObject();
     }
   } catch (err) {
     logger.error('[updateUserPluginAuth]', err);
@@ -92,6 +102,14 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   }
 };
 
+/**
+ * @async
+ * @param {string} userId
+ * @param {string} authField
+ * @param {boolean} [all]
+ * @returns {Promise<import('mongoose').DeleteResult>}
+ * @throws {Error}
+ */
 const deleteUserPluginAuth = async (userId, authField, all = false) => {
   if (all) {
     try {

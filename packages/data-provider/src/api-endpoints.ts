@@ -187,6 +187,8 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
+
 export const files = () => '/api/files';
 
 export const images = () => `${files()}/images`;
@@ -269,6 +271,10 @@ export const addTagToConversation = (conversationId: string) =>
 export const userTerms = () => '/api/user/terms';
 export const acceptUserTerms = () => '/api/user/terms/accept';
 export const banner = () => '/api/banner';
+
+// Message Feedback
+export const feedback = (conversationId: string, messageId: string) =>
+  `/api/messages/${conversationId}/${messageId}/feedback`;
 
 // Two-Factor Endpoints
 export const enableTwoFactor = () => '/api/auth/2fa/enable';

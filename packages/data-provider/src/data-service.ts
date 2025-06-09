@@ -93,7 +93,7 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
-export function getUserBalance(): Promise<string> {
+export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
 
@@ -431,6 +431,14 @@ export const listAgents = (params: a.AgentListParams): Promise<a.AgentListRespon
   );
 };
 
+export const revertAgentVersion = ({
+  agent_id,
+  version_index,
+}: {
+  agent_id: string;
+  version_index: number;
+}): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
+
 /* Tools */
 
 export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
@@ -757,6 +765,15 @@ export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
 
+export function updateFeedback(
+  conversationId: string,
+  messageId: string,
+  payload: t.TUpdateFeedbackRequest,
+): Promise<t.TUpdateFeedbackResponse> {
+  return request.put(endpoints.feedback(conversationId, messageId), payload);
+}
+
+// 2FA
 export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
   return request.get(endpoints.enableTwoFactor());
 }

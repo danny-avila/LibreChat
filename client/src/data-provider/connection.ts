@@ -1,31 +1,84 @@
-import { useCallback, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Time, dataService } from 'librechat-data-provider';
 import { logger } from '~/utils';
 
-export const useHealthCheck = () => {
-  useQuery([QueryKeys.health], () => dataService.healthCheck(), {
-    refetchInterval: Time.TEN_MINUTES,
-    retry: false,
-    onError: (error) => {
-      console.error('Health check failed:', error);
-    },
-    cacheTime: 0,
-    staleTime: 0,
-    refetchOnWindowFocus: (query) => {
-      if (!query.state.dataUpdatedAt) {
-        return true;
+export const useHealthCheck = (isAuthenticated = false) => {
+  const queryClient = useQueryClient();
+  const isInitialized = useRef(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const focusHandlerRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    // Only start health check if authenticated
+    if (!isAuthenticated) {
+      return;
+    }
+
+    // Prevent multiple initializations
+    if (isInitialized.current) {
+      return;
+    }
+    isInitialized.current = true;
+
+    // Use a longer delay to ensure all rendering is complete
+    const initTimer = setTimeout(() => {
+      const performHealthCheck = async () => {
+        try {
+          await queryClient.fetchQuery([QueryKeys.health], () => dataService.healthCheck(), {
+            retry: false,
+            cacheTime: 0,
+            staleTime: 0,
+          });
+        } catch (error) {
+          console.error('Health check failed:', error);
+        }
+      };
+
+      // Initial check
+      performHealthCheck();
+
+      // Set up interval for recurring checks
+      intervalRef.current = setInterval(performHealthCheck, Time.TEN_MINUTES);
+
+      // Set up window focus handler
+      const handleWindowFocus = async () => {
+        const queryState = queryClient.getQueryState([QueryKeys.health]);
+
+        if (!queryState?.dataUpdatedAt) {
+          await performHealthCheck();
+          return;
+        }
+
+        const lastUpdated = new Date(queryState.dataUpdatedAt);
+        const tenMinutesAgo = new Date(Date.now() - Time.TEN_MINUTES);
+
+        logger.log(`Last health check: ${lastUpdated.toISOString()}`);
+        logger.log(`Ten minutes ago: ${tenMinutesAgo.toISOString()}`);
+
+        if (lastUpdated < tenMinutesAgo) {
+          await performHealthCheck();
+        }
+      };
+
+      // Store handler for cleanup
+      focusHandlerRef.current = handleWindowFocus;
+      window.addEventListener('focus', handleWindowFocus);
+    }, 500);
+
+    return () => {
+      clearTimeout(initTimer);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
-
-      const lastUpdated = new Date(query.state.dataUpdatedAt);
-      const tenMinutesAgo = new Date(Date.now() - Time.TEN_MINUTES);
-
-      logger.log(`Last health check: ${lastUpdated.toISOString()}`);
-      logger.log(`Ten minutes ago: ${tenMinutesAgo.toISOString()}`);
-
-      return lastUpdated < tenMinutesAgo;
-    },
-  });
+      // Remove focus event listener if it was added
+      if (focusHandlerRef.current) {
+        window.removeEventListener('focus', focusHandlerRef.current);
+        focusHandlerRef.current = null;
+      }
+    };
+  }, [isAuthenticated, queryClient]);
 };
 
 export const useInteractionHealthCheck = () => {

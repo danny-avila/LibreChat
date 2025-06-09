@@ -1,9 +1,6 @@
-const mongoose = require('mongoose');
+const { logger } = require('@librechat/data-schemas');
 const { EToolResources } = require('librechat-data-provider');
-const { fileSchema } = require('@librechat/data-schemas');
-const { logger } = require('~/config');
-
-const File = mongoose.model('File', fileSchema);
+const { File } = require('~/db/models');
 
 /**
  * Finds a file by its file_id with additional query options.
@@ -169,7 +166,6 @@ async function batchUpdateFiles(updates) {
 }
 
 module.exports = {
-  File,
   findFileById,
   getFiles,
   getToolFilesByIds,

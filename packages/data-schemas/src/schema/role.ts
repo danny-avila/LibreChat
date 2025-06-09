@@ -1,33 +1,6 @@
-import { Schema, Document } from 'mongoose';
+import { Schema } from 'mongoose';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-
-export interface IRole extends Document {
-  name: string;
-  permissions: {
-    [PermissionTypes.BOOKMARKS]?: {
-      [Permissions.USE]?: boolean;
-    };
-    [PermissionTypes.PROMPTS]?: {
-      [Permissions.SHARED_GLOBAL]?: boolean;
-      [Permissions.USE]?: boolean;
-      [Permissions.CREATE]?: boolean;
-    };
-    [PermissionTypes.AGENTS]?: {
-      [Permissions.SHARED_GLOBAL]?: boolean;
-      [Permissions.USE]?: boolean;
-      [Permissions.CREATE]?: boolean;
-    };
-    [PermissionTypes.MULTI_CONVO]?: {
-      [Permissions.USE]?: boolean;
-    };
-    [PermissionTypes.TEMPORARY_CHAT]?: {
-      [Permissions.USE]?: boolean;
-    };
-    [PermissionTypes.RUN_CODE]?: {
-      [Permissions.USE]?: boolean;
-    };
-  };
-}
+import type { IRole } from '~/types';
 
 // Create a sub-schema for permissions. Notice we disable _id for this subdocument.
 const rolePermissionsSchema = new Schema(
@@ -54,6 +27,9 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.RUN_CODE]: {
       [Permissions.USE]: { type: Boolean, default: true },
     },
+    [PermissionTypes.WEB_SEARCH]: {
+      [Permissions.USE]: { type: Boolean, default: true },
+    },
   },
   { _id: false },
 );
@@ -77,6 +53,7 @@ const roleSchema: Schema<IRole> = new Schema({
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
     }),
   },
 });

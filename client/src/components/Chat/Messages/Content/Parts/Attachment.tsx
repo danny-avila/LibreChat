@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from 'react';
-import { imageExtRegex } from 'librechat-data-provider';
+import { imageExtRegex, Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
@@ -7,12 +7,12 @@ import { useAttachmentLink } from './LogLink';
 import { cn } from '~/utils';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
+  const [isVisible, setIsVisible] = useState(false);
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',
   });
   const extension = attachment.filename?.split('.').pop();
-  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
@@ -84,6 +84,9 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   if (!attachment) {
     return null;
   }
+  if (attachment.type === Tools.web_search) {
+    return null;
+  }
 
   const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
   const isImage =
@@ -115,7 +118,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
     if (isImage) {
       imageAttachments.push(attachment);
-    } else {
+    } else if (attachment.type !== Tools.web_search) {
       fileAttachments.push(attachment);
     }
   });

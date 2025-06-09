@@ -597,7 +597,6 @@
   "com_ui_enter": "Enter",
   "com_ui_enter_api_key": "ป้อนคีย์ API",
   "com_ui_enter_openapi_schema": "ป้อนสคีมา OpenAPI ของคุณที่นี่",
-  "com_ui_enter_var": "ป้อน {{0}}",
   "com_ui_error": "ข้อผิดพลาด",
   "com_ui_error_connection": "เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์ ลองรีเฟรชหน้า",
   "com_ui_error_save_admin_settings": "เกิดข้อผิดพลาดในการบันทึกการตั้งค่าผู้ดูแลระบบของคุณ",
