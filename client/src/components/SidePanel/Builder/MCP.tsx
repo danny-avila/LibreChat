@@ -43,4 +43,4 @@ export default function MCP({ mcp, onClick }: MCPProps) {
       </div>
     </div>
   );
-} 
+}

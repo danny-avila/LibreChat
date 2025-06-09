@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, EModelEndpoint, AgentCapabilities, AuthTypeEnum, AuthorizationTypeEnum, TokenExchangeMethodEnum } from 'librechat-data-provider';
+import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
@@ -167,7 +167,6 @@ export default function AgentConfig({
     }
     setActivePanel(Panel.mcp);
   }, [agent_id, setActivePanel, showToast, localize]);
-
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;
@@ -357,11 +356,9 @@ export default function AgentConfig({
         </div>
         {/* MCP Section */}
         <div className="mb-4">
-          <label className={labelClass}>
-            {localize('com_assistants_mcp_server')}
-          </label>
+          <label className={labelClass}>{localize('com_assistants_mcp_server')}</label>
           <div className="space-y-2">
-          {mcps
+            {mcps
               .filter((mcp) => mcp.agent_id === agent_id)
               .map((mcp, i) => (
                 <MCP

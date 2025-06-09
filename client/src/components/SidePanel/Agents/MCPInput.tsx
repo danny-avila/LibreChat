@@ -7,13 +7,27 @@ import { Label, Checkbox } from '~/components/ui';
 import { MCPAuthForm } from '~/common/types';
 import { MCP } from 'librechat-data-provider/dist/types/types/assistants';
 
-function useUpdateAgentMCP({ onSuccess, onError }: { onSuccess: (data: [string, MCP]) => void; onError: (error: Error) => void }) {
+function useUpdateAgentMCP({
+  onSuccess,
+  onError,
+}: {
+  onSuccess: (data: [string, MCP]) => void;
+  onError: (error: Error) => void;
+}) {
   return {
-    mutate: async ({ mcp_id, metadata, agent_id }: { mcp_id?: string; metadata: MCP['metadata']; agent_id: string }) => {
+    mutate: async ({
+      mcp_id,
+      metadata,
+      agent_id,
+    }: {
+      mcp_id?: string;
+      metadata: MCP['metadata'];
+      agent_id: string;
+    }) => {
       try {
         console.log('Mock update MCP:', { mcp_id, metadata, agent_id });
         // Simulate API call with delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         // Simulate API call
         const mockMCP: MCP = {
           mcp_id: mcp_id ?? 'new-mcp-id',
@@ -30,8 +44,8 @@ function useUpdateAgentMCP({ onSuccess, onError }: { onSuccess: (data: [string, 
               'create_label',
               'move_to_folder',
               'set_auto_reply',
-              'get_email_stats'
-            ]
+              'get_email_stats',
+            ],
           },
         };
         onSuccess(['success', mockMCP]);
@@ -118,10 +132,8 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
   };
 
   const handleToolToggle = (tool: string) => {
-    setSelectedTools(prev => 
-      prev.includes(tool) 
-        ? prev.filter(t => t !== tool)
-        : [...prev, tool]
+    setSelectedTools((prev) =>
+      prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool],
     );
   };
 
@@ -140,7 +152,7 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
         <input
           id="label"
           {...register('label')}
-          className="flex h-9 w-full rounded-lg border border-token-border-medium bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
+          className="border-token-border-medium flex h-9 w-full rounded-lg border bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
           placeholder={localize('com_assistants_my_mcp_server')}
         />
       </div>
@@ -149,7 +161,7 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
         <input
           id="domain"
           {...register('domain')}
-          className="flex h-9 w-full rounded-lg border border-token-border-medium bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
+          className="border-token-border-medium flex h-9 w-full rounded-lg border bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
           placeholder={'https://mcp.example.com'}
         />
       </div>
@@ -160,7 +172,12 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
           className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
           type="button"
         >
-          {isLoading ? <Spinner className="icon-md" /> : (mcp?.mcp_id ? localize('com_ui_update') : localize('com_ui_create'))}
+          {(() => {
+            if (isLoading) {
+              return <Spinner className="icon-md" />;
+            }
+            return mcp?.mcp_id ? localize('com_ui_update') : localize('com_ui_create');
+          })()}
         </button>
       </div>
 
@@ -175,7 +192,7 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
               type="button"
               className="btn btn-neutral border-token-border-light relative h-8 rounded-full px-4 font-medium"
             >
-              {selectedTools.length === mcp.metadata.tools.length 
+              {selectedTools.length === mcp.metadata.tools.length
                 ? localize('com_ui_deselect_all')
                 : localize('com_ui_select_all')}
             </button>
@@ -185,7 +202,7 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
               <label
                 key={tool}
                 htmlFor={tool}
-                className="flex items-center border border-token-border-light rounded-lg p-2 hover:bg-token-surface-secondary cursor-pointer"
+                className="border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2"
               >
                 <Checkbox
                   id={tool}
@@ -194,7 +211,10 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
                   className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 />
                 <span className="text-token-text-primary">
-                  {tool.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                  {tool
+                    .split('_')
+                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ')}
                 </span>
               </label>
             ))}
@@ -203,4 +223,4 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
       )}
     </div>
   );
-} 
+}

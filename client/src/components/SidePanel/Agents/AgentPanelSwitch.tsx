@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
-import type { ActionsEndpoint } from '~/common';
-import type { Action, TConfig, TEndpointsConfig, TAgentsEndpoint, MCP } from 'librechat-data-provider';
+import type {
+  Action,
+  TConfig,
+  TEndpointsConfig,
+  TAgentsEndpoint,
+  MCP,
+} from 'librechat-data-provider';
 import { useGetActionsQuery, useGetEndpointsQuery, useCreateAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 import ActionsPanel from './ActionsPanel';
@@ -10,7 +15,11 @@ import VersionPanel from './Version/VersionPanel';
 import MCPPanel from './MCPPanel';
 import { Panel } from '~/common';
 // TODO: Remove this once MCP endpoint is implemented
-import { AuthTypeEnum, AuthorizationTypeEnum, TokenExchangeMethodEnum } from 'librechat-data-provider';
+import {
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
+} from 'librechat-data-provider';
 
 export default function AgentPanelSwitch() {
   const { conversation, index } = useChatContext();
@@ -18,13 +27,9 @@ export default function AgentPanelSwitch() {
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [currentAgentId, setCurrentAgentId] = useState<string | undefined>(conversation?.agent_id);
-  const { data: actions = [] } = useGetActionsQuery(
-    EModelEndpoint.agents,
-    currentAgentId,
-    {
-      enabled: !!currentAgentId,
-    },
-  );
+  const { data: actions = [] } = useGetActionsQuery(EModelEndpoint.agents, {
+    enabled: !!currentAgentId,
+  });
   // TODO: Implement MCP endpoint (currently mocked)
   const { data: mcps = [] } = {
     data: [
@@ -53,9 +58,9 @@ export default function AgentPanelSwitch() {
             'create_label',
             'move_to_folder',
             'set_auto_reply',
-            'get_email_stats'
-          ]
-        }
+            'get_email_stats',
+          ],
+        },
       },
       {
         mcp_id: '2',
@@ -78,9 +83,9 @@ export default function AgentPanelSwitch() {
             'delete_workflow',
             'get_workflow_history',
             'get_workflow_logs',
-            'get_workflow_stats'
-          ]
-        }
+            'get_workflow_stats',
+          ],
+        },
       },
       {
         mcp_id: '3',
@@ -103,11 +108,11 @@ export default function AgentPanelSwitch() {
             'manage_rules',
             'get_security_events',
             'manage_ssl_certificates',
-            'get_usage_stats'
-          ]
-        }
-      }
-    ]
+            'get_usage_stats',
+          ],
+        },
+      },
+    ],
   };
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const createMutation = useCreateAgentMutation();

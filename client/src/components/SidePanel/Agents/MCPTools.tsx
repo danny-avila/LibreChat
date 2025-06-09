@@ -13,7 +13,7 @@ const mockMCPTools = [
   'update_user_settings',
   'get_system_status',
   'get_api_usage',
-  'get_error_logs'
+  'get_error_logs',
 ];
 
 interface MCPToolsProps {
@@ -61,7 +61,7 @@ export default function MCPTools({ selectedTools, onToolToggle }: MCPToolsProps)
               onCheckedChange={() => onToolToggle(tool)}
               className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
             />
-            <label htmlFor={tool} className="text-sm text-token-text-primary">
+            <label htmlFor={tool} className="text-token-text-primary text-sm">
               {tool}
             </label>
           </div>
@@ -69,4 +69,4 @@ export default function MCPTools({ selectedTools, onToolToggle }: MCPToolsProps)
       </div>
     </div>
   );
-} 
+}

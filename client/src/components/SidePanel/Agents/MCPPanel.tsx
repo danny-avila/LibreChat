@@ -18,7 +18,13 @@ import { TrashIcon } from '~/components/svg';
 import MCPInput from './MCPInput';
 import { Panel } from '~/common';
 
-function useDeleteAgentMCP({ onSuccess, onError }: { onSuccess: () => void; onError: (error: Error) => void }) {
+function useDeleteAgentMCP({
+  onSuccess,
+  onError,
+}: {
+  onSuccess: () => void;
+  onError: (error: Error) => void;
+}) {
   return {
     mutate: async ({ mcp_id, agent_id }: { mcp_id: string; agent_id: string }) => {
       try {
@@ -31,12 +37,7 @@ function useDeleteAgentMCP({ onSuccess, onError }: { onSuccess: () => void; onEr
   };
 }
 
-export default function MCPPanel({
-  mcp,
-  setMcp,
-  agent_id,
-  setActivePanel,
-}: AgentPanelProps) {
+export default function MCPPanel({ mcp, setMcp, agent_id, setActivePanel }: AgentPanelProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const deleteAgentMCP = useDeleteAgentMCP({
@@ -158,10 +159,12 @@ export default function MCPPanel({
               </OGDialog>
             )}
 
-            <div className="text-xl font-medium">{(mcp ? localize('com_assistants_edit_mcp_server') : localize('com_assistants_add_mcp_server'))}</div>
-            <div className="text-xs text-text-secondary">
-              {localize('com_assistants_mcp_info')}
+            <div className="text-xl font-medium">
+              {mcp
+                ? localize('com_assistants_edit_mcp_server')
+                : localize('com_assistants_add_mcp_server')}
             </div>
+            <div className="text-xs text-text-secondary">{localize('com_assistants_mcp_info')}</div>
           </div>
           <MCPAuth />
           <MCPInput mcp={mcp} agent_id={agent_id} setMCP={setMcp} />
@@ -169,4 +172,4 @@ export default function MCPPanel({
       </form>
     </FormProvider>
   );
-} 
+}

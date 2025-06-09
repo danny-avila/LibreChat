@@ -227,7 +227,7 @@ export const useUpdateAgentAction = (
         if (!prev) {
           return [updateAgentActionResponse[1]];
         }
-        
+
         if (variables.action_id) {
           return prev.map((action) => {
             if (action.action_id === variables.action_id) {
@@ -236,7 +236,7 @@ export const useUpdateAgentAction = (
             return action;
           });
         }
-        
+
         return [...prev, updateAgentActionResponse[1]];
       });
 

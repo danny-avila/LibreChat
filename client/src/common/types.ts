@@ -171,7 +171,7 @@ export type MCPAuthForm = ActionAuthForm & {
   label?: string;
   domain?: string;
   tools?: string[];
-}; 
+};
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
   metadata: t.ActionMetadata | null;
