@@ -132,53 +132,63 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
           '[pointer-events:auto]', // Override body's pointer-events:none when in modal
         )}
       >
-        {isLoading ? (
-          <div className="space-y-2 p-2">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="flex items-center gap-3 px-3 py-2">
-                <Skeleton className="h-8 w-8 rounded-full" />
-                <div className="flex-1 space-y-1">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
+        {(() => {
+          if (isLoading) {
+            return (
+              <div className="space-y-2 p-2">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="flex items-center gap-3 px-3 py-2">
+                    <Skeleton className="h-8 w-8 rounded-full" />
+                    <div className="flex-1 space-y-1">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          if (options.length > 0) {
+            return options.map((o) => (
+              <Ariakit.ComboboxItem
+                key={o.key}
+                focusOnHover
+                // hideOnClick
+                value={o.value}
+                selectValueOnClick={false}
+                onClick={() => onPickHandler(o)}
+                className={cn(
+                  'flex w-full cursor-pointer items-center px-3 text-sm',
+                  'text-text-primary hover:bg-surface-tertiary',
+                  'data-[active-item]:bg-surface-tertiary',
+                )}
+                render={renderOptions(o)}
+              ></Ariakit.ComboboxItem>
+            ));
+          }
+
+          if (query.trim().length >= minQueryLengthForNoResults) {
+            return (
+              <div
+                className={cn(
+                  'flex items-center justify-center px-4 py-8 text-center',
+                  'text-sm text-text-secondary',
+                )}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <Search className="h-8 w-8 text-text-tertiary opacity-50" />
+                  <div className="font-medium">{localize('com_ui_no_results_found')}</div>
+                  <div className="text-xs text-text-tertiary">
+                    {localize('com_ui_try_adjusting_search')}
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        ) : options.length ? (
-          options.map((o) => (
-            <Ariakit.ComboboxItem
-              key={o.key}
-              focusOnHover
-              // hideOnClick
-              value={o.value}
-              selectValueOnClick={false}
-              onClick={(e) => onPickHandler(o)}
-              className={cn(
-                'flex w-full cursor-pointer items-center px-3 text-sm',
-                'text-text-primary hover:bg-surface-tertiary',
-                'data-[active-item]:bg-surface-tertiary',
-              )}
-              render={renderOptions(o)}
-            ></Ariakit.ComboboxItem>
-          ))
-        ) : (
-          query.trim().length >= minQueryLengthForNoResults && (
-            <div
-              className={cn(
-                'flex items-center justify-center px-4 py-8 text-center',
-                'text-sm text-text-secondary',
-              )}
-            >
-              <div className="flex flex-col items-center gap-2">
-                <Search className="h-8 w-8 text-text-tertiary opacity-50" />
-                <div className="font-medium">{localize('com_ui_no_results_found')}</div>
-                <div className="text-xs text-text-tertiary">
-                  {localize('com_ui_try_adjusting_search')}
-                </div>
-              </div>
-            </div>
-          )
-        )}
+            );
+          }
+
+          return null;
+        })()}
       </Ariakit.ComboboxPopover>
     </Ariakit.ComboboxProvider>
   );

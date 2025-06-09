@@ -683,7 +683,6 @@ describe('PermissionService', () => {
 
   describe('bulkUpdateResourcePermissions', () => {
     const otherUserId = new mongoose.Types.ObjectId();
-    const anotherGroupId = new mongoose.Types.ObjectId();
 
     beforeEach(async () => {
       // Setup existing permissions for testing

@@ -1,3 +1,4 @@
+const { logger } = require('@librechat/data-schemas');
 const { Constants, isAgentsEndpoint } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
@@ -82,6 +83,7 @@ const canAccessAgentFromBody = (options) => {
 
       return agentAccessMiddleware(tempReq, res, next);
     } catch (error) {
+      logger.error('Failed to validate agent access permissions', error);
       return res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to validate agent access permissions',
