@@ -44,8 +44,13 @@ const groupSchema = new Schema<IGroup>(
   { timestamps: true },
 );
 
-// Create indexes for efficient lookups
-groupSchema.index({ idOnTheSource: 1, source: 1 }, { unique: true, sparse: true });
+groupSchema.index(
+  { idOnTheSource: 1, source: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idOnTheSource: { $exists: true } },
+  },
+);
 groupSchema.index({ memberIds: 1 });
 
 export default groupSchema;
