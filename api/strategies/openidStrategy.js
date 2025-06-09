@@ -44,12 +44,14 @@ async function customFetch(url, options) {
 
   try {
     /** @type {undici.RequestInit} */
-    const fetchOptions = process.env.PROXY
-      ? {
-          ...options,
-          dispatcher: new HttpsProxyAgent(process.env.PROXY),
-        }
-      : options;
+    let fetchOptions = options;
+    if (process.env.PROXY) {
+      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
+      fetchOptions = {
+        ...options,
+        dispatcher: new HttpsProxyAgent(process.env.PROXY),
+      };
+    }
 
     const response = await undici.fetch(url, fetchOptions);
 
@@ -285,9 +287,6 @@ async function setupOpenId() {
       },
     );
 
-    if (process.env.PROXY) {
-      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
-    }
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
