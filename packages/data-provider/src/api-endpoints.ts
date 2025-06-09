@@ -277,6 +277,8 @@ export const banner = () => '/api/banner';
 export const feedback = (conversationId: string, messageId: string) =>
   `/api/messages/${conversationId}/${messageId}/feedback`;
 
+export const userPluginAuthValues = (pluginKey: string) => `/api/user/plugin_auth/${pluginKey}`;
+
 // Two-Factor Endpoints
 export const enableTwoFactor = () => '/api/auth/2fa/enable';
 export const verifyTwoFactor = () => '/api/auth/2fa/verify';
