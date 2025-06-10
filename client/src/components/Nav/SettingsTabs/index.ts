@@ -7,3 +7,4 @@ export { RevokeKeysButton } from './Data/RevokeKeysButton';
 export { default as Account } from './Account/Account';
 export { default as Balance } from './Balance/Balance';
 export { default as Speech } from './Speech/Speech';
+export { default as Personalization } from './Personalization';

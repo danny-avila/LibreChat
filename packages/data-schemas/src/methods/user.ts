@@ -170,6 +170,35 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     });
   }
 
+  /**
+   * Update a user's personalization memories setting.
+   * Handles the edge case where the personalization object doesn't exist.
+   */
+  async function toggleUserMemories(
+    userId: string,
+    memoriesEnabled: boolean,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+
+    // First, ensure the personalization object exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return null;
+    }
+
+    // Use $set to update the nested field, which will create the personalization object if it doesn't exist
+    const updateOperation = {
+      $set: {
+        'personalization.memories': memoriesEnabled,
+      },
+    };
+
+    return (await User.findByIdAndUpdate(userId, updateOperation, {
+      new: true,
+      runValidators: true,
+    }).lean()) as IUser | null;
+  }
+
   // Return all methods
   return {
     findUser,
@@ -179,6 +208,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     getUserById,
     deleteUserById,
     generateToken,
+    toggleUserMemories,
   };
 }
 

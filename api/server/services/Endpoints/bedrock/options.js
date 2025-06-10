@@ -1,4 +1,5 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { createHandleLLMNewToken } = require('@librechat/api');
 const {
   AuthType,
   Constants,
@@ -8,7 +9,6 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { createHandleLLMNewToken } = require('~/app/clients/generators');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {

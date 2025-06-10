@@ -1,4 +1,6 @@
 const { nanoid } = require('nanoid');
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { Tools, StepTypes, FileContext } = require('librechat-data-provider');
 const {
   EnvVar,
@@ -12,7 +14,6 @@ const {
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
-const { logger, sendEvent } = require('~/config');
 
 class ModelEndHandler {
   /**
@@ -240,9 +241,7 @@ function createToolEndCallback({ req, res, artifactPromises }) {
     if (output.artifact[Tools.web_search]) {
       artifactPromises.push(
         (async () => {
-          const name = `${output.name}_${output.tool_call_id}_${nanoid()}`;
           const attachment = {
-            name,
             type: Tools.web_search,
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,

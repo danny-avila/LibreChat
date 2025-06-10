@@ -19,11 +19,13 @@ function PanelNavigation({
 }) {
   const localize = useLocalize();
   return (
-    <div className="my-1 flex justify-between">
-      <div className="mb-2 flex gap-2">
-        {!isChatRoute && <ThemeSelector returnThemeOnly={true} />}
-      </div>
-      <div className="mb-2 flex gap-2">
+    <>
+      <div className="flex gap-2">{!isChatRoute && <ThemeSelector returnThemeOnly={true} />}</div>
+      <div
+        className="flex items-center justify-between gap-2"
+        role="navigation"
+        aria-label="Pagination"
+      >
         <Button variant="outline" size="sm" onClick={() => prevPage()} disabled={!hasPreviousPage}>
           {localize('com_ui_prev')}
         </Button>
@@ -36,7 +38,7 @@ function PanelNavigation({
           {localize('com_ui_next')}
         </Button>
       </div>
-    </div>
+    </>
   );
 }
 
