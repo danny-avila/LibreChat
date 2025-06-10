@@ -33,6 +33,6 @@ jobs:
           target: api-build
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/librechat-avi-api:latest
-            ghcr.io/${{ github.repository_owner }}/librechat-avi-api:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner | lowercase }}/librechat-avi-api:latest
+            ghcr.io/${{ github.repository_owner | lowercase }}/librechat-avi-api:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
