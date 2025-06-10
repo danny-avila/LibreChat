@@ -944,6 +944,7 @@
   "com_ui_versions": "Versions",
   "com_ui_view_source": "View source chat",
   "com_ui_web_search": "Web Search",
+  "com_ui_info_web_search": "When enabled, a button appears at the chat prompt to include a web search. Usage requires various API keys.",
   "com_ui_web_search_api_subtitle": "Search the web for up-to-date information",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",

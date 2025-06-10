@@ -1,7 +1,7 @@
 import React, { memo, useRef, useMemo, useCallback } from 'react';
 import { Globe } from 'lucide-react';
 import debounce from 'lodash/debounce';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   Tools,
   AuthType,
@@ -10,6 +10,7 @@ import {
   PermissionTypes,
   LocalStorageKeys,
 } from 'librechat-data-provider';
+import store from '~/store';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
 import { useLocalize, useHasAccess, useSearchApiKeyForm } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
@@ -36,6 +37,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
 
+  const webSearchEnabled = useRecoilValue(store.webSearchEnabled);
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
     permission: Permissions.USE,
@@ -90,7 +92,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
     [handleChange],
   );
 
-  if (!canUseWebSearch) {
+  if (!webSearchEnabled || !canUseWebSearch) {
     return null;
   }
 

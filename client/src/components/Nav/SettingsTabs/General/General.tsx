@@ -9,6 +9,13 @@ import store from '~/store';
 
 const toggleSwitchConfigs = [
   {
+    stateAtom: store.webSearchEnabled,
+    localizationKey: 'com_ui_web_search',
+    switchId: 'webSearchEnabled',
+    hoverCardText: 'com_ui_info_web_search',
+    key: 'webSearchEnabled',
+  },
+  {
     stateAtom: store.enableUserMsgMarkdown,
     localizationKey: 'com_nav_user_msg_markdown',
     switchId: 'enableUserMsgMarkdown',

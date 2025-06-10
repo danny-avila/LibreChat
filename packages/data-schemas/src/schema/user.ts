@@ -129,6 +129,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    webSearchEnabled: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true },
 );
