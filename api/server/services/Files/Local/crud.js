@@ -201,6 +201,10 @@ const unlinkFile = async (filepath) => {
  */
 const deleteLocalFile = async (req, file) => {
   const { publicPath, uploads } = req.app.locals.paths;
+
+  /** Filepath stripped of query parameters (e.g., ?manual=true) */
+  const cleanFilepath = file.filepath.split('?')[0];
+
   if (file.embedded && process.env.RAG_API_URL) {
     const jwtToken = req.headers.authorization.split(' ')[1];
     axios.delete(`${process.env.RAG_API_URL}/documents`, {
@@ -213,32 +217,32 @@ const deleteLocalFile = async (req, file) => {
     });
   }
 
-  if (file.filepath.startsWith(`/uploads/${req.user.id}`)) {
+  if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {
     const userUploadDir = path.join(uploads, req.user.id);
-    const basePath = file.filepath.split(`/uploads/${req.user.id}/`)[1];
+    const basePath = cleanFilepath.split(`/uploads/${req.user.id}/`)[1];
 
     if (!basePath) {
-      throw new Error(`Invalid file path: ${file.filepath}`);
+      throw new Error(`Invalid file path: ${cleanFilepath}`);
     }
 
     const filepath = path.join(userUploadDir, basePath);
 
     const rel = path.relative(userUploadDir, filepath);
     if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
-      throw new Error(`Invalid file path: ${file.filepath}`);
+      throw new Error(`Invalid file path: ${cleanFilepath}`);
     }
 
     await unlinkFile(filepath);
     return;
   }
 
-  const parts = file.filepath.split(path.sep);
+  const parts = cleanFilepath.split(path.sep);
   const subfolder = parts[1];
   if (!subfolder && parts[0] === EModelEndpoint.agents) {
     logger.warn(`Agent File ${file.file_id} is missing filepath, may have been deleted already`);
     return;
   }
-  const filepath = path.join(publicPath, file.filepath);
+  const filepath = path.join(publicPath, cleanFilepath);
 
   if (!isValidPath(req, publicPath, subfolder, filepath)) {
     throw new Error('Invalid file path');

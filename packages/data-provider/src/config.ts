@@ -244,21 +244,26 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
-export const agentsEndpointSChema = baseEndpointSchema.merge(
-  z.object({
-    /* agents specific */
-    recursionLimit: z.number().optional(),
-    disableBuilder: z.boolean().optional(),
-    maxRecursionLimit: z.number().optional(),
-    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
-    capabilities: z
-      .array(z.nativeEnum(AgentCapabilities))
-      .optional()
-      .default(defaultAgentCapabilities),
-  }),
-);
+export const agentsEndpointSchema = baseEndpointSchema
+  .merge(
+    z.object({
+      /* agents specific */
+      recursionLimit: z.number().optional(),
+      disableBuilder: z.boolean().optional().default(false),
+      maxRecursionLimit: z.number().optional(),
+      allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
+      capabilities: z
+        .array(z.nativeEnum(AgentCapabilities))
+        .optional()
+        .default(defaultAgentCapabilities),
+    }),
+  )
+  .default({
+    disableBuilder: false,
+    capabilities: defaultAgentCapabilities,
+  });
 
-export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
+export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -720,7 +725,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
-      [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
+      [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
       [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
