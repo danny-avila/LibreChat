@@ -244,7 +244,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
-export const agentsEndpointSChema = baseEndpointSchema.merge(
+export const agentsEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* agents specific */
     recursionLimit: z.number().optional(),
@@ -258,7 +258,7 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
   }),
 );
 
-export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
+export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -720,7 +720,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
-      [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
+      [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
       [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
