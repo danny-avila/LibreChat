@@ -1,0 +1,5 @@
+N2A: az containerapp update -n conpaichateastusn2a001 --resource-group rg-playai-eastus-n2a-001  --yaml ./n2a_container_app_definition.yml
+
+N1: az containerapp update -n conpaichateastusn1001 --resource-group rg-playai-eastus-n1-001  --yaml ./n1_container_app_definition.yml
+
+PROD: az containerapp update -n conpaichateastusprod001 --resource-group rg-playai-eastus-prod-001  --yaml ./prod_container_app_definition.yml

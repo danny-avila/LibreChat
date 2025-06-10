@@ -114,3 +114,5 @@ uploads/
 # owner
 release/
 !/client/src/@types/i18next.d.ts
+
+config-db

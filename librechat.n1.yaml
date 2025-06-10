@@ -3,21 +3,18 @@ cache: true
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
-    titleModel: "gpt-3.5-turbo-16k"
-    plugins: true
+    titleModel: "gpt-4o"
+    plugins: false
     assistants: false
     groups:
     # Group-level configuration
-    - group: "Azure OpenAI"
-      instanceName: "blah"
-      apiKey: "${APIM_AZURE_API_KEY}"
+    - group: "NP East US"
+      instanceName: "NP OpenAI"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
       baseURL: "${AZURE_OPENAI_BASEURL}"
-      version: "2024-02-01"
+      version: "2024-10-21"
       # Model-level configuration
       models:
-        gpt-3.5-turbo-16k:
-          deploymentName: gpt-35-turbo-16k
-          version: "2024-02-01"
-        gpt.3.5-turbo:
-          deploymentName: gpt-35-turbo
-          version: "2024-02-01"
+        gpt-4o:
+          deploymentName: gpt-4o
+          version: "2024-10-21"

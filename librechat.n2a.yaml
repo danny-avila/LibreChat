@@ -12,9 +12,9 @@ endpoints:
       instanceName: "N2A OpenAI"
       apiKey: "${AZURE_OPENAI_API_KEY}"
       baseURL: "${AZURE_OPENAI_BASEURL}"
-      version: "2024-02-01"
+      version: "2024-10-21"
       # Model-level configuration
       models:
         gpt-4o:
           deploymentName: gpt-4o
-          version: "2024-02-01"
+          version: "2024-10-21"
