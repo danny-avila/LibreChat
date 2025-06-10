@@ -7,6 +7,7 @@ const {
   getConfigDefaults,
   loadWebSearchConfig,
 } = require('librechat-data-provider');
+const { agentsConfigSetup } = require('@librechat/api');
 const {
   checkHealth,
   checkConfig,
@@ -25,7 +26,6 @@ const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
-const { agentsConfigSetup } = require('./start/agents');
 const { isEnabled } = require('~/server/utils');
 const { initializeRoles } = require('~/models');
 const { getMCPManager } = require('~/config');
@@ -103,8 +103,13 @@ const AppService = async (app) => {
     balance,
   };
 
+  const agentsDefaults = agentsConfigSetup(config);
+
   if (!Object.keys(config).length) {
-    app.locals = defaultLocals;
+    app.locals = {
+      ...defaultLocals,
+      [EModelEndpoint.agents]: agentsDefaults,
+    };
     return;
   }
 
@@ -139,9 +144,7 @@ const AppService = async (app) => {
     );
   }
 
-  if (endpoints?.[EModelEndpoint.agents]) {
-    endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config);
-  }
+  endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config, agentsDefaults);
 
   const endpointKeys = [
     EModelEndpoint.openAI,

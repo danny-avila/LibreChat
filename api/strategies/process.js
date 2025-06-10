@@ -31,7 +31,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId });
+    updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId, manual: 'false' });
   }
 
   if (updatedAvatar) {
@@ -90,7 +90,11 @@ const createSocialUser = async ({
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    const avatar = await processAvatar({ buffer: resizedBuffer, userId: newUserId });
+    const avatar = await processAvatar({
+      buffer: resizedBuffer,
+      userId: newUserId,
+      manual: 'false',
+    });
     await updateUser(newUserId, { avatar });
   }
 
