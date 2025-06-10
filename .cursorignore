@@ -1,0 +1,3 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+# PERO, no ignores el archivo .env.example
+!.env.example
