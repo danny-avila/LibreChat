@@ -1,8 +1,9 @@
 const path = require('path');
+const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
+const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
-const User = require('~/models/User');
 const connect = require('./connect');
 
 (async () => {

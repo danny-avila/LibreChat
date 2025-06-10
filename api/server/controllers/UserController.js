@@ -1,12 +1,11 @@
 const {
   Tools,
-  Constants,
   FileSources,
   webSearchKeys,
   extractWebSearchEnvVars,
 } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 const {
-  Balance,
   getFiles,
   updateUser,
   deleteFiles,
@@ -16,16 +15,14 @@ const {
   deleteUserById,
   deleteAllUserSessions,
 } = require('~/models');
-const User = require('~/models/User');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { Transaction, Balance, User } = require('~/db/models');
 const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { Transaction } = require('~/models/Transaction');
-const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */
@@ -166,7 +163,11 @@ const deleteUserController = async (req, res) => {
     await Balance.deleteMany({ user: user._id }); // delete user balances
     await deletePresets(user.id); // delete user presets
     /* TODO: Delete Assistant Threads */
-    await deleteConvos(user.id); // delete user convos
+    try {
+      await deleteConvos(user.id); // delete user convos
+    } catch (error) {
+      logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
+    }
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
     await deleteUserById(user.id); // delete user
     await deleteAllSharedLinks(user.id); // delete user shared links

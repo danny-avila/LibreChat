@@ -17,9 +17,9 @@ const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
-const { findToken } = require('~/models/Token');
 const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
+const { findToken } = require('~/models');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
