@@ -38,6 +38,7 @@ function getHostname() {
 }
 
 function initializeBackendOtel() {
+  //
   const otelEnabled = !!process.env.OTEL_ENDPOINT && !!process.env.OTEL_API_KEY;
 
   if (!otelEnabled) {
