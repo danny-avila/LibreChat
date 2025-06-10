@@ -244,19 +244,24 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
-export const agentsEndpointSchema = baseEndpointSchema.merge(
-  z.object({
-    /* agents specific */
-    recursionLimit: z.number().optional(),
-    disableBuilder: z.boolean().optional(),
-    maxRecursionLimit: z.number().optional(),
-    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
-    capabilities: z
-      .array(z.nativeEnum(AgentCapabilities))
-      .optional()
-      .default(defaultAgentCapabilities),
-  }),
-);
+export const agentsEndpointSchema = baseEndpointSchema
+  .merge(
+    z.object({
+      /* agents specific */
+      recursionLimit: z.number().optional(),
+      disableBuilder: z.boolean().optional().default(false),
+      maxRecursionLimit: z.number().optional(),
+      allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
+      capabilities: z
+        .array(z.nativeEnum(AgentCapabilities))
+        .optional()
+        .default(defaultAgentCapabilities),
+    }),
+  )
+  .default({
+    disableBuilder: false,
+    capabilities: defaultAgentCapabilities,
+  });
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
