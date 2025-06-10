@@ -557,7 +557,7 @@ export type TUpdateFeedbackResponse = {
   messageId: string;
   conversationId: string;
   feedback?: TMinimalFeedback;
-}
+};
 
 export type TBalanceResponse = {
   tokenCredits: number;
