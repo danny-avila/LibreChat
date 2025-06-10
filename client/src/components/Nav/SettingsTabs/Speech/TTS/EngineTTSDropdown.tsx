@@ -31,9 +31,8 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
         onChange={handleSelect}
         options={endpointOptions}
         sizeClasses="w-[180px]"
-        anchor="bottom start"
         testId="EngineTTSDropdown"
-        className="rounded-xl"
+        className="z-50"
       />
     </div>
   );

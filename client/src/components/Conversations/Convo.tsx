@@ -31,11 +31,11 @@ export default function Conversation({
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { navigateToConvo } = useNavigateToConvo();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { navigateWithLastTools } = useNavigateToConvo();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { conversationId, title = '' } = conversation;
 
@@ -102,6 +102,9 @@ export default function Conversation({
   const handleNavigation = (ctrlOrMetaKey: boolean) => {
     if (ctrlOrMetaKey) {
       toggleNav();
+      const baseUrl = window.location.origin;
+      const path = `/c/${conversationId}`;
+      window.open(baseUrl + path, '_blank');
       return;
     }
 
@@ -115,10 +118,10 @@ export default function Conversation({
       document.title = title;
     }
 
-    navigateWithLastTools(
-      conversation,
-      !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,
-    );
+    navigateToConvo(conversation, {
+      currentConvoId,
+      resetLatestMessage: !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,
+    });
   };
 
   const convoOptionsProps = {

@@ -1,4 +1,4 @@
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { useLocalize } from '~/hooks';
@@ -8,7 +8,8 @@ import store from '~/store';
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
   const setVisible = useSetRecoilState(store.artifactsVisible);
-  const setArtifactId = useSetRecoilState(store.currentArtifactId);
+  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
+  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   if (artifact === null || artifact === undefined) {
     return null;
   }
@@ -19,12 +20,15 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       <button
         type="button"
         onClick={() => {
-          setArtifactId(artifact.id);
+          resetCurrentArtifactId();
           setVisible(true);
+          setTimeout(() => {
+            setCurrentArtifactId(artifact.id);
+          }, 15);
         }}
         className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
       >
-        <div className="w-fit bg-surface-tertiary p-2 ">
+        <div className="w-fit bg-surface-tertiary p-2">
           <div className="flex flex-row items-center gap-2">
             <FilePreview fileType={fileType} className="relative" />
             <div className="overflow-hidden text-left">

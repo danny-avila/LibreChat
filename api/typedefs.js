@@ -7,10 +7,27 @@
  * @typedef {import('openai').OpenAI} OpenAI
  * @memberof typedefs
  */
+/**
+ * @exports OpenAIImagesResponse
+ * @typedef {Promise<import('openai').OpenAI.ImagesResponse>} OpenAIImagesResponse
+ * @memberof typedefs
+ */
 
 /**
  * @exports ServerRequest
  * @typedef {import('express').Request} ServerRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @template T
+ * @typedef {ReadableStream<T> | NodeJS.ReadableStream} NodeStream
+ * @memberof typedefs
+ */
+
+/**
+ * @template T
+ * @typedef {(req: ServerRequest, filepath: string) => Promise<NodeStream<T>>} NodeStreamDownloader
  * @memberof typedefs
  */
 
@@ -816,8 +833,9 @@
 /**
  * @typedef {Partial<ImageGenOptions> & {
  *   message?: string,
- *   signal?: AbortSignal
- *   memory?: ConversationSummaryBufferMemory
+ *   signal?: AbortSignal,
+ *   memory?: ConversationSummaryBufferMemory,
+ *   tool_resources?: AgentToolResources,
  * }} LoadToolOptions
  * @memberof typedefs
  */

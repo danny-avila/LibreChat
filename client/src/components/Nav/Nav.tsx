@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type {
-  TConversation,
-  ConversationListResponse,
-  SearchConversationListResponse,
-} from 'librechat-data-provider';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
@@ -17,9 +13,6 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import { useSearchContext } from '~/Providers';
-import { Spinner } from '~/components';
-import NavToggle from './NavToggle';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
@@ -65,7 +58,6 @@ const Nav = memo(
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
-    const [isToggleHovering, setIsToggleHovering] = useState(false);
     const [showLoading, setShowLoading] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
 
@@ -74,71 +66,48 @@ const Nav = memo(
       permission: Permissions.USE,
     });
 
-    const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-    const isSearchTyping = useRecoilValue(store.isSearchTyping);
-    const { searchQuery, searchQueryRes } = useSearchContext();
+    const search = useRecoilValue(store.search);
 
-    const { data, fetchNextPage, isFetchingNextPage, refetch } = useConversationsInfiniteQuery(
-      {
-        isArchived: false,
-        tags: tags.length === 0 ? undefined : tags,
-      },
-      {
-        enabled: isAuthenticated,
-        staleTime: 30000,
-        cacheTime: 300000,
-      },
-    );
+    const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, refetch } =
+      useConversationsInfiniteQuery(
+        {
+          tags: tags.length === 0 ? undefined : tags,
+          search: search.debouncedQuery || undefined,
+        },
+        {
+          enabled: isAuthenticated,
+          staleTime: 30000,
+          cacheTime: 300000,
+        },
+      );
 
     const computedHasNextPage = useMemo(() => {
-      if (searchQuery && searchQueryRes?.data) {
-        const pages = searchQueryRes.data.pages;
-        return pages[pages.length - 1]?.nextCursor !== null;
-      } else if (data?.pages && data.pages.length > 0) {
+      if (data?.pages && data.pages.length > 0) {
         const lastPage: ConversationListResponse = data.pages[data.pages.length - 1];
         return lastPage.nextCursor !== null;
       }
       return false;
-    }, [searchQuery, searchQueryRes?.data, data?.pages]);
+    }, [data?.pages]);
 
     const outerContainerRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<any>(null);
 
-    const { moveToTop } = useNavScrolling<
-      ConversationListResponse | SearchConversationListResponse
-    >({
+    const { moveToTop } = useNavScrolling<ConversationListResponse>({
       setShowLoading,
       fetchNextPage: async (options?) => {
         if (computedHasNextPage) {
-          if (searchQuery && searchQueryRes) {
-            const pages = searchQueryRes.data?.pages;
-            if (pages && pages.length > 0 && pages[pages.length - 1]?.nextCursor !== null) {
-              return searchQueryRes.fetchNextPage(options);
-            }
-          } else {
-            return fetchNextPage(options);
-          }
+          return fetchNextPage(options);
         }
         return Promise.resolve(
-          {} as InfiniteQueryObserverResult<
-            SearchConversationListResponse | ConversationListResponse,
-            unknown
-          >,
+          {} as InfiniteQueryObserverResult<ConversationListResponse, unknown>,
         );
       },
-      isFetchingNext: searchQuery
-        ? (searchQueryRes?.isFetchingNextPage ?? false)
-        : isFetchingNextPage,
+      isFetchingNext: isFetchingNextPage,
     });
 
     const conversations = useMemo(() => {
-      if (searchQuery && searchQueryRes?.data) {
-        return searchQueryRes.data.pages.flatMap(
-          (page) => page.conversations ?? [],
-        ) as TConversation[];
-      }
       return data ? data.pages.flatMap((page) => page.conversations) : [];
-    }, [data, searchQuery, searchQueryRes?.data]);
+    }, [data]);
 
     const toggleNavVisible = useCallback(() => {
       setNavVisible((prev: boolean) => {
@@ -181,27 +150,36 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => (
-        <>
-          {isSearchEnabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
-          {hasAccessToBookmarks && (
-            <>
-              <div className="mt-1.5" />
-              <Suspense fallback={null}>
-                <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
-              </Suspense>
-            </>
-          )}
-        </>
-      ),
-      [isSearchEnabled, hasAccessToBookmarks, isSmallScreen, tags, setTags],
+      () => search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />,
+      [search.enabled, isSmallScreen],
     );
 
-    const isSearchLoading =
-      !!searchQuery &&
-      (isSearchTyping ||
-        (searchQueryRes?.isLoading ?? false) ||
-        (searchQueryRes?.isFetching ?? false));
+    const headerButtons = useMemo(
+      () =>
+        hasAccessToBookmarks && (
+          <>
+            <div className="mt-1.5" />
+            <Suspense fallback={null}>
+              <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
+            </Suspense>
+          </>
+        ),
+      [hasAccessToBookmarks, tags, isSmallScreen],
+    );
+
+    const [isSearchLoading, setIsSearchLoading] = useState(
+      !!search.query && (search.isTyping || isLoading || isFetching),
+    );
+
+    useEffect(() => {
+      if (search.isTyping) {
+        setIsSearchLoading(true);
+      } else if (!isLoading && !isFetching) {
+        setIsSearchLoading(false);
+      } else if (!!search.query && (isLoading || isFetching)) {
+        setIsSearchLoading(true);
+      }
+    }, [search.query, search.isTyping, isLoading, isFetching]);
 
     return (
       <>
@@ -219,23 +197,19 @@ const Nav = memo(
         >
           <div className="h-full w-[320px] md:w-[260px]">
             <div className="flex h-full flex-col">
-              <div
-                className={cn(
-                  'flex h-full flex-col transition-opacity',
-                  isToggleHovering && !isSmallScreen ? 'opacity-50' : 'opacity-100',
-                )}
-              >
+              <div className="flex h-full flex-col transition-opacity">
                 <div className="flex h-full flex-col">
                   <nav
                     id="chat-history-nav"
                     aria-label={localize('com_ui_chat_history')}
-                    className="flex h-full flex-col px-3 pb-3.5"
+                    className="flex h-full flex-col px-2 pb-3.5 md:px-3"
                   >
                     <div className="flex flex-1 flex-col" ref={outerContainerRef}>
                       <MemoNewChat
-                        toggleNav={itemToggleNav}
-                        isSmallScreen={isSmallScreen}
                         subHeaders={subHeaders}
+                        toggleNav={toggleNavVisible}
+                        headerButtons={headerButtons}
+                        isSmallScreen={isSmallScreen}
                       />
                       <Conversations
                         conversations={conversations}
@@ -243,7 +217,7 @@ const Nav = memo(
                         toggleNav={itemToggleNav}
                         containerRef={listRef}
                         loadMoreConversations={loadMoreConversations}
-                        isFetchingNextPage={isFetchingNextPage || showLoading}
+                        isLoading={isFetchingNextPage || showLoading || isLoading}
                         isSearchLoading={isSearchLoading}
                       />
                     </div>
@@ -256,15 +230,6 @@ const Nav = memo(
             </div>
           </div>
         </div>
-
-        <NavToggle
-          isHovering={isToggleHovering}
-          setIsHovering={setIsToggleHovering}
-          onToggle={toggleNavVisible}
-          navVisible={navVisible}
-          className="fixed left-0 top-1/2 z-40 hidden md:flex"
-        />
-
         {isSmallScreen && <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />}
       </>
     );

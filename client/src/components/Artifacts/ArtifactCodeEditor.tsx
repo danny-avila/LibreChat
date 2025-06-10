@@ -66,6 +66,9 @@ const CodeEditor = ({
     if (isMutating) {
       return;
     }
+    if (artifact.index == null) {
+      return;
+    }
 
     const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
 

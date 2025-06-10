@@ -1,5 +1,5 @@
-import { QueryClient } from '@tanstack/react-query';
-import type { TConversation, InfiniteData } from 'librechat-data-provider';
+import { QueryClient, InfiniteData } from '@tanstack/react-query';
+import type { TConversation } from 'librechat-data-provider';
 import {
   dateKeys,
   storeEndpointSettings,
@@ -14,7 +14,6 @@ import {
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
 } from './convos';
-import { convoData } from './convos.fakeData';
 import { normalizeData } from './collection';
 
 jest.mock('date-fns', () => {

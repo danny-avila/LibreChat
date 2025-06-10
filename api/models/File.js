@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { EToolResources } = require('librechat-data-provider');
 const { fileSchema } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
 
@@ -8,7 +9,7 @@ const File = mongoose.model('File', fileSchema);
  * Finds a file by its file_id with additional query options.
  * @param {string} file_id - The unique identifier of the file.
  * @param {object} options - Query options for filtering, projection, etc.
- * @returns {Promise<IMongoFile>} A promise that resolves to the file document or null.
+ * @returns {Promise<MongoFile>} A promise that resolves to the file document or null.
  */
 const findFileById = async (file_id, options = {}) => {
   return await File.findOne({ file_id, ...options }).lean();
@@ -20,7 +21,7 @@ const findFileById = async (file_id, options = {}) => {
  * @param {Object} [_sortOptions] - Optional sort parameters.
  * @param {Object|String} [selectFields={ text: 0 }] - Fields to include/exclude in the query results.
  *                                                   Default excludes the 'text' field.
- * @returns {Promise<Array<IMongoFile>>} A promise that resolves to an array of file documents.
+ * @returns {Promise<Array<MongoFile>>} A promise that resolves to an array of file documents.
  */
 const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
@@ -30,9 +31,10 @@ const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
 /**
  * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
  * @param {string[]} fileIds - Array of file_id strings to search for
- * @returns {Promise<Array<IMongoFile>>} Files that match the criteria
+ * @param {Set<EToolResources>} toolResourceSet - Optional filter for tool resources
+ * @returns {Promise<Array<MongoFile>>} Files that match the criteria
  */
-const getToolFilesByIds = async (fileIds) => {
+const getToolFilesByIds = async (fileIds, toolResourceSet) => {
   if (!fileIds || !fileIds.length) {
     return [];
   }
@@ -40,8 +42,18 @@ const getToolFilesByIds = async (fileIds) => {
   try {
     const filter = {
       file_id: { $in: fileIds },
-      $or: [{ embedded: true }, { 'metadata.fileIdentifier': { $exists: true } }],
     };
+
+    if (toolResourceSet.size) {
+      filter.$or = [];
+    }
+
+    if (toolResourceSet.has(EToolResources.file_search)) {
+      filter.$or.push({ embedded: true });
+    }
+    if (toolResourceSet.has(EToolResources.execute_code)) {
+      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+    }
 
     const selectFields = { text: 0 };
     const sortOptions = { updatedAt: -1 };
@@ -55,9 +67,9 @@ const getToolFilesByIds = async (fileIds) => {
 
 /**
  * Creates a new file with a TTL of 1 hour.
- * @param {IMongoFile} data - The file data to be created, must contain file_id.
+ * @param {MongoFile} data - The file data to be created, must contain file_id.
  * @param {boolean} disableTTL - Whether to disable the TTL.
- * @returns {Promise<IMongoFile>} A promise that resolves to the created file document.
+ * @returns {Promise<MongoFile>} A promise that resolves to the created file document.
  */
 const createFile = async (data, disableTTL) => {
   const fileData = {
@@ -77,8 +89,8 @@ const createFile = async (data, disableTTL) => {
 
 /**
  * Updates a file identified by file_id with new data and removes the TTL.
- * @param {IMongoFile} data - The data to update, must contain file_id.
- * @returns {Promise<IMongoFile>} A promise that resolves to the updated file document.
+ * @param {MongoFile} data - The data to update, must contain file_id.
+ * @returns {Promise<MongoFile>} A promise that resolves to the updated file document.
  */
 const updateFile = async (data) => {
   const { file_id, ...update } = data;
@@ -91,8 +103,8 @@ const updateFile = async (data) => {
 
 /**
  * Increments the usage of a file identified by file_id.
- * @param {IMongoFile} data - The data to update, must contain file_id and the increment value for usage.
- * @returns {Promise<IMongoFile>} A promise that resolves to the updated file document.
+ * @param {MongoFile} data - The data to update, must contain file_id and the increment value for usage.
+ * @returns {Promise<MongoFile>} A promise that resolves to the updated file document.
  */
 const updateFileUsage = async (data) => {
   const { file_id, inc = 1 } = data;
@@ -106,7 +118,7 @@ const updateFileUsage = async (data) => {
 /**
  * Deletes a file identified by file_id.
  * @param {string} file_id - The unique identifier of the file to delete.
- * @returns {Promise<IMongoFile>} A promise that resolves to the deleted file document or null.
+ * @returns {Promise<MongoFile>} A promise that resolves to the deleted file document or null.
  */
 const deleteFile = async (file_id) => {
   return await File.findOneAndDelete({ file_id }).lean();
@@ -115,7 +127,7 @@ const deleteFile = async (file_id) => {
 /**
  * Deletes a file identified by a filter.
  * @param {object} filter - The filter criteria to apply.
- * @returns {Promise<IMongoFile>} A promise that resolves to the deleted file document or null.
+ * @returns {Promise<MongoFile>} A promise that resolves to the deleted file document or null.
  */
 const deleteFileByFilter = async (filter) => {
   return await File.findOneAndDelete(filter).lean();

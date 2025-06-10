@@ -1,47 +1,62 @@
 import { useEffect, useMemo } from 'react';
-import type { FetchNextPageOptions } from '@tanstack/react-query';
-import { useToastContext, useSearchContext, useFileMapContext } from '~/Providers';
+import { useRecoilValue } from 'recoil';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
+import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
-import { useNavScrolling, useLocalize } from '~/hooks';
+import { useToastContext, useFileMapContext } from '~/Providers';
+import { useMessagesInfiniteQuery } from '~/data-provider';
 import { Spinner } from '~/components';
 import { buildTree } from '~/utils';
-import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
 export default function Search() {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
-  const { searchQuery, searchQueryRes } = useSearchContext();
-  const isSearchTyping = useRecoilValue(store.isSearchTyping);
+  const { isAuthenticated } = useAuthContext();
+  const search = useRecoilValue(store.search);
+  const searchQuery = search.debouncedQuery;
+
+  const {
+    data: searchMessages,
+    isLoading,
+    isError,
+    fetchNextPage,
+    isFetchingNextPage,
+    hasNextPage,
+  } = useMessagesInfiniteQuery(
+    {
+      search: searchQuery || undefined,
+    },
+    {
+      enabled: isAuthenticated && !!searchQuery,
+      staleTime: 30000,
+      cacheTime: 300000,
+    },
+  );
 
   const { containerRef } = useNavScrolling({
-    nextCursor: searchQueryRes?.data?.pages[searchQueryRes.data.pages.length - 1]?.nextCursor,
+    nextCursor: searchMessages?.pages[searchMessages.pages.length - 1]?.nextCursor,
     setShowLoading: () => ({}),
-    fetchNextPage: searchQueryRes?.fetchNextPage
-      ? (options?: FetchNextPageOptions) => searchQueryRes.fetchNextPage(options)
-      : undefined,
-    isFetchingNext: searchQueryRes?.isFetchingNextPage ?? false,
+    fetchNextPage: fetchNextPage,
+    isFetchingNext: isFetchingNextPage,
   });
 
-  useEffect(() => {
-    if (searchQueryRes?.error) {
-      showToast({ message: 'An error occurred during search', status: 'error' });
-    }
-  }, [searchQueryRes?.error, showToast]);
-
   const messages = useMemo(() => {
-    const msgs = searchQueryRes?.data?.pages.flatMap((page) => page.messages) || [];
+    const msgs = searchMessages?.pages.flatMap((page) => page.messages) || [];
     const dataTree = buildTree({ messages: msgs, fileMap });
     return dataTree?.length === 0 ? null : (dataTree ?? null);
-  }, [fileMap, searchQueryRes?.data?.pages]);
+  }, [fileMap, searchMessages?.pages]);
 
-  if (!searchQuery || !searchQueryRes?.data) {
-    return null;
-  }
+  useEffect(() => {
+    if (isError && searchQuery) {
+      showToast({ message: 'An error occurred during search', status: 'error' });
+    }
+  }, [isError, searchQuery, showToast]);
 
-  if (isSearchTyping || searchQueryRes.isInitialLoading || searchQueryRes.isLoading) {
+  const isSearchLoading = search.isTyping || isLoading || isFetchingNextPage;
+
+  if (isSearchLoading) {
     return (
       <div className="absolute inset-0 flex items-center justify-center">
         <Spinner className="text-text-primary" />
@@ -49,9 +64,13 @@ export default function Search() {
     );
   }
 
+  if (!searchQuery) {
+    return null;
+  }
+
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
-      {(messages && messages.length == 0) || messages == null ? (
+      {(messages && messages.length === 0) || messages == null ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
             {localize('com_ui_nothing_found')}
@@ -62,7 +81,7 @@ export default function Search() {
           {messages.map((msg) => (
             <SearchMessage key={msg.messageId} message={msg} />
           ))}
-          {searchQueryRes.isFetchingNextPage && (
+          {isFetchingNextPage && (
             <div className="flex justify-center py-4">
               <Spinner className="text-text-primary" />
             </div>

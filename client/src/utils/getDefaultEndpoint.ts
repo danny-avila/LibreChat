@@ -20,7 +20,7 @@ const getEndpointFromSetup = (
   if (targetEndpoint && endpointsConfig?.[targetEndpoint]) {
     return targetEndpoint as EModelEndpoint;
   } else if (targetEndpoint) {
-    console.warn(`Illegal target endpoint ${targetEndpoint} ${endpointsConfig}`);
+    console.warn(`Illegal target endpoint ${targetEndpoint}`, endpointsConfig);
   }
   return null;
 };

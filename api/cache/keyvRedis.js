@@ -75,6 +75,12 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   } else {
     keyvRedis = new KeyvRedis(REDIS_URI, keyvOpts);
   }
+
+  const pingInterval = setInterval(() => {
+    logger.debug('KeyvRedis ping');
+    keyvRedis.client.ping().catch(err => logger.error('Redis keep-alive ping failed:', err));
+  }, 5 * 60 * 1000);
+
   keyvRedis.on('ready', () => {
     logger.info('KeyvRedis connection ready');
   });
@@ -85,6 +91,7 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
     logger.info('KeyvRedis connection ended');
   });
   keyvRedis.on('close', () => {
+    clearInterval(pingInterval);
     logger.info('KeyvRedis connection closed');
   });
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
