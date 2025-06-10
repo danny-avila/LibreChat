@@ -7,7 +7,7 @@ const BaseOptionsSchema = z.object({
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
-  /** 
+  /**
    * Controls server instruction behavior:
    * - undefined/not set: No instructions included (default)
    * - true: Use server-provided instructions
