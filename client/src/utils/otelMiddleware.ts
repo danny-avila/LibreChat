@@ -54,6 +54,8 @@ export async function initializeFrontendOtel() {
     return;
   }
 
+  console.debug('Open Telemetry Frontend is active!');
+
   const attributes = {
     [ATTR_SERVICE_NAME]: `${packageJson.name}`,
     [ATTR_SERVICE_VERSION]: packageJson.version,

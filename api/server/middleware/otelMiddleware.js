@@ -56,6 +56,8 @@ function initializeBackendOtel() {
     return;
   }
 
+  logger.debug('Open Telemetry Backend is active!');
+
   const configTraces = {
     url: OTEL_ENDPOINT,
     key: OTEL_API_KEY,
