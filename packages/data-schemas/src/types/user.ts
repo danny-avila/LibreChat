@@ -30,6 +30,7 @@ export interface IUser extends Document {
   }>;
   expiresAt?: Date;
   termsAccepted?: boolean;
+  webSearchEnabled?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
