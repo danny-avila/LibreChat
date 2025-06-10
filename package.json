@@ -111,7 +111,8 @@
     "prettier": "^3.5.0",
     "prettier-eslint": "^16.3.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "typescript-eslint": "^8.24.0"
+    "typescript-eslint": "^8.24.0",
+    "@langchain/mistralai": "^0.2.0"
   },
   "overrides": {
     "axios": "1.8.2",
