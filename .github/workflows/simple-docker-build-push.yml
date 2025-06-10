@@ -25,6 +25,9 @@ jobs:
       - name: Prepare environment
         run: cp .env.example .env
 
+      - name: Set lowercase repository owner
+        run: echo "REPO_OWNER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -33,6 +36,6 @@ jobs:
           target: api-build
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner | lowercase }}/librechat-avi-api:latest
-            ghcr.io/${{ github.repository_owner | lowercase }}/librechat-avi-api:${{ github.sha }}
+            ghcr.io/${{ env.REPO_OWNER_LOWER }}/librechat-avi-api:latest
+            ghcr.io/${{ env.REPO_OWNER_LOWER }}/librechat-avi-api:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
