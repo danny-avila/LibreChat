@@ -19,8 +19,10 @@ export enum Tools {
   execute_code = 'execute_code',
   code_interpreter = 'code_interpreter',
   file_search = 'file_search',
+  web_search = 'web_search',
   retrieval = 'retrieval',
   function = 'function',
+  memory = 'memory',
 }
 
 export enum EToolResources {
@@ -222,6 +224,7 @@ export type Agent = {
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
+  version?: number;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;

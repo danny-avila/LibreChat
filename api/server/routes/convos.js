@@ -65,8 +65,14 @@ router.post('/gen_title', async (req, res) => {
   let title = await titleCache.get(key);
 
   if (!title) {
-    await sleep(2500);
-    title = await titleCache.get(key);
+    // Retry every 1s for up to 20s
+    for (let i = 0; i < 20; i++) {
+      await sleep(1000);
+      title = await titleCache.get(key);
+      if (title) {
+        break;
+      }
+    }
   }
 
   if (title) {
@@ -74,7 +80,7 @@ router.post('/gen_title', async (req, res) => {
     res.status(200).json({ title });
   } else {
     res.status(404).json({
-      message: 'Title not found or method not implemented for the conversation\'s endpoint',
+      message: "Title not found or method not implemented for the conversation's endpoint",
     });
   }
 });

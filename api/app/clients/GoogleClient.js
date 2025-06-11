@@ -1,4 +1,5 @@
 const { google } = require('googleapis');
+const { Tokenizer } = require('@librechat/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
@@ -19,7 +20,6 @@ const {
 } = require('librechat-data-provider');
 const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
-const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
@@ -236,11 +236,11 @@ class GoogleClient extends BaseClient {
       msg.content = (
         !Array.isArray(msg.content)
           ? [
-            {
-              type: ContentTypes.TEXT,
-              [ContentTypes.TEXT]: msg.content,
-            },
-          ]
+              {
+                type: ContentTypes.TEXT,
+                [ContentTypes.TEXT]: msg.content,
+              },
+            ]
           : msg.content
       ).concat(message.image_urls);
 

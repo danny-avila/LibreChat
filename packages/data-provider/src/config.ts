@@ -7,7 +7,7 @@ import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
-export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
+export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -167,6 +167,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
+  web_search = 'web_search',
   artifacts = 'artifacts',
   actions = 'actions',
   tools = 'tools',
@@ -232,29 +233,37 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
-export const agentsEndpointSChema = baseEndpointSchema.merge(
-  z.object({
-    /* agents specific */
-    recursionLimit: z.number().optional(),
-    disableBuilder: z.boolean().optional(),
-    maxRecursionLimit: z.number().optional(),
-    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
-    capabilities: z
-      .array(z.nativeEnum(AgentCapabilities))
-      .optional()
-      .default([
-        AgentCapabilities.execute_code,
-        AgentCapabilities.file_search,
-        AgentCapabilities.artifacts,
-        AgentCapabilities.actions,
-        AgentCapabilities.tools,
-        AgentCapabilities.ocr,
-        AgentCapabilities.chain,
-      ]),
-  }),
-);
+export const defaultAgentCapabilities = [
+  AgentCapabilities.execute_code,
+  AgentCapabilities.file_search,
+  AgentCapabilities.web_search,
+  AgentCapabilities.artifacts,
+  AgentCapabilities.actions,
+  AgentCapabilities.tools,
+  AgentCapabilities.chain,
+  AgentCapabilities.ocr,
+];
 
-export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
+export const agentsEndpointSchema = baseEndpointSchema
+  .merge(
+    z.object({
+      /* agents specific */
+      recursionLimit: z.number().optional(),
+      disableBuilder: z.boolean().optional().default(false),
+      maxRecursionLimit: z.number().optional(),
+      allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
+      capabilities: z
+        .array(z.nativeEnum(AgentCapabilities))
+        .optional()
+        .default(defaultAgentCapabilities),
+    }),
+  )
+  .default({
+    disableBuilder: false,
+    capabilities: defaultAgentCapabilities,
+  });
+
+export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -489,11 +498,13 @@ export const intefaceSchema = z
     sidePanel: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
+    memories: z.boolean().optional(),
     presets: z.boolean().optional(),
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
     runCode: z.boolean().optional(),
+    webSearch: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -503,10 +514,12 @@ export const intefaceSchema = z
     presets: true,
     multiConvo: true,
     bookmarks: true,
+    memories: true,
     prompts: true,
     agents: true,
     temporaryChat: true,
     runCode: true,
+    webSearch: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
@@ -541,9 +554,12 @@ export type TStartupConfig = {
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   appleLoginEnabled: boolean;
+  samlLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
   openidAutoRedirect: boolean;
+  samlLabel: string;
+  samlImageUrl: string;
   /** LDAP Auth Configuration */
   ldap?: {
     /** LDAP enabled */
@@ -567,6 +583,11 @@ export type TStartupConfig = {
   instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
+  webSearch?: {
+    searchProvider?: SearchProviders;
+    scraperType?: ScraperTypes;
+    rerankerType?: RerankerTypes;
+  };
 };
 
 export enum OCRStrategy {
@@ -574,10 +595,52 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
 }
 
+export enum SearchCategories {
+  PROVIDERS = 'providers',
+  SCRAPERS = 'scrapers',
+  RERANKERS = 'rerankers',
+}
+
+export enum SearchProviders {
+  SERPER = 'serper',
+  SEARXNG = 'searxng',
+}
+
+export enum ScraperTypes {
+  FIRECRAWL = 'firecrawl',
+  SERPER = 'serper',
+}
+
+export enum RerankerTypes {
+  JINA = 'jina',
+  COHERE = 'cohere',
+}
+
+export enum SafeSearchTypes {
+  OFF = 0,
+  MODERATE = 1,
+  STRICT = 2,
+}
+
+export const webSearchSchema = z.object({
+  serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  searchProvider: z.nativeEnum(SearchProviders).optional(),
+  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  rerankerType: z.nativeEnum(RerankerTypes).optional(),
+  scraperTimeout: z.number().optional(),
+  safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
+});
+
+export type TWebSearchConfig = z.infer<typeof webSearchSchema>;
+
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
-  apiKey: z.string().optional().default('OCR_API_KEY'),
-  baseURL: z.string().optional().default('OCR_BASEURL'),
+  apiKey: z.string().optional().default('${OCR_API_KEY}'),
+  baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
@@ -593,10 +656,35 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
+export const memorySchema = z.object({
+  disabled: z.boolean().optional(),
+  validKeys: z.array(z.string()).optional(),
+  tokenLimit: z.number().optional(),
+  personalize: z.boolean().default(true),
+  messageWindowSize: z.number().optional().default(5),
+  agent: z
+    .union([
+      z.object({
+        id: z.string(),
+      }),
+      z.object({
+        provider: z.string(),
+        model: z.string(),
+        instructions: z.string().optional(),
+        model_parameters: z.record(z.any()).optional(),
+      }),
+    ])
+    .optional(),
+});
+
+export type TMemoryConfig = z.infer<typeof memorySchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
+  webSearch: webSearchSchema.optional(),
+  memory: memorySchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -637,7 +725,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
-      [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
+      [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
       [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
@@ -735,6 +823,10 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-20250514',
+  'claude-sonnet-4-latest',
+  'claude-opus-4-20250514',
+  'claude-opus-4-latest',
   'claude-3-7-sonnet-latest',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
@@ -894,8 +986,7 @@ export const visionModels = [
   'gemma',
   'gemini-exp',
   'gemini-1.5',
-  'gemini-2.0',
-  'gemini-2.5',
+  'gemini-2',
   'gemini-3',
   'moondream',
   'llama3.2-vision',
@@ -904,6 +995,9 @@ export const visionModels = [
   'llama-3.2-90b-vision',
   'llama-3-2-90b-vision',
   'llama-4',
+  'claude-opus-4',
+  'claude-sonnet-4',
+  'claude-haiku-4',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -1049,6 +1143,10 @@ export enum CacheKeys {
    * Key for s3 check intervals per user
    */
   S3_EXPIRY_INTERVAL = 'S3_EXPIRY_INTERVAL',
+  /**
+   * key for open id exchanged tokens
+   */
+  OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
 }
 
 /**
@@ -1213,6 +1311,10 @@ export enum SettingsTabValues {
    */
   DATA = 'data',
   /**
+   * Tab for Balance Settings
+   */
+  BALANCE = 'balance',
+  /**
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
@@ -1220,6 +1322,10 @@ export enum SettingsTabValues {
    * Chat input commands
    */
   COMMANDS = 'commands',
+  /**
+   * Tab for Personalization Settings
+   */
+  PERSONALIZATION = 'personalization',
 }
 
 export enum STTProviders {
@@ -1257,7 +1363,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.5',
+  CONFIG_VERSION = '1.2.6',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1325,6 +1431,8 @@ export enum LocalStorageKeys {
   LAST_MCP_ = 'LAST_MCP_',
   /** Last checked toggle for Code Interpreter API per conversation ID */
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
+  /** Last checked toggle for Web Search per conversation ID */
+  LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
 }
 
 export enum ForkOptions {

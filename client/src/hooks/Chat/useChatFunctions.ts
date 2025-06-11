@@ -245,7 +245,8 @@ export default function useChatFunctions({
     const generation = editedText ?? latestMessage?.text ?? '';
     const responseText = isEditOrContinue ? generation : '';
 
-    const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
+    const responseMessageId =
+      editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,

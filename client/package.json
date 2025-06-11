@@ -6,7 +6,7 @@
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
-    "build": "cross-env NODE_ENV=production vite build",
+    "build": "cross-env NODE_ENV=production vite build && node ./scripts/post-build.cjs",
     "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
     "dev": "cross-env NODE_ENV=development vite",
     "preview-prod": "cross-env NODE_ENV=development vite preview",
@@ -87,7 +87,7 @@
     "react-i18next": "^15.4.0",
     "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^9.0.1",
-    "react-resizable-panels": "^2.1.8",
+    "react-resizable-panels": "^3.0.2",
     "react-router-dom": "^6.11.2",
     "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",

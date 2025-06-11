@@ -1,7 +1,7 @@
 const { Keyv } = require('keyv');
 const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
-const { math, isEnabled } = require('~/server/utils');
+const { isEnabled, math } = require('~/server/utils');
 const keyvRedis = require('./keyvRedis');
 const keyvMongo = require('./keyvMongo');
 
@@ -61,6 +61,10 @@ const abortKeys = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: Time.TEN_MINUTES });
 
+const openIdExchangedTokensCache = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.OPENID_EXCHANGED_TOKENS, ttl: Time.TEN_MINUTES });
+
 const namespaces = {
   [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
@@ -98,6 +102,7 @@ const namespaces = {
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,
   [CacheKeys.FLOWS]: flows,
+  [CacheKeys.OPENID_EXCHANGED_TOKENS]: openIdExchangedTokensCache,
 };
 
 /**

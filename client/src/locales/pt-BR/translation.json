@@ -606,7 +606,6 @@
   "com_ui_enter": "Entrar",
   "com_ui_enter_api_key": "Insira a chave da API",
   "com_ui_enter_openapi_schema": "Insira seu esquema OpenAPI aqui",
-  "com_ui_enter_var": "Inserir {{0}}",
   "com_ui_error": "Erro",
   "com_ui_error_connection": "Erro ao conectar ao servidor, tente atualizar a página.",
   "com_ui_error_save_admin_settings": "Houve um erro ao salvar suas configurações de admin.",
