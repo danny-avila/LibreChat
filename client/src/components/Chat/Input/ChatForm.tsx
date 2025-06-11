@@ -621,7 +621,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       </form>
       {/* Widget de ElevenLabs ConvAI */}
       <div style={{ display: showElevenLabsWidget ? 'block' : 'none' }}>
-        <elevenlabs-convai agent-id="agent_01jwaqh00re189x9avqywf2ah6"></elevenlabs-convai>
+        <elevenlabs-convai agent-id={import.meta.env.VITE_ELEVENLABS_AGENT_ID}></elevenlabs-convai>
       </div>
     </>
   );
