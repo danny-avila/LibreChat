@@ -571,6 +571,7 @@ export type TStartupConfig = {
   instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
+  elevenLabsAgentId?: string;
   webSearch?: {
     searchProvider?: SearchProviders;
     scraperType?: ScraperTypes;

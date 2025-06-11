@@ -17,6 +17,7 @@ import {
   useSubmitMessage,
   useFocusChatEffect,
 } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
@@ -68,6 +69,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const { requiresKey } = useRequiresKey();
   const methods = useChatFormContext();
+  const { data: config } = useGetStartupConfig();
   const {
     files,
     setFiles,
@@ -621,7 +623,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       </form>
       {/* Widget de ElevenLabs ConvAI */}
       <div style={{ display: showElevenLabsWidget ? 'block' : 'none' }}>
-        <elevenlabs-convai agent-id={import.meta.env.VITE_ELEVENLABS_AGENT_ID}></elevenlabs-convai>
+        <elevenlabs-convai agent-id={config?.elevenLabsAgentId}></elevenlabs-convai>
       </div>
     </>
   );
