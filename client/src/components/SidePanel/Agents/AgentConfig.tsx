@@ -50,7 +50,10 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     groupedTools: allTools,
   } = useAgentPanelContext();
 
-  const { control } = methods;
+  const {
+    control,
+    formState: { errors },
+  } = methods;
   const provider = useWatch({ control, name: 'provider' });
   const model = useWatch({ control, name: 'model' });
   const agent = useWatch({ control, name: 'agent' });
@@ -194,21 +197,33 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           />
           <label className={labelClass} htmlFor="name">
             {localize('com_ui_name')}
+            <span className="text-red-500">*</span>
           </label>
           <Controller
             name="name"
+            rules={{ required: localize('com_ui_agent_name_is_required') }}
             control={control}
             render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                maxLength={256}
-                className={inputClass}
-                id="name"
-                type="text"
-                placeholder={localize('com_agents_name_placeholder')}
-                aria-label="Agent name"
-              />
+              <>
+                <input
+                  {...field}
+                  value={field.value ?? ''}
+                  maxLength={256}
+                  className={inputClass}
+                  id="name"
+                  type="text"
+                  placeholder={localize('com_agents_name_placeholder')}
+                  aria-label="Agent name"
+                />
+                <div
+                  className={cn(
+                    'mt-1 w-56 text-sm text-red-500',
+                    errors.name ? 'visible h-auto' : 'invisible h-0',
+                  )}
+                >
+                  {errors.name ? errors.name.message : ' '}
+                </div>
+              </>
             )}
           />
           <Controller

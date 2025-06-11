@@ -37,6 +37,14 @@ export enum PermissionTypes {
    */
   WEB_SEARCH = 'WEB_SEARCH',
   /**
+   * Type for People Picker Permissions
+   */
+  PEOPLE_PICKER = 'PEOPLE_PICKER',
+  /**
+   * Type for Marketplace Permissions
+   */
+  MARKETPLACE = 'MARKETPLACE',
+  /**
    * Type for using the "File Search" feature
    */
   FILE_SEARCH = 'FILE_SEARCH',
@@ -59,6 +67,8 @@ export enum Permissions {
   SHARE = 'SHARE',
   /** Can disable if desired */
   OPT_OUT = 'OPT_OUT',
+  VIEW_USERS = 'VIEW_USERS',
+  VIEW_GROUPS = 'VIEW_GROUPS',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -111,6 +121,17 @@ export const webSearchPermissionsSchema = z.object({
 });
 export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
 
+export const peoplePickerPermissionsSchema = z.object({
+  [Permissions.VIEW_USERS]: z.boolean().default(true),
+  [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+});
+export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
+
+export const marketplacePermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+export type TMarketplacePermissions = z.infer<typeof marketplacePermissionsSchema>;
+
 export const fileSearchPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
 });
@@ -131,6 +152,8 @@ export const permissionsSchema = z.object({
   [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
   [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
+  [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema,
+  [PermissionTypes.MARKETPLACE]: marketplacePermissionsSchema,
   [PermissionTypes.FILE_SEARCH]: fileSearchPermissionsSchema,
   [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
 });

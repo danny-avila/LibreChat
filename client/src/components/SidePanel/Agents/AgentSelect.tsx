@@ -6,7 +6,11 @@ import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-que
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
-import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
+import {
+  useListAgentsQuery,
+  useGetStartupConfig,
+  useAgentListingDefaultPermissionLevel,
+} from '~/data-provider';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
 
@@ -28,18 +32,23 @@ export default function AgentSelect({
   const { control, reset } = useFormContext();
 
   const { data: startupConfig } = useGetStartupConfig();
-  const { data: agents = null } = useListAgentsQuery(undefined, {
-    select: (res) =>
-      res.data.map((agent) =>
-        processAgentOption({
-          agent: {
-            ...agent,
-            name: agent.name || agent.id,
-          },
-          instanceProjectId: startupConfig?.instanceProjectId,
-        }),
-      ),
-  });
+  const permissionLevel = useAgentListingDefaultPermissionLevel();
+
+  const { data: agents = null } = useListAgentsQuery(
+    { requiredPermission: permissionLevel },
+    {
+      select: (res) =>
+        res.data.map((agent) =>
+          processAgentOption({
+            agent: {
+              ...agent,
+              name: agent.name || agent.id,
+            },
+            instanceProjectId: startupConfig?.instanceProjectId,
+          }),
+        ),
+    },
+  );
 
   const resetAgentForm = useCallback(
     (fullAgent: Agent) => {
