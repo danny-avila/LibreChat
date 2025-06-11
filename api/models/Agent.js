@@ -5,7 +5,6 @@ const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 // Default category value for new agents
-const AgentCategory = require('./AgentCategory');
 const {
   getProjectByName,
   addAgentIdsToProject,
@@ -15,80 +14,7 @@ const {
 const { getCachedTools } = require('~/server/services/Config');
 
 // Category values are now imported from shared constants
-
-// Add category field to the Agent schema if it doesn't already exist
-if (!agentSchema.paths.category) {
-  agentSchema.add({
-    category: {
-      type: String,
-      trim: true,
-      validate: {
-        validator: async function (value) {
-          if (!value) return true; // Allow empty values (will use default)
-
-          // Check if category exists in database
-          const validCategories = await AgentCategory.getValidCategoryValues();
-          return validCategories.includes(value);
-        },
-        message: function (props) {
-          return `"${props.value}" is not a valid agent category. Please check available categories.`;
-        },
-      },
-      index: true,
-      default: 'general',
-    },
-  });
-}
-
-// Add support_contact field to the Agent schema if it doesn't already exist
-if (!agentSchema.paths.support_contact) {
-  agentSchema.add({
-    support_contact: {
-      type: Object,
-      default: {},
-      name: {
-        type: String,
-        minlength: [3, 'Support contact name must be at least 3 characters.'],
-        trim: true,
-      },
-      email: {
-        type: String,
-        match: [
-          /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-          'Please enter a valid email address.',
-        ],
-        trim: true,
-      },
-    },
-  });
-}
-
-// Add promotion field to the Agent schema if it doesn't already exist
-if (!agentSchema.paths.is_promoted) {
-  agentSchema.add({
-    is_promoted: {
-      type: Boolean,
-      default: false,
-      index: true, // Index for efficient promoted agent queries
-    },
-  });
-}
-
-// Add additional indexes for marketplace functionality
-agentSchema.index({ projectIds: 1, is_promoted: 1, updatedAt: -1 }); // Optimize promoted agents query
-agentSchema.index({ category: 1, projectIds: 1, updatedAt: -1 }); // Optimize category filtering
-agentSchema.index({ projectIds: 1, category: 1 }); // Optimize aggregation pipeline
-
-// Text indexes for search functionality
-agentSchema.index(
-  { name: 'text', description: 'text' },
-  {
-    weights: {
-      name: 3, // Name matches are 3x more important than description matches
-      description: 1,
-    },
-  },
-);
+// Schema fields (category, support_contact, is_promoted) are defined in @librechat/data-schemas
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
