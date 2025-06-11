@@ -92,6 +92,35 @@ const agentSchema = new Schema<IAgent>(
       type: [Schema.Types.Mixed],
       default: [],
     },
+    category: {
+      type: String,
+      trim: true,
+      index: true,
+      default: 'general',
+    },
+    support_contact: {
+      type: {
+        name: {
+          type: String,
+          minlength: [3, 'Support contact name must be at least 3 characters.'],
+          trim: true,
+        },
+        email: {
+          type: String,
+          match: [
+            /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
+            'Please enter a valid email address.',
+          ],
+          trim: true,
+        },
+      },
+      default: {},
+    },
+    is_promoted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
