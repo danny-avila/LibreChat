@@ -32,3 +32,11 @@ jobs:
 
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n1.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:n1.latest
+
+            - name: Update Azure Container App
+              run: |
+                az login --identity
+                az containerapp update \
+                  --name conpaichateastusn1001 \
+                  --resource-group rg-playai-eastus-n1-001 \
+                  --yaml ./n1_container_app_definition.yml
