@@ -28,4 +28,10 @@ export interface IAgent extends Omit<Document, 'model'> {
   tool_resources?: unknown;
   projectIds?: Types.ObjectId[];
   versions?: Omit<IAgent, 'versions'>[];
+  category: string;
+  support_contact?: {
+    name?: string;
+    email?: string;
+  };
+  is_promoted?: boolean;
 }

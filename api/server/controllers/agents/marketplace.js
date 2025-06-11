@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const { logger } = require('~/config');
 
 // Get the Agent model
-const Agent = mongoose.model('agent');
+const Agent = mongoose.model('Agent');
 
 // Default page size for agent browsing
 const DEFAULT_PAGE_SIZE = 6;
