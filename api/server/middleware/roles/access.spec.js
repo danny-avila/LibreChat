@@ -1,16 +1,30 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { checkAccess, generateCheckAccess } = require('./access');
+const { checkAccess, generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { getRoleByName } = require('~/models/Role');
 const { Role } = require('~/db/models');
 
-// Mock only the logger
-jest.mock('~/config', () => ({
+// Mock the logger from @librechat/data-schemas
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: {
     warn: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
   },
 }));
+
+// Mock the cache to use a simple in-memory implementation
+const mockCache = new Map();
+jest.mock('~/cache/getLogStores', () => {
+  return jest.fn(() => ({
+    get: jest.fn(async (key) => mockCache.get(key)),
+    set: jest.fn(async (key, value) => mockCache.set(key, value)),
+    clear: jest.fn(async () => mockCache.clear()),
+  }));
+});
 
 describe('Access Middleware', () => {
   let mongoServer;
@@ -29,26 +43,78 @@ describe('Access Middleware', () => {
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();
+    mockCache.clear(); // Clear the cache between tests
 
     // Create test roles
     await Role.create({
       name: 'user',
       permissions: {
+        [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.SHARED_GLOBAL]: false,
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+        },
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.UPDATE]: true,
+          [Permissions.READ]: true,
+          [Permissions.OPT_OUT]: true,
+        },
         [PermissionTypes.AGENTS]: {
           [Permissions.USE]: true,
           [Permissions.CREATE]: false,
           [Permissions.SHARED_GLOBAL]: false,
         },
+        [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+        [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
+        [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+        [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       },
     });
 
     await Role.create({
       name: 'admin',
       permissions: {
+        [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.SHARED_GLOBAL]: true,
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+        },
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.UPDATE]: true,
+          [Permissions.READ]: true,
+          [Permissions.OPT_OUT]: true,
+        },
         [PermissionTypes.AGENTS]: {
           [Permissions.USE]: true,
           [Permissions.CREATE]: true,
           [Permissions.SHARED_GLOBAL]: true,
+        },
+        [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+        [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
+        [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+        [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
+      },
+    });
+
+    // Create limited role with no AGENTS permissions
+    await Role.create({
+      name: 'limited',
+      permissions: {
+        // Explicitly set AGENTS permissions to false
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.SHARED_GLOBAL]: false,
+        },
+        // Has permissions for other types
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: true,
         },
       },
     });
@@ -56,6 +122,7 @@ describe('Access Middleware', () => {
     req = {
       user: { id: 'user123', role: 'user' },
       body: {},
+      originalUrl: '/test',
     };
     res = {
       status: jest.fn().mockReturnThis(),
@@ -67,92 +134,127 @@ describe('Access Middleware', () => {
 
   describe('checkAccess', () => {
     test('should return false if user is not provided', async () => {
-      const result = await checkAccess(null, PermissionTypes.AGENTS, [Permissions.USE]);
+      const result = await checkAccess({
+        user: null,
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
       expect(result).toBe(false);
     });
 
     test('should return true if user has required permission', async () => {
-      const result = await checkAccess(req.user, PermissionTypes.AGENTS, [Permissions.USE]);
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'user123', role: 'user' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
       expect(result).toBe(true);
     });
 
     test('should return false if user lacks required permission', async () => {
-      const result = await checkAccess(req.user, PermissionTypes.AGENTS, [Permissions.CREATE]);
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'user123', role: 'user' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE],
+        getRoleByName,
+      });
       expect(result).toBe(false);
     });
 
-    test('should return true if user has any of multiple permissions', async () => {
-      const result = await checkAccess(req.user, PermissionTypes.AGENTS, [
-        Permissions.USE,
-        Permissions.CREATE,
-      ]);
+    test('should return false if user has only some of multiple permissions', async () => {
+      // User has USE but not CREATE, so should fail when checking for both
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'user123', role: 'user' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE, Permissions.USE],
+        getRoleByName,
+      });
+      expect(result).toBe(false);
+    });
+
+    test('should return true if user has all of multiple permissions', async () => {
+      // Admin has both USE and CREATE
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'admin123', role: 'admin' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE, Permissions.USE],
+        getRoleByName,
+      });
       expect(result).toBe(true);
     });
 
     test('should check body properties when permission is not directly granted', async () => {
-      // User role doesn't have CREATE permission, but bodyProps allows it
-      const bodyProps = {
-        [Permissions.CREATE]: ['agentId', 'name'],
-      };
-
-      const checkObject = { agentId: 'agent123' };
-
-      const result = await checkAccess(
-        req.user,
-        PermissionTypes.AGENTS,
-        [Permissions.CREATE],
-        bodyProps,
-        checkObject,
-      );
+      const req = { body: { id: 'agent123' } };
+      const result = await checkAccess({
+        req,
+        user: { id: 'user123', role: 'user' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.UPDATE],
+        bodyProps: {
+          [Permissions.UPDATE]: ['id'],
+        },
+        checkObject: req.body,
+        getRoleByName,
+      });
       expect(result).toBe(true);
     });
 
     test('should return false if role is not found', async () => {
-      req.user.role = 'nonexistent';
-      const result = await checkAccess(req.user, PermissionTypes.AGENTS, [Permissions.USE]);
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'user123', role: 'nonexistent' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
       expect(result).toBe(false);
     });
 
     test('should return false if role has no permissions for the requested type', async () => {
-      await Role.create({
-        name: 'limited',
-        permissions: {
-          // Explicitly set AGENTS permissions to false
-          [PermissionTypes.AGENTS]: {
-            [Permissions.USE]: false,
-            [Permissions.CREATE]: false,
-            [Permissions.SHARED_GLOBAL]: false,
-          },
-          // Has permissions for other types
-          [PermissionTypes.PROMPTS]: {
-            [Permissions.USE]: true,
-          },
-        },
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'user123', role: 'limited' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
       });
-      req.user.role = 'limited';
-
-      const result = await checkAccess(req.user, PermissionTypes.AGENTS, [Permissions.USE]);
       expect(result).toBe(false);
     });
 
     test('should handle admin role with all permissions', async () => {
-      req.user.role = 'admin';
-
-      const createResult = await checkAccess(req.user, PermissionTypes.AGENTS, [
-        Permissions.CREATE,
-      ]);
+      const createResult = await checkAccess({
+        req: {},
+        user: { id: 'admin123', role: 'admin' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE],
+        getRoleByName,
+      });
       expect(createResult).toBe(true);
 
-      const shareResult = await checkAccess(req.user, PermissionTypes.AGENTS, [
-        Permissions.SHARED_GLOBAL,
-      ]);
+      const shareResult = await checkAccess({
+        req: {},
+        user: { id: 'admin123', role: 'admin' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.SHARED_GLOBAL],
+        getRoleByName,
+      });
       expect(shareResult).toBe(true);
     });
   });
 
   describe('generateCheckAccess', () => {
     test('should call next() when user has required permission', async () => {
-      const middleware = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).toHaveBeenCalled();
@@ -160,7 +262,11 @@ describe('Access Middleware', () => {
     });
 
     test('should return 403 when user lacks permission', async () => {
-      const middleware = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.CREATE]);
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE],
+        getRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
@@ -175,11 +281,12 @@ describe('Access Middleware', () => {
         [Permissions.CREATE]: ['agentId'],
       };
 
-      const middleware = generateCheckAccess(
-        PermissionTypes.AGENTS,
-        [Permissions.CREATE],
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE],
         bodyProps,
-      );
+        getRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).toHaveBeenCalled();
@@ -187,10 +294,16 @@ describe('Access Middleware', () => {
     });
 
     test('should handle database errors gracefully', async () => {
-      // Create a user with an invalid role that will cause getRoleByName to fail
-      req.user.role = { invalid: 'object' }; // This will cause an error when querying
+      // Mock getRoleByName to throw an error
+      const mockGetRoleByName = jest
+        .fn()
+        .mockRejectedValue(new Error('Database connection failed'));
 
-      const middleware = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName: mockGetRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
@@ -203,11 +316,11 @@ describe('Access Middleware', () => {
     test('should work with multiple permission types', async () => {
       req.user.role = 'admin';
 
-      const middleware = generateCheckAccess(PermissionTypes.AGENTS, [
-        Permissions.USE,
-        Permissions.CREATE,
-        Permissions.SHARED_GLOBAL,
-      ]);
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARED_GLOBAL],
+        getRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).toHaveBeenCalled();
@@ -216,14 +329,16 @@ describe('Access Middleware', () => {
     test('should handle missing user gracefully', async () => {
       req.user = null;
 
-      const middleware = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        message: expect.stringContaining('Server error:'),
-      });
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Forbidden: Insufficient permissions' });
     });
 
     test('should handle role with no AGENTS permissions', async () => {
@@ -240,7 +355,11 @@ describe('Access Middleware', () => {
       });
       req.user.role = 'noaccess';
 
-      const middleware = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+      const middleware = generateCheckAccess({
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
       await middleware(req, res, next);
 
       expect(next).not.toHaveBeenCalled();

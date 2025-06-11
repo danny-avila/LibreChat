@@ -109,7 +109,6 @@ export type DeleteActionOptions = MutationOptions<void, DeleteActionVariables>;
 export type AgentAvatarVariables = {
   agent_id: string;
   formData: FormData;
-  postCreation?: boolean;
 };
 
 export type UpdateAgentActionVariables = {
