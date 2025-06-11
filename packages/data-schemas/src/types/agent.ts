@@ -23,6 +23,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   hide_sequential_outputs?: boolean;
   end_after_tools?: boolean;
   agent_ids?: string[];
+  /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
   conversation_starters?: string[];
   tool_resources?: unknown;

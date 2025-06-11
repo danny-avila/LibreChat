@@ -97,7 +97,13 @@ const Dropdown: React.FC<DropdownProps> = ({
       <Select.SelectPopover
         portal={portal}
         store={selectProps}
-        className={cn('popover-ui', sizeClasses, className, 'max-h-[80vh] overflow-y-auto')}
+        className={cn(
+          'popover-ui',
+          sizeClasses,
+          className,
+          'max-h-[80vh] overflow-y-auto',
+          '[pointer-events:auto]', // Override body's pointer-events:none when in modal
+        )}
       >
         {options.map((item, index) => {
           if (isDivider(item)) {

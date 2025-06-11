@@ -4,14 +4,12 @@ const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
-const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
   addAgentIdsToProject,
   removeAgentIdsFromProject,
   removeAgentFromAllProjects,
 } = require('./Project');
-const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -122,29 +120,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   }
 
   agent.version = agent.versions ? agent.versions.length : 0;
-
-  if (agent.author.toString() === req.user.id) {
-    return agent;
-  }
-
-  if (!agent.projectIds) {
-    return null;
-  }
-
-  const cache = getLogStores(CONFIG_STORE);
-  /** @type {TStartupConfig} */
-  const cachedStartupConfig = await cache.get(STARTUP_CONFIG);
-  let { instanceProjectId } = cachedStartupConfig ?? {};
-  if (!instanceProjectId) {
-    instanceProjectId = (await getProjectByName(GLOBAL_PROJECT_NAME, '_id'))._id.toString();
-  }
-
-  for (const projectObjectId of agent.projectIds) {
-    const projectId = projectObjectId.toString();
-    if (projectId === instanceProjectId) {
-      return agent;
-    }
-  }
+  return agent;
 };
 
 /**
@@ -459,7 +435,62 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
+ * Get agents by accessible IDs (combines ownership and ACL permissions).
+ * @param {Object} params - The parameters for getting accessible agents.
+ * @param {string} params.userId - The user ID to get agents for.
+ * @param {Array} [params.accessibleIds] - Array of agent ObjectIds the user has ACL access to.
+ * @param {Object} [params.otherParams] - Additional query parameters.
+ * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
+ */
+const getListAgentsByAccess = async ({ userId, accessibleIds = [], otherParams = {} }) => {
+  // Build query for owned agents and ACL accessible agents
+  const queries = [
+    // Agents where user is author (owned)
+    { author: userId, ...otherParams },
+  ];
+
+  // Add ACL accessible agents if any
+  if (accessibleIds.length > 0) {
+    queries.push({ _id: { $in: accessibleIds }, ...otherParams });
+  }
+
+  const query = queries.length > 1 ? { $or: queries } : queries[0];
+
+  const agents = (
+    await Agent.find(query, {
+      id: 1,
+      _id: 1,
+      name: 1,
+      avatar: 1,
+      author: 1,
+      projectIds: 1,
+      description: 1,
+    }).lean()
+  ).map((agent) => {
+    if (agent.author?.toString() !== userId) {
+      delete agent.author;
+    }
+    if (agent.author) {
+      agent.author = agent.author.toString();
+    }
+    return agent;
+  });
+
+  const hasMore = agents.length > 0;
+  const firstId = agents.length > 0 ? agents[0].id : null;
+  const lastId = agents.length > 0 ? agents[agents.length - 1].id : null;
+
+  return {
+    data: agents,
+    has_more: hasMore,
+    first_id: firstId,
+    last_id: lastId,
+  };
+};
+
+/**
  * Get all agents.
+ * @deprecated Use getListAgentsByAccess for ACL-aware agent listing
  * @param {Object} searchParameter - The search parameters to find matching agents.
  * @param {string} searchParameter.author - The user ID of the agent's author.
  * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
@@ -478,12 +509,13 @@ const getListAgents = async (searchParameter) => {
   const agents = (
     await Agent.find(query, {
       id: 1,
-      _id: 0,
+      _id: 1,
       name: 1,
       avatar: 1,
       author: 1,
       projectIds: 1,
       description: 1,
+      // @deprecated - isCollaborative replaced by ACL permissions
       isCollaborative: 1,
     }).lean()
   ).map((agent) => {
@@ -664,6 +696,7 @@ module.exports = {
   revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
+  getListAgentsByAccess,
   removeAgentResourceFiles,
   generateActionMetadataHash,
 };
