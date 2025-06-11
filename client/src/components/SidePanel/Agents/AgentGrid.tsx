@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { Button, Spinner } from '@librechat/client';
+import { PERMISSION_BITS } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
-import { useDynamicAgentQuery, useAgentCategories } from '~/hooks/Agents';
-import { SmartLoader, useHasData } from './SmartLoader';
+import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
+import { useAgentCategories } from '~/hooks/Agents';
 import useLocalize from '~/hooks/useLocalize';
+import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
 import { cn } from '~/utils';
@@ -14,45 +16,68 @@ interface AgentGridProps {
   onSelectAgent: (agent: t.Agent) => void; // Callback when agent is selected
 }
 
-// Interface for the actual data structure returned by the API
-interface AgentGridData {
-  agents: t.Agent[];
-  pagination?: {
-    hasMore: boolean;
-    current: number;
-    total: number;
-  };
-}
-
 /**
  * Component for displaying a grid of agent cards
  */
 const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAgent }) => {
   const localize = useLocalize();
-  const [page, setPage] = useState(1);
 
   // Get category data from API
   const { categories } = useAgentCategories();
 
-  // Single dynamic query that handles all cases - much cleaner!
+  // Build query parameters based on current state
+  const queryParams = useMemo(() => {
+    const params: {
+      requiredPermission: number;
+      category?: string;
+      search?: string;
+      limit: number;
+      promoted?: 0 | 1;
+    } = {
+      requiredPermission: PERMISSION_BITS.VIEW, // View permission for marketplace viewing
+      limit: 6,
+    };
+
+    // Handle search
+    if (searchQuery) {
+      params.search = searchQuery;
+      // Include category filter for search if it's not 'all' or 'promoted'
+      if (category !== 'all' && category !== 'promoted') {
+        params.category = category;
+      }
+    } else {
+      // Handle category-based queries
+      if (category === 'promoted') {
+        params.promoted = 1;
+      } else if (category !== 'all') {
+        params.category = category;
+      }
+      // For 'all' category, no additional filters needed
+    }
+
+    return params;
+  }, [category, searchQuery]);
+
+  // Use infinite query for marketplace agents
   const {
-    data: rawData,
+    data,
     isLoading,
     error,
     isFetching,
+    fetchNextPage,
+    hasNextPage,
     refetch,
-  } = useDynamicAgentQuery({
-    category,
-    searchQuery,
-    page,
-    limit: 6,
-  });
+    isFetchingNextPage,
+  } = useMarketplaceAgentsInfiniteQuery(queryParams);
 
-  // Type the data properly
-  const data = rawData as AgentGridData | undefined;
+  // Flatten all pages into a single array of agents
+  const currentAgents = useMemo(() => {
+    if (!data?.pages) return [];
+    return data.pages.flatMap((page) => page.data || []);
+  }, [data?.pages]);
 
   // Check if we have meaningful data to prevent unnecessary loading states
-  const hasData = useHasData(data);
+  const hasData = useHasData(data?.pages?.[0]);
 
   /**
    * Get category display name from API data or use fallback
@@ -79,15 +104,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
    * Load more agents when "See More" button is clicked
    */
   const handleLoadMore = () => {
-    setPage((prevPage) => prevPage + 1);
+    if (hasNextPage && !isFetching) {
+      fetchNextPage();
+    }
   };
-
-  /**
-   * Reset page when category or search changes
-   */
-  React.useEffect(() => {
-    setPage(1);
-  }, [category, searchQuery]);
 
   /**
    * Get the appropriate title for the agents grid based on current state
@@ -160,7 +180,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
           <h2
             className="text-xl font-bold text-gray-900 dark:text-white"
             id={`category-heading-${category}`}
-            aria-label={`${getGridTitle()}, ${data?.agents?.length || 0} agents available`}
+            aria-label={`${getGridTitle()}, ${currentAgents.length || 0} agents available`}
           >
             {getGridTitle()}
           </h2>
@@ -168,7 +188,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
       )}
 
       {/* Handle empty results with enhanced accessibility */}
-      {(!data?.agents || data.agents.length === 0) && !isLoading && !isFetching ? (
+      {(!currentAgents || currentAgents.length === 0) && !isLoading && !isFetching ? (
         <div
           className="py-12 text-center text-gray-500"
           role="status"
@@ -195,22 +215,22 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
           {/* Announcement for screen readers */}
           <div id="search-results-count" className="sr-only" aria-live="polite" aria-atomic="true">
             {localize('com_agents_grid_announcement', {
-              count: data?.agents?.length || 0,
+              count: currentAgents?.length || 0,
               category: getCategoryDisplayName(category),
             })}
           </div>
 
           {/* Agent grid - 2 per row with proper semantic structure */}
-          {data?.agents && data.agents.length > 0 && (
+          {currentAgents && currentAgents.length > 0 && (
             <div
               className="grid grid-cols-1 gap-6 md:grid-cols-2"
               role="grid"
               aria-label={localize('com_agents_grid_announcement', {
-                count: data.agents.length,
+                count: currentAgents.length,
                 category: getCategoryDisplayName(category),
               })}
             >
-              {data.agents.map((agent: t.Agent, index: number) => (
+              {currentAgents.map((agent: t.Agent, index: number) => (
                 <div key={`${agent.id}-${index}`} role="gridcell">
                   <AgentCard agent={agent} onClick={() => onSelectAgent(agent)} />
                 </div>
@@ -219,7 +239,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
           )}
 
           {/* Loading indicator when fetching more with accessibility */}
-          {isFetching && page > 1 && (
+          {isFetching && hasNextPage && (
             <div
               className="flex justify-center py-4"
               role="status"
@@ -232,7 +252,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
           )}
 
           {/* Load more button with enhanced accessibility */}
-          {data?.pagination?.hasMore && !isFetching && (
+          {hasNextPage && !isFetching && (
             <div className="mt-8 flex justify-center">
               <Button
                 variant="outline"
@@ -257,17 +277,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
     </div>
   );
 
-  // Use SmartLoader to prevent unnecessary loading flashes
-  return (
-    <SmartLoader
-      isLoading={isLoading}
-      hasData={hasData}
-      delay={200} // Show loading only after 200ms delay
-      loadingComponent={loadingSkeleton}
-    >
-      {mainContent}
-    </SmartLoader>
-  );
+  if (isLoading || (isFetching && !isFetchingNextPage)) {
+    return loadingSkeleton;
+  }
+  return mainContent;
 };
 
 export default AgentGrid;

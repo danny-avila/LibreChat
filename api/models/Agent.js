@@ -5,7 +5,6 @@ const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 // Default category value for new agents
-const AgentCategory = require('./AgentCategory');
 const {
   getProjectByName,
   addAgentIdsToProject,
@@ -15,80 +14,7 @@ const {
 const { getCachedTools } = require('~/server/services/Config');
 
 // Category values are now imported from shared constants
-
-// Add category field to the Agent schema if it doesn't already exist
-if (!agentSchema.paths.category) {
-  agentSchema.add({
-    category: {
-      type: String,
-      trim: true,
-      validate: {
-        validator: async function (value) {
-          if (!value) return true; // Allow empty values (will use default)
-
-          // Check if category exists in database
-          const validCategories = await AgentCategory.getValidCategoryValues();
-          return validCategories.includes(value);
-        },
-        message: function (props) {
-          return `"${props.value}" is not a valid agent category. Please check available categories.`;
-        },
-      },
-      index: true,
-      default: 'general',
-    },
-  });
-}
-
-// Add support_contact field to the Agent schema if it doesn't already exist
-if (!agentSchema.paths.support_contact) {
-  agentSchema.add({
-    support_contact: {
-      type: Object,
-      default: {},
-      name: {
-        type: String,
-        minlength: [3, 'Support contact name must be at least 3 characters.'],
-        trim: true,
-      },
-      email: {
-        type: String,
-        match: [
-          /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-          'Please enter a valid email address.',
-        ],
-        trim: true,
-      },
-    },
-  });
-}
-
-// Add promotion field to the Agent schema if it doesn't already exist
-if (!agentSchema.paths.is_promoted) {
-  agentSchema.add({
-    is_promoted: {
-      type: Boolean,
-      default: false,
-      index: true, // Index for efficient promoted agent queries
-    },
-  });
-}
-
-// Add additional indexes for marketplace functionality
-agentSchema.index({ projectIds: 1, is_promoted: 1, updatedAt: -1 }); // Optimize promoted agents query
-agentSchema.index({ category: 1, projectIds: 1, updatedAt: -1 }); // Optimize category filtering
-agentSchema.index({ projectIds: 1, category: 1 }); // Optimize aggregation pipeline
-
-// Text indexes for search functionality
-agentSchema.index(
-  { name: 'text', description: 'text' },
-  {
-    weights: {
-      name: 3, // Name matches are 3x more important than description matches
-      description: 1,
-    },
-  },
-);
+// Schema fields (category, support_contact, is_promoted) are defined in @librechat/data-schemas
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -112,6 +38,7 @@ const createAgent = async (agentData) => {
     ],
     category: agentData.category || 'general',
   };
+
   return (await Agent.create(initialAgentData)).toObject();
 };
 
@@ -257,54 +184,116 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
 
   let isMatch = true;
   for (const field of importantFields) {
-    if (!wouldBeVersion[field] && !lastVersion[field]) {
+    const wouldBeValue = wouldBeVersion[field];
+    const lastVersionValue = lastVersion[field];
+
+    // Skip if both are undefined/null
+    if (!wouldBeValue && !lastVersionValue) {
       continue;
     }
 
-    if (Array.isArray(wouldBeVersion[field]) && Array.isArray(lastVersion[field])) {
-      if (wouldBeVersion[field].length !== lastVersion[field].length) {
+    // Handle arrays
+    if (Array.isArray(wouldBeValue) || Array.isArray(lastVersionValue)) {
+      // Normalize: treat undefined/null as empty array for comparison
+      let wouldBeArr;
+      if (Array.isArray(wouldBeValue)) {
+        wouldBeArr = wouldBeValue;
+      } else if (wouldBeValue == null) {
+        wouldBeArr = [];
+      } else {
+        wouldBeArr = [wouldBeValue];
+      }
+
+      let lastVersionArr;
+      if (Array.isArray(lastVersionValue)) {
+        lastVersionArr = lastVersionValue;
+      } else if (lastVersionValue == null) {
+        lastVersionArr = [];
+      } else {
+        lastVersionArr = [lastVersionValue];
+      }
+
+      if (wouldBeArr.length !== lastVersionArr.length) {
         isMatch = false;
         break;
       }
 
       // Special handling for projectIds (MongoDB ObjectIds)
       if (field === 'projectIds') {
-        const wouldBeIds = wouldBeVersion[field].map((id) => id.toString()).sort();
-        const versionIds = lastVersion[field].map((id) => id.toString()).sort();
+        const wouldBeIds = wouldBeArr.map((id) => id.toString()).sort();
+        const versionIds = lastVersionArr.map((id) => id.toString()).sort();
 
         if (!wouldBeIds.every((id, i) => id === versionIds[i])) {
           isMatch = false;
           break;
         }
       }
-      // Handle arrays of objects like tool_kwargs
-      else if (typeof wouldBeVersion[field][0] === 'object' && wouldBeVersion[field][0] !== null) {
-        const sortedWouldBe = [...wouldBeVersion[field]].map((item) => JSON.stringify(item)).sort();
-        const sortedVersion = [...lastVersion[field]].map((item) => JSON.stringify(item)).sort();
+      // Handle arrays of objects
+      else if (
+        wouldBeArr.length > 0 &&
+        typeof wouldBeArr[0] === 'object' &&
+        wouldBeArr[0] !== null
+      ) {
+        const sortedWouldBe = [...wouldBeArr].map((item) => JSON.stringify(item)).sort();
+        const sortedVersion = [...lastVersionArr].map((item) => JSON.stringify(item)).sort();
 
         if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
           isMatch = false;
           break;
         }
       } else {
-        const sortedWouldBe = [...wouldBeVersion[field]].sort();
-        const sortedVersion = [...lastVersion[field]].sort();
+        const sortedWouldBe = [...wouldBeArr].sort();
+        const sortedVersion = [...lastVersionArr].sort();
 
         if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
           isMatch = false;
           break;
         }
       }
-    } else if (field === 'model_parameters') {
-      const wouldBeParams = wouldBeVersion[field] || {};
-      const lastVersionParams = lastVersion[field] || {};
-      if (JSON.stringify(wouldBeParams) !== JSON.stringify(lastVersionParams)) {
+    }
+    // Handle objects
+    else if (typeof wouldBeValue === 'object' && wouldBeValue !== null) {
+      const lastVersionObj =
+        typeof lastVersionValue === 'object' && lastVersionValue !== null ? lastVersionValue : {};
+
+      // For empty objects, normalize the comparison
+      const wouldBeKeys = Object.keys(wouldBeValue);
+      const lastVersionKeys = Object.keys(lastVersionObj);
+
+      // If both are empty objects, they're equal
+      if (wouldBeKeys.length === 0 && lastVersionKeys.length === 0) {
+        continue;
+      }
+
+      // Otherwise do a deep comparison
+      if (JSON.stringify(wouldBeValue) !== JSON.stringify(lastVersionObj)) {
         isMatch = false;
         break;
       }
-    } else if (wouldBeVersion[field] !== lastVersion[field]) {
-      isMatch = false;
-      break;
+    }
+    // Handle primitive values
+    else {
+      // For primitives, handle the case where one is undefined and the other is a default value
+      if (wouldBeValue !== lastVersionValue) {
+        // Special handling for boolean false vs undefined
+        if (
+          typeof wouldBeValue === 'boolean' &&
+          wouldBeValue === false &&
+          lastVersionValue === undefined
+        ) {
+          continue;
+        }
+        // Special handling for empty string vs undefined
+        if (
+          typeof wouldBeValue === 'string' &&
+          wouldBeValue === '' &&
+          lastVersionValue === undefined
+        ) {
+          continue;
+        }
+        isMatch = false;
+        break;
+      }
     }
   }
 
@@ -565,7 +554,7 @@ const getListAgentsByAccess = async ({
       const cursorCondition = {
         $or: [
           { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } },
+          { updatedAt: new Date(updatedAt), _id: { $gt: new mongoose.Types.ObjectId(_id) } },
         ],
       };
 
@@ -593,6 +582,9 @@ const getListAgentsByAccess = async ({
     projectIds: 1,
     description: 1,
     updatedAt: 1,
+    category: 1,
+    support_contact: 1,
+    is_promoted: 1,
   }).sort({ updatedAt: -1, _id: 1 });
 
   // Only apply limit if pagination is requested
@@ -827,6 +819,14 @@ const generateActionMetadataHash = async (actionIds, actions) => {
 
   return hashHex;
 };
+/**
+ * Counts the number of promoted agents.
+ * @returns  {Promise<number>} - The count of promoted agents
+ */
+const countPromotedAgents = async () => {
+  const count = await Agent.countDocuments({ is_promoted: true });
+  return count;
+};
 
 /**
  * Load a default agent based on the endpoint
@@ -847,4 +847,5 @@ module.exports = {
   getListAgentsByAccess,
   removeAgentResourceFiles,
   generateActionMetadataHash,
+  countPromotedAgents,
 };

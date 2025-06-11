@@ -1,17 +1,30 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AgentGrid from '../AgentGrid';
-import { useDynamicAgentQuery } from '~/hooks/Agents';
 import type t from 'librechat-data-provider';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// Mock the dynamic agent query hook
+// Mock the marketplace agent query hook
+jest.mock('~/data-provider/Agents', () => ({
+  useMarketplaceAgentsInfiniteQuery: jest.fn(),
+}));
+
 jest.mock('~/hooks/Agents', () => ({
-  useDynamicAgentQuery: jest.fn(),
+  useAgentCategories: jest.fn(() => ({
+    categories: [],
+    isLoading: false,
+    error: null,
+  })),
+}));
+
+// Mock SmartLoader
+jest.mock('../SmartLoader', () => ({
+  useHasData: jest.fn(() => true),
 }));
 
 // Mock useLocalize hook
-jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
+jest.mock('~/hooks/useLocalize', () => () => (key: string, options?: any) => {
   const mockTranslations: Record<string, string> = {
     com_agents_top_picks: 'Top Picks',
     com_agents_all: 'All Agents',
@@ -22,318 +35,342 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
     com_agents_error_searching: 'Error searching agents',
     com_agents_no_results: 'No agents found. Try another search term.',
     com_agents_none_in_category: 'No agents found in this category',
+    com_agents_search_empty_heading: 'No results found',
+    com_agents_empty_state_heading: 'No agents available',
+    com_agents_loading: 'Loading...',
+    com_agents_grid_announcement: '{{count}} agents in {{category}}',
+    com_agents_load_more_label: 'Load more agents from {{category}}',
   };
-  return mockTranslations[key] || key;
+
+  let translation = mockTranslations[key] || key;
+
+  if (options) {
+    Object.keys(options).forEach((optionKey) => {
+      translation = translation.replace(new RegExp(`{{${optionKey}}}`, 'g'), options[optionKey]);
+    });
+  }
+
+  return translation;
 });
 
-// Mock getCategoryDisplayName and getCategoryDescription
-jest.mock('~/utils/agents', () => ({
-  getCategoryDisplayName: (category: string) => {
-    const names: Record<string, string> = {
-      promoted: 'Top Picks',
-      all: 'All',
-      general: 'General',
-      hr: 'HR',
-      finance: 'Finance',
-    };
-    return names[category] || category;
-  },
-  getCategoryDescription: (category: string) => {
-    const descriptions: Record<string, string> = {
-      promoted: 'Our recommended agents',
-      all: 'Browse all available agents',
-      general: 'General purpose agents',
-      hr: 'HR agents',
-      finance: 'Finance agents',
-    };
-    return descriptions[category] || '';
-  },
+// Mock ErrorDisplay component
+jest.mock('../ErrorDisplay', () => ({
+  __esModule: true,
+  default: ({ error, onRetry }: { error: any; onRetry: () => void }) => (
+    <div>
+      <div>
+        {`Error: `}
+        {typeof error === 'string' ? error : error?.message || 'Unknown error'}
+      </div>
+      <button onClick={onRetry}>{`Retry`}</button>
+    </div>
+  ),
 }));
 
-const mockUseDynamicAgentQuery = useDynamicAgentQuery as jest.MockedFunction<
-  typeof useDynamicAgentQuery
->;
+// Mock AgentCard component
+jest.mock('../AgentCard', () => ({
+  __esModule: true,
+  default: ({ agent, onClick }: { agent: t.Agent; onClick: () => void }) => (
+    <div data-testid={`agent-card-${agent.id}`} onClick={onClick}>
+      <h3>{agent.name}</h3>
+      <p>{agent.description}</p>
+    </div>
+  ),
+}));
 
-describe('AgentGrid Integration with useDynamicAgentQuery', () => {
+// Import the actual modules to get the mocked functions
+import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
+
+const mockUseMarketplaceAgentsInfiniteQuery = jest.mocked(useMarketplaceAgentsInfiniteQuery);
+
+describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
   const mockOnSelectAgent = jest.fn();
 
-  const mockAgents: Partial<t.Agent>[] = [
+  const mockAgents: t.Agent[] = [
     {
       id: '1',
       name: 'Test Agent 1',
       description: 'First test agent',
-      avatar: '/avatar1.png',
+      avatar: { filepath: '/avatar1.png', source: 'local' },
+      category: 'finance',
+      authorName: 'Author 1',
+      created_at: 1672531200000,
+      instructions: null,
+      provider: 'custom',
+      model: 'gpt-4',
+      model_parameters: {
+        temperature: null,
+        maxContextTokens: null,
+        max_context_tokens: null,
+        max_output_tokens: null,
+        top_p: null,
+        frequency_penalty: null,
+        presence_penalty: null,
+      },
     },
     {
       id: '2',
       name: 'Test Agent 2',
       description: 'Second test agent',
-      avatar: { filepath: '/avatar2.png' },
+      avatar: { filepath: '/avatar2.png', source: 'local' },
+      category: 'finance',
+      authorName: 'Author 2',
+      created_at: 1672531200000,
+      instructions: null,
+      provider: 'custom',
+      model: 'gpt-4',
+      model_parameters: {
+        temperature: 0.7,
+        top_p: 0.9,
+        frequency_penalty: 0,
+        maxContextTokens: null,
+        max_context_tokens: null,
+        max_output_tokens: null,
+        presence_penalty: null,
+      },
     },
   ];
-
   const defaultMockQueryResult = {
     data: {
-      agents: mockAgents,
-      pagination: {
-        current: 1,
-        hasMore: true,
-        total: 10,
-      },
+      pages: [
+        {
+          data: mockAgents,
+        },
+      ],
     },
     isLoading: false,
     error: null,
     isFetching: false,
-    queryType: 'promoted' as const,
-  };
+    isFetchingNextPage: false,
+    hasNextPage: true,
+    fetchNextPage: jest.fn(),
+    refetch: jest.fn(),
+  } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseDynamicAgentQuery.mockReturnValue(defaultMockQueryResult);
+    mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue(defaultMockQueryResult);
   });
 
   describe('Query Integration', () => {
-    it('should call useDynamicAgentQuery with correct parameters', () => {
+    it('should call useGetMarketplaceAgentsQuery with correct parameters for category search', () => {
       render(
         <AgentGrid category="finance" searchQuery="test query" onSelectAgent={mockOnSelectAgent} />,
       );
 
-      expect(mockUseDynamicAgentQuery).toHaveBeenCalledWith({
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
         category: 'finance',
-        searchQuery: 'test query',
-        page: 1,
+        search: 'test query',
         limit: 6,
       });
     });
 
-    it('should update page when "See More" is clicked', async () => {
-      render(<AgentGrid category="hr" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
-
-      const seeMoreButton = screen.getByText('See more');
-      fireEvent.click(seeMoreButton);
-
-      await waitFor(() => {
-        expect(mockUseDynamicAgentQuery).toHaveBeenCalledWith({
-          category: 'hr',
-          searchQuery: '',
-          page: 2,
-          limit: 6,
-        });
-      });
-    });
-
-    it('should reset page when category changes', () => {
-      const { rerender } = render(
-        <AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />,
-      );
-
-      // Simulate clicking "See More" to increment page
-      const seeMoreButton = screen.getByText('See more');
-      fireEvent.click(seeMoreButton);
-
-      // Change category - should reset page to 1
-      rerender(<AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
-
-      expect(mockUseDynamicAgentQuery).toHaveBeenLastCalledWith({
-        category: 'finance',
-        searchQuery: '',
-        page: 1,
-        limit: 6,
-      });
-    });
-
-    it('should reset page when search query changes', () => {
-      const { rerender } = render(
-        <AgentGrid category="hr" searchQuery="" onSelectAgent={mockOnSelectAgent} />,
-      );
-
-      // Change search query - should reset page to 1
-      rerender(
-        <AgentGrid category="hr" searchQuery="new search" onSelectAgent={mockOnSelectAgent} />,
-      );
-
-      expect(mockUseDynamicAgentQuery).toHaveBeenLastCalledWith({
-        category: 'hr',
-        searchQuery: 'new search',
-        page: 1,
-        limit: 6,
-      });
-    });
-  });
-
-  describe('Different Query Types Display', () => {
-    it('should display correct title for promoted category', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        queryType: 'promoted',
-      });
-
+    it('should call useGetMarketplaceAgentsQuery with promoted=1 for promoted category', () => {
       render(<AgentGrid category="promoted" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
 
-      expect(screen.getByText('Top Picks')).toBeInTheDocument();
-      expect(screen.getByText('Our recommended agents')).toBeInTheDocument();
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        promoted: 1,
+        limit: 6,
+      });
     });
 
-    it('should display correct title for search results', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        queryType: 'search',
-      });
-
-      render(
-        <AgentGrid category="all" searchQuery="test search" onSelectAgent={mockOnSelectAgent} />,
-      );
-
-      expect(screen.getByText('Results for "test search"')).toBeInTheDocument();
-    });
-
-    it('should display correct title for specific category', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        queryType: 'category',
-      });
-
-      render(<AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
-
-      expect(screen.getByText('Finance')).toBeInTheDocument();
-      expect(screen.getByText('Finance agents')).toBeInTheDocument();
-    });
-
-    it('should display correct title for all category', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        queryType: 'all',
-      });
-
+    it('should call useGetMarketplaceAgentsQuery without category filter for "all" category', () => {
       render(<AgentGrid category="all" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
 
-      expect(screen.getByText('All')).toBeInTheDocument();
-      expect(screen.getByText('Browse all available agents')).toBeInTheDocument();
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        limit: 6,
+      });
+    });
+
+    it('should not include category in search when category is "all" or "promoted"', () => {
+      render(<AgentGrid category="all" searchQuery="test" onSelectAgent={mockOnSelectAgent} />);
+
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        search: 'test',
+        limit: 6,
+      });
     });
   });
 
-  describe('Loading and Error States', () => {
-    it('should show loading skeleton when isLoading is true and no data', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        data: undefined,
-        isLoading: true,
-      });
-
-      render(<AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
-
-      // Should show loading skeletons
-      const loadingElements = screen.getAllByRole('generic');
-      const hasLoadingClass = loadingElements.some((el) => el.className.includes('animate-pulse'));
-      expect(hasLoadingClass).toBe(true);
+  // Create wrapper with QueryClient
+  const createWrapper = () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
     });
 
-    it('should show error message when there is an error', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        data: undefined,
-        error: new Error('Test error'),
-      });
+    return ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+  };
 
-      render(<AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
+  describe('Agent Display', () => {
+    it('should render agent cards when data is available', () => {
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
 
-      expect(screen.getByText('Error loading agents')).toBeInTheDocument();
-    });
-
-    it('should show loading spinner when fetching more data', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
-        ...defaultMockQueryResult,
-        isFetching: true,
-      });
-
-      render(<AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
-
-      // Should show agents and loading spinner for pagination
+      expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
       expect(screen.getByText('Test Agent 1')).toBeInTheDocument();
       expect(screen.getByText('Test Agent 2')).toBeInTheDocument();
     });
-  });
 
-  describe('Agent Interaction', () => {
     it('should call onSelectAgent when agent card is clicked', () => {
-      render(<AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
 
-      const agentCard = screen.getByLabelText('Test Agent 1 agent card');
-      fireEvent.click(agentCard);
-
+      fireEvent.click(screen.getByTestId('agent-card-1'));
       expect(mockOnSelectAgent).toHaveBeenCalledWith(mockAgents[0]);
     });
   });
 
-  describe('Pagination', () => {
-    it('should show "See More" button when hasMore is true', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
+  describe('Loading States', () => {
+    it('should show loading state when isLoading is true', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         ...defaultMockQueryResult,
-        data: {
-          agents: mockAgents,
-          pagination: {
-            current: 1,
-            hasMore: true,
-            total: 10,
-          },
-        },
+        isLoading: true,
+        data: undefined,
       });
 
-      render(<AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
 
-      expect(screen.getByText('See more')).toBeInTheDocument();
+      // Should show skeleton loading state
+      expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
     });
 
-    it('should not show "See More" button when hasMore is false', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
+    it('should show empty state when no agents are available', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         ...defaultMockQueryResult,
         data: {
-          agents: mockAgents,
-          pagination: {
-            current: 1,
-            hasMore: false,
-            total: 2,
-          },
+          pages: [
+            {
+              data: [],
+            },
+          ],
         },
       });
 
-      render(<AgentGrid category="general" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
 
-      expect(screen.queryByText('See more')).not.toBeInTheDocument();
+      expect(screen.getByText('No agents available')).toBeInTheDocument();
     });
   });
 
-  describe('Empty States', () => {
-    it('should show empty state for search results', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
+  describe('Error Handling', () => {
+    it('should show error display when query has error', () => {
+      const mockError = new Error('Failed to fetch agents');
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         ...defaultMockQueryResult,
-        data: {
-          agents: [],
-          pagination: { current: 1, hasMore: false, total: 0 },
-        },
-        queryType: 'search',
+        error: mockError,
+        isError: true,
+        data: undefined,
       });
 
+      const Wrapper = createWrapper();
       render(
-        <AgentGrid category="all" searchQuery="no results" onSelectAgent={mockOnSelectAgent} />,
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
       );
 
-      expect(screen.getByText('No agents found. Try another search term.')).toBeInTheDocument();
+      expect(screen.getByText('Error: Failed to fetch agents')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+  });
+
+  describe('Search Results', () => {
+    it('should show search results title when searching', () => {
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid
+            category="finance"
+            searchQuery="automation"
+            onSelectAgent={mockOnSelectAgent}
+          />
+        </Wrapper>,
+      );
+
+      expect(screen.getByText('Results for "automation"')).toBeInTheDocument();
     });
 
-    it('should show empty state for category with no agents', () => {
-      mockUseDynamicAgentQuery.mockReturnValue({
+    it('should show empty search results message', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         ...defaultMockQueryResult,
         data: {
-          agents: [],
-          pagination: { current: 1, hasMore: false, total: 0 },
+          pages: [
+            {
+              data: [],
+            },
+          ],
         },
-        queryType: 'category',
       });
 
-      render(<AgentGrid category="hr" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid
+            category="finance"
+            searchQuery="nonexistent"
+            onSelectAgent={mockOnSelectAgent}
+          />
+        </Wrapper>,
+      );
 
-      expect(screen.getByText('No agents found in this category')).toBeInTheDocument();
+      expect(screen.getByText('No results found')).toBeInTheDocument();
+      expect(screen.getByText('No agents found. Try another search term.')).toBeInTheDocument();
+    });
+  });
+
+  describe('Load More Functionality', () => {
+    it('should show "See more" button when hasNextPage is true', () => {
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
+
+      expect(
+        screen.getByRole('button', { name: 'Load more agents from Finance' }),
+      ).toBeInTheDocument();
+    });
+
+    it('should not show "See more" button when hasNextPage is false', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        ...defaultMockQueryResult,
+        hasNextPage: false,
+      });
+
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
+
+      expect(screen.queryByRole('button', { name: /Load more agents/ })).not.toBeInTheDocument();
     });
   });
 });

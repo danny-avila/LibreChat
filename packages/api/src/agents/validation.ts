@@ -27,6 +27,14 @@ export const agentToolResourcesSchema = z
   })
   .optional();
 
+/** Support contact schema for agent */
+export const agentSupportContactSchema = z
+  .object({
+    name: z.string().optional(),
+    email: z.union([z.literal(''), z.string().email()]).optional(),
+  })
+  .optional();
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -42,6 +50,8 @@ export const agentBaseSchema = z.object({
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),
   tool_resources: agentToolResourcesSchema,
+  support_contact: agentSupportContactSchema,
+  category: z.string().optional(),
 });
 
 /** Create schema extends base with required fields for creation */

@@ -17,6 +17,8 @@ const {
   updateAgent,
   deleteAgent,
   getListAgentsByAccess,
+  countPromotedAgents,
+  revertAgentVersion,
 } = require('~/models/Agent');
 const {
   grantPermission,
@@ -30,8 +32,8 @@ const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
-const { revertAgentVersion } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
+const { getCategoriesWithCounts } = require('~/models');
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -45,7 +47,7 @@ const systemTools = {
  * @param {ServerRequest} req - The request object.
  * @param {AgentCreateParams} req.body - The request body.
  * @param {ServerResponse} res - The response object.
- * @returns {Agent} 201 - success response - application/json
+ * @returns {Promise<Agent>} 201 - success response - application/json
  */
 const createAgentHandler = async (req, res) => {
   try {
@@ -399,12 +401,43 @@ const deleteAgentHandler = async (req, res) => {
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { category, search, limit, cursor, promoted } = req.query;
+    let requiredPermission = req.query.requiredPermission;
+    if (typeof requiredPermission === 'string') {
+      requiredPermission = parseInt(requiredPermission, 10);
+      if (isNaN(requiredPermission)) {
+        requiredPermission = PermissionBits.VIEW;
+      }
+    } else if (typeof requiredPermission !== 'number') {
+      requiredPermission = PermissionBits.VIEW;
+    }
+    // Base filter
+    const filter = {};
 
+    // Handle category filter - only apply if category is defined
+    if (category !== undefined && category.trim() !== '') {
+      filter.category = category;
+    }
+
+    // Handle promoted filter - only from query param
+    if (promoted === '1') {
+      filter.is_promoted = true;
+    } else if (promoted === '0') {
+      filter.is_promoted = { $ne: true };
+    }
+
+    // Handle search filter
+    if (search && search.trim() !== '') {
+      filter.$or = [
+        { name: { $regex: search.trim(), $options: 'i' } },
+        { description: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
       resourceType: 'agent',
-      requiredPermissions: PermissionBits.VIEW,
+      requiredPermissions: requiredPermission,
     });
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: 'agent',
@@ -413,7 +446,9 @@ const getListAgentsHandler = async (req, res) => {
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
       accessibleIds,
-      otherParams: {}, // Can add query params here if needed
+      otherParams: filter,
+      limit,
+      after: cursor,
     });
     if (data?.data?.length) {
       data.data = data.data.map((agent) => {
@@ -589,7 +624,48 @@ const revertAgentVersionHandler = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+/**
+ * Get all agent categories with counts
+ *
+ * @param {Object} _req - Express request object (unused)
+ * @param {Object} res - Express response object
+ */
+const getAgentCategories = async (_req, res) => {
+  try {
+    const categories = await getCategoriesWithCounts();
+    const promotedCount = await countPromotedAgents();
+    const formattedCategories = categories.map((category) => ({
+      value: category.value,
+      label: category.label,
+      count: category.agentCount,
+      description: category.description,
+    }));
 
+    if (promotedCount > 0) {
+      formattedCategories.unshift({
+        value: 'promoted',
+        label: 'Promoted',
+        count: promotedCount,
+        description: 'Our recommended agents',
+      });
+    }
+
+    formattedCategories.push({
+      value: 'all',
+      label: 'All',
+      description: 'All available agents',
+    });
+
+    res.status(200).json(formattedCategories);
+  } catch (error) {
+    logger.error('[/Agents/Marketplace] Error fetching agent categories:', error);
+    res.status(500).json({
+      error: 'Failed to fetch agent categories',
+      userMessage: 'Unable to load categories. Please refresh the page.',
+      suggestion: 'Try refreshing the page or check your network connection',
+    });
+  }
+};
 module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
@@ -599,4 +675,5 @@ module.exports = {
   getListAgents: getListAgentsHandler,
   uploadAgentAvatar: uploadAgentAvatarHandler,
   revertAgentVersion: revertAgentVersionHandler,
+  getAgentCategories,
 };

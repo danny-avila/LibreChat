@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ACCESS_ROLE_IDS } from 'librechat-data-provider';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ACCESS_ROLE_IDS, PermissionTypes } from 'librechat-data-provider';
 import { Share2Icon, Users, Loader, Shield, Link, CopyCheck } from 'lucide-react';
 import {
   useGetResourcePermissionsQuery,
@@ -15,8 +15,8 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TPrincipal } from 'librechat-data-provider';
+import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
 import ManagePermissionsDialog from './ManagePermissionsDialog';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
 import PublicSharingToggle from './PublicSharingToggle';
 import PeoplePicker from './PeoplePicker/PeoplePicker';
 import AccessRolesPicker from './AccessRolesPicker';
@@ -37,6 +37,29 @@ export default function GrantAccessDialog({
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+
+  // Check if user has permission to access people picker
+  const canViewUsers = useHasAccess({
+    permissionType: PermissionTypes.PEOPLE_PICKER,
+    permission: Permissions.VIEW_USERS,
+  });
+  const canViewGroups = useHasAccess({
+    permissionType: PermissionTypes.PEOPLE_PICKER,
+    permission: Permissions.VIEW_GROUPS,
+  });
+  const hasPeoplePickerAccess = canViewUsers || canViewGroups;
+
+  // Determine type filter based on permissions
+  const peoplePickerTypeFilter = useMemo(() => {
+    if (canViewUsers && canViewGroups) {
+      return null; // Both types allowed
+    } else if (canViewUsers) {
+      return 'user' as const;
+    } else if (canViewGroups) {
+      return 'group' as const;
+    }
+    return null;
+  }, [canViewUsers, canViewGroups]);
 
   const {
     data: permissionsData,
@@ -177,26 +200,31 @@ export default function GrantAccessDialog({
         </OGDialogTitle>
 
         <div className="space-y-6 p-2">
-          <PeoplePicker
-            onSelectionChange={setNewShares}
-            placeholder={localize('com_ui_search_people_placeholder')}
-          />
+          {hasPeoplePickerAccess && (
+            <>
+              <PeoplePicker
+                onSelectionChange={setNewShares}
+                placeholder={localize('com_ui_search_people_placeholder')}
+                typeFilter={peoplePickerTypeFilter}
+              />
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-text-secondary" />
-                <label className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_permission_level')}
-                </label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-text-secondary" />
+                    <label className="text-sm font-medium text-text-primary">
+                      {localize('com_ui_permission_level')}
+                    </label>
+                  </div>
+                </div>
+                <AccessRolesPicker
+                  resourceType={resourceType}
+                  selectedRoleId={defaultPermissionId}
+                  onRoleChange={setDefaultPermissionId}
+                />
               </div>
-            </div>
-            <AccessRolesPicker
-              resourceType={resourceType}
-              selectedRoleId={defaultPermissionId}
-              onRoleChange={setDefaultPermissionId}
-            />
-          </div>
+            </>
+          )}
           <PublicSharingToggle
             isPublic={isPublic}
             publicRole={publicRole}
@@ -206,11 +234,13 @@ export default function GrantAccessDialog({
           />
           <div className="flex justify-between border-t pt-4">
             <div className="flex gap-2">
-              <ManagePermissionsDialog
-                agentDbId={agentDbId}
-                agentName={agentName}
-                resourceType={resourceType}
-              />
+              {hasPeoplePickerAccess && (
+                <ManagePermissionsDialog
+                  agentDbId={agentDbId}
+                  agentName={agentName}
+                  resourceType={resourceType}
+                />
+              )}
               {agentId && (
                 <Button
                   variant="outline"

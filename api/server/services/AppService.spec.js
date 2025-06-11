@@ -29,6 +29,7 @@ jest.mock('./Files/Firebase/initialize', () => ({
 jest.mock('~/models', () => ({
   initializeRoles: jest.fn(),
   seedDefaultRoles: jest.fn(),
+  ensureDefaultCategories: jest.fn(),
 }));
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),

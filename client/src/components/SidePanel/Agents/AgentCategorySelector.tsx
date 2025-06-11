@@ -10,6 +10,7 @@ import {
   ControllerRenderProps,
 } from 'react-hook-form';
 import { useAgentCategories } from '~/hooks/Agents';
+import { cn } from '~/utils';
 
 /**
  * Custom hook to handle category synchronization
@@ -18,7 +19,9 @@ const useCategorySync = (agent_id: string | null) => {
   const [handled, setHandled] = useState(false);
 
   return {
-    syncCategory: (field: ControllerRenderProps<FieldValues, FieldPath<FieldValues>>) => {
+    syncCategory: <T extends FieldPath<FieldValues>>(
+      field: ControllerRenderProps<FieldValues, T>,
+    ) => {
       // Only run once and only for new agents
       if (!handled && agent_id === '' && !field.value) {
         field.onChange('general');
@@ -31,7 +34,7 @@ const useCategorySync = (agent_id: string | null) => {
 /**
  * A component for selecting agent categories with form validation
  */
-const AgentCategorySelector: React.FC = () => {
+const AgentCategorySelector: React.FC<{ className?: string }> = ({ className }) => {
   const { t } = useTranslation();
   const formContext = useFormContext();
   const { categories } = useAgentCategories();
@@ -79,7 +82,7 @@ const AgentCategorySelector: React.FC = () => {
               field.onChange(value);
             }}
             items={comboboxItems}
-            className=""
+            className={cn(className)}
             ariaLabel={ariaLabel}
             isCollapsed={false}
             showCarat={true}

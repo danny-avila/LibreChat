@@ -35,6 +35,13 @@ export interface IRole extends Document {
     [PermissionTypes.WEB_SEARCH]?: {
       [Permissions.USE]?: boolean;
     };
+    [PermissionTypes.PEOPLE_PICKER]?: {
+      [Permissions.VIEW_USERS]?: boolean;
+      [Permissions.VIEW_GROUPS]?: boolean;
+    };
+    [PermissionTypes.MARKETPLACE]?: {
+      [Permissions.USE]?: boolean;
+    };
     [PermissionTypes.FILE_SEARCH]?: {
       [Permissions.USE]?: boolean;
     };
