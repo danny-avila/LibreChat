@@ -10,12 +10,14 @@ interface PeoplePickerProps {
   onSelectionChange: (principals: TPrincipal[]) => void;
   placeholder?: string;
   className?: string;
+  typeFilter?: 'user' | 'group' | null;
 }
 
 export default function PeoplePicker({
   onSelectionChange,
   placeholder,
   className = '',
+  typeFilter = null,
 }: PeoplePickerProps) {
   const localize = useLocalize();
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,8 +27,9 @@ export default function PeoplePicker({
     () => ({
       q: searchQuery,
       limit: 30,
+      ...(typeFilter && { type: typeFilter }),
     }),
-    [searchQuery],
+    [searchQuery, typeFilter],
   );
 
   const {

@@ -2,7 +2,6 @@ const {
   CacheKeys,
   SystemRoles,
   roleDefaults,
-  PermissionTypes,
   permissionsSchema,
   removeNullishValues,
 } = require('librechat-data-provider');

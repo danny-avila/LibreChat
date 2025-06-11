@@ -3,6 +3,7 @@ const axios = require('axios');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { Tools, EToolResources } = require('librechat-data-provider');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { getFiles } = require('~/models/File');
 
@@ -22,14 +23,19 @@ const primeFiles = async (options) => {
   const file_ids = tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.file_search]?.files ?? [];
-  const dbFiles = (
-    (await getFiles(
-      { file_id: { $in: file_ids } },
-      null,
-      { text: 0 },
-      { userId: req?.user?.id, agentId },
-    )) ?? []
-  ).concat(resourceFiles);
+
+  // Get all files first
+  const allFiles = (await getFiles({ file_id: { $in: file_ids } }, null, { text: 0 })) ?? [];
+
+  // Filter by access if user and agent are provided
+  let dbFiles;
+  if (req?.user?.id && agentId) {
+    dbFiles = await filterFilesByAgentAccess(allFiles, req.user.id, agentId);
+  } else {
+    dbFiles = allFiles;
+  }
+
+  dbFiles = dbFiles.concat(resourceFiles);
 
   let toolContext = `- Note: Semantic search is available through the ${Tools.file_search} tool but no files are currently loaded. Request the user to upload documents to search through.`;
 
