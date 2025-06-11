@@ -8,7 +8,6 @@ process.env.CREDS_IV = '0123456789abcdef';
 
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   getAgent,
@@ -23,11 +22,7 @@ const {
   generateActionMetadataHash,
   revertAgentVersion,
 } = require('./Agent');
-
-/**
- * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
- */
-let Agent;
+const { Agent } = require('~/db/models');
 
 describe('models/Agent', () => {
   describe('Agent Resource File Operations', () => {
@@ -36,7 +31,6 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -662,7 +656,6 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -1324,7 +1317,6 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -1506,7 +1498,6 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -1800,7 +1791,6 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -2355,7 +2345,6 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
