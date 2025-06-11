@@ -19,8 +19,13 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
       - name: Install locize CLI
-        run: npm install -g locize-cli
+        run: pnpm add -g locize-cli
 
       # Sync translations (Push missing keys & remove deleted ones)
       - name: Sync Locize with Repository

@@ -2,7 +2,7 @@ name: Frontend Unit Tests
 
 on:
   pull_request:
-    branches: 
+    branches:
       - main
       - dev
       - release/*
@@ -21,16 +21,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Client
-        run: npm run frontend:ci
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm -w run frontend:ci
 
       - name: Run unit tests
-        run: npm run test:ci --verbose
+        run: pnpm run test:ci --verbose
         working-directory: client
 
   tests_frontend_windows:
@@ -43,14 +49,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Client
-        run: npm run frontend:ci
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm -w run frontend:ci
 
       - name: Run unit tests
-        run: npm run test:ci --verbose
+        run: pnpm run test:ci --verbose
         working-directory: client

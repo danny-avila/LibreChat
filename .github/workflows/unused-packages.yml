@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - 'package.json'
-      - 'package-lock.json'
+      - 'pnpm-lock.yaml'
       - 'client/**'
       - 'api/**'
 
@@ -21,10 +21,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
 
       - name: Install depcheck
-        run: npm install -g depcheck
+        run: pnpm add -g depcheck
 
       - name: Validate JSON files
         run: |
@@ -65,10 +69,10 @@ jobs:
             if [[ -d "$folder" ]]; then
               grep -rEho "require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)" "$folder" --include=\*.{js,ts,mjs,cjs} | \
                 sed -E "s/require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)/\1/" > "$output_file"
-          
+
               grep -rEho "import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{js,ts,mjs,cjs} | \
                 sed -E "s/import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file"
-          
+
               sort -u "$output_file" -o "$output_file"
             else
               touch "$output_file"

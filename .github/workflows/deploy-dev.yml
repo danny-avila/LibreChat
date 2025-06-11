@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.repository == 'danny-avila/LibreChat' &&
-      (github.event_name == 'workflow_dispatch' || 
+      (github.event_name == 'workflow_dispatch' ||
        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'dev'))
     steps:
     - name: Checkout repository
@@ -33,14 +33,14 @@ jobs:
         sudo -i -u danny bash << 'EEOF'
         cd ~/LibreChat && \
         git fetch origin main && \
-        sudo npm run stop:deployed && \
+        sudo pnpm -w run stop:deployed && \
         sudo docker images --format "{{.Repository}}:{{.ID}}" | grep -E "lc-dev|librechat" | cut -d: -f2 | xargs -r sudo docker rmi -f || true && \
-        sudo npm run update:deployed && \
+        sudo pnpm -w run update:deployed && \
         git checkout dev && \
         git pull origin dev && \
         git checkout do-deploy && \
         git rebase dev && \
-        sudo npm run start:deployed && \
+        sudo pnpm -w run start:deployed && \
         echo "Update completed. Application should be running now."
         EEOF
         EOF

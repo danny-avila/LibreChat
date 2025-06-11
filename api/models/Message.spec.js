@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { v4: uuidv4 } = require('uuid');
-const { messageSchema } = require('@librechat/data-schemas');
+
+// Need to unmock for this test to use real models
+jest.unmock('@librechat/data-schemas');
+jest.unmock('~/db/models');
+
+const { createModels } = require('@librechat/data-schemas');
 
 const {
   saveMessage,
@@ -12,9 +17,6 @@ const {
   deleteMessagesSince,
 } = require('./Message');
 
-/**
- * @type {import('mongoose').Model<import('@librechat/data-schemas').IMessage>}
- */
 let Message;
 
 describe('Message Operations', () => {
@@ -25,8 +27,14 @@ describe('Message Operations', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
-    Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
     await mongoose.connect(mongoUri);
+    
+    // Create models after connection
+    const models = createModels(mongoose);
+    Message = models.Message;
+    
+    // Mock the db/models module to return our models
+    jest.doMock('~/db/models', () => models);
   });
 
   afterAll(async () => {

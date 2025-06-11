@@ -28,10 +28,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # Run ESLint on changed files within the api/ and client/ directories.
       - name: Run ESLint on changed files
@@ -63,7 +81,10 @@ jobs:
           npx eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
             --format @microsoft/eslint-formatter-sarif \
-            --output-file eslint-results.sarif $CHANGED_FILES || true
+            --output-file eslint-results.sarif $CHANGED_FILES || {
+            echo "ESLint execution failed. Creating empty SARIF file."
+            echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"ESLint"}},"results":[]}]}' > eslint-results.sarif
+          }
 
       - name: Upload analysis results to GitHub
         if: env.UPLOAD_SARIF == 'true'

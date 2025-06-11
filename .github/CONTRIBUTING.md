@@ -27,35 +27,36 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 ## 1. Development Setup
 
 1. Use Node.JS 20.x.
-2. Install typescript globally: `npm i -g typescript`.
-3. Run `npm ci` to install dependencies.
-4. Build the data provider: `npm run build:data-provider`.
-5. Build data schemas: `npm run build:data-schemas`.
-6. Build API methods: `npm run build:api`.
-7. Setup and run unit tests:
+2. Install pnpm globally: `npm install -g pnpm`.
+3. Install typescript globally: `pnpm add -g typescript`.
+4. Run `pnpm install` to install dependencies.
+5. Build the data provider: `pnpm run build:data-provider`.
+6. Build MCP: `pnpm run build:mcp`.
+7. Build data schemas: `pnpm run build:data-schemas`.
+8. Setup and run unit tests:
     - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
-    - Run backend unit tests: `npm run test:api`.
-    - Run frontend unit tests: `npm run test:client`.
-8. Setup and run integration tests:
-    - Build client: `cd client && npm run build`.
+    - Run backend unit tests: `pnpm run test:api`.
+    - Run frontend unit tests: `pnpm run test:client`.
+9. Setup and run integration tests:
+    - Build client: `cd client && pnpm run build`.
     - Create `.env`: `cp .env.example .env`.
     - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance.
-    - Run: `npx install playwright`, then `npx playwright install`.
+    - Run: `pnpm dlx playwright install`.
     - Copy `config.local`: `cp e2e/config.local.example.ts e2e/config.local.ts`.
     - Copy `librechat.yaml`: `cp librechat.example.yaml librechat.yaml`.
-    - Run: `npm run e2e`.
+    - Run: `pnpm run e2e`.
 
 ## 2. Development Notes
 
-1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
-3. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
-3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
+1. Before starting work, make sure your main branch has the latest commits with `pnpm run update`.
+2. Run linting command to find errors: `pnpm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
+3. After your changes, reinstall packages in your current branch using `pnpm run reinstall` and ensure everything still works.
     - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.
-5. For frontend changes, compile typescript before and after changes to check for introduced errors: `cd client && npm run build`.
-6. Run backend unit tests: `npm run test:api`.
-7. Run frontend unit tests: `npm run test:client`.
-8. Run integration tests: `npm run e2e`.
+5. For frontend changes, compile typescript before and after changes to check for introduced errors: `cd client && pnpm run build`.
+6. Run backend unit tests: `pnpm run test:api`.
+7. Run frontend unit tests: `pnpm run test:client`.
+8. Run integration tests: `pnpm run e2e`.
 
 ## 3. Git Workflow
 
@@ -129,24 +130,24 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 
 3. **Backend Considerations**:
    - Transitioning the backend to TypeScript would be a more intricate process, especially for an established Express.js server.
-   
+
    - **Options for Transition**:
       - **Single Phase Overhaul**: This involves converting the entire backend to TypeScript in one go. It's the most straightforward approach but can be disruptive, especially for larger codebases.
-      
+
       - **Incremental Transition**: Convert parts of the backend progressively. This can be done by:
          - Maintaining a separate directory for TypeScript files.
          - Gradually migrating and testing individual modules or routes.
          - Using a build tool like `tsc` to compile TypeScript files independently until the entire transition is complete.
-         
-   - **Compilation Considerations**: 
+
+   - **Compilation Considerations**:
       - Introducing a compilation step for the server is an option. This would involve using tools like `ts-node` for development and `tsc` for production builds.
       - However, this is not a conventional approach for Express.js servers and could introduce added complexity, especially in terms of build and deployment processes.
-      
+
    - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
 
 ## 8. Module Import Conventions
 
-- `npm` packages first, 
+- `npm` packages first,
      - from shortest line (top) to longest (bottom)
 
 - Followed by typescript types (pertains to data-provider and client workspaces)

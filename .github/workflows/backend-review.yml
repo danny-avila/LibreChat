@@ -29,19 +29,37 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install Data Provider Package
-        run: npm run build:data-provider
+        run: pnpm -w run build:data-provider
+
+      - name: Install MCP Package
+        run: pnpm -w run build:mcp
 
       - name: Install Data Schemas Package
-        run: npm run build:data-schemas
-
-      - name: Install API Package
-        run: npm run build:api
+        run: pnpm -w run build:data-schemas
 
       - name: Create empty auth.json file
         run: |
@@ -51,7 +69,7 @@ jobs:
       - name: Check for Circular dependency in rollup
         working-directory: ./packages/data-provider
         run: |
-          output=$(npm run rollup:api)
+          output=$(pnpm run rollup:api)
           echo "$output"
           if echo "$output" | grep -q "Circular dependency"; then
             echo "Error: Circular dependency detected!"
@@ -62,13 +80,10 @@ jobs:
         run: cp api/test/.env.test.example api/test/.env.test
 
       - name: Run unit tests
-        run: cd api && npm run test:ci
+        run: cd api && pnpm run test:ci
 
       - name: Run librechat-data-provider unit tests
-        run: cd packages/data-provider && npm run test:ci
+        run: cd packages/data-provider && pnpm run test:ci
 
-      - name: Run @librechat/data-schemas unit tests
-        run: cd packages/data-schemas && npm run test:ci
-
-      - name: Run @librechat/api unit tests
-        run: cd packages/api && npm run test:ci
+      - name: Run librechat-mcp unit tests
+        run: cd packages/mcp && pnpm run test:ci

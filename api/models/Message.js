@@ -74,7 +74,7 @@ async function saveMessage(req, params, metadata) {
       { upsert: true, new: true },
     );
 
-    return message.toObject();
+    return message?.toObject();
   } catch (err) {
     logger.error('Error saving message:', err);
     logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
@@ -93,7 +93,7 @@ async function saveMessage(req, params, metadata) {
 
         // If we found it, return it
         if (existingMessage) {
-          return existingMessage.toObject();
+          return existingMessage?.toObject();
         }
 
         // If we can't find it (unlikely but possible in race conditions)

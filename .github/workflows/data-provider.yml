@@ -15,8 +15,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 16
-      - run: cd packages/data-provider && npm ci
-      - run: cd packages/data-provider && npm run build
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - run: cd packages/data-provider && pnpm install --frozen-lockfile
+      - run: cd packages/data-provider && pnpm run build
 
   publish-npm:
     needs: build
@@ -27,8 +47,28 @@ jobs:
         with:
           node-version: 16
           registry-url: 'https://registry.npmjs.org'
-      - run: cd packages/data-provider && npm ci
-      - run: cd packages/data-provider && npm run build
-      - run: cd packages/data-provider && npm publish
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - run: cd packages/data-provider && pnpm install --frozen-lockfile
+      - run: cd packages/data-provider && pnpm run build
+      - run: cd packages/data-provider && pnpm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}

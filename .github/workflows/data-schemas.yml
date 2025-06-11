@@ -18,27 +18,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18.x'
-          
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
       - name: Install dependencies
-        run: cd packages/data-schemas && npm ci
-        
+        run: cd packages/data-schemas && pnpm install --frozen-lockfile
+
       - name: Build
-        run: cd packages/data-schemas && npm run build
-        
+        run: cd packages/data-schemas && pnpm run build
+
       - name: Set up npm authentication
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
-        
+
       - name: Check version change
         id: check
         working-directory: packages/data-schemas
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          PUBLISHED_VERSION=$(npm view @librechat/data-schemas version 2>/dev/null || echo "0.0.0")
+          PUBLISHED_VERSION=$(pnpm view @librechat/data-schemas version 2>/dev/null || echo "0.0.0")
           if [ "$PACKAGE_VERSION" = "$PUBLISHED_VERSION" ]; then
             echo "No version change, skipping publish"
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -46,13 +65,13 @@ jobs:
             echo "Version changed, proceeding with publish"
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
-            
+
       - name: Pack package
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/data-schemas
-        run: npm pack
-        
+        run: pnpm pack
+
       - name: Publish
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/data-schemas
-        run: npm publish *.tgz --access public
+        run: pnpm publish *.tgz --access public

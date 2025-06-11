@@ -1,5 +1,20 @@
 jest.mock('winston', () => {
-  const mockFormatFunction = jest.fn((fn) => fn);
+  const mockFormatFunction = jest.fn((fn) => {
+    // Return a function that handles the info object properly
+    return () => ({
+      transform: (info) => {
+        // Ensure info has required properties
+        if (!info || typeof info !== 'object') {
+          return { level: 'info', message: '' };
+        }
+        // Call the original function if it exists
+        if (typeof fn === 'function') {
+          return fn(info) || info;
+        }
+        return info;
+      }
+    });
+  });
 
   mockFormatFunction.colorize = jest.fn();
   mockFormatFunction.combine = jest.fn();
@@ -56,8 +71,15 @@ jest.mock('~/config', () => {
 
 jest.mock('~/config/parsers', () => {
   return {
-    redactMessage: jest.fn(),
-    redactFormat: jest.fn(),
-    debugTraverse: jest.fn(),
+    redactMessage: jest.fn((msg) => msg),
+    redactFormat: jest.fn(() => ({
+      transform: (info) => info
+    })),
+    debugTraverse: jest.fn(() => ({
+      transform: (info) => info
+    })),
+    jsonTruncateFormat: jest.fn(() => ({
+      transform: (info) => info
+    })),
   };
 });

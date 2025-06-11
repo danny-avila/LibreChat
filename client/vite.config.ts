@@ -95,7 +95,7 @@ export default defineConfig(({ command }) => ({
   ],
   publicDir: command === 'serve' ? './public' : false,
   build: {
-    sourcemap: process.env.NODE_ENV === 'development',
+    sourcemap: process.env.NODE_ENV === 'development' && process.env.VITE_MODE !== 'ci',
     outDir: './dist',
     minify: 'terser',
     rollupOptions: {
@@ -230,6 +230,9 @@ export default defineConfig(({ command }) => ({
       '~': path.join(__dirname, 'src/'),
       $fonts: path.resolve(__dirname, 'public/fonts'),
     },
+  },
+  optimizeDeps: {
+    include: ['katex'],
   },
 }));
 

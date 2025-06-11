@@ -1,7 +1,7 @@
 ## Translations
 
 ### Requirements:
-- All dependencies installed, run `npm ci` in the root directory.
+- All dependencies installed, run `pnpm install` in the root directory.
 - bun: https://bun.sh/
 - `ANTHROPIC_API_KEY` in project root directory `.env` file.
 
@@ -20,7 +20,7 @@ This script can be expensive, several dollars worth, even with prompt caching. I
 0. Make sure git history is clean with `git status`.
 1. Install `hnswlib-node` package temporarily (we don't need to include it in the project):
 ```bash
-npm install --save-dev hnswlib-node
+pnpm add -D hnswlib-node
 ```
 2. Run `bun install`.
 3. Main script: Run `bun config/translations/scan.ts`.

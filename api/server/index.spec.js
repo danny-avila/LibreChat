@@ -8,6 +8,11 @@ jest.mock('~/server/services/Config/loadCustomConfig', () => {
   return jest.fn(() => Promise.resolve({}));
 });
 
+jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
+  initializeRoles: jest.fn(() => Promise.resolve()),
+}));
+
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
   jest.setTimeout(30_000);
@@ -35,6 +40,8 @@ describe('Server Configuration', () => {
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
+    process.env.HOST = 'localhost';
+    process.env.ALLOW_SOCIAL_LOGIN = 'false';
     app = require('~/server');
 
     // Wait for the app to be healthy
