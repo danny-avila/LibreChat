@@ -92,6 +92,21 @@ const agentSchema = new Schema<IAgent>(
       type: [Schema.Types.Mixed],
       default: [],
     },
+    category: {
+      type: String,
+      trim: true,
+      index: true,
+      default: 'general',
+    },
+    support_contact: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
+    is_promoted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

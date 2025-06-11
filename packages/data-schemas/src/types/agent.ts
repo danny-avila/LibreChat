@@ -36,4 +36,5 @@ export interface IAgent extends Omit<Document, 'model'> {
   versions?: Omit<IAgent, 'versions'>[];
   category: string;
   support_contact?: ISupportContact;
+  is_promoted?: boolean;
 }

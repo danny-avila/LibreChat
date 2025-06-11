@@ -38,6 +38,9 @@ const mockLocalize = jest.fn((key: string, options?: any) => {
     com_agents_error_server_suggestion: 'Please try again in a few moments.',
     com_agents_error_search_title: 'Search Error',
     com_agents_error_category_title: 'Category Error',
+    com_agents_error_timeout_title: 'Connection Timeout',
+    com_agents_error_timeout_message: 'The request took too long to complete.',
+    com_agents_error_timeout_suggestion: 'Please check your internet connection and try again.',
     com_agents_search_no_results: `No agents found for "${options?.query}"`,
     com_agents_category_empty: `No agents found in the ${options?.category} category`,
     com_agents_error_retry: 'Try Again',
@@ -298,5 +301,3 @@ describe('ErrorDisplay', () => {
     });
   });
 });
-
-export default {};

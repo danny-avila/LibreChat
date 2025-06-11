@@ -8,6 +8,7 @@ const {
   searchPrincipals,
 } = require('~/server/controllers/PermissionsController');
 const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
+const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.use(uaParser);
  * GET /api/permissions/search-principals
  * Search for users and groups to grant permissions
  */
-router.get('/search-principals', searchPrincipals);
+router.get('/search-principals', checkPeoplePickerAccess, searchPrincipals);
 
 /**
  * GET /api/permissions/{resourceType}/roles

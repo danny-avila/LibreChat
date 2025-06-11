@@ -1,7 +1,16 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Dialog, Button, DotsIcon, DialogContent, useToastContext } from '@librechat/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { Dialog, DialogContent, Button, DotsIcon, useToastContext } from '@librechat/client';
+import {
+  QueryKeys,
+  Constants,
+  EModelEndpoint,
+  PERMISSION_BITS,
+  LocalStorageKeys,
+  AgentListResponse,
+} from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
+import { useChatContext } from '~/Providers';
 import { renderAgentAvatar } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -13,7 +22,6 @@ interface SupportContact {
 interface AgentWithSupport extends t.Agent {
   support_contact?: SupportContact;
 }
-
 interface AgentDetailProps {
   agent: AgentWithSupport; // The agent data to display
   isOpen: boolean; // Whether the detail dialog is open
@@ -25,12 +33,13 @@ interface AgentDetailProps {
  */
 const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => {
   const localize = useLocalize();
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
+  const { conversation, newConversation } = useChatContext();
   const { showToast } = useToastContext();
   const dialogRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
+  const queryClient = useQueryClient();
   // Close dropdown when clicking outside the dropdown menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -54,7 +63,31 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
    */
   const handleStartChat = () => {
     if (agent) {
-      navigate(`/c/new?agent_id=${agent.id}`);
+      const keys = [QueryKeys.agents, { requiredPermission: PERMISSION_BITS.EDIT }];
+      const listResp = queryClient.getQueryData<AgentListResponse>(keys);
+      if (listResp != null) {
+        if (!listResp.data.some((a) => a.id === agent.id)) {
+          const currentAgents = [agent, ...JSON.parse(JSON.stringify(listResp.data))];
+          queryClient.setQueryData<AgentListResponse>(keys, { ...listResp, data: currentAgents });
+        }
+      }
+
+      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, agent.id);
+
+      queryClient.setQueryData<t.TMessage[]>(
+        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+        [],
+      );
+      queryClient.invalidateQueries([QueryKeys.messages]);
+
+      newConversation({
+        template: {
+          conversationId: Constants.NEW_CONVO as string,
+          endpoint: EModelEndpoint.agents,
+          agent_id: agent.id,
+          title: `Chat with ${agent.name || 'Agent'}`,
+        },
+      });
     }
   };
 
@@ -68,7 +101,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
       .writeText(chatUrl)
       .then(() => {
         showToast({
-          message: 'Link copied',
+          message: localize('com_agents_link_copied'),
         });
       })
       .catch(() => {
@@ -118,7 +151,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
             variant="ghost"
             size="icon"
             className="h-8 w-8 rounded-lg text-text-secondary hover:bg-surface-hover hover:text-text-primary dark:hover:bg-surface-hover"
-            aria-label="More options"
+            aria-label={localize('com_agents_more_options')}
             aria-expanded={dropdownOpen}
             aria-haspopup="menu"
             onClick={(e) => {

@@ -9,11 +9,13 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { canAccessAgentResource } = require('~/server/middleware');
 const { getAgent, updateAgent } = require('~/models/Agent');
 const { getRoleByName } = require('~/models/Role');
+const { getListAgentsByAccess } = require('~/models/Agent');
 
 const router = express.Router();
 
@@ -31,9 +33,22 @@ const checkAgentCreate = generateCheckAccess({
  */
 router.get('/', async (req, res) => {
   try {
-    // Get all actions for the user (admin permissions handled by middleware if needed)
-    const searchParams = { user: req.user.id };
-    res.json(await getActions(searchParams));
+    const userId = req.user.id;
+    const editableAgentObjectIds = await findAccessibleResources({
+      userId,
+      resourceType: 'agent',
+      requiredPermissions: PermissionBits.EDIT,
+    });
+
+    const agentsResponse = await getListAgentsByAccess({
+      accessibleIds: editableAgentObjectIds,
+    });
+
+    const editableAgentIds = agentsResponse.data.map((agent) => agent.id);
+    const actions =
+      editableAgentIds.length > 0 ? await getActions({ agent_id: { $in: editableAgentIds } }) : [];
+
+    res.json(actions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

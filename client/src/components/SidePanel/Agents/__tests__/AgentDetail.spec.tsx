@@ -1,15 +1,16 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot } from 'recoil';
 
 import type t from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 
 import AgentDetail from '../AgentDetail';
 import { useToast } from '~/hooks';
-import useLocalize from '~/hooks/useLocalize';
 
 // Mock dependencies
 jest.mock('react-router-dom', () => ({
@@ -19,11 +20,8 @@ jest.mock('react-router-dom', () => ({
 
 jest.mock('~/hooks', () => ({
   useToast: jest.fn(),
-}));
-
-jest.mock('~/hooks/useLocalize', () => ({
-  __esModule: true,
-  default: jest.fn(),
+  useMediaQuery: jest.fn(() => false), // Mock as desktop by default
+  useLocalize: jest.fn(),
 }));
 
 jest.mock('~/utils/agents', () => ({
@@ -32,12 +30,17 @@ jest.mock('~/utils/agents', () => ({
   )),
 }));
 
+jest.mock('~/Providers', () => ({
+  useChatContext: jest.fn(),
+}));
+
+jest.mock('@tanstack/react-query', () => ({
+  ...jest.requireActual('@tanstack/react-query'),
+  useQueryClient: jest.fn(),
+}));
+
 // Mock clipboard API
-Object.assign(navigator, {
-  clipboard: {
-    writeText: jest.fn(),
-  },
-});
+const mockWriteText = jest.fn();
 
 const mockNavigate = jest.fn();
 const mockShowToast = jest.fn();
@@ -55,16 +58,22 @@ const mockAgent: t.Agent = {
   provider: 'openai',
   instructions: 'You are a helpful test agent',
   tools: [],
-  code_interpreter: false,
-  file_search: false,
   author: 'test-user-id',
-  author_name: 'Test User',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  created_at: new Date().getTime(),
   version: 1,
   support_contact: {
     name: 'Support Team',
     email: 'support@test.com',
+  },
+  model_parameters: {
+    model: undefined,
+    temperature: null,
+    maxContextTokens: null,
+    max_context_tokens: null,
+    max_output_tokens: null,
+    top_p: null,
+    frequency_penalty: null,
+    presence_penalty: null,
   },
 };
 
@@ -93,10 +102,37 @@ describe('AgentDetail', () => {
     jest.clearAllMocks();
     (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
     (useToast as jest.Mock).mockReturnValue({ showToast: mockShowToast });
+    const { useLocalize } = require('~/hooks');
     (useLocalize as jest.Mock).mockReturnValue(mockLocalize);
 
-    // Reset clipboard mock
-    (navigator.clipboard.writeText as jest.Mock).mockResolvedValue(undefined);
+    // Mock useChatContext
+    const { useChatContext } = require('~/Providers');
+    (useChatContext as jest.Mock).mockReturnValue({
+      conversation: { conversationId: 'test-convo-id' },
+      newConversation: jest.fn(),
+    });
+
+    // Mock useQueryClient
+    const { useQueryClient } = require('@tanstack/react-query');
+    (useQueryClient as jest.Mock).mockReturnValue({
+      getQueryData: jest.fn(),
+      setQueryData: jest.fn(),
+      invalidateQueries: jest.fn(),
+    });
+
+    // Setup clipboard mock if it doesn't exist
+    if (!navigator.clipboard) {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: mockWriteText,
+        },
+        configurable: true,
+      });
+    } else {
+      // If clipboard exists, spy on it
+      jest.spyOn(navigator.clipboard, 'writeText').mockImplementation(mockWriteText);
+    }
+    mockWriteText.mockResolvedValue(undefined);
   });
 
   const defaultProps = {
@@ -145,7 +181,7 @@ describe('AgentDetail', () => {
     it('should render 3-dot menu button', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       expect(menuButton).toBeInTheDocument();
       expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
     });
@@ -162,12 +198,36 @@ describe('AgentDetail', () => {
   describe('Interactions', () => {
     it('should navigate to chat when Start Chat button is clicked', async () => {
       const user = userEvent.setup();
+      const mockNewConversation = jest.fn();
+      const mockQueryClient = {
+        getQueryData: jest.fn().mockReturnValue(null),
+        setQueryData: jest.fn(),
+        invalidateQueries: jest.fn(),
+      };
+
+      // Update mocks for this test
+      const { useChatContext } = require('~/Providers');
+      (useChatContext as jest.Mock).mockReturnValue({
+        conversation: { conversationId: 'test-convo-id' },
+        newConversation: mockNewConversation,
+      });
+
+      const { useQueryClient } = require('@tanstack/react-query');
+      (useQueryClient as jest.Mock).mockReturnValue(mockQueryClient);
+
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       const startChatButton = screen.getByRole('button', { name: 'com_agents_start_chat' });
       await user.click(startChatButton);
 
-      expect(mockNavigate).toHaveBeenCalledWith('/c/new?agent_id=test-agent-id');
+      expect(mockNewConversation).toHaveBeenCalledWith({
+        template: {
+          conversationId: Constants.NEW_CONVO,
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'test-agent-id',
+          title: 'Chat with Test Agent',
+        },
+      });
     });
 
     it('should not navigate when agent is null', async () => {
@@ -185,7 +245,7 @@ describe('AgentDetail', () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
@@ -196,7 +256,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       // Open dropdown
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
@@ -217,18 +277,24 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       // Open dropdown
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       // Click copy link
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
       await user.click(copyLinkButton);
 
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        `${window.location.origin}/c/new?agent_id=test-agent-id`,
-      );
-      expect(mockShowToast).toHaveBeenCalledWith({
-        message: 'Link copied',
+      // Wait for async clipboard operation to complete
+      await waitFor(() => {
+        expect(mockWriteText).toHaveBeenCalledWith(
+          `${window.location.origin}/c/new?agent_id=test-agent-id`,
+        );
+      });
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_agents_link_copied',
+        });
       });
 
       // Dropdown should close
@@ -241,16 +307,21 @@ describe('AgentDetail', () => {
 
     it('should show error toast when clipboard write fails', async () => {
       const user = userEvent.setup();
-      (navigator.clipboard.writeText as jest.Mock).mockRejectedValue(new Error('Clipboard error'));
+      mockWriteText.mockRejectedValue(new Error('Clipboard error'));
 
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       // Open dropdown and click copy link
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
       await user.click(copyLinkButton);
+
+      // Wait for clipboard operation to fail and error toast to show
+      await waitFor(() => {
+        expect(mockWriteText).toHaveBeenCalled();
+      });
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
@@ -261,7 +332,7 @@ describe('AgentDetail', () => {
 
     it('should call onClose when dialog is closed', () => {
       const mockOnClose = jest.fn();
-      render(<AgentDetail {...defaultProps} onClose={mockOnClose} isOpen={false} />);
+      renderWithProviders(<AgentDetail {...defaultProps} onClose={mockOnClose} isOpen={false} />);
 
       // Since we're testing the onOpenChange callback, we need to trigger it
       // This would normally be done by the Dialog component when ESC is pressed or overlay is clicked
@@ -274,16 +345,16 @@ describe('AgentDetail', () => {
     it('should have proper ARIA attributes', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
-      expect(menuButton).toHaveAttribute('aria-label', 'More options');
+      expect(menuButton).toHaveAttribute('aria-label', 'com_agents_more_options');
     });
 
     it('should support keyboard navigation for dropdown', async () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
 
       // Focus and open with Enter key
       menuButton.focus();
@@ -296,7 +367,7 @@ describe('AgentDetail', () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });

@@ -23,7 +23,7 @@
   "com_agents_mcp_trust_subtext": "Custom connectors are not verified by LibreChat",
   "com_agents_mcps_disabled": "You need to create an agent before adding MCPs.",
   "com_agents_missing_provider_model": "Please select a provider and model before creating an agent.",
-  "com_agents_name_placeholder": "Optional: The name of the agent",
+  "com_agents_name_placeholder": "The name of the agent",
   "com_agents_no_access": "You don't have access to edit this agent.",
   "com_agents_no_agent_id_error": "No agent ID found. Please ensure the agent is created first.",
   "com_agents_not_available": "Agent Not Available",
@@ -1097,6 +1097,7 @@
   "com_ui_update_mcp_error": "There was an error creating or updating the MCP.",
   "com_ui_update_mcp_success": "Successfully created or updated MCP",
   "com_ui_upload": "Upload",
+  "com_ui_upload_agent_avatar": "Successfully updated agent avatar",
   "com_ui_upload_code_files": "Upload for Code Interpreter",
   "com_ui_upload_delay": "Uploading \"{{0}}\" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.",
   "com_ui_upload_error": "There was an error uploading your file",
@@ -1207,9 +1208,7 @@
   "com_agents_link_copied": "Link copied",
   "com_agents_link_copy_failed": "Failed to copy link",
   "com_agents_more_options": "More options",
-  "com_agents_close": "Close",
   "com_agents_loading": "Loading...",
-  "com_agents_loading_description": "Loading agent description...",
   "com_agents_error_loading": "Error loading agents",
   "com_agents_error_searching": "Error searching agents",
   "com_agents_error_title": "Something went wrong",
@@ -1229,6 +1228,9 @@
   "com_agents_error_server_suggestion": "Please try again in a few moments.",
   "com_agents_error_search_title": "Search Error",
   "com_agents_error_category_title": "Category Error",
+  "com_agents_error_timeout_title": "Connection Timeout",
+  "com_agents_error_timeout_message": "The request took too long to complete.",
+  "com_agents_error_timeout_suggestion": "Please check your internet connection and try again.",
   "com_agents_search_no_results": "No agents found for \"{{query}}\"",
   "com_agents_category_empty": "No agents found in the {{category}} category",
   "com_agents_error_retry": "Try Again",
@@ -1245,5 +1247,8 @@
   "com_agents_no_results": "No agents found. Try another search term.",
   "com_agents_results_for": "Results for '{{query}}'",
   "com_nav_agents_marketplace": "Agent Marketplace",
-  "com_agents_marketplace_subtitle": "Discover and use powerful AI agents to enhance your workflows and productivity"
+  "com_agents_marketplace_subtitle": "Discover and use powerful AI agents to enhance your workflows and productivity",
+  "com_ui_agent_name_is_required": "Agent name is required",
+  "com_agents_missing_name": "Please type in a name before creating an agent."
 }
+

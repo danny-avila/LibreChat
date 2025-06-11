@@ -33,7 +33,7 @@ describe('Agent Utilities', () => {
         id: '1',
         name: 'Test Agent',
         avatar: '/path/to/avatar.png',
-      } as t.Agent;
+      } as unknown as t.Agent;
       expect(getAgentAvatarUrl(agent)).toBe('/path/to/avatar.png');
     });
 
@@ -62,7 +62,7 @@ describe('Agent Utilities', () => {
         id: '1',
         name: 'Test Agent',
         avatar: '/test-avatar.png',
-      } as t.Agent;
+      } as unknown as t.Agent;
 
       render(<div>{renderAgentAvatar(agent)}</div>);
 
@@ -90,7 +90,7 @@ describe('Agent Utilities', () => {
         id: '1',
         name: 'Test Agent',
         avatar: '/test-avatar.png',
-      } as t.Agent;
+      } as unknown as t.Agent;
 
       const { rerender } = render(<div>{renderAgentAvatar(agent, { size: 'sm' })}</div>);
       expect(screen.getByAltText('Test Agent avatar')).toHaveClass('h-12', 'w-12');
@@ -107,7 +107,7 @@ describe('Agent Utilities', () => {
         id: '1',
         name: 'Test Agent',
         avatar: '/test-avatar.png',
-      } as t.Agent;
+      } as unknown as t.Agent;
 
       render(<div>{renderAgentAvatar(agent, { className: 'custom-class' })}</div>);
 
@@ -120,7 +120,7 @@ describe('Agent Utilities', () => {
         id: '1',
         name: 'Test Agent',
         avatar: '/test-avatar.png',
-      } as t.Agent;
+      } as unknown as t.Agent;
 
       const { rerender } = render(<div>{renderAgentAvatar(agent, { showBorder: true })}</div>);
       expect(screen.getByAltText('Test Agent avatar')).toHaveClass('border-2');

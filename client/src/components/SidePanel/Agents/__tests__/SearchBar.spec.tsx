@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import SearchBar from '../SearchBar';
@@ -9,7 +9,7 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string) => key);
 
 // Mock useDebounce hook
 jest.mock('~/hooks', () => ({
-  useDebounce: (value: string, delay: number) => value, // Return value immediately for testing
+  useDebounce: (value: string) => value, // Return value immediately for testing
 }));
 
 describe('SearchBar', () => {

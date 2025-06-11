@@ -1,5 +1,6 @@
 export { default as actionSchema } from './action';
 export { default as agentSchema } from './agent';
+export { default as agentCategorySchema } from './agentCategory';
 export { default as assistantSchema } from './assistant';
 export { default as balanceSchema } from './balance';
 export { default as bannerSchema } from './banner';

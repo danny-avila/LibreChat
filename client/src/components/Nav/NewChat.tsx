@@ -2,8 +2,8 @@ import React, { useCallback, useContext } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants, Permissions, PermissionTypes } from 'librechat-data-provider';
-import { NewChatIcon, MobileSidebar, Sidebar, TooltipAnchor, Button } from '@librechat/client';
+import { QueryKeys, Constants, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import { useLocalize, useNewConvo, useHasAccess, AuthContext } from '~/hooks';
 import store from '~/store';
@@ -30,6 +30,10 @@ export default function NewChat({
   const authContext = useContext(AuthContext);
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
+  const hasAccessToMarketplace = useHasAccess({
+    permissionType: PermissionTypes.MARKETPLACE,
     permission: Permissions.USE,
   });
 
@@ -65,9 +69,8 @@ export default function NewChat({
     authContext?.isAuthenticated !== undefined &&
     (authContext?.isAuthenticated === false || authContext?.user !== undefined);
 
-  // Show agent marketplace when auth is ready and user has access
-  // Note: endpointsConfig[agents] is null, but we can still show the marketplace
-  const showAgentMarketplace = authReady && hasAccessToAgents;
+  // Show agent marketplace when marketplace permission is enabled, auth is ready, and user has access to agents
+  const showAgentMarketplace = authReady && hasAccessToAgents && hasAccessToMarketplace;
 
   return (
     <>

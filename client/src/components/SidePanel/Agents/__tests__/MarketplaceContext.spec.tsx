@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -15,6 +16,11 @@ jest.mock('~/Providers', () => ({
     ),
   },
   useChatContext: jest.fn(),
+}));
+
+// Mock useChatHelpers to avoid Recoil dependency
+jest.mock('~/hooks', () => ({
+  useChatHelpers: jest.fn(),
 }));
 
 const mockedUseChatContext = useChatContext as jest.MockedFunction<typeof useChatContext>;
@@ -35,6 +41,16 @@ const TestConsumer: React.FC = () => {
 describe('MarketplaceProvider', () => {
   beforeEach(() => {
     mockedUseChatContext.mockClear();
+
+    // Mock useChatHelpers return value
+    const { useChatHelpers } = require('~/hooks');
+    (useChatHelpers as jest.Mock).mockReturnValue({
+      conversation: {
+        endpoint: EModelEndpoint.agents,
+        conversationId: 'marketplace',
+        title: 'Agent Marketplace',
+      },
+    });
   });
 
   it('provides correct marketplace context values', () => {
@@ -46,7 +62,7 @@ describe('MarketplaceProvider', () => {
       },
     };
 
-    mockedUseChatContext.mockReturnValue(mockContext);
+    mockedUseChatContext.mockReturnValue(mockContext as ReturnType<typeof useChatContext>);
 
     render(
       <MarketplaceProvider>
