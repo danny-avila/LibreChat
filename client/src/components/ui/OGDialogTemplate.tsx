@@ -8,6 +8,7 @@ import {
   OGDialogDescription,
 } from './OriginalDialog';
 import { useLocalize } from '~/hooks';
+import { Button } from './Button';
 import { Spinner } from '../svg';
 import { cn } from '~/utils/';
 
@@ -53,7 +54,6 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     showCancelButton = true,
   } = props;
   const { selectHandler, selectClasses, selectText, isLoading } = selection || {};
-  const Cancel = localize('com_ui_cancel');
 
   const defaultSelect =
     'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
@@ -83,12 +83,12 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
           ) : null}
         </div>
         <div className="flex h-auto gap-3 max-sm:w-full max-sm:flex-col sm:flex-row">
-          {buttons != null ? buttons : null}
           {showCancelButton && (
-            <OGDialogClose className="btn btn-neutral border-token-border-light relative justify-center rounded-lg text-sm ring-offset-2 focus:ring-2 focus:ring-black dark:ring-offset-0 max-sm:order-last max-sm:w-full sm:order-first">
-              {Cancel}
+            <OGDialogClose asChild>
+              <Button variant="outline">{localize('com_ui_cancel')}</Button>
             </OGDialogClose>
           )}
+          {buttons != null ? buttons : null}
           {selection ? (
             <OGDialogClose
               onClick={selectHandler}

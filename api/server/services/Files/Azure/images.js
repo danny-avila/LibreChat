@@ -91,15 +91,28 @@ async function prepareAzureImageURL(req, file) {
  * @param {Buffer} params.buffer - The avatar image buffer.
  * @param {string} params.userId - The user's id.
  * @param {string} params.manual - Flag to indicate manual update.
+ * @param {string} [params.agentId] - Optional agent ID if this is an agent avatar.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
  * @returns {Promise<string>} The URL of the avatar.
  */
-async function processAzureAvatar({ buffer, userId, manual, basePath = 'images', containerName }) {
+async function processAzureAvatar({
+  buffer,
+  userId,
+  manual,
+  agentId,
+  basePath = 'images',
+  containerName,
+}) {
   try {
     const metadata = await sharp(buffer).metadata();
     const extension = metadata.format === 'gif' ? 'gif' : 'png';
-    const fileName = `avatar.${extension}`;
+    const timestamp = new Date().getTime();
+
+    /** Unique filename with timestamp and optional agent ID */
+    const fileName = agentId
+      ? `agent-${agentId}-avatar-${timestamp}.${extension}`
+      : `avatar-${timestamp}.${extension}`;
 
     const downloadURL = await saveBufferToAzure({
       userId,
@@ -110,9 +123,12 @@ async function processAzureAvatar({ buffer, userId, manual, basePath = 'images',
     });
     const isManual = manual === 'true';
     const url = `${downloadURL}?manual=${isManual}`;
-    if (isManual) {
+
+    // Only update user record if this is a user avatar (manual === 'true')
+    if (isManual && !agentId) {
       await updateUser(userId, { avatar: url });
     }
+
     return url;
   } catch (error) {
     logger.error('[processAzureAvatar] Error uploading profile picture to Azure:', error);

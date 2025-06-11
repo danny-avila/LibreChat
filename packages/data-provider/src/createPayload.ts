@@ -13,11 +13,11 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
-  const { endpoint, endpointType } = endpointOption as {
+  const { endpoint: _e, endpointType } = endpointOption as {
     endpoint: s.EModelEndpoint;
     endpointType?: s.EModelEndpoint;
   };
-
+  const endpoint = _e as s.EModelEndpoint;
   let server = EndpointURLs[endpointType ?? endpoint];
   const isEphemeral = s.isEphemeralAgent(endpoint, ephemeralAgent);
 
@@ -32,6 +32,7 @@ export default function createPayload(submission: t.TSubmission) {
   const payload: t.TPayload = {
     ...userMessage,
     ...endpointOption,
+    endpoint,
     ephemeralAgent: isEphemeral ? ephemeralAgent : undefined,
     isContinued: !!(isEdited && isContinued),
     conversationId,

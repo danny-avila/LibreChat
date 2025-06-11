@@ -2,8 +2,10 @@ const {
   FileSources,
   EModelEndpoint,
   EImageOutputType,
+  AgentCapabilities,
   defaultSocialLogins,
   validateAzureGroups,
+  defaultAgentCapabilities,
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
@@ -151,6 +153,11 @@ describe('AppService', () => {
         safeSearch: 1,
         serperApiKey: '${SERPER_API_KEY}',
       },
+      memory: undefined,
+      agents: {
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+      },
     });
   });
 
@@ -264,6 +271,71 @@ describe('AppService', () => {
         timeoutMs: 30000,
         supportedIds: expect.arrayContaining(['id1', 'id2']),
         privateAssistants: false,
+      }),
+    );
+  });
+
+  it('should correctly configure Agents endpoint based on custom config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            disableBuilder: true,
+            recursionLimit: 10,
+            maxRecursionLimit: 20,
+            allowedProviders: ['openai', 'anthropic'],
+            capabilities: [AgentCapabilities.tools, AgentCapabilities.actions],
+          },
+        },
+      }),
+    );
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
+    expect(app.locals[EModelEndpoint.agents]).toEqual(
+      expect.objectContaining({
+        disableBuilder: true,
+        recursionLimit: 10,
+        maxRecursionLimit: 20,
+        allowedProviders: expect.arrayContaining(['openai', 'anthropic']),
+        capabilities: expect.arrayContaining([AgentCapabilities.tools, AgentCapabilities.actions]),
+      }),
+    );
+  });
+
+  it('should configure Agents endpoint with defaults when no config is provided', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
+    expect(app.locals[EModelEndpoint.agents]).toEqual(
+      expect.objectContaining({
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+      }),
+    );
+  });
+
+  it('should configure Agents endpoint with defaults when endpoints exist but agents is not defined', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleConvo: true,
+          },
+        },
+      }),
+    );
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
+    expect(app.locals[EModelEndpoint.agents]).toEqual(
+      expect.objectContaining({
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
       }),
     );
   });

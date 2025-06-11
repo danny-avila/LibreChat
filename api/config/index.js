@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { EventSource } = require('eventsource');
-const { Time, CacheKeys } = require('librechat-data-provider');
-const { MCPManager, FlowStateManager } = require('librechat-mcp');
+const { Time } = require('librechat-data-provider');
+const { MCPManager, FlowStateManager } = require('@librechat/api');
 const logger = require('./winston');
 
 global.EventSource = EventSource;

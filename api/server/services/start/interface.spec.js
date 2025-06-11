@@ -12,6 +12,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: true,
         bookmarks: true,
+        memories: true,
         multiConvo: true,
         agents: true,
         temporaryChat: true,
@@ -26,6 +27,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: true },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
@@ -39,6 +41,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: false,
         bookmarks: false,
+        memories: false,
         multiConvo: false,
         agents: false,
         temporaryChat: false,
@@ -53,6 +56,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: false },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
@@ -70,6 +74,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -83,6 +88,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: undefined,
         bookmarks: undefined,
+        memories: undefined,
         multiConvo: undefined,
         agents: undefined,
         temporaryChat: undefined,
@@ -97,6 +103,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -110,6 +117,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: true,
         bookmarks: false,
+        memories: true,
         multiConvo: undefined,
         agents: true,
         temporaryChat: undefined,
@@ -124,6 +132,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: true },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -138,6 +147,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: true,
         bookmarks: true,
+        memories: true,
         multiConvo: true,
         agents: true,
         temporaryChat: true,
@@ -151,6 +161,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: true },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
@@ -168,6 +179,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -185,6 +197,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -202,6 +215,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -215,6 +229,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: true,
         bookmarks: false,
+        memories: true,
         multiConvo: true,
         agents: false,
         temporaryChat: true,
@@ -228,6 +243,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: true },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
@@ -242,6 +258,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: true,
         bookmarks: true,
+        memories: false,
         multiConvo: false,
         agents: undefined,
         temporaryChat: undefined,
@@ -255,6 +272,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: false },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
@@ -268,6 +286,7 @@ describe('loadDefaultInterface', () => {
       interface: {
         prompts: true,
         bookmarks: false,
+        memories: true,
         multiConvo: true,
         agents: false,
         temporaryChat: true,
@@ -281,6 +300,7 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: true },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },

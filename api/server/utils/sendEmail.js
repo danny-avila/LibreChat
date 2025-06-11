@@ -34,6 +34,7 @@ const sendEmailViaMailgun = async ({ to, from, subject, html }) => {
   formData.append('to', to);
   formData.append('subject', subject);
   formData.append('html', html);
+  formData.append('o:tracking-clicks', 'no');
 
   try {
     const response = await axios.post(`${mailgunHost}/v3/${mailgunDomain}/messages`, formData, {

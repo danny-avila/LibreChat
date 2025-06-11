@@ -31,9 +31,9 @@ export default [
       'client/public/**/*',
       'client/coverage/**/*',
       'e2e/playwright-report/**/*',
-      'packages/mcp/types/**/*',
-      'packages/mcp/dist/**/*',
-      'packages/mcp/test_bundle/**/*',
+      'packages/api/types/**/*',
+      'packages/api/dist/**/*',
+      'packages/api/test_bundle/**/*',
       'api/demo/**/*',
       'packages/data-provider/types/**/*',
       'packages/data-provider/dist/**/*',
@@ -317,7 +317,7 @@ export default [
     files: ['./api/demo/**/*.ts'],
   },
   {
-    files: ['./packages/mcp/**/*.ts'],
+    files: ['./packages/api/**/*.ts'],
   },
   {
     files: ['./config/translations/**/*.ts'],
@@ -351,12 +351,12 @@ export default [
     },
   },
   {
-    files: ['./packages/mcp/specs/**/*.ts'],
+    files: ['./packages/api/specs/**/*.ts'],
     languageOptions: {
       ecmaVersion: 5,
       sourceType: 'script',
       parserOptions: {
-        project: './packages/mcp/tsconfig.spec.json',
+        project: './packages/api/tsconfig.spec.json',
       },
     },
   },

@@ -9,6 +9,7 @@ import type {
 } from 'librechat-data-provider';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
+import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
@@ -72,6 +73,7 @@ const ContentParts = memo(
 
       return hasThinkPart && allThinkPartsHaveContent;
     }, [content]);
+
     if (!content) {
       return null;
     }
@@ -103,6 +105,7 @@ const ContentParts = memo(
     return (
       <>
         <SearchContext.Provider value={{ searchResults }}>
+          <MemoryArtifacts attachments={attachments} />
           <Sources />
           {hasReasoningParts && (
             <div className="mb-5">

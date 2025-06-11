@@ -387,6 +387,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       buffer: resizedBuffer,
       userId: req.user.id,
       manual: 'false',
+      agentId: agent_id,
     });
 
     const image = {

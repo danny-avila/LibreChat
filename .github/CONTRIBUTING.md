@@ -30,8 +30,8 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 2. Install typescript globally: `npm i -g typescript`.
 3. Run `npm ci` to install dependencies.
 4. Build the data provider: `npm run build:data-provider`.
-5. Build MCP: `npm run build:mcp`.
-6. Build data schemas: `npm run build:data-schemas`.
+5. Build data schemas: `npm run build:data-schemas`.
+6. Build API methods: `npm run build:api`.
 7. Setup and run unit tests:
     - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
     - Run backend unit tests: `npm run test:api`.

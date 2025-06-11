@@ -128,7 +128,7 @@ export default function ActionsPanel({
                     selectHandler: () => {
                       if (!agent_id) {
                         return showToast({
-                          message: 'No agent_id found, is the agent created?',
+                          message: localize('com_agents_no_agent_id_error'),
                           status: 'error',
                         });
                       }
