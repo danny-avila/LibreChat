@@ -187,37 +187,52 @@ export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser, customUse
   if (obj === null || obj === undefined) {
     return obj;
   }
-  
+
   const newObj: MCPOptions = structuredClone(obj);
+
+  const processSingleValue = (originalValue: string): string => {
+    let value = originalValue;
+
+    // 1. Replace custom user variables
+    if (customUserVars) {
+      for (const [varName, varVal] of Object.entries(customUserVars)) {
+        // Escape varName for use in regex to avoid issues with special characters
+        const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
+        value = value.replace(placeholderRegex, varVal);
+      }
+    }
+
+    // 2. Replace standard user field placeholders (now includes USER_ID via ALLOWED_USER_FIELDS)
+    value = processUserPlaceholders(value, user);
+
+    // 3. Replace system environment variables
+    value = extractEnvVariable(value);
+
+    return value;
+  };
 
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(newObj.env)) {
-      let processedValue = extractEnvVariable(value);
-      processedValue = processUserPlaceholders(processedValue, user);
-      processedEnv[key] = processedValue;
+    for (const [key, originalValue] of Object.entries(newObj.env)) {
+      processedEnv[key] = processSingleValue(originalValue);
     }
     newObj.env = processedEnv;
-  } else if ('headers' in newObj && newObj.headers) {
+  }
+  
+  // Process headers if they exist (for WebSocket, SSE, StreamableHTTP types)
+  // Note: `env` and `headers` are on different branches of the MCPOptions union type.
+  if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
-    for (const [key, value] of Object.entries(newObj.headers)) {
-      const userId = user?.id;
-      if (value === '{{LIBRECHAT_USER_ID}}' && userId != null) {
-        processedHeaders[key] = String(userId);
-        continue;
-      }
-
-      let processedValue = extractEnvVariable(value);
-      processedValue = processUserPlaceholders(processedValue, user);
-      processedHeaders[key] = processedValue;
+    for (const [key, originalValue] of Object.entries(newObj.headers)) {
+      processedHeaders[key] = processSingleValue(originalValue);
     }
     newObj.headers = processedHeaders;
   }
 
+  // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
-    let processedUrl = extractEnvVariable(newObj.url);
-    processedUrl = processUserPlaceholders(processedUrl, user);
-    newObj.url = processedUrl;
+    newObj.url = processSingleValue(newObj.url);
   }
 
   return newObj;

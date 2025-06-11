@@ -188,10 +188,18 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
       const tool = mcpToolDetails?.find((t) => t.name === serverName);
       const hasAuthConfig = tool?.authConfig && tool.authConfig.length > 0;
 
-      if (tool && (hasAuthConfig)) {
+      // Common wrapper for the main content (check mark + text)
+      // Ensures Check & Text are adjacent and the group takes available space.
+      const mainContentWrapper = (
+        <div className="flex flex-grow items-center">
+          {defaultContent}
+        </div>
+      );
+
+      if (tool && hasAuthConfig) {
         return (
           <div className="flex w-full items-center justify-between">
-            <div className="flex-grow">{defaultContent}</div>
+            {mainContentWrapper}
             <button
               type="button"
               onClick={(e) => {
@@ -208,7 +216,8 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
           </div>
         );
       }
-      return defaultContent;
+      // For items without a settings icon, return the consistently wrapped main content.
+      return mainContentWrapper;
     },
     [mcpToolDetails, setSelectedToolForConfig, setIsConfigModalOpen],
   );

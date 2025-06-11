@@ -23,6 +23,8 @@ export class MCPManager {
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
   private processMCPEnv?: (obj: MCPOptions, user?: TUser, customUserVars?: Record<string, string>) => MCPOptions; // Store the processing function
+  /** Store MCP server instructions */
+  private serverInstructions: Map<string, string> = new Map();
   private logger: Logger;
 
   private static getDefaultLogger(): Logger {
