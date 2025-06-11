@@ -8,6 +8,7 @@ import {
   isAgentsEndpoint,
   getConfigDefaults,
   isAssistantsEndpoint,
+  PERMISSION_BITS,
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
@@ -79,28 +80,31 @@ export default function useMentions({
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig?.interface],
   );
-  const { data: agentsList = null } = useListAgentsQuery(undefined, {
-    enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
-    select: (res) => {
-      const { data } = res;
-      return data.map(({ id, name, avatar }) => ({
-        value: id,
-        label: name ?? '',
-        type: EModelEndpoint.agents,
-        icon: EndpointIcon({
-          conversation: {
-            agent_id: id,
-            endpoint: EModelEndpoint.agents,
-            iconURL: avatar?.filepath,
-          },
-          containerClassName: 'shadow-stroke overflow-hidden rounded-full',
-          endpointsConfig: endpointsConfig,
-          context: 'menu-item',
-          size: 20,
-        }),
-      }));
+  const { data: agentsList = null } = useListAgentsQuery(
+    { requiredPermission: PERMISSION_BITS.VIEW },
+    {
+      enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
+      select: (res) => {
+        const { data } = res;
+        return data.map(({ id, name, avatar }) => ({
+          value: id,
+          label: name ?? '',
+          type: EModelEndpoint.agents,
+          icon: EndpointIcon({
+            conversation: {
+              agent_id: id,
+              endpoint: EModelEndpoint.agents,
+              iconURL: avatar?.filepath,
+            },
+            containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+            endpointsConfig: endpointsConfig,
+            context: 'menu-item',
+            size: 20,
+          }),
+        }));
+      },
     },
-  });
+  );
   const assistantListMap = useMemo(
     () => ({
       [EModelEndpoint.assistants]: listMap[EModelEndpoint.assistants]

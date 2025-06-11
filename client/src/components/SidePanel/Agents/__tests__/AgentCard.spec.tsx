@@ -21,8 +21,21 @@ describe('AgentCard', () => {
       name: 'Test Support',
       email: 'test@example.com',
     },
-    avatar: '/test-avatar.png',
-  } as t.Agent;
+    avatar: { filepath: '/test-avatar.png', source: 'local' },
+    created_at: 1672531200000,
+    instructions: 'Test instructions',
+    provider: 'openai' as const,
+    model: 'gpt-4',
+    model_parameters: {
+      temperature: 0.7,
+      maxContextTokens: 4096,
+      max_context_tokens: 4096,
+      max_output_tokens: 1024,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+    },
+  };
 
   const mockOnClick = jest.fn();
 
@@ -39,7 +52,7 @@ describe('AgentCard', () => {
     expect(screen.getByText('Test Support')).toBeInTheDocument();
   });
 
-  it('displays avatar when provided as string', () => {
+  it('displays avatar when provided as object', () => {
     render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const avatarImg = screen.getByAltText('Test Agent avatar');
@@ -47,17 +60,17 @@ describe('AgentCard', () => {
     expect(avatarImg).toHaveAttribute('src', '/test-avatar.png');
   });
 
-  it('displays avatar when provided as object with filepath', () => {
-    const agentWithObjectAvatar = {
+  it('displays avatar when provided as string', () => {
+    const agentWithStringAvatar = {
       ...mockAgent,
-      avatar: { filepath: '/object-avatar.png' },
+      avatar: '/string-avatar.png' as any, // Legacy support for string avatars
     };
 
-    render(<AgentCard agent={agentWithObjectAvatar} onClick={mockOnClick} />);
+    render(<AgentCard agent={agentWithStringAvatar} onClick={mockOnClick} />);
 
     const avatarImg = screen.getByAltText('Test Agent avatar');
     expect(avatarImg).toBeInTheDocument();
-    expect(avatarImg).toHaveAttribute('src', '/object-avatar.png');
+    expect(avatarImg).toHaveAttribute('src', '/string-avatar.png');
   });
 
   it('displays Bot icon fallback when no avatar is provided', () => {
@@ -66,7 +79,7 @@ describe('AgentCard', () => {
       avatar: undefined,
     };
 
-    render(<AgentCard agent={agentWithoutAvatar} onClick={mockOnClick} />);
+    render(<AgentCard agent={agentWithoutAvatar as any as t.Agent} onClick={mockOnClick} />);
 
     // Check for Bot icon presence by looking for the svg with lucide-bot class
     const botIcon = document.querySelector('.lucide-bot');
