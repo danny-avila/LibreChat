@@ -22,6 +22,7 @@ export enum Tools {
   web_search = 'web_search',
   retrieval = 'retrieval',
   function = 'function',
+  memory = 'memory',
 }
 
 export enum EToolResources {

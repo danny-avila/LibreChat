@@ -220,6 +220,9 @@ function disposeClient(client) {
     if (client.maxResponseTokens) {
       client.maxResponseTokens = null;
     }
+    if (client.processMemory) {
+      client.processMemory = null;
+    }
     if (client.run) {
       // Break circular references in run
       if (client.run.Graph) {

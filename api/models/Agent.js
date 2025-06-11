@@ -170,7 +170,6 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
     'created_at',
     'updated_at',
     '__v',
-    'agent_ids',
     'versions',
     'actionsHash', // Exclude actionsHash from direct comparison
   ];
