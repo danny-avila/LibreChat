@@ -10,7 +10,6 @@ import {
   TAgentsEndpoint,
   TEndpointsConfig,
   isAssistantsEndpoint,
-  defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
 import {
@@ -18,11 +17,11 @@ import {
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
 } from '~/data-provider';
+import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
-import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
@@ -57,7 +56,7 @@ export default function AgentPanel({
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
-    defaultValues: defaultAgentFormValues,
+    defaultValues: getDefaultAgentFormValues(),
   });
 
   const { control, handleSubmit, reset } = methods;
@@ -283,7 +282,7 @@ export default function AgentPanel({
                 variant="outline"
                 className="w-full justify-center"
                 onClick={() => {
-                  reset(defaultAgentFormValues);
+                  reset(getDefaultAgentFormValues());
                   setCurrentAgentId(undefined);
                 }}
                 disabled={agentQuery.isInitialLoading}

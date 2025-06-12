@@ -1,18 +1,14 @@
 import { EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
+import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
-import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
-import { cn, createProviderOption, processAgentOption } from '~/utils';
 import type { TAgentCapabilities, AgentForm } from '~/common';
+import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
+import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
-import {
-  AgentCapabilities,
-  defaultAgentFormValues,
-  LocalStorageKeys,
-} from 'librechat-data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
@@ -131,9 +127,7 @@ export default function AgentSelect({
       createMutation.reset();
       if (!agentExists) {
         setCurrentAgentId(undefined);
-        return reset({
-          ...defaultAgentFormValues,
-        });
+        return reset(getDefaultAgentFormValues());
       }
 
       setCurrentAgentId(selectedId);
@@ -174,18 +168,6 @@ export default function AgentSelect({
       }
     };
   }, [selectedAgentId, agents, onSelect]);
-
-  useEffect(() => {
-    if (selectedAgentId === null) {
-      reset({
-        ...defaultAgentFormValues,
-        model: localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '',
-        provider: createProviderOption(
-          localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? '',
-        ),
-      });
-    }
-  }, [selectedAgentId, reset]);
 
   const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
 
