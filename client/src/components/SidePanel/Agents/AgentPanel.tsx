@@ -2,9 +2,24 @@ import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback } from 'react';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import {
+  Tools,
+  Constants,
+  SystemRoles,
+  EModelEndpoint,
+  TAgentsEndpoint,
+  TEndpointsConfig,
+  isAssistantsEndpoint,
+  defaultAgentFormValues,
+} from 'librechat-data-provider';
+import type { AgentForm, StringOption } from '~/common';
+import {
+  useCreateAgentMutation,
+  useUpdateAgentMutation,
+  useGetAgentByIdQuery,
+} from '~/data-provider';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import type { AgentForm, StringOption } from '~/common';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { createProviderOption } from '~/utils';
@@ -15,21 +30,6 @@ import AgentFooter from './AgentFooter';
 import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
-import {
-  Tools,
-  Constants,
-  SystemRoles,
-  EModelEndpoint,
-  isAssistantsEndpoint,
-  defaultAgentFormValues,
-  TAgentsEndpoint,
-  TEndpointsConfig,
-} from 'librechat-data-provider';
-import {
-  useCreateAgentMutation,
-  useUpdateAgentMutation,
-  useGetAgentByIdQuery,
-} from '~/data-provider';
 
 export default function AgentPanel({
   agentsConfig,
@@ -42,14 +42,10 @@ export default function AgentPanel({
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const {
-    setAction,
-    setMcp,
     activePanel,
-    actions,
-    mcps,
     setActivePanel,
-    agent_id: current_agent_id,
     setCurrentAgentId,
+    agent_id: current_agent_id,
   } = useAgentPanelContext();
 
   const { onSelect: onSelectAgent } = useSelectAgent();
@@ -325,24 +321,13 @@ export default function AgentPanel({
           </div>
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-          <ModelPanel
-            setActivePanel={setActivePanel}
-            agent_id={agent_id}
-            providers={providers}
-            models={models}
-          />
+          <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
           <AgentConfig
-            actions={actions}
-            setAction={setAction}
-            setMcp={setMcp}
-            mcps={mcps}
             createMutation={create}
             agentsConfig={agentsConfig}
-            setActivePanel={setActivePanel}
             endpointsConfig={endpointsConfig}
-            setCurrentAgentId={setCurrentAgentId}
           />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (

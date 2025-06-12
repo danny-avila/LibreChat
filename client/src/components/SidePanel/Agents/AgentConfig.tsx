@@ -4,8 +4,8 @@ import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
+import { useToastContext, useFileMapContext, useAgentPanelContext } from '~/Providers';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
-import { useToastContext, useFileMapContext } from '~/Providers';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -30,23 +30,19 @@ const inputClass = cn(
 );
 
 export default function AgentConfig({
-  setAction,
-  actions = [],
   agentsConfig,
   createMutation,
-  setActivePanel,
   endpointsConfig,
-}: AgentPanelProps) {
+}: Pick<AgentPanelProps, 'agentsConfig' | 'createMutation' | 'endpointsConfig'>) {
+  const localize = useLocalize();
   const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
+  const methods = useFormContext<AgentForm>();
+  const [showToolDialog, setShowToolDialog] = useState(false);
+  const { actions, setAction, setActivePanel } = useAgentPanelContext();
 
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
-  const { showToast } = useToastContext();
-  const localize = useLocalize();
-
-  const [showToolDialog, setShowToolDialog] = useState(false);
-
-  const methods = useFormContext<AgentForm>();
 
   const { control } = methods;
   const provider = useWatch({ control, name: 'provider' });
@@ -300,7 +296,7 @@ export default function AgentConfig({
                 agent_id={agent_id}
               />
             ))}
-            {actions
+            {(actions ?? [])
               .filter((action) => action.agent_id === agent_id)
               .map((action, i) => (
                 <Action
