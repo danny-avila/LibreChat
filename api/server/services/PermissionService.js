@@ -13,6 +13,10 @@ const {
   createUser,
   updateUser,
   findUser,
+  grantPermission: grantPermissionACL,
+  findAccessibleResources: findAccessibleResourcesACL,
+  hasPermission,
+  getEffectivePermissions: getEffectivePermissionsACL,
 } = require('~/models');
 const { AclEntry, AccessRole, Group } = require('~/db/models');
 
@@ -72,34 +76,15 @@ const grantPermission = async ({
         `Role ${accessRoleId} is for ${role.resourceType} resources, not ${resourceType}`,
       );
     }
-
-    const query = {
+    return await grantPermissionACL(
       principalType,
+      principalId,
       resourceType,
       resourceId,
-    };
-
-    if (principalType !== 'public') {
-      query.principalId = principalId;
-      query.principalModel = principalType === 'user' ? 'User' : 'Group';
-    }
-
-    const update = {
-      $set: {
-        permBits: role.permBits,
-        roleId: role._id,
-        grantedBy,
-        grantedAt: new Date(),
-      },
-    };
-
-    const options = {
-      upsert: true,
-      new: true,
-      ...(session ? { session } : {}),
-    };
-
-    return await AclEntry.findOneAndUpdate(query, update, options);
+      role.permBits,
+      grantedBy,
+      session,
+    );
   } catch (error) {
     logger.error(`[PermissionService.grantPermission] Error: ${error.message}`);
     throw error;
@@ -128,18 +113,7 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
       return false;
     }
 
-    // Find any ACL entry matching the principals, resource, and check if it has all required permission bits
-    const entry = await AclEntry.findOne({
-      $or: principals.map((p) => ({
-        principalType: p.principalType,
-        ...(p.principalType !== 'public' && { principalId: p.principalId }),
-      })),
-      resourceType,
-      resourceId,
-      permBits: { $bitsAllSet: requiredPermission },
-    }).lean();
-
-    return !!entry;
+    return await hasPermission(principals, resourceType, resourceId, requiredPermission);
   } catch (error) {
     logger.error(`[PermissionService.checkPermission] Error: ${error.message}`);
     // Re-throw validation errors
@@ -166,27 +140,7 @@ const getEffectivePermissions = async ({ userId, resourceType, resourceId }) => 
     if (principals.length === 0) {
       return 0;
     }
-
-    // Find all matching ACL entries
-    const aclEntries = await AclEntry.find({
-      $or: principals.map((p) => ({
-        principalType: p.principalType,
-        ...(p.principalType !== 'public' && { principalId: p.principalId }),
-      })),
-      resourceType,
-      resourceId,
-    }).lean();
-
-    if (aclEntries.length === 0) {
-      return 0;
-    }
-
-    let effectiveBits = 0;
-    for (const entry of aclEntries) {
-      effectiveBits |= entry.permBits;
-    }
-
-    return effectiveBits;
+    return await getEffectivePermissionsACL(principals, resourceType, resourceId);
   } catch (error) {
     logger.error(`[PermissionService.getEffectivePermissions] Error: ${error.message}`);
     return 0;
@@ -208,23 +162,12 @@ const findAccessibleResources = async ({ userId, resourceType, requiredPermissio
     }
 
     // Get all principals for the user (user + groups + public)
-    const principals = await getUserPrincipals(userId);
+    const principalsList = await getUserPrincipals(userId);
 
-    if (principals.length === 0) {
+    if (principalsList.length === 0) {
       return [];
     }
-
-    // Find all matching ACL entries where user has at least the required permission bits
-    const entries = await AclEntry.find({
-      $or: principals.map((p) => ({
-        principalType: p.principalType,
-        ...(p.principalType !== 'public' && { principalId: p.principalId }),
-      })),
-      resourceType,
-      permBits: { $bitsAllSet: requiredPermissions },
-    }).distinct('resourceId');
-
-    return entries;
+    return await findAccessibleResourcesACL(principalsList, resourceType, requiredPermissions);
   } catch (error) {
     logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
     // Re-throw validation errors
