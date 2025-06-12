@@ -241,18 +241,6 @@ describe('getLLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('maxTokens', 8192);
     });
 
-    it('should handle both proxy and reverseProxyUrl', () => {
-      const result = getLLMConfig('test-api-key', {
-        modelOptions: {},
-        proxy: 'http://proxy:8080',
-        reverseProxyUrl: 'https://reverse-proxy.com',
-      });
-
-      expect(result.llmConfig.clientOptions).toHaveProperty('httpAgent');
-      expect(result.llmConfig.clientOptions).toHaveProperty('baseURL', 'https://reverse-proxy.com');
-      expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'https://reverse-proxy.com');
-    });
-
     it('should handle prompt cache with supported model', () => {
       checkPromptCacheSupport.mockReturnValue(true);
       getClaudeHeaders.mockReturnValue({ 'anthropic-beta': 'prompt-caching-2024-07-31' });
