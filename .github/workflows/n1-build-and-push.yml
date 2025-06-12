@@ -17,6 +17,14 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
+            - name: Create Config File
+              run: |
+                touch librechat.yaml && chmod 755 librechat.yaml |
+                cat librechat.n2a.yaml >> librechat.yaml |
+                rm -rf .dockerignore |
+                touch .dockerignore && chmod 755 .dockerignore |
+                cat .paychex.dockerignore >> .dockerignore |
+                cat .dockerignore
 
             - name: log in to ACR
               uses: azure/docker-login@v1
