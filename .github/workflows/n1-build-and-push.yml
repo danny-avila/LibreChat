@@ -2,9 +2,9 @@ name: N1 - Build and Push
 
 env:
     # Azure ACR
-    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_NONPROD }}
-    ACR_USER: ${{ secrets.REGISTRY_USERNAME_NONPROD }}
-    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_NONPROD }}
+    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
+    ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
+    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
 
 on:
   workflow_dispatch:
@@ -17,6 +17,14 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
+            - name: Create Config File
+              run: |
+                touch librechat.yaml && chmod 755 librechat.yaml |
+                cat librechat.n1.yaml >> librechat.yaml |
+                rm -rf .dockerignore |
+                touch .dockerignore && chmod 755 .dockerignore |
+                cat .paychex.dockerignore >> .dockerignore |
+                cat .dockerignore
 
             - name: log in to ACR
               uses: azure/docker-login@v1
