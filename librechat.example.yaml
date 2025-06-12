@@ -13,6 +13,7 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  logoPath: "/assets/custom_logo.svg" # Path in /client/public/assets/
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
