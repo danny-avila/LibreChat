@@ -1,0 +1,408 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - '**'  # Run on all branches
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - production
+        default: 'production'
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    env:
+      # Server Configuration
+      NODE_ENV: test
+      PORT: 3080
+      HOST: localhost
+      TRUST_PROXY: 1
+      DOMAIN_SERVER: http://localhost:3080
+      DOMAIN_CLIENT: http://localhost:3000
+      
+      # Database
+      MONGO_URI: mongodb://localhost:27017/librechat-test
+      
+      # Authentication
+      JWT_SECRET: test-secret
+      JWT_REFRESH_SECRET: test-refresh-secret
+      CREDS_KEY: test-creds-key
+      CREDS_IV: test-creds-iv
+      
+      # API Keys
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AZURE_ASSISTANTS_API_KEY: ${{ secrets.AZURE_ASSISTANTS_API_KEY }}
+      ASSISTANTS_API_KEY: ${{ secrets.ASSISTANTS_API_KEY }}
+      AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
+      GOOGLE_KEY: ${{ secrets.GOOGLE_KEY }}
+      WOLFRAM_APP_ID: ${{ secrets.WOLFRAM_APP_ID }}
+      
+      # Social Login
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      FACEBOOK_CLIENT_ID: ${{ secrets.FACEBOOK_CLIENT_ID }}
+      FACEBOOK_CLIENT_SECRET: ${{ secrets.FACEBOOK_CLIENT_SECRET }}
+      GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+      GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+      DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
+      
+      # Apple Login
+      APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+      APPLE_PRIVATE_KEY_PATH: ${{ secrets.APPLE_PRIVATE_KEY_PATH }}
+      
+      # OpenID
+      OPENID_CLIENT_ID: ${{ secrets.OPENID_CLIENT_ID }}
+      OPENID_CLIENT_SECRET: ${{ secrets.OPENID_CLIENT_SECRET }}
+      OPENID_ISSUER: ${{ secrets.OPENID_ISSUER }}
+      OPENID_SESSION_SECRET: ${{ secrets.OPENID_SESSION_SECRET }}
+      OPENID_BUTTON_LABEL: ${{ secrets.OPENID_BUTTON_LABEL }}
+      OPENID_AUTO_REDIRECT: ${{ secrets.OPENID_AUTO_REDIRECT }}
+      OPENID_AUTH_URL: ${{ secrets.OPENID_AUTH_URL }}
+      OPENID_IMAGE_URL: ${{ secrets.OPENID_IMAGE_URL }}
+      
+      # SAML
+      SAML_ENTRY_POINT: ${{ secrets.SAML_ENTRY_POINT }}
+      SAML_ISSUER: ${{ secrets.SAML_ISSUER }}
+      SAML_CERT: ${{ secrets.SAML_CERT }}
+      SAML_SESSION_SECRET: ${{ secrets.SAML_SESSION_SECRET }}
+      SAML_BUTTON_LABEL: ${{ secrets.SAML_BUTTON_LABEL }}
+      SAML_IMAGE_URL: ${{ secrets.SAML_IMAGE_URL }}
+      
+      # LDAP
+      LDAP_URL: ${{ secrets.LDAP_URL }}
+      LDAP_BIND_DN: ${{ secrets.LDAP_BIND_DN }}
+      LDAP_BIND_CREDENTIALS: ${{ secrets.LDAP_BIND_CREDENTIALS }}
+      LDAP_USER_SEARCH_BASE: ${{ secrets.LDAP_USER_SEARCH_BASE }}
+      LDAP_SEARCH_FILTER: ${{ secrets.LDAP_SEARCH_FILTER }}
+      
+      # Email Configuration
+      EMAIL_SERVICE: ${{ secrets.EMAIL_SERVICE }}
+      EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+      EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+      EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+      EMAIL_ENCRYPTION: ${{ secrets.EMAIL_ENCRYPTION }}
+      EMAIL_ALLOW_SELFSIGNED: ${{ secrets.EMAIL_ALLOW_SELFSIGNED }}
+      EMAIL_ENCRYPTION_HOSTNAME: ${{ secrets.EMAIL_ENCRYPTION_HOSTNAME }}
+      
+      # Mailgun
+      MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+      MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+      
+      # Features
+      ALLOW_REGISTRATION: ${{ secrets.ALLOW_REGISTRATION }}
+      ALLOW_SOCIAL_LOGIN: ${{ secrets.ALLOW_SOCIAL_LOGIN }}
+      ALLOW_PASSWORD_RESET: ${{ secrets.ALLOW_PASSWORD_RESET }}
+      SHOW_BIRTHDAY_ICON: ${{ secrets.SHOW_BIRTHDAY_ICON }}
+      HELP_AND_FAQ_URL: ${{ secrets.HELP_AND_FAQ_URL }}
+      
+      # Rate Limiting
+      FILE_UPLOAD_IP_MAX: ${{ secrets.FILE_UPLOAD_IP_MAX }}
+      FILE_UPLOAD_IP_WINDOW: ${{ secrets.FILE_UPLOAD_IP_WINDOW }}
+      FILE_UPLOAD_USER_MAX: ${{ secrets.FILE_UPLOAD_USER_MAX }}
+      FILE_UPLOAD_USER_WINDOW: ${{ secrets.FILE_UPLOAD_USER_WINDOW }}
+      IMPORT_IP_MAX: ${{ secrets.IMPORT_IP_MAX }}
+      IMPORT_IP_WINDOW: ${{ secrets.IMPORT_IP_WINDOW }}
+      IMPORT_USER_MAX: ${{ secrets.IMPORT_USER_MAX }}
+      IMPORT_USER_WINDOW: ${{ secrets.IMPORT_USER_WINDOW }}
+      
+      # Logging
+      DEBUG_LOGGING: ${{ secrets.DEBUG_LOGGING }}
+      CONSOLE_JSON: ${{ secrets.CONSOLE_JSON }}
+      DEBUG_CONSOLE: ${{ secrets.DEBUG_CONSOLE }}
+      
+      # Other Services
+      MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
+      PLUGINS_USE_AZURE: ${{ secrets.PLUGINS_USE_AZURE }}
+      OPENAI_REVERSE_PROXY: ${{ secrets.OPENAI_REVERSE_PROXY }}
+      AZURE_OPENAI_BASEURL: ${{ secrets.AZURE_OPENAI_BASEURL }}
+      ASSISTANTS_BASE_URL: ${{ secrets.ASSISTANTS_BASE_URL }}
+      AZURE_ASSISTANTS_BASE_URL: ${{ secrets.AZURE_ASSISTANTS_BASE_URL }}
+      BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+      BEDROCK_AWS_DEFAULT_REGION: ${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  verify-main:
+    name: Verify Main Branch
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Verify branch
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Deployment can only be triggered from main branch"
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to Production
+    needs: [test, verify-main]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      # Server Configuration
+      NODE_ENV: production
+      PORT: 3080
+      HOST: ${{ secrets.HOST }}
+      TRUST_PROXY: ${{ secrets.TRUST_PROXY }}
+      DOMAIN_SERVER: ${{ secrets.DOMAIN_SERVER }}
+      DOMAIN_CLIENT: ${{ secrets.DOMAIN_CLIENT }}
+      
+      # Database
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      
+      # Authentication
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+      CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      CREDS_IV: ${{ secrets.CREDS_IV }}
+      
+      # API Keys
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AZURE_ASSISTANTS_API_KEY: ${{ secrets.AZURE_ASSISTANTS_API_KEY }}
+      ASSISTANTS_API_KEY: ${{ secrets.ASSISTANTS_API_KEY }}
+      AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
+      GOOGLE_KEY: ${{ secrets.GOOGLE_KEY }}
+      WOLFRAM_APP_ID: ${{ secrets.WOLFRAM_APP_ID }}
+      
+      # Social Login
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      FACEBOOK_CLIENT_ID: ${{ secrets.FACEBOOK_CLIENT_ID }}
+      FACEBOOK_CLIENT_SECRET: ${{ secrets.FACEBOOK_CLIENT_SECRET }}
+      GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+      GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+      DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
+      
+      # Apple Login
+      APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+      APPLE_PRIVATE_KEY_PATH: ${{ secrets.APPLE_PRIVATE_KEY_PATH }}
+      
+      # OpenID
+      OPENID_CLIENT_ID: ${{ secrets.OPENID_CLIENT_ID }}
+      OPENID_CLIENT_SECRET: ${{ secrets.OPENID_CLIENT_SECRET }}
+      OPENID_ISSUER: ${{ secrets.OPENID_ISSUER }}
+      OPENID_SESSION_SECRET: ${{ secrets.OPENID_SESSION_SECRET }}
+      OPENID_BUTTON_LABEL: ${{ secrets.OPENID_BUTTON_LABEL }}
+      OPENID_AUTO_REDIRECT: ${{ secrets.OPENID_AUTO_REDIRECT }}
+      OPENID_AUTH_URL: ${{ secrets.OPENID_AUTH_URL }}
+      OPENID_IMAGE_URL: ${{ secrets.OPENID_IMAGE_URL }}
+      
+      # SAML
+      SAML_ENTRY_POINT: ${{ secrets.SAML_ENTRY_POINT }}
+      SAML_ISSUER: ${{ secrets.SAML_ISSUER }}
+      SAML_CERT: ${{ secrets.SAML_CERT }}
+      SAML_SESSION_SECRET: ${{ secrets.SAML_SESSION_SECRET }}
+      SAML_BUTTON_LABEL: ${{ secrets.SAML_BUTTON_LABEL }}
+      SAML_IMAGE_URL: ${{ secrets.SAML_IMAGE_URL }}
+      
+      # LDAP
+      LDAP_URL: ${{ secrets.LDAP_URL }}
+      LDAP_BIND_DN: ${{ secrets.LDAP_BIND_DN }}
+      LDAP_BIND_CREDENTIALS: ${{ secrets.LDAP_BIND_CREDENTIALS }}
+      LDAP_USER_SEARCH_BASE: ${{ secrets.LDAP_USER_SEARCH_BASE }}
+      LDAP_SEARCH_FILTER: ${{ secrets.LDAP_SEARCH_FILTER }}
+      
+      # Email Configuration
+      EMAIL_SERVICE: ${{ secrets.EMAIL_SERVICE }}
+      EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+      EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+      EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+      EMAIL_ENCRYPTION: ${{ secrets.EMAIL_ENCRYPTION }}
+      EMAIL_ALLOW_SELFSIGNED: ${{ secrets.EMAIL_ALLOW_SELFSIGNED }}
+      EMAIL_ENCRYPTION_HOSTNAME: ${{ secrets.EMAIL_ENCRYPTION_HOSTNAME }}
+      
+      # Mailgun
+      MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+      MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+      
+      # Features
+      ALLOW_REGISTRATION: ${{ secrets.ALLOW_REGISTRATION }}
+      ALLOW_SOCIAL_LOGIN: ${{ secrets.ALLOW_SOCIAL_LOGIN }}
+      ALLOW_PASSWORD_RESET: ${{ secrets.ALLOW_PASSWORD_RESET }}
+      SHOW_BIRTHDAY_ICON: ${{ secrets.SHOW_BIRTHDAY_ICON }}
+      HELP_AND_FAQ_URL: ${{ secrets.HELP_AND_FAQ_URL }}
+      
+      # Rate Limiting
+      FILE_UPLOAD_IP_MAX: ${{ secrets.FILE_UPLOAD_IP_MAX }}
+      FILE_UPLOAD_IP_WINDOW: ${{ secrets.FILE_UPLOAD_IP_WINDOW }}
+      FILE_UPLOAD_USER_MAX: ${{ secrets.FILE_UPLOAD_USER_MAX }}
+      FILE_UPLOAD_USER_WINDOW: ${{ secrets.FILE_UPLOAD_USER_WINDOW }}
+      IMPORT_IP_MAX: ${{ secrets.IMPORT_IP_MAX }}
+      IMPORT_IP_WINDOW: ${{ secrets.IMPORT_IP_WINDOW }}
+      IMPORT_USER_MAX: ${{ secrets.IMPORT_USER_MAX }}
+      IMPORT_USER_WINDOW: ${{ secrets.IMPORT_USER_WINDOW }}
+      
+      # Logging
+      DEBUG_LOGGING: ${{ secrets.DEBUG_LOGGING }}
+      CONSOLE_JSON: ${{ secrets.CONSOLE_JSON }}
+      DEBUG_CONSOLE: ${{ secrets.DEBUG_CONSOLE }}
+      
+      # Other Services
+      MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
+      PLUGINS_USE_AZURE: ${{ secrets.PLUGINS_USE_AZURE }}
+      OPENAI_REVERSE_PROXY: ${{ secrets.OPENAI_REVERSE_PROXY }}
+      AZURE_OPENAI_BASEURL: ${{ secrets.AZURE_OPENAI_BASEURL }}
+      ASSISTANTS_BASE_URL: ${{ secrets.ASSISTANTS_BASE_URL }}
+      AZURE_ASSISTANTS_BASE_URL: ${{ secrets.AZURE_ASSISTANTS_BASE_URL }}
+      BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+      BEDROCK_AWS_DEFAULT_REGION: ${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DigitalOcean Container Registry
+        run: doctl registry login
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
+          build-args: |
+            NODE_ENV=production
+            PORT=3080
+            HOST=${{ secrets.HOST }}
+            TRUST_PROXY=${{ secrets.TRUST_PROXY }}
+            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER }}
+            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT }}
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            CREDS_KEY=${{ secrets.CREDS_KEY }}
+            CREDS_IV=${{ secrets.CREDS_IV }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            AZURE_ASSISTANTS_API_KEY=${{ secrets.AZURE_ASSISTANTS_API_KEY }}
+            ASSISTANTS_API_KEY=${{ secrets.ASSISTANTS_API_KEY }}
+            AZURE_API_KEY=${{ secrets.AZURE_API_KEY }}
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            CHATGPT_TOKEN=${{ secrets.CHATGPT_TOKEN }}
+            GOOGLE_KEY=${{ secrets.GOOGLE_KEY }}
+            WOLFRAM_APP_ID=${{ secrets.WOLFRAM_APP_ID }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            FACEBOOK_CLIENT_ID=${{ secrets.FACEBOOK_CLIENT_ID }}
+            FACEBOOK_CLIENT_SECRET=${{ secrets.FACEBOOK_CLIENT_SECRET }}
+            GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}
+            GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }}
+            DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}
+            DISCORD_CLIENT_SECRET=${{ secrets.DISCORD_CLIENT_SECRET }}
+            APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
+            APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}
+            APPLE_KEY_ID=${{ secrets.APPLE_KEY_ID }}
+            APPLE_PRIVATE_KEY_PATH=${{ secrets.APPLE_PRIVATE_KEY_PATH }}
+            OPENID_CLIENT_ID=${{ secrets.OPENID_CLIENT_ID }}
+            OPENID_CLIENT_SECRET=${{ secrets.OPENID_CLIENT_SECRET }}
+            OPENID_ISSUER=${{ secrets.OPENID_ISSUER }}
+            OPENID_SESSION_SECRET=${{ secrets.OPENID_SESSION_SECRET }}
+            OPENID_BUTTON_LABEL=${{ secrets.OPENID_BUTTON_LABEL }}
+            OPENID_AUTO_REDIRECT=${{ secrets.OPENID_AUTO_REDIRECT }}
+            OPENID_AUTH_URL=${{ secrets.OPENID_AUTH_URL }}
+            OPENID_IMAGE_URL=${{ secrets.OPENID_IMAGE_URL }}
+            SAML_ENTRY_POINT=${{ secrets.SAML_ENTRY_POINT }}
+            SAML_ISSUER=${{ secrets.SAML_ISSUER }}
+            SAML_CERT=${{ secrets.SAML_CERT }}
+            SAML_SESSION_SECRET=${{ secrets.SAML_SESSION_SECRET }}
+            SAML_BUTTON_LABEL=${{ secrets.SAML_BUTTON_LABEL }}
+            SAML_IMAGE_URL=${{ secrets.SAML_IMAGE_URL }}
+            LDAP_URL=${{ secrets.LDAP_URL }}
+            LDAP_BIND_DN=${{ secrets.LDAP_BIND_DN }}
+            LDAP_BIND_CREDENTIALS=${{ secrets.LDAP_BIND_CREDENTIALS }}
+            LDAP_USER_SEARCH_BASE=${{ secrets.LDAP_USER_SEARCH_BASE }}
+            LDAP_SEARCH_FILTER=${{ secrets.LDAP_SEARCH_FILTER }}
+            EMAIL_SERVICE=${{ secrets.EMAIL_SERVICE }}
+            EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+            EMAIL_PORT=${{ secrets.EMAIL_PORT }}
+            EMAIL_USERNAME=${{ secrets.EMAIL_USERNAME }}
+            EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
+            EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+            EMAIL_FROM_NAME=${{ secrets.EMAIL_FROM_NAME }}
+            EMAIL_ENCRYPTION=${{ secrets.EMAIL_ENCRYPTION }}
+            EMAIL_ALLOW_SELFSIGNED=${{ secrets.EMAIL_ALLOW_SELFSIGNED }}
+            EMAIL_ENCRYPTION_HOSTNAME=${{ secrets.EMAIL_ENCRYPTION_HOSTNAME }}
+            MAILGUN_API_KEY=${{ secrets.MAILGUN_API_KEY }}
+            MAILGUN_DOMAIN=${{ secrets.MAILGUN_DOMAIN }}
+            ALLOW_REGISTRATION=${{ secrets.ALLOW_REGISTRATION }}
+            ALLOW_SOCIAL_LOGIN=${{ secrets.ALLOW_SOCIAL_LOGIN }}
+            ALLOW_PASSWORD_RESET=${{ secrets.ALLOW_PASSWORD_RESET }}
+            SHOW_BIRTHDAY_ICON=${{ secrets.SHOW_BIRTHDAY_ICON }}
+            HELP_AND_FAQ_URL=${{ secrets.HELP_AND_FAQ_URL }}
+            FILE_UPLOAD_IP_MAX=${{ secrets.FILE_UPLOAD_IP_MAX }}
+            FILE_UPLOAD_IP_WINDOW=${{ secrets.FILE_UPLOAD_IP_WINDOW }}
+            FILE_UPLOAD_USER_MAX=${{ secrets.FILE_UPLOAD_USER_MAX }}
+            FILE_UPLOAD_USER_WINDOW=${{ secrets.FILE_UPLOAD_USER_WINDOW }}
+            IMPORT_IP_MAX=${{ secrets.IMPORT_IP_MAX }}
+            IMPORT_IP_WINDOW=${{ secrets.IMPORT_IP_WINDOW }}
+            IMPORT_USER_MAX=${{ secrets.IMPORT_USER_MAX }}
+            IMPORT_USER_WINDOW=${{ secrets.IMPORT_USER_WINDOW }}
+            DEBUG_LOGGING=${{ secrets.DEBUG_LOGGING }}
+            CONSOLE_JSON=${{ secrets.CONSOLE_JSON }}
+            DEBUG_CONSOLE=${{ secrets.DEBUG_CONSOLE }}
+            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
+            PLUGINS_USE_AZURE=${{ secrets.PLUGINS_USE_AZURE }}
+            OPENAI_REVERSE_PROXY=${{ secrets.OPENAI_REVERSE_PROXY }}
+            AZURE_OPENAI_BASEURL=${{ secrets.AZURE_OPENAI_BASEURL }}
+            ASSISTANTS_BASE_URL=${{ secrets.ASSISTANTS_BASE_URL }}
+            AZURE_ASSISTANTS_BASE_URL=${{ secrets.AZURE_ASSISTANTS_BASE_URL }}
+            BEDROCK_AWS_SECRET_ACCESS_KEY=${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+            BEDROCK_AWS_DEFAULT_REGION=${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}
+
+      - name: Deploy to DigitalOcean App Platform
+        run: |
+          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 
