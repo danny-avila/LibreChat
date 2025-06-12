@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       environment:
@@ -18,8 +19,21 @@ on:
         default: 'production'
 
 jobs:
+  check_review:
+    name: Check Pull Request Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    steps:
+      - name: Check for required reviews
+        run: |
+          if [[ "${{ github.event.pull_request.review_comments }}" -eq 0 ]]; then
+            echo "Error: At least one review is required before merging to main"
+            exit 1
+          fi
+
   deploy:
     name: Deploy to Production
+    needs: check_review
     runs-on: ubuntu-latest
     if: github.event.inputs.environment == 'production'
     environment: production
