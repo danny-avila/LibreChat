@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
+import {
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
+} from 'librechat-data-provider';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
@@ -12,11 +17,6 @@ import { useToastContext } from '~/Providers';
 import { TrashIcon } from '~/components/svg';
 import ActionsInput from './ActionsInput';
 import { Panel } from '~/common';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
 
 export default function ActionsPanel() {
   const localize = useLocalize();
@@ -58,7 +58,7 @@ export default function ActionsPanel() {
     },
   });
 
-  const { reset, watch } = methods;
+  const { reset } = methods;
 
   useEffect(() => {
     if (action?.metadata.auth) {
