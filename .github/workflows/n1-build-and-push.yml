@@ -2,9 +2,9 @@ name: N1 - Build and Push
 
 env:
     # Azure ACR
-    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_NONPROD }}
-    ACR_USER: ${{ secrets.REGISTRY_USERNAME_NONPROD }}
-    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_NONPROD }}
+    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
+    ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
+    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
 
 on:
   workflow_dispatch:
