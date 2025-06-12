@@ -338,7 +338,7 @@ export default function AgentConfig({
           </div>
         </div>
         {/* MCP Section */}
-        <MCPSection />
+        {/* <MCPSection /> */}
       </div>
       <ToolSelectDialog
         isOpen={showToolDialog}
