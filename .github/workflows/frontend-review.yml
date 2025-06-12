@@ -17,20 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
       - name: Use Node.js 20.x
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Client
-        run: npm run frontend:ci
+        run: pnpm run frontend:ci
 
       - name: Run unit tests
-        run: npm run test:ci --verbose
+        run: pnpm run test:ci --verbose
         working-directory: client
 
   tests_frontend_windows:
@@ -39,18 +42,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
       - name: Use Node.js 20.x
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Client
-        run: npm run frontend:ci
+        run: pnpm run frontend:ci
 
       - name: Run unit tests
-        run: npm run test:ci --verbose
+        run: pnpm run test:ci --verbose
         working-directory: client

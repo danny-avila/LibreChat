@@ -12,23 +12,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 16
-      - run: cd packages/data-provider && npm ci
-      - run: cd packages/data-provider && npm run build
+          cache: 'pnpm'
+      - run: cd packages/data-provider && pnpm install --frozen-lockfile
+      - run: cd packages/data-provider && pnpm run build
 
   publish-npm:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 16
           registry-url: 'https://registry.npmjs.org'
-      - run: cd packages/data-provider && npm ci
-      - run: cd packages/data-provider && npm run build
+          cache: 'pnpm'
+      - run: cd packages/data-provider && pnpm install --frozen-lockfile
+      - run: cd packages/data-provider && pnpm run build
       - run: cd packages/data-provider && npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}

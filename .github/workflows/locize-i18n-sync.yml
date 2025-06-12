@@ -14,13 +14,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
       - name: Set Up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm'
 
       - name: Install locize CLI
-        run: npm install -g locize-cli
+        run: pnpm install -g locize-cli
 
       # Sync translations (Push missing keys & remove deleted ones)
       - name: Sync Locize with Repository

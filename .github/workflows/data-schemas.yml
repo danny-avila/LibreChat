@@ -19,16 +19,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18.x'
+          cache: 'pnpm'
           
       - name: Install dependencies
-        run: cd packages/data-schemas && npm ci
+        run: cd packages/data-schemas && pnpm install --frozen-lockfile
         
       - name: Build
-        run: cd packages/data-schemas && npm run build
+        run: cd packages/data-schemas && pnpm run build
         
       - name: Set up npm authentication
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
