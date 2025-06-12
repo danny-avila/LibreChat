@@ -404,6 +404,453 @@ describe('primeResources', () => {
       expect(result.attachments?.[0]?.file_id).toBe('ocr-file-1');
       expect(result.attachments?.[1]?.file_id).toBe('file1');
     });
+
+    it('should prevent duplicate files when same file exists in OCR and attachments', async () => {
+      const sharedFile: TFile = {
+        user: 'user1',
+        file_id: 'shared-file-id',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      const mockOcrFiles: TFile[] = [sharedFile];
+      const mockAttachmentFiles: TFile[] = [
+        sharedFile,
+        {
+          user: 'user1',
+          file_id: 'unique-file',
+          filename: 'other.txt',
+          filepath: '/uploads/other.txt',
+          object: 'file',
+          type: 'text/plain',
+          bytes: 256,
+          embedded: false,
+          usage: 0,
+        },
+      ];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+      const attachments = Promise.resolve(mockAttachmentFiles);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['shared-file-id'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources,
+      });
+
+      // Should only have 2 files, not 3 (no duplicate)
+      expect(result.attachments).toHaveLength(2);
+      expect(result.attachments?.filter((f) => f?.file_id === 'shared-file-id')).toHaveLength(1);
+      expect(result.attachments?.find((f) => f?.file_id === 'unique-file')).toBeDefined();
+    });
+
+    it('should still categorize duplicate files for tool_resources', async () => {
+      const sharedFile: TFile = {
+        user: 'user1',
+        file_id: 'shared-file-id',
+        filename: 'script.py',
+        filepath: '/uploads/script.py',
+        object: 'file',
+        type: 'text/x-python',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+        metadata: {
+          fileIdentifier: 'python-script',
+        },
+      };
+
+      const mockOcrFiles: TFile[] = [sharedFile];
+      const mockAttachmentFiles: TFile[] = [sharedFile];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+      const attachments = Promise.resolve(mockAttachmentFiles);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['shared-file-id'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources,
+      });
+
+      // File should appear only once in attachments
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments?.[0]?.file_id).toBe('shared-file-id');
+
+      // But should still be categorized in tool_resources
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files?.[0]?.file_id).toBe(
+        'shared-file-id',
+      );
+    });
+
+    it('should handle multiple duplicate files', async () => {
+      const file1: TFile = {
+        user: 'user1',
+        file_id: 'file-1',
+        filename: 'doc1.pdf',
+        filepath: '/uploads/doc1.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      const file2: TFile = {
+        user: 'user1',
+        file_id: 'file-2',
+        filename: 'doc2.pdf',
+        filepath: '/uploads/doc2.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+      };
+
+      const uniqueFile: TFile = {
+        user: 'user1',
+        file_id: 'unique-file',
+        filename: 'unique.txt',
+        filepath: '/uploads/unique.txt',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 256,
+        embedded: false,
+        usage: 0,
+      };
+
+      const mockOcrFiles: TFile[] = [file1, file2];
+      const mockAttachmentFiles: TFile[] = [file1, file2, uniqueFile];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+      const attachments = Promise.resolve(mockAttachmentFiles);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['file-1', 'file-2'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources,
+      });
+
+      // Should have 3 files total (2 from OCR + 1 unique from attachments)
+      expect(result.attachments).toHaveLength(3);
+
+      // Each file should appear only once
+      const fileIds = result.attachments?.map((f) => f?.file_id);
+      expect(fileIds).toContain('file-1');
+      expect(fileIds).toContain('file-2');
+      expect(fileIds).toContain('unique-file');
+
+      // Check no duplicates
+      const uniqueFileIds = new Set(fileIds);
+      expect(uniqueFileIds.size).toBe(fileIds?.length);
+    });
+
+    it('should handle files without file_id gracefully', async () => {
+      const fileWithoutId: Partial<TFile> = {
+        user: 'user1',
+        filename: 'no-id.txt',
+        filepath: '/uploads/no-id.txt',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 256,
+        embedded: false,
+        usage: 0,
+      };
+
+      const normalFile: TFile = {
+        user: 'user1',
+        file_id: 'normal-file',
+        filename: 'normal.txt',
+        filepath: '/uploads/normal.txt',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+      };
+
+      const mockOcrFiles: TFile[] = [normalFile];
+      const mockAttachmentFiles = [fileWithoutId as TFile, normalFile];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+      const attachments = Promise.resolve(mockAttachmentFiles);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['normal-file'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources,
+      });
+
+      // Should include file without ID and one instance of normal file
+      expect(result.attachments).toHaveLength(2);
+      expect(result.attachments?.filter((f) => f?.file_id === 'normal-file')).toHaveLength(1);
+      expect(result.attachments?.some((f) => !f?.file_id)).toBe(true);
+    });
+
+    it('should prevent duplicates from existing tool_resources', async () => {
+      const existingFile: TFile = {
+        user: 'user1',
+        file_id: 'existing-file',
+        filename: 'existing.py',
+        filepath: '/uploads/existing.py',
+        object: 'file',
+        type: 'text/x-python',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+        metadata: {
+          fileIdentifier: 'python-script',
+        },
+      };
+
+      const newFile: TFile = {
+        user: 'user1',
+        file_id: 'new-file',
+        filename: 'new.py',
+        filepath: '/uploads/new.py',
+        object: 'file',
+        type: 'text/x-python',
+        bytes: 256,
+        embedded: false,
+        usage: 0,
+        metadata: {
+          fileIdentifier: 'python-script',
+        },
+      };
+
+      const existingToolResources = {
+        [EToolResources.execute_code]: {
+          files: [existingFile],
+        },
+      };
+
+      const attachments = Promise.resolve([existingFile, newFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources: existingToolResources,
+      });
+
+      // Should only add the new file to attachments
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments?.[0]?.file_id).toBe('new-file');
+
+      // Should not duplicate the existing file in tool_resources
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(2);
+      const fileIds = result.tool_resources?.[EToolResources.execute_code]?.files?.map(
+        (f) => f.file_id,
+      );
+      expect(fileIds).toEqual(['existing-file', 'new-file']);
+    });
+
+    it('should handle duplicates within attachments array', async () => {
+      const duplicatedFile: TFile = {
+        user: 'user1',
+        file_id: 'dup-file',
+        filename: 'duplicate.txt',
+        filepath: '/uploads/duplicate.txt',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 256,
+        embedded: false,
+        usage: 0,
+      };
+
+      const uniqueFile: TFile = {
+        user: 'user1',
+        file_id: 'unique-file',
+        filename: 'unique.txt',
+        filepath: '/uploads/unique.txt',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 128,
+        embedded: false,
+        usage: 0,
+      };
+
+      // Same file appears multiple times in attachments
+      const attachments = Promise.resolve([
+        duplicatedFile,
+        duplicatedFile,
+        uniqueFile,
+        duplicatedFile,
+      ]);
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources: {},
+      });
+
+      // Should only have 2 unique files
+      expect(result.attachments).toHaveLength(2);
+      const fileIds = result.attachments?.map((f) => f?.file_id);
+      expect(fileIds).toContain('dup-file');
+      expect(fileIds).toContain('unique-file');
+
+      // Verify no duplicates
+      expect(fileIds?.filter((id) => id === 'dup-file')).toHaveLength(1);
+    });
+
+    it('should prevent duplicates across different tool_resource categories', async () => {
+      const multiPurposeFile: TFile = {
+        user: 'user1',
+        file_id: 'multi-file',
+        filename: 'data.txt',
+        filepath: '/uploads/data.txt',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 512,
+        embedded: true, // Will be categorized as file_search
+        usage: 0,
+      };
+
+      const existingToolResources = {
+        [EToolResources.file_search]: {
+          files: [multiPurposeFile],
+        },
+      };
+
+      // Try to add the same file again
+      const attachments = Promise.resolve([multiPurposeFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources: existingToolResources,
+      });
+
+      // Should not add to attachments (already exists)
+      expect(result.attachments).toHaveLength(0);
+
+      // Should not duplicate in file_search
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.file_search]?.files?.[0]?.file_id).toBe(
+        'multi-file',
+      );
+    });
+
+    it('should handle complex scenario with OCR, existing tool_resources, and attachments', async () => {
+      const ocrFile: TFile = {
+        user: 'user1',
+        file_id: 'ocr-file',
+        filename: 'scan.pdf',
+        filepath: '/uploads/scan.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+      };
+
+      const existingFile: TFile = {
+        user: 'user1',
+        file_id: 'existing-file',
+        filename: 'code.py',
+        filepath: '/uploads/code.py',
+        object: 'file',
+        type: 'text/x-python',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+        metadata: {
+          fileIdentifier: 'python-script',
+        },
+      };
+
+      const newFile: TFile = {
+        user: 'user1',
+        file_id: 'new-file',
+        filename: 'image.png',
+        filepath: '/uploads/image.png',
+        object: 'file',
+        type: 'image/png',
+        bytes: 4096,
+        embedded: false,
+        usage: 0,
+        height: 800,
+        width: 600,
+      };
+
+      mockGetFiles.mockResolvedValue([ocrFile, existingFile]); // OCR returns both files
+      const attachments = Promise.resolve([existingFile, ocrFile, newFile]); // Attachments has duplicates
+
+      const existingToolResources = {
+        [EToolResources.ocr]: {
+          file_ids: ['ocr-file', 'existing-file'],
+        },
+        [EToolResources.execute_code]: {
+          files: [existingFile],
+        },
+      };
+
+      requestFileSet.add('new-file'); // Only new-file is in request set
+
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources: existingToolResources,
+      });
+
+      // Should have 3 unique files total
+      expect(result.attachments).toHaveLength(3);
+      const attachmentIds = result.attachments?.map((f) => f?.file_id).sort();
+      expect(attachmentIds).toEqual(['existing-file', 'new-file', 'ocr-file']);
+
+      // Check tool_resources
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.image_edit]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.image_edit]?.files?.[0]?.file_id).toBe(
+        'new-file',
+      );
+    });
   });
 
   describe('error handling', () => {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TUser } from './types';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
@@ -7,7 +8,7 @@ const BaseOptionsSchema = z.object({
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
-  /** 
+  /**
    * Controls server instruction behavior:
    * - undefined/not set: No instructions included (default)
    * - true: Use server-provided instructions
@@ -121,12 +122,58 @@ export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
 
 /**
- * Recursively processes an object to replace environment variables in string values
- * @param {MCPOptions} obj - The object to process
- * @param {string} [userId] - The user ID
- * @returns {MCPOptions} - The processed object with environment variables replaced
+ * List of allowed user fields that can be used in MCP environment variables.
+ * These are non-sensitive string/boolean fields from the IUser interface.
  */
-export function processMCPEnv(obj: Readonly<MCPOptions>, userId?: string): MCPOptions {
+const ALLOWED_USER_FIELDS = [
+  'name',
+  'username',
+  'email',
+  'provider',
+  'role',
+  'googleId',
+  'facebookId',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'githubId',
+  'discordId',
+  'appleId',
+  'emailVerified',
+  'twoFactorEnabled',
+  'termsAccepted',
+] as const;
+
+/**
+ * Processes a string value to replace user field placeholders
+ * @param value - The string value to process
+ * @param user - The user object
+ * @returns The processed string with placeholders replaced
+ */
+function processUserPlaceholders(value: string, user?: TUser): string {
+  if (!user || typeof value !== 'string') {
+    return value;
+  }
+
+  for (const field of ALLOWED_USER_FIELDS) {
+    const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
+    if (value.includes(placeholder)) {
+      const fieldValue = user[field as keyof TUser];
+      const replacementValue = fieldValue != null ? String(fieldValue) : '';
+      value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
+    }
+  }
+
+  return value;
+}
+
+/**
+ * Recursively processes an object to replace environment variables in string values
+ * @param obj - The object to process
+ * @param user - The user object containing all user fields
+ * @returns - The processed object with environment variables replaced
+ */
+export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser): MCPOptions {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -136,23 +183,31 @@ export function processMCPEnv(obj: Readonly<MCPOptions>, userId?: string): MCPOp
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
     for (const [key, value] of Object.entries(newObj.env)) {
-      processedEnv[key] = extractEnvVariable(value);
+      let processedValue = extractEnvVariable(value);
+      processedValue = processUserPlaceholders(processedValue, user);
+      processedEnv[key] = processedValue;
     }
     newObj.env = processedEnv;
   } else if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
     for (const [key, value] of Object.entries(newObj.headers)) {
-      if (value === '{{LIBRECHAT_USER_ID}}' && userId != null && userId) {
-        processedHeaders[key] = userId;
+      const userId = user?.id;
+      if (value === '{{LIBRECHAT_USER_ID}}' && userId != null) {
+        processedHeaders[key] = String(userId);
         continue;
       }
-      processedHeaders[key] = extractEnvVariable(value);
+
+      let processedValue = extractEnvVariable(value);
+      processedValue = processUserPlaceholders(processedValue, user);
+      processedHeaders[key] = processedValue;
     }
     newObj.headers = processedHeaders;
   }
 
   if ('url' in newObj && newObj.url) {
-    newObj.url = extractEnvVariable(newObj.url);
+    let processedUrl = extractEnvVariable(newObj.url);
+    processedUrl = processUserPlaceholders(processedUrl, user);
+    newObj.url = processedUrl;
   }
 
   return newObj;

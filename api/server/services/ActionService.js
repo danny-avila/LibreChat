@@ -210,6 +210,7 @@ async function createActionTool({
                     userId: userId,
                     client_url: metadata.auth.client_url,
                     redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
+                    token_exchange_method: metadata.auth.token_exchange_method,
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
@@ -264,6 +265,7 @@ async function createActionTool({
                     refresh_token,
                     client_url: metadata.auth.client_url,
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
+                    token_exchange_method: metadata.auth.token_exchange_method,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                   });
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
