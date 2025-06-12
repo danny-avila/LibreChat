@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { TokenExchangeMethodEnum } = require('librechat-data-provider');
 const { handleOAuthToken } = require('~/models/Token');
 const { decryptV2 } = require('~/server/utils/crypto');
 const { logAxiosError } = require('~/utils');
@@ -49,6 +50,7 @@ async function processAccessTokens(tokenData, { userId, identifier }) {
  * @param {string} fields.client_url - The URL of the OAuth provider.
  * @param {string} fields.identifier - The identifier for the token.
  * @param {string} fields.refresh_token - The refresh token to use.
+ * @param {string} fields.token_exchange_method - The token exchange method ('default_post' or 'basic_auth_header').
  * @param {string} fields.encrypted_oauth_client_id - The client ID for the OAuth provider.
  * @param {string} fields.encrypted_oauth_client_secret - The client secret for the OAuth provider.
  * @returns {Promise<{
@@ -63,26 +65,36 @@ const refreshAccessToken = async ({
   client_url,
   identifier,
   refresh_token,
+  token_exchange_method,
   encrypted_oauth_client_id,
   encrypted_oauth_client_secret,
 }) => {
   try {
     const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
     const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    };
+
     const params = new URLSearchParams({
-      client_id: oauth_client_id,
-      client_secret: oauth_client_secret,
       grant_type: 'refresh_token',
       refresh_token,
     });
 
+    if (token_exchange_method === TokenExchangeMethodEnum.BasicAuthHeader) {
+      const basicAuth = Buffer.from(`${oauth_client_id}:${oauth_client_secret}`).toString('base64');
+      headers['Authorization'] = `Basic ${basicAuth}`;
+    } else {
+      params.append('client_id', oauth_client_id);
+      params.append('client_secret', oauth_client_secret);
+    }
+
     const response = await axios({
       method: 'POST',
       url: client_url,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
+      headers,
       data: params.toString(),
     });
     await processAccessTokens(response.data, {
@@ -110,6 +122,7 @@ const refreshAccessToken = async ({
  * @param {string} fields.identifier - The identifier for the token.
  * @param {string} fields.client_url - The URL of the OAuth provider.
  * @param {string} fields.redirect_uri - The redirect URI for the OAuth provider.
+ * @param {string} fields.token_exchange_method - The token exchange method ('default_post' or 'basic_auth_header').
  * @param {string} fields.encrypted_oauth_client_id - The client ID for the OAuth provider.
  * @param {string} fields.encrypted_oauth_client_secret - The client secret for the OAuth provider.
  * @returns {Promise<{
@@ -125,27 +138,37 @@ const getAccessToken = async ({
   identifier,
   client_url,
   redirect_uri,
+  token_exchange_method,
   encrypted_oauth_client_id,
   encrypted_oauth_client_secret,
 }) => {
   const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
   const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
+
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept: 'application/json',
+  };
+
   const params = new URLSearchParams({
     code,
-    client_id: oauth_client_id,
-    client_secret: oauth_client_secret,
     grant_type: 'authorization_code',
     redirect_uri,
   });
+
+  if (token_exchange_method === TokenExchangeMethodEnum.BasicAuthHeader) {
+    const basicAuth = Buffer.from(`${oauth_client_id}:${oauth_client_secret}`).toString('base64');
+    headers['Authorization'] = `Basic ${basicAuth}`;
+  } else {
+    params.append('client_id', oauth_client_id);
+    params.append('client_secret', oauth_client_secret);
+  }
 
   try {
     const response = await axios({
       method: 'POST',
       url: client_url,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
+      headers,
       data: params.toString(),
     });
 
