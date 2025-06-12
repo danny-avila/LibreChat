@@ -1,14 +1,21 @@
 jest.mock('winston', () => {
-  const mockFormatFunction = jest.fn((fn) => fn);
+  const mockFormatFunction = jest.fn((fn) => {
+    // Return a function that creates an object with level property
+    return () => ({
+      level: 'info',
+      message: '',
+      timestamp: new Date().toISOString(),
+    });
+  });
 
-  mockFormatFunction.colorize = jest.fn();
-  mockFormatFunction.combine = jest.fn();
-  mockFormatFunction.label = jest.fn();
-  mockFormatFunction.timestamp = jest.fn();
-  mockFormatFunction.printf = jest.fn();
-  mockFormatFunction.errors = jest.fn();
-  mockFormatFunction.splat = jest.fn();
-  mockFormatFunction.json = jest.fn();
+  mockFormatFunction.colorize = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.combine = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.label = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.timestamp = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.printf = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.errors = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.splat = jest.fn(() => mockFormatFunction);
+  mockFormatFunction.json = jest.fn(() => mockFormatFunction);
   return {
     format: mockFormatFunction,
     createLogger: jest.fn().mockReturnValue({
