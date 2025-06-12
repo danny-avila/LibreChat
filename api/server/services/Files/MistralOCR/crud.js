@@ -121,12 +121,10 @@ async function performOCR({
  *                       representing the user
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `mimetype` property that tells us the file type
- * @param {string} params.file_id - The file ID.
- * @param {string} [params.entity_id] - The entity ID, not used here but passed for consistency.
  * @returns {Promise<{ filepath: string, bytes: number }>} - The result object containing the processed `text` and `images` (not currently used),
  *                       along with the `filename` and `bytes` properties.
  */
-const uploadMistralOCR = async ({ req, file, file_id, entity_id }) => {
+const uploadMistralOCR = async ({ req, file }) => {
   try {
     /** @type {TCustomConfig['ocr']} */
     const ocrConfig = req.app.locals?.ocr;
