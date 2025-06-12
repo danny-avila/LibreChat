@@ -2,11 +2,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import React, { useState, useMemo, useCallback } from 'react';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { useToastContext, useFileMapContext } from '~/Providers';
 import Action from '~/components/SidePanel/Builder/Action';
-import type { TPlugin } from 'librechat-data-provider';
 import { ToolSelectDialog } from '~/components/Tools';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { processAgentOption } from '~/utils';
@@ -15,11 +15,11 @@ import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
 import { useLocalize } from '~/hooks';
+import MCPSection from './MCPSection';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
-import MCPSection from './MCPSection';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -341,7 +341,6 @@ export default function AgentConfig({
             </div>
           </div>
         </div>
-
         {/* MCP Section */}
         <MCPSection />
       </div>
