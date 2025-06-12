@@ -40,7 +40,7 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
 
       if (localStorage.getItem(key) !== null) return;
 
-      const setter = (setters as Record<string, (v: any) => void>)[key];
+      const setter = setters[key as keyof typeof setters];
       if (setter) {
         logger.log(`Setting default speech setting: ${key} = ${value}`);
         setter(value as any);
