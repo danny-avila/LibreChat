@@ -9,7 +9,7 @@ import type { Plugin } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig(({ command }) => ({
   server: {
-    host: 'localhost',
+    host: process.env.IS_DEV_CONTAINER ? '0.0.0.0' : 'localhost',
     port: 3090,
     strictPort: false,
     proxy: {
