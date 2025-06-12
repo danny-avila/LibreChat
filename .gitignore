@@ -124,6 +124,3 @@ helm/**/.values.yaml
 
 # SAML Idp cert
 *.cert
-# dev files directory
-.devFiles/
-
