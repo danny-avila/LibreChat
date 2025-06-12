@@ -16,13 +16,9 @@ async function isEmailDomainAllowed(email) {
   }
 
   const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return true;
-  } else if (!customConfig?.registration?.allowedDomains) {
-    return true;
-  }
+  const allowedDomains = customConfig?.registration?.allowedDomains || ['socioh.com'];
 
-  return customConfig.registration.allowedDomains.includes(domain);
+  return allowedDomains.includes(domain.toLowerCase());
 }
 
 /**

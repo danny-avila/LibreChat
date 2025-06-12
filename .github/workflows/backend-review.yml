@@ -14,15 +14,42 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
+      # Server Configuration
+      PORT: 3080
+      HOST: 0.0.0.0
+      NODE_ENV: CI
+      
+      # MongoDB Configuration
       MONGO_URI: ${{ secrets.MONGO_URI }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      
+      # Meilisearch Configuration
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
+      
+      # RAG API Configuration
+      RAG_PORT: 8000
+      RAG_API_URL: http://rag_api:8000
+      
+      # Security
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
+      
+      # Rate Limiting
       BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
       BAN_DURATION: ${{ secrets.BAN_DURATION }}
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
-      NODE_ENV: CI
+      
+      # Vector Database Configuration
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      
+      # API Keys
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # Add other API keys as needed
+      # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 20.x

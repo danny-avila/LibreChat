@@ -18,285 +18,102 @@ on:
         default: 'production'
 
 jobs:
-  test:
-    name: Run Unit Tests
+  deploy:
+    name: Deploy to Production
     runs-on: ubuntu-latest
-    env:
-      # Server Configuration
-      NODE_ENV: test
-      PORT: 3080
-      HOST: localhost
-      TRUST_PROXY: 1
-      DOMAIN_SERVER: http://localhost:3080
-      DOMAIN_CLIENT: http://localhost:3000
-      
-      # Database
-      MONGO_URI: mongodb://localhost:27017/librechat-test
-      
-      # Authentication
-      JWT_SECRET: test-secret
-      JWT_REFRESH_SECRET: test-refresh-secret
-      CREDS_KEY: test-creds-key
-      CREDS_IV: test-creds-iv
-      
-      # API Keys
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      AZURE_ASSISTANTS_API_KEY: ${{ secrets.AZURE_ASSISTANTS_API_KEY }}
-      ASSISTANTS_API_KEY: ${{ secrets.ASSISTANTS_API_KEY }}
-      AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
-      GOOGLE_KEY: ${{ secrets.GOOGLE_KEY }}
-      WOLFRAM_APP_ID: ${{ secrets.WOLFRAM_APP_ID }}
-      
-      # Social Login
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-      FACEBOOK_CLIENT_ID: ${{ secrets.FACEBOOK_CLIENT_ID }}
-      FACEBOOK_CLIENT_SECRET: ${{ secrets.FACEBOOK_CLIENT_SECRET }}
-      GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
-      GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
-      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-      DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
-      
-      # Apple Login
-      APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
-      APPLE_PRIVATE_KEY_PATH: ${{ secrets.APPLE_PRIVATE_KEY_PATH }}
-      
-      # OpenID
-      OPENID_CLIENT_ID: ${{ secrets.OPENID_CLIENT_ID }}
-      OPENID_CLIENT_SECRET: ${{ secrets.OPENID_CLIENT_SECRET }}
-      OPENID_ISSUER: ${{ secrets.OPENID_ISSUER }}
-      OPENID_SESSION_SECRET: ${{ secrets.OPENID_SESSION_SECRET }}
-      OPENID_BUTTON_LABEL: ${{ secrets.OPENID_BUTTON_LABEL }}
-      OPENID_AUTO_REDIRECT: ${{ secrets.OPENID_AUTO_REDIRECT }}
-      OPENID_AUTH_URL: ${{ secrets.OPENID_AUTH_URL }}
-      OPENID_IMAGE_URL: ${{ secrets.OPENID_IMAGE_URL }}
-      
-      # SAML
-      SAML_ENTRY_POINT: ${{ secrets.SAML_ENTRY_POINT }}
-      SAML_ISSUER: ${{ secrets.SAML_ISSUER }}
-      SAML_CERT: ${{ secrets.SAML_CERT }}
-      SAML_SESSION_SECRET: ${{ secrets.SAML_SESSION_SECRET }}
-      SAML_BUTTON_LABEL: ${{ secrets.SAML_BUTTON_LABEL }}
-      SAML_IMAGE_URL: ${{ secrets.SAML_IMAGE_URL }}
-      
-      # LDAP
-      LDAP_URL: ${{ secrets.LDAP_URL }}
-      LDAP_BIND_DN: ${{ secrets.LDAP_BIND_DN }}
-      LDAP_BIND_CREDENTIALS: ${{ secrets.LDAP_BIND_CREDENTIALS }}
-      LDAP_USER_SEARCH_BASE: ${{ secrets.LDAP_USER_SEARCH_BASE }}
-      LDAP_SEARCH_FILTER: ${{ secrets.LDAP_SEARCH_FILTER }}
-      
-      # Email Configuration
-      EMAIL_SERVICE: ${{ secrets.EMAIL_SERVICE }}
-      EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
-      EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
-      EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
-      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-      EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
-      EMAIL_ENCRYPTION: ${{ secrets.EMAIL_ENCRYPTION }}
-      EMAIL_ALLOW_SELFSIGNED: ${{ secrets.EMAIL_ALLOW_SELFSIGNED }}
-      EMAIL_ENCRYPTION_HOSTNAME: ${{ secrets.EMAIL_ENCRYPTION_HOSTNAME }}
-      
-      # Mailgun
-      MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
-      MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
-      
-      # Features
-      ALLOW_REGISTRATION: ${{ secrets.ALLOW_REGISTRATION }}
-      ALLOW_SOCIAL_LOGIN: ${{ secrets.ALLOW_SOCIAL_LOGIN }}
-      ALLOW_PASSWORD_RESET: ${{ secrets.ALLOW_PASSWORD_RESET }}
-      SHOW_BIRTHDAY_ICON: ${{ secrets.SHOW_BIRTHDAY_ICON }}
-      HELP_AND_FAQ_URL: ${{ secrets.HELP_AND_FAQ_URL }}
-      
-      # Rate Limiting
-      FILE_UPLOAD_IP_MAX: ${{ secrets.FILE_UPLOAD_IP_MAX }}
-      FILE_UPLOAD_IP_WINDOW: ${{ secrets.FILE_UPLOAD_IP_WINDOW }}
-      FILE_UPLOAD_USER_MAX: ${{ secrets.FILE_UPLOAD_USER_MAX }}
-      FILE_UPLOAD_USER_WINDOW: ${{ secrets.FILE_UPLOAD_USER_WINDOW }}
-      IMPORT_IP_MAX: ${{ secrets.IMPORT_IP_MAX }}
-      IMPORT_IP_WINDOW: ${{ secrets.IMPORT_IP_WINDOW }}
-      IMPORT_USER_MAX: ${{ secrets.IMPORT_USER_MAX }}
-      IMPORT_USER_WINDOW: ${{ secrets.IMPORT_USER_WINDOW }}
-      
-      # Logging
-      DEBUG_LOGGING: ${{ secrets.DEBUG_LOGGING }}
-      CONSOLE_JSON: ${{ secrets.CONSOLE_JSON }}
-      DEBUG_CONSOLE: ${{ secrets.DEBUG_CONSOLE }}
-      
-      # Other Services
-      MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
-      PLUGINS_USE_AZURE: ${{ secrets.PLUGINS_USE_AZURE }}
-      OPENAI_REVERSE_PROXY: ${{ secrets.OPENAI_REVERSE_PROXY }}
-      AZURE_OPENAI_BASEURL: ${{ secrets.AZURE_OPENAI_BASEURL }}
-      ASSISTANTS_BASE_URL: ${{ secrets.ASSISTANTS_BASE_URL }}
-      AZURE_ASSISTANTS_BASE_URL: ${{ secrets.AZURE_ASSISTANTS_BASE_URL }}
-      BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
-      BEDROCK_AWS_DEFAULT_REGION: ${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}
-    
+    if: github.event.inputs.environment == 'production'
+    environment: production
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-  verify-main:
-    name: Verify Main Branch
-    needs: test
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Verify branch
+      - name: Validate Required Credentials
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Deployment can only be triggered from main branch"
+          # Function to check if a secret is set
+          check_secret() {
+            local secret_name=$1
+            local secret_value=$2
+            local is_required=$3
+            
+            if [[ -z "$secret_value" ]]; then
+              if [[ "$is_required" == "true" ]]; then
+                echo "Error: Required secret '$secret_name' is not set"
+                return 1
+              else
+                echo "Warning: Optional secret '$secret_name' is not set"
+                return 0
+              fi
+            fi
+            return 0
+          }
+
+          # Required secrets for deployment
+          required_secrets=(
+            "DIGITALOCEAN_ACCESS_TOKEN"
+            "DIGITALOCEAN_REGISTRY"
+            "DIGITALOCEAN_APP_ID"
+            "MONGO_URI"
+            "JWT_SECRET"
+            "CREDS_KEY"
+            "CREDS_IV"
+            "POSTGRES_PASSWORD"
+          )
+
+          # Required API keys (at least one must be set)
+          required_api_keys=(
+            "OPENAI_API_KEY"
+            "ANTHROPIC_API_KEY"
+            "GOOGLE_API_KEY"
+            "AZURE_API_KEY"
+          )
+
+          # Check all required secrets
+          missing_required=0
+          for secret in "${required_secrets[@]}"; do
+            if ! check_secret "$secret" "${{ secrets[secret] }}" "true"; then
+              missing_required=1
+            fi
+          done
+
+          # Check if at least one API key is set
+          api_key_set=0
+          for key in "${required_api_keys[@]}"; do
+            if [[ -n "${{ secrets[key] }}" ]]; then
+              api_key_set=1
+              break
+            fi
+          done
+
+          if [[ $api_key_set -eq 0 ]]; then
+            echo "Error: At least one API key must be set (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or AZURE_API_KEY)"
+            missing_required=1
+          fi
+
+          # Validate MongoDB URI format
+          if [[ -n "${{ secrets.MONGO_URI }}" ]]; then
+            if ! [[ "${{ secrets.MONGO_URI }}" =~ ^mongodb(\+srv)?://[^:]+:[^@]+@[^/]+/[^?]+ ]]; then
+              echo "Error: MONGO_URI must be a valid MongoDB connection string with authentication"
+              missing_required=1
+            fi
+          fi
+
+          # Check for development values in production
+          if [[ "${{ secrets.JWT_SECRET }}" == "dev_jwt_secret_do_not_use_in_production" ]]; then
+            echo "Error: JWT_SECRET cannot use development value in production"
+            missing_required=1
+          fi
+
+          if [[ "${{ secrets.MONGO_URI }}" == "mongodb://localhost:27017"* ]]; then
+            echo "Error: MONGO_URI cannot use localhost in production"
+            missing_required=1
+          fi
+
+          if [[ $missing_required -eq 1 ]]; then
+            echo "Deployment failed: Required credentials are missing or invalid"
             exit 1
           fi
 
-  deploy:
-    name: Deploy to Production
-    needs: [test, verify-main]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: production
-    env:
-      # Server Configuration
-      NODE_ENV: production
-      PORT: 3080
-      HOST: ${{ secrets.HOST }}
-      TRUST_PROXY: ${{ secrets.TRUST_PROXY }}
-      DOMAIN_SERVER: ${{ secrets.DOMAIN_SERVER }}
-      DOMAIN_CLIENT: ${{ secrets.DOMAIN_CLIENT }}
-      
-      # Database
-      MONGO_URI: ${{ secrets.MONGO_URI }}
-      
-      # Authentication
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
-      CREDS_KEY: ${{ secrets.CREDS_KEY }}
-      CREDS_IV: ${{ secrets.CREDS_IV }}
-      
-      # API Keys
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      AZURE_ASSISTANTS_API_KEY: ${{ secrets.AZURE_ASSISTANTS_API_KEY }}
-      ASSISTANTS_API_KEY: ${{ secrets.ASSISTANTS_API_KEY }}
-      AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
-      GOOGLE_KEY: ${{ secrets.GOOGLE_KEY }}
-      WOLFRAM_APP_ID: ${{ secrets.WOLFRAM_APP_ID }}
-      
-      # Social Login
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-      FACEBOOK_CLIENT_ID: ${{ secrets.FACEBOOK_CLIENT_ID }}
-      FACEBOOK_CLIENT_SECRET: ${{ secrets.FACEBOOK_CLIENT_SECRET }}
-      GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
-      GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
-      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-      DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
-      
-      # Apple Login
-      APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
-      APPLE_PRIVATE_KEY_PATH: ${{ secrets.APPLE_PRIVATE_KEY_PATH }}
-      
-      # OpenID
-      OPENID_CLIENT_ID: ${{ secrets.OPENID_CLIENT_ID }}
-      OPENID_CLIENT_SECRET: ${{ secrets.OPENID_CLIENT_SECRET }}
-      OPENID_ISSUER: ${{ secrets.OPENID_ISSUER }}
-      OPENID_SESSION_SECRET: ${{ secrets.OPENID_SESSION_SECRET }}
-      OPENID_BUTTON_LABEL: ${{ secrets.OPENID_BUTTON_LABEL }}
-      OPENID_AUTO_REDIRECT: ${{ secrets.OPENID_AUTO_REDIRECT }}
-      OPENID_AUTH_URL: ${{ secrets.OPENID_AUTH_URL }}
-      OPENID_IMAGE_URL: ${{ secrets.OPENID_IMAGE_URL }}
-      
-      # SAML
-      SAML_ENTRY_POINT: ${{ secrets.SAML_ENTRY_POINT }}
-      SAML_ISSUER: ${{ secrets.SAML_ISSUER }}
-      SAML_CERT: ${{ secrets.SAML_CERT }}
-      SAML_SESSION_SECRET: ${{ secrets.SAML_SESSION_SECRET }}
-      SAML_BUTTON_LABEL: ${{ secrets.SAML_BUTTON_LABEL }}
-      SAML_IMAGE_URL: ${{ secrets.SAML_IMAGE_URL }}
-      
-      # LDAP
-      LDAP_URL: ${{ secrets.LDAP_URL }}
-      LDAP_BIND_DN: ${{ secrets.LDAP_BIND_DN }}
-      LDAP_BIND_CREDENTIALS: ${{ secrets.LDAP_BIND_CREDENTIALS }}
-      LDAP_USER_SEARCH_BASE: ${{ secrets.LDAP_USER_SEARCH_BASE }}
-      LDAP_SEARCH_FILTER: ${{ secrets.LDAP_SEARCH_FILTER }}
-      
-      # Email Configuration
-      EMAIL_SERVICE: ${{ secrets.EMAIL_SERVICE }}
-      EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
-      EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
-      EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
-      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-      EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
-      EMAIL_ENCRYPTION: ${{ secrets.EMAIL_ENCRYPTION }}
-      EMAIL_ALLOW_SELFSIGNED: ${{ secrets.EMAIL_ALLOW_SELFSIGNED }}
-      EMAIL_ENCRYPTION_HOSTNAME: ${{ secrets.EMAIL_ENCRYPTION_HOSTNAME }}
-      
-      # Mailgun
-      MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
-      MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
-      
-      # Features
-      ALLOW_REGISTRATION: ${{ secrets.ALLOW_REGISTRATION }}
-      ALLOW_SOCIAL_LOGIN: ${{ secrets.ALLOW_SOCIAL_LOGIN }}
-      ALLOW_PASSWORD_RESET: ${{ secrets.ALLOW_PASSWORD_RESET }}
-      SHOW_BIRTHDAY_ICON: ${{ secrets.SHOW_BIRTHDAY_ICON }}
-      HELP_AND_FAQ_URL: ${{ secrets.HELP_AND_FAQ_URL }}
-      
-      # Rate Limiting
-      FILE_UPLOAD_IP_MAX: ${{ secrets.FILE_UPLOAD_IP_MAX }}
-      FILE_UPLOAD_IP_WINDOW: ${{ secrets.FILE_UPLOAD_IP_WINDOW }}
-      FILE_UPLOAD_USER_MAX: ${{ secrets.FILE_UPLOAD_USER_MAX }}
-      FILE_UPLOAD_USER_WINDOW: ${{ secrets.FILE_UPLOAD_USER_WINDOW }}
-      IMPORT_IP_MAX: ${{ secrets.IMPORT_IP_MAX }}
-      IMPORT_IP_WINDOW: ${{ secrets.IMPORT_IP_WINDOW }}
-      IMPORT_USER_MAX: ${{ secrets.IMPORT_USER_MAX }}
-      IMPORT_USER_WINDOW: ${{ secrets.IMPORT_USER_WINDOW }}
-      
-      # Logging
-      DEBUG_LOGGING: ${{ secrets.DEBUG_LOGGING }}
-      CONSOLE_JSON: ${{ secrets.CONSOLE_JSON }}
-      DEBUG_CONSOLE: ${{ secrets.DEBUG_CONSOLE }}
-      
-      # Other Services
-      MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
-      PLUGINS_USE_AZURE: ${{ secrets.PLUGINS_USE_AZURE }}
-      OPENAI_REVERSE_PROXY: ${{ secrets.OPENAI_REVERSE_PROXY }}
-      AZURE_OPENAI_BASEURL: ${{ secrets.AZURE_OPENAI_BASEURL }}
-      ASSISTANTS_BASE_URL: ${{ secrets.ASSISTANTS_BASE_URL }}
-      AZURE_ASSISTANTS_BASE_URL: ${{ secrets.AZURE_ASSISTANTS_BASE_URL }}
-      BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
-      BEDROCK_AWS_DEFAULT_REGION: ${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+          echo "All required credentials are present and valid."
 
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
@@ -304,105 +121,67 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
-      - name: Login to DigitalOcean Container Registry
-        run: doctl registry login
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Create .env file with secrets
+        run: |
+          cat << EOF > .env
+          # Server Configuration
+          PORT=3080
+          HOST=0.0.0.0
+          NODE_ENV=production
+          
+          # MongoDB Configuration
+          MONGO_URI=${{ secrets.MONGO_URI }}
+          
+          # Meilisearch Configuration
+          MEILI_HOST=http://meilisearch:7700
+          MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
+          
+          # RAG API Configuration
+          RAG_PORT=8000
+          RAG_API_URL=http://rag_api:8000
+          
+          # Security
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          CREDS_KEY=${{ secrets.CREDS_KEY }}
+          CREDS_IV=${{ secrets.CREDS_IV }}
+          
+          # Rate Limiting
+          BAN_VIOLATIONS=${{ secrets.BAN_VIOLATIONS }}
+          BAN_DURATION=${{ secrets.BAN_DURATION }}
+          BAN_INTERVAL=${{ secrets.BAN_INTERVAL }}
+          
+          # Vector Database Configuration
+          POSTGRES_DB=mydatabase
+          POSTGRES_USER=myuser
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          
+          # API Keys
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+          AZURE_API_KEY=${{ secrets.AZURE_API_KEY }}
+          AZURE_API_ENDPOINT=${{ secrets.AZURE_API_ENDPOINT }}
+          AZURE_DEPLOYMENT_NAME=${{ secrets.AZURE_DEPLOYMENT_NAME }}
+          BINGAI_TOKEN=${{ secrets.BINGAI_TOKEN }}
+          CHATGPT_TOKEN=${{ secrets.CHATGPT_TOKEN }}
+          HUGGINGFACE_API_KEY=${{ secrets.HUGGINGFACE_API_KEY }}
+          REPLICATE_API_KEY=${{ secrets.REPLICATE_API_KEY }}
+
+          # Custom Configuration
+          CUSTOM_CONFIG={"registration":{"allowedDomains":["socioh.com"]},"actions":{"allowedDomains":["socioh.com"]}}
+          EOF
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
-          build-args: |
-            NODE_ENV=production
-            PORT=3080
-            HOST=${{ secrets.HOST }}
-            TRUST_PROXY=${{ secrets.TRUST_PROXY }}
-            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER }}
-            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT }}
-            MONGO_URI=${{ secrets.MONGO_URI }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            CREDS_KEY=${{ secrets.CREDS_KEY }}
-            CREDS_IV=${{ secrets.CREDS_IV }}
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            AZURE_ASSISTANTS_API_KEY=${{ secrets.AZURE_ASSISTANTS_API_KEY }}
-            ASSISTANTS_API_KEY=${{ secrets.ASSISTANTS_API_KEY }}
-            AZURE_API_KEY=${{ secrets.AZURE_API_KEY }}
-            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-            CHATGPT_TOKEN=${{ secrets.CHATGPT_TOKEN }}
-            GOOGLE_KEY=${{ secrets.GOOGLE_KEY }}
-            WOLFRAM_APP_ID=${{ secrets.WOLFRAM_APP_ID }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            FACEBOOK_CLIENT_ID=${{ secrets.FACEBOOK_CLIENT_ID }}
-            FACEBOOK_CLIENT_SECRET=${{ secrets.FACEBOOK_CLIENT_SECRET }}
-            GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}
-            GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }}
-            DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}
-            DISCORD_CLIENT_SECRET=${{ secrets.DISCORD_CLIENT_SECRET }}
-            APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
-            APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}
-            APPLE_KEY_ID=${{ secrets.APPLE_KEY_ID }}
-            APPLE_PRIVATE_KEY_PATH=${{ secrets.APPLE_PRIVATE_KEY_PATH }}
-            OPENID_CLIENT_ID=${{ secrets.OPENID_CLIENT_ID }}
-            OPENID_CLIENT_SECRET=${{ secrets.OPENID_CLIENT_SECRET }}
-            OPENID_ISSUER=${{ secrets.OPENID_ISSUER }}
-            OPENID_SESSION_SECRET=${{ secrets.OPENID_SESSION_SECRET }}
-            OPENID_BUTTON_LABEL=${{ secrets.OPENID_BUTTON_LABEL }}
-            OPENID_AUTO_REDIRECT=${{ secrets.OPENID_AUTO_REDIRECT }}
-            OPENID_AUTH_URL=${{ secrets.OPENID_AUTH_URL }}
-            OPENID_IMAGE_URL=${{ secrets.OPENID_IMAGE_URL }}
-            SAML_ENTRY_POINT=${{ secrets.SAML_ENTRY_POINT }}
-            SAML_ISSUER=${{ secrets.SAML_ISSUER }}
-            SAML_CERT=${{ secrets.SAML_CERT }}
-            SAML_SESSION_SECRET=${{ secrets.SAML_SESSION_SECRET }}
-            SAML_BUTTON_LABEL=${{ secrets.SAML_BUTTON_LABEL }}
-            SAML_IMAGE_URL=${{ secrets.SAML_IMAGE_URL }}
-            LDAP_URL=${{ secrets.LDAP_URL }}
-            LDAP_BIND_DN=${{ secrets.LDAP_BIND_DN }}
-            LDAP_BIND_CREDENTIALS=${{ secrets.LDAP_BIND_CREDENTIALS }}
-            LDAP_USER_SEARCH_BASE=${{ secrets.LDAP_USER_SEARCH_BASE }}
-            LDAP_SEARCH_FILTER=${{ secrets.LDAP_SEARCH_FILTER }}
-            EMAIL_SERVICE=${{ secrets.EMAIL_SERVICE }}
-            EMAIL_HOST=${{ secrets.EMAIL_HOST }}
-            EMAIL_PORT=${{ secrets.EMAIL_PORT }}
-            EMAIL_USERNAME=${{ secrets.EMAIL_USERNAME }}
-            EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
-            EMAIL_FROM=${{ secrets.EMAIL_FROM }}
-            EMAIL_FROM_NAME=${{ secrets.EMAIL_FROM_NAME }}
-            EMAIL_ENCRYPTION=${{ secrets.EMAIL_ENCRYPTION }}
-            EMAIL_ALLOW_SELFSIGNED=${{ secrets.EMAIL_ALLOW_SELFSIGNED }}
-            EMAIL_ENCRYPTION_HOSTNAME=${{ secrets.EMAIL_ENCRYPTION_HOSTNAME }}
-            MAILGUN_API_KEY=${{ secrets.MAILGUN_API_KEY }}
-            MAILGUN_DOMAIN=${{ secrets.MAILGUN_DOMAIN }}
-            ALLOW_REGISTRATION=${{ secrets.ALLOW_REGISTRATION }}
-            ALLOW_SOCIAL_LOGIN=${{ secrets.ALLOW_SOCIAL_LOGIN }}
-            ALLOW_PASSWORD_RESET=${{ secrets.ALLOW_PASSWORD_RESET }}
-            SHOW_BIRTHDAY_ICON=${{ secrets.SHOW_BIRTHDAY_ICON }}
-            HELP_AND_FAQ_URL=${{ secrets.HELP_AND_FAQ_URL }}
-            FILE_UPLOAD_IP_MAX=${{ secrets.FILE_UPLOAD_IP_MAX }}
-            FILE_UPLOAD_IP_WINDOW=${{ secrets.FILE_UPLOAD_IP_WINDOW }}
-            FILE_UPLOAD_USER_MAX=${{ secrets.FILE_UPLOAD_USER_MAX }}
-            FILE_UPLOAD_USER_WINDOW=${{ secrets.FILE_UPLOAD_USER_WINDOW }}
-            IMPORT_IP_MAX=${{ secrets.IMPORT_IP_MAX }}
-            IMPORT_IP_WINDOW=${{ secrets.IMPORT_IP_WINDOW }}
-            IMPORT_USER_MAX=${{ secrets.IMPORT_USER_MAX }}
-            IMPORT_USER_WINDOW=${{ secrets.IMPORT_USER_WINDOW }}
-            DEBUG_LOGGING=${{ secrets.DEBUG_LOGGING }}
-            CONSOLE_JSON=${{ secrets.CONSOLE_JSON }}
-            DEBUG_CONSOLE=${{ secrets.DEBUG_CONSOLE }}
-            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
-            PLUGINS_USE_AZURE=${{ secrets.PLUGINS_USE_AZURE }}
-            OPENAI_REVERSE_PROXY=${{ secrets.OPENAI_REVERSE_PROXY }}
-            AZURE_OPENAI_BASEURL=${{ secrets.AZURE_OPENAI_BASEURL }}
-            ASSISTANTS_BASE_URL=${{ secrets.ASSISTANTS_BASE_URL }}
-            AZURE_ASSISTANTS_BASE_URL=${{ secrets.AZURE_ASSISTANTS_BASE_URL }}
-            BEDROCK_AWS_SECRET_ACCESS_KEY=${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
-            BEDROCK_AWS_DEFAULT_REGION=${{ secrets.BEDROCK_AWS_DEFAULT_REGION }}
 
       - name: Deploy to DigitalOcean App Platform
-        run: |
-          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 
+        run: doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 
