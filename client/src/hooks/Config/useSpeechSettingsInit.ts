@@ -46,5 +46,5 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
         setter(value as any);
       }
     });
-  }, [isAuthenticated, data]);
+  }, [isAuthenticated, data, setters]);
 }
