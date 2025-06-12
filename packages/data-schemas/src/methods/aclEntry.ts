@@ -85,7 +85,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       $or: principalsQuery,
       resourceType,
       resourceId,
-      permBits: { $bitsAnySet: permissionBit },
+      permBits: { $bitsAllSet: permissionBit },
     }).lean();
 
     return !!entry;
@@ -96,22 +96,13 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
    * @param principalsList - List of principals, each containing { principalType, principalId }
    * @param resourceType - The type of resource
    * @param resourceId - The ID of the resource
-   * @returns Object with effectiveBits (combined permissions) and sources (individual entries)
+   * @returns {Promise<number>} Effective permission bitmask
    */
   async function getEffectivePermissions(
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     resourceId: string | Types.ObjectId,
-  ): Promise<{
-    effectiveBits: number;
-    sources: Array<{
-      from: string;
-      principalId?: Types.ObjectId;
-      permBits: number;
-      direct: boolean;
-      inheritedFrom?: Types.ObjectId;
-    }>;
-  }> {
+  ): Promise<number> {
     const aclEntries = await findEntriesByPrincipalsAndResource(
       principalsList,
       resourceType,
@@ -119,18 +110,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     );
 
     let effectiveBits = 0;
-    const sources = aclEntries.map((entry) => {
+    for (const entry of aclEntries) {
       effectiveBits |= entry.permBits;
-      return {
-        from: entry.principalType,
-        principalId: entry.principalId,
-        permBits: entry.permBits,
-        direct: !entry.inheritedFrom,
-        inheritedFrom: entry.inheritedFrom,
-      };
-    });
-
-    return { effectiveBits, sources };
+    }
+    return effectiveBits;
   }
 
   /**
@@ -286,7 +269,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const entries = await AclEntry.find({
       $or: principalsQuery,
       resourceType,
-      permBits: { $bitsAnySet: requiredPermBit },
+      permBits: { $bitsAllSet: requiredPermBit },
     }).distinct('resourceId');
 
     return entries;
