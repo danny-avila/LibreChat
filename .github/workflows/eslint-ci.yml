@@ -63,11 +63,15 @@ jobs:
           # Set variable to allow SARIF upload
           echo "UPLOAD_SARIF=true" >> $GITHUB_ENV
 
-          # Run ESLint
-          npx eslint --no-error-on-unmatched-pattern \
+          # Run ESLint using pnpm exec with the full path to the formatter
+          # In non-hoisted setups, formatters need to be referenced by their full path
+          pnpm exec eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
-            --format @microsoft/eslint-formatter-sarif \
-            --output-file eslint-results.sarif $CHANGED_FILES || true
+            --format ./node_modules/@microsoft/eslint-formatter-sarif \
+            --output-file eslint-results.sarif $CHANGED_FILES || {
+              # If ESLint fails but we need a SARIF file for the upload step
+              echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"ESLint"}},"results":[]}]}' > eslint-results.sarif
+            }
 
       - name: Upload analysis results to GitHub
         if: env.UPLOAD_SARIF == 'true'

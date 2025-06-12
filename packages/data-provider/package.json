@@ -42,6 +42,7 @@
     "axios": "^1.8.2",
     "dayjs": "^1.11.13",
     "js-yaml": "^4.1.0",
+    "tslib": "^2.6.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {

@@ -40,6 +40,9 @@ jobs:
     name: Run frontend unit tests on Windows
     timeout-minutes: 60
     runs-on: windows-latest
+    env:
+      # Force Vite to use different settings in CI
+      VITE_CJS_IGNORE_WARNING: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -54,9 +57,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Client
-        run: pnpm run frontend:ci
+      # For Windows, only build the data-provider since that's all Jest needs
+      - name: Build workspace dependencies (Windows optimization)
+        run: cd packages/data-provider && pnpm run build
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
       - name: Run unit tests
         run: pnpm run test:ci --verbose
         working-directory: client
+        env:
+          # Skip Vite altogether for Jest tests
+          NODE_ENV: test

@@ -477,7 +477,8 @@ describe('Multer Configuration', () => {
         done(new Error('Expected mkdirSync to throw an error but no error was thrown'));
       } catch (error) {
         // This is the expected behavior - mkdirSync throws synchronously for invalid paths
-        expect(error.code).toBe('ENOENT');
+        // The error code can be ENOENT (file not found) or EACCES (permission denied) depending on the environment
+        expect(['ENOENT', 'EACCES']).toContain(error.code);
         done();
       }
     });
