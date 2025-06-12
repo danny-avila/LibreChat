@@ -48,7 +48,6 @@ class OpenTelemetryConsoleLogger {
 
   private safeStringify(obj: any, maxLength = 10000): string {
     try {
-      // Handle circular references and limit depth
       const seen = new WeakSet();
       const result = JSON.stringify(obj, (key, val) => {
         if (val != null && typeof val === 'object') {
@@ -60,13 +59,12 @@ class OpenTelemetryConsoleLogger {
         return val;
       });
 
-      // Truncate if too long
       if (result.length > maxLength) {
         return result.substring(0, maxLength) + '...[truncated]';
       }
 
       return result;
-    } catch (error) {
+    } catch {
       return '[Unable to stringify object]';
     }
   }
@@ -92,8 +90,6 @@ class OpenTelemetryConsoleLogger {
         try {
           const message = this.formatArgs(args);
           this.captureLog('info', message);
-        } catch (error) {
-          // Silently fail to avoid breaking the app
         } finally {
           this.isLogging = false;
         }
@@ -107,8 +103,6 @@ class OpenTelemetryConsoleLogger {
         try {
           const message = this.formatArgs(args);
           this.captureLog('error', message);
-        } catch (error) {
-          // Silently fail
         } finally {
           this.isLogging = false;
         }
@@ -122,8 +116,6 @@ class OpenTelemetryConsoleLogger {
         try {
           const message = this.formatArgs(args);
           this.captureLog('warn', message);
-        } catch (error) {
-          // Silently fail
         } finally {
           this.isLogging = false;
         }
@@ -137,8 +129,6 @@ class OpenTelemetryConsoleLogger {
         try {
           const message = this.formatArgs(args);
           this.captureLog('debug', message);
-        } catch (error) {
-          // Silently fail
         } finally {
           this.isLogging = false;
         }
@@ -152,8 +142,6 @@ class OpenTelemetryConsoleLogger {
         try {
           const message = this.formatArgs(args);
           this.captureLog('info', message);
-        } catch (error) {
-          // Silently fail
         } finally {
           this.isLogging = false;
         }
@@ -163,23 +151,20 @@ class OpenTelemetryConsoleLogger {
   }
 
   private captureLog(level: string, message: string, additionalData?: Record<string, any>): void {
-    // Skip if message is too long or empty
     if (!message || message.length > 50000) {
       return;
     }
 
     const info: LogInfo = {
       level,
-      message: message.substring(0, 10000), // Limit message length
+      message: message.substring(0, 10000),
       timestamp: new Date().toISOString(),
       ...additionalData,
     };
 
-    // Only send to OpenTelemetry
     this.logToOpenTelemetry(info);
   }
 
-  // Keep your existing methods for direct usage
   log(level: string, message: string, additionalData?: Record<string, any>): void {
     if (!this.isLogging) {
       this.captureLog(level, message, additionalData);
@@ -233,12 +218,10 @@ class OpenTelemetryConsoleLogger {
         level: severityText,
       };
 
-      // Safely add additional attributes
       if (typeof info === 'object' && info !== null) {
         Object.keys(info).forEach((key: string) => {
           if (!['level', 'message', 'timestamp'].includes(key)) {
             const value = info[key];
-            // Only add simple values to avoid serialization issues
             if (
               typeof value === 'string' ||
               typeof value === 'number' ||
@@ -259,7 +242,6 @@ class OpenTelemetryConsoleLogger {
         attributes: attributes,
       });
     } catch (error) {
-      // Silently fail to avoid breaking the application
       this.originalConsole.error('Failed to send log to OpenTelemetry:', error);
     }
   }
