@@ -2,15 +2,15 @@
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
+const { logger } = require('@librechat/data-schemas');
 const {
   FileSources,
   envVarRegex,
   extractEnvVariable,
   extractVariableName,
 } = require('librechat-data-provider');
+const { logAxiosError, createAxiosInstance } = require('@librechat/api');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { logger, createAxiosInstance } = require('~/config');
-const { logAxiosError } = require('~/utils/axios');
 
 const axios = createAxiosInstance();
 
