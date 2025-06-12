@@ -136,5 +136,10 @@
       "admin/",
       "packages/"
     ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "mongodb-memory-server"
+    ]
   }
 }
