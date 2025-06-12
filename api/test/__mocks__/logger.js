@@ -44,7 +44,6 @@ jest.mock('~/config', () => {
   const actualModule = jest.requireActual('~/config');
   return {
     sendEvent: actualModule.sendEvent,
-    createAxiosInstance: actualModule.createAxiosInstance,
     logger: {
       info: jest.fn(),
       warn: jest.fn(),
