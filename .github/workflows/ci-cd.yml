@@ -187,7 +187,7 @@ jobs:
           REPLICATE_API_KEY=${{ secrets.REPLICATE_API_KEY }}
 
           # Custom Configuration
-          CUSTOM_CONFIG={"registration":{"allowedDomains":["socioh.com"]},"actions":{"allowedDomains":["socioh.com"]}}
+          CUSTOM_CONFIG='{"registration":{"allowedDomains":["socioh.com"]},"actions":{"allowedDomains":["socioh.com"]}}'
           EOF
 
       - name: Build and push Docker image
