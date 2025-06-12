@@ -69,7 +69,7 @@
   },
   "peerDependencies": {
     "@librechat/agents": "^2.4.37",
-    "@librechat/data-schemas": "*",
+    "@librechat/data-schemas": "workspace:*",
     "librechat-data-provider": "*",
     "@modelcontextprotocol/sdk": "^1.11.2",
     "diff": "^7.0.0",
