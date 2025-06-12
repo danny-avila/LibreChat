@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { TConfig, TEndpointsConfig, TAgentsEndpoint } from 'librechat-data-provider';
 import { AgentPanelProvider, useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import { useGetActionsQuery, useGetEndpointsQuery } from '~/data-provider';
+import { useGetEndpointsQuery } from '~/data-provider';
 import VersionPanel from './Version/VersionPanel';
 import { useChatContext } from '~/Providers';
 import ActionsPanel from './ActionsPanel';
@@ -19,14 +19,11 @@ export default function AgentPanelSwitch() {
 }
 
 function AgentPanelSwitchWithContext() {
-  const { activePanel, setCurrentAgentId, setActions, agent_id } = useAgentPanelContext();
   const { conversation } = useChatContext();
+  const { activePanel, setCurrentAgentId } = useAgentPanelContext();
 
   // TODO: Implement MCP endpoint
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const { data: actions = [] } = useGetActionsQuery(EModelEndpoint.agents, {
-    enabled: !!agent_id,
-  });
 
   const agentsConfig = useMemo<TAgentsEndpoint | null>(() => {
     const config = endpointsConfig?.[EModelEndpoint.agents] ?? null;
@@ -45,11 +42,7 @@ function AgentPanelSwitchWithContext() {
     if (agent_id) {
       setCurrentAgentId(agent_id);
     }
-  }, [conversation?.agent_id]);
-
-  useEffect(() => {
-    setActions(actions);
-  }, [actions, setActions]);
+  }, [setCurrentAgentId, conversation?.agent_id]);
 
   if (!conversation?.endpoint) {
     return null;

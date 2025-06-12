@@ -215,7 +215,6 @@ export type AgentPanelContextType = {
   action?: t.Action;
   actions?: t.Action[];
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
-  setActions: React.Dispatch<React.SetStateAction<t.Action[] | undefined>>;
   mcp?: t.MCP;
   mcps?: t.MCP[];
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
