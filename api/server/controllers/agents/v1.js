@@ -390,9 +390,9 @@ const getListAgentsHandler = async (req, res) => {
 
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
-      userId,
       accessibleIds,
       otherParams: {}, // Can add query params here if needed
+      
     });
 
     return res.json(data);

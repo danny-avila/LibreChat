@@ -435,56 +435,101 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
- * Get agents by accessible IDs (combines ownership and ACL permissions).
+ * Get agents by accessible IDs with optional cursor-based pagination.
  * @param {Object} params - The parameters for getting accessible agents.
- * @param {string} params.userId - The user ID to get agents for.
  * @param {Array} [params.accessibleIds] - Array of agent ObjectIds the user has ACL access to.
- * @param {Object} [params.otherParams] - Additional query parameters.
+ * @param {Object} [params.otherParams] - Additional query parameters (including author filter).
+ * @param {number} [params.limit] - Number of agents to return (max 100). If not provided, returns all agents.
+ * @param {string} [params.after] - Cursor for pagination - get agents after this cursor. // base64 encoded JSON string with updatedAt and _id.
  * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
  */
-const getListAgentsByAccess = async ({ userId, accessibleIds = [], otherParams = {} }) => {
-  // Build query for owned agents and ACL accessible agents
-  const queries = [
-    // Agents where user is author (owned)
-    { author: userId, ...otherParams },
-  ];
-
-  // Add ACL accessible agents if any
+const getListAgentsByAccess = async ({ 
+  accessibleIds = [], 
+  otherParams = {},
+  limit = null,
+  after = null 
+}) => {
+  const isPaginated = limit !== null && limit !== undefined;
+  const normalizedLimit = isPaginated ? Math.min(Math.max(1, parseInt(limit) || 20), 100) : null;
+  
+  // Build base query combining ACL accessible agents with other filters
+  const baseQuery = { ...otherParams };
+  
   if (accessibleIds.length > 0) {
-    queries.push({ _id: { $in: accessibleIds }, ...otherParams });
+    baseQuery._id = { $in: accessibleIds };
   }
 
-  const query = queries.length > 1 ? { $or: queries } : queries[0];
-
-  const agents = (
-    await Agent.find(query, {
-      id: 1,
-      _id: 1,
-      name: 1,
-      avatar: 1,
-      author: 1,
-      projectIds: 1,
-      description: 1,
-    }).lean()
-  ).map((agent) => {
-    if (agent.author?.toString() !== userId) {
-      delete agent.author;
+  // Add cursor condition
+  if (after) {
+    try {
+      const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
+      const { updatedAt, _id } = cursor;
+      
+      const cursorCondition = {
+        $or: [
+          { updatedAt: { $lt: new Date(updatedAt) } },
+          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } }
+        ]
+      };
+      
+      // Merge cursor condition with base query
+      if (Object.keys(baseQuery).length > 0) {
+        baseQuery.$and = [{ ...baseQuery }, cursorCondition];
+        // Remove the original conditions from baseQuery to avoid duplication
+        Object.keys(baseQuery).forEach(key => {
+          if (key !== '$and') delete baseQuery[key];
+        });
+      } else {
+        Object.assign(baseQuery, cursorCondition);
+      }
+    } catch (error) {
+      logger.warn('Invalid cursor:', error.message);
     }
+  }
+
+  let query = Agent.find(baseQuery, {
+    id: 1,
+    _id: 1,
+    name: 1,
+    avatar: 1,
+    author: 1,
+    projectIds: 1,
+    description: 1,
+    updatedAt: 1,
+  }).sort({ updatedAt: -1, _id: 1 });
+
+  // Only apply limit if pagination is requested
+  if (isPaginated) {
+    query = query.limit(normalizedLimit + 1);
+  }
+
+  const agents = await query.lean();
+
+  const hasMore = isPaginated ? agents.length > normalizedLimit : false;
+  const data = (isPaginated ? agents.slice(0, normalizedLimit) : agents).map((agent) => {
     if (agent.author) {
       agent.author = agent.author.toString();
     }
     return agent;
   });
 
-  const hasMore = agents.length > 0;
-  const firstId = agents.length > 0 ? agents[0].id : null;
-  const lastId = agents.length > 0 ? agents[agents.length - 1].id : null;
+  // Generate next cursor only if paginated
+  let nextCursor = null;
+  if (isPaginated && hasMore && data.length > 0) {
+    const lastAgent = agents[normalizedLimit - 1];
+    nextCursor = Buffer.from(JSON.stringify({
+      updatedAt: lastAgent.updatedAt.toISOString(),
+      _id: lastAgent._id.toString()
+    })).toString('base64');
+  }
 
   return {
-    data: agents,
+    object: 'list',
+    data,
+    first_id: data.length > 0 ? data[0].id : null,
+    last_id: data.length > 0 ? data[data.length - 1].id : null,
     has_more: hasMore,
-    first_id: firstId,
-    last_id: lastId,
+    after: nextCursor
   };
 };
 
