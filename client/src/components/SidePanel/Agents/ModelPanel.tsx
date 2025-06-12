@@ -19,10 +19,10 @@ import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
 export default function ModelPanel({
-  setActivePanel,
   providers,
+  setActivePanel,
   models: modelsData,
-}: AgentModelPanelProps) {
+}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
   const localize = useLocalize();
 
   const { control, setValue } = useFormContext<AgentForm>();
