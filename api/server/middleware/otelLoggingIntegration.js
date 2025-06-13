@@ -17,13 +17,13 @@ function OpenTelemetryTransport(opts) {
 require('util').inherits(OpenTelemetryTransport, Transport);
 
 OpenTelemetryTransport.prototype.log = function (info, callback) {
-  var self = this;
+  const self = this;
 
   setImmediate(function () {
     self.emit('logged', info);
   });
 
-  var severityMap = {
+  const severityMap = {
     error: logsAPI.SeverityNumber.ERROR,
     warn: logsAPI.SeverityNumber.WARN,
     info: logsAPI.SeverityNumber.INFO,
@@ -35,7 +35,7 @@ OpenTelemetryTransport.prototype.log = function (info, callback) {
 
   const severityText = info.level.toUpperCase();
 
-  var attributes = { 'log.type': 'winston', level: severityText };
+  const attributes = { 'log.type': 'winston', level: severityText };
 
   if (typeof info === 'object' && info !== null) {
     Object.keys(info).forEach(function (key) {

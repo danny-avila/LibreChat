@@ -99,7 +99,7 @@ function initializeBackendOtel() {
     return isDevelopment ? 'debug' : 'warn';
   };
 
-  var envLevel = level();
+  let envLevel = level();
 
   const useDebugLogging =
     (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
