@@ -85,7 +85,7 @@ const createMemoryTool = ({
   totalTokens?: number;
 }) => {
   return tool(
-    async ({ key, value }) => {
+    async ({ key, value }: { key: string; value: string }) => {
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -169,7 +169,7 @@ const createDeleteMemoryTool = ({
   validKeys?: string[];
 }) => {
   return tool(
-    async ({ key }) => {
+    async ({ key }: { key: string }) => {
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(

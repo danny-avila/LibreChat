@@ -685,6 +685,9 @@ importers:
       eslint-plugin-jest:
         specifier: ^28.11.0
         version: 28.13.3(@typescript-eslint/eslint-plugin@8.34.0(@typescript-eslint/parser@8.34.0(eslint@9.28.0(jiti@1.21.7))(typescript@5.8.3))(eslint@9.28.0(jiti@1.21.7))(typescript@5.8.3))(eslint@9.28.0(jiti@1.21.7))(jest@29.7.0(@types/node@20.19.0)(ts-node@10.9.2(@types/node@20.19.0)(typescript@5.8.3)))(typescript@5.8.3)
+      fs-extra:
+        specifier: ^11.2.0
+        version: 11.3.0
       identity-obj-proxy:
         specifier: ^3.0.0
         version: 3.0.0
@@ -736,6 +739,9 @@ importers:
 
   packages/api:
     dependencies:
+      '@langchain/core':
+        specifier: ^0.3.57
+        version: 0.3.58(openai@4.104.0(ws@8.18.2)(zod@3.25.63))
       '@librechat/agents':
         specifier: ^2.4.37
         version: 2.4.38(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-agent-runtime@3.828.0)(@aws-sdk/client-bedrock-runtime@3.828.0)(@aws-sdk/client-kendra@3.828.0)(@aws-sdk/client-s3@3.828.0)(@aws-sdk/credential-provider-node@3.828.0)(@azure/search-documents@12.1.0)(@azure/storage-blob@12.27.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.53.0)(deepmerge@4.3.1)(dotenv@16.5.0)(openai@4.104.0(ws@8.18.2)(zod@3.25.63))(zod@3.25.63))(@ibm-cloud/watsonx-ai@1.6.7)(@smithy/util-utf8@2.3.0)(axios@1.9.0)(cohere-ai@7.17.1)(fast-xml-parser@5.2.5)(google-auth-library@9.15.1)(googleapis@126.0.1)(handlebars@4.7.8)(ibm-cloud-sdk-core@5.4.0)(ignore@5.3.2)(ioredis@5.6.1)(jsdom@20.0.3)(jsonwebtoken@9.0.2)(lodash@4.17.21)(mongodb@6.17.0(@aws-sdk/credential-providers@3.828.0))(openai@4.104.0(ws@8.18.2)(zod@3.25.63))(playwright@1.53.0)(react@18.3.1)(weaviate-client@3.6.1)(ws@8.18.2)(zod-to-json-schema@3.24.5(zod@3.25.63))(zod@3.25.63)
@@ -754,6 +760,9 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.21.2
+      https-proxy-agent:
+        specifier: ^7.0.6
+        version: 7.0.6
       keyv:
         specifier: ^5.3.2
         version: 5.3.4
@@ -763,6 +772,9 @@ importers:
       tiktoken:
         specifier: ^1.0.15
         version: 1.0.21
+      winston:
+        specifier: ^3.11.0
+        version: 3.17.0
       zod:
         specifier: ^3.22.4
         version: 3.25.63
@@ -812,6 +824,9 @@ importers:
       '@types/node':
         specifier: ^20.3.0
         version: 20.19.0
+      '@types/node-fetch':
+        specifier: ^2.6.11
+        version: 2.6.12
       '@types/react':
         specifier: ^18.2.18
         version: 18.3.23
@@ -842,6 +857,9 @@ importers:
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@20.19.0)(typescript@5.8.3)
+      tslib:
+        specifier: ^2.6.2
+        version: 2.8.1
       typescript:
         specifier: ^5.0.4
         version: 5.8.3
@@ -7368,6 +7386,10 @@ packages:
   fs-extra@10.1.0:
     resolution: {integrity: sha512-oRXApq54ETRj4eMiFzGnHWGy+zo5raudjuxN0b8H7s/RU2oW0Wvsx9O0ACRN/kRq9E8Vu/ReskGB5o3ji+FzHQ==}
     engines: {node: '>=12'}
+
+  fs-extra@11.3.0:
+    resolution: {integrity: sha512-Z4XaCL6dUDHfP/jT25jJKMmtxvuwbkrD1vNSMFlo9lNLY2c5FHYSQgHPRZUjAB26TpDEoW9HCOgplrdbaPV/ew==}
+    engines: {node: '>=14.14'}
 
   fs-extra@4.0.3:
     resolution: {integrity: sha512-q6rbdDd1o2mAnQreO7YADIxf/Whx4AHBiRf6d+/cVT8h44ss+lHgxf1FemcqDnQt9X3ct4McHr+JMGlYSsK7Cg==}
@@ -19734,6 +19756,12 @@ snapshots:
   fresh@2.0.0: {}
 
   fs-extra@10.1.0:
+    dependencies:
+      graceful-fs: 4.2.11
+      jsonfile: 6.1.0
+      universalify: 2.0.1
+
+  fs-extra@11.3.0:
     dependencies:
       graceful-fs: 4.2.11
       jsonfile: 6.1.0

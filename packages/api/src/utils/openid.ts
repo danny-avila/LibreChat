@@ -37,10 +37,14 @@ export function safeStringify(obj: unknown, maxLength = 1000): string {
  */
 export function logHeaders(headers: Headers | undefined | null): string {
   const headerObj: Record<string, string> = {};
-  if (!headers || typeof headers.entries !== 'function') {
+  if (!headers) {
     return 'No headers available';
   }
-  for (const [key, value] of headers.entries()) {
+  const headersWithEntries = headers as Headers & { entries(): IterableIterator<[string, string]> };
+  if (typeof headersWithEntries.entries !== 'function') {
+    return 'No headers available';
+  }
+  for (const [key, value] of headersWithEntries.entries()) {
     if (key.toLowerCase() === 'authorization' || key.toLowerCase().includes('secret')) {
       headerObj[key] = '***MASKED***';
     } else {
