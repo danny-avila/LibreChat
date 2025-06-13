@@ -62,9 +62,13 @@ export default function ManagePermissionsDialog({
 
   useEffect(() => {
     if (permissionsData) {
-      setManagedShares(currentShares);
-      setManagedIsPublic(isPublic);
-      setManagedPublicRole(publicRole);
+      const shares = permissionsData.principals || [];
+      const isPublicValue = permissionsData.public || false;
+      const publicRoleValue = permissionsData.publicAccessRoleId || ACCESS_ROLE_IDS.AGENT_VIEWER;
+
+      setManagedShares(shares);
+      setManagedIsPublic(isPublicValue);
+      setManagedPublicRole(publicRoleValue);
       setHasChanges(false);
     }
   }, [permissionsData, isModalOpen]);

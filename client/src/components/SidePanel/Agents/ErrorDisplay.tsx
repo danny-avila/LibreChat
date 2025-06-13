@@ -67,23 +67,25 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
       errorData = error;
     }
 
-    // Use user-friendly message from backend if available
-    if (errorData && typeof errorData === 'object' && (errorData as any)?.userMessage) {
+    // Handle network errors first
+    let errorMessage = '';
+    if (isErrorInstance(error)) {
+      errorMessage = error.message;
+    } else if (isErrorObject(error) && (error as any)?.message) {
+      errorMessage = (error as any).message;
+    }
+
+    const errorCode = isErrorObject(error) ? (error as any)?.code : '';
+
+    // Handle timeout errors specifically
+    if (errorCode === 'ECONNABORTED' || errorMessage?.includes('timeout')) {
       return {
-        title: getContextualTitle(),
-        message: (errorData as any).userMessage,
-        suggestion:
-          (errorData as any).suggestion || localize('com_agents_error_suggestion_generic'),
+        title: localize('com_agents_error_timeout_title'),
+        message: localize('com_agents_error_timeout_message'),
+        suggestion: localize('com_agents_error_timeout_suggestion'),
       };
     }
 
-    // Handle network errors
-    const errorMessage = isErrorInstance(error)
-      ? error.message
-      : isErrorObject(error) && (error as any)?.message
-        ? (error as any).message
-        : '';
-    const errorCode = isErrorObject(error) ? (error as any)?.code : '';
     if (errorCode === 'NETWORK_ERROR' || errorMessage?.includes('Network Error')) {
       return {
         title: localize('com_agents_error_network_title'),
@@ -92,7 +94,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
       };
     }
 
-    // Handle specific HTTP status codes
+    // Handle specific HTTP status codes before generic userMessage
     const status = isErrorObject(error) ? (error as any)?.response?.status : null;
     if (status) {
       if (status === 404) {
@@ -108,7 +110,8 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
           title: localize('com_agents_error_invalid_request'),
           message:
             (errorData as any)?.userMessage || localize('com_agents_error_bad_request_message'),
-          suggestion: localize('com_agents_error_bad_request_suggestion'),
+          suggestion:
+            (errorData as any)?.suggestion || localize('com_agents_error_bad_request_suggestion'),
         };
       }
 
@@ -121,9 +124,19 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
       }
     }
 
-    // Fallback to generic error
+    // Use user-friendly message from backend if available (after specific status code handling)
+    if (errorData && typeof errorData === 'object' && (errorData as any)?.userMessage) {
+      return {
+        title: getContextualTitle(),
+        message: (errorData as any).userMessage,
+        suggestion:
+          (errorData as any).suggestion || localize('com_agents_error_suggestion_generic'),
+      };
+    }
+
+    // Fallback to generic error with contextual title
     return {
-      title: localize('com_agents_error_title'),
+      title: getContextualTitle(),
       message: localize('com_agents_error_generic'),
       suggestion: localize('com_agents_error_suggestion_generic'),
     };
@@ -193,9 +206,9 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
 
         {/* Error content with proper headings and structure */}
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white" id="error-title">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white" id="error-title">
             {title}
-          </h2>
+          </h3>
           <p
             className="text-gray-600 dark:text-gray-400"
             id="error-message"

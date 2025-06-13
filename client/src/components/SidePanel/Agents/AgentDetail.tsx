@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type t from 'librechat-data-provider';
-
+import { AgentListResponse, PERMISSION_BITS, QueryKeys } from 'librechat-data-provider';
 interface SupportContact {
   name?: string;
   email?: string;
@@ -12,19 +12,12 @@ interface AgentWithSupport extends t.Agent {
   support_contact?: SupportContact;
 }
 
-import useLocalize from '~/hooks/useLocalize';
-import { useToast } from '~/hooks';
-import {
-  Dialog,
-  DialogContent,
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '~/components/ui';
-import { DotsIcon } from '~/components/svg';
+import { useQueryClient } from '@tanstack/react-query';
+import { Dialog, DialogContent, Button } from '~/components/ui';
 import { renderAgentAvatar } from '~/utils/agents';
+import useLocalize from '~/hooks/useLocalize';
+import { DotsIcon } from '~/components/svg';
+import { useToast } from '~/hooks';
 
 interface AgentDetailProps {
   agent: AgentWithSupport; // The agent data to display
@@ -42,7 +35,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
   const dialogRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
+  const queryClient = useQueryClient();
   // Close dropdown when clicking outside the dropdown menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -66,6 +59,14 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
    */
   const handleStartChat = () => {
     if (agent) {
+      const keys = [QueryKeys.agents, { requiredPermission: PERMISSION_BITS.EDIT }];
+      const listResp = queryClient.getQueryData<AgentListResponse>(keys);
+      if (listResp != null) {
+        if (!listResp.data.some((a) => a.id === agent.id)) {
+          const currentAgents = [agent, ...JSON.parse(JSON.stringify(listResp.data))];
+          queryClient.setQueryData<AgentListResponse>(keys, { ...listResp, data: currentAgents });
+        }
+      }
       navigate(`/c/new?agent_id=${agent.id}`);
     }
   };
@@ -80,7 +81,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
       .writeText(chatUrl)
       .then(() => {
         showToast({
-          message: 'Link copied',
+          message: localize('com_agents_link_copied'),
         });
       })
       .catch(() => {
@@ -130,7 +131,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
             variant="ghost"
             size="icon"
             className="h-8 w-8 rounded-lg text-text-secondary hover:bg-surface-hover hover:text-text-primary dark:hover:bg-surface-hover"
-            aria-label="More options"
+            aria-label={localize('com_agents_more_options')}
             aria-expanded={dropdownOpen}
             aria-haspopup="menu"
             onClick={(e) => {

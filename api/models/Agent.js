@@ -183,54 +183,116 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
 
   let isMatch = true;
   for (const field of importantFields) {
-    if (!wouldBeVersion[field] && !lastVersion[field]) {
+    const wouldBeValue = wouldBeVersion[field];
+    const lastVersionValue = lastVersion[field];
+
+    // Skip if both are undefined/null
+    if (!wouldBeValue && !lastVersionValue) {
       continue;
     }
 
-    if (Array.isArray(wouldBeVersion[field]) && Array.isArray(lastVersion[field])) {
-      if (wouldBeVersion[field].length !== lastVersion[field].length) {
+    // Handle arrays
+    if (Array.isArray(wouldBeValue) || Array.isArray(lastVersionValue)) {
+      // Normalize: treat undefined/null as empty array for comparison
+      let wouldBeArr;
+      if (Array.isArray(wouldBeValue)) {
+        wouldBeArr = wouldBeValue;
+      } else if (wouldBeValue == null) {
+        wouldBeArr = [];
+      } else {
+        wouldBeArr = [wouldBeValue];
+      }
+
+      let lastVersionArr;
+      if (Array.isArray(lastVersionValue)) {
+        lastVersionArr = lastVersionValue;
+      } else if (lastVersionValue == null) {
+        lastVersionArr = [];
+      } else {
+        lastVersionArr = [lastVersionValue];
+      }
+
+      if (wouldBeArr.length !== lastVersionArr.length) {
         isMatch = false;
         break;
       }
 
       // Special handling for projectIds (MongoDB ObjectIds)
       if (field === 'projectIds') {
-        const wouldBeIds = wouldBeVersion[field].map((id) => id.toString()).sort();
-        const versionIds = lastVersion[field].map((id) => id.toString()).sort();
+        const wouldBeIds = wouldBeArr.map((id) => id.toString()).sort();
+        const versionIds = lastVersionArr.map((id) => id.toString()).sort();
 
         if (!wouldBeIds.every((id, i) => id === versionIds[i])) {
           isMatch = false;
           break;
         }
       }
-      // Handle arrays of objects like tool_kwargs
-      else if (typeof wouldBeVersion[field][0] === 'object' && wouldBeVersion[field][0] !== null) {
-        const sortedWouldBe = [...wouldBeVersion[field]].map((item) => JSON.stringify(item)).sort();
-        const sortedVersion = [...lastVersion[field]].map((item) => JSON.stringify(item)).sort();
+      // Handle arrays of objects
+      else if (
+        wouldBeArr.length > 0 &&
+        typeof wouldBeArr[0] === 'object' &&
+        wouldBeArr[0] !== null
+      ) {
+        const sortedWouldBe = [...wouldBeArr].map((item) => JSON.stringify(item)).sort();
+        const sortedVersion = [...lastVersionArr].map((item) => JSON.stringify(item)).sort();
 
         if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
           isMatch = false;
           break;
         }
       } else {
-        const sortedWouldBe = [...wouldBeVersion[field]].sort();
-        const sortedVersion = [...lastVersion[field]].sort();
+        const sortedWouldBe = [...wouldBeArr].sort();
+        const sortedVersion = [...lastVersionArr].sort();
 
         if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
           isMatch = false;
           break;
         }
       }
-    } else if (field === 'model_parameters') {
-      const wouldBeParams = wouldBeVersion[field] || {};
-      const lastVersionParams = lastVersion[field] || {};
-      if (JSON.stringify(wouldBeParams) !== JSON.stringify(lastVersionParams)) {
+    }
+    // Handle objects
+    else if (typeof wouldBeValue === 'object' && wouldBeValue !== null) {
+      const lastVersionObj =
+        typeof lastVersionValue === 'object' && lastVersionValue !== null ? lastVersionValue : {};
+
+      // For empty objects, normalize the comparison
+      const wouldBeKeys = Object.keys(wouldBeValue);
+      const lastVersionKeys = Object.keys(lastVersionObj);
+
+      // If both are empty objects, they're equal
+      if (wouldBeKeys.length === 0 && lastVersionKeys.length === 0) {
+        continue;
+      }
+
+      // Otherwise do a deep comparison
+      if (JSON.stringify(wouldBeValue) !== JSON.stringify(lastVersionObj)) {
         isMatch = false;
         break;
       }
-    } else if (wouldBeVersion[field] !== lastVersion[field]) {
-      isMatch = false;
-      break;
+    }
+    // Handle primitive values
+    else {
+      // For primitives, handle the case where one is undefined and the other is a default value
+      if (wouldBeValue !== lastVersionValue) {
+        // Special handling for boolean false vs undefined
+        if (
+          typeof wouldBeValue === 'boolean' &&
+          wouldBeValue === false &&
+          lastVersionValue === undefined
+        ) {
+          continue;
+        }
+        // Special handling for empty string vs undefined
+        if (
+          typeof wouldBeValue === 'string' &&
+          wouldBeValue === '' &&
+          lastVersionValue === undefined
+        ) {
+          continue;
+        }
+        isMatch = false;
+        break;
+      }
     }
   }
 
@@ -491,7 +553,7 @@ const getListAgentsByAccess = async ({
       const cursorCondition = {
         $or: [
           { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } },
+          { updatedAt: new Date(updatedAt), _id: { $gt: new mongoose.Types.ObjectId(_id) } },
         ],
       };
 
@@ -519,6 +581,9 @@ const getListAgentsByAccess = async ({
     projectIds: 1,
     description: 1,
     updatedAt: 1,
+    category: 1,
+    support_contact: 1,
+    is_promoted: 1,
   }).sort({ updatedAt: -1, _id: 1 });
 
   // Only apply limit if pagination is requested
@@ -753,6 +818,14 @@ const generateActionMetadataHash = async (actionIds, actions) => {
 
   return hashHex;
 };
+/**
+ * Counts the number of promoted agents.
+ * @returns  {Promise<number>} - The count of promoted agents
+ */
+const countPromotedAgents = async () => {
+  const count = await Agent.countDocuments({ is_promoted: true });
+  return count;
+};
 
 /**
  * Load a default agent based on the endpoint
@@ -773,4 +846,5 @@ module.exports = {
   getListAgentsByAccess,
   removeAgentResourceFiles,
   generateActionMetadataHash,
+  countPromotedAgents,
 };

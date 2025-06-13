@@ -1,6 +1,5 @@
+import { AgentListResponse } from 'librechat-data-provider';
 import React, { useState, useEffect } from 'react';
-
-import { cn } from '~/utils';
 
 interface SmartLoaderProps {
   /** Whether the content is currently loading */
@@ -69,7 +68,7 @@ export const SmartLoader: React.FC<SmartLoaderProps> = ({
  * Hook to determine if we have meaningful data to show
  * Helps prevent loading states when we already have cached content
  */
-export const useHasData = (data: unknown): boolean => {
+export const useHasData = (data: AgentListResponse | undefined): boolean => {
   if (!data) return false;
 
   // Type guard for object data

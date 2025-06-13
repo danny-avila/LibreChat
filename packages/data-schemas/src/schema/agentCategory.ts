@@ -1,12 +1,5 @@
 import { Schema, Document } from 'mongoose';
-
-export interface IAgentCategory extends Document {
-  value: string;
-  label: string;
-  description?: string;
-  order: number;
-  isActive: boolean;
-}
+import type { IAgentCategory } from '~/types';
 
 const agentCategorySchema = new Schema<IAgentCategory>(
   {

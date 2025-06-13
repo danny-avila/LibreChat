@@ -1,17 +1,9 @@
 import React, { useCallback, useContext } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  QueryKeys,
-  Constants,
-  EModelEndpoint,
-  PermissionTypes,
-  Permissions,
-} from 'librechat-data-provider';
-import type { TMessage, TStartupConfig } from 'librechat-data-provider';
+import { QueryKeys, Constants, PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import { NewChatIcon, MobileSidebar, Sidebar } from '~/components/svg';
-import { getDefaultModelSpec, getModelSpecPreset } from '~/utils';
 import { TooltipAnchor, Button } from '~/components/ui';
 import { useLocalize, useNewConvo, useHasAccess } from '~/hooks';
 import { AuthContext } from '~/hooks/AuthContext';
@@ -37,7 +29,6 @@ export default function NewChat({
   const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const authContext = useContext(AuthContext);
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
