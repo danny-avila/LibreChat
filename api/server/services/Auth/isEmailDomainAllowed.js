@@ -3,7 +3,7 @@
 /**
  * Checks if an email domain is allowed based on the ALLOWED_EMAIL_DOMAINS environment variable.
  * If ALLOWED_EMAIL_DOMAINS is not set, all domains are allowed.
- * 
+ *
  * @param {string|null|undefined} email - The email address to check
  * @returns {Promise<boolean>} Returns true if the email domain is allowed, false otherwise
  * @throws {Error} If the email format is invalid
