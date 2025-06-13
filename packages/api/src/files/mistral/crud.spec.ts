@@ -220,11 +220,26 @@ describe('MistralOCR Service', () => {
     it('should perform OCR using Mistral API (document_url)', async () => {
       const mockResponse: { data: OCRResult } = {
         data: {
-          id: 'ocr-123',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-ocr-latest',
-          pages: [{ markdown: 'Page 1 content' }, { markdown: 'Page 2 content' }],
+          pages: [
+            {
+              index: 0,
+              markdown: 'Page 1 content',
+              images: [],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
+            },
+            {
+              index: 1,
+              markdown: 'Page 2 content',
+              images: [],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
+            },
+          ],
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 2,
+            doc_size_bytes: 1024,
+          },
         },
       };
       mockAxios.post!.mockResolvedValueOnce(mockResponse);
@@ -260,11 +275,20 @@ describe('MistralOCR Service', () => {
     it('should perform OCR using Mistral API (image_url)', async () => {
       const mockResponse: { data: OCRResult } = {
         data: {
-          id: 'ocr-456',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-ocr-latest',
-          pages: [{ markdown: 'Image OCR content' }],
+          pages: [
+            {
+              index: 0,
+              markdown: 'Image OCR content',
+              images: [],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
+            },
+          ],
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 1,
+            doc_size_bytes: 2048,
+          },
         },
       };
       mockAxios.post!.mockResolvedValueOnce(mockResponse);
@@ -377,21 +401,47 @@ describe('MistralOCR Service', () => {
       // Mock OCR response with text and images
       mockAxios.post!.mockResolvedValueOnce({
         data: {
-          id: 'ocr-123',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-medium',
           pages: [
             {
+              index: 0,
               markdown: 'Page 1 content',
-              images: [{ image_base64: 'base64image1' }],
+              images: [
+                {
+                  id: 'img1',
+                  top_left_x: 0,
+                  top_left_y: 0,
+                  bottom_right_x: 100,
+                  bottom_right_y: 100,
+                  image_base64: 'base64image1',
+                  image_annotation: '',
+                },
+              ],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
             },
             {
+              index: 1,
               markdown: 'Page 2 content',
-              images: [{ image_base64: 'base64image2' }],
+              images: [
+                {
+                  id: 'img2',
+                  top_left_x: 0,
+                  top_left_y: 0,
+                  bottom_right_x: 100,
+                  bottom_right_y: 100,
+                  image_base64: 'base64image2',
+                  image_annotation: '',
+                },
+              ],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
             },
           ],
-        } as OCRResult,
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 2,
+            doc_size_bytes: 1024,
+          },
+        },
       });
 
       const req = {
@@ -469,17 +519,31 @@ describe('MistralOCR Service', () => {
       // Mock OCR response for image
       mockAxios.post!.mockResolvedValueOnce({
         data: {
-          id: 'ocr-456',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-medium',
           pages: [
             {
+              index: 0,
               markdown: 'Image OCR result',
-              images: [{ image_base64: 'imgbase64' }],
+              images: [
+                {
+                  id: 'img1',
+                  top_left_x: 0,
+                  top_left_y: 0,
+                  bottom_right_x: 100,
+                  bottom_right_y: 100,
+                  image_base64: 'imgbase64',
+                  image_annotation: '',
+                },
+              ],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
             },
           ],
-        } as OCRResult,
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 1,
+            doc_size_bytes: 2048,
+          },
+        },
       });
 
       const req = {
@@ -564,12 +628,21 @@ describe('MistralOCR Service', () => {
       });
       mockAxios.post!.mockResolvedValueOnce({
         data: {
-          id: 'ocr-123',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-large',
-          pages: [{ markdown: 'Content from custom API' }],
-        } as OCRResult,
+          pages: [
+            {
+              index: 0,
+              markdown: 'Content from custom API',
+              images: [],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
+            },
+          ],
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 1,
+            doc_size_bytes: 1024,
+          },
+        },
       });
 
       const req = {
@@ -647,12 +720,21 @@ describe('MistralOCR Service', () => {
       });
       mockAxios.post!.mockResolvedValueOnce({
         data: {
-          id: 'ocr-123',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-ocr-latest',
-          pages: [{ markdown: 'Default API result' }],
-        } as OCRResult,
+          pages: [
+            {
+              index: 0,
+              markdown: 'Default API result',
+              images: [],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
+            },
+          ],
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 1,
+            doc_size_bytes: 1024,
+          },
+        },
       });
 
       const req = {
@@ -778,12 +860,21 @@ describe('MistralOCR Service', () => {
       mockAxios.post!.mockImplementationOnce(() =>
         Promise.resolve({
           data: {
-            id: 'ocr-123',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-ocr-latest',
-            pages: [{ markdown: 'Single page content' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Single page content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         }),
       );
 
@@ -857,12 +948,21 @@ describe('MistralOCR Service', () => {
       mockAxios.post!.mockImplementationOnce(() =>
         Promise.resolve({
           data: {
-            id: 'ocr-123',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-direct-model',
-            pages: [{ markdown: 'Processed with literal config values' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Processed with literal config values',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         }),
       );
 
@@ -962,12 +1062,21 @@ describe('MistralOCR Service', () => {
       mockAxios.post!.mockImplementationOnce(() =>
         Promise.resolve({
           data: {
-            id: 'ocr-123',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-ocr-latest',
-            pages: [{ markdown: 'Content from default configuration' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Content from default configuration',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         }),
       );
 
@@ -1097,12 +1206,21 @@ describe('MistralOCR Service', () => {
         // Mock OCR response
         mockAxios.post!.mockResolvedValueOnce({
           data: {
-            id: 'ocr-123',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-ocr-2503',
-            pages: [{ markdown: 'Test content' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Test content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         });
 
         const req = {
@@ -1172,12 +1290,21 @@ describe('MistralOCR Service', () => {
         // Mock OCR response
         mockAxios.post!.mockResolvedValueOnce({
           data: {
-            id: 'ocr-456',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-ocr-latest',
-            pages: [{ markdown: 'Test content' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Test content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         });
 
         const req = {
@@ -1234,17 +1361,31 @@ describe('MistralOCR Service', () => {
       // Mock OCR response
       mockAxios.post!.mockResolvedValueOnce({
         data: {
-          id: 'ocr-azure-123',
-          object: 'ocr.result',
-          created_at: Date.now(),
           model: 'mistral-ocr-latest',
           pages: [
             {
+              index: 0,
               markdown: 'Azure OCR content',
-              images: [{ image_base64: 'azure-base64' }],
+              images: [
+                {
+                  id: 'azure1',
+                  top_left_x: 0,
+                  top_left_y: 0,
+                  bottom_right_x: 100,
+                  bottom_right_y: 100,
+                  image_base64: 'azure-base64',
+                  image_annotation: '',
+                },
+              ],
+              dimensions: { dpi: 300, height: 1100, width: 850 },
             },
           ],
-        } as OCRResult,
+          document_annotation: '',
+          usage_info: {
+            pages_processed: 1,
+            doc_size_bytes: 1024,
+          },
+        },
       });
 
       const req = {
@@ -1306,12 +1447,21 @@ describe('MistralOCR Service', () => {
         // Mock OCR response
         mockAxios.post!.mockResolvedValueOnce({
           data: {
-            id: 'ocr-123',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-ocr-2503',
-            pages: [{ markdown: 'Test content' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Test content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         });
 
         const req = {
@@ -1361,12 +1511,21 @@ describe('MistralOCR Service', () => {
         // Mock OCR response
         mockAxios.post!.mockResolvedValueOnce({
           data: {
-            id: 'ocr-456',
-            object: 'ocr.result',
-            created_at: Date.now(),
             model: 'mistral-ocr-latest',
-            pages: [{ markdown: 'Test content' }],
-          } as OCRResult,
+            pages: [
+              {
+                index: 0,
+                markdown: 'Test content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
         });
 
         const req = {
