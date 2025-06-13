@@ -185,23 +185,48 @@ export const uploadMistralOCR = async ({
 
     let apiKey, baseURL;
 
+    // Handle each configuration value independently
     if (isApiKeyEnvVar || isBaseURLEnvVar || isApiKeyEmpty || isBaseURLEmpty) {
-      const apiKeyVarName = isApiKeyEnvVar
-        ? extractVariableName(apiKeyConfig) || 'OCR_API_KEY'
-        : 'OCR_API_KEY';
-      const baseURLVarName = isBaseURLEnvVar
-        ? extractVariableName(baseURLConfig) || 'OCR_BASEURL'
-        : 'OCR_BASEURL';
+      const authFields: string[] = [];
+
+      if (isBaseURLEnvVar) {
+        authFields.push(extractVariableName(baseURLConfig) || 'OCR_BASEURL');
+      } else if (isBaseURLEmpty) {
+        authFields.push('OCR_BASEURL');
+      }
+
+      if (isApiKeyEnvVar) {
+        authFields.push(extractVariableName(apiKeyConfig) || 'OCR_API_KEY');
+      } else if (isApiKeyEmpty) {
+        authFields.push('OCR_API_KEY');
+      }
 
       const authValues = await loadAuthValues({
         userId: req.user?.id || '',
-        authFields: [baseURLVarName, apiKeyVarName],
-        optional: new Set([baseURLVarName]),
+        authFields,
+        optional: new Set(['OCR_BASEURL']),
       });
 
-      apiKey = authValues[apiKeyVarName] || '';
-      baseURL = authValues[baseURLVarName] || 'https://api.mistral.ai/v1';
+      // Use env var value if it was an env var or empty, otherwise use the hardcoded value
+      if (isApiKeyEnvVar) {
+        apiKey = authValues[extractVariableName(apiKeyConfig) || 'OCR_API_KEY'] || '';
+      } else if (isApiKeyEmpty) {
+        apiKey = authValues['OCR_API_KEY'] || '';
+      } else {
+        apiKey = apiKeyConfig;
+      }
+
+      if (isBaseURLEnvVar) {
+        baseURL =
+          authValues[extractVariableName(baseURLConfig) || 'OCR_BASEURL'] ||
+          'https://api.mistral.ai/v1';
+      } else if (isBaseURLEmpty) {
+        baseURL = authValues['OCR_BASEURL'] || 'https://api.mistral.ai/v1';
+      } else {
+        baseURL = baseURLConfig;
+      }
     } else {
+      // Both are hardcoded values
       apiKey = apiKeyConfig;
       baseURL = baseURLConfig;
     }
@@ -324,23 +349,48 @@ export const uploadAzureMistralOCR = async ({
 
     let apiKey, baseURL;
 
+    // Handle each configuration value independently
     if (isApiKeyEnvVar || isBaseURLEnvVar || isApiKeyEmpty || isBaseURLEmpty) {
-      const apiKeyVarName = isApiKeyEnvVar
-        ? extractVariableName(apiKeyConfig) || 'OCR_API_KEY'
-        : 'OCR_API_KEY';
-      const baseURLVarName = isBaseURLEnvVar
-        ? extractVariableName(baseURLConfig) || 'OCR_BASEURL'
-        : 'OCR_BASEURL';
+      const authFields: string[] = [];
+
+      if (isBaseURLEnvVar) {
+        authFields.push(extractVariableName(baseURLConfig) || 'OCR_BASEURL');
+      } else if (isBaseURLEmpty) {
+        authFields.push('OCR_BASEURL');
+      }
+
+      if (isApiKeyEnvVar) {
+        authFields.push(extractVariableName(apiKeyConfig) || 'OCR_API_KEY');
+      } else if (isApiKeyEmpty) {
+        authFields.push('OCR_API_KEY');
+      }
 
       const authValues = await loadAuthValues({
         userId: req.user?.id || '',
-        authFields: [baseURLVarName, apiKeyVarName],
-        optional: new Set([baseURLVarName]),
+        authFields,
+        optional: new Set(['OCR_BASEURL']),
       });
 
-      apiKey = authValues[apiKeyVarName] || '';
-      baseURL = authValues[baseURLVarName] || 'https://api.mistral.ai/v1';
+      // Use env var value if it was an env var or empty, otherwise use the hardcoded value
+      if (isApiKeyEnvVar) {
+        apiKey = authValues[extractVariableName(apiKeyConfig) || 'OCR_API_KEY'] || '';
+      } else if (isApiKeyEmpty) {
+        apiKey = authValues['OCR_API_KEY'] || '';
+      } else {
+        apiKey = apiKeyConfig;
+      }
+
+      if (isBaseURLEnvVar) {
+        baseURL =
+          authValues[extractVariableName(baseURLConfig) || 'OCR_BASEURL'] ||
+          'https://api.mistral.ai/v1';
+      } else if (isBaseURLEmpty) {
+        baseURL = authValues['OCR_BASEURL'] || 'https://api.mistral.ai/v1';
+      } else {
+        baseURL = baseURLConfig;
+      }
     } else {
+      // Both are hardcoded values
       apiKey = apiKeyConfig;
       baseURL = baseURLConfig;
     }

@@ -1033,11 +1033,65 @@ describe('MistralOCR Service', () => {
     });
 
     describe('Mixed env var and hardcoded configuration', () => {
+      beforeEach(() => {
+        const mockReadStream: MockReadStream = {
+          on: jest.fn().mockImplementation(function (
+            this: MockReadStream,
+            event: string,
+            handler: () => void,
+          ) {
+            // Simulate immediate 'end' event to make FormData complete processing
+            if (event === 'end') {
+              handler();
+            }
+            return this;
+          }),
+          pipe: jest.fn().mockImplementation(function (this: MockReadStream) {
+            return this;
+          }),
+          pause: jest.fn(),
+          resume: jest.fn(),
+          emit: jest.fn(),
+          once: jest.fn(),
+          destroy: jest.fn(),
+          path: '/tmp/upload/file.pdf',
+          fd: 1,
+          flags: 'r',
+          mode: 0o666,
+          autoClose: true,
+          bytesRead: 0,
+          closed: false,
+          pending: false,
+        };
+
+        (jest.mocked(fs).createReadStream as jest.Mock).mockReturnValue(mockReadStream);
+      });
+
       it('should preserve hardcoded baseURL when only apiKey is an env var', async () => {
         // This test demonstrates the current bug
         mockLoadAuthValues.mockResolvedValue({
           AZURE_MISTRAL_OCR_API_KEY: 'test-api-key-from-env',
           // Note: OCR_BASEURL is not returned, simulating it not being set
+        });
+
+        // Mock file upload response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            id: 'file-123',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'document.pdf',
+            purpose: 'ocr',
+          } as MistralFileUploadResponse,
+        });
+
+        // Mock signed URL response
+        mockAxios.get!.mockResolvedValueOnce({
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          } as MistralSignedUrlResponse,
         });
 
         // Mock OCR response
@@ -1076,20 +1130,16 @@ describe('MistralOCR Service', () => {
           loadAuthValues: mockLoadAuthValues,
         });
 
-        // Check that loadAuthValues was called
+        // Check that loadAuthValues was called only with the env var field
         expect(mockLoadAuthValues).toHaveBeenCalledWith({
           userId: 'user123',
-          authFields: expect.arrayContaining(['OCR_BASEURL', 'AZURE_MISTRAL_OCR_API_KEY']),
+          authFields: ['AZURE_MISTRAL_OCR_API_KEY'],
           optional: expect.any(Set),
         });
 
-        // The bug: baseURL should be the hardcoded value, not the default
-        // Currently it will use 'https://api.mistral.ai/v1' instead of the hardcoded Azure URL
-        const ocrCall = mockAxios.post!.mock.calls[0];
-        expect(ocrCall[0]).toBe('https://endpoint.models.ai.azure.com/v1/ocr');
-
-        // This assertion will fail with the current implementation
-        // It will actually be 'https://api.mistral.ai/v1/ocr' due to the bug
+        // The fix: baseURL should be the hardcoded value
+        const uploadCall = mockAxios.post!.mock.calls[0];
+        expect(uploadCall[0]).toBe('https://endpoint.models.ai.azure.com/v1/files');
       });
 
       it('should preserve hardcoded apiKey when only baseURL is an env var', async () => {
@@ -1097,6 +1147,26 @@ describe('MistralOCR Service', () => {
         mockLoadAuthValues.mockResolvedValue({
           CUSTOM_OCR_BASEURL: 'https://custom-ocr-endpoint.com/v1',
           // Note: OCR_API_KEY is not returned, simulating it not being set
+        });
+
+        // Mock file upload response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            id: 'file-456',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'document.pdf',
+            purpose: 'ocr',
+          } as MistralFileUploadResponse,
+        });
+
+        // Mock signed URL response
+        mockAxios.get!.mockResolvedValueOnce({
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          } as MistralSignedUrlResponse,
         });
 
         // Mock OCR response
@@ -1135,21 +1205,17 @@ describe('MistralOCR Service', () => {
           loadAuthValues: mockLoadAuthValues,
         });
 
-        // Check that loadAuthValues was called
+        // Check that loadAuthValues was called only with the env var field
         expect(mockLoadAuthValues).toHaveBeenCalledWith({
           userId: 'user456',
-          authFields: expect.arrayContaining(['CUSTOM_OCR_BASEURL', 'OCR_API_KEY']),
+          authFields: ['CUSTOM_OCR_BASEURL'],
           optional: expect.any(Set),
         });
 
-        // The bug: apiKey should be the hardcoded value, not empty
-        // Currently it will be empty string instead of 'hardcoded-api-key-12345'
-        const ocrCall = mockAxios.post!.mock.calls[0];
-        const authHeader = ocrCall[2]?.headers?.Authorization;
+        // The fix: apiKey should be the hardcoded value
+        const uploadCall = mockAxios.post!.mock.calls[0];
+        const authHeader = uploadCall[2]?.headers?.Authorization;
         expect(authHeader).toBe('Bearer hardcoded-api-key-12345');
-
-        // This assertion will fail with the current implementation
-        // It will actually be 'Bearer ' (empty) due to the bug
       });
     });
   });
@@ -1273,20 +1339,16 @@ describe('MistralOCR Service', () => {
           loadAuthValues: mockLoadAuthValues,
         });
 
-        // Check that loadAuthValues was called
+        // Check that loadAuthValues was called only with the env var field
         expect(mockLoadAuthValues).toHaveBeenCalledWith({
           userId: 'user123',
-          authFields: expect.arrayContaining(['OCR_BASEURL', 'AZURE_MISTRAL_OCR_API_KEY']),
+          authFields: ['AZURE_MISTRAL_OCR_API_KEY'],
           optional: expect.any(Set),
         });
 
-        // The bug: baseURL should be the hardcoded value, not the default
-        // Currently it will use 'https://api.mistral.ai/v1' instead of the hardcoded Azure URL
+        // The fix: baseURL should be the hardcoded value
         const ocrCall = mockAxios.post!.mock.calls[0];
         expect(ocrCall[0]).toBe('https://endpoint.models.ai.azure.com/v1/ocr');
-
-        // This assertion will fail with the current implementation
-        // It will actually be 'https://api.mistral.ai/v1/ocr' due to the bug
       });
 
       it('should preserve hardcoded apiKey when only baseURL is an env var', async () => {
@@ -1332,21 +1394,17 @@ describe('MistralOCR Service', () => {
           loadAuthValues: mockLoadAuthValues,
         });
 
-        // Check that loadAuthValues was called
+        // Check that loadAuthValues was called only with the env var field
         expect(mockLoadAuthValues).toHaveBeenCalledWith({
           userId: 'user456',
-          authFields: expect.arrayContaining(['CUSTOM_OCR_BASEURL', 'OCR_API_KEY']),
+          authFields: ['CUSTOM_OCR_BASEURL'],
           optional: expect.any(Set),
         });
 
-        // The bug: apiKey should be the hardcoded value, not empty
-        // Currently it will be empty string instead of 'hardcoded-api-key-12345'
+        // The fix: apiKey should be the hardcoded value
         const ocrCall = mockAxios.post!.mock.calls[0];
         const authHeader = ocrCall[2]?.headers?.Authorization;
         expect(authHeader).toBe('Bearer hardcoded-api-key-12345');
-
-        // This assertion will fail with the current implementation
-        // It will actually be 'Bearer ' (empty) due to the bug
       });
     });
   });
