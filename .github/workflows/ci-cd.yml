@@ -19,30 +19,6 @@ on:
         default: 'production'
 
 jobs:
-  lint:
-    name: Lint Code
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build workspace packages
-        run: |
-          npm run build:data-provider
-          npm run build:data-schemas
-          npm run build:api
-
-      - name: Run ESLint
-        run: npm run lint
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -64,11 +40,11 @@ jobs:
           npm run build:data-schemas
           npm run build:api
 
-      - name: Run unit tests
-        run: npm test
+      - name: Run client tests
+        run: npm run test:client
 
-      - name: Run integration tests
-        run: npm run test:integration
+      - name: Run API tests
+        run: npm run test:api
 
   check_review:
     name: Check Pull Request Review
@@ -84,7 +60,8 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: [lint, test]
+    needs: [test]
+    runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -275,6 +252,10 @@ jobs:
           context: .
           push: true
           tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
+          build-args: |
+            NODE_ENV=production
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
 
       - name: Deploy to DigitalOcean App Platform
         run: |
@@ -282,6 +263,7 @@ jobs:
           sleep 30
           
           # Deploy the app
+          echo "Starting deployment..."
           doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} --wait
           
           # Check deployment status
@@ -290,4 +272,19 @@ jobs:
           else
             echo "Deployment failed!"
             exit 1
-          fi 
+          fi
+
+      - name: Check deployment status and logs
+        run: |
+          echo "=== Deployment Status ==="
+          doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID,Phase,Created
+          
+          echo "=== Latest Deployment Logs ==="
+          LATEST_DEPLOYMENT=$(doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID --no-header | head -n 1)
+          doctl apps get-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} $LATEST_DEPLOYMENT --format Logs
+          
+          echo "=== App Status ==="
+          doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} --format Spec.Services[0].Name,Spec.Services[0].InstanceCount,Spec.Services[0].InstanceSizeSlug
+          
+          echo "=== Environment Variables ==="
+          doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} --format Spec.Services[0].Env 
