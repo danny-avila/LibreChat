@@ -46,6 +46,11 @@ router.use('/actions', actions);
 router.use('/tools', tools);
 
 /**
+ * Get all agent categories with counts
+ * @route GET /agents/marketplace/categories
+ */
+router.get('/categories', v1.getAgentCategories);
+/**
  * Creates an agent.
  * @route POST /agents
  * @param {AgentCreateParams} req.body - The agent creation parameters.

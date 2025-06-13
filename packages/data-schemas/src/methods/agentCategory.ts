@@ -144,6 +144,66 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
     return await AgentCategory.find({}).sort({ order: 1, label: 1 }).lean();
   }
 
+  /**
+   * Ensure default categories exist, seed them if none are present
+   * @returns Promise<boolean> - true if categories were seeded, false if they already existed
+   */
+  async function ensureDefaultCategories(): Promise<boolean> {
+    const existingCategories = await getAllCategories();
+
+    if (existingCategories.length > 0) {
+      return false; // Categories already exist
+    }
+
+    const defaultCategories = [
+      {
+        value: 'general',
+        label: 'General',
+        description: 'General purpose agents for common tasks and inquiries',
+        order: 0,
+      },
+      {
+        value: 'hr',
+        label: 'Human Resources',
+        description: 'Agents specialized in HR processes, policies, and employee support',
+        order: 1,
+      },
+      {
+        value: 'rd',
+        label: 'Research & Development',
+        description: 'Agents focused on R&D processes, innovation, and technical research',
+        order: 2,
+      },
+      {
+        value: 'finance',
+        label: 'Finance',
+        description: 'Agents specialized in financial analysis, budgeting, and accounting',
+        order: 3,
+      },
+      {
+        value: 'it',
+        label: 'IT',
+        description: 'Agents for IT support, technical troubleshooting, and system administration',
+        order: 4,
+      },
+      {
+        value: 'sales',
+        label: 'Sales',
+        description: 'Agents focused on sales processes, customer relations.',
+        order: 5,
+      },
+      {
+        value: 'aftersales',
+        label: 'After Sales',
+        description: 'Agents specialized in post-sale support, maintenance, and customer service',
+        order: 6,
+      },
+    ];
+
+    await seedCategories(defaultCategories);
+    return true; // Categories were seeded
+  }
+
   return {
     getActiveCategories,
     getCategoriesWithCounts,
@@ -155,6 +215,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
     deleteCategory,
     findCategoryById,
     getAllCategories,
+    ensureDefaultCategories,
   };
 }
 
