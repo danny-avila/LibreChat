@@ -64,8 +64,11 @@ jobs:
           npm run build:data-schemas
           npm run build:api
 
-      - name: Run unit tests
-        run: npm test
+      - name: Run client tests
+        run: npm run test:client
+
+      - name: Run API tests
+        run: npm run test:api
 
       - name: Run integration tests
         run: npm run test:integration
