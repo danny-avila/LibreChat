@@ -35,13 +35,32 @@ jobs:
     name: Deploy to Production
     needs: check_review
     runs-on: ubuntu-latest
-    if: github.event.inputs.environment == 'production'
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Validate Required Credentials
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DIGITALOCEAN_REGISTRY: ${{ secrets.DIGITALOCEAN_REGISTRY }}
+          DIGITALOCEAN_APP_ID: ${{ secrets.DIGITALOCEAN_APP_ID }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CREDS_KEY: ${{ secrets.CREDS_KEY }}
+          CREDS_IV: ${{ secrets.CREDS_IV }}
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
         run: |
           # Function to check if a secret is set
           check_secret() {
@@ -88,7 +107,7 @@ jobs:
           # Check all required secrets
           missing_required=0
           for secret in "${required_secrets[@]}"; do
-            if ! check_secret "$secret" "${{ secrets[secret] }}" "true"; then
+            if ! check_secret "$secret" "${!secret}" "true"; then
               missing_required=1
             fi
           done
@@ -96,7 +115,7 @@ jobs:
           # Check if at least one API key is set
           api_key_set=0
           for key in "${required_api_keys[@]}"; do
-            if [[ -n "${{ secrets[key] }}" ]]; then
+            if [[ -n "${!key}" ]]; then
               api_key_set=1
               break
             fi
@@ -108,20 +127,20 @@ jobs:
           fi
 
           # Validate MongoDB URI format
-          if [[ -n "${{ secrets.MONGO_URI }}" ]]; then
-            if ! [[ "${{ secrets.MONGO_URI }}" =~ ^mongodb(\+srv)?://[^:]+:[^@]+@[^/]+/[^?]+ ]]; then
+          if [[ -n "${MONGO_URI}" ]]; then
+            if ! [[ "${MONGO_URI}" =~ ^mongodb(\+srv)?://[^:]+:[^@]+@[^/]+/[^?]+ ]]; then
               echo "Error: MONGO_URI must be a valid MongoDB connection string with authentication"
               missing_required=1
             fi
           fi
 
           # Check for development values in production
-          if [[ "${{ secrets.JWT_SECRET }}" == "dev_jwt_secret_do_not_use_in_production" ]]; then
+          if [[ "${JWT_SECRET}" == "dev_jwt_secret_do_not_use_in_production" ]]; then
             echo "Error: JWT_SECRET cannot use development value in production"
             missing_required=1
           fi
 
-          if [[ "${{ secrets.MONGO_URI }}" == "mongodb://localhost:27017"* ]]; then
+          if [[ "${MONGO_URI}" == "mongodb://localhost:27017"* ]]; then
             echo "Error: MONGO_URI cannot use localhost in production"
             missing_required=1
           fi
@@ -193,7 +212,7 @@ jobs:
           REPLICATE_API_KEY=${{ secrets.REPLICATE_API_KEY }}
 
           # Custom Configuration
-          CUSTOM_CONFIG='{"registration":{"allowedDomains":["socioh.com"]},"actions":{"allowedDomains":["socioh.com"]}}'
+          CUSTOM_CONFIG=${{ secrets.CUSTOM_CONFIG }}
           EOF
 
       - name: Build and push Docker image
