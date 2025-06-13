@@ -72,11 +72,11 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: [lint, test]
+    needs: [lint, test, ${{ github.event_name == 'pull_request' && 'check_review' || '' }}]
+    runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout code
@@ -200,7 +200,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to DigitalOcean Container Registry
-        run: doctl registry login --expiry-seconds 1200
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Create .env file with secrets
         run: |
@@ -262,17 +266,4 @@ jobs:
           tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
 
       - name: Deploy to DigitalOcean App Platform
-        run: |
-          # Wait for the image to be available in the registry
-          sleep 30
-          
-          # Deploy the app
-          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} --wait
-          
-          # Check deployment status
-          if [ $? -eq 0 ]; then
-            echo "Deployment successful!"
-          else
-            echo "Deployment failed!"
-            exit 1
-          fi 
+        run: doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 
