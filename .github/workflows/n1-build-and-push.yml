@@ -51,4 +51,4 @@ jobs:
                 az containerapp update \
                   --name conpaichateastusn1001 \
                   --resource-group rg-playai-eastus-n1-001 \
-                  --yaml ./n1_container_app_definition.yml
+                  --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n1_container_app_definition.yml
