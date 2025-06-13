@@ -4,6 +4,8 @@ import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, type RoleMethods } from './role';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
+/* Agent Categories */
+import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
 /* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
@@ -20,6 +22,7 @@ export function createMethods(mongoose: typeof import('mongoose')) {
     ...createTokenMethods(mongoose),
     ...createRoleMethods(mongoose),
     ...createMemoryMethods(mongoose),
+    ...createAgentCategoryMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
     ...createAclEntryMethods(mongoose),
@@ -33,6 +36,7 @@ export type AllMethods = UserMethods &
   TokenMethods &
   RoleMethods &
   MemoryMethods &
+  AgentCategoryMethods &
   AccessRoleMethods &
   UserGroupMethods &
   AclEntryMethods &
