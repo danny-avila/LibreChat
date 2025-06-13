@@ -19,6 +19,45 @@ on:
         default: 'production'
 
 jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run integration tests
+        run: npm run test:integration
+
   check_review:
     name: Check Pull Request Review
     runs-on: ubuntu-latest
@@ -33,7 +72,7 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: ${{ github.event_name == 'pull_request' && 'check_review' || '' }}
+    needs: [lint, test, ${{ github.event_name == 'pull_request' && 'check_review' || '' }}]
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
