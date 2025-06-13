@@ -72,11 +72,11 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: [lint, test, ${{ github.event_name == 'pull_request' && 'check_review' || '' }}]
-    runs-on: ubuntu-latest
+    needs: [lint, test]
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout code
@@ -262,4 +262,17 @@ jobs:
           tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
 
       - name: Deploy to DigitalOcean App Platform
-        run: doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 
+        run: |
+          # Wait for the image to be available in the registry
+          sleep 30
+          
+          # Deploy the app
+          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} --wait
+          
+          # Check deployment status
+          if [ $? -eq 0 ]; then
+            echo "Deployment successful!"
+          else
+            echo "Deployment failed!"
+            exit 1
+          fi 
