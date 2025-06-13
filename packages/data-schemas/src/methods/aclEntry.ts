@@ -125,6 +125,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
    * @param permBits - The permission bits to grant
    * @param grantedBy - The ID of the user granting the permission
    * @param session - Optional MongoDB session for transactions
+   * @param roleId - Optional role ID to associate with this permission
    * @returns The created or updated ACL entry
    */
   async function grantPermission(
@@ -135,6 +136,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     permBits: number,
     grantedBy: string | Types.ObjectId,
     session?: ClientSession,
+    roleId?: string | Types.ObjectId,
   ): Promise<IAclEntry | null> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const query: Record<string, unknown> = {
@@ -153,6 +155,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
         permBits,
         grantedBy,
         grantedAt: new Date(),
+        ...(roleId && { roleId }),
       },
     };
 

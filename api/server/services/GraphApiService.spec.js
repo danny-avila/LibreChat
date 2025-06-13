@@ -52,9 +52,17 @@ describe('GraphApiService', () => {
     await mongoServer.stop();
   });
 
+  afterEach(() => {
+    // Clean up environment variables
+    delete process.env.OPENID_GRAPH_SCOPES;
+  });
+
   beforeEach(async () => {
     jest.clearAllMocks();
     await mongoose.connection.dropDatabase();
+    
+    // Set up environment variable for People.Read scope
+    process.env.OPENID_GRAPH_SCOPES = 'User.Read,People.Read,Group.Read.All';
 
     // Mock Graph client
     mockGraphClient = {
@@ -341,6 +349,7 @@ describe('GraphApiService', () => {
 
       // Should call contacts first with user filter
       expect(mockGraphClient.api).toHaveBeenCalledWith('/me/people');
+      expect(mockGraphClient.search).toHaveBeenCalledWith('"john"');
       expect(mockGraphClient.filter).toHaveBeenCalledWith(
         "personType/subclass eq 'OrganizationUser'",
       );
@@ -404,7 +413,9 @@ describe('GraphApiService', () => {
         10,
       );
 
-      // Should call contacts with user filter only
+      // Should call contacts first with user filter
+      expect(mockGraphClient.api).toHaveBeenCalledWith('/me/people');
+      expect(mockGraphClient.search).toHaveBeenCalledWith('"test"');
       expect(mockGraphClient.filter).toHaveBeenCalledWith(
         "personType/subclass eq 'OrganizationUser'",
       );
@@ -440,6 +451,7 @@ describe('GraphApiService', () => {
 
       // Should call contacts first
       expect(mockGraphClient.api).toHaveBeenCalledWith('/me/people');
+      expect(mockGraphClient.search).toHaveBeenCalledWith('"test"');
       // Should not call users endpoint since limit was reached
       expect(mockGraphClient.api).not.toHaveBeenCalledWith('/users');
 
