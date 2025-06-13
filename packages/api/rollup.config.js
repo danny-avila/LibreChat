@@ -1,5 +1,6 @@
 // rollup.config.js
 import { readFileSync } from 'fs';
+import json from '@rollup/plugin-json';
 import terser from '@rollup/plugin-terser';
 import replace from '@rollup/plugin-replace';
 import commonjs from '@rollup/plugin-commonjs';
@@ -29,6 +30,7 @@ const plugins = [
     inlineSourceMap: true,
   }),
   terser(),
+  json(),
 ];
 
 const cjsBuild = {

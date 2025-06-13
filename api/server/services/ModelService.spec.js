@@ -1,6 +1,6 @@
 const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
-const { logger } = require('~/config');
 
 const {
   fetchModels,
@@ -28,7 +28,8 @@ jest.mock('~/cache/getLogStores', () =>
     set: jest.fn().mockResolvedValue(true),
   })),
 );
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: {
     error: jest.fn(),
   },

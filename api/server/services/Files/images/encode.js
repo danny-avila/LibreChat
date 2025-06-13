@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { logAxiosError } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
@@ -7,8 +8,6 @@ const {
   EModelEndpoint,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { logAxiosError } = require('~/utils');
-const { logger } = require('~/config');
 
 /**
  * Converts a readable stream to a base64 encoded string.

@@ -4,12 +4,13 @@ const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
 const { tool } = require('@langchain/core/tools');
+const { logAxiosError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { logAxiosError, extractBaseURL } = require('~/utils');
+const { extractBaseURL } = require('~/utils');
 const { getFiles } = require('~/models/File');
-const { logger } = require('~/config');
 
 /** Default descriptions for image generation tool  */
 const DEFAULT_IMAGE_GEN_DESCRIPTION = `
