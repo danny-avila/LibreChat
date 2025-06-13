@@ -28,11 +28,13 @@ const mockAxios = {
 };
 
 jest.mock('axios', () => mockAxios);
-jest.mock('fs');
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
   },
+}));
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   createAxiosInstance: () => mockAxios,
 }));
 jest.mock('~/server/services/Tools/credentials', () => ({
@@ -160,7 +162,7 @@ describe('MistralOCR Service', () => {
         }),
       ).rejects.toThrow();
 
-      const { logger } = require('~/config');
+      const { logger } = require('@librechat/data-schemas');
       expect(logger.error).toHaveBeenCalledWith('Error fetching signed URL:', errorMessage);
     });
   });
@@ -249,7 +251,7 @@ describe('MistralOCR Service', () => {
         }),
       ).rejects.toThrow();
 
-      const { logger } = require('~/config');
+      const { logger } = require('@librechat/data-schemas');
       expect(logger.error).toHaveBeenCalledWith('Error performing OCR:', errorMessage);
     });
   });
