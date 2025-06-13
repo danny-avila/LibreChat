@@ -593,6 +593,7 @@ export type TStartupConfig = {
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
   CUSTOM_OCR = 'custom_ocr',
+  AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
 }
 
 export enum SearchCategories {
@@ -1363,7 +1364,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.6',
+  CONFIG_VERSION = '1.2.8',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

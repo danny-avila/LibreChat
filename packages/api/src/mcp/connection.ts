@@ -88,7 +88,7 @@ export class MCPConnection extends EventEmitter {
     this.client = new Client(
       {
         name: '@librechat/api-client',
-        version: '1.2.2',
+        version: '1.2.3',
       },
       {
         capabilities: {},
