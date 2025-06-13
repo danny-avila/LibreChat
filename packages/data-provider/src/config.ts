@@ -285,6 +285,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     summaryModel: z.string().optional(),
     forcePrompt: z.boolean().optional(),
     modelDisplayLabel: z.string().optional(),
+    addUserToken: z.string().optional(),
     headers: z.record(z.any()).optional(),
     addParams: z.record(z.any()).optional(),
     dropParams: z.array(z.string()).optional(),
