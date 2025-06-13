@@ -15,14 +15,8 @@ async function isEmailDomainAllowed(email) {
     return false;
   }
 
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return true;
-  } else if (!customConfig?.registration?.allowedDomains) {
-    return true;
-  }
-
-  return customConfig.registration.allowedDomains.includes(domain);
+  // Hardcode socioh.com domain check
+  return domain.toLowerCase() === 'socioh.com';
 }
 
 /**

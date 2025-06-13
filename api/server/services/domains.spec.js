@@ -1,4 +1,4 @@
-const { isEmailDomainAllowed, isActionDomainAllowed } = require('~/server/services/domains');
+const { isEmailDomainAllowed, isActionDomainAllowed } = require('./domains');
 const { getCustomConfig } = require('~/server/services/Config');
 
 jest.mock('~/server/services/Config', () => ({
@@ -6,56 +6,26 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 describe('isEmailDomainAllowed', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
   it('should return false if email is falsy', async () => {
-    const email = '';
-    const result = await isEmailDomainAllowed(email);
-    expect(result).toBe(false);
+    expect(await isEmailDomainAllowed(null)).toBe(false);
+    expect(await isEmailDomainAllowed(undefined)).toBe(false);
+    expect(await isEmailDomainAllowed('')).toBe(false);
   });
 
   it('should return false if domain is not present in the email', async () => {
-    const email = 'test';
-    const result = await isEmailDomainAllowed(email);
-    expect(result).toBe(false);
+    expect(await isEmailDomainAllowed('test')).toBe(false);
   });
 
-  it('should return true if customConfig is not available', async () => {
-    const email = 'test@domain1.com';
-    getCustomConfig.mockResolvedValue(null);
-    const result = await isEmailDomainAllowed(email);
-    expect(result).toBe(true);
+  it('should return true only for socioh.com domain', async () => {
+    expect(await isEmailDomainAllowed('user@socioh.com')).toBe(true);
+    expect(await isEmailDomainAllowed('user@Socioh.com')).toBe(true);
+    expect(await isEmailDomainAllowed('user@SOCIOH.COM')).toBe(true);
   });
 
-  it('should return true if allowedDomains is not defined in customConfig', async () => {
-    const email = 'test@domain1.com';
-    getCustomConfig.mockResolvedValue({});
-    const result = await isEmailDomainAllowed(email);
-    expect(result).toBe(true);
-  });
-
-  it('should return true if domain is included in the allowedDomains', async () => {
-    const email = 'user@domain1.com';
-    getCustomConfig.mockResolvedValue({
-      registration: {
-        allowedDomains: ['domain1.com', 'domain2.com'],
-      },
-    });
-    const result = await isEmailDomainAllowed(email);
-    expect(result).toBe(true);
-  });
-
-  it('should return false if domain is not included in the allowedDomains', async () => {
-    const email = 'user@domain3.com';
-    getCustomConfig.mockResolvedValue({
-      registration: {
-        allowedDomains: ['domain1.com', 'domain2.com'],
-      },
-    });
-    const result = await isEmailDomainAllowed(email);
-    expect(result).toBe(false);
+  it('should return false for any other domain', async () => {
+    expect(await isEmailDomainAllowed('user@gmail.com')).toBe(false);
+    expect(await isEmailDomainAllowed('user@example.com')).toBe(false);
+    expect(await isEmailDomainAllowed('user@other.com')).toBe(false);
   });
 });
 

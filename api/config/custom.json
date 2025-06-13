@@ -1,0 +1,8 @@
+{
+  "registration": {
+    "allowedDomains": ["socioh.com"]
+  },
+  "actions": {
+    "allowedDomains": ["socioh.com"]
+  }
+} 

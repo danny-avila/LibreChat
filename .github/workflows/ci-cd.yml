@@ -1,0 +1,207 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - '**'  # Run on all branches
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - production
+        default: 'production'
+
+jobs:
+  check_review:
+    name: Check Pull Request Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    steps:
+      - name: Check for required reviews
+        run: |
+          if [[ "${{ github.event.pull_request.review_comments }}" -eq 0 ]]; then
+            echo "Error: At least one review is required before merging to main"
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to Production
+    needs: check_review
+    runs-on: ubuntu-latest
+    if: github.event.inputs.environment == 'production'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Required Credentials
+        run: |
+          # Function to check if a secret is set
+          check_secret() {
+            local secret_name=$1
+            local secret_value=$2
+            local is_required=$3
+            
+            if [[ -z "$secret_value" ]]; then
+              if [[ "$is_required" == "true" ]]; then
+                echo "Error: Required secret '$secret_name' is not set"
+                return 1
+              else
+                echo "Warning: Optional secret '$secret_name' is not set"
+                return 0
+              fi
+            fi
+            return 0
+          }
+
+          # Required secrets for deployment
+          required_secrets=(
+            "DIGITALOCEAN_ACCESS_TOKEN"
+            "DIGITALOCEAN_REGISTRY"
+            "DIGITALOCEAN_APP_ID"
+            "MONGO_URI"
+            "JWT_SECRET"
+            "CREDS_KEY"
+            "CREDS_IV"
+            "POSTGRES_HOST"
+            "POSTGRES_PORT"
+            "POSTGRES_DB"
+            "POSTGRES_USER"
+            "POSTGRES_PASSWORD"
+          )
+
+          # Required API keys (at least one must be set)
+          required_api_keys=(
+            "OPENAI_API_KEY"
+            "ANTHROPIC_API_KEY"
+            "GOOGLE_API_KEY"
+            "AZURE_API_KEY"
+          )
+
+          # Check all required secrets
+          missing_required=0
+          for secret in "${required_secrets[@]}"; do
+            if ! check_secret "$secret" "${{ secrets[secret] }}" "true"; then
+              missing_required=1
+            fi
+          done
+
+          # Check if at least one API key is set
+          api_key_set=0
+          for key in "${required_api_keys[@]}"; do
+            if [[ -n "${{ secrets[key] }}" ]]; then
+              api_key_set=1
+              break
+            fi
+          done
+
+          if [[ $api_key_set -eq 0 ]]; then
+            echo "Error: At least one API key must be set (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or AZURE_API_KEY)"
+            missing_required=1
+          fi
+
+          # Validate MongoDB URI format
+          if [[ -n "${{ secrets.MONGO_URI }}" ]]; then
+            if ! [[ "${{ secrets.MONGO_URI }}" =~ ^mongodb(\+srv)?://[^:]+:[^@]+@[^/]+/[^?]+ ]]; then
+              echo "Error: MONGO_URI must be a valid MongoDB connection string with authentication"
+              missing_required=1
+            fi
+          fi
+
+          # Check for development values in production
+          if [[ "${{ secrets.JWT_SECRET }}" == "dev_jwt_secret_do_not_use_in_production" ]]; then
+            echo "Error: JWT_SECRET cannot use development value in production"
+            missing_required=1
+          fi
+
+          if [[ "${{ secrets.MONGO_URI }}" == "mongodb://localhost:27017"* ]]; then
+            echo "Error: MONGO_URI cannot use localhost in production"
+            missing_required=1
+          fi
+
+          if [[ $missing_required -eq 1 ]]; then
+            echo "Deployment failed: Required credentials are missing or invalid"
+            exit 1
+          fi
+
+          echo "All required credentials are present and valid."
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Create .env file with secrets
+        run: |
+          cat << EOF > .env
+          # Server Configuration
+          PORT=3080
+          HOST=0.0.0.0
+          NODE_ENV=production
+          
+          # MongoDB Configuration
+          MONGO_URI=${{ secrets.MONGO_URI }}
+          
+          # Meilisearch Configuration
+          MEILI_HOST=http://meilisearch:7700
+          MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
+          
+          # RAG API Configuration
+          RAG_PORT=8000
+          RAG_API_URL=http://rag_api:8000
+          
+          # Security
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          CREDS_KEY=${{ secrets.CREDS_KEY }}
+          CREDS_IV=${{ secrets.CREDS_IV }}
+          
+          # Rate Limiting
+          BAN_VIOLATIONS=${{ secrets.BAN_VIOLATIONS }}
+          BAN_DURATION=${{ secrets.BAN_DURATION }}
+          BAN_INTERVAL=${{ secrets.BAN_INTERVAL }}
+          
+          # Vector Database Configuration
+          POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          
+          # API Keys
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+          AZURE_API_KEY=${{ secrets.AZURE_API_KEY }}
+          AZURE_API_ENDPOINT=${{ secrets.AZURE_API_ENDPOINT }}
+          AZURE_DEPLOYMENT_NAME=${{ secrets.AZURE_DEPLOYMENT_NAME }}
+          BINGAI_TOKEN=${{ secrets.BINGAI_TOKEN }}
+          CHATGPT_TOKEN=${{ secrets.CHATGPT_TOKEN }}
+          HUGGINGFACE_API_KEY=${{ secrets.HUGGINGFACE_API_KEY }}
+          REPLICATE_API_KEY=${{ secrets.REPLICATE_API_KEY }}
+
+          # Custom Configuration
+          CUSTOM_CONFIG='{"registration":{"allowedDomains":["socioh.com"]},"actions":{"allowedDomains":["socioh.com"]}}'
+          EOF
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
+
+      - name: Deploy to DigitalOcean App Platform
+        run: doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 

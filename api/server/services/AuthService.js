@@ -195,7 +195,7 @@ const registerUser = async (user, additionalData = {}) => {
 
     if (!(await isEmailDomainAllowed(email))) {
       const errorMessage =
-        'The email address provided cannot be used. Please use a different email address.';
+        'Only socioh.com email addresses are allowed. Please use a socioh.com email address to register.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
       return { status: 403, message: errorMessage };
     }
