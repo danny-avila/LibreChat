@@ -41,9 +41,7 @@ jest.mock('winston-daily-rotate-file', () => {
 });
 
 jest.mock('~/config', () => {
-  const actualModule = jest.requireActual('~/config');
   return {
-    sendEvent: actualModule.sendEvent,
     logger: {
       info: jest.fn(),
       warn: jest.fn(),
