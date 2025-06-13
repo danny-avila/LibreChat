@@ -72,8 +72,7 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: [lint, test, ${{ github.event_name == 'pull_request' && 'check_review' || '' }}]
-    runs-on: ubuntu-latest
+    needs: [lint, test]
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
