@@ -5,6 +5,7 @@ import { createBalanceModel } from './balance';
 import { createConversationModel } from './convo';
 import { createMessageModel } from './message';
 import { createAgentModel } from './agent';
+import { createAgentCategoryModel } from './agentCategory';
 import { createRoleModel } from './role';
 import { createActionModel } from './action';
 import { createAssistantModel } from './assistant';
@@ -37,6 +38,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Conversation: createConversationModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
+    AgentCategory: createAgentCategoryModel(mongoose),
     Role: createRoleModel(mongoose),
     Action: createActionModel(mongoose),
     Assistant: createAssistantModel(mongoose),

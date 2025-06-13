@@ -14,7 +14,12 @@ import type {
   AgentCreateParams,
   AgentListResponse,
 } from 'librechat-data-provider';
-import { useUploadAgentAvatarMutation, useGetFileConfig } from '~/data-provider';
+import {
+  useUploadAgentAvatarMutation,
+  useGetFileConfig,
+  allAgentViewAndEditQueryKeys,
+  invalidateAgentMarketplaceQueries,
+} from '~/data-provider';
 import { AgentAvatarRender, NoImage, AvatarMenu } from './Images';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -57,30 +62,31 @@ function Avatar({
       const newUrl = data.avatar?.filepath ?? '';
       setPreviewUrl(newUrl);
 
-      const res = queryClient.getQueryData<AgentListResponse>([
-        QueryKeys.agents,
-        defaultOrderQuery,
-      ]);
+      ((keys) => {
+        keys.forEach((key) => {
+          const res = queryClient.getQueryData<AgentListResponse>([QueryKeys.agents, key]);
 
-      if (!res?.data) {
-        return;
-      }
+          if (!res?.data) {
+            return;
+          }
 
-      const agents = res.data.map((agent) => {
-        if (agent.id === agent_id) {
-          return {
-            ...agent,
-            ...data,
-          };
-        }
-        return agent;
-      });
+          const agents = res.data.map((agent) => {
+            if (agent.id === agent_id) {
+              return {
+                ...agent,
+                ...data,
+              };
+            }
+            return agent;
+          });
 
-      queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
-        ...res,
-        data: agents,
-      });
-
+          queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, key], {
+            ...res,
+            data: agents,
+          });
+        });
+      })(allAgentViewAndEditQueryKeys);
+      invalidateAgentMarketplaceQueries(queryClient);
       setProgress(1);
     },
     onError: (error) => {
