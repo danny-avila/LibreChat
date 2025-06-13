@@ -82,26 +82,13 @@ jest.mock('librechat-data-provider', () => ({
   EModelEndpoint: { custom: 'custom', assistants: 'assistants', agents: 'agents' },
 }));
 
-// Mock global window.history
-global.window = Object.create(window);
-global.window.history = {
-  replaceState: jest.fn(),
-  pushState: jest.fn(),
-  go: jest.fn(),
-  back: jest.fn(),
-  forward: jest.fn(),
-  length: 1,
-  scrollRestoration: 'auto',
-  state: null,
-};
-
 describe('useQueryParams', () => {
   // Setup common mocks before each test
   beforeEach(() => {
     jest.useFakeTimers();
 
-    // Reset mock for window.history.replaceState
-    jest.spyOn(window.history, 'replaceState').mockClear();
+    // Reset mock for setSearchParams
+    jest.clearAllMocks();
 
     // Create mocks for all dependencies
     const mockSearchParams = new URLSearchParams();
@@ -157,10 +144,12 @@ describe('useQueryParams', () => {
   // Helper function to set URL parameters for testing
   const setUrlParams = (params: Record<string, string>) => {
     const searchParams = new URLSearchParams();
+    const mockSetSearchParams = jest.fn();
     Object.entries(params).forEach(([key, value]) => {
       searchParams.set(key, value);
     });
-    (useSearchParams as jest.Mock).mockReturnValue([searchParams, jest.fn()]);
+    (useSearchParams as jest.Mock).mockReturnValue([searchParams, mockSetSearchParams]);
+    return mockSetSearchParams;
   };
 
   // Test cases remain the same
@@ -185,7 +174,7 @@ describe('useQueryParams', () => {
       getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
     });
 
-    setUrlParams({ q: 'hello world' });
+    const mockSetSearchParams = setUrlParams({ q: 'hello world' });
 
     // Execute
     renderHook(() => useQueryParams({ textAreaRef: mockTextAreaRef }));
@@ -201,7 +190,9 @@ describe('useQueryParams', () => {
       'hello world',
       expect.objectContaining({ shouldValidate: true }),
     );
-    expect(window.history.replaceState).toHaveBeenCalled();
+    expect(mockSetSearchParams).toHaveBeenCalledWith(expect.any(URLSearchParams), {
+      replace: true,
+    });
   });
 
   it('should auto-submit message when submit=true and no settings to apply', () => {
@@ -447,9 +438,6 @@ describe('useQueryParams', () => {
     const mockHandleSubmit = jest.fn();
     const mockSubmitMessage = jest.fn();
 
-    // Force replaceState to be called
-    window.history.replaceState = jest.fn();
-
     (useChatFormContext as jest.Mock).mockReturnValue({
       setValue: mockSetValue,
       getValues: jest.fn().mockReturnValue(''),
@@ -465,7 +453,7 @@ describe('useQueryParams', () => {
       getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
     });
 
-    setUrlParams({}); // Empty params
+    const mockSetSearchParams = setUrlParams({}); // Empty params
     const mockTextAreaRef = {
       current: {
         focus: jest.fn(),
@@ -484,6 +472,8 @@ describe('useQueryParams', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
     expect(mockHandleSubmit).not.toHaveBeenCalled();
     expect(mockSubmitMessage).not.toHaveBeenCalled();
-    expect(window.history.replaceState).toHaveBeenCalled();
+    expect(mockSetSearchParams).toHaveBeenCalledWith(expect.any(URLSearchParams), {
+      replace: true,
+    });
   });
 });
