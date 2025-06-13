@@ -48,6 +48,7 @@ jobs:
             - name: Update Azure Container App
               run: |
                 az login --identity
+                az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
                 az containerapp update \
                   --name conpaichateastusn1001 \
                   --resource-group rg-playai-eastus-n1-001 \
