@@ -33,7 +33,7 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: check_review
+    needs: ${{ github.event_name == 'pull_request' && 'check_review' || '' }}
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
