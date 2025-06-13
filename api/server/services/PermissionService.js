@@ -17,6 +17,7 @@ const {
   findAccessibleResources: findAccessibleResourcesACL,
   hasPermission,
   getEffectivePermissions: getEffectivePermissionsACL,
+  findEntriesByPrincipalsAndResource,
 } = require('~/models');
 const { AclEntry, AccessRole, Group } = require('~/db/models');
 
@@ -170,6 +171,37 @@ const findAccessibleResources = async ({ userId, resourceType, requiredPermissio
     return await findAccessibleResourcesACL(principalsList, resourceType, requiredPermissions);
   } catch (error) {
     logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
+    // Re-throw validation errors
+    if (error.message.includes('requiredPermissions must be')) {
+      throw error;
+    }
+    return [];
+  }
+};
+
+/**
+ * Find all publicly accessible resources of a specific type
+ * @param {Object} params - Parameters for finding publicly accessible resources
+ * @param {string} params.resourceType - Type of resource (e.g., 'agent')
+ * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
+ * @returns {Promise<Array>} Array of resource IDs
+ */
+const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissions }) => {
+  try {
+    if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
+      throw new Error('requiredPermissions must be a positive number');
+    }
+
+    // Find all public ACL entries where the public principal has at least the required permission bits
+    const entries = await AclEntry.find({
+      principalType: 'public',
+      resourceType,
+      permBits: { $bitsAllSet: requiredPermissions },
+    }).distinct('resourceId');
+
+    return entries;
+  } catch (error) {
+    logger.error(`[PermissionService.findPubliclyAccessibleResources] Error: ${error.message}`);
     // Re-throw validation errors
     if (error.message.includes('requiredPermissions must be')) {
       throw error;
@@ -408,6 +440,41 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
 };
 
 /**
+ * Check if public has a specific permission on a resource
+ * @param {Object} params - Parameters for checking public permission
+ * @param {string} params.resourceType - Type of resource (e.g., 'agent')
+ * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
+ * @param {number} params.requiredPermissions - The permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
+ * @returns {Promise<boolean>} Whether public has the required permission bits
+ */
+const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissions }) => {
+  try {
+    if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
+      throw new Error('requiredPermissions must be a positive number');
+    }
+
+    // Use public principal to check permissions
+    const publicPrincipal = [{ principalType: 'public' }];
+    
+    const entries = await findEntriesByPrincipalsAndResource(
+      publicPrincipal,
+      resourceType,
+      resourceId,
+    );
+
+    // Check if any entry has the required permission bits
+    return entries.some(entry => (entry.permBits & requiredPermissions) === requiredPermissions);
+  } catch (error) {
+    logger.error(`[PermissionService.hasPublicPermission] Error: ${error.message}`);
+    // Re-throw validation errors
+    if (error.message.includes('requiredPermissions must be')) {
+      throw error;
+    }
+    return false;
+  }
+};
+
+/**
  * Bulk update permissions for a resource (grant, update, revoke)
  * Efficiently handles multiple permission changes in a single transaction
  *
@@ -615,6 +682,8 @@ module.exports = {
   checkPermission,
   getEffectivePermissions,
   findAccessibleResources,
+  findPubliclyAccessibleResources,
+  hasPublicPermission,
   getAvailableRoles,
   bulkUpdateResourcePermissions,
   ensurePrincipalExists,
