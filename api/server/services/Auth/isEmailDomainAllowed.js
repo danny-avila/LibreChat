@@ -24,4 +24,4 @@ async function isEmailDomainAllowed(email) {
   return domains.includes(domain.toLowerCase());
 }
 
-module.exports = { isEmailDomainAllowed }; 
+module.exports = { isEmailDomainAllowed };
