@@ -271,22 +271,7 @@ describe('AclEntry Model Tests', () => {
       const effective = await methods.getEffectivePermissions(principalsList, 'agent', resourceId);
 
       /** Combined permissions should be VIEW | EDIT */
-      expect(effective.effectiveBits).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
-
-      /** Should have 2 sources */
-      expect(effective.sources).toHaveLength(2);
-
-      /** Check sources */
-      const userSource = effective.sources.find((s) => s.from === 'user');
-      const groupSource = effective.sources.find((s) => s.from === 'group');
-
-      expect(userSource).toBeDefined();
-      expect(userSource?.permBits).toBe(PermissionBits.VIEW);
-      expect(userSource?.direct).toBe(true);
-
-      expect(groupSource).toBeDefined();
-      expect(groupSource?.permBits).toBe(PermissionBits.EDIT);
-      expect(groupSource?.direct).toBe(true);
+      expect(effective).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
     });
   });
 
@@ -489,16 +474,15 @@ describe('AclEntry Model Tests', () => {
         inheritedFrom: projectId,
       });
 
-      /** Get effective permissions including sources */
+      /** Get effective permissions */
       const effective = await methods.getEffectivePermissions(
         [{ principalType: 'user', principalId: userId }],
         'agent',
         childResourceId,
       );
 
-      expect(effective.sources).toHaveLength(1);
-      expect(effective.sources[0].inheritedFrom?.toString()).toBe(projectId.toString());
-      expect(effective.sources[0].direct).toBe(false);
+      /** Should have VIEW permission from inherited entry */
+      expect(effective).toBe(PermissionBits.VIEW);
     });
   });
 });
