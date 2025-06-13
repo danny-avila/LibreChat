@@ -12,15 +12,14 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
 import type { AxiosError } from 'axios';
 import type {
-  OCRResult,
-  OCRResultPage,
-  OCRImage,
   MistralFileUploadResponse,
   MistralSignedUrlResponse,
   MistralOCRUploadResult,
   MistralOCRError,
+  OCRResultPage,
+  OCRResult,
+  OCRImage,
 } from '~/types';
-// import { loadAuthValues } from '~/server/services/Tools/credentials';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
 
 const axios = createAxiosInstance();
