@@ -252,10 +252,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
-            registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat2:latest
-            registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat3:latest
+          tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
           build-args: |
             NODE_ENV=production
             MONGO_URI=${{ secrets.MONGO_URI }}

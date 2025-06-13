@@ -1,0 +1,98 @@
+version: 1.0
+
+actions:
+  api/src:
+    runtime: nodejs:18
+    build:
+      command: npm run build:api
+    deploy:
+      command: npm start
+
+  data-provider/src:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-provider
+    deploy:
+      command: npm start
+
+  data-schemas/src:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-schemas
+    deploy:
+      command: npm start
+
+  api/babel.config:
+    runtime: nodejs:18
+    build:
+      command: npm run build:api
+
+  api/jest.config:
+    runtime: nodejs:18
+    build:
+      command: npm run build:api
+
+  api/package:
+    runtime: nodejs:18
+    build:
+      command: npm run build:api
+
+  api/tsconfig:
+    runtime: nodejs:18
+    build:
+      command: npm run build:api
+
+  api/tsconfig.spec:
+    runtime: nodejs:18
+    build:
+      command: npm run build:api
+
+  data-provider/babel.config:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-provider
+
+  data-provider/jest.config:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-provider
+
+  data-provider/package:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-provider
+
+  data-provider/tsconfig:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-provider
+
+  data-provider/tsconfig.spec:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-provider
+
+  data-schemas/babel.config:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-schemas
+
+  data-schemas/jest.config:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-schemas
+
+  data-schemas/package:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-schemas
+
+  data-schemas/tsconfig:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-schemas
+
+  data-schemas/tsconfig.spec:
+    runtime: nodejs:18
+    build:
+      command: npm run build:data-schemas 
