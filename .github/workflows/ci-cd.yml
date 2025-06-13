@@ -262,4 +262,17 @@ jobs:
           tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
 
       - name: Deploy to DigitalOcean App Platform
-        run: doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} 
+        run: |
+          # Wait for the image to be available in the registry
+          sleep 30
+          
+          # Deploy the app
+          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} --wait
+          
+          # Check deployment status
+          if [ $? -eq 0 ]; then
+            echo "Deployment successful!"
+          else
+            echo "Deployment failed!"
+            exit 1
+          fi 
