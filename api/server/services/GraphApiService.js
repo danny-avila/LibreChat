@@ -211,7 +211,13 @@ const searchContacts = async (graphClient, query, limit = 10) => {
     if (!query || query.trim().length < 2) {
       return [];
     }
-
+    if (
+      process.env.OPENID_GRAPH_SCOPES &&
+      !process.env.OPENID_GRAPH_SCOPES.toLowerCase().includes('people.read')
+    ) {
+      logger.warn('[searchContacts] People.Read scope is not enabled, skipping contact search');
+      return [];
+    }
     // Reason: Search only for OrganizationUser (person) type, not groups
     const filter = "personType/subclass eq 'OrganizationUser'";
 
