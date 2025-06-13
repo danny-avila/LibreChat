@@ -15,7 +15,7 @@ const connect = require('./connect');
   console.purple('--------------------------');
 
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run invite-user <email>');
+    console.orange('Usage: pnpm run invite-user <email>');
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.purple('--------------------------');
   }

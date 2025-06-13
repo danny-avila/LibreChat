@@ -1,4 +1,5 @@
-import type { Logger as WinstonLogger } from 'winston';
+// Type-only import that doesn't require winston at runtime
+type WinstonLogger = any; // Will be properly typed when winston is available
 import type { RunnableConfig } from '@langchain/core/runnables';
 
 export type SearchRefType = 'search' | 'image' | 'news' | 'video' | 'ref';

@@ -2,7 +2,7 @@ name: Frontend Unit Tests
 
 on:
   pull_request:
-    branches: 
+    branches:
       - main
       - dev
       - release/*
@@ -17,40 +17,83 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
       - name: Use Node.js 20.x
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: 'pnpm'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Client
-        run: npm run frontend:ci
+        run: pnpm run frontend:ci
 
       - name: Run unit tests
-        run: npm run test:ci --verbose
+        run: pnpm run test:ci --verbose
         working-directory: client
 
   tests_frontend_windows:
     name: Run frontend unit tests on Windows
     timeout-minutes: 60
     runs-on: windows-latest
+    env:
+      # Force Vite to use different settings in CI
+      VITE_CJS_IGNORE_WARNING: true
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
       - name: Use Node.js 20.x
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: 'pnpm'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Client
-        run: npm run frontend:ci
+      # For Windows, only build the data-provider since that's all Jest needs
+      - name: Build workspace dependencies (Windows optimization)
+        run: cd packages/data-provider && pnpm run build
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
       - name: Run unit tests
-        run: npm run test:ci --verbose
+        run: pnpm run test:ci --verbose
         working-directory: client
+        env:
+          # Skip Vite altogether for Jest tests
+          NODE_ENV: test

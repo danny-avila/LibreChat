@@ -21,7 +21,7 @@ const connect = require('./connect');
     email = process.argv[2];
     duration = parseInt(process.argv[3]); // Parse the duration as an integer.
   } else {
-    console.orange('Usage: npm run ban-user <email> <duration>');
+    console.orange('Usage: pnpm run ban-user <email> <duration>');
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.purple('--------------------------');
   }

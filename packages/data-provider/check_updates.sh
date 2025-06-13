@@ -20,7 +20,7 @@ for pkg in "${packages[@]}"
 do
     echo "Checking $pkg..."
     # Retrieve the version time information as JSON
-    times=$(npm view "$pkg" time --json)
+    times=$(pnpm view "$pkg" time --json)
 
     # Loop through dates from the JSON object and check if any are within the last 3 days
     echo $times | jq -r '. | to_entries[] | select(.key as $k | $k|test("^[0-9]")) | [.key, .value] | @csv' | while IFS="," read -r version date

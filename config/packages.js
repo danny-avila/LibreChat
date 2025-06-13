@@ -17,10 +17,10 @@ const directories = [
   path.resolve(rootDir, 'api'),
 ];
 
-// Delete package-lock.json if it exists
-const packageLockPath = path.resolve(rootDir, 'package-lock.json');
+// Delete pnpm-lock.yaml if it exists
+const packageLockPath = path.resolve(rootDir, 'pnpm-lock.yaml');
 if (fs.existsSync(packageLockPath)) {
-  console.purple('Deleting package-lock.json...');
+  console.purple('Deleting pnpm-lock.yaml...');
   fs.unlinkSync(packageLockPath);
 }
 
@@ -28,11 +28,11 @@ if (fs.existsSync(packageLockPath)) {
   // Delete all node_modules
   directories.forEach(deleteNodeModules);
 
-  // Run npm cache clean --force
-  console.purple('Cleaning npm cache...');
-  execSync('npm cache clean --force', { stdio: 'inherit' });
+  // Run pnpm store prune
+  console.purple('Cleaning pnpm store...');
+  execSync('pnpm store prune', { stdio: 'inherit' });
 
   // Install dependencies
   console.purple('Installing dependencies...');
-  execSync('npm install', { stdio: 'inherit' });
+  execSync('pnpm install', { stdio: 'inherit' });
 })();

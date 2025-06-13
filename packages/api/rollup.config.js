@@ -39,7 +39,11 @@ const cjsBuild = {
     sourcemap: true,
     exports: 'named',
   },
-  external: [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})],
+  external: [
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.devDependencies || {}),
+    ...Object.keys(pkg.peerDependencies || {}),
+  ],
   preserveSymlinks: true,
   plugins,
 };

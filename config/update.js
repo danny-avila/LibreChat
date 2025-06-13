@@ -108,20 +108,20 @@ async function validateDockerRunning() {
     // Delete all node_modules
     directories.forEach(deleteNodeModules);
 
-    // Run npm cache clean --force
-    console.purple('Cleaning npm cache...');
-    execSync('npm cache clean --force', { stdio: 'inherit' });
+    // Run pnpm store prune
+    console.purple('Cleaning pnpm store...');
+    execSync('pnpm store prune', { stdio: 'inherit' });
 
     // Install dependencies
     console.purple('Installing dependencies...');
-    execSync('npm ci', { stdio: 'inherit' });
+    execSync('pnpm install --frozen-lockfile', { stdio: 'inherit' });
 
     // Build client-side code
     console.purple('Building frontend...');
-    execSync(bun ? 'bun b:client' : 'npm run frontend', { stdio: 'inherit' });
+    execSync(bun ? 'bun b:client' : 'pnpm run frontend', { stdio: 'inherit' });
   }
 
-  let startCommand = 'npm run backend';
+  let startCommand = 'pnpm run backend';
   if (docker) {
     startCommand = `${sudo}docker compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''

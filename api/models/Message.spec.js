@@ -116,7 +116,7 @@ describe('Message Operations', () => {
     it('should delete messages only for the authenticated user', async () => {
       const conversationId = uuidv4();
 
-      // Create multiple messages in the same conversation
+      // Create multiple messages in the same conversation with delays to ensure different timestamps
       const message1 = await saveMessage(mockReq, {
         messageId: 'msg1',
         conversationId,
@@ -124,12 +124,18 @@ describe('Message Operations', () => {
         user: 'user123',
       });
 
+      // Add small delay to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       const message2 = await saveMessage(mockReq, {
         messageId: 'msg2',
         conversationId,
         text: 'Second message',
         user: 'user123',
       });
+
+      // Add small delay to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       const message3 = await saveMessage(mockReq, {
         messageId: 'msg3',

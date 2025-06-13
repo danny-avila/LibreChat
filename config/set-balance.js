@@ -25,7 +25,7 @@ const connect = require('./connect');
     email = process.argv[2];
     amount = process.argv[3];
   } else {
-    console.orange('Usage: npm run set-balance <email> <amount>');
+    console.orange('Usage: pnpm run set-balance <email> <amount>');
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.purple('--------------------------');
     // console.purple(`[DEBUG] Args Length: ${process.argv.length}`);

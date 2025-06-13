@@ -30,7 +30,7 @@ const connect = require('./connect');
     isPublic = process.argv[5] === undefined ? undefined : process.argv[5] === 'true';
   } else {
     console.orange(
-      'Usage: npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>',
+      'Usage: pnpm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>',
     );
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.purple('--------------------------');
