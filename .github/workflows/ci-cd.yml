@@ -34,6 +34,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build workspace packages
+        run: |
+          npm run build:data-provider
+          npm run build:data-schemas
+          npm run build:api
+
       - name: Run ESLint
         run: npm run lint
 
@@ -51,6 +57,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Build workspace packages
+        run: |
+          npm run build:data-provider
+          npm run build:data-schemas
+          npm run build:api
 
       - name: Run unit tests
         run: npm test
