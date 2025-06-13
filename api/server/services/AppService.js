@@ -18,7 +18,7 @@ const {
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
-const { seedDefaultRoles, initializeRoles } = require('~/models');
+const { seedDefaultRoles, initializeRoles, ensureDefaultCategories } = require('~/models');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
@@ -39,6 +39,7 @@ const paths = require('~/config/paths');
 const AppService = async (app) => {
   await initializeRoles();
   await seedDefaultRoles();
+  await ensureDefaultCategories();
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
