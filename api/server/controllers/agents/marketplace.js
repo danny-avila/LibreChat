@@ -1,6 +1,6 @@
-const AgentCategory = require('~/models/AgentCategory');
 const mongoose = require('mongoose');
 const { logger } = require('~/config');
+const { findCategoryByValue, getCategoriesWithCounts } = require('~/models');
 
 // Get the Agent model
 const Agent = mongoose.model('Agent');
@@ -100,7 +100,7 @@ const getAgentsByCategory = async (req, res) => {
     const result = await paginateAgents(filter, page, limit);
 
     // Get category description from database
-    const categoryDoc = await AgentCategory.findOne({ value: category, isActive: true });
+    const categoryDoc = await findCategoryByValue(category);
     const categoryInfo = {
       name: category,
       description: categoryDoc?.description || '',
@@ -183,7 +183,7 @@ const searchAgents = async (req, res) => {
 const getAgentCategories = async (_req, res) => {
   try {
     // Get categories with agent counts from database
-    const categories = await AgentCategory.getCategoriesWithCounts();
+    const categories = await getCategoriesWithCounts();
 
     // Get count of promoted agents for Top Picks
     const promotedCount = await Agent.countDocuments({
