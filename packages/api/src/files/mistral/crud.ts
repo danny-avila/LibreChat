@@ -24,6 +24,32 @@ import type {
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
 
 const axios = createAxiosInstance();
+const DEFAULT_MISTRAL_BASE_URL = 'https://api.mistral.ai/v1';
+const DEFAULT_MISTRAL_MODEL = 'mistral-ocr-latest';
+
+/** Helper type for auth configuration */
+interface AuthConfig {
+  apiKey: string;
+  baseURL: string;
+}
+
+/** Helper type for OCR request context */
+interface OCRContext {
+  req: Pick<ServerRequest, 'user' | 'app'> & {
+    user?: { id: string };
+    app: {
+      locals?: {
+        ocr?: TCustomConfig['ocr'];
+      };
+    };
+  };
+  file: Express.Multer.File;
+  loadAuthValues: (params: {
+    userId: string;
+    authFields: string[];
+    optional?: Set<string>;
+  }) => Promise<Record<string, string | undefined>>;
+}
 
 /**
  * Uploads a document to Mistral API using file streaming to avoid loading the entire file into memory
@@ -37,7 +63,7 @@ const axios = createAxiosInstance();
 export async function uploadDocumentToMistral({
   apiKey,
   filePath,
-  baseURL = 'https://api.mistral.ai/v1',
+  baseURL = DEFAULT_MISTRAL_BASE_URL,
   fileName = '',
 }: {
   apiKey: string;
@@ -70,7 +96,7 @@ export async function getSignedUrl({
   apiKey,
   fileId,
   expiry = 24,
-  baseURL = 'https://api.mistral.ai/v1',
+  baseURL = DEFAULT_MISTRAL_BASE_URL,
 }: {
   apiKey: string;
   fileId: string;
@@ -102,8 +128,8 @@ export async function getSignedUrl({
 export async function performOCR({
   url,
   apiKey,
-  model = 'mistral-ocr-latest',
-  baseURL = 'https://api.mistral.ai/v1',
+  model = DEFAULT_MISTRAL_MODEL,
+  baseURL = DEFAULT_MISTRAL_BASE_URL,
   documentType = 'document_url',
 }: {
   url: string;
@@ -140,6 +166,160 @@ export async function performOCR({
 }
 
 /**
+ * Determines if a value needs to be loaded from environment
+ */
+function needsEnvLoad(value: string): boolean {
+  return envVarRegex.test(value) || !value.trim();
+}
+
+/**
+ * Gets the environment variable name for a config value
+ */
+function getEnvVarName(configValue: string, defaultName: string): string {
+  if (!envVarRegex.test(configValue)) {
+    return defaultName;
+  }
+  return extractVariableName(configValue) || defaultName;
+}
+
+/**
+ * Resolves a configuration value from either hardcoded or environment
+ */
+async function resolveConfigValue(
+  configValue: string,
+  defaultEnvName: string,
+  authValues: Record<string, string | undefined>,
+  defaultValue?: string,
+): Promise<string> {
+  // If it's a hardcoded value (not env var and not empty), use it directly
+  if (!needsEnvLoad(configValue)) {
+    return configValue;
+  }
+
+  // Otherwise, get from auth values
+  const envVarName = getEnvVarName(configValue, defaultEnvName);
+  return authValues[envVarName] || defaultValue || '';
+}
+
+/**
+ * Loads authentication configuration from OCR config
+ */
+async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
+  const ocrConfig = context.req.app.locals?.ocr;
+  const apiKeyConfig = ocrConfig?.apiKey || '';
+  const baseURLConfig = ocrConfig?.baseURL || '';
+
+  // If both are hardcoded, return them directly
+  if (!needsEnvLoad(apiKeyConfig) && !needsEnvLoad(baseURLConfig)) {
+    return {
+      apiKey: apiKeyConfig,
+      baseURL: baseURLConfig,
+    };
+  }
+
+  // Build auth fields array
+  const authFields: string[] = [];
+
+  if (needsEnvLoad(baseURLConfig)) {
+    authFields.push(getEnvVarName(baseURLConfig, 'OCR_BASEURL'));
+  }
+
+  if (needsEnvLoad(apiKeyConfig)) {
+    authFields.push(getEnvVarName(apiKeyConfig, 'OCR_API_KEY'));
+  }
+
+  // Load auth values
+  const authValues = await context.loadAuthValues({
+    userId: context.req.user?.id || '',
+    authFields,
+    optional: new Set(['OCR_BASEURL']),
+  });
+
+  // Resolve each value
+  const apiKey = await resolveConfigValue(apiKeyConfig, 'OCR_API_KEY', authValues);
+  const baseURL = await resolveConfigValue(
+    baseURLConfig,
+    'OCR_BASEURL',
+    authValues,
+    DEFAULT_MISTRAL_BASE_URL,
+  );
+
+  return { apiKey, baseURL };
+}
+
+/**
+ * Gets the model configuration
+ */
+function getModelConfig(ocrConfig: TCustomConfig['ocr']): string {
+  const modelConfig = ocrConfig?.mistralModel || '';
+
+  if (!modelConfig.trim()) {
+    return DEFAULT_MISTRAL_MODEL;
+  }
+
+  if (envVarRegex.test(modelConfig)) {
+    return extractEnvVariable(modelConfig) || DEFAULT_MISTRAL_MODEL;
+  }
+
+  return modelConfig.trim();
+}
+
+/**
+ * Determines document type based on file
+ */
+function getDocumentType(file: Express.Multer.File): 'image_url' | 'document_url' {
+  const mimetype = (file.mimetype || '').toLowerCase();
+  const originalname = file.originalname || '';
+  const isImage =
+    mimetype.startsWith('image') || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(originalname);
+
+  return isImage ? 'image_url' : 'document_url';
+}
+
+/**
+ * Processes OCR result pages into aggregated text and images
+ */
+function processOCRResult(ocrResult: OCRResult): { text: string; images: string[] } {
+  let aggregatedText = '';
+  const images: string[] = [];
+
+  ocrResult.pages.forEach((page: OCRResultPage, index: number) => {
+    if (ocrResult.pages.length > 1) {
+      aggregatedText += `# PAGE ${index + 1}\n`;
+    }
+
+    aggregatedText += page.markdown + '\n\n';
+
+    if (!page.images || page.images.length === 0) {
+      return;
+    }
+
+    page.images.forEach((image: OCRImage) => {
+      if (image.image_base64) {
+        images.push(image.image_base64);
+      }
+    });
+  });
+
+  return { text: aggregatedText, images };
+}
+
+/**
+ * Creates an error message for OCR operations
+ */
+function createOCRError(error: unknown, baseMessage: string): Error {
+  const axiosError = error as AxiosError<MistralOCRError>;
+  const detail = axiosError?.response?.data?.detail;
+  const message = detail || baseMessage;
+
+  const responseMessage = axiosError?.response?.data?.message;
+  const errorLog = logAxiosError({ error: axiosError, message });
+  const fullMessage = responseMessage ? `${errorLog} - ${responseMessage}` : errorLog;
+
+  return new Error(fullMessage);
+}
+
+/**
  * Uploads a file to the Mistral OCR API and processes the OCR result.
  *
  * @param params - The params object.
@@ -151,110 +331,28 @@ export async function performOCR({
  * @returns - The result object containing the processed `text` and `images` (not currently used),
  *                       along with the `filename` and `bytes` properties.
  */
-export const uploadMistralOCR = async ({
-  req,
-  file,
-  loadAuthValues,
-}: {
-  req: Pick<ServerRequest, 'user' | 'app'> & {
-    user?: { id: string };
-    app: {
-      locals?: {
-        ocr?: TCustomConfig['ocr'];
-      };
-    };
-  };
-  file: Express.Multer.File;
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-    optional?: Set<string>;
-  }) => Promise<Record<string, string | undefined>>;
-}): Promise<MistralOCRUploadResult> => {
+export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRUploadResult> => {
   try {
-    const ocrConfig: TCustomConfig['ocr'] = req.app.locals?.ocr;
+    const { apiKey, baseURL } = await loadAuthConfig(context);
+    const model = getModelConfig(context.req.app.locals?.ocr);
 
-    const apiKeyConfig = ocrConfig?.apiKey || '';
-    const baseURLConfig = ocrConfig?.baseURL || '';
-
-    const isApiKeyEnvVar = envVarRegex.test(apiKeyConfig);
-    const isBaseURLEnvVar = envVarRegex.test(baseURLConfig);
-
-    const isApiKeyEmpty = !apiKeyConfig.trim();
-    const isBaseURLEmpty = !baseURLConfig.trim();
-
-    let apiKey, baseURL;
-
-    // Handle each configuration value independently
-    if (isApiKeyEnvVar || isBaseURLEnvVar || isApiKeyEmpty || isBaseURLEmpty) {
-      const authFields: string[] = [];
-
-      if (isBaseURLEnvVar) {
-        authFields.push(extractVariableName(baseURLConfig) || 'OCR_BASEURL');
-      } else if (isBaseURLEmpty) {
-        authFields.push('OCR_BASEURL');
-      }
-
-      if (isApiKeyEnvVar) {
-        authFields.push(extractVariableName(apiKeyConfig) || 'OCR_API_KEY');
-      } else if (isApiKeyEmpty) {
-        authFields.push('OCR_API_KEY');
-      }
-
-      const authValues = await loadAuthValues({
-        userId: req.user?.id || '',
-        authFields,
-        optional: new Set(['OCR_BASEURL']),
-      });
-
-      // Use env var value if it was an env var or empty, otherwise use the hardcoded value
-      if (isApiKeyEnvVar) {
-        apiKey = authValues[extractVariableName(apiKeyConfig) || 'OCR_API_KEY'] || '';
-      } else if (isApiKeyEmpty) {
-        apiKey = authValues['OCR_API_KEY'] || '';
-      } else {
-        apiKey = apiKeyConfig;
-      }
-
-      if (isBaseURLEnvVar) {
-        baseURL =
-          authValues[extractVariableName(baseURLConfig) || 'OCR_BASEURL'] ||
-          'https://api.mistral.ai/v1';
-      } else if (isBaseURLEmpty) {
-        baseURL = authValues['OCR_BASEURL'] || 'https://api.mistral.ai/v1';
-      } else {
-        baseURL = baseURLConfig;
-      }
-    } else {
-      // Both are hardcoded values
-      apiKey = apiKeyConfig;
-      baseURL = baseURLConfig;
-    }
-
+    // Upload file
     const mistralFile = await uploadDocumentToMistral({
-      filePath: file.path,
-      fileName: file.originalname,
+      filePath: context.file.path,
+      fileName: context.file.originalname,
       apiKey,
       baseURL,
     });
 
-    const modelConfig = ocrConfig?.mistralModel || '';
-    const model = envVarRegex.test(modelConfig)
-      ? extractEnvVariable(modelConfig)
-      : modelConfig.trim() || 'mistral-ocr-latest';
-
+    // Get signed URL
     const signedUrlResponse = await getSignedUrl({
       apiKey,
       baseURL,
       fileId: mistralFile.id,
     });
 
-    const mimetype = (file.mimetype || '').toLowerCase();
-    const originalname = file.originalname || '';
-    const isImage =
-      mimetype.startsWith('image') || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(originalname);
-    const documentType = isImage ? 'image_url' : 'document_url';
-
+    // Perform OCR
+    const documentType = getDocumentType(context.file);
     const ocrResult = await performOCR({
       apiKey,
       baseURL,
@@ -263,43 +361,18 @@ export const uploadMistralOCR = async ({
       documentType,
     });
 
-    let aggregatedText = '';
-    const images: string[] = [];
-    ocrResult.pages.forEach((page: OCRResultPage, index: number) => {
-      if (ocrResult.pages.length > 1) {
-        aggregatedText += `# PAGE ${index + 1}\n`;
-      }
-
-      aggregatedText += page.markdown + '\n\n';
-
-      if (page.images && page.images.length > 0) {
-        page.images.forEach((image: OCRImage) => {
-          if (image.image_base64) {
-            images.push(image.image_base64);
-          }
-        });
-      }
-    });
+    // Process result
+    const { text, images } = processOCRResult(ocrResult);
 
     return {
-      filename: file.originalname,
-      bytes: aggregatedText.length * 4,
+      filename: context.file.originalname,
+      bytes: text.length * 4,
       filepath: FileSources.mistral_ocr,
-      text: aggregatedText,
+      text,
       images,
     };
-  } catch (error: unknown) {
-    let message = 'Error uploading document to Mistral OCR API';
-    const axiosError = error as AxiosError<MistralOCRError>;
-    const detail = axiosError?.response?.data?.detail;
-    if (detail && detail !== '') {
-      message = detail;
-    }
-
-    const responseMessage = axiosError?.response?.data?.message;
-    throw new Error(
-      `${logAxiosError({ error: axiosError, message })}${responseMessage && responseMessage !== '' ? ` - ${responseMessage}` : ''}`,
-    );
+  } catch (error) {
+    throw createOCRError(error, 'Error uploading document to Mistral OCR API');
   }
 };
 
@@ -315,99 +388,19 @@ export const uploadMistralOCR = async ({
  * @returns - The result object containing the processed `text` and `images` (not currently used),
  *                       along with the `filename` and `bytes` properties.
  */
-export const uploadAzureMistralOCR = async ({
-  req,
-  file,
-  loadAuthValues,
-}: {
-  req: Pick<ServerRequest, 'user' | 'app'> & {
-    user?: { id: string };
-    app: {
-      locals?: {
-        ocr?: TCustomConfig['ocr'];
-      };
-    };
-  };
-  file: Express.Multer.File;
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-    optional?: Set<string>;
-  }) => Promise<Record<string, string | undefined>>;
-}): Promise<MistralOCRUploadResult> => {
+export const uploadAzureMistralOCR = async (
+  context: OCRContext,
+): Promise<MistralOCRUploadResult> => {
   try {
-    const ocrConfig: TCustomConfig['ocr'] = req.app.locals?.ocr;
+    const { apiKey, baseURL } = await loadAuthConfig(context);
+    const model = getModelConfig(context.req.app.locals?.ocr);
 
-    const apiKeyConfig = ocrConfig?.apiKey || '';
-    const baseURLConfig = ocrConfig?.baseURL || '';
-
-    const isApiKeyEnvVar = envVarRegex.test(apiKeyConfig);
-    const isBaseURLEnvVar = envVarRegex.test(baseURLConfig);
-
-    const isApiKeyEmpty = !apiKeyConfig.trim();
-    const isBaseURLEmpty = !baseURLConfig.trim();
-
-    let apiKey, baseURL;
-
-    // Handle each configuration value independently
-    if (isApiKeyEnvVar || isBaseURLEnvVar || isApiKeyEmpty || isBaseURLEmpty) {
-      const authFields: string[] = [];
-
-      if (isBaseURLEnvVar) {
-        authFields.push(extractVariableName(baseURLConfig) || 'OCR_BASEURL');
-      } else if (isBaseURLEmpty) {
-        authFields.push('OCR_BASEURL');
-      }
-
-      if (isApiKeyEnvVar) {
-        authFields.push(extractVariableName(apiKeyConfig) || 'OCR_API_KEY');
-      } else if (isApiKeyEmpty) {
-        authFields.push('OCR_API_KEY');
-      }
-
-      const authValues = await loadAuthValues({
-        userId: req.user?.id || '',
-        authFields,
-        optional: new Set(['OCR_BASEURL']),
-      });
-
-      // Use env var value if it was an env var or empty, otherwise use the hardcoded value
-      if (isApiKeyEnvVar) {
-        apiKey = authValues[extractVariableName(apiKeyConfig) || 'OCR_API_KEY'] || '';
-      } else if (isApiKeyEmpty) {
-        apiKey = authValues['OCR_API_KEY'] || '';
-      } else {
-        apiKey = apiKeyConfig;
-      }
-
-      if (isBaseURLEnvVar) {
-        baseURL =
-          authValues[extractVariableName(baseURLConfig) || 'OCR_BASEURL'] ||
-          'https://api.mistral.ai/v1';
-      } else if (isBaseURLEmpty) {
-        baseURL = authValues['OCR_BASEURL'] || 'https://api.mistral.ai/v1';
-      } else {
-        baseURL = baseURLConfig;
-      }
-    } else {
-      // Both are hardcoded values
-      apiKey = apiKeyConfig;
-      baseURL = baseURLConfig;
-    }
-
-    const modelConfig = ocrConfig?.mistralModel || '';
-    const model = envVarRegex.test(modelConfig)
-      ? extractEnvVariable(modelConfig)
-      : modelConfig.trim() || 'mistral-ocr-latest';
-
-    const mimetype = (file.mimetype || '').toLowerCase();
-    const originalname = file.originalname || '';
-    const isImage =
-      mimetype.startsWith('image') || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(originalname);
-    const documentType = isImage ? 'image_url' : 'document_url';
-
-    const buffer = fs.readFileSync(file.path);
+    // Read file as base64
+    const buffer = fs.readFileSync(context.file.path);
     const base64 = buffer.toString('base64');
+
+    // Perform OCR directly with base64
+    const documentType = getDocumentType(context.file);
     const ocrResult = await performOCR({
       apiKey,
       baseURL,
@@ -416,34 +409,17 @@ export const uploadAzureMistralOCR = async ({
       documentType,
     });
 
-    let aggregatedText = '';
-    const images: string[] = [];
-    ocrResult.pages.forEach((page: OCRResultPage, index: number) => {
-      if (ocrResult.pages.length > 1) {
-        aggregatedText += `# PAGE ${index + 1}\n`;
-      }
-
-      aggregatedText += page.markdown + '\n\n';
-
-      if (page.images && page.images.length > 0) {
-        page.images.forEach((image: OCRImage) => {
-          if (image.image_base64) {
-            images.push(image.image_base64);
-          }
-        });
-      }
-    });
+    // Process result
+    const { text, images } = processOCRResult(ocrResult);
 
     return {
-      filename: file.originalname,
-      bytes: aggregatedText.length * 4,
+      filename: context.file.originalname,
+      bytes: text.length * 4,
       filepath: FileSources.azure_mistral_ocr,
-      text: aggregatedText,
+      text,
       images,
     };
   } catch (error) {
-    const message = 'Error uploading document to Azure Mistral OCR API';
-    const axiosError = error as AxiosError;
-    throw new Error(logAxiosError({ error: axiosError, message }));
+    throw createOCRError(error, 'Error uploading document to Azure Mistral OCR API');
   }
 };
