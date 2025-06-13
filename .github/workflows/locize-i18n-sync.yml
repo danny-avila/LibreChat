@@ -17,10 +17,10 @@ jobs:
       - name: Set Up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20.18.1'
 
       - name: Install locize CLI
-        run: npm install -g locize-cli
+        run: npm install -g locize-cli@7
 
       # Sync translations (Push missing keys & remove deleted ones)
       - name: Sync Locize with Repository
@@ -52,6 +52,7 @@ jobs:
         with:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
+        continue-on-error: true
 
       # 3. Create a Pull Request using built-in functionality.
       - name: Create Pull Request
