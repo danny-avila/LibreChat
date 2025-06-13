@@ -1421,7 +1421,7 @@ describe('MistralOCR Service', () => {
         expect.objectContaining({
           document: expect.objectContaining({
             type: 'document_url',
-            document_url: expect.stringMatching(/^data:image\/jpeg;base64,/),
+            document_url: expect.stringMatching(/^data:application\/pdf;base64,/),
           }),
         }),
         expect.any(Object),
