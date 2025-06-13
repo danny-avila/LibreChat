@@ -70,6 +70,10 @@ jobs:
             "JWT_SECRET"
             "CREDS_KEY"
             "CREDS_IV"
+            "POSTGRES_HOST"
+            "POSTGRES_PORT"
+            "POSTGRES_DB"
+            "POSTGRES_USER"
             "POSTGRES_PASSWORD"
           )
 
@@ -170,8 +174,10 @@ jobs:
           BAN_INTERVAL=${{ secrets.BAN_INTERVAL }}
           
           # Vector Database Configuration
-          POSTGRES_DB=mydatabase
-          POSTGRES_USER=myuser
+          POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           
           # API Keys
