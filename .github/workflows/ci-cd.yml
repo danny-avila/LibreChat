@@ -193,6 +193,7 @@ jobs:
           registry: registry.digitalocean.com
           username: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          logout: false
 
       - name: Create .env file with secrets
         run: |
