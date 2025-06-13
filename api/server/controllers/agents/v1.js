@@ -15,7 +15,12 @@ const {
   deleteAgent,
   getListAgentsByAccess,
 } = require('~/models/Agent');
-const { grantPermission, findAccessibleResources } = require('~/server/services/PermissionService');
+const {
+  grantPermission,
+  findAccessibleResources,
+  findPubliclyAccessibleResources,
+  hasPublicPermission,
+} = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { updateAgentProjects, revertAgentVersion } = require('~/models/Agent');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -134,6 +139,14 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     // @deprecated - isCollaborative replaced by ACL permissions
     agent.isCollaborative = !!agent.isCollaborative;
 
+    // Check if agent is public
+    const isPublic = await hasPublicPermission({
+      resourceType: 'agent',
+      resourceId: agent._id,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    agent.isPublic = isPublic;
+
     if (agent.author !== author) {
       delete agent.author;
     }
@@ -152,6 +165,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         projectIds: agent.projectIds,
         // @deprecated - isCollaborative replaced by ACL permissions
         isCollaborative: agent.isCollaborative,
+        isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
         createdAt: agent.createdAt,
@@ -392,14 +406,23 @@ const getListAgentsHandler = async (req, res) => {
       resourceType: 'agent',
       requiredPermissions: PermissionBits.VIEW,
     });
-
+    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
+      resourceType: 'agent',
+      requiredPermissions: PermissionBits.VIEW,
+    });
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
       accessibleIds,
       otherParams: {}, // Can add query params here if needed
-      
     });
-
+    if (data?.data?.length) {
+      data.data = data.data.map((agent) => {
+        if (publiclyAccessibleIds.some(id => id.equals(agent._id))) {
+          agent.isPublic = true;
+        }
+        return agent;
+      });
+    }
     return res.json(data);
   } catch (error) {
     logger.error('[/Agents] Error listing Agents', error);
