@@ -75,6 +75,7 @@ librechat:
   #       # OpenRouter.ai
   #       - name: "OpenRouter"
   #         apiKey: "${OPENROUTER_KEY}"
+  #         addUserToken: false
   #         baseURL: "https://openrouter.ai/api/v1"
   #         models:
   #           default: ["openai/gpt-3.5-turbo"]
