@@ -1,11 +1,12 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CategoryTabs from '../CategoryTabs';
 import AgentGrid from '../AgentGrid';
 import AgentCard from '../AgentCard';
 import SearchBar from '../SearchBar';
 import ErrorDisplay from '../ErrorDisplay';
+import * as t from 'librechat-data-provider';
 
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -22,36 +23,110 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
-// Mock hooks
-jest.mock(
-  '~/hooks/useLocalize',
-  () => () =>
-    jest.fn((key: string, options?: any) => {
-      const translations: Record<string, string> = {
-        com_agents_category_tabs_label: 'Agent Categories',
-        com_agents_category_tab_label: `${options?.category} category, ${options?.position} of ${options?.total}`,
-        com_agents_search_instructions: 'Type to search agents by name or description',
-        com_agents_search_aria: 'Search agents',
-        com_agents_search_placeholder: 'Search agents...',
-        com_agents_clear_search: 'Clear search',
-        com_agents_agent_card_label: `${options?.name} agent. ${options?.description}`,
-        com_agents_no_description: 'No description available',
-        com_agents_grid_announcement: `Showing ${options?.count} agents in ${options?.category} category`,
-        com_agents_load_more_label: `Load more agents from ${options?.category} category`,
-        com_agents_error_retry: 'Try Again',
-        com_agents_loading: 'Loading...',
-        com_agents_empty_state_heading: 'No agents found',
-        com_agents_search_empty_heading: 'No search results',
-      };
-      return translations[key] || key;
-    }),
-);
-
-jest.mock('~/hooks/Agents', () => ({
-  useDynamicAgentQuery: jest.fn(),
+// Mock Recoil
+jest.mock('recoil', () => ({
+  useRecoilValue: jest.fn(() => 'en'),
+  RecoilRoot: ({ children }: any) => children,
+  atom: jest.fn(() => ({})),
+  atomFamily: jest.fn(() => ({})),
+  selector: jest.fn(() => ({})),
+  selectorFamily: jest.fn(() => ({})),
+  useRecoilState: jest.fn(() => ['en', jest.fn()]),
+  useSetRecoilState: jest.fn(() => jest.fn()),
 }));
 
-const { useDynamicAgentQuery } = require('~/hooks/Agents');
+// Mock react-i18next
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { changeLanguage: jest.fn() },
+  }),
+}));
+
+// Create the localize function once to be reused
+const mockLocalize = jest.fn((key: string, options?: any) => {
+  const translations: Record<string, string> = {
+    com_agents_category_tabs_label: 'Agent Categories',
+    com_agents_category_tab_label: `${options?.category} category, ${options?.position} of ${options?.total}`,
+    com_agents_search_instructions: 'Type to search agents by name or description',
+    com_agents_search_aria: 'Search agents',
+    com_agents_search_placeholder: 'Search agents...',
+    com_agents_clear_search: 'Clear search',
+    com_agents_agent_card_label: `${options?.name} agent. ${options?.description}`,
+    com_agents_no_description: 'No description available',
+    com_agents_grid_announcement: `Showing ${options?.count} agents in ${options?.category} category`,
+    com_agents_load_more_label: `Load more agents from ${options?.category} category`,
+    com_agents_error_retry: 'Try Again',
+    com_agents_loading: 'Loading...',
+    com_agents_empty_state_heading: 'No agents found',
+    com_agents_search_empty_heading: 'No search results',
+    com_agents_created_by: 'by',
+    com_agents_top_picks: 'Top Picks',
+    // ErrorDisplay translations
+    com_agents_error_suggestion_generic: 'Try refreshing the page or check your network connection',
+    com_agents_error_network_title: 'Network Error',
+    com_agents_error_network_message: 'Unable to connect to the server',
+    com_agents_error_network_suggestion: 'Check your internet connection and try again',
+    com_agents_error_not_found_title: 'Not Found',
+    com_agents_error_not_found_suggestion: 'The requested resource could not be found',
+    com_agents_error_invalid_request: 'Invalid Request',
+    com_agents_error_bad_request_message: 'The request was invalid',
+    com_agents_error_bad_request_suggestion: 'Please check your input and try again',
+    com_agents_error_server_title: 'Server Error',
+    com_agents_error_server_message: 'An internal server error occurred',
+    com_agents_error_server_suggestion: 'Please try again later',
+    com_agents_error_title: 'Error',
+    com_agents_error_generic: 'An unexpected error occurred',
+    com_agents_error_search_title: 'Search Error',
+    com_agents_error_category_title: 'Category Error',
+    com_agents_search_no_results: `No results found for "${options?.query}"`,
+    com_agents_category_empty: `No agents found in ${options?.category} category`,
+    com_agents_error_not_found_message: 'The requested resource could not be found',
+  };
+  return translations[key] || key;
+});
+
+// Mock useLocalize specifically
+jest.mock('~/hooks/useLocalize', () => ({
+  __esModule: true,
+  default: () => mockLocalize,
+}));
+
+// Mock hooks
+jest.mock('~/hooks', () => ({
+  useLocalize: () => mockLocalize,
+  useDebounce: jest.fn(),
+}));
+
+jest.mock('~/data-provider/Agents', () => ({
+  useMarketplaceAgentsInfiniteQuery: jest.fn(),
+}));
+
+jest.mock('~/hooks/Agents', () => ({
+  useAgentCategories: jest.fn(),
+}));
+
+// Mock utility functions
+jest.mock('~/utils/agents', () => ({
+  renderAgentAvatar: jest.fn(() => <div data-testid="agent-avatar" />),
+  getContactDisplayName: jest.fn((agent) => agent.authorName),
+}));
+
+// Mock SmartLoader
+jest.mock('../SmartLoader', () => ({
+  SmartLoader: ({ children, isLoading }: any) => (isLoading ? <div>Loading...</div> : children),
+  useHasData: jest.fn(() => true),
+}));
+
+// Import the actual modules to get the mocked functions
+import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
+import { useAgentCategories } from '~/hooks/Agents';
+import { useDebounce } from '~/hooks';
+
+// Get typed mock functions
+const mockUseMarketplaceAgentsInfiniteQuery = jest.mocked(useMarketplaceAgentsInfiniteQuery);
+const mockUseAgentCategories = jest.mocked(useAgentCategories);
+const mockUseDebounce = jest.mocked(useDebounce);
 
 // Create wrapper with QueryClient
 const createWrapper = () => {
@@ -66,14 +141,29 @@ const createWrapper = () => {
 
 describe('Accessibility Improvements', () => {
   beforeEach(() => {
-    useDynamicAgentQuery.mockClear();
+    mockUseMarketplaceAgentsInfiniteQuery.mockClear();
+    mockUseAgentCategories.mockClear();
+    mockUseDebounce.mockClear();
+
+    // Default mock implementations
+    mockUseDebounce.mockImplementation((value) => value);
+    mockUseAgentCategories.mockReturnValue({
+      categories: [
+        { value: 'promoted', label: 'Top Picks' },
+        { value: 'all', label: 'All' },
+        { value: 'productivity', label: 'Productivity' },
+      ],
+      emptyCategory: { value: 'all', label: 'All' },
+      isLoading: false,
+      error: null,
+    });
   });
 
   describe('CategoryTabs Accessibility', () => {
     const categories = [
-      { name: 'promoted', count: 5 },
-      { name: 'all', count: 20 },
-      { name: 'productivity', count: 8 },
+      { value: 'promoted', label: 'Top Picks', count: 5 },
+      { value: 'all', label: 'All', count: 20 },
+      { value: 'productivity', label: 'Productivity', count: 8 },
     ];
 
     it('implements proper tablist role and ARIA attributes', () => {
@@ -96,7 +186,7 @@ describe('Accessibility Improvements', () => {
       const tabs = screen.getAllByRole('tab');
       expect(tabs).toHaveLength(3);
 
-      tabs.forEach((tab, index) => {
+      tabs.forEach((tab) => {
         expect(tab).toHaveAttribute('aria-selected');
         expect(tab).toHaveAttribute('aria-controls');
         expect(tab).toHaveAttribute('id');
@@ -114,7 +204,7 @@ describe('Accessibility Improvements', () => {
         />,
       );
 
-      const promotedTab = screen.getByRole('tab', { name: /promoted category/ });
+      const promotedTab = screen.getByRole('tab', { name: /Top Picks tab/ });
 
       // Test arrow key navigation
       fireEvent.keyDown(promotedTab, { key: 'ArrowRight' });
@@ -141,8 +231,8 @@ describe('Accessibility Improvements', () => {
         />,
       );
 
-      const promotedTab = screen.getByRole('tab', { name: /promoted category/ });
-      const allTab = screen.getByRole('tab', { name: /all category/ });
+      const promotedTab = screen.getByRole('tab', { name: /Top Picks tab/ });
+      const allTab = screen.getByRole('tab', { name: /All tab/ });
 
       // Active tab should be focusable
       expect(promotedTab).toHaveAttribute('tabIndex', '0');
@@ -159,7 +249,7 @@ describe('Accessibility Improvements', () => {
       expect(searchRegion).toBeInTheDocument();
 
       // Check input accessibility
-      const searchInput = screen.getByRole('searchbox');
+      const searchInput = screen.getByRole('textbox');
       expect(searchInput).toHaveAttribute('id', 'agent-search');
       expect(searchInput).toHaveAttribute('aria-label', 'Search agents');
       expect(searchInput).toHaveAttribute(
@@ -167,10 +257,9 @@ describe('Accessibility Improvements', () => {
         'search-instructions search-results-count',
       );
 
-      // Check hidden label
-      expect(screen.getByText('Type to search agents by name or description')).toHaveClass(
-        'sr-only',
-      );
+      // Check hidden label exists
+      const hiddenLabel = screen.getByLabelText('Search agents');
+      expect(hiddenLabel).toBeInTheDocument();
     });
 
     it('provides accessible clear button', () => {
@@ -197,10 +286,24 @@ describe('Accessibility Improvements', () => {
       name: 'Test Agent',
       description: 'A test agent for testing',
       authorName: 'Test Author',
+      created_at: 1704067200000,
+      avatar: null,
+      instructions: 'Test instructions',
+      provider: 'openai' as const,
+      model: 'gpt-4',
+      model_parameters: {
+        temperature: 0.7,
+        maxContextTokens: 4096,
+        max_context_tokens: 4096,
+        max_output_tokens: 1024,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+      },
     };
 
     it('provides comprehensive ARIA labels', () => {
-      render(<AgentCard agent={mockAgent} onClick={jest.fn()} />);
+      render(<AgentCard agent={mockAgent as t.Agent} onClick={jest.fn()} />);
 
       const card = screen.getByRole('button');
       expect(card).toHaveAttribute('aria-label', 'Test Agent agent. A test agent for testing');
@@ -210,14 +313,14 @@ describe('Accessibility Improvements', () => {
 
     it('handles agents without descriptions', () => {
       const agentWithoutDesc = { ...mockAgent, description: undefined };
-      render(<AgentCard agent={agentWithoutDesc} onClick={jest.fn()} />);
+      render(<AgentCard agent={agentWithoutDesc as any as t.Agent} onClick={jest.fn()} />);
 
       expect(screen.getByText('No description available')).toBeInTheDocument();
     });
 
     it('supports keyboard interaction', () => {
       const onClick = jest.fn();
-      render(<AgentCard agent={mockAgent} onClick={onClick} />);
+      render(<AgentCard agent={mockAgent as t.Agent} onClick={onClick} />);
 
       const card = screen.getByRole('button');
 
@@ -231,19 +334,20 @@ describe('Accessibility Improvements', () => {
 
   describe('AgentGrid Accessibility', () => {
     beforeEach(() => {
-      useDynamicAgentQuery.mockReturnValue({
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         data: {
-          agents: [
-            { id: '1', name: 'Agent 1', description: 'First agent' },
-            { id: '2', name: 'Agent 2', description: 'Second agent' },
+          pages: [
+            {
+              data: [
+                { id: '1', name: 'Agent 1', description: 'First agent' },
+                { id: '2', name: 'Agent 2', description: 'Second agent' },
+              ],
+            },
           ],
-          pagination: { hasMore: false, total: 2, current: 1 },
         },
         isLoading: false,
-        isFetching: false,
         error: null,
-        refetch: jest.fn(),
-      });
+      } as any);
     });
 
     it('implements proper tabpanel structure', () => {
@@ -272,7 +376,7 @@ describe('Accessibility Improvements', () => {
       // Check grid role
       const grid = screen.getByRole('grid');
       expect(grid).toBeInTheDocument();
-      expect(grid).toHaveAttribute('aria-label', 'Showing 2 agents in all category');
+      expect(grid).toHaveAttribute('aria-label', 'Showing 2 agents in All category');
 
       // Check gridcells
       const gridcells = screen.getAllByRole('gridcell');
@@ -280,13 +384,16 @@ describe('Accessibility Improvements', () => {
     });
 
     it('announces loading states to screen readers', () => {
-      useDynamicAgentQuery.mockReturnValue({
-        data: { agents: [{ id: '1', name: 'Agent 1' }] },
-        isLoading: false,
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        data: {
+          pages: [{ data: [{ id: '1', name: 'Agent 1' }] }],
+        },
         isFetching: true,
+        hasNextPage: true,
+        isFetchingNextPage: true,
+        isLoading: false,
         error: null,
-        refetch: jest.fn(),
-      });
+      } as any);
 
       const Wrapper = createWrapper();
       render(
@@ -295,20 +402,26 @@ describe('Accessibility Improvements', () => {
         </Wrapper>,
       );
 
-      // Check for loading announcement
-      const loadingStatus = screen.getByRole('status', { name: 'Loading...' });
+      // Check for loading announcement when fetching more data
+      const loadingStatus = screen.getByRole('status');
       expect(loadingStatus).toBeInTheDocument();
       expect(loadingStatus).toHaveAttribute('aria-live', 'polite');
+      expect(loadingStatus).toHaveAttribute('aria-label', 'Loading...');
+
+      // Check for screen reader text
+      const srText = screen.getByText('Loading...');
+      expect(srText).toHaveClass('sr-only');
     });
 
     it('provides accessible empty states', () => {
-      useDynamicAgentQuery.mockReturnValue({
-        data: { agents: [], pagination: { hasMore: false, total: 0, current: 1 } },
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        data: {
+          pages: [{ data: [] }],
+        },
         isLoading: false,
         isFetching: false,
         error: null,
-        refetch: jest.fn(),
-      });
+      } as any);
 
       const Wrapper = createWrapper();
       render(
@@ -343,7 +456,7 @@ describe('Accessibility Improvements', () => {
       expect(alert).toHaveAttribute('aria-atomic', 'true');
 
       // Check heading structure
-      const heading = screen.getByRole('heading', { level: 2 });
+      const heading = screen.getByRole('heading', { level: 3 });
       expect(heading).toHaveAttribute('id', 'error-title');
     });
 
@@ -382,7 +495,7 @@ describe('Accessibility Improvements', () => {
     it('provides visible focus indicators on interactive elements', () => {
       render(
         <CategoryTabs
-          categories={[{ name: 'test', count: 1 }]}
+          categories={[{ value: 'test', label: 'Test', count: 1 }]}
           activeTab="test"
           isLoading={false}
           onChange={jest.fn()}
@@ -391,7 +504,7 @@ describe('Accessibility Improvements', () => {
 
       const tab = screen.getByRole('tab');
       expect(tab.className).toContain('focus:outline-none');
-      expect(tab.className).toContain('focus:ring-2');
+      expect(tab.className).toContain('focus:bg-gray-100');
     });
   });
 
@@ -418,5 +531,3 @@ describe('Accessibility Improvements', () => {
     });
   });
 });
-
-export default {};

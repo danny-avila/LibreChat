@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import useLocalize from '~/hooks/useLocalize';
-import { useGetAgentCategoriesQuery } from '~/data-provider';
+import { useGetAgentCategoriesQuery } from '~/data-provider/Agents';
 import { EMPTY_AGENT_CATEGORY } from '~/constants/agentCategories';
 
 // This interface matches the structure used by the ControlCombobox component
@@ -9,6 +9,7 @@ export interface ProcessedAgentCategory {
   label: string; // Translated label
   value: string; // Category value
   className?: string;
+  icon?: string;
 }
 
 /**
