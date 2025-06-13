@@ -35,6 +35,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     });
   }
 
+  if (endpointConfig.addUserToken) {
+    resolvedHeaders['X-Librechat-User'] = req.headers['authorization'];
+  }
+
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
   }
