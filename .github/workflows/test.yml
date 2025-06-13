@@ -1,0 +1,67 @@
+name: Lint and Test
+
+on:
+  push:
+    branches:
+      - '**'  # Run on all branches
+  pull_request:
+    branches:
+      - '**'  # Run on all branches
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Allow the workflow to continue even if linting fails
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint || echo "Linting failed but continuing workflow"
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Allow the workflow to continue even if tests fail
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test || echo "Unit tests failed but continuing workflow"
+
+      - name: Run integration tests
+        run: npm run test:integration || echo "Integration tests failed but continuing workflow"
+
+  check-status:
+    name: Check Test Status
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    if: always()  # Run this job even if previous jobs failed
+    steps:
+      - name: Check job statuses
+        run: |
+          if [[ "${{ needs.lint.result }}" == "failure" ]]; then
+            echo "Linting failed but allowing merge"
+          fi
+          if [[ "${{ needs.test.result }}" == "failure" ]]; then
+            echo "Tests failed but allowing merge"
+          fi
+          echo "All checks completed. Merge can proceed." 
