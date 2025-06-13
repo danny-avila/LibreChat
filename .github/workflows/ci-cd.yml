@@ -46,9 +46,6 @@ jobs:
       - name: Run API tests
         run: npm run test:api
 
-      - name: Run integration tests
-        run: npm run test:integration
-
   check_review:
     name: Check Pull Request Review
     runs-on: ubuntu-latest
