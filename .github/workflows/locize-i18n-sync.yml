@@ -24,26 +24,20 @@ jobs:
 
       # Sync translations (Push missing keys & remove deleted ones)
       - name: Sync Locize with Repository
-        if: ${{ github.event_name == 'push' && secrets.LOCIZE_API_KEY != '' && secrets.LOCIZE_PROJECT_ID != '' }}
+        if: github.event_name == 'push'
         run: |
           cd client/src/locales
-          locize sync --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en
-
-      # Skip sync if secrets are not available
-      - name: Skip sync - missing secrets
-        if: ${{ github.event_name == 'push' && (secrets.LOCIZE_API_KEY == '' || secrets.LOCIZE_PROJECT_ID == '') }}
-        run: echo "Skipping Locize sync as required secrets are not configured."
+          locize sync --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en || echo "Skipping Locize sync as required secrets are not configured."
 
       # When triggered by repository_dispatch, skip sync step.
       - name: Skip sync step on non-push events
-        if: ${{ github.event_name != 'push' }}
+        if: github.event_name != 'push'
         run: echo "Skipping sync as the event is not a push."
 
   create-pull-request:
     name: Create Translation PR on Version Published
     runs-on: ubuntu-latest
     needs: sync-translations
-    if: ${{ secrets.LOCIZE_API_KEY != '' && secrets.LOCIZE_PROJECT_ID != '' }}
     permissions:
       contents: write
       pull-requests: write
