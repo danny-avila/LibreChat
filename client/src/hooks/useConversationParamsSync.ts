@@ -6,9 +6,6 @@ import { createChatSearchParams } from '~/utils';
 import { createSearchParams } from 'react-router-dom';
 import store from '~/store';
 
-/**
- * Hook that handles synchronization between conversation state and URL parameters.
- */
 export function useConversationParamsSync(index: string | number) {
   const conversation = useRecoilValue(store.conversationByIndex(index));
   const location = useLocation();
