@@ -85,6 +85,7 @@ const grantPermission = async ({
       role.permBits,
       grantedBy,
       session,
+      role._id,
     );
   } catch (error) {
     logger.error(`[PermissionService.grantPermission] Error: ${error.message}`);
