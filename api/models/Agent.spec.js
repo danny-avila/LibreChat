@@ -1630,7 +1630,7 @@ describe('models/Agent', () => {
       expect(result.version).toBe(1);
     });
 
-    test('should return null when user is not author and agent has no projectIds', async () => {
+    test('should return agent even when user is not author (permissions checked at route level)', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const userId = new mongoose.Types.ObjectId();
       const agentId = `agent_${uuidv4()}`;
@@ -1651,7 +1651,11 @@ describe('models/Agent', () => {
         model_parameters: { model: 'gpt-4' },
       });
 
-      expect(result).toBeFalsy();
+      // With the new permission system, loadAgent returns the agent regardless of permissions
+      // Permission checks are handled at the route level via middleware
+      expect(result).toBeTruthy();
+      expect(result.id).toBe(agentId);
+      expect(result.name).toBe('Test Agent');
     });
 
     test('should handle ephemeral agent with no MCP servers', async () => {
@@ -1766,7 +1770,7 @@ describe('models/Agent', () => {
         }
       });
 
-      test('should handle loadAgent with agent from different project', async () => {
+      test('should return agent from different project (permissions checked at route level)', async () => {
         const authorId = new mongoose.Types.ObjectId();
         const userId = new mongoose.Types.ObjectId();
         const agentId = `agent_${uuidv4()}`;
@@ -1789,7 +1793,11 @@ describe('models/Agent', () => {
           model_parameters: { model: 'gpt-4' },
         });
 
-        expect(result).toBeFalsy();
+        // With the new permission system, loadAgent returns the agent regardless of permissions
+        // Permission checks are handled at the route level via middleware
+        expect(result).toBeTruthy();
+        expect(result.id).toBe(agentId);
+        expect(result.name).toBe('Project Agent');
       });
     });
   });
@@ -2445,6 +2453,65 @@ describe('models/Agent', () => {
       expect(updated2.versions).toHaveLength(3);
       expect(updated2.agent_ids).toEqual(['agent1', 'agent2']);
       expect(updated2.description).toBe('Another description');
+    });
+
+    test('should skip version creation when skipVersioning option is used', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const projectId1 = new mongoose.Types.ObjectId();
+      const projectId2 = new mongoose.Types.ObjectId();
+
+      // Create agent with initial projectIds
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        projectIds: [projectId1],
+      });
+
+      // Share agent using updateAgentProjects (which uses skipVersioning)
+      const shared = await updateAgentProjects({
+        user: { id: authorId.toString() }, // Use the same author ID
+        agentId: agentId,
+        projectIds: [projectId2.toString()],
+      });
+
+      // Should NOT create a new version due to skipVersioning
+      expect(shared.versions).toHaveLength(1);
+      expect(shared.projectIds.map((id) => id.toString())).toContain(projectId1.toString());
+      expect(shared.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
+
+      // Unshare agent using updateAgentProjects
+      const unshared = await updateAgentProjects({
+        user: { id: authorId.toString() },
+        agentId: agentId,
+        removeProjectIds: [projectId1.toString()],
+      });
+
+      // Still should NOT create a new version
+      expect(unshared.versions).toHaveLength(1);
+      expect(unshared.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
+      expect(unshared.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
+
+      // Regular update without skipVersioning should create a version
+      const regularUpdate = await updateAgent(
+        { id: agentId },
+        { description: 'Updated description' },
+      );
+
+      expect(regularUpdate.versions).toHaveLength(2);
+      expect(regularUpdate.description).toBe('Updated description');
+
+      // Direct updateAgent with MongoDB operators should still create versions
+      const directUpdate = await updateAgent(
+        { id: agentId },
+        { $addToSet: { projectIds: { $each: [projectId1] } } },
+      );
+
+      expect(directUpdate.versions).toHaveLength(3);
+      expect(directUpdate.projectIds.length).toBe(2);
     });
 
     test('should preserve agent_ids in version history', async () => {

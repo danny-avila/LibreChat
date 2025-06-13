@@ -1022,7 +1022,6 @@
   "com_ui_create_memory": "Create Memory",
   "com_ui_memory_created": "Memory created successfully",
   "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key.",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
   "com_agents_marketplace": "Agent Marketplace",
   "com_agents_all": "All Agents",
   "com_agents_top_picks": "Top Picks",

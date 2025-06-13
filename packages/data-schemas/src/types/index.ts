@@ -15,3 +15,7 @@ export * from './assistant';
 export * from './file';
 /* Memories */
 export * from './memory';
+/* Access Control */
+export * from './accessRole';
+export * from './aclEntry';
+export * from './group';

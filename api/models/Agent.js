@@ -4,7 +4,6 @@ const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
-const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 // Default category value for new agents
 const {
   getProjectByName,
@@ -12,7 +11,6 @@ const {
   removeAgentIdsFromProject,
   removeAgentFromAllProjects,
 } = require('./Project');
-const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -127,29 +125,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   }
 
   agent.version = agent.versions ? agent.versions.length : 0;
-
-  if (agent.author.toString() === req.user.id) {
-    return agent;
-  }
-
-  if (!agent.projectIds) {
-    return null;
-  }
-
-  const cache = getLogStores(CONFIG_STORE);
-  /** @type {TStartupConfig} */
-  const cachedStartupConfig = await cache.get(STARTUP_CONFIG);
-  let { instanceProjectId } = cachedStartupConfig ?? {};
-  if (!instanceProjectId) {
-    instanceProjectId = (await getProjectByName(GLOBAL_PROJECT_NAME, '_id'))._id.toString();
-  }
-
-  for (const projectObjectId of agent.projectIds) {
-    const projectId = projectObjectId.toString();
-    if (projectId === instanceProjectId) {
-      return agent;
-    }
-  }
+  return agent;
 };
 
 /**
@@ -264,11 +240,12 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
  * @param {Object} [options] - Optional configuration object.
  * @param {string} [options.updatingUserId] - The ID of the user performing the update (used for tracking non-author updates).
  * @param {boolean} [options.forceVersion] - Force creation of a new version even if no fields changed.
+ * @param {boolean} [options.skipVersioning] - Skip version creation entirely (useful for isolated operations like sharing).
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
  * @throws {Error} If the update would create a duplicate version
  */
 const updateAgent = async (searchParameter, updateData, options = {}) => {
-  const { updatingUserId = null, forceVersion = false } = options;
+  const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
   const mongoOptions = { new: true, upsert: false };
 
   const currentAgent = await Agent.findOne(searchParameter);
@@ -305,7 +282,8 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     }
 
     const shouldCreateVersion =
-      forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet;
+      !skipVersioning &&
+      (forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet);
 
     if (shouldCreateVersion) {
       const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
@@ -340,7 +318,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
       versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
     }
 
-    if (shouldCreateVersion || forceVersion) {
+    if (shouldCreateVersion) {
       updateData.$push = {
         ...($push || {}),
         versions: versionEntry,
@@ -464,7 +442,109 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
+ * Get agents by accessible IDs with optional cursor-based pagination.
+ * @param {Object} params - The parameters for getting accessible agents.
+ * @param {Array} [params.accessibleIds] - Array of agent ObjectIds the user has ACL access to.
+ * @param {Object} [params.otherParams] - Additional query parameters (including author filter).
+ * @param {number} [params.limit] - Number of agents to return (max 100). If not provided, returns all agents.
+ * @param {string} [params.after] - Cursor for pagination - get agents after this cursor. // base64 encoded JSON string with updatedAt and _id.
+ * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
+ */
+const getListAgentsByAccess = async ({
+  accessibleIds = [],
+  otherParams = {},
+  limit = null,
+  after = null,
+}) => {
+  const isPaginated = limit !== null && limit !== undefined;
+  const normalizedLimit = isPaginated ? Math.min(Math.max(1, parseInt(limit) || 20), 100) : null;
+
+  // Build base query combining ACL accessible agents with other filters
+  const baseQuery = { ...otherParams };
+
+  if (accessibleIds.length > 0) {
+    baseQuery._id = { $in: accessibleIds };
+  }
+
+  // Add cursor condition
+  if (after) {
+    try {
+      const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
+      const { updatedAt, _id } = cursor;
+
+      const cursorCondition = {
+        $or: [
+          { updatedAt: { $lt: new Date(updatedAt) } },
+          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } },
+        ],
+      };
+
+      // Merge cursor condition with base query
+      if (Object.keys(baseQuery).length > 0) {
+        baseQuery.$and = [{ ...baseQuery }, cursorCondition];
+        // Remove the original conditions from baseQuery to avoid duplication
+        Object.keys(baseQuery).forEach((key) => {
+          if (key !== '$and') delete baseQuery[key];
+        });
+      } else {
+        Object.assign(baseQuery, cursorCondition);
+      }
+    } catch (error) {
+      logger.warn('Invalid cursor:', error.message);
+    }
+  }
+
+  let query = Agent.find(baseQuery, {
+    id: 1,
+    _id: 1,
+    name: 1,
+    avatar: 1,
+    author: 1,
+    projectIds: 1,
+    description: 1,
+    updatedAt: 1,
+  }).sort({ updatedAt: -1, _id: 1 });
+
+  // Only apply limit if pagination is requested
+  if (isPaginated) {
+    query = query.limit(normalizedLimit + 1);
+  }
+
+  const agents = await query.lean();
+
+  const hasMore = isPaginated ? agents.length > normalizedLimit : false;
+  const data = (isPaginated ? agents.slice(0, normalizedLimit) : agents).map((agent) => {
+    if (agent.author) {
+      agent.author = agent.author.toString();
+    }
+    return agent;
+  });
+
+  // Generate next cursor only if paginated
+  let nextCursor = null;
+  if (isPaginated && hasMore && data.length > 0) {
+    const lastAgent = agents[normalizedLimit - 1];
+    nextCursor = Buffer.from(
+      JSON.stringify({
+        updatedAt: lastAgent.updatedAt.toISOString(),
+        _id: lastAgent._id.toString(),
+      }),
+    ).toString('base64');
+  }
+
+  return {
+    object: 'list',
+    data,
+    first_id: data.length > 0 ? data[0].id : null,
+    last_id: data.length > 0 ? data[data.length - 1].id : null,
+    has_more: hasMore,
+    after: nextCursor,
+  };
+};
+
+/**
  * Get all agents.
+ * @deprecated Use getListAgentsByAccess for ACL-aware agent listing
  * @param {Object} searchParameter - The search parameters to find matching agents.
  * @param {string} searchParameter.author - The user ID of the agent's author.
  * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
@@ -483,12 +563,13 @@ const getListAgents = async (searchParameter) => {
   const agents = (
     await Agent.find(query, {
       id: 1,
-      _id: 0,
+      _id: 1,
       name: 1,
       avatar: 1,
       author: 1,
       projectIds: 1,
       description: 1,
+      // @deprecated - isCollaborative replaced by ACL permissions
       isCollaborative: 1,
       category: 1,
     }).lean()
@@ -552,7 +633,10 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
     delete updateQuery.author;
   }
 
-  const updatedAgent = await updateAgent(updateQuery, updateOps, { updatingUserId: user.id });
+  const updatedAgent = await updateAgent(updateQuery, updateOps, {
+    updatingUserId: user.id,
+    skipVersioning: true,
+  });
   if (updatedAgent) {
     return updatedAgent;
   }
@@ -670,6 +754,7 @@ module.exports = {
   revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
+  getListAgentsByAccess,
   removeAgentResourceFiles,
   generateActionMetadataHash,
 };

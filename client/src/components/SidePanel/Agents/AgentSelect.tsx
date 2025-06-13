@@ -40,9 +40,7 @@ export default function AgentSelect({
 
   const resetAgentForm = useCallback(
     (fullAgent: Agent) => {
-      const { instanceProjectId } = startupConfig ?? {};
-      const isGlobal =
-        (instanceProjectId != null && fullAgent.projectIds?.includes(instanceProjectId)) ?? false;
+      const isGlobal = fullAgent.isPublic ?? false;
       const update = {
         ...fullAgent,
         provider: createProviderOption(fullAgent.provider),

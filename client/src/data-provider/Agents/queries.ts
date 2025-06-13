@@ -54,7 +54,7 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
 };
 
 /**
- * Hook for retrieving details about a single agent
+ * Hook for retrieving basic details about a single agent (VIEW permission)
  */
 export const useGetAgentByIdQuery = (
   agent_id: string,
@@ -64,6 +64,29 @@ export const useGetAgentByIdQuery = (
     [QueryKeys.agent, agent_id],
     () =>
       dataService.getAgentById({
+        agent_id,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
+/**
+ * Hook for retrieving full agent details including sensitive configuration (EDIT permission)
+ */
+export const useGetExpandedAgentByIdQuery = (
+  agent_id: string,
+  config?: UseQueryOptions<t.Agent>,
+): QueryObserverResult<t.Agent> => {
+  return useQuery<t.Agent>(
+    [QueryKeys.agent, agent_id, 'expanded'],
+    () =>
+      dataService.getExpandedAgentById({
         agent_id,
       }),
     {
