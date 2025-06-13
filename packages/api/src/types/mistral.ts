@@ -18,33 +18,38 @@ export interface MistralSignedUrlResponse {
 }
 
 export interface OCRImage {
-  image_base64?: string;
-  caption?: string;
-  bounding_box?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+  id: string;
+  top_left_x: number;
+  top_left_y: number;
+  bottom_right_x: number;
+  bottom_right_y: number;
+  image_base64: string;
+  image_annotation?: string;
+}
+
+export interface PageDimensions {
+  dpi: number;
+  height: number;
+  width: number;
 }
 
 export interface OCRResultPage {
+  index: number;
   markdown: string;
-  images?: OCRImage[];
-  page_number?: number;
+  images: OCRImage[];
+  dimensions: PageDimensions;
+}
+
+export interface OCRUsageInfo {
+  pages_processed: number;
+  doc_size_bytes: number;
 }
 
 export interface OCRResult {
-  id: string;
-  object: string;
-  created_at: number;
-  model: string;
   pages: OCRResultPage[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
+  model: string;
+  document_annotation?: string | null;
+  usage_info: OCRUsageInfo;
 }
 
 export interface MistralOCRRequest {
