@@ -252,11 +252,23 @@ jobs:
         with:
           context: .
           push: true
-          tags: registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
+          tags: |
+            registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:latest
+            registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat2:latest
+            registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat3:latest
           build-args: |
             NODE_ENV=production
             MONGO_URI=${{ secrets.MONGO_URI }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
+            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
+            POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
+            POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache
+          cache-to: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache,mode=max
 
       - name: Deploy to DigitalOcean App Platform
         run: |
