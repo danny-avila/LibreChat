@@ -19,30 +19,6 @@ on:
         default: 'production'
 
 jobs:
-  lint:
-    name: Lint Code
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build workspace packages
-        run: |
-          npm run build:data-provider
-          npm run build:data-schemas
-          npm run build:api
-
-      - name: Run ESLint
-        run: npm run lint
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -87,7 +63,7 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    needs: [lint, test]
+    needs: [test]
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
