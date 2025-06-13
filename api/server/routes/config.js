@@ -1,6 +1,7 @@
 const express = require('express');
 const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
+const { getOtelConfig } = require('~/server/services/Config/otel');
 const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
@@ -35,6 +36,7 @@ router.get('/', async function (req, res) {
   const instanceProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
 
   const ldap = getLdapConfig();
+  const otel = getOtelConfig();
 
   try {
     const isOpenIdEnabled =
@@ -119,6 +121,10 @@ router.get('/', async function (req, res) {
 
     if (ldap) {
       payload.ldap = ldap;
+    }
+
+    if (otel) {
+      payload.otel = otel;
     }
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {

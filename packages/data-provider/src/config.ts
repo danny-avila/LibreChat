@@ -588,6 +588,11 @@ export type TStartupConfig = {
     scraperType?: ScraperTypes;
     rerankerType?: RerankerTypes;
   };
+  otel?: {
+    enabled: boolean;
+    otelEndpoint?: string;
+    otelApiKey?: string;
+  };
 };
 
 export enum OCRStrategy {
