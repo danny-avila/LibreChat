@@ -17,10 +17,10 @@ export default function useFocusChatEffect(textAreaRef: React.RefObject<HTMLText
         textAreaRef.current?.focus();
       }
 
-      navigate(`${location.pathname}${window.location.search ?? ''}`, {
+      navigate(`${location.pathname}${location.search ?? ''}`, {
         replace: true,
         state: {},
       });
     }
-  }, [navigate, textAreaRef, location.pathname, location.state?.focusChat]);
+  }, [navigate, textAreaRef, location.pathname, location.search, location.state?.focusChat]);
 }
