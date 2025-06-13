@@ -208,7 +208,6 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
   const apiKeyConfig = ocrConfig?.apiKey || '';
   const baseURLConfig = ocrConfig?.baseURL || '';
 
-  // If both are hardcoded, return them directly
   if (!needsEnvLoad(apiKeyConfig) && !needsEnvLoad(baseURLConfig)) {
     return {
       apiKey: apiKeyConfig,
@@ -216,7 +215,6 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
     };
   }
 
-  // Build auth fields array
   const authFields: string[] = [];
 
   if (needsEnvLoad(baseURLConfig)) {
@@ -227,14 +225,12 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
     authFields.push(getEnvVarName(apiKeyConfig, 'OCR_API_KEY'));
   }
 
-  // Load auth values
   const authValues = await context.loadAuthValues({
     userId: context.req.user?.id || '',
     authFields,
     optional: new Set(['OCR_BASEURL']),
   });
 
-  // Resolve each value
   const apiKey = await resolveConfigValue(apiKeyConfig, 'OCR_API_KEY', authValues);
   const baseURL = await resolveConfigValue(
     baseURLConfig,
@@ -335,7 +331,6 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
     const { apiKey, baseURL } = await loadAuthConfig(context);
     const model = getModelConfig(context.req.app.locals?.ocr);
 
-    // Upload file
     const mistralFile = await uploadDocumentToMistral({
       filePath: context.file.path,
       fileName: context.file.originalname,
@@ -343,14 +338,12 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       baseURL,
     });
 
-    // Get signed URL
     const signedUrlResponse = await getSignedUrl({
       apiKey,
       baseURL,
       fileId: mistralFile.id,
     });
 
-    // Perform OCR
     const documentType = getDocumentType(context.file);
     const ocrResult = await performOCR({
       apiKey,
@@ -394,21 +387,20 @@ export const uploadAzureMistralOCR = async (
     const { apiKey, baseURL } = await loadAuthConfig(context);
     const model = getModelConfig(context.req.app.locals?.ocr);
 
-    // Read file as base64
     const buffer = fs.readFileSync(context.file.path);
     const base64 = buffer.toString('base64');
+    /** Uses actual mimetype of the file, 'image/jpeg' as fallback since it seems to be accepted regardless of mismatch */
+    const base64Prefix = `data:${context.file.mimetype || 'image/jpeg'};base64,`;
 
-    // Perform OCR directly with base64
     const documentType = getDocumentType(context.file);
     const ocrResult = await performOCR({
       apiKey,
       baseURL,
       model,
-      url: `data:image/jpeg;base64,${base64}`,
+      url: `${base64Prefix}${base64}`,
       documentType,
     });
 
-    // Process result
     const { text, images } = processOCRResult(ocrResult);
 
     return {
