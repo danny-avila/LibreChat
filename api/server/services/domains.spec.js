@@ -6,7 +6,7 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 describe('isEmailDomainAllowed', () => {
-  const email = 'test@example.com';
+  
 
   it('should return false if email is falsy', async () => {
     expect(await isEmailDomainAllowed(null)).toBe(false);
