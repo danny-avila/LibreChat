@@ -1,5 +1,5 @@
+import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
-import { v4 as uuidv4 } from 'uuid';
 import { Constants } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createShareMethods, type ShareMethods } from './share';
@@ -83,7 +83,7 @@ describe('Share Methods', () => {
   describe('createSharedLink', () => {
     test('should create a new shared link', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       // Create test conversation
       await Conversation.create({
@@ -95,14 +95,14 @@ describe('Share Methods', () => {
       // Create test messages
       await Message.create([
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: userId,
           text: 'Hello',
           isCreatedByUser: true,
         },
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: userId,
           text: 'World',
@@ -127,7 +127,7 @@ describe('Share Methods', () => {
 
     test('should throw error if share already exists', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       await Conversation.create({
         conversationId,
@@ -137,7 +137,7 @@ describe('Share Methods', () => {
 
       // Create messages so we can create a share
       await Message.create({
-        messageId: `msg_${uuidv4()}`,
+        messageId: `msg_${nanoid()}`,
         conversationId,
         user: userId,
         text: 'Test message',
@@ -166,7 +166,7 @@ describe('Share Methods', () => {
     test('should only include messages from the same user', async () => {
       const userId1 = new mongoose.Types.ObjectId().toString();
       const userId2 = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       await Conversation.create({
         conversationId,
@@ -177,14 +177,14 @@ describe('Share Methods', () => {
       // Create messages from different users
       await Message.create([
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: userId1,
           text: 'User 1 message',
           isCreatedByUser: true,
         },
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: userId2,
           text: 'User 2 message',
@@ -204,7 +204,7 @@ describe('Share Methods', () => {
     test('should not allow user to create shared link for conversation they do not own', async () => {
       const ownerUserId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       // Create conversation owned by ownerUserId
       await Conversation.create({
@@ -216,7 +216,7 @@ describe('Share Methods', () => {
       // Create messages for the conversation
       await Message.create([
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: ownerUserId,
           text: 'Owner message',
@@ -236,7 +236,7 @@ describe('Share Methods', () => {
 
     test('should not allow creating share for conversation with no messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       // Create conversation without any messages
       await Conversation.create({
@@ -259,13 +259,13 @@ describe('Share Methods', () => {
   describe('getSharedMessages', () => {
     test('should retrieve and anonymize shared messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       // Create messages
       const messages = await Message.create([
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: userId,
           text: 'Hello',
@@ -273,7 +273,7 @@ describe('Share Methods', () => {
           parentMessageId: Constants.NO_PARENT,
         },
         {
-          messageId: `msg_${uuidv4()}`,
+          messageId: `msg_${nanoid()}`,
           conversationId,
           user: userId,
           text: 'World',
@@ -310,7 +310,7 @@ describe('Share Methods', () => {
     });
 
     test('should return null for non-public share', async () => {
-      const shareId = `share_${uuidv4()}`;
+      const shareId = `share_${nanoid()}`;
 
       await SharedLink.create({
         shareId,
@@ -330,11 +330,11 @@ describe('Share Methods', () => {
 
     test('should handle messages with attachments', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       const message = await Message.create({
-        messageId: `msg_${uuidv4()}`,
+        messageId: `msg_${nanoid()}`,
         conversationId,
         user: userId,
         text: 'Message with attachment',
@@ -518,8 +518,8 @@ describe('Share Methods', () => {
   describe('updateSharedLink', () => {
     test('should update shared link with new messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const oldShareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const oldShareId = `share_${nanoid()}`;
 
       // Create initial messages
       const initialMessages = await Message.create([
@@ -577,8 +577,8 @@ describe('Share Methods', () => {
     test('should only update with messages from the same user', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       // Create initial share
       await SharedLink.create({
@@ -621,8 +621,8 @@ describe('Share Methods', () => {
     test('should not allow user to update shared link they do not own', async () => {
       const ownerUserId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       // Create shared link owned by ownerUserId
       await SharedLink.create({
@@ -648,7 +648,7 @@ describe('Share Methods', () => {
   describe('deleteSharedLink', () => {
     test('should delete shared link', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const shareId = `share_${uuidv4()}`;
+      const shareId = `share_${nanoid()}`;
 
       await SharedLink.create({
         shareId,
@@ -676,7 +676,7 @@ describe('Share Methods', () => {
     test('should not delete share from different user', async () => {
       const userId1 = new mongoose.Types.ObjectId().toString();
       const userId2 = new mongoose.Types.ObjectId().toString();
-      const shareId = `share_${uuidv4()}`;
+      const shareId = `share_${nanoid()}`;
 
       await SharedLink.create({
         shareId,
@@ -707,8 +707,8 @@ describe('Share Methods', () => {
   describe('getSharedLink', () => {
     test('should retrieve existing shared link', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       await SharedLink.create({
         shareId,
@@ -733,7 +733,7 @@ describe('Share Methods', () => {
     test('should not return share from different user', async () => {
       const userId1 = new mongoose.Types.ObjectId().toString();
       const userId2 = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       await SharedLink.create({
         shareId: 'share123',
@@ -760,8 +760,8 @@ describe('Share Methods', () => {
 
     test('should only return public shares', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       // Create a non-public share
       await SharedLink.create({
@@ -853,7 +853,7 @@ describe('Share Methods', () => {
 
       // Create a message so we can create a share
       await Message.create({
-        messageId: `msg_${uuidv4()}`,
+        messageId: `msg_${nanoid()}`,
         conversationId,
         user: userId,
         text: 'Test message',
@@ -868,11 +868,11 @@ describe('Share Methods', () => {
 
     test('should handle messages with assistant_id', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       const message = await Message.create({
-        messageId: `msg_${uuidv4()}`,
+        messageId: `msg_${nanoid()}`,
         conversationId,
         user: userId,
         text: 'Assistant message',
@@ -895,7 +895,7 @@ describe('Share Methods', () => {
 
     test('should handle concurrent operations', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationIds = Array.from({ length: 5 }, () => `conv_${uuidv4()}`);
+      const conversationIds = Array.from({ length: 5 }, () => `conv_${nanoid()}`);
 
       // Create conversations and messages
       await Promise.all(
@@ -907,7 +907,7 @@ describe('Share Methods', () => {
           });
           // Create a message for each conversation
           await Message.create({
-            messageId: `msg_${uuidv4()}`,
+            messageId: `msg_${nanoid()}`,
             conversationId: id,
             user: userId,
             text: `Message for ${id}`,
@@ -930,7 +930,7 @@ describe('Share Methods', () => {
 
     test('should handle database errors gracefully', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
 
       // Create conversation and message first
       await Conversation.create({
@@ -940,7 +940,7 @@ describe('Share Methods', () => {
       });
 
       await Message.create({
-        messageId: `msg_${uuidv4()}`,
+        messageId: `msg_${nanoid()}`,
         conversationId,
         user: userId,
         text: 'Test message',
@@ -967,10 +967,10 @@ describe('Share Methods', () => {
 
     test('should consistently anonymize IDs', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
-      const messageId1 = `msg_${uuidv4()}`;
-      const messageId2 = `msg_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const messageId1 = `msg_${nanoid()}`;
+      const messageId2 = `msg_${nanoid()}`;
 
       const messages = await Message.create([
         {
@@ -1015,11 +1015,11 @@ describe('Share Methods', () => {
     test('should handle NO_PARENT constant correctly', async () => {
       const { Constants } = await import('librechat-data-provider');
       const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${uuidv4()}`;
-      const shareId = `share_${uuidv4()}`;
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
 
       const message = await Message.create({
-        messageId: `msg_${uuidv4()}`,
+        messageId: `msg_${nanoid()}`,
         conversationId,
         user: userId,
         text: 'Root message',
