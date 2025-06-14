@@ -230,8 +230,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         console.log('Observer anterior desconectado');
       }
 
-      // Flags para evitar reconfiguración múltiple
-      let collapseConfigured = false;
+      // Flag para evitar reconfiguración múltiple
       let endConfigured = false;
 
       // Función para activar automáticamente el botón "Llamar a AVI"
@@ -278,66 +277,22 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         }, 100);
       };
 
-      // Función para cortar llamada (opcional)
-      const endCall = () => {
+      // Función para ocultar visualmente el botón "Collapse"
+      const hideCollapseButton = () => {
         try {
-          const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
-          if (endButton) {
-            endButton.click();
-            console.log('Llamada cortada');
-            return true;
-          }
-        } catch (error) {
-          console.error('Error al cortar la llamada:', error);
-        }
-        return false;
-      };
-
-      // Función combinada para cortar llamada Y ocultar widget
-      const endCallAndHideWidget = (event?: Event) => {
-        if (event) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        
-        endCall(); // Intentar cortar llamada si es posible
-        hideWidget(); // SIEMPRE ocultar widget
-      };
-
-      // Configurar botón "Collapse" (Paso 3 de los requerimientos)
-      const setupCollapseButton = () => {
-        if (collapseConfigured) return true;
-        
-        try {
-          // Buscar el botón "Collapse" con selectores más robustos
           const collapseButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="Collapse"]') as HTMLButtonElement;
-          
           if (collapseButton) {
-            // SIEMPRE agregar funcionalidad para ocultar widget + cortar llamada si está disponible
-            collapseButton.addEventListener('click', (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              
-              // Intentar cortar llamada si el botón "End" está disponible
-              const callEnded = endCall();
-              
-              // SIEMPRE ocultar el widget, independientemente de si se cortó la llamada o no
-              hideWidget();
-              
-              console.log(`Collapse ejecutado - Llamada cortada: ${callEnded ? 'Sí' : 'No'}, Widget ocultado: Sí`);
-            }, { capture: true, once: true });
-            
-            collapseConfigured = true;
-            console.log('Botón "Collapse" configurado correctamente (oculta SIEMPRE)');
+            collapseButton.style.display = 'none';
+            console.log('Botón "Collapse" ocultado visualmente');
             return true;
           }
         } catch (error) {
-          console.error('Error al configurar botón Collapse:', error);
+          console.error('Error al ocultar botón Collapse:', error);
         }
         return false;
       };
 
-      // Configurar botón "End" (Paso 4 de los requerimientos)
+      // Configurar botón "End" (mantener solo esta funcionalidad)
       const setupEndButton = (endButton: HTMLButtonElement) => {
         if (endConfigured) return true;
         
@@ -345,7 +300,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           // Solo agregar event listener para ocultar widget después del click original
           endButton.addEventListener('click', () => {
             setTimeout(() => {
-              hideWidget(); // Usar la función de ocultar widget
+              hideWidget();
               console.log('Widget ocultado por botón End');
             }, 200);
           }, { once: true });
@@ -362,26 +317,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       // Activar el botón de llamada inmediatamente
       activateCallButton();
 
-      // Función de retry para configurar el botón "Collapse"
-      const retryConfigureCollapse = (attempts = 0, maxAttempts = 10) => {
-        if (attempts >= maxAttempts || collapseConfigured) {
-          console.log(`Configuración de Collapse terminada - Intentos: ${attempts}, Configurado: ${collapseConfigured}`);
-          return;
-        }
-
-        const success = setupCollapseButton();
-        if (!success) {
-          // Reintentar después de 200ms
-          setTimeout(() => {
-            retryConfigureCollapse(attempts + 1, maxAttempts);
-          }, 200);
-        }
-      };
-
-      // Configurar el botón "Collapse" con retry mechanism
+      // Ocultar el botón "Collapse" después de un momento
       setTimeout(() => {
-        retryConfigureCollapse();
-      }, 300); // Dar tiempo para que aparezca el botón después de activar la llamada
+        hideCollapseButton();
+      }, 500); // Dar tiempo para que aparezca antes de ocultarlo
 
       // Buscar el botón "End" inmediatamente
       const immediateEndButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
@@ -391,40 +330,36 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         return; // Salir temprano si ya encontramos el botón End
       }
 
-      console.log('Configuración inicial del widget...');
+      console.log('Configuración inicial del widget (sin botón Collapse)...');
 
-      // Solo usar MutationObserver si no encontramos el botón "End" inmediatamente
+      // Solo usar MutationObserver para el botón "End"
       const observer = new MutationObserver((mutations) => {
-        // Verificar si ya configuramos todo
-        if (endConfigured && collapseConfigured) {
+        // Verificar si ya configuramos el botón End
+        if (endConfigured) {
           observer.disconnect();
           elevenLabsObserverRef.current = null;
-          console.log('Observer desconectado - configuración completa');
+          console.log('Observer desconectado - configuración End completa');
           return;
         }
 
         for (const mutation of mutations) {
           if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
             
-            // Buscar y configurar botón "End"
+            // Intentar ocultar el botón Collapse si aparece
+            hideCollapseButton();
+            
+            // Solo buscar y configurar botón "End"
             if (!endConfigured) {
               const endButton = elevenLabsWidget.shadowRoot?.querySelector('button[aria-label="End"]') as HTMLButtonElement;
               if (endButton) {
                 setupEndButton(endButton);
+                
+                // Desconectar observer una vez que configuramos el botón End
+                console.log('Configuración End completada via observer, desconectando');
+                observer.disconnect();
+                elevenLabsObserverRef.current = null;
+                return;
               }
-            }
-            
-            // Buscar y configurar botón "Collapse"
-            if (!collapseConfigured) {
-              setupCollapseButton();
-            }
-            
-            // Desconectar observer una vez que configuramos todo
-            if (endConfigured && collapseConfigured) {
-              console.log('Configuración completada via observer, desconectando');
-              observer.disconnect();
-              elevenLabsObserverRef.current = null;
-              return;
             }
           }
         }
@@ -447,7 +382,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           elevenLabsObserverRef.current = null;
           console.log('Observer limpiado por timeout');
         }
-      }, 10000); // Reducir a 10 segundos
+      }, 10000);
 
     } catch (error) {
       console.error('Error al configurar el widget de ElevenLabs:', error);
