@@ -43,9 +43,9 @@ async function gracefulExit(code = 0) {
   console.purple('---------------');
 
   // 1) Get email
-  let email = process.argv[2];
+  let email = process.argv[2]?.trim();
   if (!email) {
-    email = await askQuestion('Email:');
+    email = (await askQuestion('Email:')).trim();
   }
 
   // 2) Find user
