@@ -1,8 +1,10 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { logger } = require('@librechat/data-schemas');
+const { getAccessToken } = require('@librechat/auth');
 const { CacheKeys } = require('librechat-data-provider');
-const { getAccessToken } = require('~/server/services/TokenService');
-const { logger, getFlowStateManager } = require('~/config');
+const { findToken, updateToken, createToken } = require('~/models');
+const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
@@ -47,17 +49,24 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       throw new Error('OAuth flow not found');
     }
 
-    const tokenData = await getAccessToken({
-      code,
-      userId: decodedState.user,
-      identifier,
-      client_url: flowState.metadata.client_url,
-      redirect_uri: flowState.metadata.redirect_uri,
-      token_exchange_method: flowState.metadata.token_exchange_method,
-      /** Encrypted values */
-      encrypted_oauth_client_id: flowState.metadata.encrypted_oauth_client_id,
-      encrypted_oauth_client_secret: flowState.metadata.encrypted_oauth_client_secret,
-    });
+    const tokenData = await getAccessToken(
+      {
+        code,
+        userId: decodedState.user,
+        identifier,
+        client_url: flowState.metadata.client_url,
+        redirect_uri: flowState.metadata.redirect_uri,
+        token_exchange_method: flowState.metadata.token_exchange_method,
+        /** Encrypted values */
+        encrypted_oauth_client_id: flowState.metadata.encrypted_oauth_client_id,
+        encrypted_oauth_client_secret: flowState.metadata.encrypted_oauth_client_secret,
+      },
+      {
+        findToken,
+        updateToken,
+        createToken,
+      },
+    );
     await flowManager.completeFlow(identifier, 'oauth', tokenData);
     res.send(`
       <!DOCTYPE html>
