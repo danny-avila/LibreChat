@@ -26,6 +26,15 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
+async function gracefulExit(code = 0) {
+  try {
+    await mongoose.disconnect();
+  } catch (err) {
+    console.error('Error disconnecting from MongoDB:', err);
+  }
+  silentExit(code);
+}
+
 (async () => {
   await connect();
 
@@ -43,7 +52,7 @@ const connect = require('./connect');
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) {
     console.yellow(`No user found with email "${email}"`);
-    return silentExit(0);
+    return gracefulExit(0);
   }
 
   // 3) Confirm full deletion
@@ -52,33 +61,32 @@ const connect = require('./connect');
   );
   if (confirmAll.toLowerCase() !== 'y') {
     console.yellow('Aborted.');
-    return silentExit(0);
+    return gracefulExit(0);
   }
 
   // 4) Ask specifically about transactions
   const confirmTx = await askQuestion('Also delete all transaction history for this user? (y/N)');
   const deleteTx = confirmTx.toLowerCase() === 'y';
 
-  const uid = user._id;
-  const uidStr = uid.toString();
+  const uid = user._id.toString();
 
   // 5) Build and run deletion tasks
   const tasks = [
     Agent.deleteMany({ author: uid }),
     Assistant.deleteMany({ user: uid }),
     Balance.deleteMany({ user: uid }),
-    ConversationTag.deleteMany({ user: uidStr }),
-    Conversation.deleteMany({ user: uidStr }),
-    Message.deleteMany({ user: uidStr }),
+    ConversationTag.deleteMany({ user: uid }),
+    Conversation.deleteMany({ user: uid }),
+    Message.deleteMany({ user: uid }),
     File.deleteMany({ user: uid }),
     Key.deleteMany({ userId: uid }),
     MemoryEntry.deleteMany({ userId: uid }),
-    PluginAuth.deleteMany({ userId: uidStr }),
+    PluginAuth.deleteMany({ userId: uid }),
     Prompt.deleteMany({ author: uid }),
     PromptGroup.deleteMany({ author: uid }),
-    Preset.deleteMany({ user: uidStr }),
+    Preset.deleteMany({ user: uid }),
     Session.deleteMany({ user: uid }),
-    SharedLink.deleteMany({ user: uidStr }),
+    SharedLink.deleteMany({ user: uid }),
     ToolCall.deleteMany({ user: uid }),
     Token.deleteMany({ userId: uid }),
   ];
@@ -96,13 +104,13 @@ const connect = require('./connect');
   if (!deleteTx) {
     console.yellow('⚠️ Transaction history was retained.');
   }
-  silentExit(0);
-})();
 
-process.on('uncaughtException', (err) => {
+  return gracefulExit(0);
+})().catch(async (err) => {
   if (!err.message.includes('fetch failed')) {
     console.error('There was an uncaught error:');
     console.error(err);
+    await mongoose.disconnect();
     process.exit(1);
   }
 });
