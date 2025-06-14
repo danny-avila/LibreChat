@@ -217,7 +217,9 @@ export type TUpdateUserKeyRequest = {
 
 export type TUpdateConversationRequest = {
   conversationId: string;
-  title: string;
+  title?: string;
+  isPinned?: boolean;
+  pinnedOrder?: number;
 };
 
 export type TUpdateConversationResponse = TConversation;
