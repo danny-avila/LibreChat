@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { encrypt, decrypt } = require('@librechat/auth');
+const { encrypt, decrypt } = require('@librechat/api');
 const { PluginAuth } = require('~/db/models');
 
 /**

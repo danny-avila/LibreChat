@@ -1,4 +1,4 @@
-const { encryptV3 } = require('@librechat/auth');
+const { encryptV3 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   verifyTOTP,

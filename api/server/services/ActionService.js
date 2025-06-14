@@ -3,8 +3,13 @@ const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
-const { sendEvent, logAxiosError } = require('@librechat/api');
-const { encryptV2, decryptV2, refreshAccessToken } = require('@librechat/auth');
+const {
+  sendEvent,
+  encryptV2,
+  decryptV2,
+  logAxiosError,
+  refreshAccessToken,
+} = require('@librechat/api');
 const {
   Time,
   CacheKeys,

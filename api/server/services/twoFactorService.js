@@ -1,5 +1,5 @@
 const { webcrypto } = require('node:crypto');
-const { hashBackupCode, decryptV3, decryptV2 } = require('@librechat/auth');
+const { hashBackupCode, decryptV3, decryptV2 } = require('@librechat/api');
 const { updateUser } = require('~/models');
 
 // Base32 alphabet for TOTP secret encoding.
