@@ -224,18 +224,20 @@ export const useUpdateAgentAction = (
       });
 
       queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
-        return prev
-          ?.map((action) => {
+        if (!prev) {
+          return [updateAgentActionResponse[1]];
+        }
+
+        if (variables.action_id) {
+          return prev.map((action) => {
             if (action.action_id === variables.action_id) {
               return updateAgentActionResponse[1];
             }
             return action;
-          })
-          .concat(
-            variables.action_id != null && variables.action_id
-              ? []
-              : [updateAgentActionResponse[1]],
-          );
+          });
+        }
+
+        return [...prev, updateAgentActionResponse[1]];
       });
 
       queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);

@@ -9,6 +9,8 @@ export * from './flow/manager';
 export * from './agents';
 /* Endpoints */
 export * from './endpoints';
+/* Files */
+export * from './files';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
