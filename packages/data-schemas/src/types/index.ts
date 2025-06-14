@@ -13,5 +13,6 @@ export * from './role';
 export * from './action';
 export * from './assistant';
 export * from './file';
+export * from './share';
 /* Memories */
 export * from './memory';
