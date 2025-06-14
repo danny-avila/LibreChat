@@ -1,5 +1,5 @@
+const { encryptV2 } = require('@librechat/auth');
 const { findToken, updateToken, createToken } = require('~/models');
-const { encryptV2 } = require('~/server/utils/crypto');
 
 /**
  * Handles the OAuth token by creating or updating the token.

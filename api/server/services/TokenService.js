@@ -1,9 +1,9 @@
 const axios = require('axios');
+const { decryptV2 } = require('@librechat/auth');
 const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { TokenExchangeMethodEnum } = require('librechat-data-provider');
 const { handleOAuthToken } = require('~/models/Token');
-const { decryptV2 } = require('~/server/utils/crypto');
 
 /**
  * Processes the access tokens and stores them in the database.
