@@ -254,6 +254,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
       ]);
 
       if (existingShare && existingShare.isPublic) {
+        logger.error('[createSharedLink] Share already exists', {
+          user,
+          conversationId,
+        });
         throw new ShareServiceError('Share already exists', 'SHARE_EXISTS');
       } else if (existingShare) {
         await SharedLink.deleteOne({ conversationId, user });
@@ -275,6 +279,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
       return { shareId, conversationId };
     } catch (error) {
+      if (error instanceof ShareServiceError) {
+        throw error;
+      }
       logger.error('[createSharedLink] Error creating shared link', {
         error: error instanceof Error ? error.message : 'Unknown error',
         user,
