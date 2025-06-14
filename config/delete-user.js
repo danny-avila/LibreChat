@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const path = require('path');
 const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
 const {
@@ -28,9 +29,6 @@ const connect = require('./connect');
 (async () => {
   await connect();
 
-  /**
-   * Show the welcome / help menu
-   */
   console.purple('---------------');
   console.purple('Deleting a user and all related data');
   console.purple('---------------');
@@ -48,24 +46,27 @@ const connect = require('./connect');
     return silentExit(0);
   }
 
-  // 3) Confirm
-  const answer = await askQuestion(
+  // 3) Confirm full deletion
+  const confirmAll = await askQuestion(
     `Really delete user ${user.email} (${user._id}) and ALL their data? (y/N)`,
   );
-  if (answer.toLowerCase() !== 'y') {
+  if (confirmAll.toLowerCase() !== 'y') {
     console.yellow('Aborted.');
     return silentExit(0);
   }
 
-  // 4) Delete related documents
+  // 4) Ask specifically about transactions
+  const confirmTx = await askQuestion('Also delete all transaction history for this user? (y/N)');
+  const deleteTx = confirmTx.toLowerCase() === 'y';
+
   const uid = user._id;
   const uidStr = uid.toString();
 
-  await Promise.all([
+  // 5) Build and run deletion tasks
+  const tasks = [
     Agent.deleteMany({ author: uid }),
     Assistant.deleteMany({ user: uid }),
     Balance.deleteMany({ user: uid }),
-    Transaction.deleteMany({ user: uid }),
     ConversationTag.deleteMany({ user: uidStr }),
     Conversation.deleteMany({ user: uidStr }),
     Message.deleteMany({ user: uidStr }),
@@ -80,12 +81,21 @@ const connect = require('./connect');
     SharedLink.deleteMany({ user: uidStr }),
     ToolCall.deleteMany({ user: uid }),
     Token.deleteMany({ userId: uid }),
-  ]);
+  ];
 
-  // 5) Finally delete the user document itself
+  if (deleteTx) {
+    tasks.push(Transaction.deleteMany({ user: uid }));
+  }
+
+  await Promise.all(tasks);
+
+  // 6) Finally delete the user document itself
   await User.deleteOne({ _id: uid });
 
   console.green(`✔ Successfully deleted user ${email} and all associated data.`);
+  if (!deleteTx) {
+    console.yellow('⚠️ Transaction history was retained.');
+  }
   silentExit(0);
 })();
 
