@@ -266,7 +266,21 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
       const conversation = (await Conversation.findOne({ conversationId, user }).lean()) as {
         title?: string;
       } | null;
-      const title = conversation?.title || 'Untitled';
+
+      // Check if user owns the conversation
+      if (!conversation) {
+        throw new ShareServiceError(
+          'Conversation not found or access denied',
+          'CONVERSATION_NOT_FOUND',
+        );
+      }
+
+      // Check if there are any messages to share
+      if (!conversationMessages || conversationMessages.length === 0) {
+        throw new ShareServiceError('No messages to share', 'NO_MESSAGES');
+      }
+
+      const title = conversation.title || 'Untitled';
 
       const shareId = nanoid();
       await SharedLink.create({
