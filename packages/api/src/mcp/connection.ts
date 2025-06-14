@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { logger } from '@librechat/data-schemas';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
@@ -10,7 +11,6 @@ import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { Logger } from 'winston';
 import type * as t from './types';
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
@@ -75,12 +75,10 @@ export class MCPConnection extends EventEmitter {
   constructor(
     serverName: string,
     private readonly options: t.MCPOptions,
-    private logger?: Logger,
     userId?: string,
   ) {
     super();
     this.serverName = serverName;
-    this.logger = logger;
     this.userId = userId;
     this.iconPath = options.iconPath;
     this.timeout = options.timeout;
@@ -107,11 +105,10 @@ export class MCPConnection extends EventEmitter {
   public static getInstance(
     serverName: string,
     options: t.MCPOptions,
-    logger?: Logger,
     userId?: string,
   ): MCPConnection {
     if (!MCPConnection.instance) {
-      MCPConnection.instance = new MCPConnection(serverName, options, logger, userId);
+      MCPConnection.instance = new MCPConnection(serverName, options, userId);
     }
     return MCPConnection.instance;
   }
@@ -129,7 +126,7 @@ export class MCPConnection extends EventEmitter {
 
   private emitError(error: unknown, errorContext: string): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    this.logger?.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
+    logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
     this.emit('error', new Error(`${errorContext}: ${errorMessage}`));
   }
 
@@ -174,7 +171,7 @@ export class MCPConnection extends EventEmitter {
             throw new Error('Invalid options for sse transport.');
           }
           const url = new URL(options.url);
-          this.logger?.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
+          logger.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
           const abortController = new AbortController();
           const transport = new SSEClientTransport(url, {
             requestInit: {
@@ -193,19 +190,17 @@ export class MCPConnection extends EventEmitter {
           });
 
           transport.onclose = () => {
-            this.logger?.info(`${this.getLogPrefix()} SSE transport closed`);
+            logger.info(`${this.getLogPrefix()} SSE transport closed`);
             this.emit('connectionChange', 'disconnected');
           };
 
           transport.onerror = (error) => {
-            this.logger?.error(`${this.getLogPrefix()} SSE transport error:`, error);
+            logger.error(`${this.getLogPrefix()} SSE transport error:`, error);
             this.emitError(error, 'SSE transport error:');
           };
 
           transport.onmessage = (message) => {
-            this.logger?.info(
-              `${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`,
-            );
+            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -217,7 +212,7 @@ export class MCPConnection extends EventEmitter {
             throw new Error('Invalid options for streamable-http transport.');
           }
           const url = new URL(options.url);
-          this.logger?.info(
+          logger.info(
             `${this.getLogPrefix()} Creating streamable-http transport: ${url.toString()}`,
           );
           const abortController = new AbortController();
@@ -230,19 +225,17 @@ export class MCPConnection extends EventEmitter {
           });
 
           transport.onclose = () => {
-            this.logger?.info(`${this.getLogPrefix()} Streamable-http transport closed`);
+            logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
           };
 
           transport.onerror = (error: Error | unknown) => {
-            this.logger?.error(`${this.getLogPrefix()} Streamable-http transport error:`, error);
+            logger.error(`${this.getLogPrefix()} Streamable-http transport error:`, error);
             this.emitError(error, 'Streamable-http transport error:');
           };
 
           transport.onmessage = (message: JSONRPCMessage) => {
-            this.logger?.info(
-              `${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`,
-            );
+            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -271,17 +264,17 @@ export class MCPConnection extends EventEmitter {
         /**
          * // FOR DEBUGGING
          * // this.client.setRequestHandler(PingRequestSchema, async (request, extra) => {
-         * //    this.logger?.info(`[MCP][${this.serverName}] PingRequest: ${JSON.stringify(request)}`);
+         * //    logger.info(`[MCP][${this.serverName}] PingRequest: ${JSON.stringify(request)}`);
          * //    if (getEventListeners && extra.signal) {
          * //      const listenerCount = getEventListeners(extra.signal, 'abort').length;
-         * //      this.logger?.debug(`Signal has ${listenerCount} abort listeners`);
+         * //      logger.debug(`Signal has ${listenerCount} abort listeners`);
          * //    }
          * //    return {};
          * //  });
          */
       } else if (state === 'error' && !this.isReconnecting && !this.isInitializing) {
         this.handleReconnection().catch((error) => {
-          this.logger?.error(`${this.getLogPrefix()} Reconnection handler failed:`, error);
+          logger.error(`${this.getLogPrefix()} Reconnection handler failed:`, error);
         });
       }
     });
@@ -305,7 +298,7 @@ export class MCPConnection extends EventEmitter {
         this.reconnectAttempts++;
         const delay = backoffDelay(this.reconnectAttempts);
 
-        this.logger?.info(
+        logger.info(
           `${this.getLogPrefix()} Reconnecting ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} (delay: ${delay}ms)`,
         );
 
@@ -316,13 +309,13 @@ export class MCPConnection extends EventEmitter {
           this.reconnectAttempts = 0;
           return;
         } catch (error) {
-          this.logger?.error(`${this.getLogPrefix()} Reconnection attempt failed:`, error);
+          logger.error(`${this.getLogPrefix()} Reconnection attempt failed:`, error);
 
           if (
             this.reconnectAttempts === this.MAX_RECONNECT_ATTEMPTS ||
             (this.shouldStopReconnecting as boolean)
           ) {
-            this.logger?.error(`${this.getLogPrefix()} Stopping reconnection attempts`);
+            logger.error(`${this.getLogPrefix()} Stopping reconnection attempts`);
             return;
           }
         }
@@ -366,7 +359,7 @@ export class MCPConnection extends EventEmitter {
             await this.client.close();
             this.transport = null;
           } catch (error) {
-            this.logger?.warn(`${this.getLogPrefix()} Error closing connection:`, error);
+            logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
           }
         }
 
@@ -403,7 +396,7 @@ export class MCPConnection extends EventEmitter {
     }
 
     this.transport.onmessage = (msg) => {
-      this.logger?.debug(`${this.getLogPrefix()} Transport received: ${JSON.stringify(msg)}`);
+      logger.debug(`${this.getLogPrefix()} Transport received: ${JSON.stringify(msg)}`);
     };
 
     const originalSend = this.transport.send.bind(this.transport);
@@ -414,7 +407,7 @@ export class MCPConnection extends EventEmitter {
         }
         this.lastPingTime = Date.now();
       }
-      this.logger?.debug(`${this.getLogPrefix()} Transport sending: ${JSON.stringify(msg)}`);
+      logger.debug(`${this.getLogPrefix()} Transport sending: ${JSON.stringify(msg)}`);
       return originalSend(msg);
     };
   }
@@ -427,14 +420,14 @@ export class MCPConnection extends EventEmitter {
         throw new Error('Connection not established');
       }
     } catch (error) {
-      this.logger?.error(`${this.getLogPrefix()} Connection failed:`, error);
+      logger.error(`${this.getLogPrefix()} Connection failed:`, error);
       throw error;
     }
   }
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      this.logger?.error(`${this.getLogPrefix()} Transport error:`, error);
+      logger.error(`${this.getLogPrefix()} Transport error:`, error);
       this.emit('connectionChange', 'error');
     };
   }
@@ -572,7 +565,7 @@ export class MCPConnection extends EventEmitter {
       await this.client.ping();
       return this.connectionState === 'connected';
     } catch (error) {
-      this.logger?.error(`${this.getLogPrefix()} Ping failed:`, error);
+      logger.error(`${this.getLogPrefix()} Ping failed:`, error);
       return false;
     }
   }

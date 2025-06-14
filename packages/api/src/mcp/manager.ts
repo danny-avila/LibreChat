@@ -1,7 +1,7 @@
+import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { JsonSchemaType, MCPOptions, TUser } from 'librechat-data-provider';
-import type { Logger } from 'winston';
 import type * as t from './types';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -24,24 +24,10 @@ export class MCPManager {
   private processMCPEnv?: (obj: MCPOptions, user?: TUser) => MCPOptions; // Store the processing function
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
-  private logger: Logger;
 
-  private static getDefaultLogger(): Logger {
-    return {
-      error: console.error,
-      warn: console.warn,
-      info: console.info,
-      debug: console.debug,
-    } as Logger;
-  }
-
-  private constructor(logger?: Logger) {
-    this.logger = logger || MCPManager.getDefaultLogger();
-  }
-
-  public static getInstance(logger?: Logger): MCPManager {
+  public static getInstance(): MCPManager {
     if (!MCPManager.instance) {
-      MCPManager.instance = new MCPManager(logger);
+      MCPManager.instance = new MCPManager();
     }
     // Check for idle connections when getInstance is called
     MCPManager.instance.checkIdleConnections();
@@ -53,7 +39,6 @@ export class MCPManager {
     mcpServers: t.MCPServers,
     processMCPEnv?: (obj: MCPOptions) => MCPOptions,
   ): Promise<void> {
-    this.logger.info('[MCP] Initializing app-level servers');
     this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
 
@@ -63,7 +48,7 @@ export class MCPManager {
       entries.map(async ([serverName, _config], i) => {
         /** Process env for app-level connections */
         const config = this.processMCPEnv ? this.processMCPEnv(_config) : _config;
-        const connection = new MCPConnection(serverName, config, this.logger);
+        const connection = new MCPConnection(serverName, config);
 
         try {
           const connectionTimeout = new Promise<void>((_, reject) =>
@@ -84,7 +69,7 @@ export class MCPManager {
               if (typeof configInstructions === 'string') {
                 // Custom instructions provided
                 this.serverInstructions.set(serverName, configInstructions);
-                this.logger.info(
+                logger.info(
                   `[MCP][${serverName}] Custom instructions stored for context inclusion: ${configInstructions}`,
                 );
               } else if (configInstructions === true) {
@@ -93,35 +78,33 @@ export class MCPManager {
 
                 if (serverInstructions) {
                   this.serverInstructions.set(serverName, serverInstructions);
-                  this.logger.info(
+                  logger.info(
                     `[MCP][${serverName}] Server instructions stored for context inclusion: ${serverInstructions}`,
                   );
                 } else {
-                  this.logger.info(
+                  logger.info(
                     `[MCP][${serverName}] serverInstructions=true but no server instructions available`,
                   );
                 }
               } else {
                 // configInstructions is false - explicitly disabled
-                this.logger.info(
+                logger.info(
                   `[MCP][${serverName}] Instructions explicitly disabled (serverInstructions=false)`,
                 );
               }
             } else {
-              this.logger.info(
+              logger.info(
                 `[MCP][${serverName}] Instructions not included (serverInstructions not configured)`,
               );
             }
 
             const serverCapabilities = connection.client.getServerCapabilities();
-            this.logger.info(
-              `[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
-            );
+            logger.info(`[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`);
 
             if (serverCapabilities?.tools) {
               const tools = await connection.client.listTools();
               if (tools.tools.length) {
-                this.logger.info(
+                logger.info(
                   `[MCP][${serverName}] Available tools: ${tools.tools
                     .map((tool) => tool.name)
                     .join(', ')}`,
@@ -130,7 +113,7 @@ export class MCPManager {
             }
           }
         } catch (error) {
-          this.logger.error(`[MCP][${serverName}] Initialization failed`, error);
+          logger.error(`[MCP][${serverName}] Initialization failed`, error);
           throw error;
         }
       }),
@@ -140,28 +123,28 @@ export class MCPManager {
       (result): result is PromiseRejectedResult => result.status === 'rejected',
     );
 
-    this.logger.info(
+    logger.info(
       `[MCP] Initialized ${initializedServers.size}/${entries.length} app-level server(s)`,
     );
 
     if (failedConnections.length > 0) {
-      this.logger.warn(
+      logger.warn(
         `[MCP] ${failedConnections.length}/${entries.length} app-level server(s) failed to initialize`,
       );
     }
 
     entries.forEach(([serverName], index) => {
       if (initializedServers.has(index)) {
-        this.logger.info(`[MCP][${serverName}] ✓ Initialized`);
+        logger.info(`[MCP][${serverName}] ✓ Initialized`);
       } else {
-        this.logger.info(`[MCP][${serverName}] ✗ Failed`);
+        logger.info(`[MCP][${serverName}] ✗ Failed`);
       }
     });
 
     if (initializedServers.size === entries.length) {
-      this.logger.info('[MCP] All app-level servers initialized successfully');
+      logger.info('[MCP] All app-level servers initialized successfully');
     } else if (initializedServers.size === 0) {
-      this.logger.warn('[MCP] No app-level servers initialized');
+      logger.warn('[MCP] No app-level servers initialized');
     }
   }
 
@@ -180,7 +163,7 @@ export class MCPManager {
       } catch (error) {
         attempts++;
         if (attempts === maxAttempts) {
-          this.logger.error(`${logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
+          logger.error(`${logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
           throw error; // Re-throw the last error
         }
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
@@ -198,12 +181,12 @@ export class MCPManager {
         continue;
       }
       if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
-        this.logger.info(
+        logger.info(
           `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
         );
         // Disconnect all user connections asynchronously (fire and forget)
         this.disconnectUserConnections(userId).catch((err) =>
-          this.logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err),
+          logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err),
         );
       }
     }
@@ -213,7 +196,7 @@ export class MCPManager {
   private updateUserLastActivity(userId: string): void {
     const now = Date.now();
     this.userLastActivity.set(userId, now);
-    this.logger.debug(
+    logger.debug(
       `[MCP][User: ${userId}] Updated last activity timestamp: ${new Date(now).toISOString()}`,
     );
   }
@@ -232,25 +215,23 @@ export class MCPManager {
     // Check if user is idle
     const lastActivity = this.userLastActivity.get(userId);
     if (lastActivity && now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
-      this.logger.info(
-        `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`,
-      );
+      logger.info(`[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`);
       // Disconnect all user connections
       try {
         await this.disconnectUserConnections(userId);
       } catch (err) {
-        this.logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err);
+        logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err);
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
       if (await connection.isConnected()) {
-        this.logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+        logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         // Update timestamp on reuse
         this.updateUserLastActivity(userId);
         return connection;
       } else {
         // Connection exists but is not connected, attempt to remove potentially stale entry
-        this.logger.warn(
+        logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
         this.removeUserConnection(userId, serverName); // Clean up maps
@@ -260,7 +241,7 @@ export class MCPManager {
 
     // If no valid connection exists, create a new one
     if (!connection) {
-      this.logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
+      logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
     }
 
     let config = this.mcpConfigs[serverName];
@@ -275,7 +256,7 @@ export class MCPManager {
       config = { ...(this.processMCPEnv(config, user) ?? {}) };
     }
 
-    connection = new MCPConnection(serverName, config, this.logger, userId);
+    connection = new MCPConnection(serverName, config, userId);
 
     try {
       const connectionTimeout = new Promise<void>((_, reject) =>
@@ -295,18 +276,15 @@ export class MCPManager {
         this.userConnections.set(userId, new Map());
       }
       this.userConnections.get(userId)?.set(serverName, connection);
-      this.logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
+      logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       // Update timestamp on creation
       this.updateUserLastActivity(userId);
       return connection;
     } catch (error) {
-      this.logger.error(
-        `[MCP][User: ${userId}][${serverName}] Failed to establish connection`,
-        error,
-      );
+      logger.error(`[MCP][User: ${userId}][${serverName}] Failed to establish connection`, error);
       // Ensure partial connection state is cleaned up if initialization fails
       await connection.disconnect().catch((disconnectError) => {
-        this.logger.error(
+        logger.error(
           `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
           disconnectError,
         );
@@ -330,7 +308,7 @@ export class MCPManager {
       }
     }
 
-    this.logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
+    logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
   }
 
   /** Disconnects and removes a specific user connection */
@@ -338,7 +316,7 @@ export class MCPManager {
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
     if (connection) {
-      this.logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
+      logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
       await connection.disconnect();
       this.removeUserConnection(userId, serverName);
     }
@@ -349,12 +327,12 @@ export class MCPManager {
     const userMap = this.userConnections.get(userId);
     const disconnectPromises: Promise<void>[] = [];
     if (userMap) {
-      this.logger.info(`[MCP][User: ${userId}] Disconnecting all servers...`);
+      logger.info(`[MCP][User: ${userId}] Disconnecting all servers...`);
       const userServers = Array.from(userMap.keys());
       for (const serverName of userServers) {
         disconnectPromises.push(
           this.disconnectUserConnection(userId, serverName).catch((error) => {
-            this.logger.error(
+            logger.error(
               `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
               error,
             );
@@ -364,7 +342,7 @@ export class MCPManager {
       await Promise.allSettled(disconnectPromises);
       // Ensure user activity timestamp is removed
       this.userLastActivity.delete(userId);
-      this.logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
+      logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
   }
 
@@ -386,9 +364,7 @@ export class MCPManager {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         if ((await connection.isConnected()) !== true) {
-          this.logger.warn(
-            `[MCP][${serverName}] Connection not established. Skipping tool mapping.`,
-          );
+          logger.warn(`[MCP][${serverName}] Connection not established. Skipping tool mapping.`);
           continue;
         }
 
@@ -405,7 +381,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        this.logger.warn(`[MCP][${serverName}] Error fetching tools for mapping:`, error);
+        logger.warn(`[MCP][${serverName}] Error fetching tools for mapping:`, error);
       }
     }
   }
@@ -419,7 +395,7 @@ export class MCPManager {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         if ((await connection.isConnected()) !== true) {
-          this.logger.warn(
+          logger.warn(
             `[MCP][${serverName}] Connection not established. Skipping manifest loading.`,
           );
           continue;
@@ -441,7 +417,7 @@ export class MCPManager {
           mcpTools.push(manifestTool);
         }
       } catch (error) {
-        this.logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
+        logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
       }
     }
 
@@ -516,7 +492,7 @@ export class MCPManager {
       return formatToolContent(result, provider);
     } catch (error) {
       // Log with context and re-throw or handle as needed
-      this.logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
+      logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     }
@@ -526,7 +502,7 @@ export class MCPManager {
   public async disconnectServer(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
     if (connection) {
-      this.logger.info(`[MCP][${serverName}] Disconnecting...`);
+      logger.info(`[MCP][${serverName}] Disconnecting...`);
       await connection.disconnect();
       this.connections.delete(serverName);
     }
@@ -534,7 +510,7 @@ export class MCPManager {
 
   /** Disconnects all app-level and user-level connections */
   public async disconnectAll(): Promise<void> {
-    this.logger.info('[MCP] Disconnecting all app-level and user-level connections...');
+    logger.info('[MCP] Disconnecting all app-level and user-level connections...');
 
     const userDisconnectPromises = Array.from(this.userConnections.keys()).map((userId) =>
       this.disconnectUserConnections(userId),
@@ -545,13 +521,13 @@ export class MCPManager {
     // Disconnect all app-level connections
     const appDisconnectPromises = Array.from(this.connections.values()).map((connection) =>
       connection.disconnect().catch((error) => {
-        this.logger.error(`[MCP][${connection.serverName}] Error during disconnectAll:`, error);
+        logger.error(`[MCP][${connection.serverName}] Error during disconnectAll:`, error);
       }),
     );
     await Promise.allSettled(appDisconnectPromises);
     this.connections.clear();
 
-    this.logger.info('[MCP] All connections processed for disconnection.');
+    logger.info('[MCP] All connections processed for disconnection.');
   }
 
   /** Destroys the singleton instance and disconnects all connections */
@@ -559,7 +535,6 @@ export class MCPManager {
     if (MCPManager.instance) {
       await MCPManager.instance.disconnectAll();
       MCPManager.instance = null;
-      const logger = MCPManager.getDefaultLogger();
       logger.info('[MCP] Manager instance destroyed.');
     }
   }
