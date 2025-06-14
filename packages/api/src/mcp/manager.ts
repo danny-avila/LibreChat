@@ -9,6 +9,7 @@ import { CONSTANTS } from './enum';
 
 export interface CallToolOptions extends RequestOptions {
   user?: TUser;
+  customUserVars: Record<string, string>;
 }
 
 export class MCPManager {
@@ -21,7 +22,7 @@ export class MCPManager {
   private userLastActivity: Map<string, number> = new Map();
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
-  private processMCPEnv?: (obj: MCPOptions, user?: TUser) => MCPOptions; // Store the processing function
+  private processMCPEnv?: (obj: MCPOptions, user?: TUser, customUserVars?: Record<string, string>) => MCPOptions; // Store the processing function
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
   private logger: Logger;
@@ -56,7 +57,7 @@ export class MCPManager {
     this.logger.info('[MCP] Initializing app-level servers');
     this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
-
+    
     const entries = Object.entries(mcpServers);
     const initializedServers = new Set();
     const connectionResults = await Promise.allSettled(
@@ -219,7 +220,7 @@ export class MCPManager {
   }
 
   /** Gets or creates a connection for a specific user */
-  public async getUserConnection(serverName: string, user: TUser): Promise<MCPConnection> {
+  public async getUserConnection(serverName: string, user: TUser, customUserVars?: Record<string, string>): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
@@ -270,11 +271,11 @@ export class MCPManager {
         `[MCP][User: ${userId}] Configuration for server "${serverName}" not found.`,
       );
     }
-
+    
     if (this.processMCPEnv) {
-      config = { ...(this.processMCPEnv(config, user) ?? {}) };
+      config = { ...(this.processMCPEnv(config, user, customUserVars) ?? {}) };
     }
-
+    
     connection = new MCPConnection(serverName, config, this.logger, userId);
 
     try {
@@ -415,7 +416,7 @@ export class MCPManager {
    */
   public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<t.LCToolManifest> {
     const mcpTools: t.LCManifestTool[] = [];
-
+    
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         if ((await connection.isConnected()) !== true) {
@@ -428,13 +429,19 @@ export class MCPManager {
         const tools = await connection.fetchTools();
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
+
+          const config = this.mcpConfigs[serverName];
           const manifestTool: t.LCManifestTool = {
             name: tool.name,
             pluginKey,
             description: tool.description ?? '',
             icon: connection.iconPath,
+            authConfig: config?.customUserVars ? Object.entries(config.customUserVars).map(([key, value]) => ({
+              authField: key,
+              label: value.title || key,
+              description: value.description || ''
+            })) : undefined
           };
-          const config = this.mcpConfigs[serverName];
           if (config?.chatMenu === false) {
             manifestTool.chatMenu = false;
           }
@@ -475,7 +482,7 @@ export class MCPManager {
       if (userId && user) {
         this.updateUserLastActivity(userId);
         // Get or create user-specific connection
-        connection = await this.getUserConnection(serverName, user);
+        connection = await this.getUserConnection(serverName, user, options?.customUserVars);
       } else {
         // Use app-level connection
         connection = this.connections.get(serverName);

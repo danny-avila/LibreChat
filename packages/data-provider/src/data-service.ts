@@ -150,7 +150,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<config.TStartupConfig> => {
+export const getStartupConfig = (): Promise<config.TStartupConfig & { mcpCustomUserVars?: Record<string, { title: string; description: string }> }> => {
   return request.get(endpoints.config());
 };
 
@@ -769,6 +769,10 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
+}
+
+export function getUserPluginAuthValues(pluginKey: string): Promise<Record<string, string>> {
+  return request.get(endpoints.userPluginAuthValues(pluginKey));
 }
 
 export function updateFeedback(
