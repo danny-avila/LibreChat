@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { useChatFormContext, useToastContext } from '~/Providers';
 import { ListeningIcon, Spinner } from '~/components/svg';
 import { useLocalize, useSpeechToText } from '~/hooks';
@@ -47,11 +47,21 @@ export default function AudioRecorder({
 
   const setText = useCallback(
     (text: string) => {
+      const textarea = textAreaRef.current;
+
+      if (textarea) {
+        textarea.focus();
+        textarea.setRangeText(text, textarea.selectionStart, textarea.selectionEnd, 'end');
+        setValue('text', textarea.value, { shouldValidate: true });
+        return;
+      }
+
+      // If the textarea isn't mounted yet, just replace the current value with the transcript
       setValue('text', text, {
         shouldValidate: true,
       });
     },
-    [setValue],
+    [setValue, textAreaRef],
   );
 
   const { isListening, isLoading, startRecording, stopRecording } = useSpeechToText(
