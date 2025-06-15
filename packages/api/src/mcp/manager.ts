@@ -853,13 +853,15 @@ Please follow these instructions when using tools from the respective MCP server
 
       oauthStart?.(authorizationUrl);
 
-      logger.info(`═══════════════════════════════════════════════════════════════════════
+      logger.info(`
+═══════════════════════════════════════════════════════════════════════
 Please visit the following URL to authenticate:
 
 ${authorizationUrl}
 
 ${logPrefix} Flow ID: ${flowId}
-═══════════════════════════════════════════════════════════════════════`);
+═══════════════════════════════════════════════════════════════════════
+`);
 
       /** Awaited tokens from successful OAuth completion + exchange */
       const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
